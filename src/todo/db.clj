@@ -67,8 +67,49 @@
                   RETURNING from_task_id, to_task_id, edge_type, attributes"
                  from to type (->json attributes)]))
 
+(defn get-task [ds task-id]
+  (execute-one! ds
+                ["SELECT id, title, attributes FROM tasks WHERE id = ?"
+                 task-id]))
+
+(defn- require-updated-task [task-id row]
+  (or row
+      (throw (ex-info "Task not found" {:task-id task-id}))))
+
+(defn update-task-attributes! [ds task-id attributes]
+  (require-updated-task
+   task-id
+   (execute-one! ds
+                 ["UPDATE tasks
+                   SET attributes = json_patch(attributes, json(?))
+                   WHERE id = ?
+                   RETURNING id, title, attributes"
+                  (->json attributes) task-id])))
+
+(defn update-task-status! [ds task-id status]
+  (require-updated-task
+   task-id
+   (execute-one! ds
+                 ["UPDATE tasks
+                   SET attributes = json_set(attributes, '$.status', ?)
+                   WHERE id = ?
+                   RETURNING id, title, attributes"
+                  status task-id])))
+
 (defn all-tasks [ds]
   (execute! ds ["SELECT id, title, attributes FROM tasks ORDER BY id"]))
+
+(defn tasks-by-attribute [ds attr-key attr-value]
+  (execute! ds
+            ["SELECT t.id, t.title, t.attributes
+              FROM tasks t
+              WHERE EXISTS (
+                SELECT 1
+                FROM json_each(t.attributes) attr
+                WHERE attr.key = ? AND attr.value = ?
+              )
+              ORDER BY t.id"
+             (name attr-key) attr-value]))
 
 (defn task-dependencies [ds task-id]
   (execute! ds
@@ -79,6 +120,15 @@
               ORDER BY dep.id"
              task-id]))
 
+(defn blocking-tasks [ds task-id]
+  (execute! ds
+            ["SELECT blocked.id, blocked.title, blocked.attributes, e.attributes AS edge_attributes
+              FROM task_edges e
+              JOIN tasks blocked ON blocked.id = e.from_task_id
+              WHERE e.to_task_id = ? AND e.edge_type = 'depends-on'
+              ORDER BY blocked.id"
+             task-id]))
+
 (defn blocked-tasks [ds]
   (execute! ds
             ["SELECT t.id, t.title, json_group_array(dep.id) AS blockers
@@ -87,6 +137,40 @@
               JOIN tasks dep ON dep.id = e.to_task_id
               GROUP BY t.id, t.title
               ORDER BY t.id"]))
+
+(defn ready-tasks [ds]
+  (execute! ds
+            ["SELECT t.id, t.title, t.attributes
+              FROM tasks t
+              WHERE json_extract(t.attributes, '$.status') IS NOT 'done'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM task_edges e
+                  JOIN tasks dep ON dep.id = e.to_task_id
+                  WHERE e.from_task_id = t.id
+                    AND e.edge_type = 'depends-on'
+                    AND json_extract(dep.attributes, '$.status') IS NOT 'done'
+                )
+              ORDER BY t.id"]))
+
+(defn transitive-dependencies [ds task-id]
+  (execute! ds
+            ["WITH RECURSIVE deps(id, title, attributes) AS (
+                SELECT dep.id, dep.title, dep.attributes
+                FROM task_edges e
+                JOIN tasks dep ON dep.id = e.to_task_id
+                WHERE e.from_task_id = ? AND e.edge_type = 'depends-on'
+              UNION
+                SELECT dep.id, dep.title, dep.attributes
+                FROM deps
+                JOIN task_edges e ON e.from_task_id = deps.id AND e.edge_type = 'depends-on'
+                JOIN tasks dep ON dep.id = e.to_task_id
+              )
+              SELECT id, title, attributes
+              FROM deps
+              WHERE id <> ?
+              ORDER BY id"
+             task-id task-id]))
 
 (defn tasks-by-priority [ds priority]
   (execute! ds

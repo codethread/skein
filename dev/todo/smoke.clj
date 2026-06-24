@@ -22,6 +22,13 @@
   (println "\n--" title "--")
   (doseq [row rows] (println row)))
 
+(defn ids [rows]
+  (mapv :id rows))
+
+(defn assert= [expected actual message]
+  (assert (= expected actual)
+          (str message "\nexpected: " (pr-str expected) "\nactual: " (pr-str actual))))
+
 (defn -main [& [db-file]]
   (let [ds (db/datasource (or db-file smoke-db))]
     (db/reset-db! ds)
@@ -29,10 +36,24 @@
       (db/add-task! ds task))
     (doseq [edge seed-edges]
       (db/add-edge! ds edge))
+    (assert= "design" (:id (db/get-task ds "design")) "get-task retrieves one seeded task")
+    (db/update-task-attributes! ds "docs" {:owner "agent"})
+    (assert= {:priority "low" :due-date "2026-07-08" :status "todo" :owner "agent"}
+             (db/<-json (:attributes (db/get-task ds "docs")))
+             "update-task-attributes! patches JSON attributes")
+    (assert= ["tui"] (ids (db/ready-tasks ds)) "only tui is ready before tui is done")
+    (db/update-task-status! ds "tui" "done")
+    (assert= ["docs"] (ids (db/ready-tasks ds)) "docs becomes ready after tui is done")
+    (assert= ["release"] (ids (db/blocking-tasks ds "docs")) "release directly depends on docs")
+    (assert= ["design" "docs" "schema" "tui"] (ids (db/transitive-dependencies ds "release")) "release transitive dependencies")
+    (assert= ["release"] (ids (db/tasks-by-attribute ds :estimate-hours 2)) "arbitrary JSON attribute lookup")
     (section "all tasks" (db/all-tasks ds))
     (section "high priority tasks via JSON1" (db/tasks-by-priority ds "high"))
     (section "tasks due by 2026-07-05 via JSON1" (db/tasks-due-before ds "2026-07-05"))
     (section "blocked tasks from edge table" (db/blocked-tasks ds))
     (section "release dependencies" (db/task-dependencies ds "release"))
+    (section "release transitive dependencies" (db/transitive-dependencies ds "release"))
+    (section "tasks blocked by docs" (db/blocking-tasks ds "docs"))
+    (section "estimate-hours=2 via arbitrary JSON attribute" (db/tasks-by-attribute ds :estimate-hours 2))
     (section "docs graph edges" (db/related-tasks ds "docs"))
     (println "\nSmoke database:" (or db-file smoke-db))))

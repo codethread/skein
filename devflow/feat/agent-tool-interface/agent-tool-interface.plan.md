@@ -85,3 +85,8 @@ Append notes here. Do not rewrite earlier notes.
 ### PLAN-001.DN2 Task queue review fixes — 2026-06-24
 
 - Clarified the REPL helper vocabulary to exact names, added CLI exposure for transitive dependencies, and required CLI attribute authoring so attribute queries are not read-only from the primary agent interface.
+
+### PLAN-001.DN3 Task 1 implementation — 2026-06-24
+
+- Added shared `todo.db` operations for status/attribute updates, arbitrary top-level JSON attribute lookup, reverse dependency lookup, ready-task selection, and transitive `depends-on` traversal while keeping status in `tasks.attributes`.
+- Smoke coverage now asserts single-task lookup, JSON attribute patching, readiness changes after marking a dependency done, arbitrary attribute queries, reverse blockers, and transitive dependencies.
