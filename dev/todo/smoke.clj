@@ -25,6 +25,23 @@
             (str "CLI command succeeds: " (pr-str command) "\n" output))
     output))
 
+(defn start-cli-daemon! [db-file]
+  (let [process (-> (ProcessBuilder. ["clojure" "-M:todo" "--db" db-file "daemon" "start"])
+                    (.redirectErrorStream true)
+                    (.start))]
+    (loop [attempts 50]
+      (when-not (.isAlive process)
+        (throw (ex-info "CLI daemon exited before becoming ready" {:output (slurp (.getInputStream process))})))
+      (when (zero? attempts)
+        (throw (ex-info "CLI daemon did not become ready" {})))
+      (when-not (try
+                  (run-cli! db-file "daemon" "status")
+                  true
+                  (catch AssertionError _ false))
+        (Thread/sleep 200)
+        (recur (dec attempts))))
+    process))
+
 (defn cli-add! [db-file title & args]
   (str/trim (apply run-cli! db-file "add" title args)))
 
@@ -40,10 +57,12 @@
   (let [ds (db/datasource (or db-file smoke-db))
         cli-db (if db-file (str db-file ".cli") cli-smoke-db)]
     (delete-sqlite-family! cli-db)
-    (run-cli! cli-db "init")
-    (let [design (cli-add! cli-db "Sketch task graph model" "--status" "done" "--attr" "priority=high")
-          schema (cli-add! cli-db "Create SQLite schema" "--attr" "priority=high")
-          docs (cli-add! cli-db "Write usage notes" "--attr" "owner=agent")]
+    (let [daemon (start-cli-daemon! cli-db)]
+      (try
+        (run-cli! cli-db "init")
+        (let [design (cli-add! cli-db "Sketch task graph model" "--status" "done" "--attr" "priority=high")
+              schema (cli-add! cli-db "Create SQLite schema" "--attr" "priority=high")
+              docs (cli-add! cli-db "Write usage notes" "--attr" "owner=agent")]
       (run-cli! cli-db "update" schema "--edge" (str "depends-on:" design))
       (run-cli! cli-db "update" docs "--edge" (str "depends-on:" schema))
       (assert= ["Create SQLite schema"]
@@ -53,10 +72,14 @@
       (assert= ["Write usage notes"]
                (titles (json/read-str (run-cli! cli-db "--format" "json" "ready") :key-fn keyword))
                "CLI update status changes readiness")
-      (assert= "done"
-               (:status (read-string (run-cli! cli-db "--format" "edn" "show" schema)))
-               "CLI show exposes first-class status"))
-    (section "agent CLI process ready" (read-string (run-cli! cli-db "--format" "edn" "ready")))
+        (assert= "done"
+                 (:status (read-string (run-cli! cli-db "--format" "edn" "show" schema)))
+                 "CLI show exposes first-class status"))
+      (section "agent CLI process ready" (read-string (run-cli! cli-db "--format" "edn" "ready")))
+      (finally
+        (when (.isAlive daemon)
+          (run-cli! cli-db "daemon" "stop")
+          (.waitFor daemon)))))
 
     (db/reset-db! ds)
     (let [design (:id (db/add-task! ds {:title "Sketch model" :status "done" :attributes {:priority "high"}}))

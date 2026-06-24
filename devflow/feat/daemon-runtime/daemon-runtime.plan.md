@@ -112,3 +112,10 @@ Outcome: Dev helpers, smoke scripts, README, and AGENTS guidance demonstrate the
 
 - Added `todo.client` for metadata discovery, nREPL connection, identity verification, fixed daemon API invocation, timeout handling, and loud `ExceptionInfo` transport/domain failures.
 - The daemon runtime now publishes the current runtime through `todo.daemon.runtime/current-runtime` for private nREPL bridge calls; CLI/REPL routing remains in later slices.
+
+### PLAN-001.DN5 TASK-003 implementation — 2026-06-24
+
+- Routed CLI task commands through `todo.client`; absent, stale, unreachable, and identity-mismatched daemons fail loudly with no direct SQLite fallback.
+- Added `daemon start|status|stop` to `todo.cli` without exposing public port selection; status EDN/JSON includes health, canonical database path, pid, endpoint, and nonce identity.
+- Updated the smoke CLI subsection, root CLI spec, and quickstart docs to start and stop a real daemon before exercising task commands; REPL helper migration remains in TASK-004.
+- Tightened metadata staleness so dead daemon PIDs are treated as stale and a subsequent `daemon start` can replace stale metadata.

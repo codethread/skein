@@ -19,8 +19,10 @@ PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
 Common commands:
 
 ```sh
+clojure -M:todo --db /tmp/todo-agent.sqlite daemon start
 clojure -M:todo --db /tmp/todo-agent.sqlite init
 clojure -M:todo --db /tmp/todo-agent.sqlite --format edn list
+clojure -M:todo --db /tmp/todo-agent.sqlite daemon stop
 clojure -M:test
 clojure -M:repl
 clojure -M:run
@@ -32,14 +34,13 @@ Agents should prefer the CLI for scripted work. Pass `--db <path>` on every comm
 
 ```sh
 DB=/tmp/todo-agent.sqlite
+clojure -M:todo --db "$DB" daemon start
 clojure -M:todo --db "$DB" init
-design=$(clojure -M:todo --db "$DB" add "Sketch model" --attr status=done --attr priority=high)
-docs=$(clojure -M:todo --db "$DB" add "Write docs" --attr status=todo --attr owner=agent --link depends-on:$design)
+design=$(clojure -M:todo --db "$DB" add "Sketch model" --status done --attr priority=high)
+docs=$(clojure -M:todo --db "$DB" add "Write docs" --attr owner=agent)
+clojure -M:todo --db "$DB" update "$docs" --edge depends-on:$design
 clojure -M:todo --db "$DB" --format edn ready
-clojure -M:todo --db "$DB" --format json by-attr owner agent
-clojure -M:todo --db "$DB" done "$docs"
-printf '[{:ref design :title "Design" :attributes {:status "done"}} {:ref docs :title "Docs" :edges [{:type "depends-on" :to design}]}]' \
-  | clojure -M:todo --db "$DB" --format edn batch
+clojure -M:todo --db "$DB" daemon stop
 ```
 
 Use `todo.repl` for interactive exploration when a REPL is already available:

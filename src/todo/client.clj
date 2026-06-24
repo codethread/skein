@@ -52,6 +52,9 @@
 (defn identity-form []
   "(do (require '[todo.daemon.runtime]) (:metadata @todo.daemon.runtime/current-runtime))")
 
+(defn stop-form []
+  "(do (require '[todo.daemon.runtime]) (let [rt @todo.daemon.runtime/current-runtime] (future (Thread/sleep 50) (todo.daemon.runtime/stop! rt)) {:stopped true}))")
+
 (defn connect [metadata timeout-ms]
   (let [{:keys [host port]} (:endpoint metadata)]
     (try
@@ -114,6 +117,20 @@
       (verify-identity! conn meta timeout-ms)
       (eval-form conn (fixed-form op args) timeout-ms {:operation op
                                                        :canonical-db-path (:canonical-db-path meta)}))))
+
+(defn status [db-file & [opts]]
+  (let [timeout-ms (:timeout-ms (or opts {}) default-timeout-ms)
+        meta (metadata-for db-file)]
+    (with-open [conn (connect meta timeout-ms)]
+      (verify-identity! conn meta timeout-ms))))
+
+(defn stop [db-file & [opts]]
+  (let [timeout-ms (:timeout-ms (or opts {}) default-timeout-ms)
+        meta (metadata-for db-file)]
+    (with-open [conn (connect meta timeout-ms)]
+      (verify-identity! conn meta timeout-ms)
+      (eval-form conn (stop-form) timeout-ms {:operation :stop
+                                              :canonical-db-path (:canonical-db-path meta)}))))
 
 (defn init [db-file & [opts]] (call db-file (or opts {}) :init))
 (defn add [db-file task & [opts]] (call db-file (or opts {}) :add task))

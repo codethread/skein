@@ -37,11 +37,13 @@ Use the agent CLI:
 
 ```sh
 DB=/tmp/todo-agent.sqlite
+clojure -M:todo --db "$DB" daemon start
 clojure -M:todo --db "$DB" init
 design=$(clojure -M:todo --db "$DB" add "Sketch model" --status done --attr priority=high)
 docs=$(clojure -M:todo --db "$DB" add "Write docs" --attr owner=agent)
 clojure -M:todo --db "$DB" update "$docs" --edge depends-on:$design
 clojure -M:todo --db "$DB" --format edn ready
+clojure -M:todo --db "$DB" daemon stop
 ```
 
 Use the REPL helpers:

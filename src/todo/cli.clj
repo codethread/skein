@@ -4,12 +4,13 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.tools.cli :refer [parse-opts]]
-            [next.jdbc :as jdbc]
+            [todo.client :as client]
+            [todo.daemon.runtime :as runtime]
             [todo.db :as db]
             [todo.specs :as specs]))
 
 (def query-commands #{"show" "list" "ready"})
-(def commands (conj query-commands "init" "add" "update"))
+(def commands (conj query-commands "init" "add" "update" "daemon"))
 
 (def global-options
   [[nil "--db PATH" "SQLite database path"
@@ -59,7 +60,10 @@
        "  update <id> [--title title] [--status status] [--attr key=value ...] [--edge edge-type:to-id ...]\n"
        "  show <id>\n"
        "  list\n"
-       "  ready\n\n"
+       "  ready\n"
+       "  daemon start\n"
+       "  daemon stop\n"
+       "  daemon status\n\n"
        "Options:\n"
        summary
        "\n"))
@@ -95,69 +99,67 @@
       (fail! (str "Invalid attributes:\n" (explain ::specs/cli-attributes (:attr options))) summary))
     options))
 
-(def json-columns #{:attributes :edge_attributes})
-
-(declare normalize)
-
-(defn normalize-row [row]
-  (reduce-kv (fn [m k v]
-               (assoc m k (cond
-                            (and (json-columns k) (string? v)) (db/<-json v)
-                            (map? v) (normalize v)
-                            (sequential? v) (mapv normalize v)
-                            :else v)))
-             {}
-             row))
-
-(defn normalize [result]
-  (cond
-    (map? result) (normalize-row result)
-    (sequential? result) (mapv normalize result)
-    :else result))
-
 (defn print-result [format result]
-  (let [result (normalize result)]
-    (case format
-      "human" (if (and (sequential? result) (empty? result))
-                (println "(no rows)")
-                (doseq [row (if (sequential? result) result [result])] (prn row)))
-      "edn" (prn result)
-      "json" (println (json/write-str result)))))
+  (case format
+    "human" (if (and (sequential? result) (empty? result))
+              (println "(no rows)")
+              (doseq [row (if (sequential? result) result [result])] (prn row)))
+    "edn" (prn result)
+    "json" (println (json/write-str result))))
 
-(defn apply-edges! [ds id edges]
-  (doseq [{:keys [to type]} edges]
-    (when-not (db/get-task ds to)
-      (throw (ex-info "Edge target task not found" {:to to :type type})))
-    (db/add-edge! ds {:from id :to to :type type :attributes {}})))
-
-(defn run-command! [ds command args summary]
+(defn run-command! [db-file command args summary]
   (case command
     "init" (do (require-conform ::specs/empty-command args command summary)
-                (db/init! ds)
-                {:database "initialized"})
+                (client/init db-file))
     "add" (let [{:keys [title opts]} (require-conform ::specs/add-command args command summary)
-                 options (parse-command-options opts summary)
-                 created (db/add-task! ds {:title title :status (:status options) :attributes (:attr options)})]
-             created)
+                 options (parse-command-options opts summary)]
+             (when (seq (:edge options))
+               (fail! "add does not accept --edge" summary))
+             (client/add db-file {:title title :status (:status options) :attributes (:attr options)}))
     "update" (let [{:keys [id opts]} (require-conform ::specs/update-command args command summary)
                     options (parse-command-options opts summary)]
-                (jdbc/with-transaction [tx ds]
-                  (apply-edges! tx id (:edge options))
-                  (db/update-task! tx id {:title (:title options)
-                                          :status (:status options)
-                                          :attributes (when (seq (:attr options)) (:attr options))})))
-    "show" (do (require-conform ::specs/one-id-command args command summary) (db/get-task ds (first args)))
-    "list" (do (require-conform ::specs/empty-command args command summary) (db/all-tasks ds))
-    "ready" (do (require-conform ::specs/empty-command args command summary) (db/ready-tasks ds))))
+                (client/update db-file id {:title (:title options)
+                                           :status (:status options)
+                                           :attributes (when (seq (:attr options)) (:attr options))
+                                           :edges (:edge options)}))
+    "show" (do (require-conform ::specs/one-id-command args command summary) (client/show db-file (first args)))
+    "list" (do (require-conform ::specs/empty-command args command summary) (client/list db-file))
+    "ready" (do (require-conform ::specs/empty-command args command summary) (client/ready db-file))))
+
+(defn daemon-status [db-file]
+  (let [meta (client/status db-file)]
+    {:health "ok"
+     :canonical-db-path (:canonical-db-path meta)
+     :pid (:pid meta)
+     :endpoint (:endpoint meta)
+     :identity {:nonce (:nonce meta)}}))
+
+(defn run-daemon-command! [db-file args summary]
+  (let [subcommand (first args)
+        subargs (vec (rest args))]
+    (case subcommand
+      "start" (do (require-conform ::specs/empty-command subargs "daemon start" summary)
+                   (runtime/start! db-file)
+                   (println "daemon started")
+                   (while @runtime/current-runtime
+                     (Thread/sleep 100)))
+      "stop" (do (require-conform ::specs/empty-command subargs "daemon stop" summary)
+                  (client/stop db-file))
+      "status" (do (require-conform ::specs/empty-command subargs "daemon status" summary)
+                    (daemon-status db-file))
+      (fail! (str "Unknown daemon command: " (or subcommand "")) summary))))
 
 (defn -main [& args]
   (let [[opts command command-args summary] (parse-global-options args)]
     (when (nil? command) (fail! "Missing command" summary))
     (when-not (commands command) (fail! (str "Unknown command: " command) summary))
     (try
-      (let [result (run-command! (db/datasource (:db opts)) command command-args summary)]
+      (let [result (if (= command "daemon")
+                     (run-daemon-command! (:db opts) command-args summary)
+                     (run-command! (:db opts) command command-args summary))]
         (cond
           (and (= command "add") (= "human" (:format opts))) (println (:id result))
-          (or (query-commands command) (not= "human" (:format opts))) (print-result (:format opts) result)))
+          (and (= command "daemon") (= "start" (first command-args))) nil
+          (or (query-commands command) (= command "daemon") (not= "human" (:format opts))) (print-result (:format opts) result)))
       (catch clojure.lang.ExceptionInfo e (fail! (.getMessage e) summary))
       (catch Exception e (fail! (.getMessage e) summary)))))

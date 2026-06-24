@@ -2,7 +2,8 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint])
-  (:import [java.nio.charset StandardCharsets]
+  (:import [java.lang ProcessHandle]
+           [java.nio.charset StandardCharsets]
            [java.nio.file Files StandardCopyOption]
            [java.security MessageDigest]
            [java.util UUID]))
@@ -57,9 +58,13 @@
   (.delete (metadata-file canonical-path)))
 
 
+(defn pid-alive? [pid]
+  (boolean (some-> (ProcessHandle/of pid) (.orElse nil) .isAlive)))
+
 (defn stale-or-missing? [metadata]
   (not (and (map? metadata)
             (int? (:pid metadata))
+            (pid-alive? (:pid metadata))
             (= :nrepl (:transport metadata))
             (string? (get-in metadata [:endpoint :host]))
             (int? (get-in metadata [:endpoint :port]))

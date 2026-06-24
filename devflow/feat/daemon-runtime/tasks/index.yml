@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: route cli through daemon
     task_file: tasks/003-route-cli-through-daemon.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 4
     description: route repl and dev helpers
