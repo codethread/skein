@@ -1,0 +1,36 @@
+tasks:
+  - id: 1
+    description: add daemon runtime api
+    task_file: tasks/001-add-daemon-runtime-api.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: add nrepl client bridge
+    task_file: tasks/002-add-nrepl-client-bridge.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: route cli through daemon
+    task_file: tasks/003-route-cli-through-daemon.md
+    status: pending
+    blocked_by: [2]
+  - id: 4
+    description: route repl and dev helpers
+    task_file: tasks/004-route-repl-and-dev-helpers.md
+    status: pending
+    blocked_by: [2]
+  - id: 5
+    description: update smoke docs and validation
+    task_file: tasks/005-update-smoke-docs-and-validation.md
+    status: pending
+    blocked_by: [3, 4, 7]
+  - id: 6
+    description: verify daemon via tmux
+    task_file: tasks/006-verify-daemon-via-tmux.md
+    status: pending
+    blocked_by: [5]
+  - id: 7
+    description: add trusted startup config
+    task_file: tasks/007-add-trusted-startup-config.md
+    status: pending
+    blocked_by: [3]
