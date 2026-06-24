@@ -3,24 +3,14 @@
   (:require [next.jdbc :as jdbc]
             [todo.db :as db]))
 
-(def json-columns #{:attributes})
-
-(declare normalize)
-
 (defn normalize-row [row]
-  (reduce-kv (fn [m k v]
-               (assoc m k (cond
-                            (and (json-columns k) (string? v)) (db/<-json v)
-                            (map? v) (normalize v)
-                            (sequential? v) (mapv normalize v)
-                            :else v)))
-             {}
-             row))
+  (cond-> row
+    (string? (:attributes row)) (clojure.core/update :attributes db/<-json)))
 
 (defn normalize [result]
   (cond
     (map? result) (normalize-row result)
-    (sequential? result) (mapv normalize result)
+    (sequential? result) (mapv normalize-row result)
     :else result))
 
 (defn- ds [runtime]
