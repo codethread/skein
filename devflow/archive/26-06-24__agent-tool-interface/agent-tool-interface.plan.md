@@ -113,4 +113,8 @@ Append notes here. Do not rewrite earlier notes.
 ### PLAN-001.DN7 Final shipped scope — 2026-06-24
 
 - Shipped the full planned MVP scope: shared DB operations, `todo.cli` command surface, `todo.repl` helper namespace, README agent quickstart, and smoke coverage for CLI/REPL/JSON1/graph workflows.
-- No planned task scope was cut. No feature-local specs required promotion because the stable contracts are documented in README for this MVP rather than staged as root specs.
+- No planned task scope was cut. At archive time, no feature-local specs required promotion because the stable contracts were documented in README for this MVP rather than staged as root specs.
+
+### PLAN-001.DN8 Post-archive spec consolidation — 2026-06-24
+
+- Current shipped contracts were later consolidated into root specs under `devflow/specs/`: task model, CLI surface, and REPL API. Treat those root specs as canonical over this historical archive note.

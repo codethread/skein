@@ -2,13 +2,37 @@
 
 A small Clojure todo graph tool using `next.jdbc` + SQLite.
 
-- `tasks.attributes` is JSON stored as `TEXT` and validated with SQLite JSON1.
-- `task_edges` stores graph relationships such as `depends-on` and `mentions`.
-- Runtime/userland attributes are open-ended for now; schemas can be added later.
+It exists to give coding agents and humans a lightweight local task graph:
 
-## Agent quickstart
+- tasks are stored in SQLite;
+- open-ended task attributes are JSON stored as `TEXT` and queried with SQLite JSON1;
+- `task_edges` stores graph relationships such as `depends-on` and `mentions`;
+- agents can use a scriptable CLI or a compact REPL API;
+- humans can still use the basic TUI.
 
-Use the CLI first for automation. Pick a disposable database path and pass it with every command:
+For contributor, debugging, and implementation guidance, see [AGENTS.md](./AGENTS.md). For durable behavior contracts, see the [Devflow spec index](./devflow/README.md#root-specs).
+
+## Requirements
+
+- Clojure CLI
+- Java / OpenJDK
+- SQLite, provided by the `org.xerial/sqlite-jdbc` dependency at runtime
+
+On this system, Homebrew OpenJDK may need to be put on PATH:
+
+```sh
+PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
+```
+
+## Quickstart
+
+Run the smoke demo:
+
+```sh
+clojure -M:smoke
+```
+
+Use the agent CLI:
 
 ```sh
 DB=/tmp/todo-agent.sqlite
@@ -17,36 +41,9 @@ clojure -M:todo --db "$DB" add design "Sketch model" --attr status=done --attr p
 clojure -M:todo --db "$DB" add docs "Write docs" --attr status=todo --attr owner=agent
 clojure -M:todo --db "$DB" link docs design depends-on --attr reason="docs follow design"
 clojure -M:todo --db "$DB" --format edn ready
-clojure -M:todo --db "$DB" --format json by-attr owner agent
-clojure -M:todo --db "$DB" --format edn deps docs
-clojure -M:todo --db "$DB" done docs
 ```
 
-### CLI command vocabulary
-
-Global options:
-
-- `--db <path>`: SQLite database path. Defaults to `todo.sqlite`.
-- `--format human|edn|json`: output mode for query commands. Use `edn` for Clojure-native automation and `json` for general shell automation.
-- `--attr key=value`: repeatable task or edge attribute. CLI attribute values are stored as strings.
-
-Commands:
-
-- `init`: create the schema in the selected database.
-- `add <id> <title> [--attr key=value ...]`: create a task.
-- `link <from-id> <to-id> <edge-type> [--attr key=value ...]`: create a graph edge.
-- `show <id>`: fetch one task.
-- `list`: list all tasks.
-- `deps <id>`: list direct `depends-on` dependencies for a task.
-- `transitive-deps <id>`: list all recursive `depends-on` dependencies for a task.
-- `blocking <id>`: list tasks directly blocked by a task.
-- `ready`: list non-done tasks whose direct dependencies are all `done`.
-- `by-attr <key> <value>`: query tasks by a top-level JSON1 attribute.
-- `done <id>`: set the task's conventional `status` attribute to `done`.
-
-## Agent REPL helpers
-
-Use `todo.repl` for interactive exploration when a REPL is already available:
+Use the REPL helpers:
 
 ```clojure
 (require '[todo.repl :refer :all])
@@ -56,55 +53,9 @@ Use `todo.repl` for interactive exploration when a REPL is already available:
 (task! "docs" "Write docs" {:status "todo" :owner "agent"})
 (depends! "docs" "design")
 (ready)
-(by-attr :owner "agent")
-(deps "docs")
-(done! "docs")
 ```
 
-Helpers use the datasource opened with `open!`; calling database helpers first fails with a clear error.
-
-REPL helper vocabulary:
-
-- `open!`: select the active SQLite database.
-- `init!`: create the schema in the active database.
-- `task!`: create a task.
-- `edge!`: create any edge type.
-- `depends!`: create a conventional `depends-on` edge.
-- `done!`: set the conventional `status` attribute to `done`.
-- `tasks`: list all tasks.
-- `task`: fetch one task.
-- `deps`: list direct `depends-on` dependencies.
-- `transitive-deps`: list recursive `depends-on` dependencies.
-- `blocking`: list tasks directly blocked by a task.
-- `ready`: list non-done tasks whose direct dependencies are all `done`.
-- `by-attr`: query tasks by a top-level JSON1 attribute.
-- `graph`: list all edges touching a task.
-
-## MVP conventions
-
-Supported task attributes remain open-ended JSON. The MVP establishes these conventional keys for interoperability:
-
-- `status`: task state. `done` means complete; non-`done` values such as `todo` and `doing` remain active.
-- `priority`: free-form priority label such as `high`, `medium`, or `low`.
-- `due-date`: ISO-like date string used by the demo queries.
-- Other attributes, such as `owner`, `reason`, or `estimate-hours`, are userland values and can be queried with `by-attr` when stored on tasks.
-
-Supported edge types are plain strings. The MVP conventions are:
-
-- `depends-on`: `from` cannot be ready until `to` is `done`.
-- `mentions`: loose reference edge with no readiness semantics.
-
-## Run the smoke demo
-
-```sh
-clojure -M:smoke
-```
-
-This recreates `smoke.sqlite`, exercises the CLI workflow, exercises the REPL helpers, and prints example JSON1 and graph queries.
-
-## Run the TUI
-
-The TUI remains available for local human editing, but agents should prefer the CLI or REPL helpers above.
+Run the TUI:
 
 ```sh
 clojure -M:run
@@ -112,28 +63,20 @@ clojure -M:run
 clojure -M:run my-todos.sqlite
 ```
 
-Attribute input in the TUI is a simple comma-separated format:
+## Data model
 
-```text
-priority=high,due-date=2026-07-01,status=todo
-```
+The durable data contract is specified in [Task Model](./devflow/specs/task-model.md). At a high level:
 
-## Schema
+- tasks have a unique text id, a title, and open-ended JSON object attributes;
+- task edges connect two tasks with an edge type and open-ended JSON object attributes;
+- `depends-on` edges define readiness semantics;
+- task completion is represented by the conventional `status` attribute value `done`.
 
-```sql
-CREATE TABLE tasks (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  attributes TEXT NOT NULL DEFAULT '{}',
-  CHECK (json_valid(attributes))
-);
+## Development
 
-CREATE TABLE task_edges (
-  from_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  to_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  edge_type TEXT NOT NULL,
-  attributes TEXT NOT NULL DEFAULT '{}',
-  PRIMARY KEY (from_task_id, to_task_id, edge_type),
-  CHECK (json_valid(attributes))
-);
-```
+See:
+
+- [AGENTS.md](./AGENTS.md) for contributor/debug/build guidance;
+- [Task Model](./devflow/specs/task-model.md) for data semantics;
+- [CLI Surface](./devflow/specs/cli.md) for full command vocabulary;
+- [REPL API](./devflow/specs/repl-api.md) for full helper vocabulary.

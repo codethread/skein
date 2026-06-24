@@ -17,6 +17,8 @@
   (jdbc/execute-one! ds sql-params {:builder-fn rs/as-unqualified-lower-maps}))
 
 (defn ->json [m]
+  (when-not (or (nil? m) (map? m))
+    (throw (ex-info "Attributes must be a map that encodes to a JSON object" {:attributes m})))
   (json/write-str (or m {})))
 
 (defn <-json [s]
