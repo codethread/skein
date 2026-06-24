@@ -102,3 +102,8 @@ Outcome: Dev helpers, smoke scripts, README, and AGENTS guidance demonstrate the
 ### PLAN-001.DN2 Deep review amendment — 2026-06-24
 
 - Deep review found missing tmux/dev smoke validation, ambiguous `open!` semantics, public `--port` leakage, under-specified metadata discovery, and missing docs/dev helper scope. The plan/spec deltas were amended before task authoring.
+
+### PLAN-001.DN3 TASK-001 implementation — 2026-06-24
+
+- Added the daemon runtime/API foundation with nREPL bound to `127.0.0.1`, daemon-owned datasource state, and deterministic EDN metadata keyed by canonical database path hash.
+- `todo.daemon.api` currently exposes in-process semantic operations only; nREPL client invocation and CLI/REPL routing remain in later slices.
