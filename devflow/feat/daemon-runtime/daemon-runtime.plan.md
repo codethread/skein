@@ -107,3 +107,8 @@ Outcome: Dev helpers, smoke scripts, README, and AGENTS guidance demonstrate the
 
 - Added the daemon runtime/API foundation with nREPL bound to `127.0.0.1`, daemon-owned datasource state, and deterministic EDN metadata keyed by canonical database path hash.
 - `todo.daemon.api` currently exposes in-process semantic operations only; nREPL client invocation and CLI/REPL routing remain in later slices.
+
+### PLAN-001.DN4 TASK-002 implementation — 2026-06-24
+
+- Added `todo.client` for metadata discovery, nREPL connection, identity verification, fixed daemon API invocation, timeout handling, and loud `ExceptionInfo` transport/domain failures.
+- The daemon runtime now publishes the current runtime through `todo.daemon.runtime/current-runtime` for private nREPL bridge calls; CLI/REPL routing remains in later slices.

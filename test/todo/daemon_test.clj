@@ -91,7 +91,7 @@
         rt (runtime/start! db-file)]
     (try
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"already exists"
+                            #"already active"
                             (runtime/start! db-file)))
       (finally
         (runtime/stop! rt)
