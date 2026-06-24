@@ -1,0 +1,21 @@
+tasks:
+  - id: 1
+    description: Add shared agent query operations
+    task_file: tasks/001-shared-agent-query-operations.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Add scriptable agent CLI
+    task_file: tasks/002-scriptable-agent-cli.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: Add agent REPL helpers
+    task_file: tasks/003-agent-repl-helpers.md
+    status: pending
+    blocked_by: [1]
+  - id: 4
+    description: Document and smoke agent workflows
+    task_file: tasks/004-document-and-smoke-agent-workflows.md
+    status: pending
+    blocked_by: [2, 3]
