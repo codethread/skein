@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -101,5 +102,58 @@ func TestXDGConfigLoading(t *testing.T) {
 	_, err := run("list")
 	if err == nil || !strings.Contains(err.Error(), "list is not wired") {
 		t.Fatalf("expected xdg config to parse and reach stub, got %v", err)
+	}
+}
+
+type fakeClient struct{ calls []fakeCall }
+type fakeCall struct {
+	op   string
+	args map[string]any
+}
+
+func (f *fakeClient) Call(op string, args map[string]any) (any, error) {
+	f.calls = append(f.calls, fakeCall{op, args})
+	return map[string]any{"id": "task-1", "title": "Write docs", "status": "todo", "attributes": map[string]any{}}, nil
+}
+
+func TestTaskCommandsUseSocketClientPayloads(t *testing.T) {
+	orig := newClient
+	fc := &fakeClient{}
+	newClient = func(o Options) Caller { return fc }
+	t.Cleanup(func() { newClient = orig })
+	out, err := run("--format", "human", "add", "Write docs", "--attr", "owner=agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "task-1" {
+		t.Fatalf("expected generated id, got %q", out)
+	}
+	if out, err = run("update", "task-1", "--status", "done", "--edge", "depends-on:task-0"); err != nil || out != "" {
+		t.Fatalf("update output/error = %q/%v", out, err)
+	}
+	if _, err = run("--format", "json", "show", "task-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fc.calls) != 3 {
+		t.Fatalf("calls = %#v", fc.calls)
+	}
+	if fc.calls[0].op != "add" || fc.calls[0].args["title"] != "Write docs" || fc.calls[0].args["status"] != "todo" {
+		t.Fatalf("bad add call: %#v", fc.calls[0])
+	}
+	if !reflect.DeepEqual(fc.calls[0].args["attributes"], map[string]any{"owner": "agent"}) {
+		t.Fatalf("bad attrs: %#v", fc.calls[0].args)
+	}
+	expectedUpdate := map[string]any{"id": "task-1", "title": nil, "status": "done", "attributes": nil, "edges": []map[string]any{{"type": "depends-on", "to": "task-0"}}}
+	if fc.calls[1].op != "update" || !reflect.DeepEqual(fc.calls[1].args, expectedUpdate) {
+		t.Fatalf("bad update call: %#v", fc.calls[1])
+	}
+	if fc.calls[2].op != "show" || fc.calls[2].args["id"] != "task-1" {
+		t.Fatalf("bad show call: %#v", fc.calls[2])
+	}
+	if _, err = run("update", "task-1", "--title", ""); err != nil {
+		t.Fatal(err)
+	}
+	if fc.calls[3].args["title"] != "" {
+		t.Fatalf("empty title flag should be sent to daemon validation: %#v", fc.calls[3])
 	}
 }

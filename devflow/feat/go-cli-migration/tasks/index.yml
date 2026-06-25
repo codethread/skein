@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: Wire Go task commands
     task_file: tasks/004-wire-go-task-commands.md
-    status: pending
+    status: complete
     blocked_by: [2, 3]
   - id: 5
     description: Wire Go query commands

@@ -116,3 +116,9 @@ Outcome: User/agent docs, smoke flows, and root specs reflect `todo` as the publ
 - Added `cli/` as a standalone Go module plus root `go.work` so the planned root build command works before packaging is defined.
 - Current Go commands validate flags/config/help and then intentionally fail at daemon socket stubs for task/query/status/stop operations; future wiring tasks should replace only the socket client layer and command argument payload construction.
 - Client config is JSON-only with supported keys `db` and `format`; unsupported keys and malformed config fail before command execution.
+
+### GOCLI-PLAN-001.DN6 Task 4 Go task commands — 2026-06-25
+
+- Wired Go `init`, `add`, `update`, and `show` through JSON runtime metadata and one-request-per-connection Unix socket calls; task paths no longer use the Clojure CLI or SQLite.
+- Go canonical database path handling resolves symlinked parent directories so `/tmp/...` paths match the Clojure daemon's canonical `/private/tmp/...` metadata on macOS.
+- Query and daemon lifecycle commands remain intentionally unwired for later slices.

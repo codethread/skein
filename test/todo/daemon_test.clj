@@ -168,6 +168,17 @@
         (is (true? (get added "ok")))
         (is (= "Socket task" (get-in added ["result" "title"])))
         (is (= {"owner" "go"} (get-in added ["result" "attributes"]))))
+      (let [target (socket-request rt "add" {"title" "Target" "status" "done" "attributes" {}})
+            source (socket-request rt "add" {"title" "Source" "status" "todo" "attributes" {}})
+            updated (socket-request rt "update" {"id" (get-in source ["result" "id"])
+                                                  "title" nil
+                                                  "status" nil
+                                                  "attributes" nil
+                                                  "edges" [{"type" "depends-on"
+                                                            "to" (get-in target ["result" "id"])}]})]
+        (is (true? (get updated "ok")))
+        (is (= [(get-in target ["result" "id"])]
+               (mapv :id (db/task-dependencies (:datasource rt) (get-in source ["result" "id"]))))))
       (let [missing (socket-request rt "update" {"id" "missing" "title" nil "status" nil "attributes" nil "edges" []})]
         (is (false? (get missing "ok")))
         (is (= "domain" (get-in missing ["error" "type"]))))

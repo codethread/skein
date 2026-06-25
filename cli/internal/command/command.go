@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,11 +13,13 @@ import (
 	"atom-todo-cli/internal/config"
 )
 
-type App struct {
-	Stdout io.Writer
-	Stderr io.Writer
-}
+type App struct{ Stdout, Stderr io.Writer }
 type Options struct{ DB, Format, ClientConfig string }
+type Caller interface {
+	Call(string, map[string]any) (any, error)
+}
+
+var newClient = func(o Options) Caller { return client.New(client.Config{DB: o.DB, Format: o.Format}) }
 
 func New(out, err io.Writer) *App { return &App{Stdout: out, Stderr: err} }
 
@@ -108,22 +111,25 @@ func (a *App) runCommand(o Options, args []string) error {
 		usage(a.Stdout)
 		return nil
 	case "init":
-		return stub(o, "init", noArgs(args[1:]))
+		if err := noArgs(args[1:]); err != nil {
+			return err
+		}
+		return a.call(o, "init", map[string]any{})
 	case "add":
-		return parseAdd(o, args[1:])
+		return a.parseAdd(o, args[1:])
 	case "update":
-		return parseUpdate(o, args[1:])
+		return a.parseUpdate(o, args[1:])
 	case "show":
 		if len(args) != 2 {
 			return errors.New("show requires exactly one id")
 		}
-		return stub(o, "show", nil)
+		return a.call(o, "show", map[string]any{"id": args[1]})
 	case "list":
-		return parseQueryish(o, "list", args[1:])
+		return parseQueryish("list", args[1:])
 	case "ready":
-		return parseQueryish(o, "ready", args[1:])
+		return parseQueryish("ready", args[1:])
 	case "daemon":
-		return parseDaemon(o, args[1:])
+		return parseDaemon(args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -144,7 +150,7 @@ Commands:
   daemon stop`)
 }
 
-func parseAdd(o Options, args []string) error {
+func (a *App) parseAdd(o Options, args []string) error {
 	if len(args) == 0 {
 		return errors.New("add requires a title")
 	}
@@ -162,21 +168,20 @@ func parseAdd(o Options, args []string) error {
 	if err := validStatus(*status); err != nil {
 		return err
 	}
-	for _, v := range attrs {
-		if err := keyValue(v, "--attr"); err != nil {
-			return err
-		}
+	am, err := parseKV(attrs, "--attr")
+	if err != nil {
+		return err
 	}
-	return stub(o, "add", nil)
+	return a.call(o, "add", map[string]any{"title": args[0], "status": *status, "attributes": am})
 }
-func parseUpdate(o Options, args []string) error {
+func (a *App) parseUpdate(o Options, args []string) error {
 	if len(args) == 0 {
 		return errors.New("update requires an id")
 	}
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	status := fs.String("status", "", "")
-	fs.String("title", "", "")
+	title := fs.String("title", "", "")
 	attrs := multiFlag{}
 	edges := multiFlag{}
 	fs.Var(&attrs, "attr", "")
@@ -192,52 +197,77 @@ func parseUpdate(o Options, args []string) error {
 			return err
 		}
 	}
-	for _, v := range attrs {
-		if err := keyValue(v, "--attr"); err != nil {
-			return err
-		}
-	}
-	for _, v := range edges {
-		left, right, ok := strings.Cut(v, ":")
-		if !ok || left == "" || right == "" || strings.Contains(right, ":") {
-			return fmt.Errorf("malformed --edge: %s", v)
-		}
-	}
-	return stub(o, "update", nil)
-}
-func parseQueryish(o Options, op string, args []string) error {
-	fs := flag.NewFlagSet(op, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	query := fs.String("query", "", "")
-	params := multiFlag{}
-	fs.Var(&params, "param", "")
-	fs.String("where", "", "")
-	if err := fs.Parse(args); err != nil {
+	am, err := parseKV(attrs, "--attr")
+	if err != nil {
 		return err
 	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("%s received unexpected arguments", op)
+	edgeRows := make([]map[string]any, 0, len(edges))
+	for _, v := range edges {
+		left, right, ok := strings.Cut(v, ":")
+		if !ok || left == "" || right == "" {
+			return fmt.Errorf("malformed --edge: %s", v)
+		}
+		edgeRows = append(edgeRows, map[string]any{"type": left, "to": right})
 	}
-	wherePresent := false
+	titleSet := false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "where" {
-			wherePresent = true
+		if f.Name == "title" {
+			titleSet = true
 		}
 	})
-	if wherePresent {
-		return errors.New("--where is not supported by the Go CLI; use --query")
+	var titleArg any
+	if titleSet {
+		titleArg = *title
 	}
-	if len(params) > 0 && *query == "" {
-		return errors.New("--param requires --query")
+	var statusArg any
+	if *status != "" {
+		statusArg = *status
 	}
-	for _, v := range params {
-		if err := keyValue(v, "--param"); err != nil {
+	var attrArg any
+	if len(attrs) > 0 {
+		attrArg = am
+	}
+	return a.call(o, "update", map[string]any{"id": args[0], "title": titleArg, "status": statusArg, "attributes": attrArg, "edges": edgeRows})
+}
+
+func (a *App) call(o Options, op string, args map[string]any) error {
+	result, err := newClient(o).Call(op, args)
+	if err != nil {
+		return err
+	}
+	if o.Format == "json" {
+		b, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(a.Stdout, string(b))
+		return err
+	}
+	switch op {
+	case "add":
+		if m, ok := result.(map[string]any); ok {
+			if id, ok := m["id"]; ok {
+				_, err := fmt.Fprintln(a.Stdout, id)
+				return err
+			}
+		}
+	case "show":
+		if result != nil {
+			b, err := json.Marshal(result)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(a.Stdout, string(b))
 			return err
 		}
 	}
-	return stub(o, op, nil)
+	return nil
 }
-func parseDaemon(o Options, args []string) error {
+
+func parseQueryish(op string, args []string) error {
+	return fmt.Errorf("%s is not wired to the daemon socket yet", op)
+}
+func parseDaemon(args []string) error {
 	if len(args) == 0 {
 		return errors.New("daemon requires start, status, or stop")
 	}
@@ -252,29 +282,21 @@ func parseDaemon(o Options, args []string) error {
 		if fs.NArg() != 0 {
 			return errors.New("daemon start received unexpected arguments")
 		}
-		return stub(o, "daemon start", nil)
+		return errors.New("daemon start is not wired to the launcher yet")
 	case "status", "stop":
 		if len(args) != 1 {
 			return fmt.Errorf("daemon %s received unexpected arguments", args[0])
 		}
-		return stub(o, args[0], nil)
+		return fmt.Errorf("daemon %s is not wired to the daemon socket yet", args[0])
 	default:
 		return fmt.Errorf("unknown daemon command: %s", args[0])
 	}
 }
-
 func noArgs(args []string) error {
 	if len(args) > 0 {
 		return errors.New("unexpected arguments")
 	}
 	return nil
-}
-func stub(o Options, op string, err error) error {
-	if err != nil {
-		return err
-	}
-	_, e := client.New(client.Config{DB: o.DB, Format: o.Format}).Call(op, map[string]any{})
-	return e
 }
 func validStatus(s string) error {
 	switch s {
@@ -283,11 +305,16 @@ func validStatus(s string) error {
 	}
 	return fmt.Errorf("invalid status: %s", s)
 }
-func keyValue(s, name string) error {
-	if strings.HasPrefix(s, "=") || !strings.Contains(s, "=") {
-		return fmt.Errorf("malformed %s: %s", name, s)
+func parseKV(vals []string, name string) (map[string]any, error) {
+	m := map[string]any{}
+	for _, s := range vals {
+		k, v, ok := strings.Cut(s, "=")
+		if !ok || k == "" {
+			return nil, fmt.Errorf("malformed %s: %s", name, s)
+		}
+		m[k] = v
 	}
-	return nil
+	return m, nil
 }
 
 type multiFlag []string

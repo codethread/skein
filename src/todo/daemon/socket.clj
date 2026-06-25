@@ -97,7 +97,13 @@
   (case op
     "init" ((api 'init) runtime)
     "add" ((api 'add) runtime {:title (get args "title") :status (get args "status") :attributes (get args "attributes")})
-    "update" ((api 'update) runtime (get args "id") {:title (get args "title") :status (get args "status") :attributes (get args "attributes") :edges (get args "edges")})
+    "update" ((api 'update) runtime (get args "id") {:title (get args "title")
+                                                       :status (get args "status")
+                                                       :attributes (get args "attributes")
+                                                       :edges (mapv (fn [edge]
+                                                                      {:type (get edge "type")
+                                                                       :to (get edge "to")})
+                                                                    (get args "edges"))})
     "show" ((api 'show) runtime (get args "id"))
     "list" ((api 'list) runtime)
     "ready" ((api 'ready) runtime)
