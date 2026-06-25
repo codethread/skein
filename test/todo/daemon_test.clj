@@ -8,6 +8,10 @@
             [todo.db :as db]
             [todo.db-test :as db-test]))
 
+(defn delete-tree! [file]
+  (doseq [f (reverse (file-seq file))]
+    (.delete f)))
+
 (defn with-runtime
   ([f] (with-runtime nil f))
   ([start-options f]
@@ -148,11 +152,14 @@
   (let [dir (java.nio.file.Files/createTempDirectory "todo-daemon-config" (make-array java.nio.file.attribute.FileAttribute 0))
         loaded (io/file (.toFile dir) "loaded.clj")
         config (io/file (.toFile dir) "config.edn")]
-    (spit loaded "(ns todo.daemon-test-loaded) (def loaded? true)")
-    (spit config "{:load-files [\"loaded.clj\"]}")
-    (with-runtime {:config-file (.getPath config)}
-      (fn [_rt _]
-        (is (true? @(requiring-resolve 'todo.daemon-test-loaded/loaded?)))))))
+    (try
+      (spit loaded "(ns todo.daemon-test-loaded) (def loaded? true)")
+      (spit config "{:load-files [\"loaded.clj\"]}")
+      (with-runtime {:config-file (.getPath config)}
+        (fn [_rt _]
+          (is (true? @(requiring-resolve 'todo.daemon-test-loaded/loaded?)))))
+      (finally
+        (delete-tree! (.toFile dir))))))
 
 (deftest runtime-config-failures-do-not-publish-metadata
   (let [db-file (db-test/temp-db-file)
@@ -196,4 +203,5 @@
       (finally
         (runtime/stop! @runtime/current-runtime)
         (metadata/delete! canonical)
-        (db-test/delete-sqlite-family! db-file)))))
+        (db-test/delete-sqlite-family! db-file)
+        (delete-tree! (.toFile dir))))))

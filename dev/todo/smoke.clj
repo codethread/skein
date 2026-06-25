@@ -18,6 +18,11 @@
 (defn delete-runtime-metadata! [db-file]
   (metadata/delete! (metadata/canonical-db-path db-file)))
 
+(defn delete-tree! [file]
+  (when file
+    (doseq [f (reverse (file-seq (.toFile file)))]
+      (.delete f))))
+
 (defn clean-runtime-artifacts! [db-file]
   (delete-sqlite-family! db-file)
   (delete-runtime-metadata! db-file))
@@ -33,10 +38,12 @@
             (str "CLI command succeeds: " (pr-str command) "\n" output))
     output))
 
-(defn start-cli-daemon! [db-file]
-  (let [process (-> (ProcessBuilder. ["clojure" "-M:todo" "--db" db-file "daemon" "start"])
-                    (.redirectErrorStream true)
-                    (.start))]
+(defn start-cli-daemon!
+  ([db-file] (start-cli-daemon! db-file []))
+  ([db-file daemon-args]
+   (let [process (-> (ProcessBuilder. (into ["clojure" "-M:todo" "--db" db-file "daemon" "start"] daemon-args))
+                     (.redirectErrorStream true)
+                     (.start))]
     (loop [attempts 50]
       (when-not (.isAlive process)
         (throw (ex-info "CLI daemon exited before becoming ready" {:output (slurp (.getInputStream process))})))
@@ -48,7 +55,7 @@
                   (catch AssertionError _ false))
         (Thread/sleep 200)
         (recur (dec attempts))))
-    process))
+    process)))
 
 (defn cli-add! [db-file title & args]
   (str/trim (apply run-cli! db-file "add" title args)))
@@ -69,27 +76,38 @@
 (defn smoke-cli! [db-file]
   (clean-runtime-artifacts! db-file)
   (try
-    (let [daemon (start-cli-daemon! db-file)]
+    (let [config-dir (java.nio.file.Files/createTempDirectory "todo-smoke-query-config" (make-array java.nio.file.attribute.FileAttribute 0))
+          query-file (java.io.File. (.toFile config-dir) "queries.clj")
+          config-file (java.io.File. (.toFile config-dir) "daemon.edn")]
       (try
-        (run-cli! db-file "init")
-        (let [design (cli-add! db-file "Sketch task graph model" "--status" "done" "--attr" "priority=high")
-              schema (cli-add! db-file "Create SQLite schema" "--attr" "priority=high")
-              docs (cli-add! db-file "Write usage notes" "--attr" "owner=agent")]
-          (run-cli! db-file "update" schema "--edge" (str "depends-on:" design))
-          (run-cli! db-file "update" docs "--edge" (str "depends-on:" schema))
-          (assert= ["Create SQLite schema"]
-                   (titles (read-string (run-cli! db-file "--format" "edn" "ready")))
-                   "CLI ready sees tasks with final dependencies")
-          (run-cli! db-file "update" schema "--status" "done")
-          (assert= ["Write usage notes"]
-                   (titles (json/read-str (run-cli! db-file "--format" "json" "ready") :key-fn keyword))
-                   "CLI update status changes readiness")
-          (assert= "done"
-                   (:status (read-string (run-cli! db-file "--format" "edn" "show" schema)))
-                   "CLI show exposes first-class status"))
-        (section "agent CLI process ready" (read-string (run-cli! db-file "--format" "edn" "ready")))
+        (spit query-file "(require '[todo.daemon.api :as api]) (api/register-query! 'configured-agent '[:= [:attr :owner] \"agent\"])")
+        (spit config-file "{:load-files [\"queries.clj\"]}")
+        (let [daemon (start-cli-daemon! db-file ["--config" (.getPath config-file)])]
+          (try
+            (run-cli! db-file "init")
+            (let [design (cli-add! db-file "Sketch task graph model" "--status" "done" "--attr" "priority=high")
+                  schema (cli-add! db-file "Create SQLite schema" "--attr" "priority=high")
+                  docs (cli-add! db-file "Write usage notes" "--attr" "owner=agent")]
+              (run-cli! db-file "update" schema "--edge" (str "depends-on:" design))
+              (run-cli! db-file "update" docs "--edge" (str "depends-on:" schema))
+              (assert= ["Create SQLite schema"]
+                       (titles (read-string (run-cli! db-file "--format" "edn" "ready")))
+                       "CLI ready sees tasks with final dependencies")
+              (run-cli! db-file "update" schema "--status" "done")
+              (assert= ["Write usage notes"]
+                       (titles (json/read-str (run-cli! db-file "--format" "json" "ready") :key-fn keyword))
+                       "CLI update status changes readiness")
+              (assert= ["Write usage notes"]
+                       (titles (read-string (run-cli! db-file "--format" "edn" "list" "--query" "configured-agent")))
+                       "CLI consumes a query registered by trusted daemon startup config")
+              (assert= "done"
+                       (:status (read-string (run-cli! db-file "--format" "edn" "show" schema)))
+                       "CLI show exposes first-class status"))
+            (section "agent CLI process ready" (read-string (run-cli! db-file "--format" "edn" "ready")))
+            (finally
+              (stop-cli-daemon! db-file daemon))))
         (finally
-          (stop-cli-daemon! db-file daemon))))
+          (delete-tree! config-dir))))
     (finally
       (clean-runtime-artifacts! db-file))))
 
@@ -104,6 +122,10 @@
               b (:id (repl/task! "Second task" {:owner "agent"}))]
           (repl/update! b {:edges [{:type "depends-on" :to a}]})
           (assert= ["Second task"] (titles (repl/ready)) "todo.repl ready returns tasks with final dependencies")
+          (repl/defquery! 'agent-owner '[:= [:attr :owner] "agent"])
+          (assert= ["Second task"]
+                   (titles (read-string (run-cli! db-file "--format" "edn" "list" "--query" "agent-owner")))
+                   "CLI consumes a query registered through todo.repl during the daemon lifetime")
           (repl/update! b {:status "done"})
           (assert= "done" (:status (repl/task b)) "todo.repl update! updates status"))
         (finally

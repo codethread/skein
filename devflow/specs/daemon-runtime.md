@@ -12,7 +12,7 @@ The daemon runtime is the long-lived local Clojure process that owns task storag
 
 ## SPEC-004.P2 Runtime model
 
-- **SPEC-004.C1:** A daemon owns exactly one active SQLite datasource for its lifetime.
+- **SPEC-004.C1:** A daemon owns exactly one active SQLite datasource and one in-memory named-query registry for its lifetime.
 - **SPEC-004.C2:** A daemon is local-only by default and must bind only to loopback/local process access.
 - **SPEC-004.C3:** Runtime metadata records enough identity for clients to connect and verify intent: process id, transport endpoint, canonical database path, and a daemon nonce or equivalent identity value.
 - **SPEC-004.C4:** Runtime metadata is stored under a deterministic runtime directory keyed by the canonical database path. The implementation uses an atomic EDN file write and a filename derived from a stable hash of the canonical database path.
@@ -21,7 +21,7 @@ The daemon runtime is the long-lived local Clojure process that owns task storag
 ## SPEC-004.P3 API boundary
 
 - **SPEC-004.C6:** `todo.daemon.api` is the semantic boundary used by clients. Transport-specific eval strings, nREPL messages, and wire details are not the durable product API.
-- **SPEC-004.C7:** Initial daemon API operations cover the current stripped task surface: initialize storage, add task, update task, show task, list tasks, and ready tasks.
+- **SPEC-004.C7:** Daemon API operations cover the current stripped task surface: initialize storage, add task, update task, show task, list tasks, ready tasks, register one named query, load named queries, list registered query definitions, resolve a named query, and execute list/ready through a named query.
 - **SPEC-004.C8:** Daemon API return values are Clojure data with JSON-bearing database columns normalized before the CLI formats EDN/JSON/human output.
 - **SPEC-004.C9:** Daemon API failures preserve domain error information well enough for clients to exit non-zero with a useful message.
 
@@ -35,10 +35,12 @@ The daemon runtime is the long-lived local Clojure process that owns task storag
 
 - **SPEC-004.C13:** Core daemon startup works without a user config file.
 - **SPEC-004.C14:** Trusted Clojure config/user-code loading is an explicit daemon startup operation and fails daemon startup loudly on read, compile, or runtime errors.
-- **SPEC-004.C15:** The minimal trusted startup config is an EDN map with only `:load-files`, a vector of trusted Clojure file paths. Relative load paths resolve from the config file directory.
+- **SPEC-004.C15:** The minimal trusted startup config is an EDN map with only `:load-files`, a vector of trusted Clojure file paths. Relative load paths resolve from the config file directory. Trusted load files run after daemon memory state exists and before runtime metadata is published, so they may initialize daemon-owned runtime state through startup helpers such as `todo.daemon.api/register-query!`; startup fails loudly and publishes no metadata if loading fails.
 - **SPEC-004.C16:** Sandboxing, SCI execution, runtime reload commands, and untrusted plugin isolation are outside the initial daemon runtime contract.
 
-## SPEC-004.P6 Saved query relationship
+## SPEC-004.P6 Named query registry
 
-- **SPEC-004.C17:** Saved query execution is deferred until the task query DSL is specified.
-- **SPEC-004.C18:** Future saved queries should be data-first DSL definitions, with user-loaded functions as an extension layer rather than the primary query persistence format.
+- **SPEC-004.C17:** Named queries are data-first EDN DSL definitions stored in daemon memory, not executable user functions.
+- **SPEC-004.C18:** Registry names are simple unqualified names; symbol and keyword forms of the same name resolve to one entry.
+- **SPEC-004.C19:** Registry contents are not durable across daemon restarts. Users reload runtime query definitions through trusted startup config or REPL helpers.
+- **SPEC-004.C20:** Missing named-query resolution fails loudly with a clear domain error.

@@ -17,5 +17,5 @@ tasks:
   - id: 4
     description: cross surface validation docs
     task_file: tasks/004-cross-surface-validation-docs.md
-    status: pending
+    status: complete
     blocked_by: [2, 3]

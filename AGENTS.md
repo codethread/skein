@@ -69,8 +69,11 @@ clojure -M:todo --db agent.sqlite daemon start
 (def design (:id (task! "Sketch model" "done" {:priority "high"})))
 (def docs (:id (task! "Write docs" {:owner "agent"})))
 (update! docs {:edges [{:type "depends-on" :to design}]})
+(defquery! 'agent-owned '[:= [:attr :owner] "agent"])
 (ready)
 ```
+
+Named queries are daemon-lifetime runtime state: register or load them through trusted daemon config or REPL helpers (`defquery!`, `load-queries!`), inspect them with `queries`, then consume them from either REPL helpers or CLI commands such as `list --query agent-owned`. They disappear when the daemon stops; the CLI does not accept `--query-file` because runtime customization belongs in daemon/REPL workflows rather than the low-privilege CLI.
 
 ```sh
 clojure -M:todo --db agent.sqlite daemon status

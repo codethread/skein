@@ -22,8 +22,6 @@
      (when-not (metadata/stale-or-missing? existing)
        (throw (ex-info "Daemon metadata already exists for database" {:canonical-db-path canonical-path
                                                                        :metadata existing})))
-     (when config-file
-       (config/load-config! config-file))
      (let [ds (db/datasource canonical-path)
            server (nrepl/start-server :bind loopback-host :port 0)
            port (:port server)
@@ -32,16 +30,20 @@
                                           :host loopback-host
                                           :port port
                                           :canonical-db-path canonical-path
-                                          :nonce nonce})]
+                                          :nonce nonce})
+           runtime {:datasource ds
+                    :query-registry (atom {})
+                    :server server
+                    :metadata meta}]
        (try
-         (let [runtime {:datasource ds
-                        :query-registry (atom {})
-                        :server server
-                        :metadata meta
-                        :metadata-file (metadata/publish! meta)}]
-           (reset! current-runtime runtime)
-           runtime)
+         (reset! current-runtime runtime)
+         (when config-file
+           (config/load-config! config-file))
+         (let [published-runtime (assoc runtime :metadata-file (metadata/publish! meta))]
+           (reset! current-runtime published-runtime)
+           published-runtime)
          (catch Throwable t
+           (reset! current-runtime nil)
            (nrepl/stop-server server)
            (throw t)))))))
 

@@ -68,12 +68,18 @@ clojure -M:todo --db agent.sqlite daemon start
 (def design (:id (task! "Sketch model" "done" {:priority "high"})))
 (def docs (:id (task! "Write docs" {:owner "agent"})))
 (update! docs {:edges [{:type "depends-on" :to design}]})
+(defquery! 'agent-owned '[:= [:attr :owner] "agent"])
 (ready)
 ```
 
+Named queries live in daemon memory for the current daemon lifetime. Load them from trusted daemon config or REPL helpers such as `defquery!` / `load-queries!`, then consume them from either REPL helpers or the small CLI surface:
+
 ```sh
+clojure -M:todo --db agent.sqlite --format edn list --query agent-owned
 clojure -M:todo --db agent.sqlite daemon stop
 ```
+
+The registry is not saved to SQLite; restart the daemon and reload trusted config/REPL query definitions when needed. The CLI intentionally has no `--query-file` loader so runtime customization stays daemon/REPL-owned, matching the daemon-core design described in [Devflow Philosophy](./devflow/PHILOSOPHY.md).
 
 ## Data model
 

@@ -1,6 +1,7 @@
 (ns todo.daemon.api
   (:refer-clojure :exclude [list update])
   (:require [next.jdbc :as jdbc]
+            [todo.daemon.runtime :as runtime]
             [todo.db :as db]
             [todo.query :as query]))
 
@@ -33,6 +34,16 @@
   (let [validated-query-defs (into {} (map validated-query-entry) query-defs)]
     (swap! (query-registry runtime) merge validated-query-defs)
     validated-query-defs))
+
+(defn- current-runtime []
+  (or @runtime/current-runtime
+      (throw (ex-info "No daemon runtime is active" {}))))
+
+(defn register-query! [query-name query-def]
+  (register-query (current-runtime) query-name query-def))
+
+(defn load-queries! [query-defs]
+  (load-queries (current-runtime) query-defs))
 
 (defn queries [runtime]
   (into (sorted-map) @(query-registry runtime)))

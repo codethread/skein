@@ -37,9 +37,10 @@ ready
 - **SPEC-003.C6:** `defquery!` registers a named query expression or parameterized query map in the active daemon's in-memory query registry.
 - **SPEC-003.C7:** `load-queries!` reads one EDN map of query names to query definitions and merges it into the active daemon's in-memory query registry.
 - **SPEC-003.C8:** `queries` returns the active daemon's in-memory query registry.
-- **SPEC-003.C9:** `query` returns tasks matching an ad hoc query definition or daemon-registered query name, with optional runtime parameters.
-- **SPEC-003.C10:** `task`, `tasks`, `query`, and `ready` return rows with JSON-bearing columns normalized to Clojure values.
-- **SPEC-003.C11:** `ready` returns non-final tasks whose direct `depends-on` dependencies are all final and may be further filtered by an ad hoc or registered query.
+- **SPEC-003.C9:** Query registry contents last only for the active daemon lifetime; reload trusted config or call `defquery!` / `load-queries!` again after daemon restart.
+- **SPEC-003.C10:** `query` returns tasks matching an ad hoc query definition or daemon-registered query name, with optional runtime parameters.
+- **SPEC-003.C11:** `task`, `tasks`, `query`, and `ready` return rows with JSON-bearing columns normalized to Clojure values.
+- **SPEC-003.C12:** `ready` returns non-final tasks whose direct `depends-on` dependencies are all final and may be further filtered by an ad hoc or registered query.
 
 ## SPEC-003.P4 Non-goals
 
