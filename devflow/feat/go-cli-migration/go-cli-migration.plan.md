@@ -104,3 +104,9 @@ Outcome: User/agent docs, smoke flows, and root specs reflect `todo` as the publ
 
 - Added feature-local protocol note `specs/json-socket-protocol.md` with stable IDs for JSON runtime metadata, one-request-per-connection newline framing, request/response/error envelopes, timeout behavior, operation allowlist/exclusions, status/stop identity checks, and foreground `daemon start` launcher semantics.
 - Added golden JSON fixtures under `specs/fixtures/` for one success response and one domain error response so later Clojure and Go tests can consume the same contract examples.
+
+### GOCLI-PLAN-001.DN4 Task 2 daemon socket runtime — 2026-06-25
+
+- Added Clojure JSON Unix socket transport alongside nREPL, with JSON metadata publication retaining EDN/nREPL compatibility.
+- Socket filenames use a shortened database hash under the runtime directory because Unix domain socket path length limits reject the full metadata hash path on macOS temp directories; JSON metadata is the authoritative advertised socket path.
+- The transport dispatches only the Go CLI allowlist to `todo.daemon.api`; registry mutation/listing/inspection operations remain unavailable over JSON.

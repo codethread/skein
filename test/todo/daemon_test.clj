@@ -1,12 +1,16 @@
 (ns todo.daemon-test
-  (:require [clojure.edn :as edn]
+  (:require [clojure.data.json :as json]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [todo.daemon.api :as api]
             [todo.daemon.metadata :as metadata]
             [todo.daemon.runtime :as runtime]
             [todo.db :as db]
-            [todo.db-test :as db-test]))
+            [todo.db-test :as db-test])
+  (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
+           [java.net StandardProtocolFamily UnixDomainSocketAddress]
+           [java.nio.channels Channels SocketChannel]))
 
 (defn delete-tree! [file]
   (doseq [f (reverse (file-seq file))]
@@ -22,6 +26,24 @@
        (finally
          (runtime/stop! rt)
          (db-test/delete-sqlite-family! db-file))))))
+
+(defn socket-request [rt operation arguments]
+  (let [m (:metadata rt)
+        req {"protocol_version" 1
+             "request_id" "test-request"
+             "daemon_id" (:nonce m)
+             "database_path" (:canonical-db-path m)
+             "operation" operation
+             "arguments" arguments
+             "options" {"format" "json"}}]
+    (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
+                     (.connect (UnixDomainSocketAddress/of (get-in m [:json :socket-path]))))
+                rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
+                wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
+      (.write wrt (json/write-str req))
+      (.newLine wrt)
+      (.flush wrt)
+      (json/read-str (.readLine rdr)))))
 
 (deftest daemon-api-delegates-to-db-and-normalizes-results
   (with-runtime
@@ -120,16 +142,92 @@
       (let [canonical (metadata/canonical-db-path db-file)
             status (runtime/status rt)
             file (:metadata-file rt)
-            from-disk (edn/read-string (slurp file))]
+            from-disk (edn/read-string (slurp file))
+            json-disk (json/read-str (slurp (metadata/json-metadata-file canonical)))]
         (is (= canonical (:canonical-db-path status)))
         (is (= status from-disk))
         (is (= file (metadata/metadata-file canonical)))
         (is (pos-int? (get-in status [:endpoint :port])))
         (is (string? (:nonce status)))
         (is (= :nrepl (:transport status)))
+        (is (= 1 (get-in status [:json :protocol-version])))
+        (is (string? (get-in status [:json :socket-path])))
+        (is (= canonical (get json-disk "database_path")))
+        (is (= (:nonce status) (get json-disk "daemon_id")))
+        (is (= (get-in status [:json :socket-path]) (get json-disk "socket_path")))
+        (is (= "127.0.0.1" (get-in json-disk ["nrepl" "host"])))
         (is (false? (metadata/stale-or-missing? status)))
         (is (= "127.0.0.1" (get-in status [:endpoint :host])))
         (is (.isLoopbackAddress (.getInetAddress (:server-socket (:server rt)))))))))
+
+(deftest json-socket-dispatches-success-domain-and-protocol-errors
+  (with-runtime
+    (fn [rt _]
+      (is (= true (get (socket-request rt "init" {}) "ok")))
+      (let [added (socket-request rt "add" {"title" "Socket task" "status" "todo" "attributes" {"owner" "go"}})]
+        (is (true? (get added "ok")))
+        (is (= "Socket task" (get-in added ["result" "title"])))
+        (is (= {"owner" "go"} (get-in added ["result" "attributes"]))))
+      (let [missing (socket-request rt "update" {"id" "missing" "title" nil "status" nil "attributes" nil "edges" []})]
+        (is (false? (get missing "ok")))
+        (is (= "domain" (get-in missing ["error" "type"]))))
+      (let [rejected (socket-request rt "queries" {})]
+        (is (false? (get rejected "ok")))
+        (is (= "protocol/operation-not-allowed" (get-in rejected ["error" "code"])))))))
+
+(deftest json-socket-rejects-identity-mismatch
+  (with-runtime
+    (fn [rt _]
+      (let [m (:metadata rt)
+            req {"protocol_version" 1 "request_id" "bad-identity" "daemon_id" "wrong"
+                 "database_path" (:canonical-db-path m) "operation" "stop" "arguments" {} "options" {"format" "json"}}]
+        (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
+                         (.connect (UnixDomainSocketAddress/of (get-in m [:json :socket-path]))))
+                    rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
+                    wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
+          (.write wrt (json/write-str req))
+          (.newLine wrt)
+          (.flush wrt)
+          (let [response (json/read-str (.readLine rdr))]
+            (is (= false (get response "ok")))
+            (is (= "protocol/identity-mismatch" (get-in response ["error" "code"]))))))
+      (Thread/sleep 100)
+      (is (some? @runtime/current-runtime)))))
+
+(deftest json-socket-rejects-malformed-stop-without-shutdown
+  (with-runtime
+    (fn [rt _]
+      (let [m (:metadata rt)
+            req {"protocol_version" 1 "request_id" "bad-stop" "daemon_id" (:nonce m)
+                 "database_path" (:canonical-db-path m) "operation" "stop" "arguments" {"force" true} "options" {"format" "json"}}]
+        (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
+                         (.connect (UnixDomainSocketAddress/of (get-in m [:json :socket-path]))))
+                    rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
+                    wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
+          (.write wrt (json/write-str req))
+          (.newLine wrt)
+          (.flush wrt)
+          (let [response (json/read-str (.readLine rdr))]
+            (is (= false (get response "ok")))
+            (is (= "protocol/malformed-request" (get-in response ["error" "code"]))))))
+      (Thread/sleep 100)
+      (is (some? @runtime/current-runtime)))))
+
+(deftest json-socket-stop-cleans-runtime
+  (let [db-file (db-test/temp-db-file)
+        rt (runtime/start! db-file)
+        canonical (metadata/canonical-db-path db-file)]
+    (try
+      (let [response (socket-request rt "stop" {})]
+        (is (true? (get response "ok")))
+        (is (= true (get-in response ["result" "stopping"]))))
+      (Thread/sleep 250)
+      (is (nil? @runtime/current-runtime))
+      (is (false? (.exists (metadata/socket-file canonical))))
+      (is (false? (.exists (metadata/json-metadata-file canonical))))
+      (finally
+        (runtime/stop! @runtime/current-runtime)
+        (db-test/delete-sqlite-family! db-file)))))
 
 (deftest metadata-shape-detects-missing-and-stale-files
   (let [db-file (db-test/temp-db-file)
@@ -152,6 +250,8 @@
     (try
       (runtime/stop! rt)
       (is (nil? (metadata/read-metadata canonical)))
+      (is (false? (.exists (metadata/json-metadata-file canonical))))
+      (is (false? (.exists (metadata/socket-file canonical))))
       (finally
         (runtime/stop! rt)
         (db-test/delete-sqlite-family! db-file)))))

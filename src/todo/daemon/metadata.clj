@@ -1,5 +1,6 @@
 (ns todo.daemon.metadata
-  (:require [clojure.edn :as edn]
+  (:require [clojure.data.json :as json]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint])
   (:import [java.lang ProcessHandle]
@@ -24,15 +25,34 @@
 (defn metadata-file [canonical-path]
   (io/file (runtime-dir) (str (stable-path-hash canonical-path) ".edn")))
 
+(defn json-metadata-file [canonical-path]
+  (io/file (runtime-dir) (str (stable-path-hash canonical-path) ".json")))
+
+(defn socket-file [canonical-path]
+  (io/file (runtime-dir) (str (subs (stable-path-hash canonical-path) 0 16) ".sock")))
+
 (defn new-nonce []
   (str (UUID/randomUUID)))
 
-(defn metadata-shape [{:keys [pid host port canonical-db-path nonce]}]
+(defn metadata-shape [{:keys [pid host port canonical-db-path nonce started-at]}]
   {:pid pid
    :transport :nrepl
    :endpoint {:host host :port port}
    :canonical-db-path canonical-db-path
-   :nonce nonce})
+   :nonce nonce
+   :started-at started-at
+   :json {:protocol-version 1
+          :socket-path (.getPath (socket-file canonical-db-path))}})
+
+(defn json-metadata-shape [metadata]
+  {"protocol_version" 1
+   "pid" (:pid metadata)
+   "database_path" (:canonical-db-path metadata)
+   "daemon_id" (:nonce metadata)
+   "socket_path" (get-in metadata [:json :socket-path])
+   "started_at" (:started-at metadata)
+   "nrepl" {"host" (get-in metadata [:endpoint :host])
+             "port" (get-in metadata [:endpoint :port])}})
 
 (defn write-atomic! [file data]
   (.mkdirs (.getParentFile file))
@@ -44,9 +64,21 @@
                                                 StandardCopyOption/REPLACE_EXISTING]))
     file))
 
+(defn write-raw-atomic! [file content]
+  (.mkdirs (.getParentFile file))
+  (let [tmp (io/file (.getParentFile file) (str (.getName file) "." (new-nonce) ".tmp"))]
+    (spit tmp content)
+    (Files/move (.toPath tmp)
+                (.toPath file)
+                (into-array StandardCopyOption [StandardCopyOption/ATOMIC_MOVE
+                                                StandardCopyOption/REPLACE_EXISTING]))
+    file))
+
 (defn publish! [metadata]
   (let [file (metadata-file (:canonical-db-path metadata))]
     (write-atomic! file metadata)
+    (write-raw-atomic! (json-metadata-file (:canonical-db-path metadata))
+                       (json/write-str (json-metadata-shape metadata)))
     file))
 
 (defn read-metadata [canonical-path]
@@ -55,7 +87,9 @@
       (edn/read-string (slurp file)))))
 
 (defn delete! [canonical-path]
-  (.delete (metadata-file canonical-path)))
+  (.delete (metadata-file canonical-path))
+  (.delete (json-metadata-file canonical-path))
+  (.delete (socket-file canonical-path)))
 
 
 (defn pid-alive? [pid]
