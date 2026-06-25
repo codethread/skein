@@ -35,6 +35,7 @@
                                           :nonce nonce})]
        (try
          (let [runtime {:datasource ds
+                        :query-registry (atom {})
                         :server server
                         :metadata meta
                         :metadata-file (metadata/publish! meta)}]

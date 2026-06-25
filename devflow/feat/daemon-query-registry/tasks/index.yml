@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: daemon query registry API
     task_file: tasks/001-daemon-query-registry-api.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: cli named query consumption

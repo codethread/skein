@@ -116,16 +116,27 @@
   (with-open [r (io/reader (io/file path))]
     (edn/read {:eof nil} (java.io.PushbackReader. r))))
 
-(defn- counterpart-query-name [query-name]
-  (cond
-    (symbol? query-name) (keyword (str query-name))
-    (keyword? query-name) (symbol (subs (str query-name) 1))
-    :else query-name))
+(defn canonical-query-name [query-name]
+  (let [canonical-name (cond
+                         (and (symbol? query-name) (nil? (namespace query-name))) (name query-name)
+                         (and (keyword? query-name) (nil? (namespace query-name))) (name query-name)
+                         :else (fail! "Query names must be simple symbols or keywords" {:query query-name}))]
+    (when (str/blank? canonical-name)
+      (fail! "Query names must not be blank" {:query query-name}))
+    canonical-name))
+
+(defn- registry-query-name [query-name]
+  (if (string? query-name)
+    query-name
+    (canonical-query-name query-name)))
 
 (defn query-def [registry query-name]
-  (or (get registry query-name)
-      (get registry (counterpart-query-name query-name))
-      (fail! "Query not found" {:query query-name :available (keys registry)})))
+  (let [canonical-name (canonical-query-name query-name)
+        normalized-registry (update-keys registry registry-query-name)]
+    (or (get normalized-registry canonical-name)
+        (fail! "Query not found" {:query query-name
+                                   :canonical-query canonical-name
+                                   :available (sort (keys normalized-registry))}))))
 
 (defn query-expr [query-def params]
   (cond

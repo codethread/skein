@@ -61,3 +61,4 @@
 - **PLAN-001.DN1:** Created feature plan from user clarification: CLI and REPL should add/load EDN query definitions into daemon memory, and both should later use a loaded name without a query file.
 - **PLAN-001.DN2:** User first refined scope to drop CLI `query add`; REPL owns single-query creation via `defquery!`.
 - **PLAN-001.DN3:** User further refined scope to drop CLI `query load`, `query list`, and `--query-file`. Mental model: daemon is the app core; runtime behavior comes from trusted config or REPL, while CLI is a small common-ops/low-privilege consumption surface.
+- **PLAN-001.DN4:** TASK-001 stores daemon query registry keys as canonical unqualified strings while accepting simple symbols/keywords at API boundaries; client wrappers preserve daemon domain errors for missing and invalid query names.

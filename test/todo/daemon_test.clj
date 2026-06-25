@@ -32,6 +32,50 @@
         (is (= #{(:id design) (:id docs)} (set (map :id (api/list rt)))))
         (is (= [(:id docs)] (mapv :id (api/ready rt))))))))
 
+(deftest daemon-query-registry-add-load-list-and-resolve
+  (with-runtime
+    (fn [rt _]
+      (let [open-query [:= :status "open"]
+            owner-query {:params [:owner]
+                         :where [:= [:attr :owner] [:param :owner]]}]
+        (is (= {"mine" owner-query} (api/register-query rt 'mine owner-query)))
+        (is (= owner-query (api/resolve-query rt :mine)))
+        (is (= {"mine" owner-query} (api/queries rt)))
+        (is (= {"open" open-query} (api/load-queries rt {:open open-query})))
+        (is (= {"mine" owner-query
+                "open" open-query}
+               (api/queries rt)))))))
+
+(deftest daemon-query-registry-fails-clearly
+  (with-runtime
+    (fn [rt _]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Query not found"
+                            (api/resolve-query rt 'missing)))
+      (try
+        (api/resolve-query rt 'missing)
+        (is false "expected missing query error")
+        (catch clojure.lang.ExceptionInfo e
+          (is (= 'missing (:query (ex-data e))))
+          (is (= "missing" (:canonical-query (ex-data e))))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"simple symbols or keywords"
+                            (api/register-query rt 'user/mine [:= :status "open"])))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"simple symbols or keywords"
+                            (api/load-queries rt {"mine" [:= :status "open"]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"simple symbols or keywords"
+                            (api/load-queries rt {'user/mine [:= :status "open"]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Unknown query operator"
+                            (api/register-query rt :broken [:unknown :status "open"])))
+      (api/register-query rt :ok [:= :status "open"])
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Unknown query operator"
+                            (api/load-queries rt {:bad [:unknown :status "open"]})))
+      (is (= {"ok" [:= :status "open"]} (api/queries rt))))))
+
 (deftest daemon-api-update-preserves-domain-errors-and-rolls-back
   (with-runtime
     (fn [rt _]

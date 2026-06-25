@@ -13,7 +13,11 @@
    :update 'todo.daemon.api/update
    :show 'todo.daemon.api/show
    :list 'todo.daemon.api/list
-   :ready 'todo.daemon.api/ready})
+   :ready 'todo.daemon.api/ready
+   :register-query 'todo.daemon.api/register-query
+   :load-queries 'todo.daemon.api/load-queries
+   :queries 'todo.daemon.api/queries
+   :resolve-query 'todo.daemon.api/resolve-query})
 
 (defn fail [message data]
   (throw (ex-info message data)))
@@ -155,3 +159,15 @@
    (call db-file {} :ready query-def params))
   ([db-file query-def params opts]
    (call db-file (or opts {}) :ready query-def params)))
+
+(defn register-query [db-file query-name query-def & [opts]]
+  (call db-file (or opts {}) :register-query query-name query-def))
+
+(defn load-queries [db-file query-defs & [opts]]
+  (call db-file (or opts {}) :load-queries query-defs))
+
+(defn queries [db-file & [opts]]
+  (call db-file (or opts {}) :queries))
+
+(defn resolve-query [db-file query-name & [opts]]
+  (call db-file (or opts {}) :resolve-query query-name))

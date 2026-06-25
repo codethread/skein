@@ -27,6 +27,37 @@
         (is (= [(:id task)] (mapv :id (client/list db-file))))
         (is (= [(:id task)] (mapv :id (client/ready db-file))))))))
 
+(deftest client-query-registry-calls-share-daemon-state
+  (with-runtime
+    (fn [_ db-file]
+      (let [query-def {:params [:owner]
+                       :where [:= [:attr :owner] [:param :owner]]}]
+        (is (= {"mine" query-def} (client/register-query db-file :mine query-def)))
+        (is (= query-def (client/resolve-query db-file 'mine)))
+        (is (= {"mine" query-def} (client/queries db-file)))
+        (is (= {"done" [:= :status "done"]}
+               (client/load-queries db-file {'done [:= :status "done"]})))
+        (is (= {"done" [:= :status "done"]
+                "mine" query-def}
+               (client/queries db-file)))))))
+
+(deftest client-query-registry-preserves-domain-errors
+  (with-runtime
+    (fn [_ db-file]
+      (try
+        (client/resolve-query db-file :missing)
+        (is false "expected missing query error")
+        (catch clojure.lang.ExceptionInfo e
+          (is (= "Daemon API call failed" (ex-message e)))
+          (is (= "Query not found" (:daemon-message (ex-data e))))
+          (is (= :missing (get-in (ex-data e) [:daemon-data :query])))))
+      (try
+        (client/load-queries db-file {"mine" [:= :status "open"]})
+        (is false "expected invalid query name error")
+        (catch clojure.lang.ExceptionInfo e
+          (is (= "Daemon API call failed" (ex-message e)))
+          (is (= "Query names must be simple symbols or keywords" (:daemon-message (ex-data e)))))))))
+
 (deftest client-fails-loudly-for-missing-and-stale-metadata
   (let [db-file (db-test/temp-db-file)
         canonical (metadata/canonical-db-path db-file)]

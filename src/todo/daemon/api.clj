@@ -1,7 +1,8 @@
 (ns todo.daemon.api
   (:refer-clojure :exclude [list update])
   (:require [next.jdbc :as jdbc]
-            [todo.db :as db]))
+            [todo.db :as db]
+            [todo.query :as query]))
 
 (defn normalize-row [row]
   (cond-> row
@@ -15,6 +16,29 @@
 
 (defn- ds [runtime]
   (:datasource runtime))
+
+(defn- query-registry [runtime]
+  (:query-registry runtime))
+
+(defn- validated-query-entry [[query-name query-def]]
+  [(query/canonical-query-name query-name)
+   (query/validate-query-def! query-def)])
+
+(defn register-query [runtime query-name query-def]
+  (let [entry (validated-query-entry [query-name query-def])]
+    (swap! (query-registry runtime) conj entry)
+    (into {} [entry])))
+
+(defn load-queries [runtime query-defs]
+  (let [validated-query-defs (into {} (map validated-query-entry) query-defs)]
+    (swap! (query-registry runtime) merge validated-query-defs)
+    validated-query-defs))
+
+(defn queries [runtime]
+  (into (sorted-map) @(query-registry runtime)))
+
+(defn resolve-query [runtime query-name]
+  (query/query-def @(query-registry runtime) query-name))
 
 (defn init [runtime]
   (db/init! (ds runtime))
