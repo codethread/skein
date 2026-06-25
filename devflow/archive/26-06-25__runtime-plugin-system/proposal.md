@@ -1,7 +1,7 @@
 # Runtime Plugin System Proposal
 
 **Document ID:** `RPS-PROP-001`
-**Status:** Draft
+**Status:** Shipped
 **Date:** 2026-06-25
 **Prerequisite shipped:** [`devflow/archive/26-06-25__user-daemon-home`](../../archive/26-06-25__user-daemon-home/) — config-dir daemon worlds, default `init.clj`, and connected REPL workflows
 **Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md)

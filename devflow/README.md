@@ -15,7 +15,7 @@ Root specs are canonical for shipped behavior:
 
 ## Active features
 
-- `runtime-plugin-system` — reviewed plan for Emacs-like trusted local runtime plugins, blessed source-visible alpha libraries, bootstrap/prelude ergonomics, local plugin loading, and plugin metadata.
+- `runtime-library-workspace` — reviewed plan for config-dir Clojure library workspaces, approved local roots, daemon-side `use!` activation, and layered resilient startup.
 
 ## Archived features
 
@@ -28,4 +28,5 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-25__daemon-query-registry` — shipped in-memory daemon query registry managed through REPL/config workflows and consumed by CLI named queries.
 - `26-06-25__go-cli-migration` — shipped native Go `todo` CLI over the daemon JSON Unix socket, with JSON-only machine output and Clojure REPL/config retained for rich workflows.
 - `26-06-25__user-daemon-home` — shipped config-dir daemon worlds, fixed selected-world socket discovery, default daemon init, and connected REPL/stdin UX.
+- `26-06-25__runtime-plugin-system` — shipped trusted local runtime plugin/library MVP with blessed `atom.*.alpha` namespaces, local `load-plugin!`, daemon-lifetime plugin metadata, bootstrap/prelude ergonomics, and CLI plugin non-goals.
 - `26-06-24__stripped-task-api` — shipped smaller CLI/REPL surface with first-class task lifecycle fields.

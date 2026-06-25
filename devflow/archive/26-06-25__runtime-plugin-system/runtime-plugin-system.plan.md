@@ -1,7 +1,7 @@
 # Runtime Plugin System Plan
 
 **Document ID:** `RPS-PLAN-001`
-**Status:** Reviewed
+**Status:** Shipped
 **Last Updated:** 2026-06-25
 **Prerequisite shipped:** [`devflow/archive/26-06-25__user-daemon-home`](../../archive/26-06-25__user-daemon-home/) — config-dir daemon worlds, default `init.clj`, `connect!`, and connected `todo daemon repl --stdin`
 **Proposal:** [proposal.md](./proposal.md)
@@ -148,3 +148,7 @@ Full validation passed for the implemented runtime plugin system: `PATH="/opt/ho
 ### RPS-PLAN-001.DN13 Shipped spec promotion — 2026-06-25
 
 Promoted the runtime plugin/library MVP contracts into root `devflow/specs/`: trusted local plugin loading via `atom.plugin.alpha/load-plugin!`, daemon-lifetime plugin metadata registry semantics, blessed `atom.*.alpha` library tiers, bootstrap/prelude REPL ergonomics, and CLI non-goals. Root specs explicitly keep package-manager behavior, git fetching, dependency solving, lockfiles, dynamic classpath mutation, and CLI plugin package/loader commands out of the shipped contract. Full validation passed again with `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.
+
+### RPS-PLAN-001.DN14 Devflow finish/archive — 2026-06-25
+
+Finished the feature as shipped. All planned task scope is complete; root `CLI Surface`, `REPL API`, and `Daemon Runtime` specs already contain the shipped plugin-system contracts. No scope was cut, no RFCs were archived, and the feature-local deltas were marked merged before archiving.

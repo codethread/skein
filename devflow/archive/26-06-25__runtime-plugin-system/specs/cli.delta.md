@@ -1,7 +1,7 @@
 # CLI Surface Delta — Runtime Plugin System
 
 **Document ID:** `RPS-DELTA-003`
-**Status:** Draft
+**Status:** Merged
 **Date:** 2026-06-25
 **Prerequisite:** `user-daemon-home` shipped in `devflow/archive/26-06-25__user-daemon-home`
 **Updates:** [CLI Surface](../../../specs/cli.md)
