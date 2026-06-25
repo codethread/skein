@@ -12,7 +12,7 @@ The public CLI remains a thin daemon client. It does not become the plugin loade
 
 ## RPS-DELTA-003.P2 Contract clarifications
 
-- **RPS-DELTA-003.C1:** Plugin loading happens through daemon startup `init.clj` and trusted REPL workflows, not through task/query CLI commands.
+- **RPS-DELTA-003.C1:** Plugin loading happens through daemon startup `init.clj`, `atom.plugin.alpha/load-plugin!`, and trusted REPL workflows, not through task/query CLI commands.
 - **RPS-DELTA-003.C2:** The JSON socket allowlist is unchanged by this feature.
 - **RPS-DELTA-003.C3:** `todo daemon repl --stdin` is the recommended non-TTY path for agents that need to run trusted plugin/library code.
-- **RPS-DELTA-003.C4:** Future CLI plugin package commands such as `plugin sync`, `plugin freeze`, or `plugin thaw` are deferred to a separate feature.
+- **RPS-DELTA-003.C4:** Future CLI or REPL helpers for git-backed plugin fetch/pin/freeze/thaw are deferred to a separate feature.

@@ -9,16 +9,18 @@
 
 Type: AFK
 
-Finalize the feature-local specs for trusted plugins, blessed libraries, stability/coupling tiers, and the deferred `straight.el`-inspired package direction.
+Finalize the feature-local specs for trusted local plugins, `atom.*.alpha` namespaces, required `atom-plugin.edn`, plugin `init.clj`, `load-file` semantics, blessed library tiers, and deferred package/classpath work.
 
 ## RPS-TASK-002.P2 Implementation notes
 
 - **RPS-TASK-002.I1:** Ensure specs make clear that blessed libraries are recommended/maintained paths, not restrictions.
 - **RPS-TASK-002.I2:** Preserve user autonomy to use lower-level namespaces or raw SQLite schema with explicit compatibility cost.
-- **RPS-TASK-002.I3:** Keep package recipes/lockfiles as future direction only.
-- **RPS-TASK-002.I4:** Do not add implementation beyond spec/doc edits in this task.
+- **RPS-TASK-002.I3:** Keep git fetching, latest-tag resolution, lockfiles, dependency solving, dynamic classpath mutation, and plugin deps out of scope.
+- **RPS-TASK-002.I4:** Commit to `atom.plugin.alpha`, `atom.bootstrap.alpha`, and `atom.prelude.alpha` for new public alpha namespaces.
+- **RPS-TASK-002.I5:** Preserve settled decisions unless review/user changes them: canonical symbol plugin names, duplicate registration replaces, missing lookup returns nil, prelude opt-in, and relative plugin paths resolve against selected config-dir.
+- **RPS-TASK-002.I6:** Do not add implementation beyond spec/doc edits in this task.
 
 ## RPS-TASK-002.P3 Done when
 
 - **RPS-TASK-002.D1:** Feature deltas are internally consistent and no longer leave core plugin model wording ambiguous.
-- **RPS-TASK-002.D2:** Plan Developer Notes record any resolved naming or duplicate-registration decisions.
+- **RPS-TASK-002.D2:** Plan Developer Notes record any changed decisions from implementation review.

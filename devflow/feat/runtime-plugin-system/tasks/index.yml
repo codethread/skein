@@ -15,17 +15,27 @@ tasks:
     status: blocked
     blocked_by: [2]
   - id: 4
-    description: Bootstrap prelude namespaces
-    task_file: tasks/004-bootstrap-prelude-namespaces.md
+    description: Local plugin loader
+    task_file: tasks/004-local-plugin-loader.md
     status: blocked
     blocked_by: [2, 3]
   - id: 5
-    description: Init and REPL examples
-    task_file: tasks/005-init-repl-examples.md
+    description: Bootstrap prelude namespaces
+    task_file: tasks/005-bootstrap-prelude-namespaces.md
     status: blocked
-    blocked_by: [4]
+    blocked_by: [3]
   - id: 6
-    description: Validation docs spec prep
-    task_file: tasks/006-validation-docs-spec-prep.md
+    description: Init and REPL examples
+    task_file: tasks/006-init-repl-examples.md
     status: blocked
-    blocked_by: [5]
+    blocked_by: [4, 5]
+  - id: 7
+    description: Validation docs prep
+    task_file: tasks/007-validation-docs-prep.md
+    status: blocked
+    blocked_by: [6]
+  - id: 8
+    description: Promote shipped specs
+    task_file: tasks/008-promote-shipped-specs.md
+    status: blocked
+    blocked_by: [7]
