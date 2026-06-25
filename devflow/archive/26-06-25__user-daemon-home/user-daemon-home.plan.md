@@ -1,7 +1,7 @@
 # User Daemon Home Plan
 
 **Document ID:** `UDH-PLAN-001`
-**Status:** Reviewed
+**Status:** Shipped
 **Last Updated:** 2026-06-25
 **Proposal:** [proposal.md](./proposal.md)
 **Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md)
@@ -139,3 +139,7 @@ Updated smoke validation to build an absolute `todo` binary, write disposable `-
 ### UDH-PLAN-001.DN12 Task 7 spec promotion notes — 2026-06-25
 
 Promoted the user-daemon-home CLI, daemon runtime, and REPL API deltas into the root canonical specs. The root specs now describe config-dir selected daemon worlds, fixed selected-world socket/metadata, daemon-owned default storage, config-dir `init.clj`, `source`-gated Clojure launch commands, connected `todo daemon repl`, and direct-result `daemon repl --stdin`. Feature-local delta files were marked merged; archive movement remains deferred to the devflow finish/archive procedure.
+
+### UDH-PLAN-001.DN13 Finish/archive — 2026-06-25
+
+Feature completed and archived as shipped. Final alignment pass found one fixed-socket startup edge case: a selected world with an orphaned `daemon.sock` but no metadata was not provably stale. Fixed `todo.daemon.runtime/start!` to fail loudly instead of deleting the socket, and added daemon runtime coverage. Final validation passed: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.

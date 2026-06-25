@@ -3,7 +3,7 @@
 **Document ID:** `RPS-PROP-001`
 **Status:** Draft
 **Date:** 2026-06-25
-**Blocked by:** `devflow/feat/user-daemon-home` shipping config-dir daemon worlds, default `init.clj`, and connected REPL workflows
+**Prerequisite shipped:** [`devflow/archive/26-06-25__user-daemon-home`](../../archive/26-06-25__user-daemon-home/) — config-dir daemon worlds, default `init.clj`, and connected REPL workflows
 **Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md)
 **Research:** [`straight.el`](https://github.com/radian-software/straight.el), vendored for study at `~/dev/vendor/straight.el`
 **Related RFCs:** None
@@ -50,10 +50,13 @@ The missing first abstraction is a tiny trusted runtime plugin/library model. At
 - **RPS-PROP-001.D3:** Plugin-specific Maven dependencies, dynamic classpath mutation, and plugin-to-plugin dependency resolution are deferred.
 - **RPS-PROP-001.D4:** Users may clone plugin repos manually wherever they choose, commonly under their selected config-dir, then call `load-plugin!` from `init.clj`.
 - **RPS-PROP-001.D5:** Git-backed helpers such as `(plugin! {:type :git ...})`, latest-tag resolution, pinning, freeze/thaw, and package recipes are deferred to a later feature.
-- **RPS-PROP-001.D6:** Plugin names canonicalize to symbols. Metadata may use a symbol or keyword input, but lookup/replacement compares canonical symbols.
-- **RPS-PROP-001.D7:** Duplicate plugin metadata registration replaces prior metadata to support REPL reload workflows.
-- **RPS-PROP-001.D8:** Missing `atom.plugin.alpha/plugin` lookup returns nil; loading and registration failures still fail loudly.
-- **RPS-PROP-001.D9:** `atom.bootstrap.alpha/use-defaults!` does not load `atom.prelude.alpha`; prelude remains opt-in.
+- **RPS-PROP-001.D6:** `atom-plugin.edn` uses a required unqualified `:format-version 1` key plus unqualified plugin metadata keys. Unknown keys fail loudly.
+- **RPS-PROP-001.D7:** Plugin names canonicalize to symbols. Metadata may use a symbol or keyword input, but lookup/replacement compares canonical symbols.
+- **RPS-PROP-001.D8:** Duplicate plugin metadata registration replaces prior metadata to support REPL reload workflows.
+- **RPS-PROP-001.D9:** Missing `atom.plugin.alpha/plugin` lookup returns nil; loading and registration failures still fail loudly.
+- **RPS-PROP-001.D10:** `atom.plugin.alpha/load-plugin!` returns the recorded plugin metadata map on success.
+- **RPS-PROP-001.D11:** `load-plugin!` owns plugin metadata registration from `atom-plugin.edn`; plugin `init.clj` should not self-register its own plugin metadata.
+- **RPS-PROP-001.D12:** `atom.bootstrap.alpha/use-defaults!` does not load `atom.prelude.alpha`; prelude remains opt-in.
 
 ## RPS-PROP-001.P6 Open questions
 

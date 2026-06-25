@@ -336,6 +336,20 @@
         (db-test/delete-sqlite-family! db-file)
         (delete-tree! (io/file (:config-dir world)))))))
 
+(deftest runtime-refuses-orphaned-socket-without-metadata
+  (let [world (temp-world)
+        socket-file (metadata/socket-file world)]
+    (try
+      (.mkdirs (io/file (:state-dir world)))
+      (spit socket-file "orphaned")
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"cannot prove daemon world is stale"
+                            (runtime/start! nil {:world world})))
+      (is (.exists socket-file))
+      (finally
+        (metadata/delete! world)
+        (delete-tree! (io/file (:config-dir world)))))))
+
 (deftest runtime-stop-removes-metadata
   (let [db-file (db-test/temp-db-file)
         world (temp-world)

@@ -30,10 +30,14 @@
    (let [world (or world (config/world))
          db-file (or db-file (:db-path world))
          canonical-path (metadata/canonical-db-path db-file)
-         existing (metadata/read-metadata world)]
+         existing (metadata/read-metadata world)
+         socket-file (metadata/socket-file world)]
      (when-not (metadata/stale-or-missing? existing)
        (throw (ex-info "Daemon metadata already exists for daemon world" {:config-dir (:config-dir world)
                                                                            :metadata existing})))
+     (when (and (nil? existing) (.exists socket-file))
+       (throw (ex-info "Daemon socket exists without metadata; cannot prove daemon world is stale" {:config-dir (:config-dir world)
+                                                                                                    :socket-path (.getPath socket-file)})))
      (.mkdirs (clojure.java.io/file (:state-dir world)))
      (.mkdirs (clojure.java.io/file (:data-dir world)))
      (let [ds (db/datasource canonical-path)

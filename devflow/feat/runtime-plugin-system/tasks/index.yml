@@ -1,41 +1,41 @@
 tasks:
   - id: 1
-    description: "[HITL] Wait for user-daemon-home"
+    description: Confirm user-daemon-home shipped
     task_file: tasks/001-wait-for-user-daemon-home.md
-    status: blocked
+    status: complete
     blocked_by: []
   - id: 2
     description: Plugin contract specs
     task_file: tasks/002-plugin-contract-specs.md
-    status: blocked
+    status: pending
     blocked_by: [1]
   - id: 3
     description: Plugin metadata registry
     task_file: tasks/003-plugin-metadata-registry.md
-    status: blocked
+    status: pending
     blocked_by: [2]
   - id: 4
     description: Local plugin loader
     task_file: tasks/004-local-plugin-loader.md
-    status: blocked
+    status: pending
     blocked_by: [2, 3]
   - id: 5
     description: Bootstrap prelude namespaces
     task_file: tasks/005-bootstrap-prelude-namespaces.md
-    status: blocked
-    blocked_by: [3]
+    status: pending
+    blocked_by: [2, 3]
   - id: 6
     description: Init and REPL examples
     task_file: tasks/006-init-repl-examples.md
-    status: blocked
+    status: pending
     blocked_by: [4, 5]
   - id: 7
     description: Validation docs prep
     task_file: tasks/007-validation-docs-prep.md
-    status: blocked
+    status: pending
     blocked_by: [6]
   - id: 8
     description: Promote shipped specs
     task_file: tasks/008-promote-shipped-specs.md
-    status: blocked
+    status: pending
     blocked_by: [7]

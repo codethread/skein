@@ -3,7 +3,7 @@
 **Document ID:** `RPS-DELTA-003`
 **Status:** Draft
 **Date:** 2026-06-25
-**Blocked by:** `user-daemon-home` spec promotion
+**Prerequisite:** `user-daemon-home` shipped in `devflow/archive/26-06-25__user-daemon-home`
 **Updates:** [CLI Surface](../../../specs/cli.md)
 
 ## RPS-DELTA-003.P1 Summary

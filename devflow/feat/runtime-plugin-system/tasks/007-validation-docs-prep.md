@@ -1,7 +1,7 @@
 # Validation Docs Prep
 
 **Document ID:** `RPS-TASK-007`
-**Status:** Blocked
+**Status:** Pending
 **Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md)
 **Specs:** [daemon-runtime.delta.md](../specs/daemon-runtime.delta.md), [repl-api.delta.md](../specs/repl-api.delta.md), [cli.delta.md](../specs/cli.delta.md)
 

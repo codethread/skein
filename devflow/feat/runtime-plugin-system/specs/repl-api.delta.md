@@ -3,7 +3,7 @@
 **Document ID:** `RPS-DELTA-002`
 **Status:** Draft
 **Date:** 2026-06-25
-**Blocked by:** `user-daemon-home` spec promotion
+**Prerequisite:** `user-daemon-home` shipped in `devflow/archive/26-06-25__user-daemon-home`
 **Updates:** [REPL API](../../../specs/repl-api.md)
 
 ## RPS-DELTA-002.P1 Summary
@@ -16,7 +16,7 @@ Expose plugin/library ergonomics through trusted Clojure: users can require bles
 - **RPS-DELTA-002.C2:** `atom.plugin.alpha/register!` registers or replaces daemon-lifetime plugin metadata by canonical plugin name.
 - **RPS-DELTA-002.C3:** `atom.plugin.alpha/plugins` returns loaded plugin metadata for the current daemon lifetime.
 - **RPS-DELTA-002.C4:** `atom.plugin.alpha/plugin` returns metadata for one loaded plugin by name, or nil when no plugin metadata is registered for that name.
-- **RPS-DELTA-002.C5:** `atom.plugin.alpha/load-plugin!` loads a local plugin directory using the required `atom-plugin.edn` plus `init.clj` convention. Absolute paths are used as-is; relative paths resolve against the selected config-dir.
+- **RPS-DELTA-002.C5:** `atom.plugin.alpha/load-plugin!` loads a local plugin directory using the required `atom-plugin.edn` plus `init.clj` convention. Absolute paths are used as-is; relative paths resolve against the daemon's selected config-dir. On success it returns the recorded plugin metadata map.
 - **RPS-DELTA-002.C6:** Add `atom.bootstrap.alpha/use-defaults!` for minimal recommended startup setup from selected config-dir `init.clj`.
 - **RPS-DELTA-002.C7:** Add `atom.prelude.alpha` for optional broad interactive helper imports. Prelude use is opt-in and `use-defaults!` does not automatically load it.
 - **RPS-DELTA-002.C8:** `todo daemon repl` and `todo daemon repl --stdin` from `user-daemon-home` are the blessed ways for users/agents to evaluate plugin code against a running daemon world.
@@ -41,6 +41,14 @@ The plugin directory may look like:
 my-plugin/
 |-- atom-plugin.edn
 `-- init.clj
+```
+
+```clojure
+;; my-plugin/atom-plugin.edn
+{:format-version 1
+ :name my/my-plugin
+ :version "0.1.0-alpha"
+ :provides [:example/helpers]}
 ```
 
 ## RPS-DELTA-002.P4 Non-goals retained
