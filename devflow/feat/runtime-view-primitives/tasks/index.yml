@@ -1,0 +1,31 @@
+tasks:
+  - id: 1
+    description: "[HITL] Wait for user-daemon-home"
+    task_file: tasks/001-wait-for-user-daemon-home.md
+    status: blocked
+    blocked_by: []
+  - id: 2
+    description: Query ids and batch hydration
+    task_file: tasks/002-query-ids-batch-hydration.md
+    status: blocked
+    blocked_by: [1]
+  - id: 3
+    description: Parent graph traversal
+    task_file: tasks/003-parent-graph-traversal.md
+    status: blocked
+    blocked_by: [2]
+  - id: 4
+    description: Trusted view registry
+    task_file: tasks/004-trusted-view-registry.md
+    status: blocked
+    blocked_by: [2]
+  - id: 5
+    description: REPL helpers and example
+    task_file: tasks/005-repl-helpers-example.md
+    status: blocked
+    blocked_by: [3, 4]
+  - id: 6
+    description: Validation docs spec prep
+    task_file: tasks/006-validation-docs-spec-prep.md
+    status: blocked
+    blocked_by: [5]
