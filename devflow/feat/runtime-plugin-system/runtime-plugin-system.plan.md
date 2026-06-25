@@ -124,3 +124,7 @@ Final council supported the MVP and recommended tightening the API before implem
 ### RPS-PLAN-001.DN7 Plugin contract spec finalization — 2026-06-25
 
 Tightened feature-local deltas without implementation changes: clarified blessed alpha namespaces as maintained recommendations rather than restrictions, made user autonomy and compatibility costs explicit, pinned `atom.*.alpha` namespace names, specified relative plugin path resolution against selected config-dir rather than shell cwd, and kept git/package/dependency/classpath work deferred.
+
+### RPS-PLAN-001.DN8 Plugin metadata registry implementation — 2026-06-25
+
+Implemented daemon-lifetime plugin metadata state as an in-memory runtime registry exposed through `atom.plugin.alpha`. Registration validates required `:format-version 1` and symbol/keyword names, canonicalizes plugin names and `:provides` entries to symbols, rejects unknown or malformed metadata loudly, replaces duplicate registrations, and leaves the JSON socket CLI allowlist unchanged. `atom.plugin.alpha` works both in the daemon JVM and from the connected helper REPL by routing trusted calls over the existing nREPL client path. Loader-owned metadata keys are accepted for the upcoming local loader slice without adding premature type policy beyond the current spec.

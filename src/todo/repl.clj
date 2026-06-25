@@ -6,10 +6,13 @@
 
 (defonce ^:private active-config-dir (atom nil))
 
-(defn- config-dir []
+(defn connected-config-dir []
   (or @active-config-dir
       (throw (ex-info "No todo daemon world is connected. Start a connected helper REPL with `todo daemon repl`, or call (connect!) / (connect! \"/path/to/config-dir\") before using todo.repl helpers."
                       {:helper 'connect!}))))
+
+(defn- config-dir []
+  (connected-config-dir))
 
 (defn connect!
   ([]

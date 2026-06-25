@@ -91,6 +91,21 @@
           (is (= [] (read-string (second lines))))
           (is (= [] (read-string (nth lines 2)))))))))
 
+(deftest plugin-alpha-helpers-work-from-connected-stdin-repl
+  (with-runtime
+    (fn [rt _]
+      (let [out (java.io.StringWriter.)]
+        (binding [*in* (java.io.StringReader. "(require '[atom.plugin.alpha :as plugin])\n(plugin/register! {:format-version 1 :name :demo/plugin})\n(plugin/plugin :demo/plugin)\n(plugin/plugins)\n")
+                  *out* out
+                  *err* (java.io.StringWriter.)
+                  *ns* (the-ns 'user)]
+          (repl/-main "--stdin" (:config-dir (:metadata rt))))
+        (let [lines (str/split-lines (str out))]
+          (is (= 4 (count lines)))
+          (is (= {:format-version 1 :name 'demo/plugin} (read-string (second lines))))
+          (is (= {:format-version 1 :name 'demo/plugin} (read-string (nth lines 2))))
+          (is (= [{:format-version 1 :name 'demo/plugin}] (read-string (nth lines 3)))))))))
+
 (deftest query-helpers-use-daemon-backed-task-flow
   (with-runtime
     (fn [rt db-file]

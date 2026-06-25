@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Plugin metadata registry
     task_file: tasks/003-plugin-metadata-registry.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 4
     description: Local plugin loader

@@ -53,6 +53,7 @@
                                           :started-at (str (Instant/now))})
            runtime-base {:datasource ds
                          :query-registry (atom {})
+                         :plugin-registry (atom {})
                          :server server
                          :metadata meta}
            runtime-state (atom runtime-base)]

@@ -20,7 +20,10 @@
    :queries 'todo.daemon.api/queries
    :resolve-query 'todo.daemon.api/resolve-query
    :list-query 'todo.daemon.api/list-query
-   :ready-query 'todo.daemon.api/ready-query})
+   :ready-query 'todo.daemon.api/ready-query
+   :register-plugin 'todo.daemon.api/register-plugin
+   :plugins 'todo.daemon.api/plugins
+   :plugin 'todo.daemon.api/plugin})
 
 (defn fail [message data]
   (throw (ex-info message data)))
