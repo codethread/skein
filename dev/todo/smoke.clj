@@ -16,6 +16,12 @@
   (doseq [suffix ["" "-journal" "-wal" "-shm" ".client.json"]]
     (.delete (java.io.File. (str db-file suffix)))))
 
+(defn smoke-config-dir [db-file]
+  (java.nio.file.Paths/get (str db-file ".config-dir") (make-array String 0)))
+
+(defn smoke-world-db [db-file]
+  (str (.resolve (smoke-config-dir db-file) "data/tasks.sqlite")))
+
 (defn delete-runtime-metadata! [db-file]
   (metadata/delete! (metadata/canonical-db-path db-file)))
 
@@ -26,7 +32,10 @@
 
 (defn clean-runtime-artifacts! [db-file]
   (delete-sqlite-family! db-file)
-  (delete-runtime-metadata! db-file))
+  (delete-runtime-metadata! db-file)
+  (delete-sqlite-family! (smoke-world-db db-file))
+  (delete-runtime-metadata! (smoke-world-db db-file))
+  (delete-tree! (smoke-config-dir db-file)))
 
 (defn delete-built-cli! []
   (delete-tree! (java.nio.file.Paths/get "cli/bin" (make-array String 0))))
@@ -46,17 +55,18 @@
   todo-bin)
 
 (defn write-client-config! [db-file]
-  (let [path (str db-file ".client.json")]
-    (spit path (json/write-str {:db db-file :format "human"}))
-    path))
+  (let [dir (.toFile (smoke-config-dir db-file))]
+    (.mkdirs dir)
+    (spit (java.io.File. dir "config.json") (json/write-str {:source (.getAbsolutePath (java.io.File. ".")) :format "human"}))
+    (.getPath dir)))
 
 (defn run-cli! [db-file & args]
-  (run-process! "Go CLI command succeeds" (into [todo-bin "--config-path" (write-client-config! db-file)] args)))
+  (run-process! "Go CLI command succeeds" (into [todo-bin "--config-dir" (write-client-config! db-file)] args)))
 
 (defn start-cli-daemon!
   ([db-file] (start-cli-daemon! db-file []))
   ([db-file daemon-args]
-   (let [process (-> (ProcessBuilder. (into [todo-bin "--config-path" (write-client-config! db-file) "daemon" "start"] daemon-args))
+   (let [process (-> (ProcessBuilder. (into [todo-bin "--config-dir" (write-client-config! db-file) "daemon" "start"] daemon-args))
                      (.redirectErrorStream true)
                      (.start))]
      (loop [attempts 50]
@@ -98,7 +108,7 @@
       (assert-contains add needle "Go CLI command help shows flags"))
     (doseq [needle ["start" "status" "stop"]]
       (assert-contains daemon needle "Go CLI subcommand help shows children"))
-    (assert-contains start "--config" "Go CLI nested subcommand help shows flags")))
+    (assert-contains start "--config-dir" "Go CLI nested subcommand help shows selected world flag")))
 
 (defn stop-cli-daemon! [db-file daemon]
   (when (.isAlive daemon)
@@ -111,15 +121,9 @@
   (try
     (build-cli!)
     (smoke-cli-help!)
-    (let [config-dir (java.nio.file.Files/createTempDirectory "todo-smoke-query-config" (make-array java.nio.file.attribute.FileAttribute 0))
-          query-file (java.io.File. (.toFile config-dir) "queries.clj")
-          config-file (java.io.File. (.toFile config-dir) "daemon.edn")]
+    (let [daemon (start-cli-daemon! db-file)]
       (try
-        (spit query-file "(require '[todo.daemon.api :as api]) (api/register-query! 'configured-agent '[:= [:attr :owner] \"agent\"])")
-        (spit config-file "{:load-files [\"queries.clj\"]}")
-        (let [daemon (start-cli-daemon! db-file ["--config" (.getPath config-file)])]
-          (try
-            (run-cli! db-file "init")
+        (run-cli! db-file "init")
             (let [design (cli-add! db-file "Sketch task graph model" "--status" "done" "--attr" "priority=high")
                   schema (cli-add! db-file "Create SQLite schema" "--attr" "priority=high")
                   docs (cli-add! db-file "Write usage notes" "--attr" "owner=agent")]
@@ -132,9 +136,6 @@
               (assert= ["Write usage notes"]
                        (titles (parse-json (run-cli! db-file "--format" "json" "ready")))
                        "Go CLI update status changes readiness")
-              (assert= ["Write usage notes"]
-                       (titles (parse-json (run-cli! db-file "--format" "json" "list" "--query" "configured-agent")))
-                       "Go CLI consumes a query registered by trusted daemon startup config")
               (assert= "done"
                        (:status (parse-json (run-cli! db-file "--format" "json" "show" schema)))
                        "Go CLI show exposes first-class status")
@@ -142,13 +143,11 @@
                 (assert= true
                          (:healthy status)
                          "Go CLI daemon status checks socket health")
-                (assert= (.getPath (metadata/socket-file (metadata/canonical-db-path db-file)))
+                (assert= (.getPath (metadata/socket-file (metadata/canonical-db-path (smoke-world-db db-file))))
                          (:socket_path status)
                          "Go CLI daemon status reports socket metadata")))
-            (finally
-              (stop-cli-daemon! db-file daemon))))
         (finally
-          (delete-tree! config-dir))))
+          (stop-cli-daemon! db-file daemon))))
     (finally
       (clean-runtime-artifacts! db-file)
       (delete-built-cli!))))

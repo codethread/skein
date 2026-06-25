@@ -4,6 +4,7 @@
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [todo.daemon.api :as api]
+            [todo.daemon.config :as daemon-config]
             [todo.daemon.metadata :as metadata]
             [todo.daemon.runtime :as runtime]
             [todo.db :as db]
@@ -44,6 +45,25 @@
       (.newLine wrt)
       (.flush wrt)
       (json/read-str (.readLine rdr)))))
+
+(deftest daemon-world-resolution
+  (let [home (System/getProperty "user.home")
+        config-home (or (System/getenv "XDG_CONFIG_HOME") (str home "/.config"))
+        state-home (or (System/getenv "XDG_STATE_HOME") (str home "/.local/state"))
+        data-home (or (System/getenv "XDG_DATA_HOME") (str home "/.local/share"))]
+    (is (= {:config-dir (str config-home "/atom")
+            :state-dir (str state-home "/atom")
+            :data-dir (str data-home "/atom")
+            :config-file (str config-home "/atom/config.json")
+            :db-path (str data-home "/atom/tasks.sqlite")}
+           (daemon-config/world))))
+  (let [dir (.getCanonicalPath (.toFile (java.nio.file.Files/createTempDirectory "todo-world" (make-array java.nio.file.attribute.FileAttribute 0))))]
+    (is (= {:config-dir dir
+            :state-dir (str dir "/state")
+            :data-dir (str dir "/data")
+            :config-file (str dir "/config.json")
+            :db-path (str dir "/data/tasks.sqlite")}
+           (daemon-config/world dir)))))
 
 (deftest daemon-api-delegates-to-db-and-normalizes-results
   (with-runtime

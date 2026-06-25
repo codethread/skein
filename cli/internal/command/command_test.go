@@ -50,7 +50,7 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"start [--config trusted.edn]", "--config"} {
+	for _, want := range []string{"start", "--config-dir"} {
 		if !strings.Contains(start, want) {
 			t.Fatalf("daemon start help missing %q in:\n%s", want, start)
 		}
@@ -81,56 +81,117 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 	}
 }
 
-func TestConfigPathPrecedenceAndValidation(t *testing.T) {
+func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 	dir := t.TempDir()
-	cfg := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(cfg, []byte(`{"db":"from-config.sqlite","format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"source":"/tmp/source","format":"json"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	opts, rest, err := Resolve([]string{"--config-path", cfg, "--format", "human", "list"})
+	opts, rest, err := Resolve([]string{"--config-dir", dir, "--format", "human", "list"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts.DB != "from-config.sqlite" || opts.Format != "human" || len(rest) != 1 || rest[0] != "list" {
+	if opts.DB != filepath.Join(dir, "data", "tasks.sqlite") || opts.Format != "human" || opts.Source != "/tmp/source" || len(rest) != 1 || rest[0] != "list" {
 		t.Fatalf("unexpected resolved options/rest: %#v %#v", opts, rest)
 	}
 
-	bad := filepath.Join(dir, "bad.json")
-	if err := os.WriteFile(bad, []byte(`{"where":"nope"}`), 0644); err != nil {
+	if _, err := run("--config-path", dir, "list"); err == nil || !strings.Contains(err.Error(), "unknown flag: --config-path") {
+		t.Fatalf("expected removed config-path error, got %v", err)
+	}
+
+	badDir := filepath.Join(t.TempDir(), "bad")
+	if err := os.MkdirAll(badDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := run("--config-path", bad, "list"); err == nil || !strings.Contains(err.Error(), "unsupported client config key") {
+	if err := os.WriteFile(filepath.Join(badDir, "config.json"), []byte(`{"where":"nope"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", badDir, "list"); err == nil || !strings.Contains(err.Error(), "unsupported client config key: where") {
 		t.Fatalf("expected unsupported key error, got %v", err)
 	}
 
-	malformed := filepath.Join(dir, "malformed.json")
-	if err := os.WriteFile(malformed, []byte(`{"db":`), 0644); err != nil {
+	oldDBDir := filepath.Join(t.TempDir(), "old-db")
+	if err := os.MkdirAll(oldDBDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := run("--config-path", malformed, "list"); err == nil || !strings.Contains(err.Error(), "malformed client config") {
+	if err := os.WriteFile(filepath.Join(oldDBDir, "config.json"), []byte(`{"db":"old.sqlite"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", oldDBDir, "list"); err == nil || !strings.Contains(err.Error(), "unsupported client config key: db") {
+		t.Fatalf("expected db unsupported error, got %v", err)
+	}
+
+	malformedDir := filepath.Join(t.TempDir(), "malformed")
+	if err := os.MkdirAll(malformedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(malformedDir, "config.json"), []byte(`{"source":`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", malformedDir, "list"); err == nil || !strings.Contains(err.Error(), "malformed client config") {
 		t.Fatalf("expected malformed config error, got %v", err)
 	}
 
-	wrongType := filepath.Join(dir, "wrong-type.json")
-	if err := os.WriteFile(wrongType, []byte(`{"db":123}`), 0644); err != nil {
+	wrongTypeDir := filepath.Join(t.TempDir(), "wrong-type")
+	if err := os.MkdirAll(wrongTypeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := run("--config-path", wrongType, "list"); err == nil || !strings.Contains(err.Error(), "client config db must be a string") {
+	if err := os.WriteFile(filepath.Join(wrongTypeDir, "config.json"), []byte(`{"source":123}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", wrongTypeDir, "list"); err == nil || !strings.Contains(err.Error(), "client config source must be a string") {
 		t.Fatalf("expected wrong type config error, got %v", err)
+	}
+}
+
+func TestSourceValidationForDaemonStart(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"source":"relative"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", dir, "daemon", "start"); err == nil || !strings.Contains(err.Error(), "source must be an absolute path") {
+		t.Fatalf("expected absolute source error, got %v", err)
+	}
+
+	missingDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(missingDir, "config.json"), []byte(`{"source":"/definitely/missing/atom-source"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", missingDir, "daemon", "start"); err == nil || !strings.Contains(err.Error(), "source must be an existing directory") {
+		t.Fatalf("expected missing source error, got %v", err)
+	}
+
+	source := t.TempDir()
+	noDepsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(noDepsDir, "config.json"), []byte(`{"source":"`+source+`"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", noDepsDir, "daemon", "start"); err == nil || !strings.Contains(err.Error(), "source must contain deps.edn") {
+		t.Fatalf("expected deps.edn source error, got %v", err)
 	}
 }
 
 func TestXDGConfigLoading(t *testing.T) {
 	dir := t.TempDir()
+	stateDir := t.TempDir()
+	dataDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
 	path := filepath.Join(dir, "atom")
 	if err := os.MkdirAll(path, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"db":"xdg.sqlite","format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"format":"json"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := run("list")
+	opts, _, err := Resolve([]string{"list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.DB != filepath.Join(dataDir, "atom", "tasks.sqlite") || opts.ConfigDir != filepath.Join(dir, "atom") {
+		t.Fatalf("unexpected default world: %#v", opts)
+	}
+	_, err = run("list")
 	if err == nil || !strings.Contains(err.Error(), "no running daemon") {
 		t.Fatalf("expected xdg config to parse and reach daemon metadata lookup, got %v", err)
 	}
@@ -155,8 +216,8 @@ func (f *fakeClient) Call(op string, args map[string]any) (any, error) {
 
 func testConfig(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"db":"test.sqlite","format":"human"}`), 0644); err != nil {
+	path := t.TempDir()
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"format":"human"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -168,14 +229,14 @@ func TestQueryCommandsUseSocketClientPayloads(t *testing.T) {
 	fc := &fakeClient{result: []any{map[string]any{"id": "task-1"}}}
 	newClient = func(o Options) Caller { return fc }
 	t.Cleanup(func() { newClient = orig })
-	out, err := run("--config-path", cfg, "list")
+	out, err := run("--config-dir", cfg, "list")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.TrimSpace(out) != `{"id":"task-1"}` {
 		t.Fatalf("unexpected human list output: %q", out)
 	}
-	out, err = run("--config-path", cfg, "ready", "--query", "by-owner", "--param", "owner=agent")
+	out, err = run("--config-dir", cfg, "ready", "--query", "by-owner", "--param", "owner=agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +251,7 @@ func TestQueryCommandsUseSocketClientPayloads(t *testing.T) {
 		t.Fatalf("bad ready-query call: %#v", fc.calls[1])
 	}
 	fc.result = []any{}
-	out, err = run("--config-path", cfg, "list", "--query", "empty")
+	out, err = run("--config-dir", cfg, "list", "--query", "empty")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,17 +266,17 @@ func TestTaskCommandsUseSocketClientPayloads(t *testing.T) {
 	fc := &fakeClient{}
 	newClient = func(o Options) Caller { return fc }
 	t.Cleanup(func() { newClient = orig })
-	out, err := run("--config-path", cfg, "--format", "human", "add", "Write docs", "--attr", "owner=agent")
+	out, err := run("--config-dir", cfg, "--format", "human", "add", "Write docs", "--attr", "owner=agent")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.TrimSpace(out) != "task-1" {
 		t.Fatalf("expected generated id, got %q", out)
 	}
-	if out, err = run("--config-path", cfg, "update", "task-1", "--status", "done", "--edge", "depends-on:task-0"); err != nil || out != "" {
+	if out, err = run("--config-dir", cfg, "update", "task-1", "--status", "done", "--edge", "depends-on:task-0"); err != nil || out != "" {
 		t.Fatalf("update output/error = %q/%v", out, err)
 	}
-	if _, err = run("--config-path", cfg, "--format", "json", "show", "task-1"); err != nil {
+	if _, err = run("--config-dir", cfg, "--format", "json", "show", "task-1"); err != nil {
 		t.Fatal(err)
 	}
 	if len(fc.calls) != 3 {
@@ -234,7 +295,7 @@ func TestTaskCommandsUseSocketClientPayloads(t *testing.T) {
 	if fc.calls[2].op != "show" || fc.calls[2].args["id"] != "task-1" {
 		t.Fatalf("bad show call: %#v", fc.calls[2])
 	}
-	if _, err = run("--config-path", cfg, "update", "task-1", "--title", ""); err != nil {
+	if _, err = run("--config-dir", cfg, "update", "task-1", "--title", ""); err != nil {
 		t.Fatal(err)
 	}
 	if fc.calls[3].args["title"] != "" {

@@ -2,13 +2,12 @@
   (:gen-class)
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
-            [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.tools.cli :refer [parse-opts]]
             [todo.client :as client]
+            [todo.daemon.config :as daemon-config]
             [todo.daemon.runtime :as runtime]
-            [todo.db :as db]
             [todo.query :as query]
             [todo.specs :as specs]))
 
@@ -16,8 +15,8 @@
 (def commands (conj query-commands "init" "add" "update" "daemon"))
 
 (def global-options
-  [[nil "--config-path PATH" "Client JSON config path"
-    :id :config-path]
+  [[nil "--config-dir DIR" "Daemon world config directory"
+    :id :config-dir]
    [nil "--format FORMAT" "Output mode: human, edn, json"
     :id :format
     :validate [#(s/valid? ::specs/format %) "must be one of: human, edn, json"]]])
@@ -72,14 +71,12 @@
                   [(keyword k) v]))
     :update-fn (fn [params [k v]] (assoc params k v))]])
 
-(def daemon-start-options
-  [[nil "--config PATH" "Daemon startup EDN config; supports {:load-files [\"trusted.clj\"]}"
-    :id :config]])
+(def daemon-start-options [])
 
 (defn usage [summary]
   (str "Todo CLI\n\n"
        "Usage:\n"
-       "  clojure -M:todo [--config-path <path>] [--format human|edn|json] <command> [args]\n\n"
+       "  clojure -M:todo [--config-dir <dir>] [--format human|edn|json] <command> [args]\n\n"
        "Commands:\n"
        "  init\n"
        "  add <title> [--status status] [--attr key=value ...]\n"
@@ -87,7 +84,7 @@
        "  show <id>\n"
        "  list [--where EDN | --query name] [--param key=value ...]\n"
        "  ready [--where EDN | --query name] [--param key=value ...]\n"
-       "  daemon start [--config path]\n"
+       "  daemon start\n"
        "  daemon stop\n"
        "  daemon status\n\n"
        "Options:\n"
@@ -110,31 +107,27 @@
       (fail! (str "Invalid arguments for " command ":\n" (explain spec args)) summary))
     conformed))
 
-(defn default-client-config-path []
-  (if-let [xdg (System/getenv "XDG_CONFIG_HOME")]
-    (str (io/file xdg "atom" "config.json"))
-    (str (io/file (System/getProperty "user.home") ".config" "atom" "config.json"))))
-
-(defn read-client-config [path]
-  (let [file (io/file (or path (default-client-config-path)))]
+(defn read-client-config [world]
+  (let [file (java.io.File. (:config-file world))]
     (if (.isFile file)
       (let [config (json/read-str (slurp file) :key-fn keyword)]
         (when-not (map? config)
           (throw (ex-info "Client config must be a JSON object" {:config (.getPath file)})))
-        (when-let [unknown (seq (remove #{:db :format} (keys config)))]
+        (when-let [unknown (seq (remove #{:source :format} (keys config)))]
           (throw (ex-info "Unsupported client config keys" {:config (.getPath file) :keys (vec unknown)})))
-        (when-not (or (nil? (:db config)) (string? (:db config)))
-          (throw (ex-info "Client config db must be a string" {:config (.getPath file)})))
+        (when-not (or (nil? (:source config)) (string? (:source config)))
+          (throw (ex-info "Client config source must be a string" {:config (.getPath file)})))
         (when-not (or (nil? (:format config)) (string? (:format config)))
           (throw (ex-info "Client config format must be a string" {:config (.getPath file)})))
         config)
       {})))
 
 (defn resolve-global-options [options]
-  (let [config (read-client-config (:config-path options))]
-    (merge {:db db/default-db-file :format "human"}
-           (select-keys config [:db :format])
-           (select-keys options [:format :config-path]))))
+  (let [world (daemon-config/world (:config-dir options))
+        config (read-client-config world)]
+    (merge {:db (:db-path world) :format "human" :world world :config-dir (:config-dir world)}
+           (select-keys config [:source :format])
+           (select-keys options [:format]))))
 
 (defn parse-global-options [args]
   (let [{:keys [options arguments errors summary]} (parse-opts args global-options :in-order true)]
@@ -228,8 +221,8 @@
   (let [subcommand (first args)
         subargs (vec (rest args))]
     (case subcommand
-      "start" (let [options (parse-daemon-start-options subargs summary)]
-                 (runtime/start! db-file {:config-file (:config options)})
+      "start" (do (parse-daemon-start-options subargs summary)
+                 (runtime/start! db-file)
                  (println "daemon started")
                  (while @runtime/current-runtime
                    (Thread/sleep 100)))

@@ -111,3 +111,7 @@ Final review asked for explicit removal of `--config-path`, a named public REPL 
 ### UDH-PLAN-001.DN5 Task queue generated — 2026-06-25
 
 Marked the plan Reviewed and generated AFK task slices. Task sequencing is vertical: establish world/config resolution first, then fixed socket protocol, daemon startup/init, task command migration, connected REPL/stdin, validation/docs, and spec promotion/archive prep.
+
+### UDH-PLAN-001.DN6 Task 1 implementation notes — 2026-06-25
+
+Implemented the first-slice world/config contract while keeping socket discovery DB-keyed until the fixed-socket slice. The Go CLI now resolves `--config-dir` worlds and rejects old `db` client config; Clojure has matching world path helpers and the internal CLI resolves `--config-dir` through the same `config.json` `source`/`format` shape for transition. Deep review found and we fixed relative `--config-dir` normalization before launching Clojure. Root spec promotion remains deferred to Task 7 as planned.

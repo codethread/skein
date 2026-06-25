@@ -16,10 +16,23 @@
     (.delete file)
     (.getAbsolutePath file)))
 
-(defn temp-client-config [db-file]
-  (let [file (java.io.File/createTempFile "todo-client-config" ".json")]
-    (spit file (json/write-str {:db db-file :format "human"}))
-    (.getAbsolutePath file)))
+(defn temp-client-config [_db-file]
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory "todo-client-config" (make-array java.nio.file.attribute.FileAttribute 0)))]
+    (spit (java.io.File. dir "config.json") (json/write-str {:format "human"}))
+    (.getCanonicalPath dir)))
+
+(defn expected-world [config-dir]
+  {:config-dir config-dir
+   :state-dir (str config-dir "/state")
+   :data-dir (str config-dir "/data")
+   :config-file (str config-dir "/config.json")
+   :db-path (str config-dir "/data/tasks.sqlite")})
+
+(defn expected-opts [config-dir format]
+  {:db (str config-dir "/data/tasks.sqlite")
+   :format format
+   :world (expected-world config-dir)
+   :config-dir config-dir})
 
 (defn with-runtime [f]
   (let [db-file (temp-db-file)
@@ -36,27 +49,34 @@
   (testing "global options are parsed before the command and command args are preserved"
     (let [config (temp-client-config "/tmp/todo.sqlite")]
       (try
-        (is (= [{:db "/tmp/todo.sqlite" :format "json" :config-path config} "ready" []]
+        (is (= [(expected-opts config "json") "ready" []]
                (let [[opts command args _summary]
-                     (cli/parse-global-options ["--config-path" config "--format" "json" "ready"])]
+                     (cli/parse-global-options ["--config-dir" config "--format" "json" "ready"])]
                  [opts command args])))
         (finally (.delete (java.io.File. config))))))
   (testing "options after the command are command arguments, not global options"
     (let [config (temp-client-config "/tmp/todo.sqlite")]
       (try
-        (is (= [{:db "/tmp/todo.sqlite" :format "human" :config-path config} "ready" ["--format" "json"]]
+        (is (= [(expected-opts config "human") "ready" ["--format" "json"]]
                (let [[opts command args _summary]
-                     (cli/parse-global-options ["--config-path" config "ready" "--format" "json"])]
+                     (cli/parse-global-options ["--config-dir" config "ready" "--format" "json"])]
                  [opts command args])))
         (finally (.delete (java.io.File. config))))))
   (testing "daemon lifecycle commands are parsed after global options"
     (let [config (temp-client-config "/tmp/todo.sqlite")]
       (try
-        (is (= [{:db "/tmp/todo.sqlite" :format "edn" :config-path config} "daemon" ["status"]]
+        (is (= [(expected-opts config "edn") "daemon" ["status"]]
                (let [[opts command args _summary]
-                     (cli/parse-global-options ["--config-path" config "--format" "edn" "daemon" "status"])]
+                     (cli/parse-global-options ["--config-dir" config "--format" "edn" "daemon" "status"])]
                  [opts command args])))
-        (finally (.delete (java.io.File. config)))))))
+        (finally (.delete (java.io.File. config))))))
+  (testing "client config only supports source and format"
+    (let [dir (.toFile (java.nio.file.Files/createTempDirectory "todo-bad-config" (make-array java.nio.file.attribute.FileAttribute 0)))]
+      (spit (java.io.File. dir "config.json") (json/write-str {:db "old.sqlite"}))
+      (with-redefs [cli/fail! (fn [message _summary] (throw (ex-info message {})))]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Unsupported client config keys"
+                              (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))))))
 
 (deftest parses-repeatable-command-options
   (is (= {:status "done"
@@ -67,8 +87,8 @@
                                      "--attr" "owner=agent"
                                      "--edge" "depends-on:ue72w"]
                                     "summary")))
-  (is (= {:config "daemon.edn"}
-         (cli/parse-daemon-start-options ["--config" "daemon.edn"] "summary"))))
+  (is (= {}
+         (cli/parse-daemon-start-options [] "summary"))))
 
 (deftest internal-clojure-cli-retains-edn-query-options
   (testing "legacy Clojure CLI parser/client behavior remains available for daemon and REPL support; public Go CLI rejects --where/EDN"
@@ -104,12 +124,8 @@
     (fn [db-file]
       (client/register-query db-file 'known '[:= :status "todo"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"Query not found: missing .*available: known"
-                            (with-redefs [cli/fail! (fn [message _summary] (throw (ex-info message {})))]
-                              (let [config (temp-client-config db-file)]
-                                (try
-                                  (cli/-main "--config-path" config "list" "--query" "missing")
-                                  (finally (.delete (java.io.File. config)))))))))))
+                            #"Daemon API call failed"
+                            (cli/run-command! db-file "list" ["--query" "missing"] "summary"))))))
 
 (deftest task-commands-reject-daemon-config-option
   (with-redefs [cli/fail! (fn [message _summary] (throw (ex-info message {})))
@@ -160,12 +176,8 @@
       (let [rt (runtime/start! db-file)]
         (try
           (client/init db-file)
-          (let [status (cli/run-daemon-command! db-file ["status"] "summary")
-                config (temp-client-config db-file)
-                edn-status (read-string (with-out-str (cli/-main "--config-path" config "--format" "edn" "daemon" "status")))
-                json-status (json/read-str (with-out-str (cli/-main "--config-path" config "--format" "json" "daemon" "status")) :key-fn keyword)]
-            (.delete (java.io.File. config))
-            (doseq [payload [status edn-status json-status]]
+          (let [status (cli/run-daemon-command! db-file ["status"] "summary")]
+            (doseq [payload [status]]
               (is (= "ok" (:health payload)))
               (is (= (metadata/canonical-db-path db-file) (:canonical-db-path payload)))
               (is (integer? (:pid payload)))

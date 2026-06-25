@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"atom-todo-cli/internal/client"
@@ -16,7 +15,7 @@ import (
 )
 
 type App struct{ Stdout, Stderr io.Writer }
-type Options struct{ DB, Format, ConfigPath string }
+type Options struct{ DB, Format, ConfigDir, Source string }
 type ExitError struct {
 	Code int
 	Err  error
@@ -56,7 +55,7 @@ func (a *App) rootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.PersistentFlags().StringVar(&o.ConfigPath, "config-path", "", "JSON client config path")
+	root.PersistentFlags().StringVar(&o.ConfigDir, "config-dir", "", "daemon world config directory")
 	root.PersistentFlags().StringVar(&o.Format, "format", "", "output format: human or json")
 	root.AddCommand(&cobra.Command{Use: "init", Short: "Initialize task storage", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		return a.withConfig(o, func(r Options) error { return a.call(r, "init", map[string]any{}) })
@@ -131,11 +130,9 @@ func (a *App) rootCommand() *cobra.Command {
 	root.AddCommand(a.queryCommand(&o, "ready", "List ready tasks"))
 
 	daemon := &cobra.Command{Use: "daemon", Short: "Manage the local daemon"}
-	start := &cobra.Command{Use: "start [--config trusted.edn]", Short: "Start the daemon in the foreground", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := cmd.Flags().GetString("config")
-		return a.withConfig(o, func(r Options) error { return a.launchDaemon(r, cfg) })
+	start := &cobra.Command{Use: "start", Short: "Start the daemon in the foreground for the selected config-dir world", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		return a.withConfig(o, func(r Options) error { return a.launchDaemon(r) })
 	}}
-	start.Flags().String("config", "", "trusted daemon startup config EDN path")
 	daemon.AddCommand(start)
 	daemon.AddCommand(&cobra.Command{Use: "status", Short: "Show daemon status", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		return a.withConfig(o, func(r Options) error { return a.call(r, "status", map[string]any{}) })
@@ -200,12 +197,12 @@ func Resolve(args []string) (Options, []string, error) {
 				return o, nil, errors.New("--format requires a value")
 			}
 			o.Format = args[i]
-		case "--config-path":
+		case "--config-dir":
 			i++
 			if i >= len(args) {
-				return o, nil, errors.New("--config-path requires a value")
+				return o, nil, errors.New("--config-dir requires a value")
 			}
-			o.ConfigPath = args[i]
+			o.ConfigDir = args[i]
 		case "-h", "--help":
 			return o, []string{"help"}, nil
 		case "--where":
@@ -218,14 +215,13 @@ func Resolve(args []string) (Options, []string, error) {
 }
 
 func resolveOptions(o Options) (Options, error) {
-	cfg, err := config.Load(o.ConfigPath)
+	cfg, world, err := config.Load(o.ConfigDir)
 	if err != nil {
 		return o, err
 	}
-	o.DB = cfg.DB
-	if o.DB == "" {
-		return o, errors.New("client config db is required")
-	}
+	o.DB = world.DBPath
+	o.Source = cfg.Source
+	o.ConfigDir = world.ConfigDir
 	if o.Format == "" {
 		o.Format = cfg.Format
 	}
@@ -294,29 +290,13 @@ func (a *App) writeHumanRows(result any) error {
 	return nil
 }
 
-func (a *App) launchDaemon(o Options, configFile string) error {
-	args := []string{"-M:todo"}
-	if o.ConfigPath != "" {
-		p, err := filepath.Abs(o.ConfigPath)
-		if err != nil {
-			return err
-		}
-		args = append(args, "--config-path", p)
+func (a *App) launchDaemon(o Options) error {
+	if err := config.ValidateSource(o.Source); err != nil {
+		return err
 	}
-	args = append(args, "daemon", "start")
-	if configFile != "" {
-		p, err := filepath.Abs(configFile)
-		if err != nil {
-			return err
-		}
-		args = append(args, "--config", p)
-	}
+	args := []string{"-M:todo", "--config-dir", o.ConfigDir, "daemon", "start"}
 	cmd := exec.Command("clojure", args...)
-	if _, err := os.Stat("deps.edn"); err != nil {
-		if _, parentErr := os.Stat(filepath.Join("..", "deps.edn")); parentErr == nil {
-			cmd.Dir = ".."
-		}
-	}
+	cmd.Dir = o.Source
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = a.Stdout
 	cmd.Stderr = a.Stderr
