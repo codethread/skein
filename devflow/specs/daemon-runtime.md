@@ -12,7 +12,7 @@ The daemon runtime is the long-lived local Clojure process that owns task storag
 
 ## SPEC-004.P2 Runtime model
 
-- **SPEC-004.C1:** A daemon owns exactly one active SQLite datasource and one in-memory named-query registry for its lifetime.
+- **SPEC-004.C1:** A daemon owns exactly one active SQLite datasource, one in-memory named-query registry, and one in-memory loaded-plugin metadata registry for its lifetime.
 - **SPEC-004.C2:** A daemon exposes two local transports: nREPL for Clojure REPL/client workflows and a JSON Unix domain socket for the public Go CLI.
 - **SPEC-004.C3:** Transports are local-only by default: nREPL binds to loopback, and the JSON CLI transport uses a Unix domain socket under the selected runtime state directory.
 - **SPEC-004.C4:** A daemon world is selected by config-dir. The default config-dir is `$XDG_CONFIG_HOME/atom` or `~/.config/atom`; an explicit config-dir override selects a separate world.
@@ -66,3 +66,19 @@ The daemon runtime is the long-lived local Clojure process that owns task storag
 - **SPEC-004.C34:** Registry names are simple unqualified names; symbol and keyword forms of the same name resolve to one entry.
 - **SPEC-004.C35:** Registry contents are not durable across daemon restarts. Users reload runtime query definitions through trusted startup config or REPL helpers.
 - **SPEC-004.C36:** Missing named-query resolution fails loudly with a clear domain error.
+
+## SPEC-004.P9 Runtime plugin/library model
+
+- **SPEC-004.C37:** A plugin is trusted Clojure runtime code loaded into the daemon process through selected config-dir startup (`init.clj`), `atom.plugin.alpha/load-plugin!`, or connected REPL workflows.
+- **SPEC-004.C38:** Plugins run with daemon process authority. Sandboxing, untrusted execution, remote authorization, and capability restriction are outside this contract.
+- **SPEC-004.C39:** Atom ships blessed source-visible alpha runtime libraries. Initial maintained namespaces are `atom.plugin.alpha`, `atom.bootstrap.alpha`, and `atom.prelude.alpha`.
+- **SPEC-004.C40:** Blessed alpha libraries are documented, tested, and used by examples. They are recommended maintenance paths, not enforcement boundaries; trusted plugins may require lower-level namespaces or use raw SQLite schema when they accept compatibility cost.
+- **SPEC-004.C41:** `atom.plugin.alpha/load-plugin!` loads a local plugin directory containing required `atom-plugin.edn` metadata and executable `init.clj`. Absolute paths are used as-is; relative paths resolve against the daemon's selected config-dir.
+- **SPEC-004.C42:** The loader validates metadata before entry execution, loads `init.clj` with `load-file`, records metadata only after successful entry execution, and returns the recorded metadata map. Load failures fail loudly and do not record the plugin as loaded.
+- **SPEC-004.C43:** Plugin-authored metadata is an EDN map with required keys `:format-version 1` and `:name`; optional keys are `:version`, `:requires-atom`, and `:provides`. Unknown, namespaced, missing, or malformed metadata fails loudly before loading the entry file.
+- **SPEC-004.C44:** Plugin names canonicalize to symbols. Duplicate plugin metadata registration replaces prior metadata for REPL reload workflows.
+- **SPEC-004.C45:** The loader augments recorded metadata with loader-owned source facts including `:source`, `:dir`, `:init-file`, and `:loaded-at`.
+- **SPEC-004.C46:** Plugin metadata is daemon-lifetime runtime state and is not persisted in SQLite. Trusted REPL/config workflows can inspect the current registry.
+- **SPEC-004.C47:** Plugin-authored side effects before a thrown load error are trusted code effects and are not rolled back.
+- **SPEC-004.C48:** MVP plugin loading does not mutate the JVM classpath. Plugin package registries, git fetching, dependency solving, lockfiles, plugin-specific dependency/classpath mutation, and CLI plugin package commands are outside this contract.
+- **SPEC-004.C49:** Blessed `atom.*.alpha` namespaces are loaded from the selected world's configured Atom source checkout/classpath. Startup or REPL use fails loudly if those namespaces are unavailable.

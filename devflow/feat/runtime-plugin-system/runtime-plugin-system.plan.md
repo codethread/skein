@@ -144,3 +144,7 @@ Updated README examples to show selected config-dir `init.clj` bootstrapping def
 ### RPS-PLAN-001.DN12 Validation docs prep — 2026-06-25
 
 Full validation passed for the implemented runtime plugin system: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`. The feature-local spec deltas remain staged for root spec promotion in task 8, and `git status --short` showed no generated SQLite/runtime/plugin artifacts after validation.
+
+### RPS-PLAN-001.DN13 Shipped spec promotion — 2026-06-25
+
+Promoted the runtime plugin/library MVP contracts into root `devflow/specs/`: trusted local plugin loading via `atom.plugin.alpha/load-plugin!`, daemon-lifetime plugin metadata registry semantics, blessed `atom.*.alpha` library tiers, bootstrap/prelude REPL ergonomics, and CLI non-goals. Root specs explicitly keep package-manager behavior, git fetching, dependency solving, lockfiles, dynamic classpath mutation, and CLI plugin package/loader commands out of the shipped contract. Full validation passed again with `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.

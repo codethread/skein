@@ -37,5 +37,5 @@ tasks:
   - id: 8
     description: Promote shipped specs
     task_file: tasks/008-promote-shipped-specs.md
-    status: pending
+    status: complete
     blocked_by: [7]

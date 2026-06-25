@@ -55,10 +55,12 @@ daemon status
 - **SPEC-002.C16:** `daemon start` resolves the selected config-dir, reads `config.json`, requires valid `source`, launches the Clojure daemon from that source in the foreground, and passes the selected config-dir into the daemon. The daemon owns storage selection and loads selected config-dir `init.clj` when present.
 - **SPEC-002.C17:** `daemon repl` resolves the selected config-dir, reads `config.json`, requires valid `source`, verifies a reachable daemon for that world, and launches a local plain Clojure helper REPL from the source checkout already connected to the daemon.
 - **SPEC-002.C18:** `daemon repl --stdin` reads Clojure forms from stdin, evaluates them in the same connected helper context as the interactive REPL, prints one direct normal Clojure result per top-level form, and exits non-zero on read/eval errors. It does not impose a JSON or EDN response envelope; callers that want one machine-readable payload should send one top-level `do` or `let` form.
-- **SPEC-002.C19:** `daemon status` validates metadata and socket identity and reports health, selected config/state/data paths, daemon-owned database path, pid, daemon identity, socket endpoint, and nREPL endpoint. `daemon stop` stops only the matched daemon over the socket and waits for runtime metadata/socket cleanup.
+- **SPEC-002.C19:** `daemon repl` and `daemon repl --stdin` are the public CLI paths for users and agents that need to run trusted plugin/library Clojure code against a running daemon world.
+- **SPEC-002.C20:** `daemon status` validates metadata and socket identity and reports health, selected config/state/data paths, daemon-owned database path, pid, daemon identity, socket endpoint, and nREPL endpoint. `daemon stop` stops only the matched daemon over the socket and waits for runtime metadata/socket cleanup.
+- **SPEC-002.C21:** Plugin loading happens through selected config-dir `init.clj`, `atom.plugin.alpha/load-plugin!`, and trusted REPL workflows, not through task/query CLI commands. Runtime plugin support does not change the JSON socket allowlist or add plugin package/loader commands.
 
 ## SPEC-002.P4 Deferred
 
-`by-attr`, bespoke dependency inspection commands, `link`, `done`, `batch`, public CLI EDN query expressions, and query registry mutation commands are not part of the stripped public CLI.
+`by-attr`, bespoke dependency inspection commands, `link`, `done`, `batch`, public CLI EDN query expressions, query registry mutation commands, and plugin commands are not part of the stripped public CLI.
 
 The legacy `clojure -M:todo` entrypoint may remain available as an internal Clojure/dev support path, but it is not the public scripted CLI contract.
