@@ -11,6 +11,70 @@ import (
 	"time"
 )
 
+func TestInitBootstrapsConfigDirWorkspaceAndStartsDaemon(t *testing.T) {
+	cfg := shortTempDir(t)
+	source, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source = filepath.Join(source, "..")
+	source = filepath.Clean(source)
+	source, err = filepath.Abs(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := buildTodo(t)
+	out, err := outputTodo(bin, cfg, source, "init")
+	if err == nil || (!strings.Contains(out, "daemon socket unreachable") && !strings.Contains(out, "no running daemon")) {
+		t.Fatalf("expected daemon connection error on init, got out=%q err=%v", out, err)
+	}
+	configPath := filepath.Join(cfg, "config.json")
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("expected config bootstrap: %v", err)
+	}
+	var cfgFile map[string]any
+	b, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &cfgFile); err != nil {
+		t.Fatal(err)
+	}
+	if cfgFile["source"] != source || cfgFile["configFormat"] != "alpha" {
+		t.Fatalf("unexpected bootstrap config: %#v", cfgFile)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "libs.edn")); err != nil {
+		t.Fatalf("expected libs.edn bootstrap: %v", err)
+	}
+	initPath := filepath.Join(cfg, "init.clj")
+	if _, err := os.Stat(initPath); err != nil {
+		t.Fatalf("expected init.clj bootstrap: %v", err)
+	}
+	if got := string(mustReadFile(t, initPath)); got != "(require '[atom.libs.alpha :as libs])\n(libs/sync!)\n" {
+		t.Fatalf("unexpected init.clj bootstrap contents: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, ".git")); err != nil {
+		t.Fatalf("expected .git bootstrap: %v", err)
+	}
+
+	daemon := exec.Command(bin, "--config-dir", cfg, "daemon", "start")
+	daemon.Dir = source
+	var daemonOut bytes.Buffer
+	daemon.Stdout = &daemonOut
+	daemon.Stderr = &daemonOut
+	if err := daemon.Start(); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+	t.Cleanup(func() { _ = daemon.Process.Kill(); _, _ = daemon.Process.Wait() })
+	waitForStatus(t, bin, cfg, source, &daemonOut)
+	if err := runTodo(bin, cfg, source, "daemon", "stop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.Wait(); err != nil {
+		t.Fatalf("daemon did not exit cleanly: %v\n%s", err, daemonOut.String())
+	}
+}
+
 func TestGoDaemonLifecycleCommands(t *testing.T) {
 	dir := shortTempDir(t)
 	writeClientConfig(t, dir)
@@ -73,7 +137,7 @@ func TestTaskAndQueryCommandsRunOutsideCheckoutWithoutSource(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = daemon.Process.Kill(); _, _ = daemon.Process.Wait() })
 	waitForDaemonAndInit(t, bin, dir, runDir, &daemonOut)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","format":"json"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := outputTodo(bin, dir, runDir, "--format", "json", "daemon", "status"); err != nil || !strings.Contains(out, `"healthy":true`) {
@@ -124,6 +188,15 @@ func buildTodo(t *testing.T) string {
 	return bin
 }
 
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
 func addJSON(t *testing.T, bin, configDir, cwd, title, status, attr string) string {
 	t.Helper()
 	out, err := outputTodo(bin, configDir, cwd, "--format", "json", "add", title, "--status", status, "--attr", attr)
@@ -147,7 +220,7 @@ func writeClientConfig(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"source":`+quote(source)+`,"format":"human"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","source":`+quote(source)+`,"format":"human"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 }

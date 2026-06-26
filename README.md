@@ -1,155 +1,77 @@
-# Todo Graph MVP
+# Atom Todo Graph
 
-A small Clojure todo graph tool using `next.jdbc` + SQLite.
+Atom is a small daemon-backed task graph for coding agents and humans. It stores tasks locally in SQLite, exposes a thin `todo` CLI for scripts, and keeps richer customization in trusted daemon config and Clojure REPL workflows.
 
-It exists to give coding agents and humans a lightweight local task graph:
+## What it is for
 
-- tasks are stored in SQLite;
-- tasks have first-class `status`, `created_at`, `updated_at`, and `final_at` lifecycle fields;
-- open-ended task attributes are JSON stored as `TEXT` and queried with SQLite JSON1;
-- `task_edges` stores acyclic graph relationships used by task updates, including `depends-on` for readiness;
-- agents can use a stripped scriptable CLI or compact REPL API.
+- Track local task graphs without a hosted service.
+- Let coding agents create, update, query, and inspect structured task state.
+- Model dependencies with `depends-on` edges so agents can ask what is ready next.
+- Attach flexible JSON attributes to tasks and edges for userland workflows.
+- Customize the live daemon through trusted startup config, named queries, and REPL helpers.
 
-For contributor, debugging, and implementation guidance, see [AGENTS.md](./AGENTS.md). For durable behavior contracts, see the [Devflow spec index](./devflow/README.md#root-specs); for the daemon/REPL/CLI design mental model, see [Devflow Philosophy](./devflow/PHILOSOPHY.md).
+For contributor setup, validation, and debugging, see [CONTRIBUTING.md](./CONTRIBUTING.md). For canonical behavior contracts, see the [Devflow spec index](./devflow/README.md#root-specs).
 
-## Requirements
+## Bootstrap
 
-- Clojure CLI
-- Java / OpenJDK
-- SQLite, provided by the `org.xerial/sqlite-jdbc` dependency at runtime
-
-On this system, Homebrew OpenJDK may need to be put on PATH:
+Install the `todo` command from this checkout and point your default daemon world at it:
 
 ```sh
-PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
+go install ./cli/cmd/todo
+ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/atom"
+mkdir -p "$ATOM_CONFIG"
+printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$ATOM_CONFIG/config.json"
 ```
+
+This installs `todo` into your Go bin directory, which is commonly already on `PATH`. After that, day-to-day use goes through `todo`.
 
 ## Quickstart
 
-Run the unit tests and smoke demo:
+Start the daemon in one terminal:
 
 ```sh
-clojure -M:test
-(cd cli && go test ./...)
-clojure -M:smoke
+todo daemon start
 ```
 
-The smoke path builds and removes `./cli/bin/todo` while exercising the Go CLI against the daemon JSON socket.
-
-Build and use the daemon-backed Go CLI. The default daemon world reads `~/.config/atom/config.json`; create it with an absolute `source` path to this checkout:
+Use it from another terminal:
 
 ```sh
-go build -o ./cli/bin/todo ./cli/cmd/todo
-TODO="$PWD/cli/bin/todo"
-mkdir -p ~/.config/atom
-printf '{"source":"%s","format":"human"}\n' "$PWD" > ~/.config/atom/config.json
-"$TODO" daemon start
+todo init  # bootstraps missing config-dir files and git repo without overwriting existing files
+todo add "Sketch model" --status done --attr priority=high
+todo add "Write docs" --attr owner=agent
+todo --format json list
+todo --format json ready
+todo daemon stop
 ```
 
-Run task commands from another terminal and any working directory:
+Use `--config-dir <dir>` for an alternate daemon world. Its config lives in `<dir>/config.json`, runtime state in `<dir>/state`, and task data in `<dir>/data`.
 
-```sh
-"$TODO" daemon status
-"$TODO" init
-design=$("$TODO" add "Sketch model" --status done --attr priority=high)
-docs=$("$TODO" add "Write docs" --attr owner=agent)
-"$TODO" update "$docs" --edge depends-on:$design
-"$TODO" --format json ready
-"$TODO" daemon stop
-```
+Once the daemon is running, continue with [Getting started after the daemon is running](./docs/getting-started.md). If Clojure syntax is unfamiliar, keep [Tiny Clojure crash course for Atom users](./docs/clojure-crash-course.md) nearby.
 
-Use `--config-dir <dir>` for a disposable alternate daemon world; its config lives in `<dir>/config.json`, runtime state in `<dir>/state`, and data in `<dir>/data`.
+## Core model
 
-Use the connected helper REPL against a running daemon:
+Atom stores:
 
-```sh
-"$TODO" daemon repl
-```
+- tasks with generated text ids, title, status, lifecycle timestamps, and JSON attributes;
+- task edges with a type, direction, and JSON attributes;
+- acyclic graph relationships, rejecting cycles loudly;
+- `depends-on` edges used to calculate task readiness.
 
-```clojure
-(init!)
-(def design (:id (task! "Sketch model" "done" {:priority "high"})))
-(def docs (:id (task! "Write docs" {:owner "agent"})))
-(update! docs {:edges [{:type "depends-on" :to design}]})
-(defquery! 'agent-owned '[:= [:attr :owner] "agent"])
-(ready)
-```
+Final statuses are `done`, `failed`, and `cancelled`. Full semantics live in [Task Model](./devflow/specs/task-model.md).
 
-Agents can run trusted non-interactive forms through the same connected context. `--stdin` prints direct Clojure results, one per top-level form, with no CLI response envelope:
+## Customization model
 
-```sh
-printf '(ready)\n' | "$TODO" daemon repl --stdin
-```
+Atom is daemon-core-first. Runtime customization belongs in trusted daemon startup config and connected REPL workflows; the CLI stays small and scriptable.
 
-Named queries live in daemon memory for the current daemon lifetime. Load them from trusted `init.clj` in the selected config-dir or REPL helpers such as `defquery!` / `load-queries!`, then consume them from either REPL helpers or the small CLI surface:
+Named queries and runtime libraries are loaded into the selected daemon world, then consumed by helpers or by small CLI commands such as `list --query <name>`. The CLI intentionally does not grow loaders for arbitrary query or library files.
 
-```sh
-"$TODO" --format json list --query agent-owned
-"$TODO" daemon stop
-```
+## Reference
 
-The registry is not saved to SQLite; restart the daemon and reload trusted config/REPL query definitions when needed. The CLI intentionally has no `--query-file` loader so runtime customization stays daemon/REPL-owned, matching the daemon-core design described in [Devflow Philosophy](./devflow/PHILOSOPHY.md).
-
-## Runtime libraries and startup config
-
-Atom is not core-only: trusted runtime customization belongs in the selected daemon world's `init.clj` and connected REPL workflows. The selected `--config-dir` is also a user-owned library workspace. Keep the Atom checkout wherever `config.json` `source` points, then keep user/community source under the config-dir by Git repo, Git submodule, or manual copy. Atom does not clone source, install packages, or expose plugin/package/library activation commands in the public CLI.
-
-The blessed extension path is normal Clojure libraries: approve local roots in `libs.edn`, sync them into the daemon, then activate optional modules with `atom.libs.alpha/use!`.
-
-```clojure
-;; <config-dir>/libs.edn
-{:libs {community/graph {:local/root "libs/community-graph"}
-        my/config       {:local/root "/absolute/path/to/my-config-lib"}}}
-```
-
-Relative roots resolve against the selected config-dir; absolute roots are explicit user-approved paths. Roots are canonicalized, so symlinks and relative segments normalize before sync. Each local root should be a tools.deps project root, for example with its own `deps.edn` and `src` directory.
-
-A resilient `init.clj` can be mostly layered `use!` calls:
-
-```clojure
-(require '[atom.libs.alpha :as libs])
-
-(libs/sync!)
-
-(libs/use! :graph
-  {:ns 'community.graph.alpha
-   :libs #{'community/graph}
-   :call 'community.graph.alpha/install!})
-
-(libs/use! :my/config
-  {:ns 'my.config.alpha
-   :libs #{'my/config}
-   :after [:graph]
-   :call 'my.config.alpha/install!})
-```
-
-`use!` records loaded, skipped, and failed attempts for fix-forward inspection. Optional modules with missing roots or unmet `:after` gates skip without bricking daemon startup; malformed options and strict raw `require` still fail loudly when that is what you want.
-
-Inspect approved libraries, sync outcomes, and module-use state through the connected REPL or non-interactive stdin:
-
-```sh
-printf '(require '\''[atom.libs.alpha :as libs])\n(libs/approved)\n(libs/sync!)\n(libs/syncs)\n(libs/uses)\n' | "$TODO" daemon repl --stdin
-```
-
-REPL process boundaries matter: `libs/sync!` mutates the daemon JVM classpath, and `libs/use!` runs daemon-side activation. A direct `require` typed into a connected helper REPL uses that helper JVM's classpath, not newly synced daemon libraries. Use daemon-routed helpers for daemon-side activation, or put required daemon startup code in `init.clj`.
-
-Coupling tiers are explicit. `atom.libs.alpha` is the documented, tested path for library-workspace startup and REPL workflows. Supported lower-level libraries are available to trusted code when the coupling cost is worth it. Internal implementation namespaces are inspectable and callable, but may change freely. Raw SQLite/schema access is also allowed for trusted code, with the caller owning compatibility risk when persistence details change.
-
-## Data model
-
-The durable data contract is specified in [Task Model](./devflow/specs/task-model.md). At a high level:
-
-- tasks have a generated unique text id, title, status, lifecycle timestamps, and open-ended JSON object attributes;
-- final statuses are `done`, `failed`, and `cancelled`, and set `final_at`;
-- task edges connect two tasks with a canonical edge type and open-ended JSON object attributes;
-- edge writes reject unsupported types and directed cycles;
-- `depends-on` edges define readiness semantics.
-
-## Development
-
-See:
-
-- [AGENTS.md](./AGENTS.md) for contributor/debug/build guidance;
-- [Task Model](./devflow/specs/task-model.md) for data semantics;
-- [CLI Surface](./devflow/specs/cli.md) for full command vocabulary;
-- [REPL API](./devflow/specs/repl-api.md) for full helper vocabulary.
+- [Getting started](./docs/getting-started.md) — first CLI/REPL workflow after the daemon is running.
+- [Tiny Clojure crash course](./docs/clojure-crash-course.md) — enough syntax and vocabulary for humans using the REPL.
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — local setup, validation, debugging, and implementation guidance.
+- [CLI Surface](./devflow/specs/cli.md) — command vocabulary and output behavior.
+- [REPL API](./devflow/specs/repl-api.md) — helper vocabulary.
+- [Daemon Runtime](./devflow/specs/daemon-runtime.md) — daemon lifecycle and trusted startup config.
+- [Task Model](./devflow/specs/task-model.md) — data semantics.
+- [Devflow Philosophy](./devflow/PHILOSOPHY.md) — daemon-core design mental model.

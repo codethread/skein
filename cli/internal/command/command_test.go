@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"atom-todo-cli/internal/config"
 )
 
 func run(args ...string) (string, error) {
@@ -85,7 +88,7 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 
 func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"source":"/tmp/source","format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","source":"/tmp/source","format":"json"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	var captured Options
@@ -114,7 +117,7 @@ func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 	if err := os.MkdirAll(badDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(badDir, "config.json"), []byte(`{"where":"nope"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(badDir, "config.json"), []byte(`{"configFormat":"alpha","where":"nope"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run("--config-dir", badDir, "list"); err == nil || !strings.Contains(err.Error(), "unsupported client config key: where") {
@@ -125,18 +128,29 @@ func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 	if err := os.MkdirAll(oldDBDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(oldDBDir, "config.json"), []byte(`{"db":"old.sqlite"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(oldDBDir, "config.json"), []byte(`{"configFormat":"alpha","db":"old.sqlite"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run("--config-dir", oldDBDir, "list"); err == nil || !strings.Contains(err.Error(), "unsupported client config key: db") {
 		t.Fatalf("expected db unsupported error, got %v", err)
 	}
 
+	missingFormat := filepath.Join(t.TempDir(), "missing-format")
+	if err := os.MkdirAll(missingFormat, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(missingFormat, "config.json"), []byte(`{"source":"/tmp/source"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("--config-dir", missingFormat, "list"); err == nil || !strings.Contains(err.Error(), "configFormat is required") {
+		t.Fatalf("expected configFormat required error, got %v", err)
+	}
+
 	malformedDir := filepath.Join(t.TempDir(), "malformed")
 	if err := os.MkdirAll(malformedDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(malformedDir, "config.json"), []byte(`{"source":`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(malformedDir, "config.json"), []byte(`{"configFormat":"alpha","source":`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run("--config-dir", malformedDir, "list"); err == nil || !strings.Contains(err.Error(), "malformed client config") {
@@ -147,11 +161,161 @@ func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 	if err := os.MkdirAll(wrongTypeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(wrongTypeDir, "config.json"), []byte(`{"source":123}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wrongTypeDir, "config.json"), []byte(`{"configFormat":"alpha","source":123}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run("--config-dir", wrongTypeDir, "list"); err == nil || !strings.Contains(err.Error(), "client config source must be a string") {
 		t.Fatalf("expected source type error, got %v", err)
+	}
+}
+
+func TestInitBootstrapsWorkspaceWhenMissingAndCallsInit(t *testing.T) {
+	cfg := t.TempDir()
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "deps.edn"), []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(source); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	var clientCalled bool
+	var initCalled bool
+	captured := Options{}
+	origClient := newClient
+	origGit := runGitInit
+	newClient = func(o Options) Caller {
+		clientCalled = true
+		captured = o
+		return &fakeClient{}
+	}
+	runGitInit = func(configDir string) error {
+		tgt, err := filepath.EvalSymlinks(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if configDir != tgt {
+			t.Fatalf("unexpected git init dir: %s", configDir)
+		}
+		initCalled = true
+		return nil
+	}
+	t.Cleanup(func() {
+		newClient = origClient
+		runGitInit = origGit
+	})
+	if _, err := run("--config-dir", cfg, "init"); err != nil {
+		t.Fatal(err)
+	}
+	if !clientCalled {
+		t.Fatal("expected init to call daemon init")
+	}
+	if !initCalled {
+		t.Fatal("expected git init to run")
+	}
+	cfgFile := filepath.Join(cfg, "config.json")
+	if _, err := os.Stat(cfgFile); err != nil {
+		t.Fatalf("missing config.json: %v", err)
+	}
+	var c struct {
+		ConfigFormat string `json:"configFormat"`
+		Source       string `json:"source"`
+		Format       string `json:"format"`
+	}
+	f, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(f, &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.ConfigFormat != "alpha" || c.Format != config.DefaultFormat {
+		t.Fatalf("unexpected config fields: %#v", c)
+	}
+	realSource, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Source != realSource {
+		t.Fatalf("unexpected source: %q", c.Source)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "libs")); err != nil {
+		t.Fatalf("missing libs directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "libs.edn")); err != nil {
+		t.Fatalf("missing libs.edn: %v", err)
+	}
+	initPath := filepath.Join(cfg, "init.clj")
+	if _, err := os.Stat(initPath); err != nil {
+		t.Fatalf("missing init.clj: %v", err)
+	}
+	if got := string(mustReadFile(t, initPath)); got != "(require '[atom.libs.alpha :as libs])\n(libs/sync!)\n" {
+		t.Fatalf("unexpected init.clj contents: %q", got)
+	}
+	realCfg, err := filepath.EvalSymlinks(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured.ConfigDir != realCfg {
+		t.Fatalf("unexpected resolved config-dir: %#v", captured)
+	}
+}
+
+func TestInitValidatesExistingConfigButDoesNotRewriteMissingKeys(t *testing.T) {
+	cfg := t.TempDir()
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "deps.edn"), []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(source); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := os.MkdirAll(filepath.Join(cfg, ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cfg, "libs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	original := `{"configFormat":"alpha","format":"json","source":"` + source + `"}`
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "libs.edn"), []byte("{:libs {}}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "init.clj"), []byte("(comment \"custom\")\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	origClient := newClient
+	origGit := runGitInit
+	newClient = func(o Options) Caller { return &fakeClient{} }
+	runGitInit = func(configDir string) error {
+		t.Fatalf("git init should not run when .git exists")
+		return nil
+	}
+	t.Cleanup(func() { newClient = origClient; runGitInit = origGit })
+	if _, err := run("--config-dir", cfg, "init"); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(cfg, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != original {
+		t.Fatalf("config should not be rewritten\nexpected: %q\nactual: %q", original, string(raw))
+	}
+	initPath := filepath.Join(cfg, "init.clj")
+	if got := string(mustReadFile(t, initPath)); got != "(comment \"custom\")\n" {
+		t.Fatalf("init.clj should not be overwritten, got: %q", got)
 	}
 }
 
@@ -161,7 +325,7 @@ func TestDaemonStartLaunchesFromConfiguredSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "deps.edn"), []byte(`{}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"source":"`+source+`"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","source":"`+source+`"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	var launched Options
@@ -197,7 +361,7 @@ func TestDaemonReplVerifiesDaemonAndLaunchesFromConfiguredSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "deps.edn"), []byte(`{}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"source":"`+source+`"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","source":"`+source+`"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	origClient := newClient
@@ -230,13 +394,53 @@ func TestDaemonReplVerifiesDaemonAndLaunchesFromConfiguredSource(t *testing.T) {
 	}
 }
 
+func TestDaemonStartSupportsHomeRelativeSource(t *testing.T) {
+	cfg := t.TempDir()
+	home := t.TempDir()
+	homeSource := filepath.Join(home, "atom")
+	if err := os.MkdirAll(homeSource, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(homeSource, "deps.edn"), []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","source":"~/atom"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var launched Options
+	orig := runDaemonProcess
+	runDaemonProcess = func(o Options, out, errOut io.Writer) error {
+		launched = o
+		return nil
+	}
+	t.Cleanup(func() { runDaemonProcess = orig })
+	if _, err := run("--config-dir", cfg, "daemon", "start"); err != nil {
+		t.Fatal(err)
+	}
+	realCfg, err := filepath.EvalSymlinks(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launched.Source != homeSource || launched.ConfigDir != realCfg || !launched.ConfigDirExplicit {
+		t.Fatalf("unexpected launch options: %#v", launched)
+	}
+	raw, err := os.ReadFile(filepath.Join(cfg, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"source":"~/atom"`) {
+		t.Fatalf("expected stored source to remain unchanged, got: %q", string(raw))
+	}
+}
+
 func TestDaemonReplStatusFailureBlocksLaunch(t *testing.T) {
 	cfg := t.TempDir()
 	source := t.TempDir()
 	if err := os.WriteFile(filepath.Join(source, "deps.edn"), []byte(`{}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"source":"`+source+`"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","source":"`+source+`"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	origClient := newClient
@@ -258,7 +462,7 @@ func TestDaemonReplStatusFailureBlocksLaunch(t *testing.T) {
 
 func TestSourceValidationForDaemonStart(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"source":"relative"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","source":"relative"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run("--config-dir", dir, "daemon", "start"); err == nil || !strings.Contains(err.Error(), "source must be an absolute path") {
@@ -266,7 +470,7 @@ func TestSourceValidationForDaemonStart(t *testing.T) {
 	}
 
 	missingDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(missingDir, "config.json"), []byte(`{"source":"/definitely/missing/atom-source"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(missingDir, "config.json"), []byte(`{"configFormat":"alpha","source":"/definitely/missing/atom-source"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run("--config-dir", missingDir, "daemon", "start"); err == nil || !strings.Contains(err.Error(), "source must be an existing directory") {
@@ -275,7 +479,7 @@ func TestSourceValidationForDaemonStart(t *testing.T) {
 
 	source := t.TempDir()
 	noDepsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(noDepsDir, "config.json"), []byte(`{"source":"`+source+`"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(noDepsDir, "config.json"), []byte(`{"configFormat":"alpha","source":"`+source+`"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run("--config-dir", noDepsDir, "daemon", "start"); err == nil || !strings.Contains(err.Error(), "source must contain deps.edn") {
@@ -294,7 +498,7 @@ func TestXDGConfigLoading(t *testing.T) {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"configFormat":"alpha","format":"json"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	var captured Options
@@ -310,6 +514,15 @@ func TestXDGConfigLoading(t *testing.T) {
 	if captured.ConfigDir != filepath.Join(dir, "atom") || captured.StateDir != filepath.Join(stateDir, "atom") {
 		t.Fatalf("unexpected default world: %#v", captured)
 	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 type fakeClient struct {
@@ -336,7 +549,7 @@ func (f *fakeClient) Call(op string, args map[string]any) (any, error) {
 func testConfig(t *testing.T) string {
 	t.Helper()
 	path := t.TempDir()
-	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"format":"human"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"configFormat":"alpha","format":"human"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return path

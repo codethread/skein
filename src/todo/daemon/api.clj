@@ -48,11 +48,18 @@
 (defn- libs-file [runtime]
   (io/file (config-dir runtime) "libs.edn"))
 
+(defn- expand-user-home [path]
+  (cond
+    (= "~" path) (System/getProperty "user.home")
+    (str/starts-with? path "~/") (str (System/getProperty "user.home") (subs path 1))
+    :else path))
+
 (defn- canonical-root [runtime path]
-  (let [file (io/file path)
+  (let [expanded-path (expand-user-home path)
+        file (io/file expanded-path)
         resolved (if (.isAbsolute file)
                    file
-                   (io/file (config-dir runtime) path))]
+                   (io/file (config-dir runtime) expanded-path))]
     (.getCanonicalPath resolved)))
 
 (defn- validate-approved-lib-entry! [lib entry]

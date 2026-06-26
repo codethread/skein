@@ -113,12 +113,19 @@
       (let [config (json/read-str (slurp file) :key-fn keyword)]
         (when-not (map? config)
           (throw (ex-info "Client config must be a JSON object" {:config (.getPath file)})))
-        (when-let [unknown (seq (remove #{:source :format} (keys config)))]
+        (when-let [unknown (seq (remove #{:configFormat :source :format} (keys config)))]
           (throw (ex-info "Unsupported client config keys" {:config (.getPath file) :keys (vec unknown)})))
+        (when-not (and (contains? config :configFormat)
+                       (string? (:configFormat config)))
+          (throw (ex-info "Client config configFormat must be a string" {:config (.getPath file)})))
+        (when-not (= "alpha" (:configFormat config))
+          (throw (ex-info "Client config configFormat must be \"alpha\"" {:config (.getPath file)})))
         (when-not (or (nil? (:source config)) (string? (:source config)))
           (throw (ex-info "Client config source must be a string" {:config (.getPath file)})))
         (when-not (or (nil? (:format config)) (string? (:format config)))
           (throw (ex-info "Client config format must be a string" {:config (.getPath file)})))
+        (when-not (or (nil? (:format config)) (s/valid? ::specs/format (:format config)))
+          (throw (ex-info "Client config format must be one of human, edn, or json" {:config (.getPath file)})))
         config)
       {})))
 

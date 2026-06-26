@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const DefaultFormat = "human"
 const ConfigFileName = "config.json"
 const DefaultDBFileName = "tasks.sqlite"
 
-var allowedKeys = map[string]bool{"source": true, "format": true}
+var allowedKeys = map[string]bool{"configFormat": true, "source": true, "format": true}
 
 type World struct {
 	ConfigDir  string
@@ -22,8 +23,9 @@ type World struct {
 }
 
 type Config struct {
-	Source string `json:"source"`
-	Format string `json:"format"`
+	ConfigFormat string `json:"configFormat"`
+	Source       string `json:"source"`
+	Format       string `json:"format"`
 }
 
 func DefaultWorld() (World, error) {
@@ -87,6 +89,16 @@ func Load(configDir string) (Config, World, error) {
 		}
 	}
 	var c Config
+	if v, ok := raw["configFormat"]; ok {
+		if err := json.Unmarshal(v, &c.ConfigFormat); err != nil {
+			return Config{}, World{}, fmt.Errorf("client config configFormat must be a string")
+		}
+	} else {
+		return Config{}, World{}, fmt.Errorf("client config configFormat is required")
+	}
+	if c.ConfigFormat != "alpha" {
+		return Config{}, World{}, fmt.Errorf("unsupported client config configFormat: %s", c.ConfigFormat)
+	}
 	if v, ok := raw["source"]; ok {
 		if err := json.Unmarshal(v, &c.Source); err != nil {
 			return Config{}, World{}, fmt.Errorf("client config source must be a string")
@@ -103,22 +115,41 @@ func Load(configDir string) (Config, World, error) {
 	return c, w, nil
 }
 
-func ValidateSource(source string) error {
+func ResolveSource(source string) (string, error) {
 	if source == "" {
-		return fmt.Errorf("client config source is required for daemon lifecycle commands; set source in %s", ConfigFileName)
+		return "", fmt.Errorf("client config source is required for daemon lifecycle commands; set source in %s", ConfigFileName)
 	}
-	if !filepath.IsAbs(source) {
-		return fmt.Errorf("client config source must be an absolute path: %s", source)
+	resolvedSource := source
+	if strings.HasPrefix(source, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if source == "~" {
+			resolvedSource = home
+		} else if strings.HasPrefix(source, "~/") {
+			resolvedSource = filepath.Join(home, source[2:])
+		} else if strings.HasPrefix(source, `~\\`) {
+			resolvedSource = filepath.Join(home, source[2:])
+		}
 	}
-	st, err := os.Stat(source)
+	if !filepath.IsAbs(resolvedSource) {
+		return "", fmt.Errorf("client config source must be an absolute path: %s", resolvedSource)
+	}
+	st, err := os.Stat(resolvedSource)
 	if err != nil {
-		return fmt.Errorf("client config source must be an existing directory: %s", source)
+		return "", fmt.Errorf("client config source must be an existing directory: %s", resolvedSource)
 	}
 	if !st.IsDir() {
-		return fmt.Errorf("client config source must be an existing directory: %s", source)
+		return "", fmt.Errorf("client config source must be an existing directory: %s", resolvedSource)
 	}
-	if st, err := os.Stat(filepath.Join(source, "deps.edn")); err != nil || st.IsDir() {
-		return fmt.Errorf("client config source must contain deps.edn: %s", source)
+	if st, err := os.Stat(filepath.Join(resolvedSource, "deps.edn")); err != nil || st.IsDir() {
+		return "", fmt.Errorf("client config source must contain deps.edn: %s", resolvedSource)
 	}
-	return nil
+	return resolvedSource, nil
+}
+
+func ValidateSource(source string) error {
+	_, err := ResolveSource(source)
+	return err
 }

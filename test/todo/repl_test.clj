@@ -1,13 +1,15 @@
 (ns todo.repl-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
+            [todo.client]
             [todo.daemon.config :as daemon-config]
             [todo.daemon.runtime :as runtime]
             [todo.db-test :as db-test]
             [todo.repl :as repl]))
 
 (defn reset-open-state! []
-  (reset! (var-get (ns-resolve 'todo.repl 'active-config-dir)) nil))
+  (reset! (var-get (ns-resolve 'todo.repl 'active-config-dir))
+          (var-get (ns-resolve 'todo.repl 'no-connection))))
 
 (defn with-runtime [f]
   (let [db-file (db-test/temp-db-file)
@@ -30,6 +32,15 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo
                         #"No todo daemon world is connected"
                         (repl/load-queries! "/path/does/not/matter.edn"))))
+
+(deftest connect-without-arg-checks-default-world-not-explicit-config-dir
+  (let [calls (atom [])]
+    (with-redefs [todo.client/status-world (fn [config-dir]
+                                             (swap! calls conj config-dir)
+                                             {:ok true})]
+      (is (= (:config-dir (daemon-config/world)) (repl/connect!)))
+      (is (= [nil] @calls)))
+    (reset-open-state!)))
 
 (deftest connect-fails-without-selecting-a-daemon
   (let [config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]

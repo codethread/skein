@@ -9,13 +9,13 @@ Always study [TENETS](./TENETS.md) and [PHILOSOPHY](./PHILOSOPHY.md). No code, s
 Root specs are canonical for shipped behavior:
 
 - [Task Model](./specs/task-model.md) — task records, JSON attributes, edge semantics, and readiness rules.
-- [CLI Surface](./specs/cli.md) — scriptable command contract for agents.
-- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract.
-- [Daemon Runtime](./specs/daemon-runtime.md) — local long-lived daemon lifecycle, metadata, transport, and trusted startup config.
+- [CLI Surface](./specs/cli.md) — scriptable command contract for agents, including the thin Go CLI and JSON socket boundary.
+- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL and runtime library workspace helpers.
+- [Daemon Runtime](./specs/daemon-runtime.md) — local long-lived daemon lifecycle, metadata, transports, trusted startup config, query registry, and runtime library workspace model.
 
 ## Active features
 
-- `runtime-library-workspace` — reviewed plan for config-dir Clojure library workspaces, approved local roots, daemon-side `use!` activation, and layered resilient startup.
+None.
 
 ## Archived features
 
@@ -28,5 +28,6 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-25__daemon-query-registry` — shipped in-memory daemon query registry managed through REPL/config workflows and consumed by CLI named queries.
 - `26-06-25__go-cli-migration` — shipped native Go `todo` CLI over the daemon JSON Unix socket, with JSON-only machine output and Clojure REPL/config retained for rich workflows.
 - `26-06-25__user-daemon-home` — shipped config-dir daemon worlds, fixed selected-world socket discovery, default daemon init, and connected REPL/stdin UX.
-- `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the active runtime library workspace model in the canonical root specs.
+- `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the runtime library workspace model in the canonical root specs.
+- `26-06-26__runtime-library-workspace` — shipped config-dir Clojure library workspaces with `libs.edn`, approved local roots, daemon-side `atom.libs.alpha/sync!` and `use!`, module-use introspection, and replacement of the plugin-directory public extension API.
 - `26-06-24__stripped-task-api` — shipped smaller CLI/REPL surface with first-class task lifecycle fields.

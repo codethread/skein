@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"atom-todo-cli/internal/client"
@@ -66,7 +67,7 @@ func (a *App) rootCommand() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&o.Format, "format", "", "output format: human or json")
 	root.AddCommand(&cobra.Command{Use: "init", Short: "Initialize task storage", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		return a.withConfig(o, func(r Options) error { return a.call(r, "init", map[string]any{}) })
+		return a.initCommand(o)
 	}})
 
 	add := &cobra.Command{Use: "add <title>", Short: "Create a task", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -314,17 +315,106 @@ var runReplProcess = func(o Options, stdin bool, in io.Reader, out, errOut io.Wr
 	return runProcess(o.Source, replArgs(o, stdin), in, out, errOut)
 }
 
-func (a *App) launchDaemon(o Options) error {
-	if err := config.ValidateSource(o.Source); err != nil {
+var runGitInit = func(configDir string) error {
+	cmd := exec.Command("git", "init")
+	cmd.Dir = configDir
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			return &ExitError{Code: exit.ExitCode(), Err: err}
+		}
 		return err
 	}
+	return nil
+}
+
+func (a *App) initCommand(o Options) error {
+	if err := a.bootstrapConfigDir(o); err != nil {
+		return err
+	}
+	if err := a.withConfig(o, func(r Options) error {
+		return a.call(r, "init", map[string]any{})
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *App) bootstrapConfigDir(o Options) error {
+	world, err := config.ExplicitWorld(o.ConfigDir)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(world.ConfigDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(world.ConfigDir, "libs"), 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Stat(world.ConfigFile); os.IsNotExist(err) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		absSource, err := filepath.Abs(cwd)
+		if err != nil {
+			return err
+		}
+		if err := config.ValidateSource(absSource); err != nil {
+			return err
+		}
+		cfg := config.Config{ConfigFormat: "alpha", Source: absSource, Format: config.DefaultFormat}
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(world.ConfigFile, append(data, '\n'), 0o644); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(world.ConfigDir, "libs.edn")); os.IsNotExist(err) {
+		if err := os.WriteFile(filepath.Join(world.ConfigDir, "libs.edn"), []byte("{:libs {}}\n"), 0o644); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(world.ConfigDir, "init.clj")); os.IsNotExist(err) {
+		if err := os.WriteFile(filepath.Join(world.ConfigDir, "init.clj"), []byte("(require '[atom.libs.alpha :as libs])\n(libs/sync!)\n"), 0o644); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(world.ConfigDir, ".git")); os.IsNotExist(err) {
+		if err := runGitInit(world.ConfigDir); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if _, _, err := config.Load(world.ConfigDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *App) launchDaemon(o Options) error {
+	source, err := config.ResolveSource(o.Source)
+	if err != nil {
+		return err
+	}
+	o.Source = source
 	return runDaemonProcess(o, a.Stdout, a.Stderr)
 }
 
 func (a *App) launchRepl(o Options, stdin bool) error {
-	if err := config.ValidateSource(o.Source); err != nil {
+	source, err := config.ResolveSource(o.Source)
+	if err != nil {
 		return err
 	}
+	o.Source = source
 	if _, err := newClient(o).Call("status", map[string]any{}); err != nil {
 		return err
 	}

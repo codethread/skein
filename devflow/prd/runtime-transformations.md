@@ -3,15 +3,15 @@
 **Document ID:** `PRD-001`
 **Status:** Draft
 **Last Updated:** 2026-06-25
-**Related:** [Devflow Philosophy](../PHILOSOPHY.md), [Task Model](../specs/task-model.md), [CLI Surface](../specs/cli.md), [REPL API](../specs/repl-api.md), [Daemon Runtime](../specs/daemon-runtime.md)
+**Related:** [Devflow Philosophy](../PHILOSOPHY.md), [Task Model](../specs/task-model.md), [CLI Surface](../specs/cli.md), [REPL API](../specs/repl-api.md), [Daemon Runtime](../specs/daemon-runtime.md), [Runtime Library Workspace archive](../archive/26-06-26__runtime-library-workspace/)
 
 ## PRD-001.P1 Vision
 
 Atom should treat persisted tasks and edges as durable facts, and treat almost everything else as runtime transformation over those facts.
 
-SQLite remains the long-term persistence layer for the task graph. The daemon is the live application core. Trusted Clojure config and REPL workflows define runtime behavior. The CLI remains a small convenience and low-privilege invocation surface for common operations and known daemon behavior. Runtime transformations require a running daemon; CLI examples in this document are daemon-mediated calls against the selected config-dir world, not direct SQLite access.
+SQLite remains the long-term persistence layer for the task graph. The daemon is the live application core. Trusted Clojure config, runtime libraries, and REPL workflows define runtime behavior. The selected config-dir is now the user-owned runtime library workspace: `init.clj` boots trusted code, `libs.edn` approves local roots, and `atom.libs.alpha/sync!` / `use!` make libraries available and activate modules in daemon memory. The CLI remains a small convenience and low-privilege invocation surface for common operations and known daemon behavior. Runtime transformations require a running daemon; CLI examples in this document are daemon-mediated calls against the selected config-dir world, not direct SQLite access.
 
-This should feel closer to Emacs than to a stateless command-line utility: start the daemon, load trusted runtime behavior, explore and refine in the REPL, and let constrained workers invoke named behavior without needing broad REPL access.
+This should feel closer to Emacs than to a stateless command-line utility: start the daemon, load trusted runtime behavior from config-dir libraries, explore and refine in the REPL, and let constrained workers invoke named behavior without needing broad REPL access.
 
 ## PRD-001.P2 Problem
 
@@ -52,9 +52,10 @@ Runtime transformations have three layers:
    - Good for parent/child traversal, ancestor/descendant expansion, subgraph extraction, edge lookup, and batch hydration.
 
 3. **Trusted Clojure views: orchestration and shaping**
-   - Daemon-memory runtime functions loaded from trusted config or defined in the REPL.
+   - Daemon-memory runtime functions installed by trusted config-dir libraries or defined in the REPL.
    - Compose queries, graph primitives, and arbitrary Clojure filters.
    - Good for domain-specific views, scoring, grouping, ranking, custom output shapes, and chained workflows.
+   - Expected to ship first as blessed `atom.*.alpha` libraries layered on the runtime library workspace, not as public CLI loaders or plugin-directory APIs.
 
 The preferred flow is:
 
@@ -70,7 +71,7 @@ A user tracks repository ownership in task attributes:
 {:repo "atom"}
 ```
 
-Trusted config or REPL registers a named query:
+Trusted config, a config-dir runtime library, or REPL registers a named query:
 
 ```clojure
 (require '[todo.daemon.api :as todo])
@@ -143,7 +144,9 @@ The exact API is illustrative. The product requirement is the composition patter
 
 ## PRD-001.P7 First buildable slice
 
-The first view-oriented slice should prove the architecture without implementing every graph helper.
+The runtime library workspace is already shipped. The first view-oriented slice should build on it rather than inventing another extension mechanism. Prefer a blessed source-visible library namespace such as `atom.graph.alpha` or `atom.views.alpha`, activated from config-dir `init.clj` via `atom.libs.alpha/use!`, with thin daemon API primitives underneath only where core access is required.
+
+The first slice should prove the architecture without implementing every graph helper.
 
 Minimum useful primitive set:
 
@@ -152,8 +155,9 @@ Minimum useful primitive set:
 - **PRD-001.MVP3:** `ancestor-root-ids` over `parent-of` for walking from seed work up to feature roots;
 - **PRD-001.MVP4:** `subgraph` or `descendant-ids` over `parent-of` for expanding from feature roots back down to full DAGs;
 - **PRD-001.MVP5:** `tasks-by-ids` for batch hydration;
-- **PRD-001.MVP6:** a trusted `register-view!` / `view!` path for read-only Clojure views;
-- **PRD-001.MVP7:** no CLI view invocation until output contracts are designed, unless a feature explicitly scopes that work.
+- **PRD-001.MVP6:** a trusted `register-view!` / `view!` path for read-only Clojure views, probably exposed through a blessed runtime library namespace rather than the base `todo.repl` helper surface;
+- **PRD-001.MVP7:** module activation through existing `libs.edn`, `libs/sync!`, and `libs/use!` workflows;
+- **PRD-001.MVP8:** no CLI view invocation until output contracts are designed, unless a feature explicitly scopes that work.
 
 This slice is enough to validate the flagship shape: query active seed ids -> walk to feature roots -> expand feature DAGs -> hydrate -> Clojure shape. More graph helpers should be added only when a concrete view needs them.
 
@@ -185,7 +189,8 @@ Potential runtime primitives:
 - **PRD-001.R1:** `register-query!` for EDN query definitions.
 - **PRD-001.R2:** `register-view!` for trusted Clojure view functions.
 - **PRD-001.R3:** `view!` for invoking registered views from trusted code.
-- **PRD-001.R4:** CLI view invocation for known registered views, if a future feature defines a stable output contract.
+- **PRD-001.R4:** library activation through existing `atom.libs.alpha/sync!` and `use!`, not a new plugin/package surface.
+- **PRD-001.R5:** CLI view invocation for known registered views, if a future feature defines a stable output contract.
 
 ## PRD-001.P9 Performance model
 
@@ -219,11 +224,11 @@ The CLI should not become the place users load views, define functions, submit r
 
 ## PRD-001.P11 Runtime definition lifecycle
 
-Runtime definitions live in trusted Clojure files or active REPL sessions, not in SQLite. For repeatable automation, teams should keep canonical query/view definitions in versioned config files loaded by daemon startup config. REPL definitions are for exploration and local session work.
+Runtime definitions live in trusted Clojure files, approved config-dir libraries, or active REPL sessions, not in SQLite. For repeatable automation, teams should keep canonical query/view definitions in versioned config-dir libraries loaded by daemon startup config. REPL definitions are for exploration and local session work.
 
 A low-privilege worker invoking a named query/view should treat absence as a loud operational failure: either the daemon was started without the expected config, the wrong database/runtime was selected, or the runtime was restarted without reloading definitions.
 
-Names should be stable, simple, and documented near the config that registers them. The daemon registry is authoritative only for the current daemon lifetime.
+Names should be stable, simple, and documented near the config or library module that registers them. The daemon registry is authoritative only for the current daemon lifetime.
 
 ## PRD-001.P12 Parameter contract
 
@@ -240,6 +245,7 @@ Examples using values such as `:since` are conceptual unless paired with trusted
 - **PRD-001.NG3:** Do not grow the EDN query DSL into a full programming language.
 - **PRD-001.NG4:** Do not require every useful transformation to become a durable schema concept.
 - **PRD-001.NG5:** Do not optimize for untrusted plugin execution in the initial model.
+- **PRD-001.NG6:** Do not revive the superseded plugin-directory public API; runtime transformations should use the shipped runtime library workspace model.
 
 ## PRD-001.P14 Open design questions
 

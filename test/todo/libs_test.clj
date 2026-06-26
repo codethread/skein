@@ -77,6 +77,16 @@
                                        :root (.getCanonicalPath relative-root)}}}
                (libs/approved)))))))
 
+(deftest approved-expands-home-relative-roots
+  (with-runtime
+    (fn [_ config-dir]
+      (let [home (System/getProperty "user.home")
+            home-root (io/file home "dev" "projects" "my-lib")]
+        (write-libs! config-dir (pr-str {:libs {'demo/home {:local/root "~/dev/projects/my-lib"}}}))
+        (is (= {:libs {'demo/home {:local/root "~/dev/projects/my-lib"
+                                   :root (.getCanonicalPath home-root)}}}
+               (libs/approved)))))))
+
 (deftest approved-canonicalizes-symlink-roots
   (with-runtime
     (fn [_ config-dir]

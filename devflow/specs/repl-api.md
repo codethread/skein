@@ -55,7 +55,7 @@ ready
 
 Approved library config lives in `libs.edn` in the selected config-dir. The MVP config is an EDN map with exactly one top-level key, `:libs`. `:libs` is a map from symbol library coordinates to maps containing exactly one required key, `:local/root`, whose value is a non-blank string path. Unknown top-level keys, non-symbol coordinates, missing `:libs`, non-map entries, unknown per-lib keys, and missing/non-string `:local/root` fail loudly as structural config errors.
 
-Relative `:local/root` values resolve against selected config-dir; absolute roots are accepted as explicit user-approved paths. Normalized approved config returns entries shaped as `{lib-symbol {:local/root original-path :root canonical-path}}`. Per-library missing or unreadable local roots are not structural config errors; `(libs/sync!)` records them as failed sync outcomes so optional module activation can skip without aborting daemon startup.
+Relative `:local/root` values resolve against selected config-dir; absolute roots are accepted as explicit user-approved paths; leading `~` and `~/` expand to the user home directory. Normalized approved config returns entries shaped as `{lib-symbol {:local/root original-path :root canonical-path}}`. Per-library missing or unreadable local roots are not structural config errors; `(libs/sync!)` records them as failed sync outcomes so optional module activation can skip without aborting daemon startup.
 
 Helpers include:
 

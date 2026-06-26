@@ -1,8 +1,8 @@
 # Runtime Library Workspace Plan
 
 **Document ID:** `RLW-PLAN-001`
-**Status:** Reviewed
-**Last Updated:** 2026-06-25
+**Status:** Shipped
+**Last Updated:** 2026-06-26
 **Proposal:** [proposal.md](./proposal.md)
 **Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md)
 **Related RFCs:** None
@@ -163,3 +163,7 @@ Removed the thin `atom.prelude.alpha` alias namespace and its tests/docs referen
 ### RLW-PLAN-001.DN14 Alignment fix-forward — 2026-06-25
 
 Post-build alignment review found one blessed-path boundary bug: `use! :file` rejected absolute paths but allowed relative traversal such as `../mod.clj`, which contradicted the selected-config-dir-relative contract. Fixed `todo.daemon.api/use!` to reject `:file` targets whose canonical path escapes the selected config-dir, added regression coverage, and updated root/feature REPL specs. Validation passed afterward: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.
+
+### RLW-PLAN-001.DN15 Shipped and archived — 2026-06-26
+
+Feature is complete and root specs are canonical for the runtime library workspace model: `atom.libs.alpha`, `libs.edn`, approved local roots, daemon-side `sync!`/`use!`, module-use introspection, and the removal of plugin-directory loading as public extension API. No RFCs are archived with this feature. Further config bootstrap/refactor work is tracked outside this feature.

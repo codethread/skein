@@ -4,12 +4,16 @@
             [todo.daemon.config :as daemon-config]
             [todo.query :as query]))
 
-(defonce ^:private active-config-dir (atom nil))
+(def ^:private no-connection ::no-connection)
+(def ^:private default-world ::default-world)
+(defonce ^:private active-config-dir (atom no-connection))
 
 (defn connected-config-dir []
-  (or @active-config-dir
-      (throw (ex-info "No todo daemon world is connected. Start a connected helper REPL with `todo daemon repl`, or call (connect!) / (connect! \"/path/to/config-dir\") before using todo.repl helpers."
-                      {:helper 'connect!}))))
+  (case @active-config-dir
+    ::no-connection (throw (ex-info "No todo daemon world is connected. Start a connected helper REPL with `todo daemon repl`, or call (connect!) / (connect! \"/path/to/config-dir\") before using todo.repl helpers."
+                                   {:helper 'connect!}))
+    ::default-world nil
+    @active-config-dir))
 
 (defn- config-dir []
   (connected-config-dir))
@@ -18,12 +22,18 @@
   ([]
    (connect! nil))
   ([config-dir]
-   (reset! active-config-dir nil)
+   (reset! active-config-dir no-connection)
    (when (and config-dir (.isFile (java.io.File. config-dir)))
      (throw (ex-info "connect! expects a daemon config directory, not a database file" {:config-dir config-dir})))
    (let [world (daemon-config/world config-dir)]
-     (client/status-world (:config-dir world))
-     (reset! active-config-dir (:config-dir world)))))
+     (if config-dir
+       (do
+         (client/status-world (:config-dir world))
+         (reset! active-config-dir (:config-dir world)))
+       (do
+         (client/status-world nil)
+         (reset! active-config-dir default-world)))
+     (:config-dir world))))
 
 (defn- daemon [op & args]
   (apply client/call-world (config-dir) {} op args))
@@ -120,6 +130,7 @@
                             (throw (ex-info "Usage: todo.repl [--stdin] [config-dir]" {:args args})))]
     (connect! config-dir)
     (binding [*ns* (the-ns 'todo.repl)]
+      (require '[atom.libs.alpha :as libs])
       (case mode
         :stdin (try
                  (eval-stdin!)
