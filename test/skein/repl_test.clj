@@ -1,15 +1,15 @@
-(ns todo.repl-test
+(ns skein.repl-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [todo.client]
-            [todo.daemon.config :as daemon-config]
-            [todo.daemon.runtime :as runtime]
-            [todo.db-test :as db-test]
-            [todo.repl :as repl]))
+            [skein.client]
+            [skein.weaver.config :as daemon-config]
+            [skein.weaver.runtime :as runtime]
+            [skein.db-test :as db-test]
+            [skein.repl :as repl]))
 
 (defn reset-open-state! []
-  (reset! (var-get (ns-resolve 'todo.repl 'active-config-dir))
-          (var-get (ns-resolve 'todo.repl 'no-connection))))
+  (reset! (var-get (ns-resolve 'skein.repl 'active-config-dir))
+          (var-get (ns-resolve 'skein.repl 'no-connection))))
 
 (defn with-runtime [f]
   (let [db-file (db-test/temp-db-file)
@@ -27,15 +27,15 @@
 (deftest helpers-fail-before-connect
   (reset-open-state!)
   (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                        #"No todo daemon world is connected"
+                        #"No Skein weaver world is connected"
                         (repl/tasks)))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                        #"No todo daemon world is connected"
+                        #"No Skein weaver world is connected"
                         (repl/load-queries! "/path/does/not/matter.edn"))))
 
 (deftest connect-without-arg-checks-default-world-not-explicit-config-dir
   (let [calls (atom [])]
-    (with-redefs [todo.client/status-world (fn [config-dir]
+    (with-redefs [skein.client/status-world (fn [config-dir]
                                              (swap! calls conj config-dir)
                                              {:ok true})]
       (is (= (:config-dir (daemon-config/world)) (repl/connect!)))
@@ -50,7 +50,7 @@
                             #"metadata is missing or stale"
                             (repl/connect! config-dir)))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"No todo daemon world is connected"
+                            #"No Skein weaver world is connected"
                             (repl/tasks)))
       (finally
         (reset-open-state!)))))
@@ -65,7 +65,7 @@
                               #"connect! expects a daemon config directory"
                               (repl/connect! db-file)))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                              #"No todo daemon world is connected"
+                              #"No Skein weaver world is connected"
                               (repl/tasks)))
         (finally
           (db-test/delete-sqlite-family! db-file))))))

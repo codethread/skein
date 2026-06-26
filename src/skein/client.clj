@@ -1,39 +1,39 @@
-(ns todo.client
+(ns skein.client
   (:refer-clojure :exclude [list update])
   (:require [clojure.edn :as edn]
             [nrepl.core :as nrepl]
-            [todo.daemon.config :as config]
-            [todo.daemon.metadata :as metadata])
+            [skein.weaver.config :as config]
+            [skein.weaver.metadata :as metadata])
   (:import [java.net InetAddress]))
 
 (def default-timeout-ms 2000)
 
 (def api-symbols
-  {:init 'todo.daemon.api/init
-   :add 'todo.daemon.api/add
-   :update 'todo.daemon.api/update
-   :show 'todo.daemon.api/show
-   :list 'todo.daemon.api/list
-   :ready 'todo.daemon.api/ready
-   :register-query 'todo.daemon.api/register-query
-   :load-queries 'todo.daemon.api/load-queries
-   :queries 'todo.daemon.api/queries
-   :resolve-query 'todo.daemon.api/resolve-query
-   :list-query 'todo.daemon.api/list-query
-   :ready-query 'todo.daemon.api/ready-query
-   :query-ids 'todo.daemon.api/query-ids
-   :tasks-by-ids 'todo.daemon.api/tasks-by-ids
-   :ancestor-root-ids 'todo.daemon.api/ancestor-root-ids
-   :subgraph 'todo.daemon.api/subgraph
-   :register-view! 'todo.daemon.api/register-view!
-   :view! 'todo.daemon.api/view!
-   :views 'todo.daemon.api/views
-   :approved-libs 'todo.daemon.api/approved-libs
-   :sync-approved-libs 'todo.daemon.api/sync-approved-libs
-   :approved-lib-syncs 'todo.daemon.api/approved-lib-syncs
-   :use! 'todo.daemon.api/use!
-   :uses 'todo.daemon.api/uses
-   :use 'todo.daemon.api/use})
+  {:init 'skein.weaver.api/init
+   :add 'skein.weaver.api/add
+   :update 'skein.weaver.api/update
+   :show 'skein.weaver.api/show
+   :list 'skein.weaver.api/list
+   :ready 'skein.weaver.api/ready
+   :register-query 'skein.weaver.api/register-query
+   :load-queries 'skein.weaver.api/load-queries
+   :queries 'skein.weaver.api/queries
+   :resolve-query 'skein.weaver.api/resolve-query
+   :list-query 'skein.weaver.api/list-query
+   :ready-query 'skein.weaver.api/ready-query
+   :query-ids 'skein.weaver.api/query-ids
+   :tasks-by-ids 'skein.weaver.api/tasks-by-ids
+   :ancestor-root-ids 'skein.weaver.api/ancestor-root-ids
+   :subgraph 'skein.weaver.api/subgraph
+   :register-view! 'skein.weaver.api/register-view!
+   :view! 'skein.weaver.api/view!
+   :views 'skein.weaver.api/views
+   :approved-libs 'skein.weaver.api/approved-libs
+   :sync-approved-libs 'skein.weaver.api/sync-approved-libs
+   :approved-lib-syncs 'skein.weaver.api/approved-lib-syncs
+   :use! 'skein.weaver.api/use!
+   :uses 'skein.weaver.api/uses
+   :use 'skein.weaver.api/use})
 
 (defn fail [message data]
   (throw (ex-info message data)))
@@ -47,16 +47,16 @@
    (let [world (config/world config-dir)
          meta (metadata/read-metadata world)]
      (when (metadata/stale-or-missing? meta)
-       (fail "Daemon metadata is missing or stale" {:type :todo.client/missing-or-stale-metadata
+       (fail "Weaver metadata is missing or stale" {:type :skein.client/missing-or-stale-metadata
                                                      :config-dir (:config-dir world)
                                                      :metadata meta}))
      (when-not (= (:config-dir world) (:config-dir meta))
-       (fail "Daemon metadata config dir does not match requested world" {:type :todo.client/metadata-config-mismatch
+       (fail "Weaver metadata config dir does not match requested world" {:type :skein.client/metadata-config-mismatch
                                                                            :expected (:config-dir world)
                                                                            :actual (:config-dir meta)
                                                                            :metadata meta}))
      (when-not (loopback-host? (get-in meta [:endpoint :host]))
-       (fail "Daemon metadata endpoint is not loopback" {:type :todo.client/non-local-endpoint
+       (fail "Weaver metadata endpoint is not loopback" {:type :skein.client/non-local-endpoint
                                                           :endpoint (:endpoint meta)}))
      meta)))
 
@@ -64,34 +64,34 @@
   (let [meta (metadata-for-world nil)
         canonical-path (metadata/canonical-db-path db-file)]
     (when-not (= canonical-path (:canonical-db-path meta))
-      (fail "Daemon metadata is missing or stale" {:type :todo.client/missing-or-stale-metadata
+      (fail "Weaver metadata is missing or stale" {:type :skein.client/missing-or-stale-metadata
                                                     :canonical-db-path canonical-path
                                                     :metadata meta}))
     meta))
 
 (defn fixed-form [op args]
   (let [api-symbol (or (api-symbols op)
-                       (fail "Unknown daemon API operation" {:type :todo.client/unknown-operation
+                       (fail "Unknown weaver API operation" {:type :skein.client/unknown-operation
                                                               :operation op}))]
     (str "(do "
-         "(require '[todo.daemon.api] '[todo.daemon.runtime]) "
+         "(require '[skein.weaver.api] '[skein.weaver.runtime]) "
          "(let [args '" (pr-str (vec args)) "] "
-         "(try {:ok true :value (apply " api-symbol " @todo.daemon.runtime/current-runtime args)} "
+         "(try {:ok true :value (apply " api-symbol " @skein.weaver.runtime/current-runtime args)} "
          "(catch Throwable t {:ok false :class (str (class t)) :message (ex-message t) :data (ex-data t)})))"
          ")")))
 
 (defn identity-form []
-  "(do (require '[todo.daemon.runtime]) (:metadata @todo.daemon.runtime/current-runtime))")
+  "(do (require '[skein.weaver.runtime]) (:metadata @skein.weaver.runtime/current-runtime))")
 
 (defn stop-form []
-  "(do (require '[todo.daemon.runtime]) (let [rt @todo.daemon.runtime/current-runtime] (future (Thread/sleep 50) (todo.daemon.runtime/stop! rt)) {:stopped true}))")
+  "(do (require '[skein.weaver.runtime]) (let [rt @skein.weaver.runtime/current-runtime] (future (Thread/sleep 50) (skein.weaver.runtime/stop! rt)) {:stopped true}))")
 
 (defn connect [metadata timeout-ms]
   (let [{:keys [host port]} (:endpoint metadata)]
     (try
       (nrepl/connect :host host :port port :timeout timeout-ms)
       (catch Exception e
-        (throw (ex-info "Unable to connect to daemon nREPL endpoint" {:type :todo.client/connection-failed
+        (throw (ex-info "Unable to connect to weaver nREPL endpoint" {:type :skein.client/connection-failed
                                                                        :endpoint (:endpoint metadata)}
                         e))))))
 
@@ -101,43 +101,43 @@
         responses (try
                     (doall (nrepl/message session {:op "eval" :code form}))
                     (catch java.net.SocketTimeoutException e
-                      (throw (ex-info "Daemon nREPL request timed out" (assoc context :type :todo.client/timeout) e)))
+                      (throw (ex-info "Weaver nREPL request timed out" (assoc context :type :skein.client/timeout) e)))
                     (catch Exception e
-                      (throw (ex-info "Daemon nREPL request failed" (assoc context :type :todo.client/request-failed) e))))
+                      (throw (ex-info "Weaver nREPL request failed" (assoc context :type :skein.client/request-failed) e))))
         statuses (set (mapcat :status responses))]
     (when (contains? statuses "eval-error")
       (let [err (some :err responses)]
-        (fail "Daemon API call failed" (assoc context :type :todo.client/daemon-error
+        (fail "Weaver API call failed" (assoc context :type :skein.client/weaver-error
                                              :err err
                                              :responses responses))))
     (when (contains? statuses "error")
-      (fail "Daemon nREPL returned an error" (assoc context :type :todo.client/nrepl-error
+      (fail "Weaver nREPL returned an error" (assoc context :type :skein.client/nrepl-error
                                                    :responses responses)))
     (if-let [value (some :value responses)]
       (let [result (edn/read-string value)]
         (if (and (map? result) (contains? result :ok))
           (if (:ok result)
             (:value result)
-            (fail "Daemon API call failed" (assoc context
-                                             :type :todo.client/daemon-error
-                                             :daemon-class (:class result)
-                                             :daemon-message (:message result)
-                                             :daemon-data (:data result))))
+            (fail "Weaver API call failed" (assoc context
+                                             :type :skein.client/weaver-error
+                                             :weaver-class (:class result)
+                                             :weaver-message (:message result)
+                                             :weaver-data (:data result))))
           result))
       (if (empty? responses)
-        (fail "Daemon nREPL request timed out" (assoc context :type :todo.client/timeout
+        (fail "Weaver nREPL request timed out" (assoc context :type :skein.client/timeout
                                                    :responses responses))
-        (fail "Daemon nREPL returned no value" (assoc context :type :todo.client/no-value
+        (fail "Weaver nREPL returned no value" (assoc context :type :skein.client/no-value
                                                      :responses responses))))))
 
 (defn verify-identity! [conn expected timeout-ms]
   (let [actual (eval-form conn (identity-form) timeout-ms {:operation :identity})]
     (when-not (= (:config-dir expected) (:config-dir actual))
-      (fail "Connected daemon serves a different config dir" {:type :todo.client/config-mismatch
+      (fail "Connected weaver serves a different config dir" {:type :skein.client/config-mismatch
                                                                :expected (:config-dir expected)
                                                                :actual (:config-dir actual)}))
     (when-not (= (:nonce expected) (:nonce actual))
-      (fail "Connected daemon identity does not match runtime metadata" {:type :todo.client/identity-mismatch
+      (fail "Connected weaver identity does not match runtime metadata" {:type :skein.client/identity-mismatch
                                                                          :expected (:nonce expected)
                                                                          :actual (:nonce actual)}))
     actual))

@@ -102,7 +102,7 @@ func TestGoDaemonLifecycleCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status["healthy"] != true || status["database_path"] == "" || status["config_dir"] != realDir || status["data_dir"] == "" || status["daemon_id"] == "" || status["socket_path"] != filepath.Join(realDir, "state", "daemon.sock") || status["pid"].(float64) <= 0 {
+	if status["healthy"] != true || status["database_path"] == "" || status["config_dir"] != realDir || status["data_dir"] == "" || status["weaver_id"] == "" || status["socket_path"] != filepath.Join(realDir, "state", "weaver.sock") || status["pid"].(float64) <= 0 {
 		t.Fatalf("unexpected status payload: %#v", status)
 	}
 	if err := runTodo(bin, dir, runDir, "daemon", "stop"); err != nil {
@@ -120,7 +120,7 @@ func TestTaskAndQueryCommandsRunOutsideCheckoutWithoutSource(t *testing.T) {
 	dir := shortTempDir(t)
 	writeClientConfig(t, dir)
 	initPath := filepath.Join(dir, "init.clj")
-	init := `(require '[todo.daemon.api :as api] '[todo.daemon.runtime :as runtime])
+	init := `(require '[skein.weaver.api :as api] '[skein.weaver.runtime :as runtime])
 (api/register-query @runtime/current-runtime 'by-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})`
 	if err := os.WriteFile(initPath, []byte(init), 0644); err != nil {
 		t.Fatal(err)
@@ -143,8 +143,8 @@ func TestTaskAndQueryCommandsRunOutsideCheckoutWithoutSource(t *testing.T) {
 	if out, err := outputTodo(bin, dir, runDir, "--format", "json", "daemon", "status"); err != nil || !strings.Contains(out, `"healthy":true`) {
 		t.Fatalf("status after source removal output/error = %q/%v", out, err)
 	}
-	design := addJSON(t, bin, dir, runDir, "Design", "todo", "owner=agent")
-	docs := addJSON(t, bin, dir, runDir, "Docs", "todo", "owner=agent")
+	design := addJSON(t, bin, dir, runDir, "Design", "owner=agent")
+	docs := addJSON(t, bin, dir, runDir, "Docs", "owner=agent")
 	if out, err := outputTodo(bin, dir, runDir, "--format", "json", "show", docs); err != nil || !strings.Contains(out, `"title":"Docs"`) {
 		t.Fatalf("show output/error = %q/%v", out, err)
 	}
@@ -197,9 +197,9 @@ func mustReadFile(t *testing.T, path string) []byte {
 	return raw
 }
 
-func addJSON(t *testing.T, bin, configDir, cwd, title, status, attr string) string {
+func addJSON(t *testing.T, bin, configDir, cwd, title, attr string) string {
 	t.Helper()
-	out, err := outputTodo(bin, configDir, cwd, "--format", "json", "add", title, "--status", status, "--attr", attr)
+	out, err := outputTodo(bin, configDir, cwd, "--format", "json", "add", title, "--attr", attr)
 	if err != nil {
 		t.Fatalf("add %s: %v\n%s", title, err, out)
 	}

@@ -1,9 +1,9 @@
-(ns todo.daemon.runtime
+(ns skein.weaver.runtime
   (:require [nrepl.server :as nrepl]
-            [todo.daemon.config :as config]
-            [todo.daemon.metadata :as metadata]
-            [todo.daemon.socket :as socket]
-            [todo.db :as db])
+            [skein.weaver.config :as config]
+            [skein.weaver.metadata :as metadata]
+            [skein.weaver.socket :as socket]
+            [skein.db :as db])
   (:import [java.lang ProcessHandle]
            [java.time Instant]))
 
@@ -35,17 +35,17 @@
   ([db-file] (start! db-file {}))
   ([db-file {:keys [world]}]
    (when @current-runtime
-     (throw (ex-info "A daemon runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
+     (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
    (let [world (or world (config/world))
          db-file (or db-file (:db-path world))
          canonical-path (metadata/canonical-db-path db-file)
          existing (metadata/read-metadata world)
          socket-file (metadata/socket-file world)]
      (when-not (metadata/stale-or-missing? existing)
-       (throw (ex-info "Daemon metadata already exists for daemon world" {:config-dir (:config-dir world)
+       (throw (ex-info "Weaver metadata already exists for weaver world" {:config-dir (:config-dir world)
                                                                            :metadata existing})))
      (when (and (nil? existing) (.exists socket-file))
-       (throw (ex-info "Daemon socket exists without metadata; cannot prove daemon world is stale" {:config-dir (:config-dir world)
+       (throw (ex-info "Weaver socket exists without metadata; cannot prove weaver world is stale" {:config-dir (:config-dir world)
                                                                                                     :socket-path (.getPath socket-file)})))
      (.mkdirs (clojure.java.io/file (:state-dir world)))
      (.mkdirs (clojure.java.io/file (:data-dir world)))

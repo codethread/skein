@@ -43,7 +43,7 @@ Install the public CLI and create/edit the default XDG config world:
 
 ```sh
 go install ./cli/cmd/todo
-ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/atom"
+ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/skein"
 mkdir -p "$ATOM_CONFIG"
 printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$ATOM_CONFIG/config.json"
 ```
@@ -121,7 +121,7 @@ A fresh default-world setup can look like this:
 ```sh
 go install ./cli/cmd/todo
 ATOM_SOURCE="$PWD"
-ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/atom"
+ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/skein"
 
 mkdir -p "$ATOM_CONFIG/libs"
 cd "$ATOM_CONFIG"
@@ -188,9 +188,9 @@ REPL process boundaries matter: `libs/sync!` mutates the daemon JVM classpath, a
 Useful inspection commands:
 
 ```sh
-sqlite3 smoke-cli.sqlite.config-dir/data/tasks.sqlite '.schema'
-sqlite3 smoke-cli.sqlite.config-dir/data/tasks.sqlite 'select id, title, attributes from tasks;'
-sqlite3 smoke-cli.sqlite.config-dir/data/tasks.sqlite 'select from_task_id, to_task_id, edge_type, attributes from task_edges;'
+sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite '.schema'
+sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select id, title, attributes from tasks;'
+sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select from_task_id, to_task_id, edge_type, attributes from task_edges;'
 ```
 
 ## Implementation boundaries

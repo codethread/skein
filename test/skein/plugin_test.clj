@@ -1,11 +1,11 @@
-(ns todo.plugin-test
+(ns skein.plugin-test
   (:require [clojure.test :refer [deftest is]]
             [atom.libs.alpha :as libs]
-            [todo.client :as client]
-            [todo.daemon.api]
-            [todo.daemon.config :as daemon-config]
-            [todo.daemon.runtime :as runtime]
-            [todo.db-test :as db-test]))
+            [skein.client :as client]
+            [skein.weaver.api]
+            [skein.weaver.config :as daemon-config]
+            [skein.weaver.runtime :as runtime]
+            [skein.db-test :as db-test]))
 
 (defn with-runtime [f]
   (let [db-file (db-test/temp-db-file)
@@ -22,11 +22,11 @@
   (is (thrown? java.io.FileNotFoundException (require 'atom.plugin.alpha)))
   (is (thrown? java.io.FileNotFoundException (require 'atom.bootstrap.alpha)))
   (is (thrown? java.io.FileNotFoundException (require 'atom.prelude.alpha)))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown daemon API operation"
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown weaver API operation"
                         (client/fixed-form :load-plugin ["plugins/demo"])))
-  (is (nil? (ns-resolve 'todo.daemon.api 'load-plugin)))
-  (is (nil? (ns-resolve 'todo.daemon.api 'plugins)))
-  (is (nil? (ns-resolve 'todo.daemon.api 'plugin))))
+  (is (nil? (ns-resolve 'skein.weaver.api 'load-plugin)))
+  (is (nil? (ns-resolve 'skein.weaver.api 'plugins)))
+  (is (nil? (ns-resolve 'skein.weaver.api 'plugin))))
 
 (deftest library-workspace-state-is-the-public-path
   (with-runtime

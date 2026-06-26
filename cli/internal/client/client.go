@@ -26,7 +26,7 @@ type Metadata struct {
 	ProtocolVersion int    `json:"protocol_version"`
 	PID             int    `json:"pid"`
 	DatabasePath    string `json:"database_path"`
-	DaemonID        string `json:"daemon_id"`
+	DaemonID        string `json:"weaver_id"`
 	ConfigDir       string `json:"config_dir"`
 	DataDir         string `json:"data_dir"`
 	SocketPath      string `json:"socket_path"`
@@ -120,7 +120,7 @@ func (c *SocketClient) Call(operation string, arguments map[string]any) (any, er
 		return nil, err
 	}
 	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
-	req := map[string]any{"protocol_version": protocolVersion, "request_id": requestID, "daemon_id": meta.DaemonID, "operation": operation, "arguments": arguments, "options": map[string]any{"format": c.Config.Format}}
+	req := map[string]any{"protocol_version": protocolVersion, "request_id": requestID, "weaver_id": meta.DaemonID, "operation": operation, "arguments": arguments, "options": map[string]any{"format": c.Config.Format}}
 	ctx, cancel := context.WithTimeout(context.Background(), c.DialTimeout)
 	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", meta.SocketPath)
@@ -163,7 +163,7 @@ func (c *SocketClient) metadata() (Metadata, string, error) {
 	if c.Config.StateDir == "" {
 		return Metadata{}, "", errors.New("state dir is required")
 	}
-	file := filepath.Join(c.Config.StateDir, "daemon.json")
+	file := filepath.Join(c.Config.StateDir, "weaver.json")
 	b, err := os.ReadFile(file)
 	if os.IsNotExist(err) {
 		return Metadata{}, "", c.daemonStateError("no running daemon (state dir %s)", c.Config.StateDir)
@@ -181,7 +181,7 @@ func (c *SocketClient) metadata() (Metadata, string, error) {
 	if c.Config.ConfigDir != "" && filepath.Clean(m.ConfigDir) != filepath.Clean(c.Config.ConfigDir) {
 		return Metadata{}, "", c.daemonStateError("daemon metadata config dir mismatch: %s", m.ConfigDir)
 	}
-	if filepath.Clean(m.SocketPath) != filepath.Join(c.Config.StateDir, "daemon.sock") {
+	if filepath.Clean(m.SocketPath) != filepath.Join(c.Config.StateDir, "weaver.sock") {
 		return Metadata{}, "", c.daemonStateError("daemon metadata socket mismatch: %s", m.SocketPath)
 	}
 	if !pidAlive(m.PID) {
@@ -194,12 +194,12 @@ func validateLifecycleResult(operation string, result any, meta Metadata) error 
 	switch operation {
 	case "status":
 		m, ok := result.(map[string]any)
-		if !ok || m["healthy"] != true || m["protocol_version"] != float64(protocolVersion) || !samePositivePID(m["pid"], meta.PID) || m["database_path"] != meta.DatabasePath || m["daemon_id"] != meta.DaemonID || m["socket_path"] != meta.SocketPath || m["config_dir"] != meta.ConfigDir || m["data_dir"] != meta.DataDir || m["started_at"] != meta.StartedAt || !validNREPL(m["nrepl"]) {
+		if !ok || m["healthy"] != true || m["protocol_version"] != float64(protocolVersion) || !samePositivePID(m["pid"], meta.PID) || m["database_path"] != meta.DatabasePath || m["weaver_id"] != meta.DaemonID || m["socket_path"] != meta.SocketPath || m["config_dir"] != meta.ConfigDir || m["data_dir"] != meta.DataDir || m["started_at"] != meta.StartedAt || !validNREPL(m["nrepl"]) {
 			return errors.New("malformed daemon response: invalid status result")
 		}
 	case "stop":
 		m, ok := result.(map[string]any)
-		if !ok || m["stopping"] != true || !samePositivePID(m["pid"], meta.PID) || m["daemon_id"] != meta.DaemonID {
+		if !ok || m["stopping"] != true || !samePositivePID(m["pid"], meta.PID) || m["weaver_id"] != meta.DaemonID {
 			return errors.New("malformed daemon response: invalid stop result")
 		}
 	}
@@ -231,7 +231,7 @@ func samePositivePID(v any, expected int) bool {
 }
 
 func waitForCleanup(metadataFile, socketPath string) error {
-	ednFile := filepath.Join(filepath.Dir(metadataFile), "daemon.edn")
+	ednFile := filepath.Join(filepath.Dir(metadataFile), "weaver.edn")
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		metadataGone, err := missing(metadataFile)

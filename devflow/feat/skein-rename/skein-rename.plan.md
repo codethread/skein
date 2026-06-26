@@ -109,3 +109,14 @@ Append notes here. Do not rewrite earlier notes.
 - Active readiness now ignores inactive dependencies; persistent strands can deactivate/reactivate, while active ephemeral strands are deleted with incident edges on deactivation.
 - Clojure DB/query tests now reject `:status` and `:final_at` fields. The Go CLI and smoke path were minimally adjusted to send `active`/`ephemeral` lifecycle fields because smoke exercises the daemon JSON socket end-to-end.
 - Manual smoke exposed that SQLite foreign-key enforcement was not guaranteed on the daemon connection for ephemeral deletion, so delete-on-deactivate now explicitly removes incident edges before deleting the strand.
+
+### SR-PLAN-001.DN3 Task 002 implementation — 2026-06-26
+
+- Moved Clojure runtime namespaces from `todo.*` to `skein.*` and daemon internals to `skein.weaver.*`; no `src/todo` or `test/todo` source trees remain.
+- Runtime worlds now default to `skein`, default storage uses `skein.sqlite`, and metadata/socket artifacts use `weaver.edn`, `weaver.json`, and `weaver.sock` only.
+- Updated Clojure and Go clients to read/send `weaver.*` metadata and `weaver_id` socket identity. The Go command vocabulary remains `todo daemon ...` for task 4, but it now targets the renamed Clojure runtime.
+- Full smoke still runs through the existing Go `todo daemon` command because public CLI rename is intentionally deferred to task 4.
+
+### SR-PLAN-001.DN4 Task 002 YAGNI cleanup — 2026-06-26
+
+- Removed the temporary `:todo` Clojure alias and pointed the current Go daemon launcher at `-M:skein`; the public binary/subcommand names still remain for task 4, but the Clojure entrypoint no longer carries an old compatibility alias.

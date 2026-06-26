@@ -1,4 +1,4 @@
-(ns todo.specs
+(ns skein.specs
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]))
 

@@ -1,13 +1,13 @@
-(ns todo.client-test
+(ns skein.client-test
   (:refer-clojure :exclude [list update])
   (:require [clojure.test :refer [deftest is]]
             [nrepl.core :as nrepl]
-            [todo.client :as client]
-            [todo.daemon.api :as api]
-            [todo.daemon.config :as daemon-config]
-            [todo.daemon.metadata :as metadata]
-            [todo.daemon.runtime :as runtime]
-            [todo.db-test :as db-test]))
+            [skein.client :as client]
+            [skein.weaver.api :as api]
+            [skein.weaver.config :as daemon-config]
+            [skein.weaver.metadata :as metadata]
+            [skein.weaver.runtime :as runtime]
+            [skein.db-test :as db-test]))
 
 (defn delete-tree! [file]
   (doseq [f (reverse (file-seq file))]
@@ -80,9 +80,9 @@
         (is (= [] (client/call db-file {} :ancestor-root-ids [(:id agent)] {:where [:= [:attr :kind] "feature"]})))
         (is (= {:root-ids [(:id agent)] :tasks [agent] :strands [agent] :edges []}
                (client/call db-file {} :subgraph [(:id agent)])))
-        (is (= {:name "client" :fn 'todo.client-test/client-test-view}
-               (client/call db-file {} :register-view! 'client 'todo.client-test/client-test-view)))
-        (is (= [{:name "client" :fn 'todo.client-test/client-test-view}]
+        (is (= {:name "client" :fn 'skein.client-test/client-test-view}
+               (client/call db-file {} :register-view! 'client 'skein.client-test/client-test-view)))
+        (is (= [{:name "client" :fn 'skein.client-test/client-test-view}]
                (client/call db-file {} :views)))
         (is (= {:client-view {:ok true}}
                (client/call db-file {} :view! 'client {:ok true})))))))
@@ -94,15 +94,15 @@
         (client/resolve-query db-file :missing)
         (is false "expected missing query error")
         (catch clojure.lang.ExceptionInfo e
-          (is (= "Daemon API call failed" (ex-message e)))
-          (is (= "Query not found" (:daemon-message (ex-data e))))
-          (is (= :missing (get-in (ex-data e) [:daemon-data :query])))))
+          (is (= "Weaver API call failed" (ex-message e)))
+          (is (= "Query not found" (:weaver-message (ex-data e))))
+          (is (= :missing (get-in (ex-data e) [:weaver-data :query])))))
       (try
         (client/load-queries db-file {"mine" [:= :active true]})
         (is false "expected invalid query name error")
         (catch clojure.lang.ExceptionInfo e
-          (is (= "Daemon API call failed" (ex-message e)))
-          (is (= "Query names must be simple symbols or keywords" (:daemon-message (ex-data e)))))))))
+          (is (= "Weaver API call failed" (ex-message e)))
+          (is (= "Query names must be simple symbols or keywords" (:weaver-message (ex-data e)))))))))
 
 (deftest client-fails-loudly-for-missing-and-stale-metadata
   (let [db-file (db-test/temp-db-file)
@@ -166,10 +166,10 @@
         (client/add db-file {:title ""})
         (is false "expected daemon domain error")
         (catch clojure.lang.ExceptionInfo e
-          (is (= "Daemon API call failed" (ex-message e)))
-          (is (= :todo.client/daemon-error (:type (ex-data e))))
-          (is (= "Invalid strand" (:daemon-message (ex-data e))))
-          (is (re-find #"non-blank" (:explain (:daemon-data (ex-data e))))))))))
+          (is (= "Weaver API call failed" (ex-message e)))
+          (is (= :skein.client/weaver-error (:type (ex-data e))))
+          (is (= "Invalid strand" (:weaver-message (ex-data e))))
+          (is (re-find #"non-blank" (:explain (:weaver-data (ex-data e))))))))))
 
 (deftest client-fails-loudly-for-timeouts
   (with-redefs [nrepl/client (fn [conn _timeout-ms] conn)

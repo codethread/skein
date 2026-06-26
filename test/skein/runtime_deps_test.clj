@@ -1,9 +1,9 @@
-(ns todo.runtime-deps-test
+(ns skein.runtime-deps-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
             [nrepl.core :as nrepl]
-            [todo.daemon.config :as daemon-config]
-            [todo.daemon.runtime :as runtime]))
+            [skein.weaver.config :as daemon-config]
+            [skein.weaver.runtime :as runtime]))
 
 (defn- temp-dir [prefix]
   (.toFile (java.nio.file.Files/createTempDirectory
@@ -38,7 +38,7 @@
       (some :value responses))))
 
 (deftest daemon-runtime-can-hot-add-config-dir-local-root
-  (let [config-dir (temp-dir "atom-runtime-deps-config")
+  (let [config-dir (temp-dir "skein-runtime-deps-config")
         suffix (str "s" (.replace (str (java.util.UUID/randomUUID)) "-" ""))]
     (try
       (let [world (daemon-config/world (.getCanonicalPath config-dir))

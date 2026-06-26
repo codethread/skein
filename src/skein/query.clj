@@ -1,4 +1,4 @@
-(ns todo.query
+(ns skein.query
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]))
@@ -162,7 +162,7 @@
 
 (defn validate-query-def! [query-def]
   (let [params (if (map? query-def)
-                 (zipmap (:params query-def) (repeat ["__atom_query_param__"]))
+                 (zipmap (:params query-def) (repeat ["__skein_query_param__"]))
                  {})]
     (compile-query query-def params))
   query-def)

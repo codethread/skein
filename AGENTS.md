@@ -26,13 +26,13 @@ Common commands:
 ```sh
 # Install the public Go CLI and create/edit the default XDG config world.
 go install ./cli/cmd/todo
-ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/atom"
+ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/skein"
 mkdir -p "$ATOM_CONFIG"
 printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$ATOM_CONFIG/config.json"
 
 # Run in a dedicated terminal; daemon start stays in the foreground.
 todo daemon start
-# Optional trusted startup code lives at ~/.config/atom/init.clj.
+# Optional trusted startup code lives at ~/.config/skein/init.clj.
 
 # Run from another terminal while the daemon is alive.
 todo init
@@ -47,7 +47,7 @@ clojure -M:run
 
 ## Agent operation quick reference
 
-Agents should prefer the CLI for scripted work. Always use an explicit disposable `--config-dir <dir>` for agent testing, smoke reproduction, and feature work. Never use or mutate the user's default config/data/state worlds (`~/.config/atom`, `~/.local/share/atom`, `~/.local/state/atom`) unless the user explicitly asks you to operate on their real setup.
+Agents should prefer the CLI for scripted work. Always use an explicit disposable `--config-dir <dir>` for agent testing, smoke reproduction, and feature work. Never use or mutate the user's default config/data/state worlds (`~/.config/skein`, `~/.local/share/skein`, `~/.local/state/skein`) unless the user explicitly asks you to operate on their real setup.
 
 ```sh
 go install ./cli/cmd/todo
@@ -125,9 +125,9 @@ Useful inspection commands:
 ```sh
 # The default smoke run cleans these files after success; pass a custom smoke path
 # or inspect during a stopped failure before cleanup.
-sqlite3 smoke-cli.sqlite.config-dir/data/tasks.sqlite '.schema'
-sqlite3 smoke-cli.sqlite.config-dir/data/tasks.sqlite 'select id, title, attributes from tasks;'
-sqlite3 smoke-cli.sqlite.config-dir/data/tasks.sqlite 'select from_task_id, to_task_id, edge_type, attributes from task_edges;'
+sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite '.schema'
+sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select id, title, attributes from tasks;'
+sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select from_task_id, to_task_id, edge_type, attributes from task_edges;'
 ```
 
 ## Implementation boundaries

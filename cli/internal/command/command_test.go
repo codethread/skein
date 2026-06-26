@@ -345,12 +345,12 @@ func TestDaemonStartLaunchesFromConfiguredSource(t *testing.T) {
 	if launched.Source != source || launched.ConfigDir != realCfg || !launched.ConfigDirExplicit {
 		t.Fatalf("unexpected launch options: %#v", launched)
 	}
-	if !reflect.DeepEqual(daemonArgs(launched), []string{"-M:todo", "--config-dir", realCfg, "daemon", "start"}) {
+	if !reflect.DeepEqual(daemonArgs(launched), []string{"-M:skein", "--config-dir", realCfg, "daemon", "start"}) {
 		t.Fatalf("unexpected explicit daemon args: %#v", daemonArgs(launched))
 	}
 	defaultLaunch := launched
 	defaultLaunch.ConfigDirExplicit = false
-	if !reflect.DeepEqual(daemonArgs(defaultLaunch), []string{"-M:todo", "daemon", "start"}) {
+	if !reflect.DeepEqual(daemonArgs(defaultLaunch), []string{"-M:skein", "daemon", "start"}) {
 		t.Fatalf("unexpected default daemon args: %#v", daemonArgs(defaultLaunch))
 	}
 }
@@ -386,7 +386,7 @@ func TestDaemonReplVerifiesDaemonAndLaunchesFromConfiguredSource(t *testing.T) {
 	if launched.Source != source || launched.ConfigDir != realCfg || !launched.ConfigDirExplicit || !launchedStdin {
 		t.Fatalf("unexpected repl launch: %#v stdin=%v", launched, launchedStdin)
 	}
-	if !reflect.DeepEqual(replArgs(launched, true), []string{"-M", "-m", "todo.repl", "--stdin", realCfg}) {
+	if !reflect.DeepEqual(replArgs(launched, true), []string{"-M", "-m", "skein.repl", "--stdin", realCfg}) {
 		t.Fatalf("unexpected repl args: %#v", replArgs(launched, true))
 	}
 	if len(fc.calls) != 1 || fc.calls[0].op != "status" {
@@ -397,7 +397,7 @@ func TestDaemonReplVerifiesDaemonAndLaunchesFromConfiguredSource(t *testing.T) {
 func TestDaemonStartSupportsHomeRelativeSource(t *testing.T) {
 	cfg := t.TempDir()
 	home := t.TempDir()
-	homeSource := filepath.Join(home, "atom")
+	homeSource := filepath.Join(home, "skein")
 	if err := os.MkdirAll(homeSource, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func TestDaemonStartSupportsHomeRelativeSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", home)
-	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","source":"~/atom"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","source":"~/skein"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	var launched Options
@@ -429,7 +429,7 @@ func TestDaemonStartSupportsHomeRelativeSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"source":"~/atom"`) {
+	if !strings.Contains(string(raw), `"source":"~/skein"`) {
 		t.Fatalf("expected stored source to remain unchanged, got: %q", string(raw))
 	}
 }
@@ -494,7 +494,7 @@ func TestXDGConfigLoading(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("XDG_STATE_HOME", stateDir)
 	t.Setenv("XDG_DATA_HOME", dataDir)
-	path := filepath.Join(dir, "atom")
+	path := filepath.Join(dir, "skein")
 	if err := os.MkdirAll(path, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +511,7 @@ func TestXDGConfigLoading(t *testing.T) {
 	if _, err := run("list"); err != nil {
 		t.Fatal(err)
 	}
-	if captured.ConfigDir != filepath.Join(dir, "atom") || captured.StateDir != filepath.Join(stateDir, "atom") {
+	if captured.ConfigDir != filepath.Join(dir, "skein") || captured.StateDir != filepath.Join(stateDir, "skein") {
 		t.Fatalf("unexpected default world: %#v", captured)
 	}
 }

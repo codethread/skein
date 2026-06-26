@@ -1,7 +1,7 @@
-(ns todo.db-test
+(ns skein.db-test
   (:require [clojure.test :refer [deftest is testing]]
-            [todo.db :as db]
-            [todo.query :as query]))
+            [skein.db :as db]
+            [skein.query :as query]))
 
 (defn delete-sqlite-family! [db-file]
   (doseq [suffix ["" "-journal" "-wal" "-shm"]]

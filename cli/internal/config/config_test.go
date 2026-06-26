@@ -85,7 +85,7 @@ func TestLoadAcceptsValidAlphaConfig(t *testing.T) {
 
 func TestResolveSourceSupportsLeadingHomeExpansion(t *testing.T) {
 	home := t.TempDir()
-	homeSource := filepath.Join(home, "atom")
+	homeSource := filepath.Join(home, "skein")
 	if err := os.MkdirAll(homeSource, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestResolveSourceSupportsLeadingHomeExpansion(t *testing.T) {
 		t.Fatalf("unexpected resolved source: %q", resolved)
 	}
 
-	resolved, err = ResolveSource("~/atom")
+	resolved, err = ResolveSource("~/skein")
 	if err != nil {
 		t.Fatalf("expected leading ~/ to resolve, got %v", err)
 	}
@@ -113,7 +113,7 @@ func TestResolveSourceSupportsLeadingHomeExpansion(t *testing.T) {
 		t.Fatalf("unexpected resolved source: %q", resolved)
 	}
 
-	resolved, err = ResolveSource("~" + string(filepath.Separator) + "atom")
+	resolved, err = ResolveSource("~" + string(filepath.Separator) + "skein")
 	if err != nil {
 		t.Fatalf("expected leading ~/ path to resolve, got %v", err)
 	}

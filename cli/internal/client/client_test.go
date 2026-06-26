@@ -15,11 +15,11 @@ func writeMeta(t *testing.T, stateDir, sock string, pid int) {
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	m := Metadata{ProtocolVersion: 1, PID: pid, DatabasePath: filepath.Join(filepath.Dir(stateDir), "data", "tasks.sqlite"), DaemonID: "daemon-1", ConfigDir: filepath.Dir(stateDir), DataDir: filepath.Join(filepath.Dir(stateDir), "data"), SocketPath: sock, StartedAt: "now"}
+	m := Metadata{ProtocolVersion: 1, PID: pid, DatabasePath: filepath.Join(filepath.Dir(stateDir), "data", "skein.sqlite"), DaemonID: "daemon-1", ConfigDir: filepath.Dir(stateDir), DataDir: filepath.Join(filepath.Dir(stateDir), "data"), SocketPath: sock, StartedAt: "now"}
 	m.NREPL.Host = "127.0.0.1"
 	m.NREPL.Port = 9999
 	b, _ := json.Marshal(m)
-	if err := os.WriteFile(filepath.Join(stateDir, "daemon.json"), b, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(stateDir, "weaver.json"), b, 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -49,7 +49,7 @@ func serveAt(t *testing.T, sock string, handler func(map[string]any) map[string]
 }
 
 func serve(t *testing.T, stateDir string, handler func(map[string]any) map[string]any) string {
-	return serveAt(t, filepath.Join(stateDir, "daemon.sock"), handler)
+	return serveAt(t, filepath.Join(stateDir, "weaver.sock"), handler)
 }
 
 func TestCallSuccessAndDaemonError(t *testing.T) {
@@ -60,7 +60,7 @@ func TestCallSuccessAndDaemonError(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(base) })
 	stateDir := filepath.Join(base, "state")
 	sock := serve(t, stateDir, func(req map[string]any) map[string]any {
-		if req["protocol_version"] != float64(1) || req["operation"] != "show" || req["daemon_id"] != "daemon-1" || req["database_path"] != nil {
+		if req["protocol_version"] != float64(1) || req["operation"] != "show" || req["weaver_id"] != "daemon-1" || req["database_path"] != nil {
 			t.Fatalf("bad envelope: %#v", req)
 		}
 		if got := req["arguments"].(map[string]any)["id"]; got != "t1" {
@@ -105,12 +105,12 @@ func TestMetadataAndTransportFailures(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no running daemon") || !strings.Contains(err.Error(), "daemon start") {
 		t.Fatalf("expected missing daemon startup guidance, got %v", err)
 	}
-	writeMeta(t, stateDir, filepath.Join(stateDir, "daemon.sock"), os.Getpid())
+	writeMeta(t, stateDir, filepath.Join(stateDir, "weaver.sock"), os.Getpid())
 	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("init", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "daemon socket unreachable") {
 		t.Fatalf("expected unreachable socket, got %v", err)
 	}
-	writeMeta(t, stateDir, filepath.Join(stateDir, "daemon.sock"), 999999)
+	writeMeta(t, stateDir, filepath.Join(stateDir, "weaver.sock"), 999999)
 	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("init", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "stale daemon metadata") {
 		t.Fatalf("expected stale metadata, got %v", err)
@@ -125,7 +125,7 @@ func TestMalformedMetadataAndIdentityMismatch(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(base) })
 	stateDir := filepath.Join(base, "state")
 	_ = os.MkdirAll(stateDir, 0755)
-	metaFile := filepath.Join(stateDir, "daemon.json")
+	metaFile := filepath.Join(stateDir, "weaver.json")
 	if err := os.WriteFile(metaFile, []byte(`{"protocol_version":1}`), 0644); err != nil {
 		t.Fatal(err)
 	}

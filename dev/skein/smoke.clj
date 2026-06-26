@@ -1,10 +1,10 @@
-(ns todo.smoke
+(ns skein.smoke
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.string]
-            [todo.daemon.metadata :as metadata]
-            [todo.daemon.runtime :as runtime]
-            [todo.repl :as repl]))
+            [skein.weaver.metadata :as metadata]
+            [skein.weaver.runtime :as runtime]
+            [skein.repl :as repl]))
 
 (def cli-smoke-db "smoke-cli.sqlite")
 (def repl-smoke-db "smoke-repl.sqlite")
@@ -22,7 +22,7 @@
   (java.nio.file.Paths/get (str db-file ".config-dir") (make-array String 0)))
 
 (defn smoke-world-db [db-file]
-  (str (.resolve (smoke-config-dir db-file) "data/tasks.sqlite")))
+  (str (.resolve (smoke-config-dir db-file) "data/skein.sqlite")))
 
 (defn smoke-world [db-file]
   (let [config-dir (.getCanonicalPath (.toFile (smoke-config-dir db-file)))]
@@ -94,7 +94,7 @@
     (.getCanonicalPath marker)))
 
 (defn outside-repo-dir []
-  (doto (java.io.File. (System/getProperty "java.io.tmpdir") "atom-smoke-outside-repo")
+  (doto (java.io.File. (System/getProperty "java.io.tmpdir") "skein-smoke-outside-repo")
     (.mkdirs)))
 
 (defn write-client-config-to-dir! [config-dir]
@@ -192,14 +192,14 @@
         config-file (java.io.File. config-dir "config.json")]
     (delete-tree! (smoke-config-dir-named (str db-file ".bootstrap-clean")))
     (try
-      (run-process! "clean bootstrap creates config-dir files before daemon is running"
+      (run-process! "clean bootstrap creates config-dir files before weaver is running"
                     (java.io.File. checkout-root)
                     nil
                     [todo-bin "--config-dir" config-dir "init"])
       (throw (ex-info "clean bootstrap init unexpectedly reached daemon" {}))
       (catch AssertionError e
         (let [message (ex-message e)]
-          (when-not (or (clojure.string/includes? message "daemon socket unreachable")
+          (when-not (or (clojure.string/includes? message "weaver socket unreachable")
                         (clojure.string/includes? message "no running daemon"))
             (throw e)))))
     (let [daemon (start-cli-daemon-config! config-dir)]
@@ -225,7 +225,7 @@
         init-path (java.io.File. config-dir "init.clj")
         original-config (str "{\"configFormat\":\"alpha\",\"source\":\"" checkout-root "\",\"format\":\"json\"}\n")
         original-libs "{:libs {}}\n;; user comment\n"
-        original-init "(require '[todo.daemon.api :as api])\n(api/register-query! 'dirty [:= [:attr :owner] \"dirty\"])\n"]
+        original-init "(require '[skein.weaver.api :as api])\n(api/register-query! 'dirty [:= [:attr :owner] \"dirty\"])\n"]
     (delete-tree! (smoke-config-dir-named (str db-file ".bootstrap-dirty")))
     (.mkdirs (java.io.File. config-dir))
     (.mkdirs (java.io.File. config-dir ".git"))
@@ -253,7 +253,7 @@
     (write-client-config-to-dir! config-dir)
     (spit (java.io.File. config-dir "libs.edn") "{:libs {}}\n")
     (spit (java.io.File. config-dir "init.clj")
-          "(ns smoke.startup\n  (:require [atom.libs.alpha :as libs]\n            [atom.graph.alpha :as graph]\n            [atom.views.alpha :as views]\n            [todo.daemon.api :as api]))\n(libs/sync!)\n(api/register-query! 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(defn smoke-owned-view [{:keys [params]}]\n  (let [ids (graph/query-ids! 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :tasks (graph/tasks-by-ids ids)}))\n(views/register-view! 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n")
+          "(ns smoke.startup\n  (:require [atom.libs.alpha :as libs]\n            [atom.graph.alpha :as graph]\n            [atom.views.alpha :as views]\n            [skein.weaver.api :as api]))\n(libs/sync!)\n(api/register-query! 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(defn smoke-owned-view [{:keys [params]}]\n  (let [ids (graph/query-ids! 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :tasks (graph/tasks-by-ids ids)}))\n(views/register-view! 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n")
     (let [daemon (start-cli-daemon-config! config-dir)]
       (try
         (run-cli-config! config-dir "init")
@@ -319,7 +319,7 @@
         (assert= true (:healthy (parse-json (run-cli-config! config-dir "--format" "json" "daemon" "status"))) "daemon remains healthy after bad live library code")
 
         (write-live-lib! config-dir "good-lib" "live.good-alpha"
-                         (str "(ns live.good-alpha\n  (:require [todo.daemon.api :as api]))\n"
+                         (str "(ns live.good-alpha\n  (:require [skein.weaver.api :as api]))\n"
                               "(defn install! []\n"
                               "  (spit " (pr-str (.getCanonicalPath marker)) " (pr-str :installed))\n"
                               "  (api/register-query! 'live-owned [:= [:attr :owner] \"live\"])\n"
@@ -404,16 +404,16 @@
         (let [a (:id (repl/task! "First task" false {}))
               b (:id (repl/task! "Second task" {:owner "agent"}))]
           (repl/update! b {:edges [{:type "depends-on" :to a}]})
-          (assert= ["Second task"] (titles (repl/ready)) "todo.repl ready returns strands with inactive dependencies")
+          (assert= ["Second task"] (titles (repl/ready)) "skein.repl ready returns strands with inactive dependencies")
           (repl/defquery! 'agent-owner '[:= [:attr :owner] "agent"])
           (assert= ["Second task"]
                    (titles (repl/tasks 'agent-owner))
-                   "todo.repl consumes a query registered during the daemon lifetime")
+                   "skein.repl consumes a query registered during the daemon lifetime")
           (assert= ["Second task"]
                    (titles (repl/query '[:= [:attr :owner] "agent"]))
-                   "todo.repl retains EDN-rich ad hoc query debugging")
+                   "skein.repl retains EDN-rich ad hoc query debugging")
           (repl/update! b {:active false})
-          (assert= false (:active (repl/task b)) "todo.repl update! updates active"))
+          (assert= false (:active (repl/task b)) "skein.repl update! updates active"))
         (finally
           (runtime/stop! runtime))))
     (finally

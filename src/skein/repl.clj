@@ -1,9 +1,9 @@
-(ns todo.repl
+(ns skein.repl
   (:require [clojure.main :as main]
             [clojure.string :as str]
-            [todo.client :as client]
-            [todo.daemon.config :as daemon-config]
-            [todo.query :as query]))
+            [skein.client :as client]
+            [skein.weaver.config :as daemon-config]
+            [skein.query :as query]))
 
 (def ^:private no-connection ::no-connection)
 (def ^:private default-world ::default-world)
@@ -11,7 +11,7 @@
 
 (defn connected-config-dir []
   (case @active-config-dir
-    ::no-connection (throw (ex-info "No todo daemon world is connected. Start a connected helper REPL with `todo daemon repl`, or call (connect!) / (connect! \"/path/to/config-dir\") before using todo.repl helpers."
+    ::no-connection (throw (ex-info "No Skein weaver world is connected. Start a connected helper REPL with `todo daemon repl`, or call (connect!) / (connect! \"/path/to/config-dir\") before using skein.repl helpers."
                                    {:helper 'connect!}))
     ::default-world nil
     @active-config-dir))
@@ -66,8 +66,8 @@
   (try
     (f)
     (catch clojure.lang.ExceptionInfo e
-      (if-let [daemon-message (:daemon-message (ex-data e))]
-        (throw (ex-info daemon-message (:daemon-data (ex-data e))))
+      (if-let [weaver-message (:weaver-message (ex-data e))]
+        (throw (ex-info weaver-message (:weaver-data (ex-data e))))
         (throw e)))))
 
 (defn defquery! [query-name query-def]
@@ -132,10 +132,10 @@
                                 [:repl (first args)])
                             2 (if (= "--stdin" (first args))
                                 [:stdin (second args)]
-                                (throw (ex-info "Usage: todo.repl [--stdin] [config-dir]" {:args args})))
-                            (throw (ex-info "Usage: todo.repl [--stdin] [config-dir]" {:args args})))]
+                                (throw (ex-info "Usage: skein.repl [--stdin] [config-dir]" {:args args})))
+                            (throw (ex-info "Usage: skein.repl [--stdin] [config-dir]" {:args args})))]
     (connect! config-dir)
-    (binding [*ns* (the-ns 'todo.repl)]
+    (binding [*ns* (the-ns 'skein.repl)]
       (require '[atom.libs.alpha :as libs])
       (case mode
         :stdin (try
@@ -144,4 +144,4 @@
                    (binding [*out* *err*]
                      (println (or (ex-message t) (str t))))
                    (System/exit 1)))
-        :repl (main/repl :prompt #(print "todo=> "))))))
+        :repl (main/repl :prompt #(print "skein=> "))))))

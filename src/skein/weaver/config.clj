@@ -1,4 +1,4 @@
-(ns todo.daemon.config
+(ns skein.weaver.config
   (:require [clojure.java.io :as io]))
 
 (defn- env-or [k fallback]
@@ -24,9 +24,9 @@
          config-home (env-or "XDG_CONFIG_HOME" (str home "/.config"))
          state-home (env-or "XDG_STATE_HOME" (str home "/.local/state"))
          data-home (env-or "XDG_DATA_HOME" (str home "/.local/share"))]
-     (world-map (str config-home "/atom")
-                (str state-home "/atom")
-                (str data-home "/atom"))))
+     (world-map (str config-home "/skein")
+                (str state-home "/skein")
+                (str data-home "/skein"))))
   ([config-dir]
    (if config-dir
      (let [dir (canonical-path config-dir)]

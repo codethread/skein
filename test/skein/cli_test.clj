@@ -1,12 +1,12 @@
-(ns todo.cli-test
+(ns skein.cli-test
   (:require [clojure.data.json :as json]
             [clojure.test :refer [deftest is testing]]
-            [todo.cli :as cli]
-            [todo.client :as client]
-            [todo.daemon.config :as daemon-config]
-            [todo.daemon.metadata :as metadata]
-            [todo.daemon.runtime :as runtime]
-            [todo.db :as db]))
+            [skein.cli :as cli]
+            [skein.client :as client]
+            [skein.weaver.config :as weaver-config]
+            [skein.weaver.metadata :as metadata]
+            [skein.weaver.runtime :as runtime]
+            [skein.db :as db]))
 
 (defn delete-sqlite-family! [db-file]
   (doseq [suffix ["" "-journal" "-wal" "-shm"]]
@@ -44,13 +44,13 @@
                       (.toPath (java.io.File. "/tmp"))
                       "tcli"
                       (make-array java.nio.file.attribute.FileAttribute 0)))]
-    (daemon-config/world (.getCanonicalPath dir))))
+    (weaver-config/world (.getCanonicalPath dir))))
 
 (defn with-runtime [f]
   (let [db-file (temp-db-file)
         world (temp-world)
-        real-world daemon-config/world]
-    (with-redefs [daemon-config/world (fn
+        real-world weaver-config/world]
+    (with-redefs [weaver-config/world (fn
                                         ([] world)
                                         ([config-dir] (real-world config-dir)))]
       (let [rt (runtime/start! db-file {:world world})]
@@ -65,7 +65,7 @@
 
 (deftest parses-global-options-before-command
   (testing "global options are parsed before the command and command args are preserved"
-    (let [config (temp-client-config "/tmp/todo.sqlite")]
+    (let [config (temp-client-config "/tmp/skein.sqlite")]
       (try
         (is (= [(expected-opts config "json") "ready" []]
                (let [[opts command args _summary]
@@ -73,15 +73,15 @@
                  [opts command args])))
         (finally (.delete (java.io.File. config))))))
   (testing "options after the command are command arguments, not global options"
-    (let [config (temp-client-config "/tmp/todo.sqlite")]
+    (let [config (temp-client-config "/tmp/skein.sqlite")]
       (try
         (is (= [(expected-opts config "human") "ready" ["--format" "json"]]
                (let [[opts command args _summary]
                      (cli/parse-global-options ["--config-dir" config "ready" "--format" "json"])]
                  [opts command args])))
         (finally (.delete (java.io.File. config))))))
-  (testing "daemon lifecycle commands are parsed after global options"
-    (let [config (temp-client-config "/tmp/todo.sqlite")]
+  (testing "weaver lifecycle commands are parsed after global options"
+    (let [config (temp-client-config "/tmp/skein.sqlite")]
       (try
         (is (= [(expected-opts config "edn") "daemon" ["status"]]
                (let [[opts command args _summary]
@@ -133,7 +133,7 @@
          (cli/parse-daemon-start-options [] "summary"))))
 
 (deftest internal-clojure-cli-retains-edn-query-options
-  (testing "legacy Clojure CLI parser/client behavior remains available for daemon and REPL support; public Go CLI rejects --where/EDN"
+  (testing "legacy Clojure CLI parser/client behavior remains available for weaver and REPL support; public Go CLI rejects --where/EDN"
     (with-runtime
     (fn [db-file]
       (let [design (:id (cli/run-command! db-file "add" ["Design" "--active" "false" "--attr" "owner=agent"] "summary"))
@@ -166,19 +166,19 @@
     (fn [db-file]
       (client/register-query db-file 'known '[:= :active true])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"Daemon API call failed"
+                            #"Weaver API call failed"
                             (cli/run-command! db-file "list" ["--query" "missing"] "summary"))))))
 
-(deftest task-commands-reject-daemon-config-option
+(deftest task-commands-reject-weaver-config-option
   (with-redefs [cli/fail! (fn [message _summary] (throw (ex-info message {})))
                 client/add (fn [_db-file _request] :unexpected)
                 client/update (fn [_db-file _id _request] :unexpected)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"Unknown option: \"--config\""
-                          (cli/run-command! "todo.sqlite" "add" ["Task" "--config" "daemon.edn"] "summary")))
+                          (cli/run-command! "skein.sqlite" "add" ["Task" "--config" "weaver.edn"] "summary")))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"Unknown option: \"--config\""
-                          (cli/run-command! "todo.sqlite" "update" ["abc12" "--config" "daemon.edn"] "summary")))))
+                          (cli/run-command! "skein.sqlite" "update" ["abc12" "--config" "weaver.edn"] "summary")))))
 
 (deftest add-and-update-command-route-through-daemon
   (with-runtime
@@ -212,7 +212,7 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"metadata is missing or stale"
                             (cli/run-command! db-file "list" [] "summary")))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"metadata is missing or stale"
-                            (cli/run-command! db-file "add" ["No daemon"] "summary")))
+                            (cli/run-command! db-file "add" ["No weaver"] "summary")))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"metadata is missing or stale"
                             (cli/run-command! db-file "show" ["missing"] "summary")))
       (finally

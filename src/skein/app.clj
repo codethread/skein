@@ -1,6 +1,6 @@
-(ns todo.app
+(ns skein.app
   (:require [clojure.string :as str]
-            [todo.db :as db]))
+            [skein.db :as db]))
 
 (defn prompt [label]
   (print label)

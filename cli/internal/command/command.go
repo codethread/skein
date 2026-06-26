@@ -283,7 +283,7 @@ func (a *App) writeHumanRows(result any) error {
 }
 
 func daemonArgs(o Options) []string {
-	args := []string{"-M:todo"}
+	args := []string{"-M:skein"}
 	if o.ConfigDirExplicit {
 		args = append(args, "--config-dir", o.ConfigDir)
 	}
@@ -291,7 +291,7 @@ func daemonArgs(o Options) []string {
 }
 
 func replArgs(o Options, stdin bool) []string {
-	args := []string{"-M", "-m", "todo.repl"}
+	args := []string{"-M", "-m", "skein.repl"}
 	if stdin {
 		args = append(args, "--stdin")
 	}

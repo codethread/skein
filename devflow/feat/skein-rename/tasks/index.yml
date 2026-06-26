@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: "Rename weaver runtime namespaces"
     task_file: "tasks/002-rename-weaver-runtime-namespaces.md"
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: "Rename repl and alpha libraries"

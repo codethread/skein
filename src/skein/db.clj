@@ -1,4 +1,4 @@
-(ns todo.db
+(ns skein.db
   (:import [java.security SecureRandom])
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
@@ -6,8 +6,8 @@
             [clojure.string :as str]
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
-            [todo.query :as query]
-            [todo.specs :as specs]))
+            [skein.query :as query]
+            [skein.specs :as specs]))
 
 (def default-db-file "skein.sqlite")
 

@@ -1,12 +1,12 @@
 (ns atom.libs.alpha
   (:refer-clojure :exclude [sync use])
-  (:require [todo.client :as client]
-            [todo.daemon.runtime :as runtime]
-            [todo.repl :as repl]))
+  (:require [skein.client :as client]
+            [skein.weaver.runtime :as runtime]
+            [skein.repl :as repl]))
 
 (defn- call-daemon [op & args]
   (if-let [rt @runtime/current-runtime]
-    (apply (requiring-resolve (symbol "todo.daemon.api" (name op))) rt args)
+    (apply (requiring-resolve (symbol "skein.weaver.api" (name op))) rt args)
     (apply client/call-world (repl/connected-config-dir) {} op args)))
 
 (defn approved
@@ -15,7 +15,7 @@
   (call-daemon :approved-libs))
 
 (defn sync!
-  "Sync approved local roots into the selected daemon runtime and return per-library results."
+  "Sync approved local roots into the selected weaver runtime and return per-library results."
   []
   (call-daemon :sync-approved-libs))
 

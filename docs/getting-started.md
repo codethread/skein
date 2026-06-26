@@ -177,7 +177,7 @@ You can add named queries and daemon-memory views there:
   (:require [atom.libs.alpha :as libs]
             [atom.graph.alpha :as graph]
             [atom.views.alpha :as views]
-            [todo.daemon.api :as api]))
+            [skein.weaver.api :as api]))
 
 (libs/sync!)
 (api/register-query! 'mine [:= [:attr :owner] "ct"])

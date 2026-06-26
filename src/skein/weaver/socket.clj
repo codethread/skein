@@ -1,4 +1,4 @@
-(ns todo.daemon.socket
+(ns skein.weaver.socket
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str])
@@ -10,7 +10,7 @@
 (def allowed-operations
   #{"init" "add" "update" "show" "list" "ready" "list-query" "ready-query" "status" "stop"})
 
-(def required-request-keys #{"protocol_version" "request_id" "daemon_id" "operation" "arguments" "options"})
+(def required-request-keys #{"protocol_version" "request_id" "weaver_id" "operation" "arguments" "options"})
 (def allowed-option-keys #{"format"})
 
 (defn- protocol-error [request-id code message details]
@@ -88,8 +88,8 @@
       (protocol-error (get req "request_id") "protocol/unsupported-version" "Unsupported protocol version" {})
       (not (string? (get req "request_id")))
       (protocol-error nil "protocol/malformed-request" "request_id must be a string" {})
-      (not= (:nonce metadata) (get req "daemon_id"))
-      (protocol-error (get req "request_id") "protocol/identity-mismatch" "Daemon identity mismatch" {})
+      (not= (:nonce metadata) (get req "weaver_id"))
+      (protocol-error (get req "request_id") "protocol/identity-mismatch" "Weaver identity mismatch" {})
       (not (allowed-operations (get req "operation")))
       (protocol-error (get req "request_id") "protocol/operation-not-allowed" "Operation is not available over JSON socket" {"operation" (get req "operation")})
       (not (map? (get req "arguments")))
@@ -109,13 +109,13 @@
      "config_dir" (:config-dir m)
      "data_dir" (:data-dir m)
      "database_path" (:canonical-db-path m)
-     "daemon_id" (:nonce m)
+     "weaver_id" (:nonce m)
      "socket_path" (:socket-path m)
      "started_at" (:started-at m)
      "nrepl" {"host" (get-in m [:endpoint :host]) "port" (get-in m [:endpoint :port])}}))
 
 (defn- api [sym]
-  (requiring-resolve (symbol "todo.daemon.api" (name sym))))
+  (requiring-resolve (symbol "skein.weaver.api" (name sym))))
 
 (defn- query-name [name]
   (let [trimmed (str/trim name)
@@ -163,7 +163,7 @@
     "list-query" (dispatch-query runtime 'list args)
     "ready-query" (dispatch-query runtime 'ready args)
     "status" (status-result runtime)
-    "stop" {"stopping" true "pid" (get-in runtime [:metadata :pid]) "daemon_id" (get-in runtime [:metadata :nonce])}))
+    "stop" {"stopping" true "pid" (get-in runtime [:metadata :pid]) "weaver_id" (get-in runtime [:metadata :nonce])}))
 
 (defn handle-request [runtime line]
   (try
@@ -211,7 +211,7 @@
                                 (future (stop-fn)))))
                           (catch ClosedChannelException _)
                           (catch Exception _))))
-                    "todo-json-socket")]
+                    "skein-weaver-json-socket")]
         (.setDaemon thread true)
         (.start thread)
         {:server server :thread thread :running? running? :socket-path socket-path})

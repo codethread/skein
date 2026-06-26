@@ -1,4 +1,4 @@
-(ns todo.daemon.metadata
+(ns skein.weaver.metadata
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
@@ -8,9 +8,9 @@
            [java.util UUID]))
 
 (def protocol-version 1)
-(def json-file-name "daemon.json")
-(def edn-file-name "daemon.edn")
-(def socket-file-name "daemon.sock")
+(def json-file-name "weaver.json")
+(def edn-file-name "weaver.edn")
+(def socket-file-name "weaver.sock")
 
 (defn canonical-db-path [db-file]
   (.getPath (.getCanonicalFile (io/file db-file))))
@@ -44,7 +44,7 @@
 (defn json-metadata-shape [metadata]
   {"protocol_version" protocol-version
    "pid" (:pid metadata)
-   "daemon_id" (:nonce metadata)
+   "weaver_id" (:nonce metadata)
    "config_dir" (:config-dir metadata)
    "state_dir" (:state-dir metadata)
    "data_dir" (:data-dir metadata)

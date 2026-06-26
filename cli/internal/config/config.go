@@ -10,7 +10,7 @@ import (
 
 const DefaultFormat = "human"
 const ConfigFileName = "config.json"
-const DefaultDBFileName = "tasks.sqlite"
+const DefaultDBFileName = "skein.sqlite"
 
 var allowedKeys = map[string]bool{"configFormat": true, "source": true, "format": true}
 
@@ -45,7 +45,7 @@ func DefaultWorld() (World, error) {
 	if dataHome == "" {
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return world(filepath.Join(configHome, "atom"), filepath.Join(stateHome, "atom"), filepath.Join(dataHome, "atom")), nil
+	return world(filepath.Join(configHome, "skein"), filepath.Join(stateHome, "skein"), filepath.Join(dataHome, "skein")), nil
 }
 
 func ExplicitWorld(configDir string) (World, error) {

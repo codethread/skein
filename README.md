@@ -18,7 +18,7 @@ Install the `todo` command from this checkout and point your default daemon worl
 
 ```sh
 go install ./cli/cmd/todo
-ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/atom"
+ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/skein"
 mkdir -p "$ATOM_CONFIG"
 printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$ATOM_CONFIG/config.json"
 ```

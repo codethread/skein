@@ -1,13 +1,13 @@
-(ns todo.daemon.api
+(ns skein.weaver.api
   (:refer-clojure :exclude [list update use])
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.repl.deps :as repl-deps]
             [clojure.string :as str]
             [next.jdbc :as jdbc]
-            [todo.daemon.runtime :as runtime]
-            [todo.db :as db]
-            [todo.query :as query]))
+            [skein.weaver.runtime :as runtime]
+            [skein.db :as db]
+            [skein.query :as query]))
 
 (defn normalize-row [row]
   (cond-> row
@@ -349,7 +349,7 @@
 
 (defn- current-runtime []
   (or @runtime/current-runtime
-      (throw (ex-info "No daemon runtime is active" {}))))
+      (throw (ex-info "No weaver runtime is active" {}))))
 
 (defn register-query! [query-name query-def]
   (register-query (current-runtime) query-name query-def))

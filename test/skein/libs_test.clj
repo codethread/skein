@@ -1,17 +1,17 @@
-(ns todo.libs-test
+(ns skein.libs-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [atom.libs.alpha :as libs]
-            [todo.daemon.config :as daemon-config]
-            [todo.client :as client]
-            [todo.daemon.runtime :as runtime]
-            [todo.db-test :as db-test]
-            [todo.repl :as repl]))
+            [skein.weaver.config :as daemon-config]
+            [skein.client :as client]
+            [skein.weaver.runtime :as runtime]
+            [skein.db-test :as db-test]
+            [skein.repl :as repl]))
 
 (defn- temp-config-dir []
   (doto (.toFile (java.nio.file.Files/createTempDirectory
                   (.toPath (io/file "/tmp"))
-                  "atom-libs-config"
+                  "skein-libs-config"
                   (make-array java.nio.file.attribute.FileAttribute 0)))
     (.mkdirs)))
 
@@ -111,38 +111,38 @@
 
 (deftest approved-routes-through-connected-helper-context
   (with-redefs [runtime/current-runtime (atom nil)
-                repl/connected-config-dir (constantly "/tmp/atom-connected-world")
-                todo.client/call-world (fn [config-dir opts op & args]
+                repl/connected-config-dir (constantly "/tmp/skein-connected-world")
+                skein.client/call-world (fn [config-dir opts op & args]
                                          {:config-dir config-dir
                                           :opts opts
                                           :op op
                                           :args args})]
-    (is (= {:config-dir "/tmp/atom-connected-world"
+    (is (= {:config-dir "/tmp/skein-connected-world"
             :opts {}
             :op :approved-libs
             :args nil}
            (libs/approved)))
-    (is (= {:config-dir "/tmp/atom-connected-world"
+    (is (= {:config-dir "/tmp/skein-connected-world"
             :opts {}
             :op :sync-approved-libs
             :args nil}
            (libs/sync!)))
-    (is (= {:config-dir "/tmp/atom-connected-world"
+    (is (= {:config-dir "/tmp/skein-connected-world"
             :opts {}
             :op :approved-lib-syncs
             :args nil}
            (libs/syncs)))
-    (is (= {:config-dir "/tmp/atom-connected-world"
+    (is (= {:config-dir "/tmp/skein-connected-world"
             :opts {}
             :op :use!
             :args [:demo {:ns 'demo.core}]}
            (libs/use! :demo {:ns 'demo.core})))
-    (is (= {:config-dir "/tmp/atom-connected-world"
+    (is (= {:config-dir "/tmp/skein-connected-world"
             :opts {}
             :op :uses
             :args nil}
            (libs/uses)))
-    (is (= {:config-dir "/tmp/atom-connected-world"
+    (is (= {:config-dir "/tmp/skein-connected-world"
             :opts {}
             :op :use
             :args [:demo]}

@@ -1,21 +1,21 @@
-(ns todo.cli
+(ns skein.cli
   (:gen-class)
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.tools.cli :refer [parse-opts]]
-            [todo.client :as client]
-            [todo.daemon.config :as daemon-config]
-            [todo.daemon.runtime :as runtime]
-            [todo.query :as query]
-            [todo.specs :as specs]))
+            [skein.client :as client]
+            [skein.weaver.config :as weaver-config]
+            [skein.weaver.runtime :as runtime]
+            [skein.query :as query]
+            [skein.specs :as specs]))
 
 (def query-commands #{"show" "list" "ready"})
 (def commands (conj query-commands "init" "add" "update" "daemon"))
 
 (def global-options
-  [[nil "--config-dir DIR" "Daemon world config directory"
+  [[nil "--config-dir DIR" "Weaver world config directory"
     :id :config-dir]
    [nil "--format FORMAT" "Output mode: human, edn, json"
     :id :format
@@ -59,7 +59,7 @@
   [[nil "--where EDN" "EDN query expression"
     :id :where
     :parse-fn edn/read-string]
-   [nil "--query NAME" "Named query from daemon memory"
+   [nil "--query NAME" "Named query from weaver memory"
     :id :query
     :parse-fn (fn [s]
                 (let [query-name (edn/read-string s)]
@@ -81,7 +81,7 @@
 (defn usage [summary]
   (str "Todo CLI\n\n"
        "Usage:\n"
-       "  clojure -M:todo [--config-dir <dir>] [--format human|edn|json] <command> [args]\n\n"
+       "  clojure -M:skein [--config-dir <dir>] [--format human|edn|json] <command> [args]\n\n"
        "Commands:\n"
        "  init\n"
        "  add <title> [--active true|false] [--ephemeral true|false] [--attr key=value ...]\n"
@@ -135,7 +135,7 @@
       {})))
 
 (defn resolve-global-options [options]
-  (let [world (daemon-config/world (:config-dir options))
+  (let [world (weaver-config/world (:config-dir options))
         config (read-client-config world)]
     (merge {:db (:db-path world) :format "human" :world world :config-dir (:config-dir world)}
            (select-keys config [:source :format])
@@ -178,13 +178,13 @@
   (parse-options args daemon-start-options summary))
 
 (defn cli-error-message [e]
-  (let [{:keys [daemon-message daemon-data]} (ex-data e)]
-    (if-let [query-name (and (= "Query not found" daemon-message)
-                             (:canonical-query daemon-data))]
+  (let [{:keys [weaver-message weaver-data]} (ex-data e)]
+    (if-let [query-name (and (= "Query not found" weaver-message)
+                             (:canonical-query weaver-data))]
       (str "Query not found: " query-name
-           (when-let [available (seq (:available daemon-data))]
+           (when-let [available (seq (:available weaver-data))]
              (str " (available: " (str/join ", " available) ")")))
-      (or daemon-message (.getMessage e)))))
+      (or weaver-message (.getMessage e)))))
 
 (defn run-query-command [db-file options ad-hoc named plain]
   (cond
@@ -232,7 +232,7 @@
      :config-dir (:config-dir meta)
      :data-dir (:data-dir meta)
      :database-path (:canonical-db-path meta)
-     :daemon-id (:nonce meta)
+     :weaver-id (:nonce meta)
      :socket-path (:socket-path meta)
      :started-at (:started-at meta)
      :nrepl (:endpoint meta)}))

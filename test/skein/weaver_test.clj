@@ -1,15 +1,15 @@
-(ns todo.daemon-test
+(ns skein.weaver-test
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
-            [todo.daemon.api :as api]
-            [todo.daemon.config :as daemon-config]
-            [todo.daemon.metadata :as metadata]
-            [todo.daemon.runtime :as runtime]
-            [todo.daemon.socket :as socket]
-            [todo.db :as db]
-            [todo.db-test :as db-test])
+            [skein.weaver.api :as api]
+            [skein.weaver.config :as weaver-config]
+            [skein.weaver.metadata :as metadata]
+            [skein.weaver.runtime :as runtime]
+            [skein.weaver.socket :as socket]
+            [skein.db :as db]
+            [skein.db-test :as db-test])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
            [java.nio.channels Channels SocketChannel]))
@@ -22,7 +22,7 @@
   (let [file (java.io.File/createTempFile "tdx" "")]
     (.delete file)
     (.mkdirs file)
-    (daemon-config/world (.getCanonicalPath file))))
+    (weaver-config/world (.getCanonicalPath file))))
 
 (defn with-runtime
   ([f] (with-runtime nil f))
@@ -59,7 +59,7 @@
   (let [m (:metadata rt)
         req {"protocol_version" 1
              "request_id" "test-request"
-             "daemon_id" (:nonce m)
+             "weaver_id" (:nonce m)
              "operation" operation
              "arguments" arguments
              "options" {"format" "json"}}]
@@ -72,26 +72,26 @@
       (.flush wrt)
       (json/read-str (.readLine rdr)))))
 
-(deftest daemon-world-resolution
+(deftest weaver-world-resolution
   (let [home (System/getProperty "user.home")
         config-home (or (System/getenv "XDG_CONFIG_HOME") (str home "/.config"))
         state-home (or (System/getenv "XDG_STATE_HOME") (str home "/.local/state"))
         data-home (or (System/getenv "XDG_DATA_HOME") (str home "/.local/share"))]
-    (is (= {:config-dir (str config-home "/atom")
-            :state-dir (str state-home "/atom")
-            :data-dir (str data-home "/atom")
-            :config-file (str config-home "/atom/config.json")
-            :db-path (str data-home "/atom/skein.sqlite")}
-           (daemon-config/world))))
+    (is (= {:config-dir (str config-home "/skein")
+            :state-dir (str state-home "/skein")
+            :data-dir (str data-home "/skein")
+            :config-file (str config-home "/skein/config.json")
+            :db-path (str data-home "/skein/skein.sqlite")}
+           (weaver-config/world))))
   (let [dir (.getCanonicalPath (.toFile (java.nio.file.Files/createTempDirectory "todo-world" (make-array java.nio.file.attribute.FileAttribute 0))))]
     (is (= {:config-dir dir
             :state-dir (str dir "/state")
             :data-dir (str dir "/data")
             :config-file (str dir "/config.json")
             :db-path (str dir "/data/skein.sqlite")}
-           (daemon-config/world dir)))))
+           (weaver-config/world dir)))))
 
-(deftest daemon-api-delegates-to-db-and-normalizes-results
+(deftest weaver-api-delegates-to-db-and-normalizes-results
   (with-runtime
     (fn [rt _]
       (is (= {:database "initialized"} (api/init rt)))
@@ -104,7 +104,7 @@
         (is (= #{(:id design) (:id docs)} (set (map :id (api/list rt)))))
         (is (= [(:id docs)] (mapv :id (api/ready rt))))))))
 
-(deftest daemon-query-registry-add-load-list-and-resolve
+(deftest weaver-query-registry-add-load-list-and-resolve
   (with-runtime
     (fn [rt _]
       (let [open-query [:= :active true]
@@ -118,7 +118,7 @@
                 "open" open-query}
                (api/queries rt)))))))
 
-(deftest daemon-query-registry-accepts-parameterized-in-queries
+(deftest weaver-query-registry-accepts-parameterized-in-queries
   (with-runtime
     (fn [rt _]
       (api/init rt)
@@ -141,7 +141,7 @@
   (is (= #{"init" "add" "update" "show" "list" "ready" "list-query" "ready-query" "status" "stop"}
          socket/allowed-operations)))
 
-(deftest daemon-runtime-transformation-primitives
+(deftest weaver-runtime-transformation-primitives
   (with-runtime
     (fn [rt _]
       (api/init rt)
@@ -160,18 +160,18 @@
         (is (= #{(:id feature) (:id agent) (:id human)}
                (set (map :id (:tasks (api/subgraph rt [(:id feature)]))))))))))
 
-(deftest daemon-view-registry-operations
+(deftest weaver-view-registry-operations
   (with-runtime
     (fn [rt _]
-      (is (= {:name "daily" :fn 'todo.daemon-test/test-view}
-             (api/register-view! rt 'daily 'todo.daemon-test/test-view)))
-      (is (= [{:name "daily" :fn 'todo.daemon-test/test-view}]
+      (is (= {:name "daily" :fn 'skein.weaver-test/test-view}
+             (api/register-view! rt 'daily 'skein.weaver-test/test-view)))
+      (is (= [{:name "daily" :fn 'skein.weaver-test/test-view}]
              (api/views rt)))
       (is (= {:view :test :params {:owner "agent"}}
              (api/view! rt :daily {:owner "agent"})))
-      (is (= {:name "daily" :fn 'todo.daemon-test/replacement-view}
-             (api/register-view! rt :daily 'todo.daemon-test/replacement-view)))
-      (is (= [{:name "daily" :fn 'todo.daemon-test/replacement-view}]
+      (is (= {:name "daily" :fn 'skein.weaver-test/replacement-view}
+             (api/register-view! rt :daily 'skein.weaver-test/replacement-view)))
+      (is (= [{:name "daily" :fn 'skein.weaver-test/replacement-view}]
              (api/views rt)))
       (is (= {:view :replacement :params {}}
              (api/view! rt 'daily {})))
@@ -192,9 +192,9 @@
                             (api/register-view! rt 'bad 'unqualified)))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (api/register-view! rt 'user/daily 'todo.daemon-test/test-view))))))
+                            (api/register-view! rt 'user/daily 'skein.weaver-test/test-view))))))
 
-(deftest daemon-query-registry-fails-clearly
+(deftest weaver-query-registry-fails-clearly
   (with-runtime
     (fn [rt _]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
@@ -224,7 +224,7 @@
                             (api/load-queries rt {:bad [:unknown :active true]})))
       (is (= {"ok" [:= :active true]} (api/queries rt))))))
 
-(deftest daemon-api-update-preserves-domain-errors-and-rolls-back
+(deftest weaver-api-update-preserves-domain-errors-and-rolls-back
   (with-runtime
     (fn [rt _]
       (api/init rt)
@@ -247,9 +247,9 @@
              (get-in rt [:metadata :canonical-db-path])))
       (is (.isDirectory (io/file (:state-dir world))))
       (is (.isDirectory (io/file (:data-dir world))))
-      (is (= (str (:state-dir world) "/daemon.sock") (get-in rt [:metadata :socket-path])))
-      (is (= (str (:state-dir world) "/daemon.edn") (.getPath (metadata/metadata-file world))))
-      (is (= (str (:state-dir world) "/daemon.json") (.getPath (metadata/json-metadata-file world))))
+      (is (= (str (:state-dir world) "/weaver.sock") (get-in rt [:metadata :socket-path])))
+      (is (= (str (:state-dir world) "/weaver.edn") (.getPath (metadata/metadata-file world))))
+      (is (= (str (:state-dir world) "/weaver.json") (.getPath (metadata/json-metadata-file world))))
       (finally
         (runtime/stop! rt)
         (delete-tree! (io/file (:config-dir world)))))))
@@ -258,7 +258,7 @@
   (let [world (temp-world)
         init (io/file (:config-dir world) "init.clj")]
     (try
-      (spit init "(require '[todo.daemon.api :as api] '[todo.daemon.runtime :as runtime]) (api/register-query @runtime/current-runtime 'trusted [:= :active true])")
+      (spit init "(require '[skein.weaver.api :as api] '[skein.weaver.runtime :as runtime]) (api/register-query @runtime/current-runtime 'trusted [:= :active true])")
       (let [rt (runtime/start! nil {:world world})]
         (try
           (is (= {"trusted" [:= :active true]} (api/queries rt)))
@@ -299,7 +299,7 @@
         (is (= 1 (:protocol-version status)))
         (is (string? (:socket-path status)))
         (is (= canonical (get json-disk "database_path")))
-        (is (= (:nonce status) (get json-disk "daemon_id")))
+        (is (= (:nonce status) (get json-disk "weaver_id")))
         (is (= (:socket-path status) (get json-disk "socket_path")))
         (is (= "127.0.0.1" (get-in json-disk ["nrepl" "host"])))
         (is (false? (metadata/stale-or-missing? status)))
@@ -346,7 +346,7 @@
   (with-runtime
     (fn [rt _]
       (let [m (:metadata rt)
-            req {"protocol_version" 1 "request_id" "bad-identity" "daemon_id" "wrong"
+            req {"protocol_version" 1 "request_id" "bad-identity" "weaver_id" "wrong"
                  "operation" "stop" "arguments" {} "options" {"format" "json"}}]
         (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
                          (.connect (UnixDomainSocketAddress/of (:socket-path m))))
@@ -365,7 +365,7 @@
   (with-runtime
     (fn [rt _]
       (let [m (:metadata rt)
-            req {"protocol_version" 1 "request_id" "bad-stop" "daemon_id" (:nonce m)
+            req {"protocol_version" 1 "request_id" "bad-stop" "weaver_id" (:nonce m)
                  "operation" "stop" "arguments" {"force" true} "options" {"format" "json"}}]
         (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
                          (.connect (UnixDomainSocketAddress/of (:socket-path m))))
@@ -419,7 +419,7 @@
       (.mkdirs (io/file (:state-dir world)))
       (spit socket-file "orphaned")
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"cannot prove daemon world is stale"
+                            #"cannot prove weaver world is stale"
                             (runtime/start! nil {:world world})))
       (is (.exists socket-file))
       (finally
