@@ -15,7 +15,7 @@ Root specs are canonical for shipped behavior:
 
 ## Active features
 
-None.
+- `runtime-transformation-primitives` — planned blessed `atom.*.alpha` query/graph/view primitives built on the runtime library workspace.
 
 ## Archived features
 

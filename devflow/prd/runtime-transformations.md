@@ -113,38 +113,38 @@ Future trusted Clojure might look like:
            [:> :updated_at [:param :since]]
            [:not [:in :status ["done" "failed" "cancelled"]]]]})
 
-(todo/register-view!
-  'active-feature-dags
-  (fn [{:keys [params]}]
-    (let [seed-ids
-          (todo/query-ids! 'active-work-in-repo params)
+(defn active-feature-dags-view [{:keys [params]}]
+  (let [seed-ids
+        (todo/query-ids! 'active-work-in-repo params)
 
-          feature-root-ids
-          (todo/ancestor-root-ids seed-ids {:edge-type "parent-of"
-                                            :where [:= [:attr :kind] "feature"]})
+        feature-root-ids
+        (todo/ancestor-root-ids seed-ids {:edge-type "parent-of"
+                                          :where [:= [:attr :kind] "feature"]})
 
-          dag
-          (todo/subgraphs feature-root-ids {:edge-type "parent-of"})
+        dag
+        (todo/subgraph feature-root-ids {:edge-type "parent-of"})
 
-          unresolved-linked-ids
-          (->> (:edges dag)
-               (filter unresolved-edge?)
-               (mapcat (juxt :from_task_id :to_task_id))
-               distinct
-               vec)
+        unresolved-linked-ids
+        (->> (:edges dag)
+             (filter unresolved-edge?)
+             (mapcat (juxt :from_task_id :to_task_id))
+             distinct
+             vec)
 
-          linked-tasks
-          (todo/tasks-by-ids unresolved-linked-ids)]
-      {:features (todo/tasks-by-ids feature-root-ids)
-       :dag dag
-       :linked-tasks linked-tasks})))
+        linked-tasks
+        (todo/tasks-by-ids unresolved-linked-ids)]
+    {:features (todo/tasks-by-ids feature-root-ids)
+     :dag dag
+     :linked-tasks linked-tasks}))
+
+(todo/register-view! 'active-feature-dags 'my.views/active-feature-dags-view)
 ```
 
 The exact API is illustrative. The product requirement is the composition pattern: userland Clojure can chain SQL-backed queries, graph expansions, batch hydration, and arbitrary filtering without pulling the whole database into memory unless it explicitly chooses to.
 
 ## PRD-001.P7 First buildable slice
 
-The runtime library workspace is already shipped. The first view-oriented slice should build on it rather than inventing another extension mechanism. Prefer a blessed source-visible library namespace such as `atom.graph.alpha` or `atom.views.alpha`, activated from config-dir `init.clj` via `atom.libs.alpha/use!`, with thin daemon API primitives underneath only where core access is required.
+The runtime library workspace is already shipped. The first view-oriented slice should build on it rather than inventing another extension mechanism. Prefer blessed source-visible library namespaces such as `atom.graph.alpha` or `atom.views.alpha`, required from config-dir `init.clj` as normal shipped Atom namespaces. Use `atom.libs.alpha/use!` for user/community runtime libraries or explicit install side effects, not merely to load built-in namespaces already present on the Atom classpath. Thin daemon API primitives should sit underneath only where core access is required.
 
 The first slice should prove the architecture without implementing every graph helper.
 
@@ -182,7 +182,7 @@ Potential graph primitives:
 - **PRD-001.GR1:** `parents-of` / `children-of` for one-hop set traversal.
 - **PRD-001.GR2:** `ancestors-of` / `descendants-of` for recursive traversal.
 - **PRD-001.GR3:** `ancestor-root-ids` for finding feature roots or ownership roots.
-- **PRD-001.GR4:** `subgraphs` for expanding full DAGs from root ids.
+- **PRD-001.GR4:** `subgraph` for expanding full DAGs from root ids, returning `{:root-ids [...] :tasks [...] :edges [...]}`.
 
 Potential runtime primitives:
 
