@@ -266,20 +266,58 @@
     (spit file content)
     file))
 
-(deftest use-loads-namespace-and-records-state
+(deftest use-loads-namespace-from-synced-root-and-records-state
   (with-runtime
     (fn [_ config-dir]
       (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.use-ns-" suffix))
-            lib (symbol (str "demo/use-ns-lib-" suffix))]
-        (write-local-lib! config-dir "use-ns" ns-sym)
+            lib (symbol (str "demo/use-ns-lib-" suffix))
+            root (write-local-lib! config-dir "use-ns" ns-sym)
+            expected-file (io/file root "src" "demo" (str "use_ns_" suffix ".clj"))]
         (write-libs! config-dir (pr-str {:libs {lib {:local/root "libs/use-ns"}}}))
         (libs/sync!)
         (let [result (libs/use! :demo/ns {:ns ns-sym :libs [lib]})]
           (is (= :loaded (:status result)))
-          (is (= {:ns ns-sym} (:loaded result)))
+          (is (= ns-sym (get-in result [:loaded :ns])))
+          (is (= (.getCanonicalPath expected-file) (get-in result [:loaded :file])))
           (is (= result (libs/use :demo/ns)))
           (is (= :synced-lib-loaded ((requiring-resolve (symbol (str ns-sym "/marker")))))))))))
+
+(deftest use-searches-multiple-synced-roots-for-namespace-source
+  (with-runtime
+    (fn [_ config-dir]
+      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+            first-ns (symbol (str "demo.first" suffix))
+            second-ns (symbol (str "demo.second-lib-" suffix))
+            first-lib (symbol (str "demo/first-lib-" suffix))
+            second-lib (symbol (str "demo/second-lib-" suffix))
+            root (write-local-lib! config-dir "second" second-ns)]
+        (write-local-lib! config-dir "first" first-ns)
+        (write-libs! config-dir (pr-str {:libs {first-lib {:local/root "libs/first"}
+                                               second-lib {:local/root "libs/second"}}}))
+        (libs/sync!)
+        (let [result (libs/use! :demo/second {:ns second-ns :libs #{first-lib second-lib}})]
+          (is (= :loaded (:status result)))
+          (is (= (.getCanonicalPath (io/file root "src" "demo" (str "second_lib_" suffix ".clj")))
+                 (get-in result [:loaded :file]))))))))
+
+(deftest use-reports-missing-synced-namespace-source
+  (with-runtime
+    (fn [_ config-dir]
+      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+            existing-ns (symbol (str "demo.existing" suffix))
+            missing-ns (symbol (str "demo.missing-lib-" suffix))
+            lib (symbol (str "demo/missing-ns-lib-" suffix))
+            root (write-local-lib! config-dir "missing-ns" existing-ns)]
+        (write-libs! config-dir (pr-str {:libs {lib {:local/root "libs/missing-ns"}}}))
+        (libs/sync!)
+        (let [result (libs/use! :demo/missing-ns {:ns missing-ns :libs [lib]})]
+          (is (= :failed (:status result)))
+          (is (= "Could not locate namespace source in synced library roots" (get-in result [:error :message])))
+          (is (= {:ns missing-ns
+                  :relative-path (str "demo" java.io.File/separator "missing_lib_" suffix ".clj")
+                  :searched-roots [(.getCanonicalPath (io/file root "src"))]}
+                 (get-in result [:error :data]))))))))
 
 (deftest use-loads-selected-config-relative-file-and-records-call-return
   (with-runtime

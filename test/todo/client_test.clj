@@ -8,14 +8,36 @@
             [todo.daemon.runtime :as runtime]
             [todo.db-test :as db-test]))
 
+(defn delete-tree! [file]
+  (doseq [f (reverse (file-seq file))]
+    (.delete f)))
+
+(defn temp-world []
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory
+                      (.toPath (java.io.File. "/tmp"))
+                      "tcw"
+                      (make-array java.nio.file.attribute.FileAttribute 0)))]
+    (daemon-config/world (.getCanonicalPath dir))))
+
+(defn with-default-world [world f]
+  (let [real-world daemon-config/world]
+    (with-redefs [daemon-config/world (fn
+                                        ([] world)
+                                        ([config-dir] (real-world config-dir)))]
+      (f))))
+
 (defn with-runtime [f]
   (let [db-file (db-test/temp-db-file)
-        rt (runtime/start! db-file)]
-    (try
-      (f rt db-file)
-      (finally
-        (runtime/stop! rt)
-        (db-test/delete-sqlite-family! db-file)))))
+        world (temp-world)]
+    (with-default-world world
+      (fn []
+        (let [rt (runtime/start! db-file {:world world})]
+          (try
+            (f rt db-file)
+            (finally
+              (runtime/stop! rt)
+              (db-test/delete-sqlite-family! db-file)
+              (delete-tree! (java.io.File. (:config-dir world))))))))))
 
 (deftest client-calls-running-daemon-and-returns-clojure-data
   (with-runtime
@@ -61,40 +83,48 @@
 
 (deftest client-fails-loudly-for-missing-and-stale-metadata
   (let [db-file (db-test/temp-db-file)
-        canonical (metadata/canonical-db-path db-file)]
-    (try
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"metadata is missing or stale"
-                            (client/list db-file)))
-      (metadata/publish! {:pid 1 :canonical-db-path canonical :state-dir (:state-dir (daemon-config/world))})
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"metadata is missing or stale"
-                            (client/list db-file)))
-      (finally
-        (metadata/delete! (daemon-config/world))
-        (db-test/delete-sqlite-family! db-file)))))
+        canonical (metadata/canonical-db-path db-file)
+        world (temp-world)]
+    (with-default-world world
+      (fn []
+        (try
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"metadata is missing or stale"
+                                (client/list db-file)))
+          (metadata/publish! {:pid 1 :canonical-db-path canonical :state-dir (:state-dir world)})
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"metadata is missing or stale"
+                                (client/list db-file)))
+          (finally
+            (metadata/delete! world)
+            (db-test/delete-sqlite-family! db-file)
+            (delete-tree! (java.io.File. (:config-dir world)))))))))
 
 (deftest client-fails-loudly-for-unreachable-and-non-local-endpoints
   (let [db-file (db-test/temp-db-file)
         canonical (metadata/canonical-db-path db-file)
+        world (temp-world)
         meta (metadata/metadata-shape {:pid 1
                                        :host "127.0.0.1"
                                        :port 1
                                        :canonical-db-path canonical
                                        :nonce "unreachable"
-                                       :world (daemon-config/world)})]
-    (try
-      (metadata/publish! meta)
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"Unable to connect"
-                            (client/list db-file {:timeout-ms 100})))
-      (metadata/publish! (assoc-in meta [:endpoint :host] "203.0.113.1"))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"not loopback"
-                            (client/list db-file {:timeout-ms 100})))
-      (finally
-        (metadata/delete! (daemon-config/world))
-        (db-test/delete-sqlite-family! db-file)))))
+                                       :world world})]
+    (with-default-world world
+      (fn []
+        (try
+          (metadata/publish! meta)
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"Unable to connect"
+                                (client/list db-file {:timeout-ms 100})))
+          (metadata/publish! (assoc-in meta [:endpoint :host] "203.0.113.1"))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"not loopback"
+                                (client/list db-file {:timeout-ms 100})))
+          (finally
+            (metadata/delete! world)
+            (db-test/delete-sqlite-family! db-file)
+            (delete-tree! (java.io.File. (:config-dir world)))))))))
 
 (deftest client-fails-loudly-for-wrong-daemon-identity
   (with-runtime

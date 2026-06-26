@@ -3,6 +3,7 @@
             [clojure.test :refer [deftest is testing]]
             [todo.cli :as cli]
             [todo.client :as client]
+            [todo.daemon.config :as daemon-config]
             [todo.daemon.metadata :as metadata]
             [todo.daemon.runtime :as runtime]
             [todo.db :as db]))
@@ -18,7 +19,7 @@
 
 (defn temp-client-config [_db-file]
   (let [dir (.toFile (java.nio.file.Files/createTempDirectory "todo-client-config" (make-array java.nio.file.attribute.FileAttribute 0)))]
-    (spit (java.io.File. dir "config.json") (json/write-str {:format "human"}))
+    (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :format "human"}))
     (.getCanonicalPath dir)))
 
 (defn expected-world [config-dir]
@@ -34,16 +35,33 @@
    :world (expected-world config-dir)
    :config-dir config-dir})
 
+(defn delete-tree! [file]
+  (doseq [f (reverse (file-seq file))]
+    (.delete f)))
+
+(defn temp-world []
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory
+                      (.toPath (java.io.File. "/tmp"))
+                      "tcli"
+                      (make-array java.nio.file.attribute.FileAttribute 0)))]
+    (daemon-config/world (.getCanonicalPath dir))))
+
 (defn with-runtime [f]
   (let [db-file (temp-db-file)
-        rt (runtime/start! db-file)]
-    (try
-      (client/init db-file)
-      (f db-file)
-      (finally
-        (when @runtime/current-runtime
-          (runtime/stop! rt))
-        (delete-sqlite-family! db-file)))))
+        world (temp-world)
+        real-world daemon-config/world]
+    (with-redefs [daemon-config/world (fn
+                                        ([] world)
+                                        ([config-dir] (real-world config-dir)))]
+      (let [rt (runtime/start! db-file {:world world})]
+        (try
+          (client/init db-file)
+          (f db-file)
+          (finally
+            (when @runtime/current-runtime
+              (runtime/stop! rt))
+            (delete-sqlite-family! db-file)
+            (delete-tree! (java.io.File. (:config-dir world)))))))))
 
 (deftest parses-global-options-before-command
   (testing "global options are parsed before the command and command args are preserved"
@@ -70,12 +88,36 @@
                      (cli/parse-global-options ["--config-dir" config "--format" "edn" "daemon" "status"])]
                  [opts command args])))
         (finally (.delete (java.io.File. config))))))
-  (testing "client config only supports source and format"
+  (testing "client config requires configFormat and rejects unsupported keys"
     (let [dir (.toFile (java.nio.file.Files/createTempDirectory "todo-bad-config" (make-array java.nio.file.attribute.FileAttribute 0)))]
-      (spit (java.io.File. dir "config.json") (json/write-str {:db "old.sqlite"}))
       (with-redefs [cli/fail! (fn [message _summary] (throw (ex-info message {})))]
+        (spit (java.io.File. dir "config.json") (json/write-str {:format "human"}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Client config configFormat must be a string"
+                              (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))
+        (spit (java.io.File. dir "config.json") (json/write-str {:configFormat 3}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Client config configFormat must be a string"
+                              (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))
+        (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "beta" :format "human" :source "x"}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Client config configFormat must be \"alpha\""
+                              (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))
+        (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :unsupported "oops"}))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Unsupported client config keys"
+                              (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))
+        (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :source 3}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Client config source must be a string"
+                              (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))
+        (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :format 4 :source "x"}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Client config format must be a string"
+                              (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))
+        (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :format "x" :source "x"}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Client config format must be one of human, edn, or json"
                               (cli/parse-global-options ["--config-dir" (.getCanonicalPath dir) "ready"])))))))
 
 (deftest parses-repeatable-command-options

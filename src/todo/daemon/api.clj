@@ -104,6 +104,23 @@
                :reason reason}
               data)])
 
+(defn- root-paths [root]
+  (let [deps-file (io/file root "deps.edn")]
+    (when-not (.isFile deps-file)
+      (throw (ex-info "Local root must contain deps.edn" {:root root})))
+    (let [deps (edn/read-string (slurp deps-file))
+          paths (or (:paths deps) ["src"])]
+      (when-not (and (vector? paths) (every? string? paths))
+        (throw (ex-info "Local root deps.edn :paths must be a vector of strings" {:root root :paths paths})))
+      (mapv #(.getCanonicalFile (io/file root %)) paths))))
+
+(defn- add-root-paths-to-library-loader! [runtime root]
+  (let [loader (:library-classloader runtime)]
+    (doseq [path (root-paths root)]
+      (when-not (.isDirectory path)
+        (throw (ex-info "Local root classpath entry must be a directory" {:root root :path (.getPath path)})))
+      (.addURL ^clojure.lang.DynamicClassLoader loader (.toURL (.toURI path))))))
+
 (defn- sync-approved-lib! [runtime lib entry]
   (let [root-file (io/file (:root entry))]
     (cond
@@ -122,6 +139,7 @@
                       runtime
                       #(binding [clojure.core/*repl* true]
                          (repl-deps/add-libs {lib {:local/root (:root entry)}})))]
+          (add-root-paths-to-library-loader! runtime (:root entry))
           [lib {:lib lib
                 :local/root (:local/root entry)
                 :root (:root entry)
@@ -219,6 +237,47 @@
                        :resolved file-path})))
     file-path))
 
+(defn- ns-relative-path [ns-sym]
+  (str (-> (name ns-sym)
+           (str/replace "-" "_")
+           (str/replace "." java.io.File/separator))
+       ".clj"))
+
+(defn- synced-root-paths [runtime]
+  (mapcat (fn [[_ {:keys [root status]}]]
+            (when (#{:loaded :already-available} status)
+              (root-paths root)))
+          @(approved-lib-sync-state runtime)))
+
+(defn- locate-synced-namespace-file [runtime ns-sym]
+  (let [relative (ns-relative-path ns-sym)
+        roots (vec (synced-root-paths runtime))
+        file (some (fn [root]
+                     (let [candidate (io/file root relative)]
+                       (when (.isFile candidate)
+                         (.getCanonicalPath candidate))))
+                   roots)]
+    {:file file
+     :relative-path relative
+     :searched-roots (mapv #(.getCanonicalPath %) roots)}))
+
+(defn- load-synced-namespace! [runtime ns-sym]
+  (if (find-ns ns-sym)
+    {:ns ns-sym}
+    (let [{:keys [file relative-path searched-roots]} (locate-synced-namespace-file runtime ns-sym)]
+      (if file
+        (do
+          (load-file file)
+          {:ns ns-sym :file file})
+        (try
+          (require ns-sym)
+          {:ns ns-sym}
+          (catch java.io.FileNotFoundException _
+            (throw (ex-info "Could not locate namespace source in synced library roots"
+                            {:ns ns-sym
+                             :relative-path relative-path
+                             :searched-roots searched-roots}))))))))
+
 (defn- exception-data [t]
   {:message (ex-message t)
    :class (str (class t))
@@ -236,7 +295,7 @@
         (let [load-result (with-library-classloader
                             runtime
                             #(if-let [ns-sym (:ns opts)]
-                               (do (require ns-sym) {:ns ns-sym})
+                               (load-synced-namespace! runtime ns-sym)
                                (let [file (module-file runtime (:file opts))]
                                  (load-file file)
                                  {:file file})))

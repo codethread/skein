@@ -24,20 +24,21 @@ PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
 Common commands:
 
 ```sh
-# Build the public Go CLI and create/edit ~/.config/atom/config.json.
-go build -o ./cli/bin/todo ./cli/cmd/todo
-mkdir -p ~/.config/atom
-printf '{"source":"%s","format":"human"}\n' "$PWD" > ~/.config/atom/config.json
+# Install the public Go CLI and create/edit the default XDG config world.
+go install ./cli/cmd/todo
+ATOM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/atom"
+mkdir -p "$ATOM_CONFIG"
+printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$ATOM_CONFIG/config.json"
 
 # Run in a dedicated terminal; daemon start stays in the foreground.
-./cli/bin/todo daemon start
+todo daemon start
 # Optional trusted startup code lives at ~/.config/atom/init.clj.
 
 # Run from another terminal while the daemon is alive.
-./cli/bin/todo init
-./cli/bin/todo --format json list
-./cli/bin/todo daemon status
-./cli/bin/todo daemon stop
+todo init
+todo --format json list
+todo daemon status
+todo daemon stop
 clojure -M:test
 (cd cli && go test ./...)
 clojure -M:repl
@@ -46,29 +47,29 @@ clojure -M:run
 
 ## Agent operation quick reference
 
-Agents should prefer the CLI for scripted work. Use `--config-dir <dir>` when you need a disposable or feature-local daemon world.
+Agents should prefer the CLI for scripted work. Always use an explicit disposable `--config-dir <dir>` for agent testing, smoke reproduction, and feature work. Never use or mutate the user's default config/data/state worlds (`~/.config/atom`, `~/.local/share/atom`, `~/.local/state/atom`) unless the user explicitly asks you to operate on their real setup.
 
 ```sh
-go build -o ./cli/bin/todo ./cli/cmd/todo
+go install ./cli/cmd/todo
 world=$(mktemp -d)
-printf '{"source":"%s","format":"human"}\n' "$PWD" > "$world/config.json"
+printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$world/config.json"
 # Run in a dedicated terminal; daemon start stays in the foreground.
-./cli/bin/todo --config-dir "$world" daemon start
+todo --config-dir "$world" daemon start
 # Optional trusted startup code lives at "$world/init.clj".
 
 # Run from another terminal while the daemon is alive.
-./cli/bin/todo --config-dir "$world" init
-design=$(./cli/bin/todo --config-dir "$world" add "Sketch model" --status done --attr priority=high)
-docs=$(./cli/bin/todo --config-dir "$world" add "Write docs" --attr owner=agent)
-./cli/bin/todo --config-dir "$world" update "$docs" --edge depends-on:$design
-./cli/bin/todo --config-dir "$world" --format json ready
-./cli/bin/todo --config-dir "$world" daemon stop
+todo --config-dir "$world" init
+design=$(todo --config-dir "$world" add "Sketch model" --status done --attr priority=high)
+docs=$(todo --config-dir "$world" add "Write docs" --attr owner=agent)
+todo --config-dir "$world" update "$docs" --edge depends-on:$design
+todo --config-dir "$world" --format json ready
+todo --config-dir "$world" daemon stop
 ```
 
 Use `todo daemon repl` for interactive exploration when a daemon is already running for the selected config-dir world:
 
 ```sh
-./cli/bin/todo --config-dir "$world" daemon repl
+todo --config-dir "$world" daemon repl
 ```
 
 ```clojure
@@ -83,16 +84,16 @@ Use `todo daemon repl` for interactive exploration when a daemon is already runn
 For non-interactive trusted forms, use stdin. It prints direct Clojure results without a CLI response envelope:
 
 ```sh
-printf '(ready)\n' | ./cli/bin/todo --config-dir "$world" daemon repl --stdin
+printf '(ready)\n' | todo --config-dir "$world" daemon repl --stdin
 ```
 
 Named queries are daemon-lifetime runtime state: register or load them through trusted daemon config or REPL helpers (`defquery!`, `load-queries!`), inspect them with `queries`, then consume them from either REPL helpers or CLI commands such as `list --query agent-owned`. They disappear when the daemon stops; the CLI does not accept `--query-file` because runtime customization belongs in daemon/REPL workflows rather than the low-privilege CLI.
 
-For config-dir library workspace workflows (`libs.edn`, `atom.libs.alpha/sync!`, layered `use!`, and helper-REPL classpath boundaries), follow [README.md](./README.md#runtime-libraries-and-startup-config). There are intentionally no plugin/package CLI commands.
+For config-dir library workspace workflows (`libs.edn`, `atom.libs.alpha/sync!`, layered `use!`, and helper-REPL classpath boundaries), follow [CONTRIBUTING.md](./CONTRIBUTING.md#runtime-libraries-and-startup-config). There are intentionally no plugin/package CLI commands.
 
 ```sh
-./cli/bin/todo --config-dir "$world" daemon status
-./cli/bin/todo --config-dir "$world" daemon stop
+todo --config-dir "$world" daemon status
+todo --config-dir "$world" daemon stop
 ```
 
 For the full CLI and REPL contracts, read the root specs linked above instead of duplicating details here.
@@ -107,7 +108,13 @@ PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
 ```
 
-The unit test suite covers parser, database, daemon, client, and REPL behavior. Go tests cover the native `todo` command, config, socket client, and integration paths. The smoke demo builds `./cli/bin/todo`, creates disposable `--config-dir` worlds with `config.json` pointing at this checkout, starts disposable daemon runtimes, exercises Go CLI subprocess commands and `daemon repl --stdin` through the selected world from outside the repo, exercises REPL helpers through a real daemon connection, then removes generated state, data, config, socket, and built CLI artifacts.
+The unit test suite covers parser, database, daemon, client, and REPL behavior. Go tests cover the native `todo` command, config, socket client, and integration paths. The smoke demo builds a temporary CLI, creates disposable `--config-dir` worlds with `config.json` pointing at this checkout, starts disposable daemon runtimes, exercises Go CLI subprocess commands and `daemon repl --stdin` through the selected world from outside the repo, exercises REPL helpers through a real daemon connection, then removes generated state, data, config, socket, and built CLI artifacts.
+
+Agents must run `clojure -M:smoke` before signing off work unless explicitly told not to. If smoke cannot be run, report that clearly with the reason and do not imply full validation passed.
+
+Keep [docs/getting-started.md](./docs/getting-started.md) and the smoke workflow in sync. User-facing bootstrap/getting-started claims should have a representative smoke path, including clean config-dir bootstrap, dirty/partially setup config-dir bootstrap, and live runtime-library reload behavior where applicable.
+
+Tests and smoke workflows must isolate daemon worlds with temporary config dirs. Do not start test daemons through the implicit default world; pass an explicit world/config-dir so tests never read user `init.clj`, `libs.edn`, runtime metadata, or task data.
 
 After validation, `git status --short` should not show generated SQLite or runtime metadata artifacts.
 

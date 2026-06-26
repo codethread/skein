@@ -72,7 +72,7 @@
 (defn write-client-config! [db-file]
   (let [dir (.toFile (smoke-config-dir db-file))]
     (.mkdirs dir)
-    (spit (java.io.File. dir "config.json") (json/write-str {:source checkout-root :format "human"}))
+    (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :source checkout-root :format "human"}))
     (.getCanonicalPath dir)))
 
 (defn write-library-startup-config! [db-file]
@@ -97,16 +97,27 @@
   (doto (java.io.File. (System/getProperty "java.io.tmpdir") "atom-smoke-outside-repo")
     (.mkdirs)))
 
+(defn write-client-config-to-dir! [config-dir]
+  (.mkdirs (java.io.File. config-dir))
+  (spit (java.io.File. config-dir "config.json") (json/write-str {:configFormat "alpha" :source checkout-root :format "human"}))
+  config-dir)
+
+(defn run-cli-config! [config-dir & args]
+  (run-process! "Go CLI command succeeds" (outside-repo-dir) nil (into [todo-bin "--config-dir" config-dir] args)))
+
+(defn run-cli-config-stdin! [config-dir stdin & args]
+  (run-process! "Go CLI stdin command succeeds" (outside-repo-dir) stdin (into [todo-bin "--config-dir" config-dir] args)))
+
 (defn run-cli! [db-file & args]
-  (run-process! "Go CLI command succeeds" (outside-repo-dir) nil (into [todo-bin "--config-dir" (write-client-config! db-file)] args)))
+  (apply run-cli-config! (write-client-config! db-file) args))
 
 (defn run-cli-stdin! [db-file stdin & args]
-  (run-process! "Go CLI stdin command succeeds" (outside-repo-dir) stdin (into [todo-bin "--config-dir" (write-client-config! db-file)] args)))
+  (apply run-cli-config-stdin! (write-client-config! db-file) stdin args))
 
-(defn start-cli-daemon!
-  ([db-file] (start-cli-daemon! db-file []))
-  ([db-file daemon-args]
-   (let [process (-> (ProcessBuilder. (into [todo-bin "--config-dir" (write-client-config! db-file) "daemon" "start"] daemon-args))
+(defn start-cli-daemon-config!
+  ([config-dir] (start-cli-daemon-config! config-dir []))
+  ([config-dir daemon-args]
+   (let [process (-> (ProcessBuilder. (into [todo-bin "--config-dir" config-dir "daemon" "start"] daemon-args))
                      (.directory (outside-repo-dir))
                      (.redirectErrorStream true)
                      (.start))]
@@ -117,18 +128,26 @@
          (.destroy process)
          (throw (ex-info "CLI daemon did not become ready" {})))
        (when-not (try
-                   (run-cli! db-file "--format" "json" "daemon" "status")
+                   (run-cli-config! config-dir "--format" "json" "daemon" "status")
                    true
                    (catch AssertionError _ false))
          (Thread/sleep 200)
          (recur (dec attempts))))
      process)))
 
+(defn start-cli-daemon!
+  ([db-file] (start-cli-daemon! db-file []))
+  ([db-file daemon-args]
+   (start-cli-daemon-config! (write-client-config! db-file) daemon-args)))
+
 (defn parse-json [s]
   (json/read-str s :key-fn keyword))
 
+(defn cli-add-config! [config-dir title & args]
+  (:id (parse-json (apply run-cli-config! config-dir "--format" "json" "add" title args))))
+
 (defn cli-add! [db-file title & args]
-  (:id (parse-json (apply run-cli! db-file "--format" "json" "add" title args))))
+  (apply cli-add-config! (write-client-config! db-file) title args))
 
 (defn assert= [expected actual message]
   (assert (= expected actual)
@@ -151,10 +170,142 @@
       (assert-contains daemon needle "Go CLI subcommand help shows children"))
     (assert-contains start "--config-dir" "Go CLI nested subcommand help shows selected world flag")))
 
-(defn stop-cli-daemon! [db-file daemon]
+(defn stop-cli-daemon-config! [config-dir daemon]
   (when (.isAlive daemon)
-    (run-cli! db-file "daemon" "stop")
+    (run-cli-config! config-dir "daemon" "stop")
     (.waitFor daemon)))
+
+(defn stop-cli-daemon! [db-file daemon]
+  (stop-cli-daemon-config! (write-client-config! db-file) daemon))
+
+(defn smoke-config-dir-named [name]
+  (java.nio.file.Paths/get (str name ".config-dir") (make-array String 0)))
+
+(defn bootstrap-config-dir [db-file label]
+  (.getCanonicalPath (.toFile (smoke-config-dir-named (str db-file "." label)))))
+
+(defn assert-file-contents [file expected message]
+  (assert= expected (slurp file) message))
+
+(defn smoke-bootstrap-clean-config! [db-file]
+  (let [config-dir (bootstrap-config-dir db-file "bootstrap-clean")
+        config-file (java.io.File. config-dir "config.json")]
+    (delete-tree! (smoke-config-dir-named (str db-file ".bootstrap-clean")))
+    (write-client-config-to-dir! config-dir)
+    (let [daemon (start-cli-daemon-config! config-dir)]
+      (try
+        (run-cli-config! config-dir "init")
+        (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
+        (assert-file-contents (java.io.File. config-dir "libs.edn") "{:libs {}}\n" "clean bootstrap creates empty libs.edn")
+        (assert-file-contents (java.io.File. config-dir "init.clj") "(require '[atom.libs.alpha :as libs])\n(libs/sync!)\n" "clean bootstrap creates minimal init.clj")
+        (assert (.isDirectory (java.io.File. config-dir "libs")) "clean bootstrap creates libs directory")
+        (assert (.isDirectory (java.io.File. config-dir ".git")) "clean bootstrap initializes config-dir git repo")
+        (let [task-id (cli-add-config! config-dir "Bootstrap clean task" "--attr" "owner=ct")]
+          (assert= "Bootstrap clean task"
+                   (:title (parse-json (run-cli-config! config-dir "--format" "json" "show" task-id)))
+                   "clean bootstrap can create and show tasks after init"))
+        (let [payload (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[atom.libs.alpha :as libs]) {:approved (libs/approved) :syncs (libs/syncs) :uses (libs/uses)})\n" "daemon" "repl" "--stdin"))]
+          (assert= {:libs {}} (:approved payload) "clean bootstrap approved libs are empty")
+          (assert= {:libs {}} (:syncs payload) "clean bootstrap sync state is empty after default sync")
+          (assert= {} (:uses payload) "clean bootstrap module use state is empty"))
+        (finally
+          (stop-cli-daemon-config! config-dir daemon)
+          (delete-tree! (smoke-config-dir-named (str db-file ".bootstrap-clean"))))))))
+
+(defn smoke-bootstrap-dirty-config! [db-file]
+  (let [config-dir (bootstrap-config-dir db-file "bootstrap-dirty")
+        config-path (java.io.File. config-dir "config.json")
+        libs-path (java.io.File. config-dir "libs.edn")
+        init-path (java.io.File. config-dir "init.clj")
+        original-config (str "{\"configFormat\":\"alpha\",\"source\":\"" checkout-root "\",\"format\":\"json\"}\n")
+        original-libs "{:libs {}}\n;; user comment\n"
+        original-init "(require '[todo.daemon.api :as api])\n(api/register-query! 'dirty [:= [:attr :owner] \"dirty\"])\n"]
+    (delete-tree! (smoke-config-dir-named (str db-file ".bootstrap-dirty")))
+    (.mkdirs (java.io.File. config-dir))
+    (.mkdirs (java.io.File. config-dir ".git"))
+    (spit config-path original-config)
+    (spit libs-path original-libs)
+    (spit init-path original-init)
+    (let [daemon (start-cli-daemon-config! config-dir)]
+      (try
+        (run-cli-config! config-dir "init")
+        (assert-file-contents config-path original-config "dirty bootstrap does not rewrite existing config.json")
+        (assert-file-contents libs-path original-libs "dirty bootstrap does not rewrite existing libs.edn")
+        (assert-file-contents init-path original-init "dirty bootstrap does not rewrite existing init.clj")
+        (assert (.isDirectory (java.io.File. config-dir "libs")) "dirty bootstrap fills missing libs directory")
+        (cli-add-config! config-dir "Dirty owned task" "--attr" "owner=dirty")
+        (assert= ["Dirty owned task"]
+                 (titles (parse-json (run-cli-config! config-dir "list" "--query" "dirty")))
+                 "dirty bootstrap keeps startup query usable from CLI")
+        (finally
+          (stop-cli-daemon-config! config-dir daemon)
+          (delete-tree! (smoke-config-dir-named (str db-file ".bootstrap-dirty"))))))))
+
+(defn smoke-bootstrap! [db-file]
+  (smoke-bootstrap-clean-config! db-file)
+  (smoke-bootstrap-dirty-config! db-file))
+
+(defn write-live-lib! [config-dir lib-dir ns-name body]
+  (let [root (java.io.File. config-dir (str "libs/" lib-dir))
+        src-dir (java.io.File. root "src")
+        ns-path (-> ns-name
+                    (clojure.string/replace "-" "_")
+                    (clojure.string/replace "." java.io.File/separator))
+        src-file (java.io.File. src-dir (str ns-path ".clj"))]
+    (.mkdirs (.getParentFile src-file))
+    (spit (java.io.File. root "deps.edn") "{:paths [\"src\"]}\n")
+    (spit src-file body)
+    root))
+
+(defn smoke-live-library-reload! [db-file]
+  (let [config-dir (bootstrap-config-dir db-file "live-libs")
+        marker (java.io.File. config-dir "live-lib-installed.edn")]
+    (delete-tree! (smoke-config-dir-named (str db-file ".live-libs")))
+    (write-client-config-to-dir! config-dir)
+    (spit (java.io.File. config-dir "libs.edn") "{:libs {}}\n")
+    (spit (java.io.File. config-dir "init.clj") "(require '[atom.libs.alpha :as libs])\n(libs/sync!)\n")
+    (let [daemon (start-cli-daemon-config! config-dir)]
+      (try
+        (run-cli-config! config-dir "init")
+        (let [initial (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[atom.libs.alpha :as libs]) {:approved (libs/approved) :syncs (libs/syncs) :uses (libs/uses)})\n" "daemon" "repl" "--stdin"))]
+          (assert= {:libs {}} (:approved initial) "live library smoke starts with no approved libs")
+          (assert= {:libs {}} (:syncs initial) "live library smoke starts with no synced libs")
+          (assert= {} (:uses initial) "live library smoke starts with no used modules"))
+
+        (spit (java.io.File. config-dir "libs.edn") "{:libs {live/missing {:local/root \"libs/missing\"}}}\n")
+        (let [bad-sync (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[atom.libs.alpha :as libs]) (libs/sync!))\n" "daemon" "repl" "--stdin"))
+              bad-use (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[atom.libs.alpha :as libs]) (libs/use! :live/missing {:ns 'live.missing :libs #{'live/missing}}))\n" "daemon" "repl" "--stdin"))]
+          (assert= :failed (get-in bad-sync [:libs 'live/missing :status]) "missing live library sync records failure")
+          (assert= :missing-root (get-in bad-sync [:libs 'live/missing :reason]) "missing live library sync records missing-root reason")
+          (assert= :skipped (:status bad-use) "failed live library use is skipped")
+          (assert= :sync-failed (:reason bad-use) "failed live library use reports sync-failed"))
+
+        (write-live-lib! config-dir "throwing-lib" "live.throwing"
+                         "(ns live.throwing)\n(defn install! [] (throw (ex-info \"install boom\" {:phase :install})))\n")
+        (spit (java.io.File. config-dir "libs.edn") "{:libs {live/throwing {:local/root \"libs/throwing-lib\"}}}\n")
+        (let [throwing (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[atom.libs.alpha :as libs]) (libs/sync!) (libs/use! :live/throwing {:ns 'live.throwing :libs #{'live/throwing} :call 'live.throwing/install!}))\n" "daemon" "repl" "--stdin"))]
+          (assert= :failed (:status throwing) "throwing live library call records failed use")
+          (assert= "install boom" (get-in throwing [:error :message]) "throwing live library call captures user-code error"))
+        (assert= true (:healthy (parse-json (run-cli-config! config-dir "--format" "json" "daemon" "status"))) "daemon remains healthy after bad live library code")
+
+        (write-live-lib! config-dir "good-lib" "live.good-alpha"
+                         (str "(ns live.good-alpha\n  (:require [todo.daemon.api :as api]))\n"
+                              "(defn install! []\n"
+                              "  (spit " (pr-str (.getCanonicalPath marker)) " (pr-str :installed))\n"
+                              "  (api/register-query! 'live-owned [:= [:attr :owner] \"live\"])\n"
+                              "  :installed)\n"))
+        (spit (java.io.File. config-dir "libs.edn") "{:libs {live/good {:local/root \"libs/good-lib\"}}}\n")
+        (let [loaded (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[atom.libs.alpha :as libs]) (libs/sync!) (libs/use! :live/good {:ns 'live.good-alpha :libs #{'live/good} :call 'live.good-alpha/install!}))\n" "daemon" "repl" "--stdin"))]
+          (assert= :loaded (:status loaded) "new good library loads without daemon restart")
+          (assert= :installed (get-in loaded [:call :return]) "new good library install call returns value")
+          (assert= :installed (edn/read-string (slurp marker)) "new good library install call has visible side effect"))
+        (cli-add-config! config-dir "Live owned task" "--attr" "owner=live")
+        (assert= ["Live owned task"]
+                 (titles (parse-json (run-cli-config! config-dir "--format" "json" "list" "--query" "live-owned")))
+                 "CLI can consume query registered by live-loaded library")
+        (finally
+          (stop-cli-daemon-config! config-dir daemon)
+          (delete-tree! (smoke-config-dir-named (str db-file ".live-libs"))))))))
 
 (defn smoke-cli! [db-file]
   (clean-runtime-artifacts! db-file)
@@ -162,6 +313,8 @@
   (try
     (build-cli!)
     (smoke-cli-help!)
+    (smoke-bootstrap! db-file)
+    (smoke-live-library-reload! db-file)
     (let [marker (write-library-startup-config! db-file)
           daemon (start-cli-daemon! db-file)]
       (try
