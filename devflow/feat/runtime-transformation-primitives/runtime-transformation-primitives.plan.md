@@ -18,7 +18,7 @@ The feature should prove the PRD flagship shape: query active seed ids, walk to 
 
 - **RTP-PLAN-001.A1:** Build inside the Atom repo as blessed alpha namespaces under `src/atom`, not as an external user library and not as a revival of the old plugin-directory API.
 - **RTP-PLAN-001.A2:** Keep base daemon core focused on primitives that need storage/runtime access. Put ergonomic composition in `atom.*.alpha` libraries.
-- **RTP-PLAN-001.A3:** Prefer a small namespace split if it improves clarity: `atom.queries.alpha` for reusable query helpers, `atom.graph.alpha` for set-oriented task/edge graph primitives, and `atom.views.alpha` for view registry helpers. Collapse to fewer namespaces if implementation shows the split is ceremonial.
+- **RTP-PLAN-001.A3:** Use a small two-namespace split: `atom.graph.alpha` for set-oriented query id, task hydration, and task/edge graph primitives; `atom.views.alpha` for daemon-memory view registry helpers. Do not add `atom.queries.alpha` in the MVP because the only query helper is an id-producing graph-pipeline primitive.
 - **RTP-PLAN-001.A4:** Keep all APIs set-oriented. Avoid helper shapes that encourage row-at-a-time N+1 calls.
 - **RTP-PLAN-001.A5:** Add daemon API operations only for stable primitive boundaries: query ids, tasks by ids, graph expansion, and view registry operations.
 - **RTP-PLAN-001.A6:** Keep view functions read-only by convention and contract. They may call query/graph/hydration helpers and arbitrary Clojure shaping code, but this feature should not design mutating workflows.
@@ -41,7 +41,7 @@ The feature should prove the PRD flagship shape: query active seed ids, walk to 
 
 ## RTP-PLAN-001.P4 API sketch
 
-Names are illustrative and should be tightened during implementation, but the contracts below should remain stable unless the plan is revised.
+The MVP API surface is frozen for this feature as follows.
 
 ```clojure
 (require '[atom.graph.alpha :as graph]
@@ -49,9 +49,8 @@ Names are illustrative and should be tightened during implementation, but the co
 
 (graph/query-ids! 'active-work-in-repo {:repo "atom" :since "2026-06-01"})
 (graph/tasks-by-ids ["task-a" "task-b"])
-(graph/ancestor-root-ids ["leaf-id"] {:edge-type "parent-of"
-                                      :where [:= [:attr :kind] "feature"]})
-(graph/subgraph ["feature-root-id"] {:edge-type "parent-of"})
+(graph/ancestor-root-ids ["leaf-id"] {:where [:= [:attr :kind] "feature"]})
+(graph/subgraph ["feature-root-id"])
 
 ;; In daemon-loadable config/library code:
 (defn active-feature-dags [{:keys [params]}]
@@ -72,17 +71,11 @@ Default generated `init.clj` should stay an editable template, not hidden activa
 (libs/sync!)
 ```
 
-If a later install function is useful because it performs explicit default registrations, call it plainly and document the side effects:
-
-```clojure
-(views/install!)
-```
-
 ## RTP-PLAN-001.P5 Implementation phases
 
 ### RTP-PLAN-001.PH1 API and namespace finalization
 
-Finalize whether the MVP uses one namespace or split `atom.queries.alpha`, `atom.graph.alpha`, and `atom.views.alpha`. Freeze exact helper names, daemon op names, arities, and return shapes before broad implementation. Keep the first API small enough to explain in one getting-started section.
+The MVP uses a two-namespace split: `atom.graph.alpha` for query id, hydration, and graph helpers; `atom.views.alpha` for view registry helpers. Freeze exact helper names, daemon op names, arities, and return shapes before broad implementation. Keep the first API small enough to explain in one getting-started section.
 
 Minimum set primitive contracts to preserve:
 
@@ -104,6 +97,18 @@ Minimum view contracts to preserve:
 - `register-view!` accepts a name and fully qualified function symbol and replaces duplicates;
 - `view!` resolves and invokes the daemon-side function with `{:params params}`;
 - `views` returns introspectable serializable entries, not function objects.
+
+Final MVP helper and daemon operation signatures:
+
+- `(graph/query-ids! query params)` -> daemon op `:query-ids`
+- `(graph/tasks-by-ids ids)` -> daemon op `:tasks-by-ids`
+- `(graph/ancestor-root-ids seed-ids opts)` -> daemon op `:ancestor-root-ids`
+- `(graph/subgraph root-ids)` -> daemon op `:subgraph`
+- `(views/register-view! name fn-sym)` -> daemon op `:register-view!`
+- `(views/view! name params)` -> daemon op `:view!`
+- `(views/views)` -> daemon op `:views`
+
+Graph helpers are `parent-of` primitives in the MVP. There is no `:edge-type` option; future edge types require a later explicit contract.
 
 ### RTP-PLAN-001.PH2 DB-backed set primitives
 
@@ -154,3 +159,7 @@ Update README/getting-started/CONTRIBUTING as needed to show the new workflow. A
 ### RTP-PLAN-001.DN1 Initial planning — 2026-06-26
 
 Started from the Runtime Transformations PRD after runtime library workspace shipped. User clarified these helpers should be built inside the Atom repo as blessed alpha helpers, exposed to fresh users through generated `todo init` config, and informed by an existing personal helper library without shipping personal defaults.
+
+### RTP-PLAN-001.DN2 TASK-001 API finalization — 2026-06-26
+
+Finalized the MVP alpha split as two namespaces: `atom.graph.alpha` owns `query-ids!`, `tasks-by-ids`, `ancestor-root-ids`, and `subgraph`; `atom.views.alpha` owns `register-view!`, `view!`, and `views`. The implementation should follow the existing `atom.libs.alpha` daemon-routing style so helpers work daemon-side during trusted startup and from connected helper REPLs. The daemon operation names are frozen as `:query-ids`, `:tasks-by-ids`, `:ancestor-root-ids`, `:subgraph`, `:register-view!`, `:view!`, and `:views`. No `atom.queries.alpha` namespace is planned for the MVP; `query-ids!` remains in `atom.graph.alpha` because it is primarily an id pipeline primitive for graph expansion. `ancestor-root-ids` and `subgraph` are parent-of primitives with no `:edge-type` option; future edge types require a later explicit contract.

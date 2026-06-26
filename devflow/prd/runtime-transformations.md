@@ -55,7 +55,7 @@ Runtime transformations have three layers:
    - Daemon-memory runtime functions installed by trusted config-dir libraries or defined in the REPL.
    - Compose queries, graph primitives, and arbitrary Clojure filters.
    - Good for domain-specific views, scoring, grouping, ranking, custom output shapes, and chained workflows.
-   - Expected to ship first as blessed `atom.*.alpha` libraries layered on the runtime library workspace, not as public CLI loaders or plugin-directory APIs.
+   - Expected to ship first as blessed `atom.graph.alpha` and `atom.views.alpha` libraries layered on the runtime library workspace, not as public CLI loaders or plugin-directory APIs.
 
 The preferred flow is:
 
@@ -99,12 +99,16 @@ Assume the task graph has feature root tasks and `parent-of` edges from feature 
 1. find active work in repo `X` since time `Y`;
 2. walk up to owning feature roots;
 3. fan back out to the full feature DAGs;
-4. include unresolved linked tasks or edges;
+4. hydrate feature roots and included DAG tasks in batch;
 5. shape the final result for an agent or human.
 
-Future trusted Clojure might look like:
+Trusted Clojure using the MVP alpha namespaces should look like:
 
 ```clojure
+(require '[atom.graph.alpha :as graph]
+         '[atom.views.alpha :as views]
+         '[todo.daemon.api :as todo])
+
 (todo/register-query!
   'active-work-in-repo
   {:params [:repo :since]
@@ -115,36 +119,24 @@ Future trusted Clojure might look like:
 
 (defn active-feature-dags-view [{:keys [params]}]
   (let [seed-ids
-        (todo/query-ids! 'active-work-in-repo params)
+        (graph/query-ids! 'active-work-in-repo params)
 
         feature-root-ids
-        (todo/ancestor-root-ids seed-ids {:edge-type "parent-of"
-                                          :where [:= [:attr :kind] "feature"]})
+        (graph/ancestor-root-ids seed-ids {:where [:= [:attr :kind] "feature"]})
 
         dag
-        (todo/subgraph feature-root-ids {:edge-type "parent-of"})
+        (graph/subgraph feature-root-ids)]
+    {:features (graph/tasks-by-ids feature-root-ids)
+     :dag dag}))
 
-        unresolved-linked-ids
-        (->> (:edges dag)
-             (filter unresolved-edge?)
-             (mapcat (juxt :from_task_id :to_task_id))
-             distinct
-             vec)
-
-        linked-tasks
-        (todo/tasks-by-ids unresolved-linked-ids)]
-    {:features (todo/tasks-by-ids feature-root-ids)
-     :dag dag
-     :linked-tasks linked-tasks}))
-
-(todo/register-view! 'active-feature-dags 'my.views/active-feature-dags-view)
+(views/register-view! 'active-feature-dags 'my.views/active-feature-dags-view)
 ```
 
 The exact API is illustrative. The product requirement is the composition pattern: userland Clojure can chain SQL-backed queries, graph expansions, batch hydration, and arbitrary filtering without pulling the whole database into memory unless it explicitly chooses to.
 
 ## PRD-001.P7 First buildable slice
 
-The runtime library workspace is already shipped. The first view-oriented slice should build on it rather than inventing another extension mechanism. Prefer blessed source-visible library namespaces such as `atom.graph.alpha` or `atom.views.alpha`, required from config-dir `init.clj` as normal shipped Atom namespaces. Use `atom.libs.alpha/use!` for user/community runtime libraries or explicit install side effects, not merely to load built-in namespaces already present on the Atom classpath. Thin daemon API primitives should sit underneath only where core access is required.
+The runtime library workspace is already shipped. The first view-oriented slice should build on it rather than inventing another extension mechanism. Use blessed source-visible library namespaces `atom.graph.alpha` and `atom.views.alpha`, required from config-dir `init.clj` as normal shipped Atom namespaces. Use `atom.libs.alpha/use!` for user/community runtime libraries or explicit install side effects, not merely to load built-in namespaces already present on the Atom classpath. Thin daemon API primitives should sit underneath only where core access is required.
 
 The first slice should prove the architecture without implementing every graph helper.
 
@@ -153,7 +145,7 @@ Minimum useful primitive set:
 - **PRD-001.MVP1:** daemon-backed named query registration and invocation already established by the query registry work;
 - **PRD-001.MVP2:** `query-ids!` for returning candidate ids from a query definition or registered query name;
 - **PRD-001.MVP3:** `ancestor-root-ids` over `parent-of` for walking from seed work up to feature roots;
-- **PRD-001.MVP4:** `subgraph` or `descendant-ids` over `parent-of` for expanding from feature roots back down to full DAGs;
+- **PRD-001.MVP4:** `subgraph` over `parent-of` for expanding from feature roots back down to full DAGs;
 - **PRD-001.MVP5:** `tasks-by-ids` for batch hydration;
 - **PRD-001.MVP6:** a trusted `register-view!` / `view!` path for read-only Clojure views, probably exposed through a blessed runtime library namespace rather than the base `todo.repl` helper surface;
 - **PRD-001.MVP7:** module activation through existing `libs.edn`, `libs/sync!`, and `libs/use!` workflows;

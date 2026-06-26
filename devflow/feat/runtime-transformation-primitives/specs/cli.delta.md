@@ -7,7 +7,7 @@
 
 ## SPEC-002-D003.P1 Changed contracts
 
-- **SPEC-002-D003.C1:** `todo init` generated startup files may require the shipped runtime transformation helper namespace(s) through normal trusted config-dir `init.clj` code as an editable template. Built-in shipped namespaces do not require `libs.edn` approval or `atom.libs.alpha/use!` activation unless a feature defines explicit install side effects.
+- **SPEC-002-D003.C1:** `todo init` generated startup files may require the shipped runtime transformation helper namespaces `atom.graph.alpha` and `atom.views.alpha` through normal trusted config-dir `init.clj` code as an editable template. Built-in shipped namespaces do not require `libs.edn` approval or `atom.libs.alpha/use!` activation unless a feature defines explicit install side effects.
 - **SPEC-002-D003.C2:** The generated files remain user-owned and editable; `todo init` must not overwrite existing user files.
 
 ## SPEC-002-D003.P2 Unchanged contracts

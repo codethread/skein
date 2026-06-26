@@ -33,7 +33,7 @@ The Runtime Transformations PRD defines the desired architecture: durable task f
 
 ## RTP-PROP-001.P4 Proposed scope
 
-- **RTP-PROP-001.S1:** Add blessed alpha runtime namespace(s), likely `atom.queries.alpha`, `atom.graph.alpha`, and/or `atom.views.alpha`, with final split chosen for minimal cohesive API.
+- **RTP-PROP-001.S1:** Add blessed alpha runtime namespaces `atom.graph.alpha` and `atom.views.alpha` with the MVP split frozen in the feature plan.
 - **RTP-PROP-001.S2:** Add query primitives for returning stably ordered ids from an ad hoc query definition or daemon-registered query name.
 - **RTP-PROP-001.S3:** Add batch hydration by ids with first-occurrence input ordering, duplicate collapse, empty input support, and loud failure for missing ids.
 - **RTP-PROP-001.S4:** Add `parent-of` graph primitives sufficient for the flagship PRD flow: active seed ids -> feature root ids -> feature DAG/subgraph.
@@ -43,5 +43,4 @@ The Runtime Transformations PRD defines the desired architecture: durable task f
 
 ## RTP-PROP-001.P5 Open questions
 
-- **RTP-PROP-001.Q1:** Should the MVP ship one namespace (`atom.views.alpha`) or split query/graph/view helpers across multiple namespaces?
-- **RTP-PROP-001.Q2:** Should a later feature add CLI view invocation after EDN/JSON/human output contracts are designed?
+- **RTP-PROP-001.Q1:** Should a later feature add CLI view invocation after EDN/JSON/human output contracts are designed?
