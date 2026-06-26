@@ -35,7 +35,6 @@ strand weaver stop
 clojure -M:test
 (cd cli && go test ./...)
 clojure -M:repl
-clojure -M:run
 ```
 
 ## Agent operation quick reference

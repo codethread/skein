@@ -146,3 +146,9 @@ Append notes here. Do not rewrite earlier notes.
 - `git status --short` showed no generated SQLite, socket, metadata, smoke, or built CLI artifacts after validation; unrelated untracked `devflow/feat/remove-legacy-clojure-cli/` was left untouched.
 - Feature is ready for devflow finish/archive; finish should move RFC-006 with the archived feature per the task contract.
 - Deep review follow-up removed two spec drift issues: root status-report wording no longer promises an unimplemented `state_dir` field, and archived devflow links now target the promoted `strand-model.md` path instead of the removed `task-model.md` path.
+
+### SR-PLAN-001.DN9 Post-slice YAGNI cleanup — 2026-06-26
+
+- Removed the unused interactive `skein.app` menu and `:run` alias, unused Go output/version packages, stale task spec alias, task-era DB convenience queries, and userland attribute indexes for `priority`/`due-date`.
+- Kept the live `:skein`/`skein.cli` launcher path because `strand weaver start` still uses it to launch the Clojure weaver.
+- Validation passed after cleanup: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.

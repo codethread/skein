@@ -13,7 +13,7 @@
 
   When called inside the daemon JVM, executes directly against the active daemon
   runtime. When called from a connected helper REPL, routes to the selected
-  weaver world from `skein.repl/connect!` / `todo daemon repl`."
+  weaver world from `skein.repl/connect!` / `strand weaver repl`."
   [query params]
   (call-daemon :query-ids query params))
 

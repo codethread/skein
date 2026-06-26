@@ -83,7 +83,7 @@
             :config-file (str config-home "/skein/config.json")
             :db-path (str data-home "/skein/skein.sqlite")}
            (weaver-config/world))))
-  (let [dir (.getCanonicalPath (.toFile (java.nio.file.Files/createTempDirectory "todo-world" (make-array java.nio.file.attribute.FileAttribute 0))))]
+  (let [dir (.getCanonicalPath (.toFile (java.nio.file.Files/createTempDirectory "tdx" (make-array java.nio.file.attribute.FileAttribute 0))))]
     (is (= {:config-dir dir
             :state-dir (str dir "/state")
             :data-dir (str dir "/data")
@@ -237,7 +237,7 @@
                               #"non-blank"
                               (api/update rt (:id source) {:title ""
                                                            :edges [{:type "depends-on" :to (:id target)}]})))
-        (is (empty? (db/strand-dependencies (:datasource rt) (:id source))))))))
+        (is (empty? (db/execute! (:datasource rt) ["SELECT 1 FROM strand_edges WHERE from_strand_id = ?" (:id source)])))))))
 
 (deftest runtime-uses-world-default-database-and-directories
   (let [world (temp-world)
@@ -323,8 +323,10 @@
                                                   "edges" [{"type" "depends-on"
                                                             "to" (get-in target ["result" "id"])}]})]
         (is (true? (get updated "ok")))
-        (is (= [(get-in target ["result" "id"])]
-               (mapv :id (db/strand-dependencies (:datasource rt) (get-in source ["result" "id"]))))))
+        (is (= [{:to_strand_id (get-in target ["result" "id"]) :edge_type "depends-on"}]
+               (db/execute! (:datasource rt)
+                            ["SELECT to_strand_id, edge_type FROM strand_edges WHERE from_strand_id = ?"
+                             (get-in source ["result" "id"])]))))
       (let [missing (socket-request rt "update" {"id" "missing" "title" nil "active" nil "attributes" nil "edges" []})]
         (is (false? (get missing "ok")))
         (is (= "domain" (get-in missing ["error" "type"]))))

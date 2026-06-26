@@ -35,5 +35,4 @@
 (s/def ::empty-command (s/cat))
 
 (s/def ::strand-input (s/keys :req-un [::title] :opt-un [::attributes ::active ::ephemeral]))
-(s/def ::task-input ::strand-input)
 (s/def ::edge-input (s/keys :req-un [::from ::to ::type] :opt-un [::attributes]))

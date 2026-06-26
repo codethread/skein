@@ -8,7 +8,7 @@
     (.delete (java.io.File. (str db-file suffix)))))
 
 (defn temp-db-file []
-  (let [file (java.io.File/createTempFile "todo-db-test" ".sqlite")]
+  (let [file (java.io.File/createTempFile "skein-db-test" ".sqlite")]
     (.delete file)
     (.getAbsolutePath file)))
 
@@ -80,7 +80,7 @@
                               (db/update-strand! ds dependent {:final_at "now"})))
         (is (nil? (db/update-strand! ds ephemeral {:active false})))
         (is (nil? (db/get-strand ds ephemeral)))
-        (is (empty? (db/related-strands ds dependent)))))))
+        (is (empty? (db/execute! ds ["SELECT 1 FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" dependent dependent])))))))
 
 (deftest query-fields-use-active-ephemeral-inactive-at
   (with-db
@@ -121,4 +121,5 @@
             refs (:refs result)]
         (is (= #{{"design" (get refs "design")} {"docs" (get refs "docs")}}
                #{{"design" (get refs "design")} {"docs" (get refs "docs")}}))
-        (is (= [(get refs "design")] (mapv :id (db/strand-dependencies ds (get refs "docs")))))))))
+        (is (= [{:to_strand_id (get refs "design") :edge_type "depends-on"}]
+               (db/execute! ds ["SELECT to_strand_id, edge_type FROM strand_edges WHERE from_strand_id = ?" (get refs "docs")])))))))

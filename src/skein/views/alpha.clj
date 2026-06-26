@@ -14,7 +14,7 @@
   Duplicate names replace prior registrations. When called inside the daemon JVM,
   registers directly on the active weaver runtime. When called from a connected
   helper REPL, routes to the selected weaver world from `skein.repl/connect!` /
-  `todo daemon repl`; connected users should register functions that are already
+  `strand weaver repl`; connected users should register functions that are already
   loadable in the daemon JVM."
   [name fn-sym]
   (call-daemon :register-view! name fn-sym))

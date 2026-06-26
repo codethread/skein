@@ -72,9 +72,7 @@
        CHECK (edge_type IN ('depends-on', 'related-to', 'parent-of', 'supersedes')),
        CHECK (json_valid(attributes))
      )"]
-   ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]
-   ["CREATE INDEX IF NOT EXISTS idx_strands_priority ON strands(json_extract(attributes, '$.priority'))"]
-   ["CREATE INDEX IF NOT EXISTS idx_strands_due_date ON strands(json_extract(attributes, '$.due-date'))"]])
+   ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]])
 
 (def required-strand-columns #{"id" "title" "active" "ephemeral" "attributes" "created_at" "updated_at" "inactive_at"})
 
@@ -91,10 +89,6 @@
   (ensure-current-schema! ds)
   ds)
 
-(defn reset-db! [ds]
-  (execute! ds ["DROP TABLE IF EXISTS strand_edges"])
-  (execute! ds ["DROP TABLE IF EXISTS strands"])
-  (init! ds))
 
 (declare get-strand add-edge!)
 
@@ -343,8 +337,6 @@
                        (when attributes (->json attributes)) (when attributes (->json attributes))
                        (when (contains? patch :active) (sqlite-bool active)) strand-id]))))))
 
-(defn update-strand-attributes! [ds strand-id attributes]
-  (update-strand! ds strand-id {:attributes attributes}))
 
 (defn query-strands
   ([ds query-def]
@@ -490,47 +482,6 @@
   ([ds query-def params]
    (query-strands ds query-def params)))
 
-(defn strands-by-attribute [ds attr-key attr-value]
-  (execute! ds
-            ["SELECT t.id, t.title, t.attributes
-              FROM strands t
-              WHERE EXISTS (
-                SELECT 1
-                FROM json_each(t.attributes) attr
-                WHERE attr.key = ? AND attr.value = ?
-              )
-              ORDER BY t.id"
-             (name attr-key) attr-value]))
-
-(defn strand-dependencies [ds strand-id]
-  (execute! ds
-            ["SELECT dep.id, dep.title, dep.active, dep.attributes, dep.created_at, dep.updated_at, dep.inactive_at,
-                     e.attributes AS edge_attributes
-              FROM strand_edges e
-              JOIN strands dep ON dep.id = e.to_strand_id
-              WHERE e.from_strand_id = ? AND e.edge_type = 'depends-on'
-              ORDER BY dep.id"
-             strand-id]))
-
-(defn blocking-strands [ds strand-id]
-  (execute! ds
-            ["SELECT blocked.id, blocked.title, blocked.active, blocked.attributes, blocked.created_at, blocked.updated_at, blocked.inactive_at,
-                     e.attributes AS edge_attributes
-              FROM strand_edges e
-              JOIN strands blocked ON blocked.id = e.from_strand_id
-              WHERE e.to_strand_id = ? AND e.edge_type = 'depends-on'
-              ORDER BY blocked.id"
-             strand-id]))
-
-(defn blocked-strands [ds]
-  (execute! ds
-            ["SELECT t.id, t.title, json_group_array(dep.id) AS blockers
-              FROM strands t
-              JOIN strand_edges e ON e.from_strand_id = t.id AND e.edge_type = 'depends-on'
-              JOIN strands dep ON dep.id = e.to_strand_id
-              GROUP BY t.id, t.title
-              ORDER BY t.id"]))
-
 (defn ready-strands
   ([ds]
    (mapv row->booleans
@@ -567,51 +518,4 @@
                    AND " query-sql "
                  ORDER BY t.id")]
                            query-params))))))
-
-(defn transitive-dependencies [ds strand-id]
-  (execute! ds
-            ["WITH RECURSIVE deps(id, title, active, attributes, created_at, updated_at, inactive_at) AS (
-                SELECT dep.id, dep.title, dep.active, dep.attributes, dep.created_at, dep.updated_at, dep.inactive_at
-                FROM strand_edges e
-                JOIN strands dep ON dep.id = e.to_strand_id
-                WHERE e.from_strand_id = ? AND e.edge_type = 'depends-on'
-              UNION
-                SELECT dep.id, dep.title, dep.active, dep.attributes, dep.created_at, dep.updated_at, dep.inactive_at
-                FROM deps
-                JOIN strand_edges e ON e.from_strand_id = deps.id AND e.edge_type = 'depends-on'
-                JOIN strands dep ON dep.id = e.to_strand_id
-              )
-              SELECT id, title, active, attributes, created_at, updated_at, inactive_at
-              FROM deps
-              WHERE id <> ?
-              ORDER BY id"
-             strand-id strand-id]))
-
-(defn strands-by-priority [ds priority]
-  (execute! ds
-            ["SELECT id, title, attributes
-              FROM strands
-              WHERE json_extract(attributes, '$.priority') = ?
-              ORDER BY json_extract(attributes, '$.due-date'), id"
-             priority]))
-
-(defn strands-due-before [ds due-date]
-  (execute! ds
-            ["SELECT id, title, attributes
-              FROM strands
-              WHERE json_extract(attributes, '$.due-date') IS NOT NULL
-                AND json_extract(attributes, '$.due-date') <= ?
-              ORDER BY json_extract(attributes, '$.due-date'), id"
-             due-date]))
-
-(defn related-strands [ds strand-id]
-  (execute! ds
-            ["SELECT e.edge_type, e.from_strand_id, src.title AS from_title,
-                     e.to_strand_id, dst.title AS to_title, e.attributes
-              FROM strand_edges e
-              JOIN strands src ON src.id = e.from_strand_id
-              JOIN strands dst ON dst.id = e.to_strand_id
-              WHERE e.from_strand_id = ? OR e.to_strand_id = ?
-              ORDER BY e.edge_type, e.from_strand_id, e.to_strand_id"
-             strand-id strand-id]))
 
