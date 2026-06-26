@@ -1,161 +1,104 @@
-# Tiny Clojure crash course for Atom users
+# Clojure crash course for Skein users
 
-Atom is designed primarily for coding agents. Agents can read the specs and use the Clojure REPL naturally. This page is for humans who want just enough Clojure vocabulary to understand what is happening.
+This is a tiny Clojure primer for using `strand weaver repl`.
 
-## Forms
-
-Clojure code is written as forms:
+## Calls
 
 ```clojure
-(function arg1 arg2)
+(strand! "Write docs")
 ```
 
-So this:
+means: call `strand!` with the string `"Write docs"`.
+
+## Names
+
+Common helper names:
 
 ```clojure
-(task! "Write docs")
+strand!
+strand
+strands
+ready
+update!
+defquery!
 ```
 
-means: call `task!` with the string `"Write docs"`.
-
-## Strings, symbols, and keywords
-
-Strings use quotes:
-
-```clojure
-"ct"
-"Write docs"
-```
-
-Symbols are names:
-
-```clojure
-task!
-query
-mine
-```
-
-Keywords start with `:` and often act like map keys:
+Common row keys:
 
 ```clojure
 :id
 :title
-:status
-:owner
+:active
+:ephemeral
+:inactive_at
+:attributes
 ```
 
-Keywords can also be used as functions over maps:
+Keywords such as `:owner` or `:example_outcome` inside `:attributes` are user-chosen.
+
+## Bind a value
 
 ```clojure
-(:id {:id "abc" :title "Demo"})
-;; => "abc"
+(def s (:id (strand! "My first strand")))
 ```
 
-## Maps and vectors
+That creates a strand, extracts its `:id`, and stores the id in `s`.
 
-Maps use `{}`:
+## Inspect and update
 
 ```clojure
-{:owner "ct" :priority "high"}
+(strand s)
+(update! s {:active false})
 ```
 
-Vectors use `[]`:
+Inactive persistent strands stay in the store and receive `:inactive_at`.
+
+## Collections
 
 ```clojure
-[:= [:attr :owner] "ct"]
+(strands)
+(ready)
 ```
 
-Atom's query DSL uses vectors because queries are data.
-
-## Quoting names
-
-A leading quote means “use this symbol as data; do not resolve it as a variable.”
-
-```clojure
-(query 'mine)
-```
-
-This asks Atom to run the named query called `mine`.
-
-Without the quote:
-
-```clojure
-(query mine)
-```
-
-Clojure looks for a variable named `mine`, which may fail with “Unable to resolve symbol”.
-
-## Defining temporary REPL names
-
-`def` stores a value in the current REPL namespace:
-
-```clojure
-(def t (:id (task! "My first task")))
-```
-
-That creates a task, extracts its `:id`, and stores the id in `t`.
-
-Then you can use:
-
-```clojure
-(task t)
-(update! t {:status "done"})
-```
+`ready` returns active strands whose direct `depends-on` targets are not active.
 
 ## Anonymous functions
 
-`#(...)` is a short anonymous function. `%` means “the current item”.
-
 ```clojure
-#(= "done" (:status %))
+#(= "ct" (get-in % [:attributes :owner]))
 ```
 
-Means: for one task row, check whether its status is `"done"`.
+means: for one strand row, check whether its user attribute `owner` is `"ct"`.
 
-## Threading with `->>`
-
-`->>` makes step-by-step data transformations easier to read. It passes the previous result as the last argument to the next form.
+## Threading
 
 ```clojure
-(->> (query 'mine)
-     (remove #(= "done" (:status %)))
+(->> (strands)
+     (filter #(= "ct" (get-in % [:attributes :owner])))
+     (filter :active)
      vec)
 ```
 
-Read it as:
+That means: list strands, keep the ones owned by `ct`, keep active rows, and return a vector.
 
-1. run `(query 'mine)`
-2. remove tasks whose status is `"done"`
-3. turn the result into a vector
-
-## Requiring helper namespaces
-
-Some helpers live in namespaces. In the Atom REPL, `libs` is preloaded for runtime-library workspace helpers:
+## Require helper namespaces
 
 ```clojure
-(libs/approved)
-(libs/syncs)
-(libs/uses)
+(require '[skein.libs.alpha :as libs]
+         '[skein.graph.alpha :as graph]
+         '[skein.views.alpha :as views])
 ```
 
-In scripts or `init.clj`, require it explicitly:
+The aliases let you call functions like `libs/sync!`, `graph/strands-by-ids`, and `views/view!`.
+
+## Quick reference
 
 ```clojure
-(require '[atom.libs.alpha :as libs])
-```
-
-## Common Atom REPL helpers
-
-```clojure
-(init!)
-(task! "Title")
-(task! "Title" {:owner "ct"})
-(update! task-id {:status "done"})
-(task task-id)
-(tasks)
+(strand! "Title")
+(strand! "Title" {:owner "ct"})
+(strand! "Scratch" {} {:ephemeral true})
+(update! strand-id {:active false})
+(strand strand-id)
+(strands)
 (ready)
-(defquery! 'mine [:= [:attr :owner] "ct"])
-(query 'mine)
 ```
-
-The REPL is intentionally powerful because trusted humans and agents can compose these primitives directly.

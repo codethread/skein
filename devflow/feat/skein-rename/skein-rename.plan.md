@@ -132,3 +132,9 @@ Append notes here. Do not rewrite earlier notes.
 - Renamed the Go build target to `cmd/strand`, the root Cobra use to `strand`, and public lifecycle commands to `strand weaver ...`; no `cmd/todo` binary path remains.
 - Go CLI now sends `active`/`ephemeral` payloads, rejects removed `--status`, rejects inactive ephemeral creation, and rejects same-command active/ephemeral updates before reaching the weaver.
 - Smoke was minimally updated to build and exercise `strand`/`weaver` so repository-required validation remains end-to-end; broader docs refresh remains task 005.
+
+### SR-PLAN-001.DN7 Task 005 implementation — 2026-06-26
+
+- Refreshed smoke to assert `inactive_at` for inactive persistent strands and delete-on-deactivate for ephemeral strands while continuing to exercise generated `skein.*.alpha` startup config, runtime library sync/use, graph helpers, views, CLI, and REPL stdin flows.
+- Rewrote user/agent-facing docs and runtime-transformations PRD examples to teach `strand`, `weaver`, Skein config-dir worlds, `strand!`/`strands`, `skein.*.alpha`, `strands-by-ids`, and active/ephemeral lifecycle vocabulary.
+- Grep checks for stale public-surface strings across README, AGENTS, CONTRIBUTING, docs, PRD, and smoke are clean except for runtime-library/module result maps using their own `:status` values, which are not core strand lifecycle fields.

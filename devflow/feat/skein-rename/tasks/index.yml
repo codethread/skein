@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: "Refresh smoke and docs"
     task_file: "tasks/005-refresh-smoke-and-docs.md"
-    status: pending
+    status: complete
     blocked_by: [3, 4]
   - id: 6
     description: "Promote specs and validate"

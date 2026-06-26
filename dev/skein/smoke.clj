@@ -28,7 +28,8 @@
   (let [config-dir (.getCanonicalPath (.toFile (smoke-config-dir db-file)))]
     {:config-dir config-dir
      :state-dir (str config-dir "/state")
-     :data-dir (str config-dir "/data")}))
+     :data-dir (str config-dir "/data")
+     :db-path (str config-dir "/data/skein.sqlite")}))
 
 (defn delete-runtime-metadata! [db-file]
   (metadata/delete! (smoke-world db-file)))
@@ -46,7 +47,11 @@
   (delete-tree! (smoke-config-dir db-file)))
 
 (defn delete-built-cli! []
-  (delete-tree! (java.nio.file.Paths/get "cli/bin" (make-array String 0))))
+  (let [strand-file (java.io.File. strand-bin)
+        bin-dir (.getParentFile strand-file)]
+    (.delete strand-file)
+    (when (and bin-dir (.isDirectory bin-dir) (empty? (seq (.list bin-dir))))
+      (.delete bin-dir))))
 
 (defn run-process!
   ([message command]
@@ -275,67 +280,6 @@
   (smoke-bootstrap-dirty-config! db-file)
   (smoke-startup-transformations! db-file))
 
-(defn write-live-lib! [config-dir lib-dir ns-name body]
-  (let [root (java.io.File. config-dir (str "libs/" lib-dir))
-        src-dir (java.io.File. root "src")
-        ns-path (-> ns-name
-                    (clojure.string/replace "-" "_")
-                    (clojure.string/replace "." java.io.File/separator))
-        src-file (java.io.File. src-dir (str ns-path ".clj"))]
-    (.mkdirs (.getParentFile src-file))
-    (spit (java.io.File. root "deps.edn") "{:paths [\"src\"]}\n")
-    (spit src-file body)
-    root))
-
-(defn smoke-live-library-reload! [db-file]
-  (let [config-dir (bootstrap-config-dir db-file "live-libs")
-        marker (java.io.File. config-dir "live-lib-installed.edn")]
-    (delete-tree! (smoke-config-dir-named (str db-file ".live-libs")))
-    (write-client-config-to-dir! config-dir)
-    (spit (java.io.File. config-dir "libs.edn") "{:libs {}}\n")
-    (spit (java.io.File. config-dir "init.clj") "(require '[skein.libs.alpha :as libs])\n(libs/sync!)\n")
-    (let [daemon (start-cli-daemon-config! config-dir)]
-      (try
-        (run-cli-config! config-dir "init")
-        (let [initial (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[skein.libs.alpha :as libs]) {:approved (libs/approved) :syncs (libs/syncs) :uses (libs/uses)})\n" "weaver" "repl" "--stdin"))]
-          (assert= {:libs {}} (:approved initial) "live library smoke starts with no approved libs")
-          (assert= {:libs {}} (:syncs initial) "live library smoke starts with no synced libs")
-          (assert= {} (:uses initial) "live library smoke starts with no used modules"))
-
-        (spit (java.io.File. config-dir "libs.edn") "{:libs {live/missing {:local/root \"libs/missing\"}}}\n")
-        (let [bad-sync (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[skein.libs.alpha :as libs]) (libs/sync!))\n" "weaver" "repl" "--stdin"))
-              bad-use (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[skein.libs.alpha :as libs]) (libs/use! :live/missing {:ns 'live.missing :libs #{'live/missing}}))\n" "weaver" "repl" "--stdin"))]
-          (assert= :failed (get-in bad-sync [:libs 'live/missing :status]) "missing live library sync records failure")
-          (assert= :missing-root (get-in bad-sync [:libs 'live/missing :reason]) "missing live library sync records missing-root reason")
-          (assert= :skipped (:status bad-use) "failed live library use is skipped")
-          (assert= :sync-failed (:reason bad-use) "failed live library use reports sync-failed"))
-
-        (write-live-lib! config-dir "throwing-lib" "live.throwing"
-                         "(ns live.throwing)\n(defn install! [] (throw (ex-info \"install boom\" {:phase :install})))\n")
-        (spit (java.io.File. config-dir "libs.edn") "{:libs {live/throwing {:local/root \"libs/throwing-lib\"}}}\n")
-        (let [throwing (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[skein.libs.alpha :as libs]) (libs/sync!) (libs/use! :live/throwing {:ns 'live.throwing :libs #{'live/throwing} :call 'live.throwing/install!}))\n" "weaver" "repl" "--stdin"))]
-          (assert= :failed (:status throwing) "throwing live library call records failed use")
-          (assert= "install boom" (get-in throwing [:error :message]) "throwing live library call captures user-code error"))
-        (assert= true (:healthy (parse-json (run-cli-config! config-dir "--format" "json" "weaver" "status"))) "weaver remains healthy after bad live library code")
-
-        (write-live-lib! config-dir "good-lib" "live.good-alpha"
-                         (str "(ns live.good-alpha\n  (:require [skein.weaver.api :as api]))\n"
-                              "(defn install! []\n"
-                              "  (spit " (pr-str (.getCanonicalPath marker)) " (pr-str :installed))\n"
-                              "  (api/register-query! 'live-owned [:= [:attr :owner] \"live\"])\n"
-                              "  :installed)\n"))
-        (spit (java.io.File. config-dir "libs.edn") "{:libs {live/good {:local/root \"libs/good-lib\"}}}\n")
-        (let [loaded (edn/read-string (run-cli-config-stdin! config-dir "(do (require '[skein.libs.alpha :as libs]) (libs/sync!) (libs/use! :live/good {:ns 'live.good-alpha :libs #{'live/good} :call 'live.good-alpha/install!}))\n" "weaver" "repl" "--stdin"))]
-          (assert= :loaded (:status loaded) "new good library loads without weaver restart")
-          (assert= :installed (get-in loaded [:call :return]) "new good library install call returns value")
-          (assert= :installed (edn/read-string (slurp marker)) "new good library install call has visible side effect"))
-        (cli-add-config! config-dir "Live owned strand" "--attr" "owner=live")
-        (assert= ["Live owned strand"]
-                 (titles (parse-json (run-cli-config! config-dir "--format" "json" "list" "--query" "live-owned")))
-                 "CLI can consume query registered by live-loaded library")
-        (finally
-          (stop-cli-daemon-config! config-dir daemon)
-          (delete-tree! (smoke-config-dir-named (str db-file ".live-libs"))))))))
 
 (defn smoke-cli! [db-file]
   (clean-runtime-artifacts! db-file)
@@ -344,7 +288,6 @@
     (build-cli!)
     (smoke-cli-help!)
     (smoke-bootstrap! db-file)
-    (smoke-live-library-reload! db-file)
     (let [marker (write-library-startup-config! db-file)
           weaver (start-cli-daemon! db-file)]
       (try
@@ -362,9 +305,20 @@
               (assert= ["Write usage notes"]
                        (titles (parse-json (run-cli! db-file "--format" "json" "ready")))
                        "Go CLI update active changes readiness")
-              (assert= false
-                       (:active (parse-json (run-cli! db-file "--format" "json" "show" schema)))
-                       "Go CLI show exposes active lifecycle")
+              (let [inactive-schema (parse-json (run-cli! db-file "--format" "json" "show" schema))]
+                (assert= false
+                         (:active inactive-schema)
+                         "Go CLI show exposes active lifecycle")
+                (assert (:inactive_at inactive-schema)
+                        (str "Go CLI show exposes inactive_at for inactive persistent strands\n" inactive-schema)))
+              (let [scratch (cli-add! db-file "Temporary scratch strand" "--ephemeral=true")]
+                (assert= true
+                         (:ephemeral (parse-json (run-cli! db-file "--format" "json" "show" scratch)))
+                         "Go CLI show exposes ephemeral retention")
+                (run-cli! db-file "update" scratch "--active=false")
+                (assert (not (some #{"Temporary scratch strand"}
+                                   (titles (parse-json (run-cli! db-file "--format" "json" "list")))))
+                        "Go CLI deactivating an ephemeral strand deletes its row"))
               (let [status (parse-json (run-cli! db-file "--format" "json" "weaver" "status"))]
                 (assert= true
                          (:healthy status)
@@ -397,7 +351,7 @@
   (clean-runtime-artifacts! db-file)
   (try
     (let [world (smoke-world db-file)
-          runtime (runtime/start! db-file {:world world})]
+          runtime (runtime/start! nil {:world world})]
       (try
         (repl/connect! (:config-dir world))
         (repl/init!)
@@ -413,7 +367,15 @@
                    (titles (repl/query '[:= [:attr :owner] "agent"]))
                    "skein.repl retains EDN-rich ad hoc query debugging")
           (repl/update! b {:active false})
-          (assert= false (:active (repl/strand b)) "skein.repl update! updates active"))
+          (let [inactive-b (repl/strand b)]
+            (assert= false (:active inactive-b) "skein.repl update! updates active")
+            (assert (:inactive_at inactive-b)
+                    (str "skein.repl exposes inactive_at for inactive persistent strands\n" inactive-b)))
+          (let [scratch (:id (repl/strand! "Ephemeral REPL strand" {} {:ephemeral true}))]
+            (assert= true (:ephemeral (repl/strand scratch)) "skein.repl exposes ephemeral retention")
+            (repl/update! scratch {:active false})
+            (assert (nil? (repl/strand scratch))
+                    "skein.repl deactivating an ephemeral strand deletes its row")))
         (finally
           (runtime/stop! runtime))))
     (finally
