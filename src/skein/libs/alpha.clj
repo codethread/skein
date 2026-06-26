@@ -10,7 +10,7 @@
     (apply client/call-world (repl/connected-config-dir) {} op args)))
 
 (defn approved
-  "Return normalized approved library config from the selected daemon config-dir libs.edn."
+  "Return normalized approved library config from the selected weaver config-dir libs.edn."
   []
   (call-daemon :approved-libs))
 
@@ -20,21 +20,21 @@
   (call-daemon :sync-approved-libs))
 
 (defn syncs
-  "Return daemon-lifetime approved library sync state."
+  "Return weaver-lifetime approved library sync state."
   []
   (call-daemon :approved-lib-syncs))
 
 (defn use!
-  "Activate a daemon-side module and record its use state."
+  "Activate a weaver-side module and record its use state."
   [key opts]
   (call-daemon :use! key opts))
 
 (defn uses
-  "Return daemon-lifetime module-use state."
+  "Return weaver-lifetime module-use state."
   []
   (call-daemon :uses))
 
 (defn use
-  "Return one daemon-lifetime module-use entry by key."
+  "Return one weaver-lifetime module-use entry by key."
   [key]
   (call-daemon :use key))

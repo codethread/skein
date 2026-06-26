@@ -1,4 +1,4 @@
-# Daemon Runtime delta for library author testing support
+# Weaver Runtime delta for library author testing support
 
 **Document ID:** `LAT-DELTA-001`
 **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
@@ -8,19 +8,19 @@
 
 ## LAT-DELTA-001.P1 Summary
 
-Daemon runtime gains an explicit storage model that supports the existing file-backed SQLite world and a real Xerial SQLite in-memory mode for trusted tests. Runtime metadata/status stop treating every database identity as a canonical filesystem path and instead report storage kind, diagnostic label, and file path only when storage is file-backed.
+Weaver runtime gains an explicit storage model that supports the existing file-backed SQLite world and a real Xerial SQLite in-memory mode for trusted tests. Runtime metadata/status stop treating every database identity as a canonical filesystem path and instead report storage kind, diagnostic label, and file path only when storage is file-backed.
 
 ## LAT-DELTA-001.P2 Contract changes
 
-- **LAT-DELTA-001.CC1:** A daemon runtime owns one storage handle for its lifetime. The handle includes a next.jdbc-compatible connectable, storage kind, diagnostic label, optional filesystem path, and close behavior.
-- **LAT-DELTA-001.CC2:** `:sqlite-file` remains the default storage kind for normal daemon worlds. It uses the selected world's `data/tasks.sqlite` path unless trusted runtime construction supplies another file path.
-- **LAT-DELTA-001.CC3:** `:sqlite-memory` is supported for trusted test/runtime construction. It uses real Xerial SQLite JDBC with a daemon-owned held `java.sql.Connection`; it is not fake persistence and must exercise the same `todo.db` schema/query code.
-- **LAT-DELTA-001.CC4:** Runtime stop closes storage resources that the daemon owns. Closing an in-memory connection destroys the in-memory database; later use of a closed storage handle fails loudly.
+- **LAT-DELTA-001.CC1:** A weaver runtime owns one storage handle for its lifetime. The handle includes a next.jdbc-compatible connectable, storage kind, diagnostic label, optional filesystem path, and close behavior.
+- **LAT-DELTA-001.CC2:** `:sqlite-file` remains the default storage kind for normal weaver worlds. It uses the selected world's `data/skein.sqlite` path unless trusted runtime construction supplies another file path.
+- **LAT-DELTA-001.CC3:** `:sqlite-memory` is supported for trusted test/runtime construction. It uses real Xerial SQLite JDBC with a weaver-owned held `java.sql.Connection`; it is not fake persistence and must exercise the same `skein.db` schema/query code.
+- **LAT-DELTA-001.CC4:** Runtime stop closes storage resources that the weaver owns. Closing an in-memory connection destroys the in-memory database; later use of a closed storage handle fails loudly.
 - **LAT-DELTA-001.CC5:** Runtime metadata reports storage identity explicitly. EDN metadata uses `:storage-kind`, `:storage-label`, and `:canonical-db-path`; JSON metadata/status uses `database_kind`, `database_label`, and `database_path`.
 - **LAT-DELTA-001.CC6:** For file-backed SQLite, `:storage-kind` is `:sqlite-file`, `:storage-label` is the canonical database path, `:canonical-db-path` is the canonical database path, `database_kind` is `"sqlite-file"`, `database_label` is the canonical database path, and `database_path` is the canonical database path.
-- **LAT-DELTA-001.CC6a:** For in-memory SQLite, `:storage-kind` is `:sqlite-memory`, `:storage-label` is a stable diagnostic label for the daemon lifetime, `:canonical-db-path` is nil, `database_kind` is `"sqlite-memory"`, `database_label` is the diagnostic label, and `database_path` is explicitly null.
+- **LAT-DELTA-001.CC6a:** For in-memory SQLite, `:storage-kind` is `:sqlite-memory`, `:storage-label` is a stable diagnostic label for the weaver lifetime, `:canonical-db-path` is nil, `database_kind` is `"sqlite-memory"`, `database_label` is the diagnostic label, and `database_path` is explicitly null.
 - **LAT-DELTA-001.CC6b:** Metadata/status must not publish a fake filesystem path for in-memory storage.
-- **LAT-DELTA-001.CC7:** Config-dir/world clients discover daemons by selected state world and daemon identity, not by database path. Legacy db-file-oriented Clojure helpers remain file-storage-only and fail loudly if used against non-file storage.
+- **LAT-DELTA-001.CC7:** Config-dir/world clients discover weavers by selected state world and weaver identity, not by database path. Legacy db-file-oriented Clojure helpers remain file-storage-only and fail loudly if used against non-file storage.
 - **LAT-DELTA-001.CC8:** The public CLI does not select storage mode in this feature. In-memory storage is intended for trusted tests/helpers, not as a general user CLI mode.
 
 ## LAT-DELTA-001.P3 Design decisions

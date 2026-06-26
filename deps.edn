@@ -14,5 +14,6 @@
   :repl {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
   :rebel {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]
           :main-opts ["-m" "rebel-readline.main"]}
+  :skein {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
   :smoke {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]
           :main-opts ["-m" "skein.smoke"]}}}

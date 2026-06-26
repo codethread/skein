@@ -1,36 +1,36 @@
-# Add daemon storage handles
+# Add weaver storage handles
 
 ## TASK-001.P1 Scope
 
 Type: AFK
 
-Introduce an internal daemon storage handle abstraction while preserving existing file-backed SQLite behavior. This task should not expose in-memory storage yet; it prepares runtime startup and stop lifecycle so later storage kinds do not distort the public helper API.
+Introduce an internal weaver storage handle abstraction while preserving existing file-backed SQLite behavior. This task should not expose in-memory storage yet; it prepares runtime startup and stop lifecycle so later storage kinds do not distort the public helper API.
 
 References:
 
 - [Plan](../library-author-testing-support.plan.md) `LAT-PLAN-001.PH1`
-- [Daemon runtime delta](../specs/daemon-runtime.delta.md)
+- [Weaver runtime delta](../specs/daemon-runtime.delta.md)
 - [SQLite lifecycle spike](../../../spikes/2026-06-26-sqlite-memory-lifecycle.md)
 
 ## TASK-001.P2 Implementation notes
 
-- Inspect and update `src/todo/db.clj`, `src/todo/daemon/runtime.clj`, and `src/todo/daemon/metadata.clj`.
-- Keep existing `todo.db` schema/query functions using next.jdbc-compatible connectables.
+- Inspect and update `src/skein/db.clj`, `src/skein/weaver/runtime.clj`, and `src/skein/weaver/metadata.clj`.
+- Keep existing `skein.db` schema/query functions using next.jdbc-compatible connectables.
 - Add a small internal storage representation with at least:
   - storage kind
   - storage label
   - optional canonical DB path
   - next.jdbc-compatible connectable
   - optional close function/resource
-- File-backed runtime startup should continue using the selected world's `data/tasks.sqlite` unless a trusted caller supplies an explicit DB file.
-- `runtime/stop!` should close daemon-owned storage resources when present without breaking current file-backed tests.
+- File-backed runtime startup should continue using the selected world's `data/skein.sqlite` unless a trusted caller supplies an explicit DB file.
+- `runtime/stop!` should close weaver-owned storage resources when present without breaking current file-backed tests.
 - Do not change public CLI behavior in this task.
 - Do not add `:sqlite-memory` behavior in this task except as a shape that future code can plug into.
 
 ## TASK-001.P3 Done when
 
-- Existing file-backed daemon startup still works through `runtime/start!` with explicit DB file and world-default DB path.
-- Existing Clojure tests that cover file-backed daemon/db behavior pass or are updated only for internal storage shape changes.
+- Existing file-backed weaver startup still works through `runtime/start!` with explicit DB file and world-default DB path.
+- Existing Clojure tests that cover file-backed weaver/db behavior pass or are updated only for internal storage shape changes.
 - `runtime/stop!` has deterministic storage-resource cleanup semantics for storage handles.
 - File-backed metadata remains behaviorally unchanged until task 3 updates the public metadata contract.
 
@@ -42,4 +42,4 @@ Run relevant checks:
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test
 ```
 
-If full Clojure tests cannot be run, run the daemon/db-related subset available in this repo and record the limitation in the plan Developer Notes.
+If full Clojure tests cannot be run, run the weaver/db-related subset available in this repo and record the limitation in the plan Developer Notes.

@@ -9,28 +9,28 @@
     (apply client/call-world (repl/connected-config-dir) {} op args)))
 
 (defn register-view!
-  "Register a daemon-memory view name to a fully qualified daemon-resolvable function symbol.
+  "Register a weaver-memory view name to a fully qualified weaver-resolvable function symbol.
 
-  Duplicate names replace prior registrations. When called inside the daemon JVM,
+  Duplicate names replace prior registrations. When called inside the weaver JVM,
   registers directly on the active weaver runtime. When called from a connected
   helper REPL, routes to the selected weaver world from `skein.repl/connect!` /
   `strand weaver repl`; connected users should register functions that are already
-  loadable in the daemon JVM."
+  loadable in the weaver JVM."
   [name fn-sym]
   (call-daemon :register-view! name fn-sym))
 
 (defn view!
-  "Invoke a registered daemon-side view with params through the selected weaver runtime.
+  "Invoke a registered weaver-side view with params through the selected weaver runtime.
 
-  The daemon resolves the registered function symbol and calls it with
-  `{:params params}`. Routes directly daemon-side or through the connected helper
-  REPL world."
+  The weaver resolves the registered function symbol and calls it with
+  `{:params params}`. Routes directly through the weaver runtime or the connected
+  helper REPL world."
   [name params]
   (call-daemon :view! name params))
 
 (defn views
-  "Return serializable daemon-memory view registry entries through the selected weaver runtime.
+  "Return serializable weaver-memory view registry entries through the selected weaver runtime.
 
-  Routes directly daemon-side or through the connected helper REPL world."
+  Routes directly through the weaver runtime or the connected helper REPL world."
   []
   (call-daemon :views))

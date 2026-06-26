@@ -314,11 +314,11 @@ func (a *App) writeHumanRows(result any) error {
 }
 
 func weaverArgs(o Options) []string {
-	args := []string{"-M:skein"}
+	args := []string{"-M:skein", "-m", "skein.weaver.runtime"}
 	if o.ConfigDirExplicit {
 		args = append(args, "--config-dir", o.ConfigDir)
 	}
-	return append(args, "weaver", "start")
+	return args
 }
 
 func replArgs(o Options, stdin bool) []string {

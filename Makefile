@@ -2,11 +2,11 @@
 
 all: build install bootstrap
 
-GO_CLI := ./cli/cmd/todo
-BIN := ./cli/bin/todo
+GO_CLI := ./cli/cmd/strand
+BIN := ./cli/bin/strand
 CONFIG_HOME ?= $(if $(XDG_CONFIG_HOME),$(XDG_CONFIG_HOME),$(HOME)/.config)
-ATOM_CONFIG ?= $(CONFIG_HOME)/atom
-CONFIG_DIR := $(ATOM_CONFIG)
+SKEIN_CONFIG ?= $(CONFIG_HOME)/skein
+CONFIG_DIR := $(SKEIN_CONFIG)
 CONFIG_FILE := $(CONFIG_DIR)/config.json
 
 build:

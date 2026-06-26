@@ -1,6 +1,6 @@
 tasks:
   - id: 1
-    description: "Add daemon storage handles"
+    description: "Add weaver storage handles"
     task_file: "tasks/001-add-daemon-storage-handles.md"
     status: pending
     blocked_by: []
@@ -15,7 +15,7 @@ tasks:
     status: pending
     blocked_by: [1, 2]
   - id: 4
-    description: "Add atom test alpha"
+    description: "Add skein test alpha"
     task_file: "tasks/004-add-atom-test-alpha.md"
     status: pending
     blocked_by: [2, 3]

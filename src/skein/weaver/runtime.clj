@@ -102,3 +102,21 @@
   (when-let [state-dir (get-in runtime [:metadata :state-dir])]
     (metadata/delete! {:state-dir state-dir}))
   {:stopped true})
+
+(defn- parse-main-args [args]
+  (loop [remaining args
+         opts {}]
+    (case (first remaining)
+      nil opts
+      "--config-dir" (let [[_ dir & more] remaining]
+                       (when-not dir
+                         (throw (ex-info "--config-dir requires a directory" {:args args})))
+                       (recur more (assoc opts :config-dir dir)))
+      (throw (ex-info "Usage: skein.weaver.runtime [--config-dir <dir>]" {:args args})))))
+
+(defn -main [& args]
+  (let [{:keys [config-dir]} (parse-main-args args)]
+    (start! nil {:world (config/world config-dir)})
+    (println "weaver started")
+    (while @current-runtime
+      (Thread/sleep 100))))

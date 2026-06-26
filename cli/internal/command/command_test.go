@@ -347,12 +347,12 @@ func TestWeaverStartLaunchesFromConfiguredSource(t *testing.T) {
 	if launched.Source != source || launched.ConfigDir != realCfg || !launched.ConfigDirExplicit {
 		t.Fatalf("unexpected launch options: %#v", launched)
 	}
-	if !reflect.DeepEqual(weaverArgs(launched), []string{"-M:skein", "--config-dir", realCfg, "weaver", "start"}) {
+	if !reflect.DeepEqual(weaverArgs(launched), []string{"-M:skein", "-m", "skein.weaver.runtime", "--config-dir", realCfg}) {
 		t.Fatalf("unexpected explicit weaver args: %#v", weaverArgs(launched))
 	}
 	defaultLaunch := launched
 	defaultLaunch.ConfigDirExplicit = false
-	if !reflect.DeepEqual(weaverArgs(defaultLaunch), []string{"-M:skein", "weaver", "start"}) {
+	if !reflect.DeepEqual(weaverArgs(defaultLaunch), []string{"-M:skein", "-m", "skein.weaver.runtime"}) {
 		t.Fatalf("unexpected default weaver args: %#v", weaverArgs(defaultLaunch))
 	}
 }

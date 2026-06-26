@@ -9,10 +9,10 @@ Finalize the feature by merging shipped contract changes from feature-local spec
 References:
 
 - [Plan](../library-author-testing-support.plan.md) validation and contract sections
-- [Daemon runtime delta](../specs/daemon-runtime.delta.md)
+- [Weaver runtime delta](../specs/daemon-runtime.delta.md)
 - [REPL API delta](../specs/repl-api.delta.md)
 - [CLI delta](../specs/cli.delta.md)
-- Root specs: [Daemon Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), [CLI Surface](../../../specs/cli.md)
+- Root specs: [Weaver Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), [CLI Surface](../../../specs/cli.md)
 
 ## TASK-008.P2 Implementation notes
 
@@ -29,7 +29,7 @@ References:
 
 ## TASK-008.P3 Done when
 
-- Root specs accurately describe implemented storage metadata, `atom.test.alpha`, and CLI status behavior.
+- Root specs accurately describe implemented storage metadata, `skein.test.alpha`, and CLI status behavior.
 - Feature-local deltas are marked `Merged` or explicitly explain unmerged/cut scope.
 - Full Clojure tests, Go tests, and smoke pass, or any inability to run them is clearly recorded with reason.
 - `git status --short` shows no generated SQLite databases, runtime metadata, sockets, or built CLI artifacts that should have been cleaned.

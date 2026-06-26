@@ -3,10 +3,10 @@
 **Document ID:** `SR-PLAN-001`
 **Feature:** `skein-rename`
 **Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-006 Rename to Skein](../../rfcs/2026-06-26-skein-rename.md)
+**RFC:** [RFC-006 Rename to Skein](./rfcs/2026-06-26-skein-rename.md)
 **Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Runtime Transformations PRD](../../prd/runtime-transformations.md)
 **Feature specs:** [strand-model.delta.md](./specs/strand-model.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [runtime-transformations.delta.md](./specs/runtime-transformations.delta.md)
-**Status:** Reviewed
+**Status:** Shipped
 **Last Updated:** 2026-06-26
 
 ## SR-PLAN-001.P1 Goal and scope
@@ -91,7 +91,7 @@ Outcome: Feature deltas are merged into root specs/PRD, `task-model.md` is promo
 
 ## SR-PLAN-001.P8 Task context
 
-- **SR-PLAN-001.TC1:** Primary references are [proposal.md](./proposal.md), [RFC-006](../../rfcs/2026-06-26-skein-rename.md), and the five feature-local deltas under [specs/](./specs/). Treat archived devflow folders as historical context; do not rewrite archive files unless finish/archive procedure explicitly requires moving RFCs.
+- **SR-PLAN-001.TC1:** Primary references are [proposal.md](./proposal.md), [RFC-006](./rfcs/2026-06-26-skein-rename.md), and the five feature-local deltas under [specs/](./specs/). Treat archived devflow folders as historical context; do not rewrite archive files unless finish/archive procedure explicitly requires moving RFCs.
 - **SR-PLAN-001.TC2:** The safest task sequence is a tracer-bullet path from DB row shape to daemon/API to REPL/CLI to smoke/docs, with spec promotion last.
 - **SR-PLAN-001.TC3:** Do not add compatibility shims. If a test or doc still depends on old names, update it to the new contract instead of preserving old behavior.
 
@@ -152,3 +152,9 @@ Append notes here. Do not rewrite earlier notes.
 - Removed the unused interactive `skein.app` menu and `:run` alias, unused Go output/version packages, stale task spec alias, task-era DB convenience queries, and userland attribute indexes for `priority`/`due-date`.
 - Kept the live `:skein`/`skein.cli` launcher path because `strand weaver start` still uses it to launch the Clojure weaver.
 - Validation passed after cleanup: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.
+
+### SR-PLAN-001.DN10 Finish/archive — 2026-06-26
+
+- Shipped scope: Skein/strand/weaver rename, strand model lifecycle/retention (`active`, `inactive_at`, `ephemeral`), Go `strand` CLI, `skein.*` namespaces, `weaver.*` runtime artifacts, docs/smoke/spec promotion, and follow-up cleanup for remaining public-surface rename drift.
+- Cut scope: public publishing/domain/GitHub handle decisions remain out of scope by proposal.
+- Archived RFC-006 with this feature.

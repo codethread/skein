@@ -15,8 +15,7 @@ Root specs are canonical for shipped behavior:
 
 ## Active features
 
-- `library-author-testing-support` — proposed library-author testing helpers and daemon storage support.
-- `skein-rename` — implemented Skein/strand/weaver rename; pending finish/archive.
+- `library-author-testing-support` — proposed library-author testing helpers and weaver storage support.
 
 ## Archived features
 
@@ -32,4 +31,5 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the runtime library workspace model in the canonical root specs.
 - `26-06-26__runtime-library-workspace` — shipped config-dir Clojure library workspaces with `libs.edn`, approved local roots, daemon-side `atom.libs.alpha/sync!` and `use!`, module-use introspection, and replacement of the plugin-directory public extension API.
 - `26-06-26__runtime-transformation-primitives` — shipped built-in `atom.graph.alpha` / `atom.views.alpha` helpers for set-oriented graph/query composition and daemon-memory read-only views.
+- `26-06-26__skein-rename` — shipped Skein/strand/weaver rename, strand model lifecycle/retention, `strand` CLI, and `skein.*` namespaces.
 - `26-06-24__stripped-task-api` — shipped smaller CLI/REPL surface with first-class task lifecycle fields.
