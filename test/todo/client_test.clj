@@ -1,6 +1,7 @@
 (ns todo.client-test
   (:refer-clojure :exclude [list update])
   (:require [clojure.test :refer [deftest is]]
+            [nrepl.core :as nrepl]
             [todo.client :as client]
             [todo.daemon.api :as api]
             [todo.daemon.config :as daemon-config]
@@ -171,9 +172,10 @@
           (is (re-find #"non-blank" (:explain (:daemon-data (ex-data e))))))))))
 
 (deftest client-fails-loudly-for-timeouts
-  (with-runtime
-    (fn [_ db-file]
-      (with-redefs [api/list (fn [_] (Thread/sleep 250) [])]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                              #"timed out"
-                              (client/list db-file {:timeout-ms 50})))))))
+  (with-redefs [nrepl/client (fn [conn _timeout-ms] conn)
+                nrepl/client-session (fn [client _timeout-ms] client)
+                nrepl/message (fn [_session _message]
+                                (throw (java.net.SocketTimeoutException. "timed out")))]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"timed out"
+                          (client/eval-form :conn "(+ 1 1)" 50 {:operation :list})))))

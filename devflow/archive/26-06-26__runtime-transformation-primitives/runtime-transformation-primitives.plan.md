@@ -1,7 +1,7 @@
 # Runtime Transformation Primitives Plan
 
 **Document ID:** `RTP-PLAN-001`
-**Status:** Draft
+**Status:** Shipped
 **Last Updated:** 2026-06-26
 **Proposal:** [proposal.md](./proposal.md)
 **PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md)
@@ -183,3 +183,7 @@ Updated fresh `todo init` startup config to require `atom.graph.alpha` and `atom
 ### RTP-PLAN-001.DN7 TASK-006 promote specs validate — 2026-06-26
 
 Promoted runtime transformation primitive contracts into root CLI, REPL API, and Daemon Runtime specs, and marked feature-local spec deltas merged into root specs. Full validation passed: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`. `git status --short` after validation showed no generated SQLite, socket, runtime metadata, or temp config artifacts.
+
+### RTP-PLAN-001.DN8 Shipped and archived — 2026-06-26
+
+Feature is complete and root specs are canonical for shipped behavior: built-in `atom.graph.alpha` and `atom.views.alpha`, set-oriented `query-ids!` / `tasks-by-ids` / `ancestor-root-ids` / `subgraph`, daemon-memory view registry operations, generated `todo init` helper imports, and docs/smoke coverage. No scope was cut. No RFCs are archived with this feature.

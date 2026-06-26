@@ -15,7 +15,7 @@ Root specs are canonical for shipped behavior:
 
 ## Active features
 
-- `runtime-transformation-primitives` — planned blessed `atom.*.alpha` query/graph/view primitives built on the runtime library workspace.
+None.
 
 ## Archived features
 
@@ -30,4 +30,5 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-25__user-daemon-home` — shipped config-dir daemon worlds, fixed selected-world socket discovery, default daemon init, and connected REPL/stdin UX.
 - `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the runtime library workspace model in the canonical root specs.
 - `26-06-26__runtime-library-workspace` — shipped config-dir Clojure library workspaces with `libs.edn`, approved local roots, daemon-side `atom.libs.alpha/sync!` and `use!`, module-use introspection, and replacement of the plugin-directory public extension API.
+- `26-06-26__runtime-transformation-primitives` — shipped built-in `atom.graph.alpha` / `atom.views.alpha` helpers for set-oriented graph/query composition and daemon-memory read-only views.
 - `26-06-24__stripped-task-api` — shipped smaller CLI/REPL surface with first-class task lifecycle fields.
