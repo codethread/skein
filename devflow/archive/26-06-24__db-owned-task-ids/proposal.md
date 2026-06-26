@@ -3,7 +3,7 @@
 **Document ID:** `PROP-001`
 **Last Updated:** 2026-06-24
 **Related RFCs:** None for core id fix; batch refs are tracked separately in [RFC-001](../../rfcs/2026-06-24-batch-task-refs.md)
-**Related root specs:** [Task Model](../../specs/task-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
+**Related root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
 **Related tenets:** [TENETS](../../TENETS.md)
 **Configuration identification:** `PROP-001` is the first active feature proposal in this repository. Every nested point ID is prefixed with `PROP-001`.
 

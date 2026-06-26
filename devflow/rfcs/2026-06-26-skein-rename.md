@@ -3,7 +3,7 @@
 **Document ID:** `RFC-006`
 **Status:** Accepted
 **Date:** 2026-06-26
-**Related:** [PHILOSOPHY](../PHILOSOPHY.md), [TENETS](../TENETS.md), [SPEC-001 Task Model](../specs/task-model.md), [SPEC-002 CLI](../specs/cli.md), [SPEC-003 REPL API](../specs/repl-api.md), [SPEC-004 Daemon Runtime](../specs/daemon-runtime.md), [PRD-001 Runtime Transformations](../prd/runtime-transformations.md)
+**Related:** [PHILOSOPHY](../PHILOSOPHY.md), [TENETS](../TENETS.md), [SPEC-001 Strand Model](../specs/strand-model.md), [SPEC-002 CLI](../specs/cli.md), [SPEC-003 REPL API](../specs/repl-api.md), [SPEC-004 Weaver Runtime](../specs/daemon-runtime.md), [PRD-001 Runtime Transformations](../prd/runtime-transformations.md)
 
 ## RFC-006.P1 Problem
 
@@ -68,7 +68,7 @@ Naming explored three axes: the product brand, the stored-unit word, and the dae
 - **RFC-006.C1:** CLI ([SPEC-002](../specs/cli.md)): Go binary `todo` → `strand`; `daemon start|repl|stop|status` subcommands → `weaver start|repl|stop|status` under the `strand` binary, including `weaver repl --stdin`. Edge creation stays on `--edge edge-type:to-id`, e.g. `strand add --edge depends-on:<id>`; no new `bond` verb.
 - **RFC-006.C2:** Internal Clojure namespaces ([SPEC-003](../specs/repl-api.md), [SPEC-004](../specs/daemon-runtime.md)): `todo.*` → `skein.*` (`todo.daemon.api` → `skein.weaver.api`, `todo.repl` → `skein.repl`, `src/todo/` → `src/skein/`).
 - **RFC-006.C3:** Blessed runtime libraries (SPEC-004.P9/P10, PRD-001 examples): `atom.libs.alpha` / `atom.graph.alpha` / `atom.views.alpha` → `skein.libs.alpha` / `skein.graph.alpha` / `skein.views.alpha`.
-- **RFC-006.C4:** Storage ([SPEC-001](../specs/task-model.md)): table `tasks` → `strands`; `task_edges` stays the edge table (rename to `strand_edges`); default db `tasks.sqlite` → `skein.sqlite`. Replace task-oriented `status` / `final_at` with core `active` / `inactive_at` and add `ephemeral`; deactivating an ephemeral strand deletes it and its incident edges instead of retaining history. Outcome subtypes such as done, failed, or cancelled belong in JSON attributes when a world wants them.
+- **RFC-006.C4:** Storage ([SPEC-001](../specs/strand-model.md)): table `tasks` → `strands`; `task_edges` stays the edge table (rename to `strand_edges`); default db `tasks.sqlite` → `skein.sqlite`. Replace task-oriented `status` / `final_at` with core `active` / `inactive_at` and add `ephemeral`; deactivating an ephemeral strand deletes it and its incident edges instead of retaining history. Outcome subtypes such as done, failed, or cancelled belong in JSON attributes when a world wants them.
 - **RFC-006.C5:** Runtime worlds (SPEC-004.P2/P3): config `~/.config/atom` → `~/.config/skein`, state `~/.local/state/atom` → `~/.local/state/skein`, data `~/.local/share/atom` → `~/.local/share/skein`. Socket/metadata files rename `daemon.sock`/`daemon.json`/`daemon.edn` → `weaver.sock`/`weaver.json`/`weaver.edn`.
 - **RFC-006.C6:** Specs: rename `task-model.md` → `strand-model.md`; refresh vocabulary across `cli.md`, `daemon-runtime.md` (→ weaver runtime framing), `repl-api.md`, and PRD-001. Promote on feature finish, not in this RFC.
 - **RFC-006.C7:** No Clojure-core symbol hazard: `strand`/`skein`/`weaver` do not shadow any `clojure.core` name, so the `atom`-style bare-symbol caution does not apply.

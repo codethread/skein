@@ -4,7 +4,7 @@
 **Feature:** `skein-rename`
 **Proposal:** [proposal.md](./proposal.md)
 **RFC:** [RFC-006 Rename to Skein](../../rfcs/2026-06-26-skein-rename.md)
-**Root specs:** [Task Model](../../specs/task-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md), [Runtime Transformations PRD](../../prd/runtime-transformations.md)
+**Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Runtime Transformations PRD](../../prd/runtime-transformations.md)
 **Feature specs:** [strand-model.delta.md](./specs/strand-model.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [runtime-transformations.delta.md](./specs/runtime-transformations.delta.md)
 **Status:** Reviewed
 **Last Updated:** 2026-06-26
@@ -138,3 +138,11 @@ Append notes here. Do not rewrite earlier notes.
 - Refreshed smoke to assert `inactive_at` for inactive persistent strands and delete-on-deactivate for ephemeral strands while continuing to exercise generated `skein.*.alpha` startup config, runtime library sync/use, graph helpers, views, CLI, and REPL stdin flows.
 - Rewrote user/agent-facing docs and runtime-transformations PRD examples to teach `strand`, `weaver`, Skein config-dir worlds, `strand!`/`strands`, `skein.*.alpha`, `strands-by-ids`, and active/ephemeral lifecycle vocabulary.
 - Grep checks for stale public-surface strings across README, AGENTS, CONTRIBUTING, docs, PRD, and smoke are clean except for runtime-library/module result maps using their own `:status` values, which are not core strand lifecycle fields.
+
+### SR-PLAN-001.DN8 Task 006 implementation — 2026-06-26
+
+- Promoted the root durable model spec from `task-model.md` to `strand-model.md`, refreshed CLI/REPL/weaver root specs, updated PRD/root devflow references, and marked all skein-rename feature deltas `Merged`.
+- Validation passed: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.
+- `git status --short` showed no generated SQLite, socket, metadata, smoke, or built CLI artifacts after validation; unrelated untracked `devflow/feat/remove-legacy-clojure-cli/` was left untouched.
+- Feature is ready for devflow finish/archive; finish should move RFC-006 with the archived feature per the task contract.
+- Deep review follow-up removed two spec drift issues: root status-report wording no longer promises an unimplemented `state_dir` field, and archived devflow links now target the promoted `strand-model.md` path instead of the removed `task-model.md` path.

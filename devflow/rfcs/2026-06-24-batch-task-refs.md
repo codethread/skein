@@ -3,7 +3,7 @@
 **Document ID:** `RFC-001`
 **Status:** Accepted
 **Date:** 2026-06-24
-**Related:** [Task Model](../specs/task-model.md), [CLI Surface](../specs/cli.md), [DB-owned task IDs feature](../archive/26-06-24__db-owned-task-ids/proposal.md)
+**Related:** [Strand Model](../specs/strand-model.md), [CLI Surface](../specs/cli.md), [DB-owned task IDs feature](../archive/26-06-24__db-owned-task-ids/proposal.md)
 **Configuration identification:** `RFC-001` is the first RFC in this repository. Every nested point ID is prefixed with `RFC-001`.
 
 ## RFC-001.P1 Problem

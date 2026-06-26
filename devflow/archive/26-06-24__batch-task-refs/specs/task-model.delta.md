@@ -1,7 +1,7 @@
 # Task Model delta for batch task refs
 
 **Document ID:** `DELTA-002`
-**Root spec:** [task-model.md](../../../specs/task-model.md)
+**Root spec:** [task-model.md](../../../specs/strand-model.md)
 **Feature:** [../proposal.md](../proposal.md)
 **Status:** Merged
 **Last Updated:** 2026-06-24

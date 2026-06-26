@@ -3,7 +3,7 @@
 **Document ID:** `SR-PROP-001`
 **Last Updated:** 2026-06-26
 **Related RFCs:** [RFC-006 Rename to Skein](../../rfcs/2026-06-26-skein-rename.md)
-**Related root specs:** [Task Model](../../specs/task-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md), [Runtime Transformations PRD](../../prd/runtime-transformations.md)
+**Related root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Runtime Transformations PRD](../../prd/runtime-transformations.md)
 
 ## SR-PROP-001.P1 Problem
 

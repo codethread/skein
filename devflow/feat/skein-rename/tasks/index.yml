@@ -27,5 +27,5 @@ tasks:
   - id: 6
     description: "Promote specs and validate"
     task_file: "tasks/006-promote-specs-and-validate.md"
-    status: pending
+    status: complete
     blocked_by: [5]

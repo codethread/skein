@@ -8,15 +8,15 @@ Always study [TENETS](./TENETS.md) and [PHILOSOPHY](./PHILOSOPHY.md). No code, s
 
 Root specs are canonical for shipped behavior:
 
-- [Task Model](./specs/task-model.md) — task records, JSON attributes, edge semantics, and readiness rules.
-- [CLI Surface](./specs/cli.md) — scriptable command contract for agents, including the thin Go CLI and JSON socket boundary.
+- [Strand Model](./specs/strand-model.md) — strand records, active/ephemeral lifecycle, JSON attributes, edge semantics, and readiness rules.
+- [CLI Surface](./specs/cli.md) — scriptable command contract for agents, including the thin Go `strand` CLI and JSON socket boundary.
 - [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL and runtime library workspace helpers.
-- [Daemon Runtime](./specs/daemon-runtime.md) — local long-lived daemon lifecycle, metadata, transports, trusted startup config, query registry, and runtime library workspace model.
+- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, metadata, transports, trusted startup config, query registry, and runtime library workspace model.
 
 ## Active features
 
 - `library-author-testing-support` — proposed library-author testing helpers and daemon storage support.
-- `skein-rename` — proposed Skein/strand/weaver rename across product, contracts, code, storage, docs, and smoke workflows.
+- `skein-rename` — implemented Skein/strand/weaver rename; pending finish/archive.
 
 ## Archived features
 

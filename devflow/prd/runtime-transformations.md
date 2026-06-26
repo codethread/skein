@@ -1,7 +1,7 @@
 # Runtime transformations
 
 **Document ID:** `PRD-001`
-**Related:** [Devflow Philosophy](../PHILOSOPHY.md), [Task Model](../specs/task-model.md), [CLI Surface](../specs/cli.md), [REPL API](../specs/repl-api.md), [Daemon Runtime](../specs/daemon-runtime.md)
+**Related:** [Devflow Philosophy](../PHILOSOPHY.md), [Strand Model](../specs/strand-model.md), [CLI Surface](../specs/cli.md), [REPL API](../specs/repl-api.md), [Weaver Runtime](../specs/daemon-runtime.md)
 
 Skein treats persisted strands and edges as durable facts, and treats richer behavior as runtime transformation over those facts.
 

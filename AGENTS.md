@@ -6,10 +6,10 @@ Skein is daemon-core-first: the long-lived weaver owns storage and runtime state
 
 Canonical shipped contracts live in root specs:
 
-- [Task Model](./devflow/specs/task-model.md): current durable model until final spec promotion for the Skein rename.
+- [Strand Model](./devflow/specs/strand-model.md)
 - [CLI Surface](./devflow/specs/cli.md)
 - [REPL API](./devflow/specs/repl-api.md)
-- [Daemon Runtime](./devflow/specs/daemon-runtime.md)
+- [Weaver Runtime](./devflow/specs/daemon-runtime.md)
 
 ## Project commands
 

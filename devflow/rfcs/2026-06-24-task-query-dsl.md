@@ -3,7 +3,7 @@
 **Document ID:** `RFC-002`
 **Status:** Accepted
 **Created:** 2026-06-24
-**Related specs:** [CLI Surface](../specs/cli.md), [REPL API](../specs/repl-api.md), [Task Model](../specs/task-model.md)
+**Related specs:** [CLI Surface](../specs/cli.md), [REPL API](../specs/repl-api.md), [Strand Model](../specs/strand-model.md)
 
 ## RFC-002.P1 Problem
 

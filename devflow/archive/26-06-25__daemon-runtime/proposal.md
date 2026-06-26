@@ -3,7 +3,7 @@
 **Document ID:** `PROP-001`
 **Last Updated:** 2026-06-24
 **Related RFCs:** [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md)
-**Related root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Task Model](../../specs/task-model.md)
+**Related root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Task Model](../../specs/strand-model.md)
 
 ## PROP-001.P1 Problem
 

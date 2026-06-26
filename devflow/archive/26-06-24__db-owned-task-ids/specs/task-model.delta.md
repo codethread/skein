@@ -2,7 +2,7 @@
 
 **Document ID:** `DELTA-001`
 **Status:** Merged
-**Target root spec:** [Task Model](../../../specs/task-model.md)
+**Target root spec:** [Task Model](../../../specs/strand-model.md)
 **Feature:** `db-owned-task-ids`
 **Last Updated:** 2026-06-24
 **Configuration identification:** `DELTA-001` is the task-model delta for `db-owned-task-ids`. Every nested point ID is prefixed with `DELTA-001`.

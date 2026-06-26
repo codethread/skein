@@ -4,7 +4,7 @@
 **Feature:** `db-owned-task-ids`
 **Proposal:** [proposal.md](./proposal.md)
 **RFC:** none for core id fix; batch refs tracked in [RFC-001](../../rfcs/2026-06-24-batch-task-refs.md)
-**Root specs:** [Task Model](../../specs/task-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
+**Root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
 **Feature specs:** [task-model.delta.md](./specs/task-model.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md)
 **Tenets:** [TENETS](../../TENETS.md)
 **Status:** Shipped
