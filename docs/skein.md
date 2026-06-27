@@ -26,6 +26,7 @@ selected config-dir
 running weaver
   owns SQLite storage
   owns named queries
+  owns weave pattern registrations
   owns view registrations
   owns synced library state
 
@@ -88,6 +89,7 @@ The weaver is the application core. It is a long-lived local Clojure process tha
 - the SQLite database connection;
 - strand creation, update, query, readiness, and burn operations;
 - the in-memory named-query registry;
+- the in-memory weave-pattern registry;
 - the in-memory view registry;
 - the approved-library sync state;
 - runtime module activation state.
@@ -115,7 +117,7 @@ The weaver exposes two local transports:
 - a Unix socket used by the Go `strand` CLI;
 - an nREPL endpoint used by the connected helper REPL.
 
-A selected config-dir may have one running weaver. Runtime registries are weaver-lifetime state, so named queries, views, and synced library state should be loaded from startup config if you want them to appear after every restart.
+A selected config-dir may have one running weaver. Runtime registries are weaver-lifetime state, so named queries, weave patterns, views, and synced library state should be loaded from startup config if you want them to appear after every restart.
 
 ## CLI
 
@@ -132,6 +134,8 @@ strand --config-dir "$world" show <id>
 strand --config-dir "$world" list
 strand --config-dir "$world" ready
 strand --config-dir "$world" burn <id>
+strand --config-dir "$world" pattern explain <pattern-name>
+printf '{"title":"New work"}\n' | strand --config-dir "$world" weave --pattern <pattern-name>
 ```
 
 The public strand/weaver commands emit JSON. CLI attributes are string-valued `key=value` pairs; richer Clojure data belongs in config or REPL workflows.
@@ -143,6 +147,7 @@ Use the CLI for:
 - adding edges;
 - asking what is ready;
 - consuming named queries registered by trusted config;
+- invoking weave patterns registered by trusted config;
 - starting, stopping, and checking the weaver.
 
 Do not expect the CLI to be a package manager, query authoring surface, plugin host, or Clojure evaluator. Those belong to the weaver config and REPL.
@@ -327,7 +332,7 @@ The generated `init.clj` is intentionally small:
 (libs/sync!)
 ```
 
-The weaver loads `init.clj` at startup when present. Use startup-loaded code to register queries, load approved libraries, register views, and install conventions for your world. Simple worlds can put registrations directly in `init.clj`; reusable or larger worlds should keep `init.clj` minimal and install behavior from a local library.
+The weaver loads `init.clj` at startup when present. Use startup-loaded code to register queries, weave patterns, load approved libraries, register views, and install conventions for your world. Simple worlds can put registrations directly in `init.clj`; reusable or larger worlds should keep `init.clj` minimal and install behavior from a local library.
 
 A direct `init.clj` query registration can look like this:
 
@@ -346,7 +351,7 @@ Use reload during development:
 (libs/reload!)
 ```
 
-Reload clears weaver-lifetime library sync state, module-use state, named queries, and views, then reloads `init.clj`.
+Reload clears weaver-lifetime library sync state, module-use state, named queries, weave patterns, and views, then reloads `init.clj`.
 
 ## Authoring your own library code
 
@@ -411,6 +416,44 @@ Key points:
 - Direct `require` from `strand weaver repl` is not the supported activation path for newly synced weaver libraries. The connected helper REPL is a separate client process; use `libs/use!` or `libs/reload!` so loading and installation happen inside the weaver runtime.
 - Extension code runs with weaver authority. Only load trusted code.
 - There is no per-module isolation or unload guarantee. Restart the weaver for a clean runtime if needed.
+
+## Weave patterns
+
+Weave patterns are trusted owner-defined transformations that turn a JSON-like input payload into an atomic batch of new strands and edges. They are useful when agents should submit intent and your world should decide the graph shape.
+
+Pattern registration lives in trusted Clojure config or libraries, not in the public CLI. A pattern has a simple name, a fully qualified weaver-loadable function symbol, and a `clojure.spec` input contract.
+
+```clojure
+(ns my.workflow
+  (:require [clojure.spec.alpha :as s]
+            [skein.patterns.alpha :as patterns]))
+
+(s/def ::title string?)
+(s/def ::task-input (s/keys :req-un [::title]))
+
+(defn task-pattern [{:keys [input]}]
+  [{:ref 'impl
+    :title (:title input)
+    :attributes {:owner "agent"}}
+   {:ref 'review
+    :title (str "Review: " (:title input))
+    :attributes {:kind "review"}
+    :edges [{:type "depends-on" :to 'impl}]}])
+
+(defn install! []
+  (patterns/register-pattern! 'task 'my.workflow/task-pattern ::task-input))
+```
+
+CLI callers can inspect the input contract and invoke the pattern with exactly one JSON value on stdin:
+
+```sh
+strand --config-dir "$world" pattern explain task
+printf '{"title":"Implement review flow"}\n' | strand --config-dir "$world" weave --pattern task
+```
+
+The pattern function runs inside the weaver and receives `{:input input}`. Its return value must be the same batch vector shape accepted by Skein's batch primitive: strand maps with optional `:ref` and `:edges`. Symbolic refs are transient to the batch and are never durable ids. Input spec failure, malformed batch output, missing refs, invalid durable targets, cycles, and database errors fail loudly and leave no partial batch writes.
+
+Like queries and views, patterns are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload.
 
 ## Views and graph helpers
 

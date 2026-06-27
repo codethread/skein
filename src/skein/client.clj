@@ -30,6 +30,11 @@
    :register-view! 'skein.weaver.api/register-view!
    :view! 'skein.weaver.api/view!
    :views 'skein.weaver.api/views
+   :register-pattern! 'skein.weaver.api/register-pattern!
+   :patterns 'skein.weaver.api/patterns
+   :resolve-pattern 'skein.weaver.api/resolve-pattern
+   :pattern-explain 'skein.weaver.api/pattern-explain
+   :weave! 'skein.weaver.api/weave!
    :approved-libs 'skein.weaver.api/approved-libs
    :sync-approved-libs 'skein.weaver.api/sync-approved-libs
    :approved-lib-syncs 'skein.weaver.api/approved-lib-syncs

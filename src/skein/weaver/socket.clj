@@ -2,6 +2,7 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [clojure.walk :as walk]
             [skein.query :as query])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
@@ -9,7 +10,7 @@
            [org.sqlite SQLiteException]))
 
 (def allowed-operations
-  #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "status" "stop"})
+  #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-explain" "status" "stop"})
 
 (def required-request-keys #{"protocol_version" "request_id" "weaver_id" "operation" "arguments" "options"})
 
@@ -79,6 +80,10 @@
         "ready-query" (and (= #{"query" "params"} (set (keys args)))
                            (string? (get args "query"))
                            (string-map? (get args "params")))
+        "weave" (and (= #{"pattern" "input"} (set (keys args)))
+                     (string? (get args "pattern")))
+        "pattern-explain" (and (= #{"pattern"} (set (keys args)))
+                               (string? (get args "pattern")))
         false)
       (protocol-error (get req "request_id") "protocol/malformed-request" "operation arguments do not match protocol" {"operation" op}))))
 
@@ -167,6 +172,8 @@
     "ready" ((api 'ready) runtime)
     "list-query" (dispatch-query runtime 'list args)
     "ready-query" (dispatch-query runtime 'ready args)
+    "weave" ((api 'weave!) runtime (query-name (get args "pattern")) (walk/keywordize-keys (get args "input")))
+    "pattern-explain" ((api 'pattern-explain) runtime (query-name (get args "pattern")))
     "status" (status-result runtime)
     "stop" {"stopping" true "pid" (get-in runtime [:metadata :pid]) "weaver_id" (get-in runtime [:metadata :nonce])}))
 

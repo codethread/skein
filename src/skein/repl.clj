@@ -3,6 +3,7 @@
             [clojure.string :as str]
             [skein.client :as client]
             [skein.weaver.config :as daemon-config]
+            [skein.patterns.alpha :as patterns-alpha]
             [skein.query :as query]))
 
 (def ^:private no-connection ::no-connection)
@@ -121,6 +122,21 @@
    (ready query-or-def {}))
   ([query-or-def params]
    (run-query (config-dir) query-or-def params :ready :ready-query)))
+
+(defn defpattern! [pattern-name fn-sym input-spec]
+  (patterns-alpha/register-pattern! pattern-name fn-sym input-spec))
+
+(defn patterns []
+  (patterns-alpha/patterns))
+
+(defn pattern [pattern-name]
+  (patterns-alpha/pattern pattern-name))
+
+(defn pattern-explain [pattern-name]
+  (patterns-alpha/explain pattern-name))
+
+(defn weave! [pattern-name input]
+  (patterns-alpha/weave! pattern-name input))
 
 (defn- eval-stdin! []
   (let [reader (java.io.PushbackReader. *in*)

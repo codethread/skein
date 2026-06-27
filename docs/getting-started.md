@@ -85,17 +85,31 @@ Fresh `strand init` creates missing workspace files without overwriting existing
 (libs/sync!)
 ```
 
-Create your own config or library files when you need runtime behavior. `init.clj` is the place to load approved libraries, register queries, register views, or call your own install functions.
+Create your own config or library files when you need runtime behavior. `init.clj` is the place to load approved libraries, register queries, register weave patterns, register views, or call your own install functions.
 
-Built-in `skein.graph.alpha` and `skein.views.alpha` come from the configured Skein checkout. User/community libraries are approved separately in `libs.edn` and synced through `skein.libs.alpha`.
+Built-in `skein.graph.alpha`, `skein.patterns.alpha`, and `skein.views.alpha` come from the configured Skein checkout. User/community libraries are approved separately in `libs.edn` and synced through `skein.libs.alpha`.
 
-Example view setup in your own startup-loaded library:
+Example pattern and view setup in your own startup-loaded library:
 
 ```clojure
 (ns my.workflow
-  (:require [skein.graph.alpha :as graph]
+  (:require [clojure.spec.alpha :as s]
+            [skein.graph.alpha :as graph]
+            [skein.patterns.alpha :as patterns]
             [skein.views.alpha :as views]
             [skein.weaver.api :as api]))
+
+(s/def ::title string?)
+(s/def ::task-input (s/keys :req-un [::title]))
+
+(defn task-pattern [{:keys [input]}]
+  [{:ref 'impl
+    :title (:title input)
+    :attributes {:owner "ct"}}
+   {:ref 'review
+    :title (str "Review: " (:title input))
+    :attributes {:kind "review"}
+    :edges [{:type "depends-on" :to 'impl}]}])
 
 (defn owned-view [{:keys [params]}]
   (let [ids (graph/query-ids! 'owned params)]
@@ -104,7 +118,15 @@ Example view setup in your own startup-loaded library:
 
 (defn install! []
   (api/register-query! 'owned [:= [:attr :owner] "ct"])
+  (patterns/register-pattern! 'task 'my.workflow/task-pattern ::task-input)
   (views/register-view! 'owned-view 'my.workflow/owned-view))
+```
+
+Lower-privilege CLI callers can inspect and invoke registered patterns with JSON stdin:
+
+```sh
+strand --config-dir "$world" pattern explain task
+printf '{"title":"Implement feature"}\n' | strand --config-dir "$world" weave --pattern task
 ```
 
 Call registered views from trusted Clojure, not from a public `strand view` CLI command:

@@ -63,6 +63,7 @@
            runtime-base {:datasource ds
                          :query-registry (atom {})
                          :view-registry (atom {})
+                         :pattern-registry (atom {})
                          :approved-lib-sync-state (atom {})
                          :module-use-state (atom {})
                          :library-classloader (clojure.lang.DynamicClassLoader.

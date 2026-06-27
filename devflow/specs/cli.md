@@ -30,6 +30,8 @@ show <id>
 burn <id>
 list [--active true|false] [--query name] [--param key=value ...]
 ready [--query name] [--param key=value ...]
+weave --pattern <name>
+pattern explain <name>
 weaver start
 weaver repl [--stdin]
 weaver stop
@@ -52,6 +54,8 @@ weaver status
 - **SPEC-002.C11:** `list` and `ready` accept an optional named query from weaver memory with `--query` and repeated string-valued `--param key=value` runtime parameters. `list` also accepts optional `--active true|false`; callers that care about liveness should pass it explicitly.
 - **SPEC-002.C12:** `--where`, `--status`, and `--format` are not part of the public Go CLI. Rich EDN query authoring belongs in trusted weaver config and REPL workflows.
 - **SPEC-002.C13:** The CLI has no query registry mutation/listing commands and does not accept `--query-file`; query loading is a trusted weaver config or REPL workflow, and registry contents last only for the weaver lifetime.
+- **SPEC-002.C13a:** `weave --pattern <name>` reads exactly one JSON value from stdin, sends it to an already registered weaver-side pattern, and returns the pattern-created batch result as JSON with `created` rows and `refs`. Empty stdin, malformed JSON, trailing JSON values, missing/blank pattern names, and positional args fail before mutation.
+- **SPEC-002.C13b:** `pattern explain <name>` sends only the pattern name to the weaver and returns JSON caller guidance for the registered input spec, including pattern name, function symbol, input spec name, and spec form. Pattern registration is not exposed through the public CLI.
 - **SPEC-002.C14:** Malformed options, invalid booleans, removed lifecycle fields, invalid edge targets, unknown commands, stale/missing metadata, socket transport/identity failures, malformed weaver responses, and database/domain errors fail non-zero. Strand commands against a reachable but uninitialized weaver store fail clearly with instructions to run `strand init`.
 - **SPEC-002.C14a:** `strand init` is also the selected config-dir bootstrap command. Before initializing strand storage, it creates only missing alpha workspace files/directories: selected config-dir, `config.json`, `libs/`, `libs.edn`, `init.clj`, and a Git repository with `git init` when `.git` is missing. It never overwrites existing files. Created config uses `"configFormat":"alpha"` and `source` as the current Skein checkout. Generated `init.clj` requires `skein.libs.alpha` and calls `(libs/sync!)`.
 - **SPEC-002.C15:** The Go CLI implementation uses Cobra rather than hand-rolled command dispatch or flag parsing. Root, command, subcommand, and flag help must clearly describe the supported command tree and accepted flags.
@@ -64,4 +68,4 @@ weaver status
 
 ## SPEC-002.P4 Deferred
 
-`by-attr`, bespoke dependency inspection commands, `link`, `done`, `batch`, public CLI EDN query expressions, query registry mutation commands, view commands, plugin/package commands, compatibility `todo` binaries, legacy Clojure CLI entrypoints, and fallback discovery of old `atom` worlds or `daemon.*` artifacts are not part of the public CLI.
+`by-attr`, bespoke dependency inspection commands, `link`, `done`, `batch`, public CLI EDN query expressions, query registry mutation commands, pattern registry mutation commands, view commands, plugin/package commands, compatibility `todo` binaries, legacy Clojure CLI entrypoints, and fallback discovery of old `atom` worlds or `daemon.*` artifacts are not part of the public CLI.

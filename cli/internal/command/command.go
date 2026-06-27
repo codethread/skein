@@ -15,7 +15,10 @@ import (
 	"skein-strand-cli/internal/config"
 )
 
-type App struct{ Stdout, Stderr io.Writer }
+type App struct {
+	Stdout, Stderr io.Writer
+	Stdin          io.Reader
+}
 type Options struct {
 	ConfigDir, StateDir, Source string
 	ConfigDirExplicit           bool
@@ -46,6 +49,9 @@ func (a *App) Run(args []string) error {
 	}
 	if a.Stderr == nil {
 		a.Stderr = os.Stderr
+	}
+	if a.Stdin == nil {
+		a.Stdin = os.Stdin
 	}
 	cmd := a.rootCommand()
 	cmd.SetArgs(args)
@@ -143,6 +149,29 @@ func (a *App) rootCommand() *cobra.Command {
 	}})
 	root.AddCommand(a.queryCommand(&o, "list", "List strands"))
 	root.AddCommand(a.queryCommand(&o, "ready", "List ready strands"))
+
+	weave := &cobra.Command{Use: "weave --pattern <name>", Short: "Create strands through a weaver-registered pattern", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		pattern, _ := cmd.Flags().GetString("pattern")
+		if strings.TrimSpace(pattern) == "" {
+			return errors.New("weave requires --pattern <name>")
+		}
+		input, err := readOneJSONValue(a.Stdin)
+		if err != nil {
+			return err
+		}
+		return a.withConfig(o, func(r Options) error { return a.call(r, "weave", map[string]any{"pattern": pattern, "input": input}) })
+	}}
+	weave.Flags().String("pattern", "", "weaver-registered pattern name")
+	root.AddCommand(weave)
+
+	pattern := &cobra.Command{Use: "pattern", Short: "Inspect weaver-registered patterns"}
+	pattern.AddCommand(&cobra.Command{Use: "explain <name>", Short: "Explain a pattern input contract", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(args[0]) == "" {
+			return errors.New("pattern explain requires a non-empty name")
+		}
+		return a.withConfig(o, func(r Options) error { return a.call(r, "pattern-explain", map[string]any{"pattern": args[0]}) })
+	}})
+	root.AddCommand(pattern)
 
 	weaver := &cobra.Command{Use: "weaver", Short: "Manage the local weaver"}
 	start := &cobra.Command{Use: "start", Short: "Start the weaver in the foreground for the selected config-dir world", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
@@ -427,6 +456,25 @@ func boolFlag(cmd *cobra.Command, name string) (bool, error) {
 	default:
 		return false, fmt.Errorf("invalid --%s: must be true or false", name)
 	}
+}
+
+func readOneJSONValue(r io.Reader) (any, error) {
+	dec := json.NewDecoder(r)
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, errors.New("weave requires one JSON value on stdin")
+		}
+		return nil, fmt.Errorf("malformed JSON stdin: %w", err)
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, errors.New("stdin must contain exactly one JSON value")
+		}
+		return nil, fmt.Errorf("malformed trailing JSON stdin: %w", err)
+	}
+	return value, nil
 }
 
 func parseKV(vals []string, name string) (map[string]any, error) {

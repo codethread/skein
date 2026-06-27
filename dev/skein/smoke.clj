@@ -258,7 +258,7 @@
     (write-client-config-to-dir! config-dir)
     (spit (java.io.File. config-dir "libs.edn") "{:libs {}}\n")
     (spit (java.io.File. config-dir "init.clj")
-          "(ns smoke.startup\n  (:require [skein.libs.alpha :as libs]\n            [skein.graph.alpha :as graph]\n            [skein.views.alpha :as views]\n            [skein.weaver.api :as api]))\n(libs/sync!)\n(api/register-query! 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(defn smoke-owned-view [{:keys [params]}]\n  (let [ids (graph/query-ids! 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :strands (graph/strands-by-ids ids)}))\n(views/register-view! 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n")
+          "(ns smoke.startup\n  (:require [clojure.spec.alpha :as s]\n            [skein.libs.alpha :as libs]\n            [skein.graph.alpha :as graph]\n            [skein.views.alpha :as views]\n            [skein.weaver.api :as api]))\n(libs/sync!)\n(api/register-query! 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(s/def ::title string?)\n(s/def ::review-input (s/keys :req-un [::title]))\n(defn review-pattern [{:keys [input]}]\n  (let [title (:title input)]\n    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n(api/register-pattern! 'review-task 'smoke.startup/review-pattern ::review-input)\n(defn smoke-owned-view [{:keys [params]}]\n  (let [ids (graph/query-ids! 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :strands (graph/strands-by-ids ids)}))\n(views/register-view! 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n")
     (let [daemon (start-cli-daemon-config! config-dir)]
       (try
         (run-cli-config! config-dir "init")
@@ -270,7 +270,13 @@
           (assert= ["Startup transformed strand"] (titles (get-in payload [:view :strands])) "startup view can hydrate graph strands")
           (assert= [{:name "smoke-owned-view" :fn 'smoke.startup/smoke-owned-view}]
                    (:views payload)
-                   "startup registered view is introspectable"))
+                   "startup registered view is introspectable")
+          (let [explanation (parse-json (run-cli-config! config-dir "pattern" "explain" "review-task"))
+                woven (parse-json (run-cli-config-stdin! config-dir "{\"title\":\"Patterned smoke\"}\n" "weave" "--pattern" "review-task"))]
+            (assert= "review-task" (:name explanation) "pattern explain exposes registered pattern")
+            (assert= ["Patterned smoke" "Review: Patterned smoke"]
+                     (titles (:created woven))
+                     "weave applies startup pattern through JSON CLI")))
         (finally
           (stop-cli-daemon-config! config-dir daemon)
           (delete-tree! (smoke-config-dir-named (str db-file ".startup-transform"))))))))

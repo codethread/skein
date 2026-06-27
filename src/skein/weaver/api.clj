@@ -3,6 +3,7 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.repl.deps :as repl-deps]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [next.jdbc :as jdbc]
             [skein.weaver.runtime :as runtime]
@@ -15,8 +16,8 @@
 
 (defn normalize [result]
   (cond
-    (map? result) (normalize-row result)
-    (sequential? result) (mapv normalize-row result)
+    (map? result) (into {} (map (fn [[k v]] [k (normalize v)])) (normalize-row result))
+    (sequential? result) (mapv normalize result)
     :else result))
 
 (defn- ds [runtime]
@@ -27,6 +28,9 @@
 
 (defn- view-registry [runtime]
   (:view-registry runtime))
+
+(defn- pattern-registry [runtime]
+  (:pattern-registry runtime))
 
 (defn- approved-lib-sync-state [runtime]
   (:approved-lib-sync-state runtime))
@@ -180,6 +184,7 @@
       (reset! (module-use-state runtime) {})
       (reset! (query-registry runtime) {})
       (reset! (view-registry runtime) {})
+      (reset! (pattern-registry runtime) {})
       (let [result (with-library-classloader runtime #(load-file canonical-file))]
         {:status :loaded
          :file canonical-file
@@ -462,10 +467,16 @@
 (defn- canonical-view-name [view-name]
   (query/canonical-query-name view-name))
 
-(defn- validate-view-fn-symbol! [fn-sym]
+(defn- validate-fn-symbol! [label fn-sym]
   (when-not (and (symbol? fn-sym) (namespace fn-sym))
-    (throw (ex-info "View function must be a fully qualified symbol" {:fn fn-sym})))
+    (throw (ex-info (str label " function must be a fully qualified symbol") {:fn fn-sym})))
   fn-sym)
+
+(defn- validate-view-fn-symbol! [fn-sym]
+  (validate-fn-symbol! "View" fn-sym))
+
+(defn- validate-pattern-fn-symbol! [fn-sym]
+  (validate-fn-symbol! "Pattern" fn-sym))
 
 (defn register-view! [runtime view-name fn-sym]
   (let [name (canonical-view-name view-name)
@@ -488,3 +499,59 @@
     (with-library-classloader
       runtime
       #((requiring-resolve fn-sym) {:params params}))))
+
+(defn- canonical-pattern-name [pattern-name]
+  (query/canonical-query-name pattern-name))
+
+(defn- validate-pattern-spec! [spec-name]
+  (when-not (or (keyword? spec-name) (symbol? spec-name))
+    (throw (ex-info "Pattern input spec must be a keyword or symbol" {:spec spec-name})))
+  spec-name)
+
+(defn register-pattern!
+  ([pattern-name fn-sym input-spec]
+   (register-pattern! (current-runtime) pattern-name fn-sym input-spec))
+  ([runtime pattern-name fn-sym input-spec]
+   (let [name (canonical-pattern-name pattern-name)
+         entry {:name name
+                :fn (validate-pattern-fn-symbol! fn-sym)
+                :input-spec (validate-pattern-spec! input-spec)}]
+     (swap! (pattern-registry runtime) assoc name entry)
+     entry)))
+
+(defn patterns [runtime]
+  (mapv val (sort-by key @(pattern-registry runtime))))
+
+(defn resolve-pattern [runtime pattern-name]
+  (let [canonical-name (canonical-pattern-name pattern-name)]
+    (or (get @(pattern-registry runtime) canonical-name)
+        (throw (ex-info "Pattern not found" {:pattern pattern-name
+                                              :canonical-pattern canonical-name
+                                              :available (sort (keys @(pattern-registry runtime)))})))))
+
+(defn- spec-form [spec-name]
+  (let [form (s/form spec-name)]
+    (when (= ::s/unknown form)
+      (throw (ex-info "Pattern input spec is not registered" {:input-spec spec-name})))
+    form))
+
+(defn pattern-explain [runtime pattern-name]
+  (let [{:keys [name fn input-spec]} (resolve-pattern runtime pattern-name)
+        form (spec-form input-spec)]
+    {:name name
+     :fn (str fn)
+     :input-spec (str input-spec)
+     :spec-form (pr-str form)}))
+
+(defn weave! [runtime pattern-name input]
+  (let [{fn-sym :fn input-spec :input-spec} (resolve-pattern runtime pattern-name)]
+    (spec-form input-spec)
+    (when-not (s/valid? input-spec input)
+      (throw (ex-info "Pattern input failed spec validation"
+                      {:pattern (canonical-pattern-name pattern-name)
+                       :input-spec input-spec
+                       :explain (s/explain-data input-spec input)})))
+    (let [batch (with-library-classloader
+                  runtime
+                  #((requiring-resolve fn-sym) {:input input}))]
+      (normalize (db/add-strand-batch! (ds runtime) batch)))))

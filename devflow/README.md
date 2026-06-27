@@ -16,7 +16,6 @@ Root specs are canonical for shipped behavior:
 ## Active features
 
 - `library-author-testing-support` — proposed library-author testing helpers and weaver storage support.
-- `patterned-weave` — proposed named weaver-side patterns for owner-controlled strand DAG creation from JSON CLI input.
 
 ## Archived features
 
@@ -34,3 +33,4 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-26__runtime-transformation-primitives` — shipped built-in `atom.graph.alpha` / `atom.views.alpha` helpers for set-oriented graph/query composition and daemon-memory read-only views.
 - `26-06-26__skein-rename` — shipped Skein/strand/weaver rename, strand model lifecycle/retention, `strand` CLI, and `skein.*` namespaces.
 - `26-06-24__stripped-task-api` — shipped smaller CLI/REPL surface with first-class task lifecycle fields.
+- `26-06-27__patterned-weave` — shipped named weaver-side patterns for owner-controlled strand DAG creation from JSON CLI input.

@@ -2,6 +2,7 @@
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.test :refer [deftest is testing]]
             [skein.weaver.api :as api]
             [skein.weaver.config :as weaver-config]
@@ -42,6 +43,31 @@
 
 (defn replacement-view [{:keys [params]}]
   {:view :replacement :params params})
+
+(def pattern-call-count (atom 0))
+
+(defn test-pattern [{:keys [input]}]
+  (let [title (or (:title input) (get input "title"))]
+    [{:ref 'impl
+      :title title
+      :attributes {:kind "implementation"}}
+     {:ref 'review
+      :title (str "Review: " title)
+      :attributes {:kind "review"}
+      :edges [{:type "depends-on" :to 'impl}]}]))
+
+(defn bad-edge-pattern [_]
+  [{:title "Should roll back"
+    :edges [{:type "depends-on" :to "missing"}]}])
+
+(defn counting-pattern [_]
+  (swap! pattern-call-count inc)
+  [{:title "Should not run"}])
+
+(s/def ::title string?)
+(s/def ::pattern-input (s/keys :req-un [::title]))
+(s/def ::json-pattern-input #(string? (get % "title")))
+(s/def ::never-valid (constantly false))
 
 (defn write-view-lib! [config-dir lib ns-sym]
   (let [root (io/file config-dir "libs" (name lib))
@@ -138,7 +164,7 @@
                               (api/list-query rt :owners {:owners []})))))))
 
 (deftest json-socket-public-operation-allowlist-stays-thin
-  (is (= #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "status" "stop"}
+  (is (= #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-explain" "status" "stop"}
          socket/allowed-operations)))
 
 (deftest weaver-runtime-transformation-primitives
@@ -193,6 +219,74 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
                             (api/register-view! rt 'user/daily 'skein.weaver-test/test-view))))))
+
+(deftest weaver-pattern-registry-and-weave
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (is (= {:name "dev-task" :fn 'skein.weaver-test/test-pattern :input-spec ::pattern-input}
+             (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)))
+      (is (= [{:name "dev-task" :fn 'skein.weaver-test/test-pattern :input-spec ::pattern-input}]
+             (api/patterns rt)))
+      (is (clojure.string/includes? (:spec-form (api/pattern-explain rt :dev-task))
+                                    "clojure.spec.alpha/keys"))
+      (let [result (api/weave! rt :dev-task {:title "Implement weave"})]
+        (is (= ["Implement weave" "Review: Implement weave"] (mapv :title (:created result))))
+        (is (= #{"impl" "review"} (set (keys (:refs result)))))
+        (is (= 1 (count (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"])))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Pattern input failed spec validation"
+                            (api/weave! rt :dev-task {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Pattern not found"
+                            (api/weave! rt :missing {:title "x"})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Pattern function"
+                            (api/register-pattern! rt 'bad 'unqualified ::pattern-input))))))
+
+(deftest weaver-pattern-failures-validate-before-code-and-rollback
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (reset! pattern-call-count 0)
+      (api/register-pattern! rt 'counting 'skein.weaver-test/counting-pattern ::never-valid)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Pattern input failed spec validation"
+                            (api/weave! rt :counting {:title "Nope"})))
+      (is (= 0 @pattern-call-count))
+      (is (empty? (api/list rt)))
+      (api/register-pattern! rt 'bad-edge 'skein.weaver-test/bad-edge-pattern ::pattern-input)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Batch target strand not found"
+                            (api/weave! rt :bad-edge {:title "Rollback"})))
+      (is (empty? (api/list rt)))
+      (is (empty? (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"]))))))
+
+(deftest weaver-reload-clears-patterns
+  (with-runtime
+    (fn [rt _]
+      (let [init-file (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
+        (spit init-file "(require '[skein.libs.alpha :as libs])\n(libs/sync!)\n")
+        (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
+        (is (= 1 (count (api/patterns rt))))
+        (api/reload-config! rt)
+        (is (empty? (api/patterns rt)))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Pattern not found"
+                              (api/resolve-pattern rt 'dev-task)))))))
+
+(deftest json-socket-weave-and-pattern-explain
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
+      (let [explained (socket-request rt "pattern-explain" {"pattern" "dev-task"})]
+        (is (true? (get explained "ok")))
+        (is (= "dev-task" (get-in explained ["result" "name"]))))
+      (let [woven (socket-request rt "weave" {"pattern" "dev-task" "input" {:title "From socket"}})]
+        (is (true? (get woven "ok")))
+        (is (= ["From socket" "Review: From socket"]
+               (mapv #(get % "title") (get-in woven ["result" "created"]))))))))
 
 (deftest weaver-query-registry-fails-clearly
   (with-runtime

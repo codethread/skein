@@ -13,8 +13,14 @@ import (
 )
 
 func run(args ...string) (string, error) {
+	return runWithStdin("", args...)
+}
+
+func runWithStdin(stdin string, args ...string) (string, error) {
 	var out, er bytes.Buffer
-	err := New(&out, &er).Run(args)
+	app := New(&out, &er)
+	app.Stdin = strings.NewReader(stdin)
+	err := app.Run(args)
 	return out.String() + er.String(), err
 }
 
@@ -23,7 +29,7 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "burn", "list", "ready", "weaver"} {
+	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "burn", "list", "ready", "weave", "pattern", "weaver"} {
 		if !strings.Contains(root, want) {
 			t.Fatalf("root help missing %q in:\n%s", want, root)
 		}
@@ -79,6 +85,10 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 		{"update", "id", "--edge", "depends-on:"},
 		{"update", "id", "--priority", "high"},
 		{"list", "--param", "novalue"},
+		{"weave"},
+		{"weave", "extra", "--pattern", "x"},
+		{"pattern", "explain"},
+		{"pattern", "explain", "x", "extra"},
 	}
 	for _, c := range cases {
 		if _, err := run(c...); err == nil {
@@ -596,6 +606,39 @@ func TestQueryCommandsUseSocketClientPayloads(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != `[]` {
 		t.Fatalf("empty row output = %q", out)
+	}
+}
+
+func TestWeaveAndPatternCommandsUseSocketClientPayloads(t *testing.T) {
+	cfg := testConfig(t)
+	orig := newClient
+	fc := &fakeClient{result: map[string]any{"created": []any{}, "refs": map[string]any{}}}
+	newClient = func(o Options) Caller { return fc }
+	t.Cleanup(func() { newClient = orig })
+	out, err := runWithStdin(`{"title":"Implement"}`, "--config-dir", cfg, "weave", "--pattern", "dev-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != `{"created":[],"refs":{}}` {
+		t.Fatalf("unexpected weave output: %q", out)
+	}
+	fc.result = map[string]any{"name": "dev-task"}
+	if _, err := run("--config-dir", cfg, "pattern", "explain", "dev-task"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fc.calls) != 2 {
+		t.Fatalf("calls = %#v", fc.calls)
+	}
+	if fc.calls[0].op != "weave" || !reflect.DeepEqual(fc.calls[0].args, map[string]any{"pattern": "dev-task", "input": map[string]any{"title": "Implement"}}) {
+		t.Fatalf("bad weave call: %#v", fc.calls[0])
+	}
+	if fc.calls[1].op != "pattern-explain" || !reflect.DeepEqual(fc.calls[1].args, map[string]any{"pattern": "dev-task"}) {
+		t.Fatalf("bad pattern explain call: %#v", fc.calls[1])
+	}
+	for _, stdin := range []string{"", `{bad`, `{} {}`} {
+		if _, err := runWithStdin(stdin, "--config-dir", cfg, "weave", "--pattern", "dev-task"); err == nil {
+			t.Fatalf("expected stdin error for %q", stdin)
+		}
 	}
 }
 

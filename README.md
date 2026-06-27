@@ -7,7 +7,7 @@ Use it to:
 - Track local strand graphs without a hosted service.
 - Let coding agents create, update, query, and inspect structured strand state.
 - Attach flexible JSON attributes to strands and edges for userland workflows.
-- Keep custom queries, graph helpers, views, and runtime libraries in trusted Clojure config instead of the low-privilege CLI.
+- Keep custom queries, weave patterns, graph helpers, views, and runtime libraries in trusted Clojure config instead of the low-privilege CLI.
 
 ## Quick start
 
@@ -84,7 +84,7 @@ Skein stores:
 
 ## Runtime customization
 
-Named queries, weaver-memory views, and runtime libraries are loaded into the selected Skein world, then consumed by helpers or by small CLI commands such as `list --query <name>`.
+Named queries, weave patterns, weaver-memory views, and runtime libraries are loaded into the selected Skein world, then consumed by helpers or by small CLI commands such as `list --query <name>` and `weave --pattern <name>`.
 
 Fresh `strand init` startup config creates a small resilient `init.clj` that syncs approved libraries. Add your own config or library files when you need runtime queries, views, or workflow helpers.
 

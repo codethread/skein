@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-003`
 **Root spec:** [Weaver Runtime](../../../specs/daemon-runtime.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-06-27
 
 ## DELTA-003.P1 Summary

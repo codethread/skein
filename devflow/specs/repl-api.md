@@ -27,6 +27,11 @@ queries
 query
 strands
 ready
+defpattern!
+patterns
+pattern
+pattern-explain
+weave!
 ```
 
 ## SPEC-003.P3 Contracts
@@ -51,6 +56,9 @@ ready
 - **SPEC-003.C17:** `skein.libs.alpha` exposes approved library config helpers, approved-local-root sync helpers, resilient module activation with `use!`, and weaver-lifetime sync/use introspection.
 - **SPEC-003.C18:** `skein.libs.alpha` helpers route to the selected weaver world when called from connected REPL clients. Direct `require` in a connected helper REPL remains local to the helper JVM.
 - **SPEC-003.C19:** `skein.libs.alpha` is the documented library-workspace path, but trusted users may require lower-level namespaces or read raw SQLite when they accept compatibility cost.
+- **SPEC-003.C20:** `defpattern!` registers a simple pattern name, fully qualified function symbol, and input spec name in the active weaver's in-memory pattern registry. Duplicate registration replaces the prior entry. The same operations are available through the blessed `skein.patterns.alpha` namespace for trusted startup config, activated libraries, and connected REPL workflows.
+- **SPEC-003.C21:** `patterns`, `pattern`, and `pattern-explain` inspect active weaver pattern state. Missing pattern lookup fails loudly. Explanations return serializable caller guidance based on the registered spec.
+- **SPEC-003.C22:** `weave!` validates input against the registered spec, calls the registered function with `{:input input}`, requires the result to be a valid batch strand vector, and creates the batch atomically through the weaver.
 
 ## SPEC-003.P4 Runtime transformation helpers
 
@@ -58,10 +66,11 @@ Skein ships blessed source-visible runtime transformation namespaces for trusted
 
 - `skein.graph.alpha` exposes `(query-ids! query params)`, `(burn-by-id! id)`, `(burn-by-ids! ids)`, `(strands-by-ids ids)`, `(ancestor-root-ids seed-ids opts)`, and `(subgraph root-ids)`. These helpers route to weaver operations for set-oriented query id selection, raw deletion, strand hydration by ids, parent-of feature-root traversal, and parent-of DAG/subgraph expansion.
 - `skein.views.alpha` exposes `(register-view! name fn-sym)`, `(view! name params)`, and `(views)`. View registration accepts a simple view name and a fully qualified function symbol, not an arbitrary client-side function value.
+- `skein.patterns.alpha` exposes `(register-pattern! name fn-sym input-spec)`, `(patterns)`, `(pattern name)`, `(explain name)`, and `(weave! name input)`. Pattern functions are weaver-loadable function symbols called with `{:input input}` after input spec validation.
 
 Helpers execute weaver-side when called from `init.clj` or activated runtime libraries, and route to the selected weaver world when called from connected REPL clients. Connected helper REPL users who want to register new view functions should place them in weaver-loadable config/library code and register their symbols. View registrations are weaver-lifetime runtime state unless user config reloads them on startup.
 
-User config may require `skein.graph.alpha` and `skein.views.alpha` so users can inspect and extend the blessed path. These built-in namespaces come from the Skein checkout on the weaver classpath; they do not require `libs.edn` approval.
+User config may require `skein.graph.alpha`, `skein.patterns.alpha`, and `skein.views.alpha` so users can inspect and extend the blessed path. These built-in namespaces come from the Skein checkout on the weaver classpath; they do not require `libs.edn` approval.
 
 ## SPEC-003.P5 Runtime library workspace helpers
 

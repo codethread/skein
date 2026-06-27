@@ -6,7 +6,7 @@
 **Related RFCs:** None
 **Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md)
 **Feature specs:** [CLI delta](./specs/cli.delta.md), [REPL API delta](./specs/repl-api.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md)
-**Status:** Draft
+**Status:** Shipped
 **Last Updated:** 2026-06-27
 
 ## PLAN-001.P1 Goal and scope
@@ -93,3 +93,12 @@ Created feature proposal, CLI/REPL/weaver spec deltas, and implementation plan f
 ### PLAN-001.DN2 Caller explanation update — 2026-06-27
 
 Studied the active feature and adjacent query/view/socket/spec code. Added the missing caller-inspection path: patterns now register an input Clojure spec, invocation validates input before running pattern code, and the CLI gains read-only `strand pattern explain <name>` backed by spec-derived caller guidance. Follow-up ecosystem research indicates Skein should lean on `clojure.spec.alpha` built-ins and likely `metosin/spec-tools` for JSON Schema / JSON-friendly validation errors rather than inventing its own schema AST; Malli is richer and more active but would be a larger source-of-truth decision.
+
+### PLAN-001.DN3 Implementation — 2026-06-27
+
+Implemented the MVP with weaver-lifetime pattern registry state, spec-backed invocation, JSON socket `weave` / `pattern-explain`, Go CLI commands, REPL helpers, tests, smoke coverage, and promoted root spec updates. Caller explanation currently ships the registered spec name and printable `s/form` guidance; richer JSON Schema generation remains deferred.
+
+
+### PLAN-001.DN4 Finish — 2026-06-27
+
+Shipped patterned weave MVP: weaver-memory pattern registry, spec-backed validation/explanation, REPL and `skein.patterns.alpha` helpers, JSON socket invocation, Go CLI `weave` / `pattern explain`, docs, smoke coverage, and promoted root specs. No RFCs were archived. Richer JSON Schema generation remains deferred.
