@@ -29,7 +29,6 @@ Common row keys:
 :id
 :title
 :active
-:ephemeral
 :inactive_at
 :attributes
 ```
@@ -51,7 +50,7 @@ That creates a strand, extracts its `:id`, and stores the id in `s`.
 (update! s {:active false})
 ```
 
-Inactive persistent strands stay in the store and receive `:inactive_at`.
+Inactive strands stay in the store and receive `:inactive_at`. Use `burn!` for explicit deletion.
 
 ## Collections
 
@@ -96,8 +95,9 @@ The aliases let you call functions like `libs/sync!`, `graph/strands-by-ids`, an
 ```clojure
 (strand! "Title")
 (strand! "Title" {:owner "ct"})
-(strand! "Scratch" {} {:ephemeral true})
+(strand! "Scratch" {:ephemeral "true"})
 (update! strand-id {:active false})
+(burn! strand-id)
 (strand strand-id)
 (strands)
 (ready)

@@ -1,0 +1,26 @@
+tasks:
+  - id: 1
+    description: "add internal event runtime"
+    task_file: "tasks/001-add-internal-event-runtime.md"
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: "emit strand mutation events"
+    task_file: "tasks/002-emit-strand-mutation-events.md"
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: "add trusted event helpers"
+    task_file: "tasks/003-add-trusted-event-helpers.md"
+    status: pending
+    blocked_by: [1]
+  - id: 4
+    description: "cover handler integration"
+    task_file: "tasks/004-cover-handler-integration.md"
+    status: pending
+    blocked_by: [2, 3]
+  - id: 5
+    description: "update docs and smoke"
+    task_file: "tasks/005-update-docs-and-smoke.md"
+    status: pending
+    blocked_by: [4]

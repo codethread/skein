@@ -17,8 +17,8 @@ import (
 
 type App struct{ Stdout, Stderr io.Writer }
 type Options struct {
-	Format, ConfigDir, StateDir, Source string
-	ConfigDirExplicit                   bool
+	ConfigDir, StateDir, Source string
+	ConfigDirExplicit           bool
 }
 type ExitError struct {
 	Code int
@@ -32,10 +32,11 @@ type Caller interface {
 	Call(string, map[string]any) (any, error)
 }
 
-const defaultInitCLJ = "(require '[skein.libs.alpha :as libs]\n         '[skein.graph.alpha :as graph]\n         '[skein.views.alpha :as views])\n(libs/sync!)\n"
+const defaultInitCLJ = "(require '[skein.libs.alpha :as libs])\n\n(libs/sync!)\n(libs/use! :user/config\n  {:file \"config.clj\"\n   :call 'user.config/install!})\n"
+const defaultConfigCLJ = "(ns user.config\n  (:require [skein.graph.alpha :as graph]\n            [skein.views.alpha :as views]))\n\n(defn install!\n  \"Install this world's Skein runtime config.\"\n  []\n  {:installed true})\n"
 
 var newClient = func(o Options) Caller {
-	return client.New(client.Config{ConfigDir: o.ConfigDir, StateDir: o.StateDir, Format: o.Format})
+	return client.New(client.Config{ConfigDir: o.ConfigDir, StateDir: o.StateDir})
 }
 
 func New(out, err io.Writer) *App { return &App{Stdout: out, Stderr: err} }
@@ -67,7 +68,6 @@ func (a *App) rootCommand() *cobra.Command {
 	root.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		o.ConfigDirExplicit = cmd.Flags().Changed("config-dir")
 	}
-	root.PersistentFlags().StringVar(&o.Format, "format", "", "output format: human or json")
 	root.AddCommand(&cobra.Command{Use: "init", Short: "Bootstrap missing config-dir files; initialize strand storage via the running weaver", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		return a.initCommand(o)
 	}})
@@ -77,40 +77,25 @@ func (a *App) rootCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		ephemeral, err := boolFlag(cmd, "ephemeral")
-		if err != nil {
-			return err
-		}
 		attrs, _ := cmd.Flags().GetStringArray("attr")
 		am, err := parseKV(attrs, "--attr")
 		if err != nil {
 			return err
 		}
-		if cmd.Flags().Changed("active") && cmd.Flags().Changed("ephemeral") && !active && ephemeral {
-			return errors.New("invalid lifecycle flags: --active false cannot be combined with --ephemeral true")
-		}
 		payload := map[string]any{"title": args[0], "attributes": am}
 		if cmd.Flags().Changed("active") {
 			payload["active"] = active
-		}
-		if cmd.Flags().Changed("ephemeral") {
-			payload["ephemeral"] = ephemeral
 		}
 		return a.withConfig(o, func(r Options) error {
 			return a.call(r, "add", payload)
 		})
 	}}
 	add.Flags().String("active", "true", "strand active state: true or false")
-	add.Flags().String("ephemeral", "false", "delete strand when deactivated: true or false")
 	add.Flags().StringArray("attr", nil, "string attribute key=value (repeatable)")
 	root.AddCommand(add)
 
 	update := &cobra.Command{Use: "update <id>", Short: "Update a strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		active, err := boolFlag(cmd, "active")
-		if err != nil {
-			return err
-		}
-		ephemeral, err := boolFlag(cmd, "ephemeral")
 		if err != nil {
 			return err
 		}
@@ -133,34 +118,29 @@ func (a *App) rootCommand() *cobra.Command {
 		if cmd.Flags().Changed("title") {
 			titleArg = title
 		}
-		if cmd.Flags().Changed("active") && cmd.Flags().Changed("ephemeral") {
-			return errors.New("invalid lifecycle flags: --active and --ephemeral cannot be changed in the same update command")
-		}
 		var activeArg any
 		if cmd.Flags().Changed("active") {
 			activeArg = active
-		}
-		var ephemeralArg any
-		if cmd.Flags().Changed("ephemeral") {
-			ephemeralArg = ephemeral
 		}
 		var attrArg any
 		if len(attrs) > 0 {
 			attrArg = am
 		}
 		return a.withConfig(o, func(r Options) error {
-			return a.call(r, "update", map[string]any{"id": args[0], "title": titleArg, "active": activeArg, "ephemeral": ephemeralArg, "attributes": attrArg, "edges": edgeRows})
+			return a.call(r, "update", map[string]any{"id": args[0], "title": titleArg, "active": activeArg, "attributes": attrArg, "edges": edgeRows})
 		})
 	}}
 	update.Flags().String("title", "", "new strand title")
 	update.Flags().String("active", "true", "strand active state: true or false")
-	update.Flags().String("ephemeral", "false", "delete strand when deactivated: true or false")
 	update.Flags().StringArray("attr", nil, "string attribute key=value (repeatable)")
 	update.Flags().StringArray("edge", nil, "outgoing edge edge-type:to-id (repeatable)")
 	root.AddCommand(update)
 
 	root.AddCommand(&cobra.Command{Use: "show <id>", Short: "Show one strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return a.withConfig(o, func(r Options) error { return a.call(r, "show", map[string]any{"id": args[0]}) })
+	}})
+	root.AddCommand(&cobra.Command{Use: "burn <id>", Short: "Burn one strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return a.withConfig(o, func(r Options) error { return a.call(r, "burn", map[string]any{"id": args[0]}) })
 	}})
 	root.AddCommand(a.queryCommand(&o, "list", "List strands"))
 	root.AddCommand(a.queryCommand(&o, "ready", "List ready strands"))
@@ -245,15 +225,6 @@ func resolveOptions(o Options) (Options, error) {
 	o.Source = cfg.Source
 	o.ConfigDir = world.ConfigDir
 	o.StateDir = world.StateDir
-	if o.Format == "" {
-		o.Format = cfg.Format
-	}
-	if o.Format == "" {
-		o.Format = config.DefaultFormat
-	}
-	if o.Format != "human" && o.Format != "json" {
-		return o, fmt.Errorf("unsupported format: %s", o.Format)
-	}
 	return o, nil
 }
 
@@ -262,28 +233,12 @@ func (a *App) call(o Options, op string, args map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if o.Format == "json" {
-		b, err := json.Marshal(result)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(a.Stdout, string(b))
+	b, err := json.Marshal(result)
+	if err != nil {
 		return err
 	}
-	switch op {
-	case "status", "stop", "show":
-		return a.writeHumanJSON(result)
-	case "add":
-		if m, ok := result.(map[string]any); ok {
-			if id, ok := m["id"]; ok {
-				_, err := fmt.Fprintln(a.Stdout, id)
-				return err
-			}
-		}
-	case "list", "ready", "list-query", "ready-query":
-		return a.writeHumanRows(result)
-	}
-	return nil
+	_, err = fmt.Fprintln(a.Stdout, string(b))
+	return err
 }
 func (a *App) writeHumanJSON(result any) error {
 	if result == nil {
@@ -402,7 +357,7 @@ func (a *App) bootstrapConfigDir(o Options) error {
 		if err := config.ValidateSource(absSource); err != nil {
 			return err
 		}
-		cfg := config.Config{ConfigFormat: "alpha", Source: absSource, Format: config.DefaultFormat}
+		cfg := config.Config{ConfigFormat: "alpha", Source: absSource}
 		data, err := json.Marshal(cfg)
 		if err != nil {
 			return err
@@ -422,6 +377,13 @@ func (a *App) bootstrapConfigDir(o Options) error {
 	}
 	if _, err := os.Stat(filepath.Join(world.ConfigDir, "init.clj")); os.IsNotExist(err) {
 		if err := os.WriteFile(filepath.Join(world.ConfigDir, "init.clj"), []byte(defaultInitCLJ), 0o644); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(world.ConfigDir, "config.clj")); os.IsNotExist(err) {
+		if err := os.WriteFile(filepath.Join(world.ConfigDir, "config.clj"), []byte(defaultConfigCLJ), 0o644); err != nil {
 			return err
 		}
 	} else if err != nil {

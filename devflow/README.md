@@ -8,7 +8,7 @@ Always study [TENETS](./TENETS.md) and [PHILOSOPHY](./PHILOSOPHY.md). No code, s
 
 Root specs are canonical for shipped behavior:
 
-- [Strand Model](./specs/strand-model.md) — strand records, active/ephemeral lifecycle, JSON attributes, edge semantics, and readiness rules.
+- [Strand Model](./specs/strand-model.md) — strand records, active lifecycle, burn deletion, JSON attributes, edge semantics, and readiness rules.
 - [CLI Surface](./specs/cli.md) — scriptable command contract for agents, including the thin Go `strand` CLI and JSON socket boundary.
 - [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL and runtime library workspace helpers.
 - [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, metadata, transports, trusted startup config, query registry, and runtime library workspace model.
@@ -16,6 +16,7 @@ Root specs are canonical for shipped behavior:
 ## Active features
 
 - `library-author-testing-support` — proposed library-author testing helpers and weaver storage support.
+- `patterned-weave` — proposed named weaver-side patterns for owner-controlled strand DAG creation from JSON CLI input.
 
 ## Archived features
 

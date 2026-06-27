@@ -13,6 +13,8 @@
    :add 'skein.weaver.api/add
    :update 'skein.weaver.api/update
    :show 'skein.weaver.api/show
+   :burn-by-id 'skein.weaver.api/burn-by-id
+   :burn-by-ids 'skein.weaver.api/burn-by-ids
    :list 'skein.weaver.api/list
    :ready 'skein.weaver.api/ready
    :register-query 'skein.weaver.api/register-query
@@ -31,6 +33,7 @@
    :approved-libs 'skein.weaver.api/approved-libs
    :sync-approved-libs 'skein.weaver.api/sync-approved-libs
    :approved-lib-syncs 'skein.weaver.api/approved-lib-syncs
+   :reload-config! 'skein.weaver.api/reload-config!
    :use! 'skein.weaver.api/use!
    :uses 'skein.weaver.api/uses
    :use 'skein.weaver.api/use})

@@ -9,10 +9,9 @@
            [org.sqlite SQLiteException]))
 
 (def allowed-operations
-  #{"init" "add" "update" "show" "list" "ready" "list-query" "ready-query" "status" "stop"})
+  #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "status" "stop"})
 
 (def required-request-keys #{"protocol_version" "request_id" "weaver_id" "operation" "arguments" "options"})
-(def allowed-option-keys #{"format"})
 
 (defn- protocol-error [request-id code message details]
   {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
@@ -56,22 +55,21 @@
         "ready" (= {} args)
         "status" (= {} args)
         "stop" (= {} args)
-        "add" (and (every? #{"title" "attributes" "active" "ephemeral"} (keys args))
+        "add" (and (every? #{"title" "attributes" "active"} (keys args))
                    (contains? args "title")
                    (contains? args "attributes")
                    (string? (get args "title"))
                    (map? (get args "attributes"))
-                   (or (not (contains? args "active")) (boolean? (get args "active")))
-                   (or (not (contains? args "ephemeral")) (boolean? (get args "ephemeral"))))
-        "update" (and (every? #{"id" "title" "active" "ephemeral" "attributes" "edges"} (keys args))
+                   (or (not (contains? args "active")) (boolean? (get args "active"))))
+        "update" (and (every? #{"id" "title" "active" "attributes" "edges"} (keys args))
                       (contains? args "id")
                       (string? (get args "id"))
                       (or (not (contains? args "title")) (nil? (get args "title")) (string? (get args "title")))
                       (or (not (contains? args "active")) (nil? (get args "active")) (boolean? (get args "active")))
-                      (or (not (contains? args "ephemeral")) (nil? (get args "ephemeral")) (boolean? (get args "ephemeral")))
                       (or (not (contains? args "attributes")) (nil? (get args "attributes") ) (map? (get args "attributes")))
                       (or (not (contains? args "edges")) (and (vector? (get args "edges")) (every? valid-edge? (get args "edges"))) ))
         "show" (and (= #{"id"} (set (keys args))) (string? (get args "id")))
+        "burn" (and (= #{"id"} (set (keys args))) (string? (get args "id")))
         "list-query" (and (every? #{"query" "params" "active"} (keys args))
                           (contains? args "query")
                           (contains? args "params")
@@ -99,10 +97,8 @@
       (protocol-error (get req "request_id") "protocol/operation-not-allowed" "Operation is not available over JSON socket" {"operation" (get req "operation")})
       (not (map? (get req "arguments")))
       (protocol-error (get req "request_id") "protocol/malformed-request" "arguments must be an object" {})
-      (not= allowed-option-keys (set (keys (get req "options"))))
-      (protocol-error (get req "request_id") "protocol/malformed-request" "options must contain only format" {})
-      (not (#{{"format" "human"} {"format" "json"}} (get req "options")))
-      (protocol-error (get req "request_id") "protocol/malformed-request" "format must be human or json" {})
+      (not= {} (get req "options"))
+      (protocol-error (get req "request_id") "protocol/malformed-request" "options must be empty" {})
 
       :else (argument-error req))))
 
@@ -154,8 +150,7 @@
     "init" ((api 'init) runtime)
     "add" ((api 'add) runtime (cond-> {:title (get args "title")
                                          :attributes (get args "attributes")}
-                                  (contains? args "active") (assoc :active (get args "active"))
-                                  (contains? args "ephemeral") (assoc :ephemeral (get args "ephemeral"))))
+                                  (contains? args "active") (assoc :active (get args "active"))))
     "update" ((api 'update) runtime (get args "id")
               (cond-> {:edges (mapv (fn [edge]
                                       {:type (get edge "type")
@@ -163,9 +158,9 @@
                                     (or (get args "edges") []))}
                 (some? (get args "title")) (assoc :title (get args "title"))
                 (some? (get args "active")) (assoc :active (get args "active"))
-                (some? (get args "ephemeral")) (assoc :ephemeral (get args "ephemeral"))
                 (some? (get args "attributes")) (assoc :attributes (get args "attributes"))))
     "show" ((api 'show) runtime (get args "id"))
+    "burn" ((api 'burn-by-id) runtime (get args "id"))
     "list" (if (contains? args "active")
              ((api 'list) runtime [:= :active (get args "active")] {})
              ((api 'list) runtime))

@@ -60,6 +60,15 @@
 (defn strand [id]
   (daemon :show id))
 
+(defn burn!
+  ([id]
+   (daemon :burn-by-id id))
+  ([id & ids]
+   (daemon :burn-by-ids (vec (cons id ids)))))
+
+(defn burn-by-ids! [ids]
+  (daemon :burn-by-ids (vec ids)))
+
 (defn- call-daemon [f]
   (try
     (f)

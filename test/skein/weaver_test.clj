@@ -62,7 +62,7 @@
              "weaver_id" (:nonce m)
              "operation" operation
              "arguments" arguments
-             "options" {"format" "json"}}]
+             "options" {}}]
     (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
                      (.connect (UnixDomainSocketAddress/of (:socket-path m))))
                 rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
@@ -138,7 +138,7 @@
                               (api/list-query rt :owners {:owners []})))))))
 
 (deftest json-socket-public-operation-allowlist-stays-thin
-  (is (= #{"init" "add" "update" "show" "list" "ready" "list-query" "ready-query" "status" "stop"}
+  (is (= #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "status" "stop"}
          socket/allowed-operations)))
 
 (deftest weaver-runtime-transformation-primitives
@@ -349,7 +349,7 @@
     (fn [rt _]
       (let [m (:metadata rt)
             req {"protocol_version" 1 "request_id" "bad-identity" "weaver_id" "wrong"
-                 "operation" "stop" "arguments" {} "options" {"format" "json"}}]
+                 "operation" "stop" "arguments" {} "options" {}}]
         (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
                          (.connect (UnixDomainSocketAddress/of (:socket-path m))))
                     rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
@@ -368,7 +368,7 @@
     (fn [rt _]
       (let [m (:metadata rt)
             req {"protocol_version" 1 "request_id" "bad-stop" "weaver_id" (:nonce m)
-                 "operation" "stop" "arguments" {"force" true} "options" {"format" "json"}}]
+                 "operation" "stop" "arguments" {"force" true} "options" {}}]
         (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
                          (.connect (UnixDomainSocketAddress/of (:socket-path m))))
                     rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))

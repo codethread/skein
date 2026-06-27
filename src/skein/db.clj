@@ -51,14 +51,11 @@
        id TEXT PRIMARY KEY,
        title TEXT NOT NULL,
        active INTEGER NOT NULL DEFAULT 1,
-       ephemeral INTEGER NOT NULL DEFAULT 0,
        attributes TEXT NOT NULL DEFAULT '{}',
        created_at TEXT NOT NULL DEFAULT (datetime('now')),
        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
        inactive_at TEXT,
        CHECK (active IN (0, 1)),
-       CHECK (ephemeral IN (0, 1)),
-       CHECK (NOT (active = 0 AND ephemeral = 1)),
        CHECK ((active = 0 AND inactive_at IS NOT NULL)
               OR (active = 1 AND inactive_at IS NULL)),
        CHECK (json_valid(attributes))
@@ -74,7 +71,7 @@
      )"]
    ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]])
 
-(def required-strand-columns #{"id" "title" "active" "ephemeral" "attributes" "created_at" "updated_at" "inactive_at"})
+(def required-strand-columns #{"id" "title" "active" "attributes" "created_at" "updated_at" "inactive_at"})
 
 (defn- ensure-current-schema! [ds]
   (let [columns (set (map :name (execute! ds ["PRAGMA table_info(strands)"])))
@@ -92,7 +89,7 @@
 
 (declare get-strand add-edge!)
 
-(def ^:private batch-strand-keys #{:title :active :ephemeral :attributes :ref :edges})
+(def ^:private batch-strand-keys #{:title :active :attributes :ref :edges})
 (def ^:private batch-edge-keys #{:type :to :attributes})
 
 (defn- json-compatible? [value]
@@ -160,7 +157,7 @@
       (throw (ex-info "Duplicate batch ref" {:ref duplicate-ref}))))
   strands)
 
-(def strand-columns "id, title, active, ephemeral, attributes, created_at, updated_at, inactive_at")
+(def strand-columns "id, title, active, attributes, created_at, updated_at, inactive_at")
 
 (defn- require-boolean! [value field]
   (when-not (or (true? value) (false? value))
@@ -172,19 +169,21 @@
 
 (defn- row->booleans [row]
   (cond-> row
-    (contains? row :active) (update :active #(case % 0 false 1 true %))
-    (contains? row :ephemeral) (update :ephemeral #(case % 0 false 1 true %))))
+    (contains? row :active) (update :active #(case % 0 false 1 true %))))
 
-(defn- insert-strand! [ds id title active ephemeral attributes]
+(defn- insert-strand! [ds id title active attributes]
   (execute-one! ds
-                [(str "INSERT INTO strands (id, title, active, ephemeral, attributes, inactive_at)
-                       VALUES (?, ?, ?, ?, json(?), CASE WHEN ? = 0 THEN datetime('now') ELSE NULL END)
+                [(str "INSERT INTO strands (id, title, active, attributes, inactive_at)
+                       VALUES (?, ?, ?, json(?), CASE WHEN ? = 0 THEN datetime('now') ELSE NULL END)
                        RETURNING " strand-columns)
-                 id title (sqlite-bool active) (sqlite-bool ephemeral) (->json attributes) (sqlite-bool active)]))
+                 id title (sqlite-bool active) (->json attributes) (sqlite-bool active)]))
+
 
 (defn- unique-strand-id-error? [^Exception e]
   (str/includes? (.getMessage e) "UNIQUE constraint failed: strands.id"))
 
+(def ^:private strand-input-keys #{:title :active :attributes})
+(def ^:private strand-patch-keys #{:title :active :attributes})
 (def ^:private removed-lifecycle-fields #{:status :final_at})
 
 (defn- reject-removed-lifecycle-fields! [m context]
@@ -192,18 +191,22 @@
     (throw (ex-info "Removed lifecycle fields are not core strand fields"
                     {:context context :fields (vec fields)}))))
 
-(defn add-strand! [ds {:keys [title active ephemeral attributes] :as strand}]
+(defn- reject-unknown-strand-keys! [m allowed context]
+  (let [unknown (seq (remove allowed (keys m)))]
+    (when unknown
+      (throw (ex-info "Unknown core strand fields" {:context context :fields (vec unknown)})))))
+
+(defn add-strand! [ds {:keys [title active attributes] :as strand}]
   (reject-removed-lifecycle-fields! strand :create)
-  (let [strand (merge {:active true :ephemeral false} strand)]
+  (reject-unknown-strand-keys! strand strand-input-keys :create)
+  (let [strand (merge {:active true} strand)]
     (require-valid! ::specs/strand-input strand "Invalid strand")
-    (when (and (= false (:active strand)) (= true (:ephemeral strand)))
-      (throw (ex-info "Inactive ephemeral strands cannot be persisted" {:strand strand})))
     (loop [attempt 1]
       (when (> attempt max-id-attempts)
         (throw (ex-info "Unable to generate unique strand id" {:attempts max-id-attempts})))
       (let [id (generate-id)
             result (try
-                     [:created (row->booleans (insert-strand! ds id title (:active strand) (:ephemeral strand) attributes))]
+                     [:created (row->booleans (insert-strand! ds id title (:active strand) attributes))]
                      (catch org.sqlite.SQLiteException e
                        (if (unique-strand-id-error? e)
                          [:retry nil]
@@ -227,32 +230,35 @@
 (defn add-strand-batch! [ds strands]
   (validate-batch! strands)
   (jdbc/with-transaction [tx ds]
-    (let [created (mapv (fn [{:keys [title active ephemeral attributes] :as strand}]
-                          (add-strand! tx (cond-> {:title title :attributes attributes}
-                                            (contains? strand :active) (assoc :active active)
-                                            (contains? strand :ephemeral) (assoc :ephemeral ephemeral))))
-                        strands)
-          refs (into {}
-                     (keep (fn [[strand created-strand]]
-                             (when-let [ref (:ref strand)]
-                               [(str ref) (:id created-strand)])))
-                     (map vector strands created))]
-      (doseq [[strand created-strand] (map vector strands created)
-              {:keys [to type attributes]} (:edges strand)]
-        (let [resolved-to (cond
-                            (symbol? to) (or (get refs (str to))
-                                             (throw (ex-info "Batch edge target ref not found; symbolic targets only resolve to batch refs, use a string for durable ids"
-                                                             {:to to :type type})))
-                            (string? to) (do
-                                           (when-not (get-strand tx to)
-                                             (throw (ex-info "Batch edge target strand not found" {:to to :type type})))
-                                           to))]
-          (add-edge! tx {:from (:id created-strand)
-                         :to resolved-to
-                         :type type
-                         :attributes attributes})))
-      {:created created
-       :refs refs})))
+    (let [resolve-existing-ref (fn [refs value context]
+                                 (cond
+                                   (symbol? value) (or (get refs (str value))
+                                                       (throw (ex-info "Batch ref not found; symbolic targets only resolve to batch refs, use a string for durable ids"
+                                                                       {:context context :value value})))
+                                   (string? value) (do
+                                                     (when-not (get-strand tx value)
+                                                       (throw (ex-info "Batch target strand not found" {:context context :value value})))
+                                                     value)))]
+      (loop [remaining strands
+             created []
+             refs {}]
+        (if-let [strand (first remaining)]
+          (let [{:keys [title active attributes]} strand
+                created-strand (add-strand! tx (cond-> {:title title :attributes attributes}
+                                                 (contains? strand :active) (assoc :active active)))
+                refs (cond-> refs
+                       (:ref strand) (assoc (str (:ref strand)) (:id created-strand)))]
+            (recur (rest remaining) (conj created created-strand) refs))
+          (do
+            (doseq [[strand created-strand] (map vector strands created)
+                    {:keys [to type attributes]} (:edges strand)]
+              (let [resolved-to (resolve-existing-ref refs to :edge)]
+                (add-edge! tx {:from (:id created-strand)
+                               :to resolved-to
+                               :type type
+                               :attributes attributes})))
+            {:created created
+             :refs refs}))))))
 
 (defn- path-exists? [ds from to]
   (boolean
@@ -298,44 +304,32 @@
   (or row
       (throw (ex-info "Strand not found" {:strand-id strand-id}))))
 
-(defn update-strand! [ds strand-id {:keys [title active ephemeral attributes] :as patch}]
+(defn update-strand! [ds strand-id {:keys [title active attributes] :as patch}]
   (reject-removed-lifecycle-fields! patch :update)
+  (reject-unknown-strand-keys! patch strand-patch-keys :update)
   (when (and title (str/blank? title))
     (throw (ex-info "Strand title must be non-blank" {:title title})))
   (when (contains? patch :active)
     (require-boolean! active :active))
-  (when (contains? patch :ephemeral)
-    (require-boolean! ephemeral :ephemeral))
-  (when (and (contains? patch :active) (contains? patch :ephemeral))
-    (throw (ex-info "Cannot change active and ephemeral in the same patch" {:patch patch})))
-  (let [current (require-updated-strand strand-id (get-strand ds strand-id))]
-    (when (and (contains? patch :ephemeral) (= true ephemeral) (false? (:active current)))
-      (throw (ex-info "Inactive ephemeral strands cannot be persisted" {:strand-id strand-id :patch patch})))
-    (if (and (contains? patch :active) (= false active) (:ephemeral current))
-      (do
-        (execute! ds ["DELETE FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" strand-id strand-id])
-        (execute! ds ["DELETE FROM strands WHERE id = ?" strand-id])
-        nil)
-      (row->booleans
-       (require-updated-strand
-        strand-id
-        (execute-one! ds
-                      [(str "UPDATE strands
-                             SET title = COALESCE(?, title),
-                                 active = COALESCE(?, active),
-                                 ephemeral = COALESCE(?, ephemeral),
-                                 attributes = CASE WHEN ? IS NULL THEN attributes ELSE json_patch(attributes, json(?)) END,
-                                 updated_at = datetime('now'),
-                                 inactive_at = CASE
-                                   WHEN COALESCE(?, active) = 0 THEN COALESCE(inactive_at, datetime('now'))
-                                   ELSE NULL
-                                 END
-                             WHERE id = ?
-                             RETURNING " strand-columns)
-                       title (when (contains? patch :active) (sqlite-bool active))
-                       (when (contains? patch :ephemeral) (sqlite-bool ephemeral))
-                       (when attributes (->json attributes)) (when attributes (->json attributes))
-                       (when (contains? patch :active) (sqlite-bool active)) strand-id]))))))
+  (require-updated-strand strand-id (get-strand ds strand-id))
+  (row->booleans
+   (require-updated-strand
+    strand-id
+    (execute-one! ds
+                  [(str "UPDATE strands
+                         SET title = COALESCE(?, title),
+                             active = COALESCE(?, active),
+                             attributes = CASE WHEN ? IS NULL THEN attributes ELSE json_patch(attributes, json(?)) END,
+                             updated_at = datetime('now'),
+                             inactive_at = CASE
+                               WHEN COALESCE(?, active) = 0 THEN COALESCE(inactive_at, datetime('now'))
+                               ELSE NULL
+                             END
+                         WHERE id = ?
+                         RETURNING " strand-columns)
+                   title (when (contains? patch :active) (sqlite-bool active))
+                   (when attributes (->json attributes)) (when attributes (->json attributes))
+                   (when (contains? patch :active) (sqlite-bool active)) strand-id]))))
 
 
 (defn query-strands
@@ -378,6 +372,17 @@
         (when (seq missing)
           (throw (ex-info "Strand ids not found" {:context context :missing missing})))))
     ids))
+
+(defn burn-by-ids! [ds ids]
+  (let [ids (require-existing-strand-ids! ds ids :burn-by-ids)]
+    (jdbc/with-transaction [tx ds]
+      (doseq [id ids]
+        (execute! tx ["DELETE FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" id id])
+        (execute! tx ["DELETE FROM strands WHERE id = ?" id]))
+      {:burned ids :count (count ids)})))
+
+(defn burn-by-id! [ds id]
+  (burn-by-ids! ds [id]))
 
 (defn strands-by-ids [ds ids]
   (let [ids (require-existing-strand-ids! ds ids :strands-by-ids)]

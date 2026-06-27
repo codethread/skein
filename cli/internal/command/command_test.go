@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"skein-strand-cli/internal/config"
 )
 
 func run(args ...string) (string, error) {
@@ -25,7 +23,7 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "list", "ready", "weaver"} {
+	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "burn", "list", "ready", "weaver"} {
 		if !strings.Contains(root, want) {
 			t.Fatalf("root help missing %q in:\n%s", want, root)
 		}
@@ -34,7 +32,7 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"add <title>", "--active", "--ephemeral", "--attr"} {
+	for _, want := range []string{"add <title>", "--active", "--attr"} {
 		if !strings.Contains(add, want) {
 			t.Fatalf("add help missing %q in:\n%s", want, add)
 		}
@@ -63,7 +61,7 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 
 func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 	cases := [][]string{
-		{"--format", "edn", "list"},
+		{"--format", "json", "list"},
 		{"list", "--where", "[:= :status \"strand\"]"},
 		{"list", "--where", ""},
 		{"list", "extra"},
@@ -72,13 +70,14 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 		{"add", "x", "extra"},
 		{"add", "x", "--status", "bogus"},
 		{"add", "x", "--active", "maybe"},
-		{"add", "x", "--active=false", "--ephemeral=true"},
+		{"add", "x", "--ephemeral", "true"},
+		{"add", "x", "--parent", "id"},
 		{"add", "x", "--attr", "novalue"},
 		{"update", "id", "extra"},
 		{"update", "id", "--edge", "depends-on"},
 		{"update", "id", "--edge", ":target"},
 		{"update", "id", "--edge", "depends-on:"},
-		{"update", "id", "--active=false", "--ephemeral=true"},
+		{"update", "id", "--ephemeral", "true"},
 		{"list", "--param", "novalue"},
 	}
 	for _, c := range cases {
@@ -90,7 +89,7 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 
 func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","source":"/tmp/source","format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","source":"/tmp/source"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	var captured Options
@@ -100,14 +99,14 @@ func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 		return &fakeClient{result: []any{}}
 	}
 	t.Cleanup(func() { newClient = orig })
-	if _, err := run("--config-dir", dir, "--format", "human", "list"); err != nil {
+	if _, err := run("--config-dir", dir, "list"); err != nil {
 		t.Fatal(err)
 	}
 	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if captured.Format != "human" || captured.Source != "/tmp/source" || captured.ConfigDir != realDir {
+	if captured.Source != "/tmp/source" || captured.ConfigDir != realDir {
 		t.Fatalf("unexpected resolved options: %#v", captured)
 	}
 
@@ -226,7 +225,6 @@ func TestInitBootstrapsWorkspaceWhenMissingAndCallsInit(t *testing.T) {
 	var c struct {
 		ConfigFormat string `json:"configFormat"`
 		Source       string `json:"source"`
-		Format       string `json:"format"`
 	}
 	f, err := os.ReadFile(cfgFile)
 	if err != nil {
@@ -235,7 +233,7 @@ func TestInitBootstrapsWorkspaceWhenMissingAndCallsInit(t *testing.T) {
 	if err := json.Unmarshal(f, &c); err != nil {
 		t.Fatal(err)
 	}
-	if c.ConfigFormat != "alpha" || c.Format != config.DefaultFormat {
+	if c.ConfigFormat != "alpha" {
 		t.Fatalf("unexpected config fields: %#v", c)
 	}
 	realSource, err := filepath.EvalSymlinks(source)
@@ -257,6 +255,10 @@ func TestInitBootstrapsWorkspaceWhenMissingAndCallsInit(t *testing.T) {
 	}
 	if got := string(mustReadFile(t, initPath)); got != defaultInitCLJ {
 		t.Fatalf("unexpected init.clj contents: %q", got)
+	}
+	configCLJPath := filepath.Join(cfg, "config.clj")
+	if got := string(mustReadFile(t, configCLJPath)); got != defaultConfigCLJ {
+		t.Fatalf("unexpected config.clj contents: %q", got)
 	}
 	realCfg, err := filepath.EvalSymlinks(cfg)
 	if err != nil {
@@ -287,7 +289,7 @@ func TestInitValidatesExistingConfigButDoesNotRewriteMissingKeys(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(cfg, "libs"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	original := `{"configFormat":"alpha","format":"json","source":"` + source + `"}`
+	original := `{"configFormat":"alpha","source":"` + source + `"}`
 	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(original), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +502,7 @@ func TestXDGConfigLoading(t *testing.T) {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"configFormat":"alpha","format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	var captured Options
@@ -545,13 +547,13 @@ func (f *fakeClient) Call(op string, args map[string]any) (any, error) {
 	if f.result != nil {
 		return f.result, nil
 	}
-	return map[string]any{"id": "task-1", "title": "Write docs", "active": true, "ephemeral": false, "attributes": map[string]any{}}, nil
+	return map[string]any{"id": "task-1", "title": "Write docs", "active": true, "attributes": map[string]any{}}, nil
 }
 
 func testConfig(t *testing.T) string {
 	t.Helper()
 	path := t.TempDir()
-	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"configFormat":"alpha","format":"human"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -567,8 +569,8 @@ func TestQueryCommandsUseSocketClientPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(out) != `{"id":"task-1"}` {
-		t.Fatalf("unexpected human list output: %q", out)
+	if strings.TrimSpace(out) != `[{"id":"task-1"}]` {
+		t.Fatalf("unexpected list output: %q", out)
 	}
 	out, err = run("--config-dir", cfg, "list", "--active", "false")
 	if err != nil {
@@ -596,7 +598,7 @@ func TestQueryCommandsUseSocketClientPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(out) != "(no rows)" {
+	if strings.TrimSpace(out) != `[]` {
 		t.Fatalf("empty row output = %q", out)
 	}
 }
@@ -607,20 +609,23 @@ func TestStrandCommandsUseSocketClientPayloads(t *testing.T) {
 	fc := &fakeClient{}
 	newClient = func(o Options) Caller { return fc }
 	t.Cleanup(func() { newClient = orig })
-	out, err := run("--config-dir", cfg, "--format", "human", "add", "Write docs", "--attr", "owner=agent")
+	out, err := run("--config-dir", cfg, "add", "Write docs", "--attr", "owner=agent")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(out) != "task-1" {
-		t.Fatalf("expected generated id, got %q", out)
+	if strings.TrimSpace(out) != `{"active":true,"attributes":{},"id":"task-1","title":"Write docs"}` {
+		t.Fatalf("expected JSON row, got %q", out)
 	}
-	if out, err = run("--config-dir", cfg, "update", "task-1", "--active=false", "--edge", "depends-on:task-0"); err != nil || out != "" {
+	if out, err = run("--config-dir", cfg, "update", "task-1", "--active=false", "--edge", "depends-on:task-0"); err != nil || !strings.Contains(out, `"id":"task-1"`) {
 		t.Fatalf("update output/error = %q/%v", out, err)
 	}
-	if _, err = run("--config-dir", cfg, "--format", "json", "show", "task-1"); err != nil {
+	if _, err = run("--config-dir", cfg, "show", "task-1"); err != nil {
 		t.Fatal(err)
 	}
-	if len(fc.calls) != 3 {
+	if _, err = run("--config-dir", cfg, "burn", "task-2"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fc.calls) != 4 {
 		t.Fatalf("calls = %#v", fc.calls)
 	}
 	if fc.calls[0].op != "add" || fc.calls[0].args["title"] != "Write docs" {
@@ -632,29 +637,20 @@ func TestStrandCommandsUseSocketClientPayloads(t *testing.T) {
 	if !reflect.DeepEqual(fc.calls[0].args["attributes"], map[string]any{"owner": "agent"}) {
 		t.Fatalf("bad attrs: %#v", fc.calls[0].args)
 	}
-	expectedUpdate := map[string]any{"id": "task-1", "title": nil, "active": false, "ephemeral": nil, "attributes": nil, "edges": []map[string]any{{"type": "depends-on", "to": "task-0"}}}
+	expectedUpdate := map[string]any{"id": "task-1", "title": nil, "active": false, "attributes": nil, "edges": []map[string]any{{"type": "depends-on", "to": "task-0"}}}
 	if fc.calls[1].op != "update" || !reflect.DeepEqual(fc.calls[1].args, expectedUpdate) {
 		t.Fatalf("bad update call: %#v", fc.calls[1])
 	}
 	if fc.calls[2].op != "show" || fc.calls[2].args["id"] != "task-1" {
 		t.Fatalf("bad show call: %#v", fc.calls[2])
 	}
+	if fc.calls[3].op != "burn" || fc.calls[3].args["id"] != "task-2" {
+		t.Fatalf("bad burn call: %#v", fc.calls[3])
+	}
 	if _, err = run("--config-dir", cfg, "update", "task-1", "--title", ""); err != nil {
 		t.Fatal(err)
 	}
-	if fc.calls[3].args["title"] != "" {
-		t.Fatalf("empty title flag should be sent to weaver validation: %#v", fc.calls[3])
-	}
-	if _, err = run("--config-dir", cfg, "add", "Scratch", "--ephemeral", "true"); err != nil {
-		t.Fatal(err)
-	}
-	if fc.calls[4].args["ephemeral"] != true {
-		t.Fatalf("explicit ephemeral add flag should be sent: %#v", fc.calls[4])
-	}
-	if _, err = run("--config-dir", cfg, "update", "task-1", "--ephemeral", "true"); err != nil {
-		t.Fatal(err)
-	}
-	if fc.calls[5].args["ephemeral"] != true {
-		t.Fatalf("explicit ephemeral update flag should be sent: %#v", fc.calls[5])
+	if fc.calls[4].args["title"] != "" {
+		t.Fatalf("empty title flag should be sent to weaver validation: %#v", fc.calls[4])
 	}
 }

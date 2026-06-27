@@ -169,6 +169,22 @@
 (defn approved-lib-syncs [runtime]
   {:libs (into (sorted-map) @(approved-lib-sync-state runtime))})
 
+(defn reload-config! [runtime]
+  (let [file (io/file (config-dir runtime) "init.clj")]
+    (when-not (.isFile file)
+      (throw (ex-info "Selected config-dir has no init.clj to reload"
+                      {:config-dir (config-dir runtime)
+                       :file (.getPath file)})))
+    (let [canonical-file (.getCanonicalPath file)]
+      (reset! (approved-lib-sync-state runtime) {})
+      (reset! (module-use-state runtime) {})
+      (reset! (query-registry runtime) {})
+      (reset! (view-registry runtime) {})
+      (let [result (with-library-classloader runtime #(load-file canonical-file))]
+        {:status :loaded
+         :file canonical-file
+         :return result}))))
+
 (def allowed-use-keys #{:ns :file :libs :after :call :required?})
 
 (defn- validate-use-opts! [key opts]
@@ -377,7 +393,7 @@
     (db/add-edge! tx {:from id :to to :type type :attributes (or attributes {})})))
 
 (defn update [runtime id patch]
-  (let [{:keys [title active ephemeral attributes edges]} patch]
+  (let [{:keys [title active attributes edges]} patch]
     (jdbc/with-transaction [tx (ds runtime)]
       (when-not (db/get-strand tx id)
         (throw (ex-info "Strand not found" {:strand-id id})))
@@ -385,11 +401,17 @@
       (normalize (db/update-strand! tx id (cond-> {}
                                           (contains? patch :title) (assoc :title title)
                                           (contains? patch :active) (assoc :active active)
-                                          (contains? patch :ephemeral) (assoc :ephemeral ephemeral)
+                                          (contains? patch :ephemeral) (assoc :ephemeral (:ephemeral patch))
                                           (contains? patch :attributes) (assoc :attributes attributes)))))))
 
 (defn show [runtime id]
   (normalize (db/get-strand (ds runtime) id)))
+
+(defn burn-by-id [runtime id]
+  (db/burn-by-id! (ds runtime) id))
+
+(defn burn-by-ids [runtime ids]
+  (db/burn-by-ids! (ds runtime) ids))
 
 (defn list
   ([runtime]

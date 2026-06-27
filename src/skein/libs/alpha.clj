@@ -24,6 +24,11 @@
   []
   (call-daemon :approved-lib-syncs))
 
+(defn reload!
+  "Reload selected config-dir init.clj in the active weaver."
+  []
+  (call-daemon :reload-config!))
+
 (defn use!
   "Activate a weaver-side module and record its use state."
   [key opts]

@@ -90,7 +90,7 @@ After validation, `git status --short` should not show generated SQLite, socket,
 
 ```sh
 sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite '.schema'
-sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select id, title, active, ephemeral, inactive_at, attributes from strands;'
+sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select id, title, active, inactive_at, attributes from strands;'
 sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select from_strand_id, to_strand_id, edge_type, attributes from strand_edges;'
 ```
 

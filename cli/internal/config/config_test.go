@@ -13,7 +13,7 @@ func TestLoadNoConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if c.ConfigFormat != "" || c.Source != "" || c.Format != "" {
+	if c.ConfigFormat != "" || c.Source != "" {
 		t.Fatalf("unexpected config: %#v", c)
 	}
 }
@@ -64,14 +64,14 @@ func TestLoadRejectsUnsupportedKeysAndValues(t *testing.T) {
 
 func TestLoadAcceptsValidAlphaConfig(t *testing.T) {
 	d := t.TempDir()
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","source":"/tmp/source","format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","source":"/tmp/source"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	c, world, err := Load(d)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if c.ConfigFormat != "alpha" || c.Source != "/tmp/source" || c.Format != "json" {
+	if c.ConfigFormat != "alpha" || c.Source != "/tmp/source" {
 		t.Fatalf("unexpected config: %#v", c)
 	}
 	tDir, err := filepath.EvalSymlinks(d)

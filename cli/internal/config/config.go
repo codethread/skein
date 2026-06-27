@@ -8,11 +8,10 @@ import (
 	"strings"
 )
 
-const DefaultFormat = "human"
 const ConfigFileName = "config.json"
 const DefaultDBFileName = "skein.sqlite"
 
-var allowedKeys = map[string]bool{"configFormat": true, "source": true, "format": true}
+var allowedKeys = map[string]bool{"configFormat": true, "source": true}
 
 type World struct {
 	ConfigDir  string
@@ -25,7 +24,6 @@ type World struct {
 type Config struct {
 	ConfigFormat string `json:"configFormat"`
 	Source       string `json:"source"`
-	Format       string `json:"format"`
 }
 
 func DefaultWorld() (World, error) {
@@ -103,14 +101,6 @@ func Load(configDir string) (Config, World, error) {
 		if err := json.Unmarshal(v, &c.Source); err != nil {
 			return Config{}, World{}, fmt.Errorf("client config source must be a string")
 		}
-	}
-	if v, ok := raw["format"]; ok {
-		if err := json.Unmarshal(v, &c.Format); err != nil {
-			return Config{}, World{}, fmt.Errorf("client config format must be a string")
-		}
-	}
-	if c.Format != "" && c.Format != "human" && c.Format != "json" {
-		return Config{}, World{}, fmt.Errorf("unsupported format: %s", c.Format)
 	}
 	return c, w, nil
 }

@@ -19,6 +19,8 @@ init!
 strand!
 update!
 strand
+burn!
+burn-by-ids!
 defquery!
 load-queries!
 queries
@@ -34,16 +36,16 @@ ready
 - **SPEC-003.C3:** `strand weaver repl --stdin` uses the same preloaded, connected helper context, reads forms from stdin, evaluates them in order, prints one direct normal Clojure result per top-level form, and exits. Callers that want one machine-readable payload should wrap work in one top-level `do` or `let`.
 - **SPEC-003.C4:** Helpers that need a weaver fail before connection with remediation that points to `strand weaver repl` or `connect!`; weaver/transport failures surface loudly as Clojure exceptions.
 - **SPEC-003.C5:** `init!` initializes the active weaver store schema.
-- **SPEC-003.C6:** `strand!` creates a strand and returns the created row. Supported arities include a title alone, title with attributes, and title with options containing optional `:active`, `:ephemeral`, and `:attributes`.
-- **SPEC-003.C7:** `update!` accepts a strand id and patch map with optional `:title`, `:active`, `:ephemeral`, `:attributes`, and `:edges`. It does not accept `:status` as a core lifecycle key.
+- **SPEC-003.C6:** `strand!` creates a strand and returns the created row. Supported arities include a title alone, title with attributes, and title with options containing optional `:active` and `:attributes`.
+- **SPEC-003.C7:** `update!` accepts a strand id and patch map with optional `:title`, `:active`, `:attributes`, and `:edges`. It does not accept removed core lifecycle keys such as `:status` or `:final_at`.
 - **SPEC-003.C8:** `:edges` are maps with `:type`, `:to`, and optional `:attributes`; each edge is written from the updated strand to `:to`.
-- **SPEC-003.C8a:** Creating with `{:active false :ephemeral true}` fails loudly, and patches that change both `:active` and `:ephemeral` fail loudly. Delete-on-deactivate requires an active strand that was already ephemeral before the deactivation patch.
+- **SPEC-003.C8a:** `burn!` and `burn-by-ids!` physically delete strands and incident edges through weaver burn primitives. Missing ids fail loudly.
 - **SPEC-003.C9:** `defquery!` registers a named query expression or parameterized query map in the active weaver's in-memory query registry.
 - **SPEC-003.C10:** `load-queries!` reads one EDN map of query names to query definitions and merges it into the active weaver's in-memory query registry.
 - **SPEC-003.C11:** `queries` returns the active weaver's in-memory query registry.
 - **SPEC-003.C12:** Query registry contents last only for the active weaver lifetime; reload trusted config or call `defquery!` / `load-queries!` again after weaver restart.
 - **SPEC-003.C13:** `query` returns strands matching an ad hoc query definition or weaver-registered query name, with optional runtime parameters.
-- **SPEC-003.C14:** `strand`, `strands`, `query`, and `ready` return rows with JSON-bearing columns normalized to Clojure values and with `active`, `ephemeral`, and `inactive_at` lifecycle fields.
+- **SPEC-003.C14:** `strand`, `strands`, `query`, and `ready` return rows with JSON-bearing columns normalized to Clojure values and with `active` and `inactive_at` lifecycle fields.
 - **SPEC-003.C15:** `ready` returns active strands whose direct `depends-on` dependencies are not active and may be further filtered by an ad hoc or registered query.
 - **SPEC-003.C16:** Blessed library-workspace helpers live in explicit `skein.libs.alpha`, not in the preloaded `skein.repl` helper namespace.
 - **SPEC-003.C17:** `skein.libs.alpha` exposes approved library config helpers, approved-local-root sync helpers, resilient module activation with `use!`, and weaver-lifetime sync/use introspection.
@@ -54,7 +56,7 @@ ready
 
 Skein ships blessed source-visible runtime transformation namespaces for trusted config and connected REPL workflows:
 
-- `skein.graph.alpha` exposes `(query-ids! query params)`, `(strands-by-ids ids)`, `(ancestor-root-ids seed-ids opts)`, and `(subgraph root-ids)`. These helpers route to weaver operations for set-oriented query id selection, strand hydration by ids, parent-of feature-root traversal, and parent-of DAG/subgraph expansion.
+- `skein.graph.alpha` exposes `(query-ids! query params)`, `(burn-by-id! id)`, `(burn-by-ids! ids)`, `(strands-by-ids ids)`, `(ancestor-root-ids seed-ids opts)`, and `(subgraph root-ids)`. These helpers route to weaver operations for set-oriented query id selection, raw deletion, strand hydration by ids, parent-of feature-root traversal, and parent-of DAG/subgraph expansion.
 - `skein.views.alpha` exposes `(register-view! name fn-sym)`, `(view! name params)`, and `(views)`. View registration accepts a simple view name and a fully qualified function symbol, not an arbitrary client-side function value.
 
 Helpers execute weaver-side when called from `init.clj` or activated runtime libraries, and route to the selected weaver world when called from connected REPL clients. Connected helper REPL users who want to register new view functions should place them in weaver-loadable config/library code and register their symbols. View registrations are weaver-lifetime runtime state unless user config reloads them on startup.
@@ -74,6 +76,7 @@ Helpers include:
 - `(libs/approved)` returns normalized approved config.
 - `(libs/sync!)` uses Clojure runtime dependency tooling to add approved local roots and returns structured results for loaded, already-available, and failed libraries.
 - `(libs/syncs)` returns weaver-lifetime approved-library sync state.
+- `(libs/reload!)` clears weaver-lifetime approved-library sync state, module-use state, named queries, and views, then reloads selected config-dir `init.clj` inside the active weaver and returns its file, status, and final form result. Missing `init.clj` fails loudly.
 - `(libs/use! key opts)` records one weaver-lifetime module-use attempt under keyword `key`; duplicate keys replace prior state for reload workflows.
 - `(libs/uses)` and `(libs/use key)` expose weaver-lifetime module-use state.
 

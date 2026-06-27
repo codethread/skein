@@ -23,7 +23,7 @@ bootstrap:
 	fi
 	go install $(GO_CLI)
 	mkdir -p "$(CONFIG_DIR)"
-	printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$(CURDIR)" | jq . > "$(CONFIG_FILE)"
+	printf '{"configFormat":"alpha","source":"%s"}\n' "$(CURDIR)" | jq . > "$(CONFIG_FILE)"
 
 open-config: bootstrap
 	@if [ -z "$(EDITOR)" ]; then \

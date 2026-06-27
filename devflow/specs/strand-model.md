@@ -7,7 +7,7 @@
 
 ## SPEC-001.P1 Purpose
 
-The strand model defines the durable local data contract for the Skein graph: strand records, core active/ephemeral lifecycle and retention state, open-ended JSON attributes, typed strand-to-strand edges, and readiness semantics.
+The strand model defines the durable local data contract for the Skein graph: strand records, core active lifecycle state, explicit burn deletion, open-ended JSON attributes, typed strand-to-strand edges, and readiness semantics.
 
 ## SPEC-001.P2 Strand records
 
@@ -16,21 +16,18 @@ A strand has:
 - `id` — generated unique text id.
 - `title` — non-blank strand title.
 - `active` — boolean liveness state. Active strands participate in readiness and can block dependents.
-- `ephemeral` — boolean retention behavior. Ephemeral strands are persisted while active and deleted when deactivated.
 - `attributes` — userland JSON object stored as SQLite `TEXT`.
 - `created_at` — set on insert.
 - `updated_at` — changed on strand update.
-- `inactive_at` — set when a persistent strand becomes inactive; null while active.
+- `inactive_at` — set when a strand becomes inactive; null while active.
 
-`active` is the only core lifecycle state. There is no core `status`, `kind`, `type`, `outcome`, `reason`, or final-status taxonomy. Worlds that need task-like outcomes, notes, pages, or workflow categories store those concepts in attributes.
+`active` is the only core lifecycle state. There is no core `status`, `kind`, `type`, `outcome`, `reason`, retention flag, or final-status taxonomy. Worlds that need task-like outcomes, notes, pages, scratch concepts, or workflow categories store those concepts in attributes.
 
 ## SPEC-001.P3 Lifecycle and retention
 
-Active persistent strands have `active=true`, `ephemeral=false`, and `inactive_at=null`. Deactivating a persistent strand sets `active=false` and `inactive_at` to the transition time. Reactivating a persistent strand sets `active=true` and clears `inactive_at`.
+Active strands have `active=true` and `inactive_at=null`. Deactivating a strand sets `active=false` and `inactive_at` to the transition time. Reactivating a strand sets `active=true` and clears `inactive_at`.
 
-Ephemeral strands have `ephemeral=true` and are persisted only while active. Deactivating an ephemeral strand deletes the strand and all incident edges instead of retaining an inactive row.
-
-Inactive ephemeral rows are invalid. Creating a strand with `active=false` and `ephemeral=true` fails loudly. Updating `active` and `ephemeral` in the same patch fails loudly; callers that want destructive delete-on-deactivate must first mark an active strand ephemeral, then deactivate it in a later patch.
+Burning a strand explicitly deletes the strand and all incident edges. Burn operations are raw deletion primitives intended for trusted workflows and userland composition.
 
 ## SPEC-001.P4 Attributes
 
@@ -54,8 +51,8 @@ The `strands` table stores lifecycle fields as columns and attributes as JSON `T
 
 ## SPEC-001.P8 Query fields
 
-Queryable core fields include `:id`, `:title`, `:active`, `:ephemeral`, `:inactive_at`, `:created_at`, `:updated_at`, and attribute paths. The removed `:status` and `:final_at` fields and old status values are not accepted by the core query compiler.
+Queryable core fields include `:id`, `:title`, `:active`, `:inactive_at`, `:created_at`, `:updated_at`, and attribute paths. The removed `:status` and `:final_at` fields and old status values are not accepted by the core query compiler.
 
 ## SPEC-001.P9 Deferred
 
-Attribute-level metadata, per-attribute timestamps, category/outcome taxonomies, and durable audit/tombstone records for ephemeral deletion are not part of the current model.
+Parent-scoped lifecycle rules, attribute-level metadata, per-attribute timestamps, category/outcome taxonomies, and durable audit/tombstone records for deletion are not part of the current model.

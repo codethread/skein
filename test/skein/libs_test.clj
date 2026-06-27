@@ -3,6 +3,7 @@
             [clojure.test :refer [deftest is testing]]
             [skein.libs.alpha :as libs]
             [skein.weaver.config :as daemon-config]
+            [skein.weaver.api :as api]
             [skein.client :as client]
             [skein.weaver.runtime :as runtime]
             [skein.db-test :as db-test]
@@ -132,6 +133,11 @@
             :op :approved-lib-syncs
             :args nil}
            (libs/syncs)))
+    (is (= {:config-dir "/tmp/skein-connected-world"
+            :opts {}
+            :op :reload-config!
+            :args nil}
+           (libs/reload!)))
     (is (= {:config-dir "/tmp/skein-connected-world"
             :opts {}
             :op :use!
@@ -275,6 +281,41 @@
     (.mkdirs (.getParentFile file))
     (spit file content)
     file))
+
+(deftest reload-loads-selected-config-init-file
+  (with-runtime
+    (fn [_ config-dir]
+      (let [result-file (io/file config-dir "reload-result.edn")]
+        (spit (io/file config-dir "init.clj")
+              (str "(spit " (pr-str (str result-file)) " (pr-str :reloaded))\n"
+                   ":reload-return\n"))
+        (let [result (libs/reload!)]
+          (is (= :loaded (:status result)))
+          (is (= (.getCanonicalPath (io/file config-dir "init.clj")) (:file result)))
+          (is (= :reload-return (:return result)))
+          (is (= :reloaded (read-string (slurp result-file)))))))))
+
+(deftest reload-fails-loudly-when-init-file-is-missing
+  (with-runtime
+    (fn [_ _]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"no init\.clj"
+                            (libs/reload!))))))
+
+(deftest reload-clears-prior-runtime-config-state-before-loading
+  (with-runtime
+    (fn [rt config-dir]
+      (write-module-file! config-dir "modules/stale.clj" "(ns demo.stale)\n")
+      (is (= :loaded (:status (libs/use! :stale {:file "modules/stale.clj"}))))
+      (api/register-query rt 'stale [:= [:attr :owner] "stale"])
+      (api/register-view! rt 'stale-view 'demo.stale/view)
+      (spit (io/file config-dir "init.clj")
+            "(require '[skein.weaver.api :as api] '[skein.weaver.runtime :as runtime])\n(api/register-query @runtime/current-runtime 'fresh [:= [:attr :owner] \"fresh\"])\n")
+      (is (= :loaded (:status (libs/reload!))))
+      (is (nil? (libs/use :stale)))
+      (is (nil? (get (api/queries rt) "stale")))
+      (is (= [:= [:attr :owner] "fresh"] (get (api/queries rt) "fresh")))
+      (is (= [] (api/views rt))))))
 
 (deftest use-loads-namespace-from-synced-root-and-records-state
   (with-runtime

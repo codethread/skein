@@ -24,7 +24,6 @@
 (s/def ::cli-attributes (s/map-of ::attr-key ::cli-attr-value))
 (s/def ::attributes (s/nilable map?))
 (s/def ::active boolean?)
-(s/def ::ephemeral boolean?)
 (s/def ::format #{"human" "edn" "json"})
 (s/def ::db non-blank-string?)
 (s/def ::opts (s/keys :req-un [::db ::format]))
@@ -34,5 +33,5 @@
 (s/def ::one-id-command (s/cat :id ::id))
 (s/def ::empty-command (s/cat))
 
-(s/def ::strand-input (s/keys :req-un [::title] :opt-un [::attributes ::active ::ephemeral]))
+(s/def ::strand-input (s/keys :req-un [::title] :opt-un [::attributes ::active]))
 (s/def ::edge-input (s/keys :req-un [::from ::to ::type] :opt-un [::attributes]))

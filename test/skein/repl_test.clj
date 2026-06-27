@@ -84,19 +84,18 @@
       (is (nil? (ns-resolve 'skein.repl 'tasks)))
       (let [design (repl/strand! "Sketch model" {:priority "high"} {:active false})
             docs (repl/strand! "Write docs" {:owner "agent"})
-            scratch (repl/strand! "Scratch" {:kind "scratch"} {:ephemeral true})]
+            scratch (repl/strand! "Scratch" {:kind "scratch"})]
         (is (= {:priority "high"} (:attributes design)))
         (is (false? (:active design)))
-        (is (true? (:ephemeral scratch)))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Inactive ephemeral"
-                              (repl/strand! "Invalid" {} {:active false :ephemeral true})))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"same patch"
-                              (repl/update! (:id docs) {:active false :ephemeral true})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown core strand fields"
+                              (repl/strand! "Invalid" {} {:ephemeral true})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown core strand fields"
+                              (repl/update! (:id docs) {:ephemeral true})))
         (repl/update! (:id docs) {:edges [{:type "depends-on" :to (:id design)}]})
         (is (= {:owner "agent"} (:attributes (repl/strand (:id docs)))))
         (is (= #{(:id design) (:id docs) (:id scratch)} (set (map :id (repl/strands)))))
         (is (= #{(:id docs) (:id scratch)} (set (map :id (repl/ready)))))
-        (is (nil? (repl/update! (:id scratch) {:active false})))
+        (is (= {:burned [(:id scratch)] :count 1} (repl/burn! (:id scratch))))
         (is (nil? (repl/strand (:id scratch))))))))
 
 (deftest stdin-main-evaluates-multiple-forms-in-helper-context

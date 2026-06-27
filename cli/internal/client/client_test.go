@@ -66,13 +66,13 @@ func TestCallSuccessAndDaemonError(t *testing.T) {
 		if got := req["arguments"].(map[string]any)["id"]; got != "t1" {
 			t.Fatalf("bad args: %#v", req["arguments"])
 		}
-		if got := req["options"].(map[string]any)["format"]; got != "json" {
+		if len(req["options"].(map[string]any)) != 0 {
 			t.Fatalf("bad options: %#v", req["options"])
 		}
 		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": true, "result": map[string]any{"id": "t1"}, "error": nil}
 	})
 	writeMeta(t, stateDir, sock, os.Getpid())
-	got, err := New(Config{StateDir: stateDir, Format: "json"}).Call("show", map[string]any{"id": "t1"})
+	got, err := New(Config{StateDir: stateDir}).Call("show", map[string]any{"id": "t1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestCallSuccessAndDaemonError(t *testing.T) {
 		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": false, "result": nil, "error": map[string]any{"type": "domain", "code": "task/not-found", "message": "Task not found", "details": map[string]any{}}}
 	})
 	writeMeta(t, stateDir, sock, os.Getpid())
-	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("show", map[string]any{"id": "missing"})
+	_, err = New(Config{StateDir: stateDir}).Call("show", map[string]any{"id": "missing"})
 	if err == nil || !strings.Contains(err.Error(), "task/not-found") {
 		t.Fatalf("expected weaver error, got %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCallSuccessAndDaemonError(t *testing.T) {
 		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": false, "result": nil, "error": map[string]any{"type": "domain", "code": "domain/error", "message": "Query not found", "details": map[string]any{"canonical-query": "missing", "available": []any{"mine", "ready"}}}}
 	})
 	writeMeta(t, stateDir, sock, os.Getpid())
-	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("list-query", map[string]any{"query": "missing", "params": map[string]string{}})
+	_, err = New(Config{StateDir: stateDir}).Call("list-query", map[string]any{"query": "missing", "params": map[string]string{}})
 	if err == nil || !strings.Contains(err.Error(), "missing") || !strings.Contains(err.Error(), "mine, ready") {
 		t.Fatalf("expected query details, got %v", err)
 	}
@@ -101,17 +101,17 @@ func TestCallSuccessAndDaemonError(t *testing.T) {
 
 func TestMetadataAndTransportFailures(t *testing.T) {
 	stateDir := filepath.Join(t.TempDir(), "state")
-	_, err := New(Config{StateDir: stateDir, Format: "json"}).Call("init", map[string]any{})
+	_, err := New(Config{StateDir: stateDir}).Call("init", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "no running weaver") || !strings.Contains(err.Error(), "weaver start") {
 		t.Fatalf("expected missing weaver startup guidance, got %v", err)
 	}
 	writeMeta(t, stateDir, filepath.Join(stateDir, "weaver.sock"), os.Getpid())
-	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("init", map[string]any{})
+	_, err = New(Config{StateDir: stateDir}).Call("init", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "weaver socket unreachable") {
 		t.Fatalf("expected unreachable socket, got %v", err)
 	}
 	writeMeta(t, stateDir, filepath.Join(stateDir, "weaver.sock"), 999999)
-	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("init", map[string]any{})
+	_, err = New(Config{StateDir: stateDir}).Call("init", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "stale weaver metadata") {
 		t.Fatalf("expected stale metadata, got %v", err)
 	}
@@ -129,7 +129,7 @@ func TestMalformedMetadataAndIdentityMismatch(t *testing.T) {
 	if err := os.WriteFile(metaFile, []byte(`{"protocol_version":1}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("init", map[string]any{})
+	_, err = New(Config{StateDir: stateDir}).Call("init", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "malformed weaver metadata") {
 		t.Fatalf("expected malformed metadata, got %v", err)
 	}
@@ -138,7 +138,7 @@ func TestMalformedMetadataAndIdentityMismatch(t *testing.T) {
 		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": false, "result": nil, "error": map[string]any{"type": "protocol", "code": "protocol/identity-mismatch", "message": "Daemon identity mismatch", "details": map[string]any{}}}
 	})
 	writeMeta(t, stateDir, sock, os.Getpid())
-	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("status", map[string]any{})
+	_, err = New(Config{StateDir: stateDir}).Call("status", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "socket mismatch") {
 		t.Fatalf("expected socket mismatch before connect, got %v", err)
 	}
@@ -155,7 +155,7 @@ func TestMalformedLifecycleResults(t *testing.T) {
 		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": true, "result": map[string]any{"healthy": true}, "error": nil}
 	})
 	writeMeta(t, stateDir, sock, os.Getpid())
-	_, err = New(Config{StateDir: stateDir, Format: "json"}).Call("status", map[string]any{})
+	_, err = New(Config{StateDir: stateDir}).Call("status", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "invalid status result") {
 		t.Fatalf("expected malformed status result, got %v", err)
 	}

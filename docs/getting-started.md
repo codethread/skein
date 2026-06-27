@@ -5,7 +5,7 @@ Use a disposable config-dir for learning and agent work:
 ```sh
 go install ./cli/cmd/strand
 world=$(mktemp -d)
-printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$world/config.json"
+printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$world/config.json"
 ```
 
 Start the weaver in a dedicated terminal:
@@ -14,7 +14,7 @@ Start the weaver in a dedicated terminal:
 strand --config-dir "$world" weaver start
 ```
 
-In another terminal, initialize the Skein store:
+In another terminal, initialize the Skein store and bootstrap missing config files:
 
 ```sh
 strand --config-dir "$world" init
@@ -24,14 +24,14 @@ Add strands:
 
 ```sh
 strand --config-dir "$world" add "Review docs" --attr owner=ct --attr area=docs
-strand --config-dir "$world" add "Scratch idea" --ephemeral true --attr example_category=scratch
+strand --config-dir "$world" add "Scratch idea" --attr ephemeral=true --attr example_category=scratch
 ```
 
-List and inspect ready strands:
+List and inspect ready strands. The CLI always emits JSON:
 
 ```sh
 strand --config-dir "$world" list
-strand --config-dir "$world" --format json ready
+strand --config-dir "$world" ready
 ```
 
 Deactivate a persistent strand:
@@ -40,7 +40,7 @@ Deactivate a persistent strand:
 strand --config-dir "$world" update <strand-id> --active false
 ```
 
-Persistent inactive rows remain visible with `active=false` and `inactive_at` set. Ephemeral active strands are deleted when deactivated.
+Inactive rows remain visible with `active=false` and `inactive_at` set. Use `strand burn <id>` for explicit deletion.
 
 ## REPL workflow
 
@@ -77,35 +77,57 @@ strand --config-dir "$world" ready --query mine
 
 ## Startup config and runtime helpers
 
-Fresh `strand init` creates missing workspace files without overwriting existing files. The generated `init.clj` imports:
+Fresh `strand init` creates missing workspace files without overwriting existing files. The generated `init.clj` is a small resilient bootstrap:
 
 ```clojure
-(require '[skein.libs.alpha :as libs]
-         '[skein.graph.alpha :as graph]
-         '[skein.views.alpha :as views])
+(require '[skein.libs.alpha :as libs])
+
 (libs/sync!)
+(libs/use! :user/config
+  {:file "config.clj"
+   :call 'user.config/install!})
 ```
+
+The generated `config.clj` is where most user config should live:
+
+```clojure
+(ns user.config
+  (:require [skein.graph.alpha :as graph]
+            [skein.views.alpha :as views]))
+
+(defn install!
+  "Install this world's Skein runtime config."
+  []
+  {:installed true})
+```
+
+Edit `config.clj` to register queries, views, and other runtime behavior. `use!` records optional config failures without killing the weaver by default; use raw `require` or `:required? true` for strict fail-fast config.
 
 Built-in `skein.graph.alpha` and `skein.views.alpha` come from the configured Skein checkout. User/community libraries are approved separately in `libs.edn` and synced through `skein.libs.alpha`.
 
-Example view setup in `init.clj`:
+Example `config.clj` view setup:
 
 ```clojure
-(ns my.skein.init
-  (:require [skein.libs.alpha :as libs]
-            [skein.graph.alpha :as graph]
+(ns user.config
+  (:require [skein.graph.alpha :as graph]
             [skein.views.alpha :as views]
             [skein.weaver.api :as api]))
-
-(libs/sync!)
-(api/register-query! 'owned [:= [:attr :owner] "ct"])
 
 (defn owned-view [{:keys [params]}]
   (let [ids (graph/query-ids! 'owned params)]
     {:ids ids
      :strands (graph/strands-by-ids ids)}))
 
-(views/register-view! 'owned-view 'my.skein.init/owned-view)
+(defn install! []
+  (api/register-query! 'owned [:= [:attr :owner] "ct"])
+  (views/register-view! 'owned-view 'user.config/owned-view))
+```
+
+Hot-reload the selected config-dir `init.clj` from a connected REPL:
+
+```clojure
+(require '[skein.libs.alpha :as libs])
+(libs/reload!)
 ```
 
 Use the connected stdin REPL for scripts:

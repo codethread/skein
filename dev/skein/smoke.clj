@@ -77,7 +77,7 @@
 (defn write-client-config! [db-file]
   (let [dir (.toFile (smoke-config-dir db-file))]
     (.mkdirs dir)
-    (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :source checkout-root :format "human"}))
+    (spit (java.io.File. dir "config.json") (json/write-str {:configFormat "alpha" :source checkout-root }))
     (.getCanonicalPath dir)))
 
 (defn write-library-startup-config! [db-file]
@@ -104,7 +104,7 @@
 
 (defn write-client-config-to-dir! [config-dir]
   (.mkdirs (java.io.File. config-dir))
-  (spit (java.io.File. config-dir "config.json") (json/write-str {:configFormat "alpha" :source checkout-root :format "human"}))
+  (spit (java.io.File. config-dir "config.json") (json/write-str {:configFormat "alpha" :source checkout-root }))
   config-dir)
 
 (defn run-cli-config! [config-dir & args]
@@ -133,7 +133,7 @@
          (.destroy process)
          (throw (ex-info "CLI weaver did not become ready" {})))
        (when-not (try
-                   (run-cli-config! config-dir "--format" "json" "weaver" "status")
+                   (run-cli-config! config-dir "weaver" "status")
                    true
                    (catch AssertionError _ false))
          (Thread/sleep 200)
@@ -149,7 +149,7 @@
   (json/read-str s :key-fn keyword))
 
 (defn cli-add-config! [config-dir title & args]
-  (:id (parse-json (apply run-cli-config! config-dir "--format" "json" "add" title args))))
+  (:id (parse-json (apply run-cli-config! config-dir "add" title args))))
 
 (defn cli-add! [db-file title & args]
   (apply cli-add-config! (write-client-config! db-file) title args))
@@ -169,7 +169,7 @@
         start (run-process! "Go CLI weaver start help succeeds" [strand-bin "weaver" "start" "--help"])]
     (doseq [needle ["Available Commands:" "add" "list" "weaver"]]
       (assert-contains root needle "Go CLI root help shows command tree"))
-    (doseq [needle ["add <title>" "--active" "--ephemeral" "--attr"]]
+    (doseq [needle ["add <title>" "--active" "--attr"]]
       (assert-contains add needle "Go CLI command help shows flags"))
     (doseq [needle ["start" "status" "stop"]]
       (assert-contains weaver needle "Go CLI subcommand help shows children"))
@@ -212,12 +212,13 @@
         (run-cli-config! config-dir "init")
         (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
         (assert-file-contents (java.io.File. config-dir "libs.edn") "{:libs {}}\n" "clean bootstrap creates empty libs.edn")
-        (assert-file-contents (java.io.File. config-dir "init.clj") "(require '[skein.libs.alpha :as libs]\n         '[skein.graph.alpha :as graph]\n         '[skein.views.alpha :as views])\n(libs/sync!)\n" "clean bootstrap creates helper init.clj template")
+        (assert-file-contents (java.io.File. config-dir "init.clj") "(require '[skein.libs.alpha :as libs])\n\n(libs/sync!)\n(libs/use! :user/config\n  {:file \"config.clj\"\n   :call 'user.config/install!})\n" "clean bootstrap creates use! init.clj template")
+        (assert-contains (slurp (java.io.File. config-dir "config.clj")) "(ns user.config" "clean bootstrap creates config.clj module")
         (assert (.isDirectory (java.io.File. config-dir "libs")) "clean bootstrap creates libs directory")
         (assert (.isDirectory (java.io.File. config-dir ".git")) "clean bootstrap initializes config-dir git repo")
         (let [strand-id (cli-add-config! config-dir "Bootstrap clean strand" "--attr" "owner=ct")]
           (assert= "Bootstrap clean strand"
-                   (:title (parse-json (run-cli-config! config-dir "--format" "json" "show" strand-id)))
+                   (:title (parse-json (run-cli-config! config-dir "show" strand-id)))
                    "clean bootstrap can create and show strands after init"))
         (finally
           (stop-cli-daemon-config! config-dir daemon)
@@ -228,7 +229,7 @@
         config-path (java.io.File. config-dir "config.json")
         libs-path (java.io.File. config-dir "libs.edn")
         init-path (java.io.File. config-dir "init.clj")
-        original-config (str "{\"configFormat\":\"alpha\",\"source\":\"" checkout-root "\",\"format\":\"json\"}\n")
+        original-config (str "{\"configFormat\":\"alpha\",\"source\":\"" checkout-root "\"}\n")
         original-libs "{:libs {}}\n;; user comment\n"
         original-init "(require '[skein.weaver.api :as api])\n(api/register-query! 'dirty [:= [:attr :owner] \"dirty\"])\n"]
     (delete-tree! (smoke-config-dir-named (str db-file ".bootstrap-dirty")))
@@ -299,27 +300,24 @@
               (run-cli! db-file "update" schema "--edge" (str "depends-on:" design))
               (run-cli! db-file "update" docs "--edge" (str "depends-on:" schema))
               (assert= ["Create SQLite schema"]
-                       (titles (parse-json (run-cli! db-file "--format" "json" "ready")))
+                       (titles (parse-json (run-cli! db-file "ready")))
                        "Go CLI ready sees strands with inactive dependencies")
               (run-cli! db-file "update" schema "--active=false")
               (assert= ["Write usage notes"]
-                       (titles (parse-json (run-cli! db-file "--format" "json" "ready")))
+                       (titles (parse-json (run-cli! db-file "ready")))
                        "Go CLI update active changes readiness")
-              (let [inactive-schema (parse-json (run-cli! db-file "--format" "json" "show" schema))]
+              (let [inactive-schema (parse-json (run-cli! db-file "show" schema))]
                 (assert= false
                          (:active inactive-schema)
                          "Go CLI show exposes active lifecycle")
                 (assert (:inactive_at inactive-schema)
                         (str "Go CLI show exposes inactive_at for inactive persistent strands\n" inactive-schema)))
-              (let [scratch (cli-add! db-file "Temporary scratch strand" "--ephemeral=true")]
-                (assert= true
-                         (:ephemeral (parse-json (run-cli! db-file "--format" "json" "show" scratch)))
-                         "Go CLI show exposes ephemeral retention")
-                (run-cli! db-file "update" scratch "--active=false")
+              (let [scratch (cli-add! db-file "Temporary scratch strand" "--attr" "ephemeral=true")]
+                (run-cli! db-file "burn" scratch)
                 (assert (not (some #{"Temporary scratch strand"}
-                                   (titles (parse-json (run-cli! db-file "--format" "json" "list")))))
-                        "Go CLI deactivating an ephemeral strand deletes its row"))
-              (let [status (parse-json (run-cli! db-file "--format" "json" "weaver" "status"))]
+                                   (titles (parse-json (run-cli! db-file "list")))))
+                        "Go CLI burn deletes a scratch strand row"))
+              (let [status (parse-json (run-cli! db-file "weaver" "status"))]
                 (assert= true
                          (:healthy status)
                          "Go CLI weaver status checks socket health")
@@ -339,7 +337,7 @@
                   (assert (not (clojure.string/includes? stdin-output "\"result\""))
                           (str "Go CLI weaver repl --stdin must not wrap output in a CLI response envelope\n" stdin-output))
                   (assert= ["Write usage notes"]
-                           (titles (parse-json (run-cli! db-file "--format" "json" "list" "--query" "agent-owned")))
+                           (titles (parse-json (run-cli! db-file "list" "--query" "agent-owned")))
                            "Go CLI list --query consumes weaver query state from outside the repo"))))
         (finally
           (stop-cli-daemon! db-file weaver))))
@@ -371,11 +369,10 @@
             (assert= false (:active inactive-b) "skein.repl update! updates active")
             (assert (:inactive_at inactive-b)
                     (str "skein.repl exposes inactive_at for inactive persistent strands\n" inactive-b)))
-          (let [scratch (:id (repl/strand! "Ephemeral REPL strand" {} {:ephemeral true}))]
-            (assert= true (:ephemeral (repl/strand scratch)) "skein.repl exposes ephemeral retention")
-            (repl/update! scratch {:active false})
+          (let [scratch (:id (repl/strand! "Scratch REPL strand" {:ephemeral "true"}))]
+            (repl/burn! scratch)
             (assert (nil? (repl/strand scratch))
-                    "skein.repl deactivating an ephemeral strand deletes its row")))
+                    "skein.repl burn! deletes a scratch strand row")))
         (finally
           (runtime/stop! runtime))))
     (finally

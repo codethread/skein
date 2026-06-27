@@ -1,6 +1,6 @@
 # Skein 🧶
 
-Skein is a small weaver-backed strand graph for coding agents and humans. It stores strands locally in SQLite, exposes a thin `strand` CLI for scripts, and keeps richer customization in trusted weaver config and Clojure REPL workflows.
+Skein is a small weaver-backed strand graph for coding agents and humans. It stores strands locally in SQLite, exposes a thin JSON-only `strand` CLI for scripts, and keeps richer customization in trusted weaver config and Clojure REPL workflows.
 
 Use it to:
 
@@ -17,7 +17,7 @@ Install the `strand` command from this checkout and point your default Skein wor
 go install ./cli/cmd/strand
 SKEIN_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/skein"
 mkdir -p "$SKEIN_CONFIG"
-printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$SKEIN_CONFIG/config.json"
+printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$SKEIN_CONFIG/config.json"
 ```
 
 Start the weaver in one terminal:
@@ -32,17 +32,17 @@ Then use it from another terminal:
 strand init
 strand add "Sketch strand model" --active false --attr example_outcome=sketched
 strand add "Write docs" --attr owner=agent
-strand --format json list
-strand --format json ready
+strand list
+strand ready
 ```
 
-However the `repl` is where skein really shines (see [docs](./docs/getting-started.md) for more)
+The CLI emits JSON for all strand/weaver commands. The `repl` is where Skein really shines (see [docs](./docs/getting-started.md) for more):
 
 ```sh
 strand weaver repl
 ```
 
-When finished
+When finished:
 
 ```sh
 strand weaver stop
@@ -54,7 +54,7 @@ For agent/testing work, prefer an explicit disposable world:
 
 ```sh
 world=$(mktemp -d)
-printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$world/config.json"
+printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$world/config.json"
 ```
 
 Start the weaver in one terminal:
@@ -76,17 +76,19 @@ Explicit `--config-dir <dir>` worlds keep config in `<dir>/config.json`, runtime
 
 Skein stores:
 
-- strands with generated text ids, titles, `active`, `ephemeral`, `inactive_at`, timestamps, and JSON attributes;
+- strands with generated text ids, titles, `active`, `inactive_at`, timestamps, and JSON attributes;
 - strand edges with a type, direction, and JSON attributes;
 - `depends-on` edges used to calculate readiness.
 
-`active` is the only core lifecycle concept. Inactive persistent strands are retained with `inactive_at`; ephemeral strands are deleted when deactivated. Outcomes or categories are user attributes chosen by your world, not built-in fields.
+`active` is the only core lifecycle concept. Inactive strands are retained with `inactive_at`; destructive cleanup uses explicit `burn`. Outcomes, categories, or ephemeral/scratch concepts are user attributes chosen by your world, not built-in fields.
 
 ## Runtime customization
 
-Named queries, weaver-memory views, and runtime libraries are loaded into the selected Skein world, then consumed by helpers or by small CLI commands such as `list --query <name>`. Fresh `strand init` startup config requires the built-in `skein.libs.alpha`, `skein.graph.alpha`, and `skein.views.alpha` helper namespaces as editable examples.
+Named queries, weaver-memory views, and runtime libraries are loaded into the selected Skein world, then consumed by helpers or by small CLI commands such as `list --query <name>`.
 
-Use `strand weaver repl` for trusted interactive work.
+Fresh `strand init` startup config uses `skein.libs.alpha/use!` to load `config.clj` from the selected config-dir. That keeps `init.clj` as a small resilient bootstrap while the real user config lives in a normal editable Clojure module. `use!` records load/call failures instead of killing the weaver unless you opt into strict `:required? true` behavior.
+
+Use `strand weaver repl` for trusted interactive work and `(skein.libs.alpha/reload!)` to hot-reload `init.clj`.
 
 ## Documentation
 

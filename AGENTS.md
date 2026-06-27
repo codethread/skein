@@ -25,11 +25,11 @@ Common commands:
 go install ./cli/cmd/strand
 SKEIN_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/skein"
 mkdir -p "$SKEIN_CONFIG"
-printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$SKEIN_CONFIG/config.json"
+printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$SKEIN_CONFIG/config.json"
 
 strand weaver start
 strand init
-strand --format json list
+strand list
 strand weaver status
 strand weaver stop
 clojure -M:test
@@ -44,14 +44,14 @@ Agents must prefer explicit disposable `--config-dir` worlds. Never use or mutat
 ```sh
 go install ./cli/cmd/strand
 world=$(mktemp -d)
-printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$world/config.json"
+printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$world/config.json"
 
 strand --config-dir "$world" weaver start
 strand --config-dir "$world" init
 design=$(strand --config-dir "$world" add "Sketch model" --active false --attr priority=high)
 docs=$(strand --config-dir "$world" add "Write docs" --attr owner=agent)
 strand --config-dir "$world" update "$docs" --edge depends-on:$design
-strand --config-dir "$world" --format json ready
+strand --config-dir "$world" ready
 strand --config-dir "$world" weaver stop
 ```
 

@@ -24,7 +24,7 @@
 (deftest init-creates-strand-schema
   (with-db
     (fn [ds]
-      (is (= #{"id" "title" "active" "ephemeral" "attributes" "created_at" "updated_at" "inactive_at"}
+      (is (= #{"id" "title" "active" "attributes" "created_at" "updated_at" "inactive_at"}
              (set (map :name (db/execute! ds ["PRAGMA table_info(strands)"])))))
       (is (= #{"from_strand_id" "to_strand_id" "edge_type" "attributes"}
              (set (map :name (db/execute! ds ["PRAGMA table_info(strand_edges)"])))))
@@ -36,16 +36,16 @@
       (let [strand (-> (db/add-strand! ds {:title "Sketch model" :attributes {:priority "high"}})
                        (update :attributes db/<-json))]
         (is (re-matches #"[a-z0-9]+" (:id strand)))
-        (is (= {:title "Sketch model" :active true :ephemeral false :attributes {:priority "high"} :inactive_at nil}
-               (select-keys strand [:title :active :ephemeral :attributes :inactive_at]))))
+        (is (= {:title "Sketch model" :active true :attributes {:priority "high"} :inactive_at nil}
+               (select-keys strand [:title :active :attributes :inactive_at]))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Removed lifecycle fields"
                             (db/add-strand! ds {:title "Old" :status "todo"})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Removed lifecycle fields"
                             (db/add-strand! ds {:title "Old" :final_at "now"})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Invalid strand"
                             (db/add-strand! ds {:title "Bad" :active "true"})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Inactive ephemeral"
-                            (db/add-strand! ds {:title "Bad" :active false :ephemeral true}))))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown core strand fields"
+                            (db/add-strand! ds {:title "Bad" :ephemeral true}))))))
 
 (deftest active-readiness-and-reactivation
   (with-db
@@ -65,32 +65,41 @@
           (is (nil? (:inactive_at reactivated))))
         (is (= [schema] (mapv :id (db/ready-strands ds))))))))
 
-(deftest ephemeral-retention-and-invalid-updates
+(deftest removed-lifecycle-fields-are-rejected
   (with-db
     (fn [ds]
-      (let [ephemeral (:id (db/add-strand! ds {:title "Scratch" :ephemeral true}))
-            dependent (:id (db/add-strand! ds {:title "Dependent"}))]
-        (db/add-edge! ds {:from dependent :to ephemeral :type "depends-on" :attributes {}})
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Cannot change active and ephemeral"
-                              (db/update-strand! ds dependent {:active false :ephemeral true})))
-        (db/update-strand! ds dependent {:active false})
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Inactive ephemeral"
-                              (db/update-strand! ds dependent {:ephemeral true})))
+      (let [strand (:id (db/add-strand! ds {:title "Strand"}))]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown core strand fields"
+                              (db/update-strand! ds strand {:ephemeral true})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Removed lifecycle fields"
-                              (db/update-strand! ds dependent {:final_at "now"})))
-        (is (nil? (db/update-strand! ds ephemeral {:active false})))
-        (is (nil? (db/get-strand ds ephemeral)))
-        (is (empty? (db/execute! ds ["SELECT 1 FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" dependent dependent])))))))
+                              (db/update-strand! ds strand {:final_at "now"})))))))
 
-(deftest query-fields-use-active-ephemeral-inactive-at
+(deftest burn-deletes-strands-and-incident-edges
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            c (:id (db/add-strand! ds {:title "C"}))]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {}})
+        (db/add-edge! ds {:from c :to b :type "related-to" :attributes {}})
+        (is (= {:burned [b] :count 1} (db/burn-by-id! ds b)))
+        (is (nil? (db/get-strand ds b)))
+        (is (= #{a c} (set (map :id (db/all-strands ds)))))
+        (is (empty? (db/execute! ds ["SELECT 1 FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" b b])))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Strand ids not found"
+                              (db/burn-by-ids! ds [b])))))))
+
+(deftest query-fields-use-active-inactive-at-and-attributes
   (with-db
     (fn [ds]
       (let [agent (:id (db/add-strand! ds {:title "Agent" :attributes {:owner "agent"}}))
             _human (db/add-strand! ds {:title "Human" :attributes {:owner "human"}})
-            scratch (:id (db/add-strand! ds {:title "Scratch" :ephemeral true}))]
+            scratch (:id (db/add-strand! ds {:title "Scratch" :attributes {:ephemeral "true"}}))]
         (is (= [agent]
                (mapv :id (db/all-strands ds [:and [:= :active true] [:= [:attr :owner] "agent"]]))))
-        (is (= [scratch] (mapv :id (db/all-strands ds [:= :ephemeral true]))))
+        (is (= [scratch] (mapv :id (db/all-strands ds [:= [:attr :ephemeral] "true"]))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown query field"
+                              (query/compile-query [:= :ephemeral true] {})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown query field"
                               (query/compile-query [:= :status "todo"] {})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown query field"

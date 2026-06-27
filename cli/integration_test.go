@@ -50,8 +50,11 @@ func TestInitBootstrapsConfigDirWorkspaceAndStartsWeaver(t *testing.T) {
 	if _, err := os.Stat(initPath); err != nil {
 		t.Fatalf("expected init.clj bootstrap: %v", err)
 	}
-	if got := string(mustReadFile(t, initPath)); got != "(require '[skein.libs.alpha :as libs]\n         '[skein.graph.alpha :as graph]\n         '[skein.views.alpha :as views])\n(libs/sync!)\n" {
+	if got := string(mustReadFile(t, initPath)); got != "(require '[skein.libs.alpha :as libs])\n\n(libs/sync!)\n(libs/use! :user/config\n  {:file \"config.clj\"\n   :call 'user.config/install!})\n" {
 		t.Fatalf("unexpected init.clj bootstrap contents: %q", got)
+	}
+	if got := string(mustReadFile(t, filepath.Join(cfg, "config.clj"))); !strings.Contains(got, "(ns user.config") {
+		t.Fatalf("unexpected config.clj bootstrap contents: %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(cfg, ".git")); err != nil {
 		t.Fatalf("expected .git bootstrap: %v", err)
@@ -90,7 +93,7 @@ func TestGoWeaverLifecycleCommands(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = weaver.Process.Kill(); _, _ = weaver.Process.Wait() })
 	waitForStatus(t, bin, dir, runDir, &weaverOut)
-	out, err := outputStrand(bin, dir, runDir, "--format", "json", "weaver", "status")
+	out, err := outputStrand(bin, dir, runDir, "weaver", "status")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,15 +140,15 @@ func TestTaskAndQueryCommandsRunOutsideCheckoutWithoutSource(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = weaver.Process.Kill(); _, _ = weaver.Process.Wait() })
 	waitForWeaverAndInit(t, bin, dir, runDir, &weaverOut)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","format":"json"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := outputStrand(bin, dir, runDir, "--format", "json", "weaver", "status"); err != nil || !strings.Contains(out, `"healthy":true`) {
+	if out, err := outputStrand(bin, dir, runDir, "weaver", "status"); err != nil || !strings.Contains(out, `"healthy":true`) {
 		t.Fatalf("status after source removal output/error = %q/%v", out, err)
 	}
 	design := addJSON(t, bin, dir, runDir, "Design", "owner=agent")
 	docs := addJSON(t, bin, dir, runDir, "Docs", "owner=agent")
-	if out, err := outputStrand(bin, dir, runDir, "--format", "json", "show", docs); err != nil || !strings.Contains(out, `"title":"Docs"`) {
+	if out, err := outputStrand(bin, dir, runDir, "show", docs); err != nil || !strings.Contains(out, `"title":"Docs"`) {
 		t.Fatalf("show output/error = %q/%v", out, err)
 	}
 	if err := runStrand(bin, dir, runDir, "update", docs, "--edge", "depends-on:"+design, "--attr", "phase=write"); err != nil {
@@ -154,16 +157,16 @@ func TestTaskAndQueryCommandsRunOutsideCheckoutWithoutSource(t *testing.T) {
 	if err := runStrand(bin, dir, runDir, "update", design, "--active", "false"); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := outputStrand(bin, dir, runDir, "--format", "json", "list", "--active", "false"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
+	if out, err := outputStrand(bin, dir, runDir, "list", "--active", "false"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
 		t.Fatalf("list active=false output/error = %q/%v", out, err)
 	}
-	if out, err := outputStrand(bin, dir, runDir, "--format", "json", "list", "--query", "by-owner", "--param", "owner=agent"); err != nil || !strings.Contains(out, docs) || !strings.Contains(out, design) {
+	if out, err := outputStrand(bin, dir, runDir, "list", "--query", "by-owner", "--param", "owner=agent"); err != nil || !strings.Contains(out, docs) || !strings.Contains(out, design) {
 		t.Fatalf("list query output/error = %q/%v", out, err)
 	}
-	if out, err := outputStrand(bin, dir, runDir, "--format", "json", "list", "--query", "by-owner", "--param", "owner=agent", "--active", "false"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
+	if out, err := outputStrand(bin, dir, runDir, "list", "--query", "by-owner", "--param", "owner=agent", "--active", "false"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
 		t.Fatalf("list query active=false output/error = %q/%v", out, err)
 	}
-	if out, err := outputStrand(bin, dir, runDir, "--format", "json", "ready", "--query", "by-owner", "--param", "owner=agent"); err != nil || !strings.Contains(out, docs) || strings.Contains(out, design) {
+	if out, err := outputStrand(bin, dir, runDir, "ready", "--query", "by-owner", "--param", "owner=agent"); err != nil || !strings.Contains(out, docs) || strings.Contains(out, design) {
 		t.Fatalf("ready query output/error = %q/%v", out, err)
 	}
 	if err := runStrand(bin, dir, runDir, "weaver", "stop"); err != nil {
@@ -208,7 +211,7 @@ func mustReadFile(t *testing.T, path string) []byte {
 
 func addJSON(t *testing.T, bin, configDir, cwd, title, attr string) string {
 	t.Helper()
-	out, err := outputStrand(bin, configDir, cwd, "--format", "json", "add", title, "--attr", attr)
+	out, err := outputStrand(bin, configDir, cwd, "add", title, "--attr", attr)
 	if err != nil {
 		t.Fatalf("add %s: %v\n%s", title, err, out)
 	}
@@ -229,7 +232,7 @@ func writeClientConfig(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","source":`+quote(source)+`,"format":"human"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha","source":`+quote(source)+`}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 }

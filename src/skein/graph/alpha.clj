@@ -17,6 +17,20 @@
   [query params]
   (call-daemon :query-ids query params))
 
+(defn burn-by-ids!
+  "Burn strands by id through the selected weaver runtime.
+
+  Burning physically deletes each strand and its incident edges. Missing ids fail
+  loudly in the weaver operation. Routes directly through the weaver runtime or
+  the connected helper REPL world."
+  [ids]
+  (call-daemon :burn-by-ids ids))
+
+(defn burn-by-id!
+  "Burn one strand by id through the selected weaver runtime."
+  [id]
+  (call-daemon :burn-by-id id))
+
 (defn strands-by-ids
   "Hydrate strands by id through the selected weaver runtime.
 

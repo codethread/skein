@@ -7,7 +7,6 @@
   {:id "t.id"
    :title "t.title"
    :active "t.active"
-   :ephemeral "t.ephemeral"
    :created_at "t.created_at"
    :updated_at "t.updated_at"
    :inactive_at "t.inactive_at"})

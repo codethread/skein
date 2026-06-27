@@ -19,7 +19,6 @@ const protocolVersion = 1
 type Config struct {
 	ConfigDir string
 	StateDir  string
-	Format    string
 }
 
 type Metadata struct {
@@ -120,7 +119,7 @@ func (c *SocketClient) Call(operation string, arguments map[string]any) (any, er
 		return nil, err
 	}
 	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
-	req := map[string]any{"protocol_version": protocolVersion, "request_id": requestID, "weaver_id": meta.DaemonID, "operation": operation, "arguments": arguments, "options": map[string]any{"format": c.Config.Format}}
+	req := map[string]any{"protocol_version": protocolVersion, "request_id": requestID, "weaver_id": meta.DaemonID, "operation": operation, "arguments": arguments, "options": map[string]any{}}
 	ctx, cancel := context.WithTimeout(context.Background(), c.DialTimeout)
 	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", meta.SocketPath)
