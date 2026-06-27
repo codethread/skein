@@ -254,11 +254,12 @@
 
 (defn smoke-startup-transformations! [db-file]
   (let [config-dir (bootstrap-config-dir db-file "startup-transform")
+        init-path (java.io.File. config-dir "init.clj")
         event-marker (java.io.File. config-dir "event-handler.txt")]
     (delete-tree! (smoke-config-dir-named (str db-file ".startup-transform")))
     (write-client-config-to-dir! config-dir)
     (spit (java.io.File. config-dir "libs.edn") "{:libs {}}\n")
-    (spit (java.io.File. config-dir "init.clj")
+    (spit init-path
           (str "(ns smoke.startup\n  (:require [clojure.spec.alpha :as s]\n            [skein.libs.alpha :as libs]\n            [skein.events.alpha :as events]\n            [skein.graph.alpha :as graph]\n            [skein.views.alpha :as views]\n            [skein.weaver.api :as api]))\n(libs/sync!)\n(api/register-query! 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(s/def ::title string?)\n(s/def ::review-input (s/keys :req-un [::title]))\n(defn review-pattern [{:keys [input]}]\n  (let [title (:title input)]\n    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n(api/register-pattern! 'review-task 'smoke.startup/review-pattern ::review-input)\n(def event-marker " (pr-str (.getCanonicalPath event-marker)) ")\n(defn record-added! [event]\n  (spit event-marker (:title (:strand event))))\n(defn smoke-owned-view [{:keys [params]}]\n  (let [ids (graph/query-ids! 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :strands (graph/strands-by-ids ids)}))\n(views/register-view! 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n(events/register! :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})\n"))
     (let [daemon (start-cli-daemon-config! config-dir)]
       (try
@@ -284,7 +285,31 @@
             (assert= "review-task" (:name explanation) "pattern explain exposes registered pattern")
             (assert= ["Patterned smoke" "Review: Patterned smoke"]
                      (titles (:created woven))
-                     "weave applies startup pattern through JSON CLI")))
+                     "weave applies startup pattern through JSON CLI"))
+          (let [runtime-woven (edn/read-string
+                               (run-cli-config-stdin!
+                                config-dir
+                                "(do\n  (defpattern! 'runtime-review 'smoke.startup/review-pattern :smoke.startup/review-input)\n  (weave! 'runtime-review {:title \"Runtime patterned smoke\"}))\n"
+                                "weaver" "repl" "--stdin"))]
+            (assert= ["Runtime patterned smoke" "Review: Runtime patterned smoke"]
+                     (titles (:created runtime-woven))
+                     "running weaver accepts runtime pattern registration through connected REPL"))
+          (spit init-path
+                (clojure.string/replace
+                 (slurp init-path)
+                 "(api/register-pattern! 'review-task 'smoke.startup/review-pattern ::review-input)\n"
+                 "(api/register-pattern! 'review-task 'smoke.startup/review-pattern ::review-input)\n(api/register-pattern! 'reload-review 'smoke.startup/review-pattern ::review-input)\n"))
+          (let [reload-payload (edn/read-string
+                                (run-cli-config-stdin!
+                                 config-dir
+                                 "(do\n  (require '[skein.libs.alpha :as libs])\n  (libs/reload!)\n  {:patterns (patterns)\n   :woven (weave! 'reload-review {:title \"Reload patterned smoke\"})})\n"
+                                 "weaver" "repl" "--stdin"))]
+            (assert= ["reload-review" "review-task"]
+                     (mapv :name (:patterns reload-payload))
+                     "config reload refreshes pattern registry with new config-defined pattern")
+            (assert= ["Reload patterned smoke" "Review: Reload patterned smoke"]
+                     (titles (get-in reload-payload [:woven :created]))
+                     "weave applies pattern added by config reload")))
         (finally
           (stop-cli-daemon-config! config-dir daemon)
           (delete-tree! (smoke-config-dir-named (str db-file ".startup-transform"))))))))
