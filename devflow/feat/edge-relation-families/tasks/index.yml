@@ -1,0 +1,46 @@
+tasks:
+  - id: 1
+    description: convert core lifecycle to state
+    task_file: tasks/001-convert-core-lifecycle-to-state.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: update CLI and socket state surface
+    task_file: tasks/002-update-cli-and-socket-state-surface.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: implement relation declarations and cycle checks
+    task_file: tasks/003-implement-relation-declarations-and-cycle-checks.md
+    status: pending
+    blocked_by: [1]
+  - id: 4
+    description: add edge predicates and relation traversal
+    task_file: tasks/004-add-edge-predicates-and-relation-traversal.md
+    status: pending
+    blocked_by: [3]
+  - id: 5
+    description: implement core supersession transaction
+    task_file: tasks/005-implement-core-supersession-transaction.md
+    status: pending
+    blocked_by: [3]
+  - id: 6
+    description: expose supersession through helpers and CLI
+    task_file: tasks/006-expose-supersession-through-helpers-and-cli.md
+    status: pending
+    blocked_by: [2, 5]
+  - id: 7
+    description: add relation catalog and align active feature docs
+    task_file: tasks/007-add-relation-catalog-and-align-active-feature-docs.md
+    status: pending
+    blocked_by: [3]
+  - id: 9
+    description: adapt batch graph upsert
+    task_file: tasks/009-adapt-batch-graph-upsert.md
+    status: pending
+    blocked_by: [2, 3]
+  - id: 8
+    description: sweep docs smoke and final validation
+    task_file: tasks/008-sweep-docs-smoke-and-final-validation.md
+    status: pending
+    blocked_by: [2, 4, 6, 7, 9]

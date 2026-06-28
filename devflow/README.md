@@ -16,6 +16,7 @@ Root specs are canonical for shipped behavior:
 ## Active features
 
 - `batch-graph-upsert` — proposed transactional batch graph mutation primitive with local refs.
+- `edge-relation-families` — proposed state lifecycle model, operational relation families, core supersession, edge predicates, and relation-scoped traversal.
 - `library-author-testing-support` — proposed library-author testing helpers and weaver storage support.
 
 ## Archived features
