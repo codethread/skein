@@ -15,7 +15,7 @@ Supersession exposes the weakness most clearly. If replacement is modeled as an 
 
 ## ERF-PROP-001.P2 Goals
 
-- **ERF-PROP-001.G1:** Replace `active`/`inactive_at` with an explicit `state` lifecycle field: `active`, `closed`, or `replaced`.
+- **ERF-PROP-001.G1:** Replace legacy boolean lifecycle columns with an explicit `state` lifecycle field: `active`, `closed`, or `replaced`.
 - **ERF-PROP-001.G2:** Replace the closed edge-type vocabulary with open, valid relation-name strings.
 - **ERF-PROP-001.G3:** Make acyclicity a durable per-relation declaration, not a global edge invariant and not a mutable runtime registry.
 - **ERF-PROP-001.G4:** Ship tested operational graph batteries for `depends-on`, `parent-of`, and `supersedes`.
@@ -27,7 +27,7 @@ Supersession exposes the weakness most clearly. If replacement is modeled as an 
 
 ## ERF-PROP-001.P3 Non-goals
 
-- **ERF-PROP-001.NG1:** Do not provide live migration for existing databases or compatibility aliases for `active`, `inactive_at`, `--active`, or old query fields.
+- **ERF-PROP-001.NG1:** Do not provide live migration for existing databases or compatibility aliases for legacy boolean lifecycle columns, legacy boolean lifecycle flag, or old query fields.
 - **ERF-PROP-001.NG2:** Do not add a `replaced_by` column or any duplicated replacement pointer.
 - **ERF-PROP-001.NG3:** Do not add a runtime-configurable relation semantics registry.
 - **ERF-PROP-001.NG4:** Do not add workflow-specific commands or core engine semantics for duplicates, tracking, gates, verification, or arbitrary annotation relations.
@@ -37,7 +37,7 @@ Supersession exposes the weakness most clearly. If replacement is modeled as an 
 ## ERF-PROP-001.P4 Proposed scope
 
 - **ERF-PROP-001.S1:** Change strand lifecycle to `state` with values `active`, `closed`, and `replaced`. `state="active"` is the only lifecycle state that participates in readiness and blocking; `state="replaced"` is reserved for the supersession transaction.
-- **ERF-PROP-001.S2:** Remove the public `active` field, `inactive_at` field, `--active` CLI flag, `:active` query field, and related compatibility behavior.
+- **ERF-PROP-001.S2:** Remove the public `active` field, `legacy inactive timestamp column` field, legacy boolean lifecycle CLI flag, legacy boolean lifecycle query field, and related compatibility behavior.
 - **ERF-PROP-001.S3:** Replace the shipped edge-type enum with valid relation names using a portable lowercase grammar (`[a-z0-9][a-z0-9._/-]*`) shared by Clojure and CLI entry points.
 - **ERF-PROP-001.S4:** Add durable acyclic relation declarations in the weaver-owned SQLite world schema. Absence from that schema means annotation-by-default, not rejection.
 - **ERF-PROP-001.S5:** Bootstrap `depends-on`, `parent-of`, and `supersedes` as shipped acyclic declarations during storage initialization. Existing incompatible databases fail loudly; users must recreate alpha worlds.

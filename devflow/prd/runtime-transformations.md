@@ -35,7 +35,7 @@ A user tracks repository ownership in strand attributes:
  'ready-for-repo
  '{:where [:and
            [:= [:attr :repo] [:param :repo]]
-           [:= :active true]]})
+           [:= :state "active"]]})
 ```
 
 The CLI can consume the registered query while the same weaver is running:
@@ -58,7 +58,7 @@ Assume a world uses user attributes such as `example_category="feature"` and `pa
  'active-owned
  '{:where [:and
            [:= [:attr :repo] [:param :repo]]
-           [:= :active true]]})
+           [:= :state "active"]]})
 
 (defn active-feature-dags [{:keys [params]}]
   (let [seed-ids (graph/query-ids! 'active-owned params)

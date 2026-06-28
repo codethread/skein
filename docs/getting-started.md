@@ -37,10 +37,10 @@ strand --config-dir "$world" ready
 Deactivate a persistent strand:
 
 ```sh
-strand --config-dir "$world" update <strand-id> --active false
+strand --config-dir "$world" update <strand-id> --state closed
 ```
 
-Inactive rows remain visible with `active=false` and `inactive_at` set. Use `strand burn <id>` for explicit deletion.
+Closed rows remain visible with `state="closed"`. Use `strand burn <id>` for explicit deletion.
 
 ## REPL workflow
 
@@ -56,7 +56,7 @@ Useful forms:
 (init!)
 (def s (:id (strand! "My first REPL strand" {:owner "ct"})))
 (strand s)
-(update! s {:active false})
+(update! s {:state "closed"})
 (strands)
 (ready)
 ```

@@ -54,6 +54,23 @@
         (is (= [(:id task)] (mapv :id (client/list db-file))))
         (is (= [(:id task)] (mapv :id (client/ready db-file))))))))
 
+(deftest client-supersede-routes-to-weaver-and-preserves-domain-errors
+  (with-runtime
+    (fn [_ db-file]
+      (client/init db-file)
+      (let [old (client/add db-file {:title "Old"})
+            replacement (client/add db-file {:title "New"})
+            result (client/supersede db-file (:id old) (:id replacement))]
+        (is (= "replaced" (get-in result [:old :after :state])))
+        (is (= [(:id replacement) (:id old) "supersedes"]
+               ((juxt :from_strand_id :to_strand_id :edge_type) (:supersedes-edge result))))
+        (try
+          (client/supersede db-file (:id old) (:id replacement))
+          (is false "expected supersession domain error")
+          (catch clojure.lang.ExceptionInfo e
+            (is (= "Weaver API call failed" (ex-message e)))
+            (is (= "Old strand is already replaced" (:weaver-message (ex-data e))))))))))
+
 (deftest client-query-registry-calls-share-daemon-state
   (with-runtime
     (fn [_ db-file]
@@ -62,9 +79,9 @@
         (is (= {"mine" query-def} (client/register-query db-file :mine query-def)))
         (is (= query-def (client/resolve-query db-file 'mine)))
         (is (= {"mine" query-def} (client/queries db-file)))
-        (is (= {"done" [:= :active false]}
-               (client/load-queries db-file {'done [:= :active false]})))
-        (is (= {"done" [:= :active false]
+        (is (= {"done" [:= :state "closed"]}
+               (client/load-queries db-file {'done [:= :state "closed"]})))
+        (is (= {"done" [:= :state "closed"]
                 "mine" query-def}
                (client/queries db-file)))))))
 
@@ -98,7 +115,7 @@
           (is (= "Query not found" (:weaver-message (ex-data e))))
           (is (= :missing (get-in (ex-data e) [:weaver-data :query])))))
       (try
-        (client/load-queries db-file {"mine" [:= :active true]})
+        (client/load-queries db-file {"mine" [:= :state "active"]})
         (is false "expected invalid query name error")
         (catch clojure.lang.ExceptionInfo e
           (is (= "Weaver API call failed" (ex-message e)))

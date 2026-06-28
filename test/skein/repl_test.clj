@@ -82,19 +82,27 @@
       (is (nil? (ns-resolve 'skein.repl 'task!)))
       (is (nil? (ns-resolve 'skein.repl 'task)))
       (is (nil? (ns-resolve 'skein.repl 'tasks)))
-      (let [design (repl/strand! "Sketch model" {:priority "high"} {:active false})
+      (let [design (repl/strand! "Sketch model" {:priority "high"} {:state "closed"})
             docs (repl/strand! "Write docs" {:owner "agent"})
-            scratch (repl/strand! "Scratch" {:kind "scratch"})]
+            scratch (repl/strand! "Scratch" {:kind "scratch"})
+            old (repl/strand! "Old impl")
+            replacement (repl/strand! "New impl")]
         (is (= {:priority "high"} (:attributes design)))
-        (is (false? (:active design)))
+        (is (= "closed" (:state design)))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown core strand fields"
                               (repl/strand! "Invalid" {} {:priority "high"})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown strand update fields"
                               (repl/update! (:id docs) {:priority "high"})))
         (repl/update! (:id docs) {:edges [{:type "depends-on" :to (:id design)}]})
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"active or closed"
+                              (repl/update! (:id docs) {:state "replaced"})))
         (is (= {:owner "agent"} (:attributes (repl/strand (:id docs)))))
-        (is (= #{(:id design) (:id docs) (:id scratch)} (set (map :id (repl/strands)))))
-        (is (= #{(:id docs) (:id scratch)} (set (map :id (repl/ready)))))
+        (is (= #{(:id design) (:id docs) (:id scratch) (:id old) (:id replacement)} (set (map :id (repl/strands)))))
+        (is (= #{(:id docs) (:id scratch) (:id old) (:id replacement)} (set (map :id (repl/ready)))))
+        (let [result (repl/supersede! (:id old) (:id replacement))]
+          (is (= "replaced" (get-in result [:old :after :state])))
+          (is (= [(:id replacement) (:id old) "supersedes"]
+                 ((juxt :from_strand_id :to_strand_id :edge_type) (:supersedes-edge result)))))
         (is (= {:burned [(:id scratch)] :count 1} (repl/burn! (:id scratch))))
         (is (nil? (repl/strand (:id scratch))))))))
 
@@ -133,7 +141,7 @@
     (fn [rt db-file]
       (repl/connect! (:config-dir (:metadata rt)))
       (repl/init!)
-      (let [design (:id (repl/strand! "Design" {:owner "agent"} {:active false}))
+      (let [design (:id (repl/strand! "Design" {:owner "agent"} {:state "closed"}))
             docs (:id (repl/strand! "Docs" {:owner "agent"}))
             misc (:id (repl/strand! "Misc" {:owner "human"}))]
         (repl/update! docs {:edges [{:type "depends-on" :to design}]})

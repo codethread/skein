@@ -78,7 +78,7 @@ func (a *App) rootCommand() *cobra.Command {
 	}})
 
 	add := &cobra.Command{Use: "add <title>", Short: "Create a strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		active, err := boolFlag(cmd, "active")
+		state, err := stateFlag(cmd, false)
 		if err != nil {
 			return err
 		}
@@ -87,14 +87,14 @@ func (a *App) rootCommand() *cobra.Command {
 			return err
 		}
 		payload := map[string]any{"title": args[0], "attributes": am}
-		if cmd.Flags().Changed("active") {
-			payload["active"] = active
+		if cmd.Flags().Changed("state") {
+			payload["state"] = state
 		}
 		return a.withConfig(o, func(r Options) error {
 			return a.call(r, "add", payload)
 		})
 	}}
-	add.Flags().String("active", "true", "strand active state: true or false")
+	add.Flags().String("state", "active", "strand lifecycle state: active or closed")
 	add.Flags().StringArray("attr", nil, "string attribute key=value (repeatable; highest priority)")
 	add.Flags().StringArray("attr-file", nil, "string attribute key=path read from file contents (repeatable)")
 	add.Flags().StringArray("attr-stdin", nil, "attribute key whose string value is read from stdin (max once)")
@@ -102,7 +102,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.AddCommand(add)
 
 	update := &cobra.Command{Use: "update <id>", Short: "Update a strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		active, err := boolFlag(cmd, "active")
+		state, err := stateFlag(cmd, false)
 		if err != nil {
 			return err
 		}
@@ -125,20 +125,20 @@ func (a *App) rootCommand() *cobra.Command {
 		if cmd.Flags().Changed("title") {
 			titleArg = title
 		}
-		var activeArg any
-		if cmd.Flags().Changed("active") {
-			activeArg = active
+		var stateArg any
+		if cmd.Flags().Changed("state") {
+			stateArg = state
 		}
 		var attrArg any
 		if len(attrs) > 0 {
 			attrArg = am
 		}
 		return a.withConfig(o, func(r Options) error {
-			return a.call(r, "update", map[string]any{"id": args[0], "title": titleArg, "active": activeArg, "attributes": attrArg, "edges": edgeRows})
+			return a.call(r, "update", map[string]any{"id": args[0], "title": titleArg, "state": stateArg, "attributes": attrArg, "edges": edgeRows})
 		})
 	}}
 	update.Flags().String("title", "", "new strand title")
-	update.Flags().String("active", "true", "strand active state: true or false")
+	update.Flags().String("state", "active", "strand lifecycle state: active or closed")
 	update.Flags().StringArray("attr", nil, "string attribute key=value (repeatable)")
 	update.Flags().StringArray("edge", nil, "outgoing edge edge-type:to-id (repeatable)")
 	root.AddCommand(update)
@@ -146,6 +146,17 @@ func (a *App) rootCommand() *cobra.Command {
 	root.AddCommand(&cobra.Command{Use: "show <id>", Short: "Show one strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return a.withConfig(o, func(r Options) error { return a.call(r, "show", map[string]any{"id": args[0]}) })
 	}})
+	root.AddCommand(&cobra.Command{
+		Use:   "supersede <old-id> <replacement-id>",
+		Short: "Replace one strand with another through the weaver supersession transaction",
+		Long:  "Replace one strand with another through the weaver supersession transaction. Stores replacement --supersedes--> old, marks old replaced, and rewires dependents; use update --edge only for raw relation writes.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.withConfig(o, func(r Options) error {
+				return a.call(r, "supersede", map[string]any{"old_id": args[0], "replacement_id": args[1]})
+			})
+		},
+	})
 	root.AddCommand(&cobra.Command{Use: "burn <id>", Short: "Burn one strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return a.withConfig(o, func(r Options) error { return a.call(r, "burn", map[string]any{"id": args[0]}) })
 	}})
@@ -209,12 +220,12 @@ func (a *App) queryCommand(o *Options, name, short string) *cobra.Command {
 			return err
 		}
 		payload := map[string]any{}
-		if name == "list" && cmd.Flags().Changed("active") {
-			active, err := boolFlag(cmd, "active")
+		if name == "list" && cmd.Flags().Changed("state") {
+			state, err := stateFlag(cmd, true)
 			if err != nil {
 				return err
 			}
-			payload["active"] = active
+			payload["state"] = state
 		}
 		if query == "" {
 			if cmd.Flags().Changed("query") {
@@ -233,7 +244,7 @@ func (a *App) queryCommand(o *Options, name, short string) *cobra.Command {
 	cmd.Flags().StringArray("param", nil, "query parameter key=value (repeatable)")
 	cmd.Flags().String("where", "", "unsupported; use --query")
 	if name == "list" {
-		cmd.Flags().String("active", "true", "filter strands by active state: true or false")
+		cmd.Flags().String("state", "", "filter strands by lifecycle state: active, closed, or replaced")
 	}
 	_ = cmd.Flags().MarkHidden("where")
 	return cmd
@@ -445,19 +456,25 @@ func (a *App) launchRepl(o Options, stdin bool) error {
 	}
 	return runReplProcess(o, stdin, os.Stdin, a.Stdout, a.Stderr)
 }
-func boolFlag(cmd *cobra.Command, name string) (bool, error) {
-	value, err := cmd.Flags().GetString(name)
+
+func stateFlag(cmd *cobra.Command, allowReplaced bool) (string, error) {
+	value, err := cmd.Flags().GetString("state")
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	switch value {
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
-		return false, fmt.Errorf("invalid --%s: must be true or false", name)
+	case "active", "closed":
+		return value, nil
+	case "replaced":
+		if allowReplaced {
+			return value, nil
+		}
 	}
+	allowed := "active, closed"
+	if allowReplaced {
+		allowed = "active, closed, replaced"
+	}
+	return "", fmt.Errorf("invalid --state: must be one of %s", allowed)
 }
 
 func readOneJSONValue(r io.Reader) (any, error) {

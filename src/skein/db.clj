@@ -50,14 +50,11 @@
    ["CREATE TABLE IF NOT EXISTS strands (
        id TEXT PRIMARY KEY,
        title TEXT NOT NULL,
-       active INTEGER NOT NULL DEFAULT 1,
+       state TEXT NOT NULL DEFAULT 'active',
        attributes TEXT NOT NULL DEFAULT '{}',
        created_at TEXT NOT NULL DEFAULT (datetime('now')),
        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-       inactive_at TEXT,
-       CHECK (active IN (0, 1)),
-       CHECK ((active = 0 AND inactive_at IS NOT NULL)
-              OR (active = 1 AND inactive_at IS NULL)),
+       CHECK (state IN ('active', 'closed', 'replaced')),
        CHECK (json_valid(attributes))
      )"]
    ["CREATE TABLE IF NOT EXISTS strand_edges (
@@ -66,30 +63,43 @@
        edge_type TEXT NOT NULL,
        attributes TEXT NOT NULL DEFAULT '{}',
        PRIMARY KEY (from_strand_id, to_strand_id, edge_type),
-       CHECK (edge_type IN ('depends-on', 'related-to', 'parent-of', 'supersedes')),
        CHECK (json_valid(attributes))
      )"]
-   ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]])
+   ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]
+   ["CREATE TABLE IF NOT EXISTS acyclic_relations (
+       relation TEXT PRIMARY KEY
+     )"]])
 
-(def required-strand-columns #{"id" "title" "active" "attributes" "created_at" "updated_at" "inactive_at"})
+(def required-strand-columns #{"id" "title" "state" "attributes" "created_at" "updated_at"})
+(def required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
+(def shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes"})
+
+(defn- missing-columns [ds table required]
+  (seq (remove (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))) required)))
 
 (defn- ensure-current-schema! [ds]
-  (let [columns (set (map :name (execute! ds ["PRAGMA table_info(strands)"])))
-        missing (seq (remove columns required-strand-columns))]
-    (when missing
-      (throw (ex-info "Existing strands table is not compatible with the current schema; use a new database or migrate it explicitly."
-                      {:missing-columns (vec missing)})))))
+  (when-let [missing (missing-columns ds "strands" required-strand-columns)]
+    (throw (ex-info "Existing strands table is not compatible with the current schema; use a new database or migrate it explicitly."
+                    {:missing-columns (vec missing)})))
+  (let [edge-schema (:sql (execute-one! ds ["SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'strand_edges'"]))]
+    (when (or (missing-columns ds "strand_edges" required-edge-columns)
+              (str/includes? edge-schema "CHECK (edge_type IN"))
+      (throw (ex-info "Existing strand_edges table is not compatible with the current schema; use a new database or migrate it explicitly." {})))))
+
+(declare bootstrap-acyclic-relation!)
 
 (defn init! [ds]
   (doseq [stmt schema-sql]
     (execute! ds stmt))
   (ensure-current-schema! ds)
+  (doseq [relation shipped-acyclic-relations]
+    (bootstrap-acyclic-relation! ds relation))
   ds)
 
 
-(declare get-strand update-strand! add-edge! strands-by-ids)
+(declare get-strand update-strand! add-edge! strands-by-ids require-updated-strand require-existing-strand-ids!)
 
-(def ^:private batch-strand-keys #{:title :active :attributes :ref :edges})
+(def ^:private batch-strand-keys #{:title :state :attributes :ref :edges})
 (def ^:private batch-edge-keys #{:type :to :attributes})
 
 (defn- json-compatible? [value]
@@ -122,8 +132,8 @@
     (throw (ex-info "Batch edge must be a map" {:edge edge})))
   (require-no-unknown-keys! edge batch-edge-keys :edge)
   (when-not (s/valid? ::specs/edge-type (:type edge))
-    (throw (ex-info "Batch edge :type must be one of the allowed edge types"
-                    {:edge edge :allowed specs/allowed-edge-types})))
+    (throw (ex-info "Batch edge :type must be a valid relation name"
+                    {:edge edge})))
   (when-not (or (symbol? (:to edge)) (string? (:to edge)))
     (throw (ex-info "Batch edge :to must be a symbol batch ref or string durable id" {:edge edge})))
   (require-json-object-encodable! (:attributes edge) :edge)
@@ -157,34 +167,29 @@
       (throw (ex-info "Duplicate batch ref" {:ref duplicate-ref}))))
   strands)
 
-(def strand-columns "id, title, active, attributes, created_at, updated_at, inactive_at")
+(def strand-columns "id, title, state, attributes, created_at, updated_at")
 
-(defn- require-boolean! [value field]
-  (when-not (or (true? value) (false? value))
-    (throw (ex-info "Lifecycle fields must be booleans" {:field field :value value})))
+(def ^:private generic-states #{"active" "closed"})
+
+(defn- require-generic-state! [value field]
+  (when-not (contains? generic-states value)
+    (throw (ex-info "Lifecycle state must be active or closed" {:field field :value value :allowed generic-states})))
   value)
 
-(defn- sqlite-bool [value]
-  (if value 1 0))
-
-(defn- row->booleans [row]
-  (cond-> row
-    (contains? row :active) (update :active #(case % 0 false 1 true %))))
-
-(defn- insert-strand! [ds id title active attributes]
+(defn- insert-strand! [ds id title state attributes]
   (execute-one! ds
-                [(str "INSERT INTO strands (id, title, active, attributes, inactive_at)
-                       VALUES (?, ?, ?, json(?), CASE WHEN ? = 0 THEN datetime('now') ELSE NULL END)
+                [(str "INSERT INTO strands (id, title, state, attributes)
+                       VALUES (?, ?, ?, json(?))
                        RETURNING " strand-columns)
-                 id title (sqlite-bool active) (->json attributes) (sqlite-bool active)]))
+                 id title state (->json attributes)]))
 
 
 (defn- unique-strand-id-error? [^Exception e]
   (str/includes? (.getMessage e) "UNIQUE constraint failed: strands.id"))
 
-(def ^:private strand-input-keys #{:title :active :attributes})
-(def ^:private strand-patch-keys #{:title :active :attributes})
-(def ^:private removed-lifecycle-fields #{:status :final_at})
+(def ^:private strand-input-keys #{:title :state :attributes})
+(def ^:private strand-patch-keys #{:title :state :attributes})
+(def ^:private removed-lifecycle-fields #{:status :final_at :active :inactive_at})
 
 (defn- reject-removed-lifecycle-fields! [m context]
   (when-let [fields (seq (filter removed-lifecycle-fields (keys m)))]
@@ -196,17 +201,17 @@
     (when unknown
       (throw (ex-info "Unknown core strand fields" {:context context :fields (vec unknown)})))))
 
-(defn add-strand! [ds {:keys [title active attributes] :as strand}]
+(defn add-strand! [ds {:keys [title state attributes] :as strand}]
   (reject-removed-lifecycle-fields! strand :create)
   (reject-unknown-strand-keys! strand strand-input-keys :create)
-  (let [strand (merge {:active true} strand)]
+  (let [strand (merge {:state "active"} strand)]
     (require-valid! ::specs/strand-input strand "Invalid strand")
     (loop [attempt 1]
       (when (> attempt max-id-attempts)
         (throw (ex-info "Unable to generate unique strand id" {:attempts max-id-attempts})))
       (let [id (generate-id)
             result (try
-                     [:created (row->booleans (insert-strand! ds id title (:active strand) attributes))]
+                     [:created (insert-strand! ds id title (:state strand) attributes)]
                      (catch org.sqlite.SQLiteException e
                        (if (unique-strand-id-error? e)
                          [:retry nil]
@@ -243,9 +248,9 @@
              created []
              refs {}]
         (if-let [strand (first remaining)]
-          (let [{:keys [title active attributes]} strand
+          (let [{:keys [title state attributes]} strand
                 created-strand (add-strand! tx (cond-> {:title title :attributes attributes}
-                                                 (contains? strand :active) (assoc :active active)))
+                                                 (contains? strand :state) (assoc :state state)))
                 refs (cond-> refs
                        (:ref strand) (assoc (str (:ref strand)) (:id created-strand)))]
             (recur (rest remaining) (conj created created-strand) refs))
@@ -260,32 +265,72 @@
             {:created created
              :refs refs}))))))
 
-(defn- path-exists? [ds from to]
+(defn- path-exists? [ds type from to]
   (boolean
    (execute-one! ds
                  ["WITH RECURSIVE reachable(id) AS (
                      SELECT to_strand_id
                      FROM strand_edges
                      WHERE from_strand_id = ?
+                       AND edge_type = ?
                    UNION
                      SELECT e.to_strand_id
                      FROM reachable r
                      JOIN strand_edges e ON e.from_strand_id = r.id
+                     WHERE e.edge_type = ?
                    )
                    SELECT 1 AS found
                    FROM reachable
                    WHERE id = ?
                    LIMIT 1"
-                  from to])))
+                  from type type to])))
+
+(defn acyclic-relation? [ds relation]
+  (boolean (execute-one! ds ["SELECT 1 AS found FROM acyclic_relations WHERE relation = ?" relation])))
+
+(defn list-acyclic-relations [ds]
+  (mapv :relation (execute! ds ["SELECT relation FROM acyclic_relations ORDER BY relation"])))
+
+(defn- require-valid-relation-name! [relation]
+  (when-not (s/valid? ::specs/edge-type relation)
+    (throw (ex-info "Relation must be a valid relation name" {:relation relation})))
+  relation)
+
+(defn- require-existing-relation-acyclic! [ds relation]
+  (doseq [{:keys [from_strand_id to_strand_id]} (execute! ds ["SELECT from_strand_id, to_strand_id FROM strand_edges WHERE edge_type = ?" relation])]
+    (when (path-exists? ds relation to_strand_id from_strand_id)
+      (throw (ex-info "Existing relation contains a cycle" {:relation relation :from from_strand_id :to to_strand_id})))))
+
+(defn- insert-acyclic-relation! [ds relation]
+  (execute-one! ds ["INSERT INTO acyclic_relations (relation) VALUES (?) RETURNING relation" relation])
+  {:relation relation :acyclic true})
+
+(defn- bootstrap-acyclic-relation! [ds relation]
+  (if (acyclic-relation? ds relation)
+    {:relation relation :acyclic true}
+    (do
+      (require-existing-relation-acyclic! ds relation)
+      (insert-acyclic-relation! ds relation))))
+
+(defn declare-acyclic-relation! [ds relation]
+  (require-valid-relation-name! relation)
+  (if (acyclic-relation? ds relation)
+    {:relation relation :acyclic true}
+    (do
+      (when (execute-one! ds ["SELECT 1 AS found FROM strand_edges WHERE edge_type = ? LIMIT 1" relation])
+        (throw (ex-info "Cannot declare relation acyclic after edges of that relation exist" {:relation relation})))
+      (insert-acyclic-relation! ds relation))))
 
 (defn- require-acyclic-edge! [ds from to type]
   (when (= from to)
     (throw (ex-info "Strand edges must not point to the same strand" {:from from :to to :type type})))
-  (when (path-exists? ds to from)
+  (when (and (acyclic-relation? ds type)
+             (path-exists? ds type to from))
     (throw (ex-info "Strand edge would create a cycle" {:from from :to to :type type}))))
 
 (defn add-edge! [ds {:keys [from to type attributes] :as edge}]
   (require-valid! ::specs/edge-input edge "Invalid edge")
+  (require-existing-strand-ids! ds [from to] :edge)
   (require-acyclic-edge! ds from to type)
   (execute-one! ds
                 ["INSERT INTO strand_edges (from_strand_id, to_strand_id, edge_type, attributes)
@@ -294,42 +339,111 @@
                   RETURNING from_strand_id, to_strand_id, edge_type, attributes"
                  from to type (->json attributes)]))
 
-(defn get-strand [ds strand-id]
-  (some-> (execute-one! ds
-                        [(str "SELECT " strand-columns " FROM strands WHERE id = ?")
-                         strand-id])
-          row->booleans))
+(defn- edge-row [ds from to type]
+  (execute-one! ds
+                ["SELECT from_strand_id, to_strand_id, edge_type, attributes
+                  FROM strand_edges
+                  WHERE from_strand_id = ?
+                    AND to_strand_id = ?
+                    AND edge_type = ?"
+                 from to type]))
 
-(defn- require-updated-strand [strand-id row]
+(defn- delete-edge! [ds from to type]
+  (let [row (edge-row ds from to type)]
+    (when row
+      (execute! ds
+                ["DELETE FROM strand_edges
+                  WHERE from_strand_id = ?
+                    AND to_strand_id = ?
+                    AND edge_type = ?"
+                 from to type]))
+    row))
+
+(defn- set-strand-state-internal! [ds strand-id state]
+  (require-updated-strand
+    strand-id
+    (execute-one! ds
+                  [(str "UPDATE strands
+                         SET state = ?,
+                             updated_at = datetime('now')
+                         WHERE id = ?
+                         RETURNING " strand-columns)
+                   state strand-id])))
+
+(defn supersede-strand! [ds old-id replacement-id]
+  (jdbc/with-transaction [tx ds]
+    (when (= old-id replacement-id)
+      (throw (ex-info "A strand cannot supersede itself" {:old-id old-id :replacement-id replacement-id})))
+    (let [old-before (or (get-strand tx old-id)
+                         (throw (ex-info "Old strand not found" {:old-id old-id})))
+          replacement (or (get-strand tx replacement-id)
+                          (throw (ex-info "Replacement strand not found" {:replacement-id replacement-id})))]
+      (when (= "replaced" (:state old-before))
+        (throw (ex-info "Old strand is already replaced" {:old-id old-id :state (:state old-before)})))
+      (when-not (= "active" (:state replacement))
+        (throw (ex-info "Replacement strand must be active" {:replacement-id replacement-id :state (:state replacement)})))
+      (let [supersedes-edge (add-edge! tx {:from replacement-id
+                                           :to old-id
+                                           :type "supersedes"
+                                           :attributes {}})
+            old-after (set-strand-state-internal! tx old-id "replaced")
+            incoming-depends (execute! tx ["SELECT from_strand_id, to_strand_id, edge_type, attributes
+                                            FROM strand_edges
+                                            WHERE to_strand_id = ?
+                                              AND edge_type = 'depends-on'
+                                            ORDER BY from_strand_id"
+                                         old-id])
+            rewired (mapv (fn [edge]
+                            (let [dependent (:from_strand_id edge)
+                                  existing-edge (edge-row tx dependent replacement-id "depends-on")
+                                  new-edge (or existing-edge
+                                               (add-edge! tx {:from dependent
+                                                              :to replacement-id
+                                                              :type "depends-on"
+                                                              :attributes (some-> (:attributes edge) <-json)}))
+                                  deleted-edge (delete-edge! tx dependent old-id "depends-on")]
+                              {:from dependent
+                               :old-to old-id
+                               :new-to replacement-id
+                               :type "depends-on"
+                               :deleted-edge deleted-edge
+                               :edge new-edge}))
+                          incoming-depends)]
+        {:old {:before old-before :after old-after}
+         :replacement-id replacement-id
+         :supersedes-edge supersedes-edge
+         :rewired-dependencies rewired}))))
+
+(defn get-strand [ds strand-id]
+  (execute-one! ds
+                [(str "SELECT " strand-columns " FROM strands WHERE id = ?")
+                 strand-id]))
+
+(defn require-updated-strand [strand-id row]
   (or row
       (throw (ex-info "Strand not found" {:strand-id strand-id}))))
 
-(defn update-strand! [ds strand-id {:keys [title active attributes] :as patch}]
+(defn update-strand! [ds strand-id {:keys [title state attributes] :as patch}]
   (reject-removed-lifecycle-fields! patch :update)
   (reject-unknown-strand-keys! patch strand-patch-keys :update)
   (when (and title (str/blank? title))
     (throw (ex-info "Strand title must be non-blank" {:title title})))
-  (when (contains? patch :active)
-    (require-boolean! active :active))
+  (when (contains? patch :state)
+    (require-generic-state! state :state))
   (require-updated-strand strand-id (get-strand ds strand-id))
-  (row->booleans
-   (require-updated-strand
+  (require-updated-strand
     strand-id
     (execute-one! ds
                   [(str "UPDATE strands
                          SET title = COALESCE(?, title),
-                             active = COALESCE(?, active),
+                             state = COALESCE(?, state),
                              attributes = CASE WHEN ? IS NULL THEN attributes ELSE json_patch(attributes, json(?)) END,
-                             updated_at = datetime('now'),
-                             inactive_at = CASE
-                               WHEN COALESCE(?, active) = 0 THEN COALESCE(inactive_at, datetime('now'))
-                               ELSE NULL
-                             END
+                             updated_at = datetime('now')
                          WHERE id = ?
                          RETURNING " strand-columns)
-                   title (when (contains? patch :active) (sqlite-bool active))
+                   title (when (contains? patch :state) state)
                    (when attributes (->json attributes)) (when attributes (->json attributes))
-                   (when (contains? patch :active) (sqlite-bool active)) strand-id]))))
+                   strand-id])))
 
 
 (defn query-strands
@@ -337,7 +451,7 @@
    (query-strands ds query-def {}))
   ([ds query-def params]
    (let [{:keys [sql params]} (query/compile-query query-def params)]
-     (mapv row->booleans
+     (mapv identity
            (execute! ds (into [(str "SELECT " strand-columns " FROM strands t WHERE " sql " ORDER BY t.id")]
                               params))))))
 
@@ -388,7 +502,7 @@
   (burn-by-ids! ds [id]))
 
 (def ^:private batch-mutation-top-level-keys #{:refs :strands :edges :burn})
-(def ^:private batch-mutation-strand-keys #{:ref :title :active :attributes})
+(def ^:private batch-mutation-strand-keys #{:ref :title :state :attributes})
 (def ^:private batch-mutation-edge-keys #{:op :from :to :type :attributes})
 
 (defn- require-batch-ref! [ref context]
@@ -451,8 +565,8 @@
       (when (contains? strand :title)
         (when-not (valid-title? (:title strand))
           (throw (ex-info "Batch strand :title must be a non-blank string" {:index idx :strand strand}))))
-      (when (contains? strand :active)
-        (require-boolean! (:active strand) :active))
+      (when (contains? strand :state)
+        (require-generic-state! (:state strand) :state))
       (when (contains? strand :attributes)
         (require-json-object-encodable! (:attributes strand) :strand)))
     (when-let [duplicate-ref (duplicate-item (map :ref strands))]
@@ -472,8 +586,8 @@
           (throw (ex-info "Batch edge endpoint is required" {:index idx :field k :edge edge})))
         (require-batch-ref! (get edge k) {:section :edges :index idx :field k}))
       (when-not (s/valid? ::specs/edge-type (:type edge))
-        (throw (ex-info "Batch edge :type must be one of the allowed edge types"
-                        {:index idx :edge edge :allowed specs/allowed-edge-types})))
+        (throw (ex-info "Batch edge :type must be a valid relation name"
+                        {:index idx :edge edge})))
       (require-json-object-encodable! (:attributes edge) :edge))
     {:refs refs :strands strands :edges edges :burn burn}))
 
@@ -505,7 +619,7 @@
               (reduce (fn [acc strand]
                         (if (contains? refs (:ref strand))
                           acc
-                          (let [created-row (add-strand! tx (select-keys strand [:title :active :attributes]))]
+                          (let [created-row (add-strand! tx (select-keys strand [:title :state :attributes]))]
                             (-> acc
                                 (update :refs assoc (:ref strand) (:id created-row))
                                 (update :rows conj created-row)))))
@@ -548,12 +662,15 @@
                              (map (juxt :id identity))
                              (execute! ds (into [(str "SELECT " strand-columns " FROM strands WHERE id IN (" (placeholders ids) ")")]
                                                 ids)))]
-        (mapv (comp row->booleans rows-by-id) ids)))))
+        (mapv rows-by-id ids)))))
 
 (defn ancestor-root-ids
   ([ds seed-ids]
    (ancestor-root-ids ds seed-ids {}))
-  ([ds seed-ids {:keys [where params]}]
+  ([ds seed-ids {:keys [where params type] :or {type "parent-of"}}]
+   (require-valid-relation-name! type)
+   (when-not (acyclic-relation? ds type)
+     (throw (ex-info "Graph traversal requires a declared acyclic relation" {:relation type})))
    (let [seed-ids (require-existing-strand-ids! ds seed-ids :ancestor-root-ids)]
      (if (empty? seed-ids)
        []
@@ -571,7 +688,7 @@
                                            FROM paths
                                            JOIN strand_edges e ON e.to_strand_id = paths.id
                                            JOIN strands t ON t.id = e.from_strand_id
-                                           WHERE e.edge_type = 'parent-of'
+                                           WHERE e.edge_type = ?
                                          )
                                          SELECT DISTINCT candidate_id AS id
                                          FROM paths
@@ -580,10 +697,10 @@
                                              SELECT 1
                                              FROM strand_edges e
                                              WHERE e.to_strand_id = paths.id
-                                               AND e.edge_type = 'parent-of'
+                                               AND e.edge_type = ?
                                            )
                                          ORDER BY id")]
-                                    (concat where-params seed-ids where-params)))))
+                                    (concat where-params seed-ids where-params [type type])))))
          (mapv :id
                (execute! ds (into [(str "WITH RECURSIVE ancestors(id) AS (
                                          SELECT id FROM strands WHERE id IN (" (placeholders seed-ids) ")
@@ -591,53 +708,59 @@
                                          SELECT e.from_strand_id
                                          FROM ancestors a
                                          JOIN strand_edges e ON e.to_strand_id = a.id
-                                         WHERE e.edge_type = 'parent-of'
+                                         WHERE e.edge_type = ?
                                        )
                                        SELECT a.id
                                        FROM ancestors a
                                        WHERE NOT EXISTS (
                                          SELECT 1
                                          FROM strand_edges e
-                                         WHERE e.to_strand_id = a.id AND e.edge_type = 'parent-of'
+                                         WHERE e.to_strand_id = a.id AND e.edge_type = ?
                                        )
                                        ORDER BY a.id")]
-                                  seed-ids))))))))
+                                  (concat seed-ids [type type])))))))))
 
-(defn subgraph [ds root-ids]
-  (let [root-ids (require-existing-strand-ids! ds root-ids :subgraph)]
-    (if (empty? root-ids)
-      {:root-ids [] :strands [] :edges []}
-      (let [cte (str "WITH RECURSIVE nodes(id) AS (
-                       SELECT id FROM strands WHERE id IN (" (placeholders root-ids) ")
-                     UNION
-                       SELECT e.to_strand_id
-                       FROM nodes n
-                       JOIN strand_edges e ON e.from_strand_id = n.id
-                       WHERE e.edge_type = 'parent-of'
-                     )")]
-        (let [rows (mapv row->booleans
-                         (execute! ds (into [(str cte "
-                                      SELECT " strand-columns "
-                                      FROM strands
-                                      WHERE id IN (SELECT id FROM nodes)
-                                      ORDER BY id")]
-                                            root-ids)))
-              edges (execute! ds (into [(str cte "
-                                      SELECT e.from_strand_id, e.to_strand_id,
-                                             e.edge_type, e.attributes
-                                      FROM strand_edges e
-                                      WHERE e.edge_type = 'parent-of'
-                                        AND e.from_strand_id IN (SELECT id FROM nodes)
-                                        AND e.to_strand_id IN (SELECT id FROM nodes)
-                                      ORDER BY e.from_strand_id, e.to_strand_id, e.edge_type")]
-                                        root-ids))]
-          {:root-ids root-ids
-           :strands rows
-           :edges edges})))))
+(defn subgraph
+  ([ds root-ids]
+   (subgraph ds root-ids {}))
+  ([ds root-ids {:keys [type] :or {type "parent-of"}}]
+   (require-valid-relation-name! type)
+   (when-not (acyclic-relation? ds type)
+     (throw (ex-info "Graph traversal requires a declared acyclic relation" {:relation type})))
+   (let [root-ids (require-existing-strand-ids! ds root-ids :subgraph)]
+     (if (empty? root-ids)
+       {:root-ids [] :strands [] :edges []}
+       (let [cte (str "WITH RECURSIVE nodes(id) AS (
+                        SELECT id FROM strands WHERE id IN (" (placeholders root-ids) ")
+                      UNION
+                        SELECT e.to_strand_id
+                        FROM nodes n
+                        JOIN strand_edges e ON e.from_strand_id = n.id
+                        WHERE e.edge_type = ?
+                      )")]
+         (let [rows (mapv identity
+                          (execute! ds (into [(str cte "
+                                       SELECT " strand-columns "
+                                       FROM strands
+                                       WHERE id IN (SELECT id FROM nodes)
+                                       ORDER BY id")]
+                                             (concat root-ids [type]))))
+               edges (execute! ds (into [(str cte "
+                                       SELECT e.from_strand_id, e.to_strand_id,
+                                              e.edge_type, e.attributes
+                                       FROM strand_edges e
+                                       WHERE e.edge_type = ?
+                                         AND e.from_strand_id IN (SELECT id FROM nodes)
+                                         AND e.to_strand_id IN (SELECT id FROM nodes)
+                                       ORDER BY e.from_strand_id, e.to_strand_id, e.edge_type")]
+                                         (concat root-ids [type type])))]
+           {:root-ids root-ids
+            :strands rows
+            :edges edges}))))))
 
 (defn all-strands
   ([ds]
-   (mapv row->booleans (execute! ds [(str "SELECT " strand-columns " FROM strands ORDER BY id")])))
+   (mapv identity (execute! ds [(str "SELECT " strand-columns " FROM strands ORDER BY id")])))
   ([ds query-def]
    (query-strands ds query-def {}))
   ([ds query-def params]
@@ -645,36 +768,36 @@
 
 (defn ready-strands
   ([ds]
-   (mapv row->booleans
+   (mapv identity
          (execute! ds
                    [(str "SELECT " strand-columns "
                FROM strands t
-               WHERE t.active = 1
+               WHERE t.state = 'active'
                  AND NOT EXISTS (
                    SELECT 1
                    FROM strand_edges e
                    JOIN strands dep ON dep.id = e.to_strand_id
                    WHERE e.from_strand_id = t.id
                      AND e.edge_type = 'depends-on'
-                     AND dep.active = 1
+                     AND dep.state = 'active'
                  )
                ORDER BY t.id")])) )
   ([ds query-def]
    (ready-strands ds query-def {}))
   ([ds query-def params]
    (let [{query-sql :sql query-params :params} (query/compile-query query-def params)]
-     (mapv row->booleans
+     (mapv identity
            (execute! ds
                      (into [(str "SELECT " strand-columns "
                  FROM strands t
-                 WHERE t.active = 1
+                 WHERE t.state = 'active'
                    AND NOT EXISTS (
                      SELECT 1
                      FROM strand_edges e
                      JOIN strands dep ON dep.id = e.to_strand_id
                      WHERE e.from_strand_id = t.id
                        AND e.edge_type = 'depends-on'
-                       AND dep.active = 1
+                       AND dep.state = 'active'
                    )
                    AND " query-sql "
                  ORDER BY t.id")]

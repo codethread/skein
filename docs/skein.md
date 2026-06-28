@@ -130,7 +130,7 @@ Common commands:
 ```sh
 strand --config-dir "$world" init
 strand --config-dir "$world" add "Write docs" --attr owner=agent --attr area=docs
-strand --config-dir "$world" update <id> --active false
+strand --config-dir "$world" update <id> --state closed
 strand --config-dir "$world" update <id> --edge depends-on:<other-id>
 strand --config-dir "$world" show <id>
 strand --config-dir "$world" list
@@ -160,29 +160,26 @@ A strand has:
 
 - `id` — generated text id;
 - `title` — human-readable title;
-- `active` — core lifecycle boolean;
-- `inactive_at` — set when a strand becomes inactive;
+- `state` — core lifecycle state: `active`, `closed`, or `replaced`;
 - `created_at` and `updated_at`;
 - `attributes` — userland JSON object.
 
-`active` is the only built-in lifecycle state. Concepts like `status`, `kind`, `type`, `category`, `outcome`, `owner`, `priority`, `project`, `estimate`, or `retention` are your attributes, not core fields.
+`state` is the only built-in lifecycle field. Concepts like `status`, `kind`, `type`, `category`, `outcome`, `owner`, `priority`, `project`, `estimate`, or `retention` are your attributes, not core fields.
 
 | Concept | Where it belongs |
 | --- | --- |
-| done/not done for readiness | core `active` boolean |
-| completion time | core `inactive_at`, set when `active` becomes false |
+| done/not done for readiness | core `state`, where `active` participates in readiness |
+| completion time | custom attribute if your workflow needs it |
 | status like `todo`, `doing`, `blocked`, `done` | custom attribute |
 | outcome like `done`, `cancelled`, `abandoned` | custom attribute |
 | owner, priority, project, estimate | custom attributes |
 | local workflow marker | custom attribute plus your own helper code |
 
-Deactivate work when it is no longer active. There is no special `done` command; use `update --active false` and optionally record your own outcome attribute:
+Close work when it is no longer active. There is no special `done` command; use `update --state closed` and optionally record your own outcome attribute:
 
 ```sh
-strand --config-dir "$world" update <id> --active false --attr outcome=done
+strand --config-dir "$world" update <id> --state closed --attr outcome=done
 ```
-
-`update --active` defaults to `true` when the flag is omitted, so pass `--active false` explicitly when deactivating.
 
 Burn only when you want deletion:
 
@@ -192,12 +189,7 @@ strand --config-dir "$world" burn <id>
 
 ## Edges and readiness
 
-Edges connect strands. Supported edge types are:
-
-- `depends-on`
-- `related-to`
-- `parent-of`
-- `supersedes`
+Edges connect strands with open relation names such as `depends-on`, `parent-of`, `supersedes`, or annotation relations like `references`.
 
 A `depends-on` edge from `A` to `B` means: `A` is blocked while `B` is active.
 
@@ -211,7 +203,7 @@ strand --config-dir "$world" update "$docs" --edge depends-on:"$design"
 strand --config-dir "$world" ready
 ```
 
-The edge graph is acyclic. Self-edges and writes that create cycles fail loudly.
+Self-edges fail for every relation. Declared acyclic relations such as `depends-on`, `parent-of`, and `supersedes` reject relation-local cycles; annotation relations may form non-self cycles.
 
 ## Attributes are the extension point
 
@@ -275,7 +267,7 @@ For a world that already activates a local library with `libs/use!`, follow that
 
 Defining a Clojure var that contains query data is not the same as registering a named query. A local var can be passed to graph helpers from your own code, but `strand list --query mine` only works after `mine` has been registered in the weaver's named-query registry.
 
-`strand list --query mine` returns all matching strands unless you also pass an active filter. Use `strand list --query mine --active true` when you only want active matches. `strand ready --query mine` always applies readiness semantics, so returned strands are active and unblocked.
+`strand list --query mine` returns all matching strands unless you also pass a state filter. Use `strand list --query mine --state active` when you only want active matches. `strand ready --query mine` always applies readiness semantics, so returned strands are active and unblocked.
 
 ## REPL
 
@@ -293,7 +285,7 @@ Useful forms:
 (init!)
 (def id (:id (strand! "Explore workflow" {:owner "ct" :kind "spike"})))
 (strand id)
-(update! id {:active false :attributes {:outcome "captured"}})
+(update! id {:state "closed" :attributes {:outcome "captured"}})
 (strands)
 (ready)
 ```
@@ -590,14 +582,14 @@ Spec: [`devflow/specs/strand-model.md`](../devflow/specs/strand-model.md)
 Covers:
 
 - durable strand fields;
-- active/inactive lifecycle;
+- `state` lifecycle values;
 - burn deletion;
 - JSON attributes;
-- edge types and DAG rules;
+- relation names and declared acyclic relations;
 - readiness semantics;
 - queryable fields.
 
-Read this when you need to know what data exists, what `active` means, how `depends-on` works, or what belongs in attributes instead of core fields.
+Read this when you need to know what data exists, how lifecycle state works, how `depends-on` works, or what belongs in attributes instead of core fields.
 
 ### CLI surface
 

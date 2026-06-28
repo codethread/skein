@@ -12,10 +12,10 @@ This delta adapts the thin CLI to the state lifecycle model, open relation names
 
 ## ERF-DELTA-004.P2 Contract changes
 
-- **ERF-DELTA-004.CC1:** `strand add` uses `--state active|closed` instead of `--active true|false`. Omitted state defaults to `active`; `replaced` is produced only by the supersession command.
-- **ERF-DELTA-004.CC2:** `strand update` uses `--state active|closed` instead of `--active true|false`; it cannot manually set `replaced`.
-- **ERF-DELTA-004.CC3:** `strand list` filters lifecycle with `--state active|closed|replaced` instead of `--active true|false`.
-- **ERF-DELTA-004.CC4:** Public strand command outputs expose `state` and do not expose old `active` or `inactive_at` fields.
+- **ERF-DELTA-004.CC1:** `strand add` uses `--state active|closed` instead of `legacy boolean lifecycle flag true|false`. Omitted state defaults to `active`; `replaced` is produced only by the supersession command.
+- **ERF-DELTA-004.CC2:** `strand update` uses `--state active|closed` instead of `legacy boolean lifecycle flag true|false`; it cannot manually set `replaced`.
+- **ERF-DELTA-004.CC3:** `strand list` filters lifecycle with `--state active|closed|replaced` instead of `legacy boolean lifecycle flag true|false`.
+- **ERF-DELTA-004.CC4:** Public strand command outputs expose `state` and do not expose old `active` or `legacy inactive timestamp column` fields.
 - **ERF-DELTA-004.CC5:** `strand ready` remains the shipped readiness battery: strands with `state="active"` and no outgoing `depends-on` target whose state is `active`. It is not reconfigured by CLI flags.
 - **ERF-DELTA-004.CC6:** `strand update --edge edge-type:to-id` accepts any valid relation-name string for `edge-type`, not a closed set of four shipped names. Valid relation names use the portable lowercase grammar `[a-z0-9][a-z0-9._/-]*`.
 - **ERF-DELTA-004.CC7:** CLI edge input reserves `:` as the separator between relation name and target id. Relation names containing `:`, uppercase letters, whitespace/control characters, blank relation names, blank target ids, or otherwise invalid relation names fail before or during the weaver mutation.
@@ -30,7 +30,7 @@ This delta adapts the thin CLI to the state lifecycle model, open relation names
 
 ### ERF-DELTA-004.D1 State is the CLI lifecycle contract
 
-- **Decision:** The CLI removes `--active` rather than keeping it as an alias for `--state`.
+- **Decision:** The CLI removes legacy boolean lifecycle flag rather than keeping it as an alias for `--state`.
 - **Rationale:** This is an alpha breaking change and the goal is to remove the old schema everywhere. Keeping aliases would preserve confusing old vocabulary.
 - **Rejected:** Compatibility flags or boolean-to-state mapping.
 

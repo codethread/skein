@@ -58,8 +58,17 @@
   ([id patch]
    (daemon :update id patch)))
 
+(defn supersede! [old-id replacement-id]
+  (daemon :supersede old-id replacement-id))
+
 (defn strand [id]
   (daemon :show id))
+
+(defn declare-acyclic-relation! [relation]
+  (daemon :declare-acyclic-relation! relation))
+
+(defn acyclic-relations []
+  (daemon :acyclic-relations))
 
 (defn burn!
   ([id]

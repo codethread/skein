@@ -58,8 +58,8 @@
   (throw (ex-info "handler failed" {:event event})))
 
 (defn burn-temporary-children-on-inactive-parent [event]
-  (when (and (true? (get-in event [:strand/before :active]))
-             (false? (get-in event [:strand/after :active])))
+  (when (and (= "active" (get-in event [:strand/before :state]))
+             (= "closed" (get-in event [:strand/after :state])))
     (let [rt @runtime/current-runtime
           root-id (:strand/id event)
           children (remove #(= root-id (:id %)) (:strands (api/subgraph rt [root-id])))
@@ -176,8 +176,11 @@
   (with-runtime
     (fn [rt _]
       (is (= {:database "initialized"} (api/init rt)))
-      (let [design (api/add rt {:title "Design" :active false :attributes {:priority "high"}})
+      (let [design (api/add rt {:title "Design" :state "closed" :attributes {:priority "high"}})
             docs (api/add rt {:title "Docs" :attributes {:owner "agent"}})]
+        (is (= ["depends-on" "parent-of" "supersedes"] (api/acyclic-relations rt)))
+        (is (= {:relation "blocks" :acyclic true} (api/declare-acyclic-relation! rt "blocks")))
+        (is (= ["blocks" "depends-on" "parent-of" "supersedes"] (api/acyclic-relations rt)))
         (is (= {:priority "high"} (:attributes design)))
         (api/update rt (:id docs) {:attributes {:phase "write"}
                                    :edges [{:type "depends-on" :to (:id design)}]})
@@ -221,6 +224,29 @@
         (is (= {:unregistered :capture} (api/unregister-event-handler! rt :capture)))
         (is (= [:fails] (mapv :key (api/event-handlers rt))))))))
 
+(deftest weaver-supersession-emits-semantic-event
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (reset! delivered-events [])
+      (api/register-event-handler! rt :capture #{:strand/superseded} 'skein.weaver-test/capture-event {})
+      (let [old (api/add rt {:title "Old"})
+            replacement (api/add rt {:title "Replacement"})
+            dependent (api/add rt {:title "Dependent"})]
+        (api/update rt (:id dependent) {:edges [{:type "depends-on" :to (:id old)}]})
+        (reset! delivered-events [])
+        (let [result (api/supersede rt (:id old) (:id replacement))
+              event (first (wait-for-events 1))]
+          (is (= "replaced" (get-in result [:old :after :state])))
+          (is (= (:id replacement) (:replacement-id result)))
+          (is (= :strand/superseded (:event/type event)))
+          (is (= (:id old) (:strand/old-id event)))
+          (is (= (:id replacement) (:strand/replacement-id event)))
+          (is (= "active" (get-in event [:strand/before :state])))
+          (is (= "replaced" (get-in event [:strand/after :state])))
+          (is (= (:supersedes-edge result) (:supersession/supersedes-edge event)))
+          (is (= (:rewired-dependencies result) (:supersession/rewired-dependencies event))))))))
+
 (deftest weaver-strand-mutations-emit-events-after-success
   (with-runtime
     (fn [rt _]
@@ -235,14 +261,14 @@
         (is (= :skein.weaver.api (:event/source add-event)))
         (is (= (:id added) (:strand/id add-event)))
         (is (= added (:strand add-event)))
-        (let [updated (api/update rt (:id added) {:active false :attributes {:phase "done"}})
+        (let [updated (api/update rt (:id added) {:state "closed" :attributes {:phase "done"}})
               update-event (second (wait-for-events 2))]
           (is (= :strand/updated (:event/type update-event)))
           (is (= (:id added) (:strand/id update-event)))
-          (is (= {:active false :attributes {:phase "done"}} (:strand/patch update-event)))
-          (is (= true (get-in update-event [:strand/before :active])))
+          (is (= {:state "closed" :attributes {:phase "done"}} (:strand/patch update-event)))
+          (is (= "active" (get-in update-event [:strand/before :state])))
           (is (= {:owner "agent"} (get-in update-event [:strand/before :attributes])))
-          (is (= false (get-in update-event [:strand/after :active])))
+          (is (= "closed" (get-in update-event [:strand/after :state])))
           (is (= {:owner "agent" :phase "done"} (get-in update-event [:strand/after :attributes])))
           (is (= updated (:strand/after update-event))))
         (let [edge-target (api/add rt {:title "Target"})]
@@ -276,7 +302,7 @@
             unrelated-temporary (api/add rt {:title "Unrelated temporary" :attributes {:temporary "true"}})]
         (api/update rt (:id parent) {:edges [{:type "parent-of" :to (:id temporary-child)}
                                              {:type "parent-of" :to (:id durable-child)}]})
-        (api/update rt (:id parent) {:active false})
+        (api/update rt (:id parent) {:state "closed"})
         (is (wait-until #(= [{:root (:id parent) :burned [(:id temporary-child)]}]
                             @cleanup-events)))
         (is (nil? (api/show rt (:id temporary-child))))
@@ -293,12 +319,12 @@
       (api/register-event-handler! rt :slow #{:strand/updated} 'skein.weaver-test/slow-capture-event {})
       (api/register-event-handler! rt :fails #{:strand/updated} 'skein.weaver-test/failing-event {})
       (let [strand (api/add rt {:title "Slow handler target"})
-            update-result (future (api/update rt (:id strand) {:active false}))]
+            update-result (future (api/update rt (:id strand) {:state "closed"}))]
         (try
           (is (deref @handler-started 1000 false))
           (let [updated (deref update-result 1000 ::mutation-blocked)]
             (is (not= ::mutation-blocked updated))
-            (is (= false (:active updated))))
+            (is (= "closed" (:state updated))))
           (is (= [] @delivered-events))
           (deliver @handler-release true)
           (is (wait-until #(= 1 (count @delivered-events))))
@@ -348,7 +374,7 @@
                                                  :existing-a (:id existing-a)
                                                  :burned (:id burned)}
                                           :strands [{:ref :existing-b
-                                                     :active false
+                                                     :state "closed"
                                                      :attributes {:phase "done-b"}}
                                                     {:ref :created-z
                                                      :title "Created Z"
@@ -392,7 +418,7 @@
           (is (= (mapv :id (:updated result))
                  (mapv :strand/id [update-b-event update-a-event])))
           (is (= (:id existing-b) (:strand/id update-b-event)))
-          (is (= {:active false :attributes {:phase "done-b"}} (:strand/patch update-b-event)))
+          (is (= {:state "closed" :attributes {:phase "done-b"}} (:strand/patch update-b-event)))
           (is (= (:id existing-a) (:strand/id update-a-event)))
           (is (= {:attributes {:phase "done-a"}} (:strand/patch update-a-event)))
           (is (= [(:id burned)] (:strand/burned-ids burn-event)))
@@ -449,7 +475,7 @@
 (deftest weaver-query-registry-add-load-list-and-resolve
   (with-runtime
     (fn [rt _]
-      (let [open-query [:= :active true]
+      (let [open-query [:= :state "active"]
             owner-query {:params [:owner]
                          :where [:= [:attr :owner] [:param :owner]]}]
         (is (= {"mine" owner-query} (api/register-query rt 'mine owner-query)))
@@ -479,8 +505,25 @@
                               #":in values must be a non-empty collection"
                               (api/list-query rt :owners {:owners []})))))))
 
+(deftest weaver-query-registry-accepts-edge-predicates
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (let [blocker (api/add rt {:title "Blocker"})
+            blocked (api/add rt {:title "Blocked" :attributes {:owner "agent"}})
+            edge-query {:params [:relation]
+                        :where [:edge/out [:param :relation] [:= :state "active"]]}]
+        (api/update rt (:id blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
+        (is (= {"blocked" edge-query} (api/register-query rt 'blocked edge-query)))
+        (is (= [(:id blocked)] (mapv :id (api/list-query rt :blocked {:relation "depends-on"}))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"nested edge predicates"
+                              (api/register-query rt 'bad-edge
+                                                  [:edge/out "depends-on"
+                                                   [:edge/in "depends-on" [:= :state "active"]]])))
+        (is (= {"blocked" edge-query} (api/queries rt)))))))
+
 (deftest json-socket-public-operation-allowlist-stays-thin
-  (is (= #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-explain" "status" "stop"}
+  (is (= #{"init" "add" "update" "supersede" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-explain" "status" "stop"}
          socket/allowed-operations)))
 
 (deftest weaver-runtime-transformation-primitives
@@ -645,21 +688,21 @@
           (is (= "missing" (:canonical-query (ex-data e))))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (api/register-query rt 'user/mine [:= :active true])))
+                            (api/register-query rt 'user/mine [:= :state "active"])))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (api/load-queries rt {"mine" [:= :active true]})))
+                            (api/load-queries rt {"mine" [:= :state "active"]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (api/load-queries rt {'user/mine [:= :active true]})))
+                            (api/load-queries rt {'user/mine [:= :state "active"]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Unknown query operator"
-                            (api/register-query rt :broken [:unknown :active true])))
-      (api/register-query rt :ok [:= :active true])
+                            (api/register-query rt :broken [:unknown :state "active"])))
+      (api/register-query rt :ok [:= :state "active"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Unknown query operator"
-                            (api/load-queries rt {:bad [:unknown :active true]})))
-      (is (= {"ok" [:= :active true]} (api/queries rt))))))
+                            (api/load-queries rt {:bad [:unknown :state "active"]})))
+      (is (= {"ok" [:= :state "active"]} (api/queries rt))))))
 
 (deftest weaver-api-update-preserves-domain-errors-and-rolls-back
   (with-runtime
@@ -695,10 +738,10 @@
   (let [world (temp-world)
         init (io/file (:config-dir world) "init.clj")]
     (try
-      (spit init "(require '[skein.weaver.api :as api] '[skein.weaver.runtime :as runtime]) (api/register-query @runtime/current-runtime 'trusted [:= :active true])")
+      (spit init "(require '[skein.weaver.api :as api] '[skein.weaver.runtime :as runtime]) (api/register-query @runtime/current-runtime 'trusted [:= :state \"active\"])")
       (let [rt (runtime/start! nil {:world world})]
         (try
-          (is (= {"trusted" [:= :active true]} (api/queries rt)))
+          (is (= {"trusted" [:= :state "active"]} (api/queries rt)))
           (finally
             (runtime/stop! rt))))
       (finally
@@ -747,15 +790,18 @@
   (with-runtime
     (fn [rt _]
       (is (= true (get (socket-request rt "init" {}) "ok")))
-      (let [added (socket-request rt "add" {"title" "Socket task" "active" true "attributes" {"owner" "go"}})]
+      (let [added (socket-request rt "add" {"title" "Socket task" "state" "active" "attributes" {"owner" "go"}})]
         (is (true? (get added "ok")))
         (is (= "Socket task" (get-in added ["result" "title"])))
+        (is (= "active" (get-in added ["result" "state"])))
+        (is (not (contains? (get added "result") "active")))
+        (is (not (contains? (get added "result") "inactive_at")))
         (is (= {"owner" "go"} (get-in added ["result" "attributes"]))))
-      (let [target (socket-request rt "add" {"title" "Target" "active" false "attributes" {}})
-            source (socket-request rt "add" {"title" "Source" "active" true "attributes" {}})
+      (let [target (socket-request rt "add" {"title" "Target" "state" "closed" "attributes" {}})
+            source (socket-request rt "add" {"title" "Source" "state" "active" "attributes" {}})
             updated (socket-request rt "update" {"id" (get-in source ["result" "id"])
                                                   "title" nil
-                                                  "active" nil
+                                                  "state" nil
                                                   "attributes" nil
                                                   "edges" [{"type" "depends-on"
                                                             "to" (get-in target ["result" "id"])}]})]
@@ -764,9 +810,26 @@
                (db/execute! (:datasource rt)
                             ["SELECT to_strand_id, edge_type FROM strand_edges WHERE from_strand_id = ?"
                              (get-in source ["result" "id"])]))))
-      (let [missing (socket-request rt "update" {"id" "missing" "title" nil "active" nil "attributes" nil "edges" []})]
+      (let [missing (socket-request rt "update" {"id" "missing" "title" nil "state" nil "attributes" nil "edges" []})]
         (is (false? (get missing "ok")))
         (is (= "domain" (get-in missing ["error" "type"]))))
+      (let [old (socket-request rt "add" {"title" "Old supersession" "attributes" {}})
+            replacement (socket-request rt "add" {"title" "Replacement" "attributes" {}})
+            superseded (socket-request rt "supersede" {"old_id" (get-in old ["result" "id"])
+                                                        "replacement_id" (get-in replacement ["result" "id"])})]
+        (is (true? (get superseded "ok")))
+        (is (= "replaced" (get-in superseded ["result" "old" "after" "state"])))
+        (is (= "supersedes" (get-in superseded ["result" "supersedes-edge" "edge_type"]))))
+      (let [bad-supersede (socket-request rt "supersede" {"old_id" "missing"})]
+        (is (false? (get bad-supersede "ok")))
+        (is (= "protocol/malformed-request" (get-in bad-supersede ["error" "code"]))))
+      (let [replaced-update (socket-request rt "update" {"id" (get-in (socket-request rt "add" {"title" "Cannot replace" "attributes" {}}) ["result" "id"])
+                                                 "state" "replaced"})]
+        (is (false? (get replaced-update "ok")))
+        (is (= "protocol/malformed-request" (get-in replaced-update ["error" "code"]))))
+      (let [old-lifecycle (socket-request rt "add" {"title" "Old lifecycle" "active" true "attributes" {}})]
+        (is (false? (get old-lifecycle "ok")))
+        (is (= "protocol/malformed-request" (get-in old-lifecycle ["error" "code"]))))
       (let [rejected (socket-request rt "queries" {})]
         (is (false? (get rejected "ok")))
         (is (= "protocol/operation-not-allowed" (get-in rejected ["error" "code"])))))))
@@ -777,13 +840,13 @@
       (api/init rt)
       (reset! delivered-events [])
       (api/register-event-handler! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event {})
-      (let [added (socket-request rt "add" {"title" "Socket patch" "active" true "attributes" {}})
+      (let [added (socket-request rt "add" {"title" "Socket patch" "state" "active" "attributes" {}})
             updated (socket-request rt "update" {"id" (get-in added ["result" "id"])
-                                                  "active" false})]
+                                                  "state" "closed"})]
         (is (true? (get updated "ok")))
         (let [event (first (wait-for-events 1))]
           (is (= :strand/updated (:event/type event)))
-          (is (= {:active false} (:strand/patch event))))))))
+          (is (= {:state "closed"} (:strand/patch event))))))))
 
 (deftest json-socket-reports-uninitialized-database
   (with-runtime

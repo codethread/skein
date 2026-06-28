@@ -8,7 +8,7 @@ Skein is alpha software and follows the project tenets in `devflow/TENETS.md` an
 go install ./cli/cmd/strand
 SKEIN_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/skein"
 mkdir -p "$SKEIN_CONFIG"
-printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$SKEIN_CONFIG/config.json"
+printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$SKEIN_CONFIG/config.json"
 ```
 
 Start the weaver in one terminal:
@@ -21,7 +21,7 @@ Use it from another terminal:
 
 ```sh
 strand init
-strand --format json list
+strand list
 strand weaver status
 strand weaver stop
 ```
@@ -32,13 +32,13 @@ Use explicit config dirs for tests, smoke reproduction, examples, and agent work
 
 ```sh
 world=$(mktemp -d)
-printf '{"configFormat":"alpha","source":"%s","format":"human"}\n' "$PWD" | jq . > "$world/config.json"
+printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$world/config.json"
 strand --config-dir "$world" weaver start
 strand --config-dir "$world" init
-design=$(strand --config-dir "$world" add "Sketch model" --active false --attr priority=high)
+design=$(strand --config-dir "$world" add "Sketch model" --state closed --attr priority=high)
 docs=$(strand --config-dir "$world" add "Write docs" --attr owner=agent)
 strand --config-dir "$world" update "$docs" --edge depends-on:$design
-strand --config-dir "$world" --format json ready
+strand --config-dir "$world" ready
 strand --config-dir "$world" weaver stop
 ```
 
@@ -52,7 +52,7 @@ strand --config-dir "$world" weaver repl
 
 ```clojure
 (init!)
-(def design (:id (strand! "Sketch model" {:priority "high"} {:active false})))
+(def design (:id (strand! "Sketch model" {:priority "high"} {:state "closed"})))
 (def docs (:id (strand! "Write docs" {:owner "agent"})))
 (update! docs {:edges [{:type "depends-on" :to design}]})
 (defquery! 'agent-owned '[:= [:attr :owner] "agent"])
@@ -89,9 +89,10 @@ After validation, `git status --short` should not show generated SQLite, socket,
 ## Debugging SQLite state
 
 ```sh
-sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite '.schema'
-sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select id, title, active, inactive_at, attributes from strands;'
-sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select from_strand_id, to_strand_id, edge_type, attributes from strand_edges;'
+# Smoke worlds are created under a short /tmp/sk<pid>/ root while the suite runs.
+sqlite3 /tmp/sk<pid>/smoke-cli.sqlite.config-dir/data/skein.sqlite '.schema'
+sqlite3 /tmp/sk<pid>/smoke-cli.sqlite.config-dir/data/skein.sqlite 'select id, title, state, attributes from strands;'
+sqlite3 /tmp/sk<pid>/smoke-cli.sqlite.config-dir/data/skein.sqlite 'select from_strand_id, to_strand_id, edge_type, attributes from strand_edges;'
 ```
 
 ## Implementation boundaries

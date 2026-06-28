@@ -41,18 +41,26 @@
   (call-daemon :strands-by-ids ids))
 
 (defn ancestor-root-ids
-  "Return parent-of ancestor root ids for seed ids through the selected weaver runtime.
+  "Return ancestor root ids for seed ids through the selected weaver runtime.
 
-  With opts `:where`, returns topmost matching ancestors on each path; without
-  opts, returns graph roots with no parent-of parent. Routes directly through the
-  weaver runtime or the connected helper REPL world."
-  [seed-ids opts]
-  (call-daemon :ancestor-root-ids seed-ids opts))
+  Opts may include `:type` for the declared acyclic relation to traverse;
+  omitted `:type` defaults to `parent-of`. With opts `:where`, returns topmost
+  matching ancestors on each path; without opts, returns graph roots with no
+  parent in the traversed relation. Routes directly through the weaver runtime
+  or the connected helper REPL world."
+  ([seed-ids]
+   (call-daemon :ancestor-root-ids seed-ids))
+  ([seed-ids opts]
+   (call-daemon :ancestor-root-ids seed-ids opts)))
 
 (defn subgraph
-  "Return a parent-of subgraph for root ids through the selected weaver runtime.
+  "Return a relation-scoped subgraph for root ids through the selected weaver runtime.
 
-  The result shape is `{:root-ids [...] :strands [...] :edges [...]}`. Routes
-  directly through the weaver runtime or the connected helper REPL world."
-  [root-ids]
-  (call-daemon :subgraph root-ids))
+  Opts may include `:type` for the declared acyclic relation to traverse;
+  omitted `:type` defaults to `parent-of`. The result shape is
+  `{:root-ids [...] :strands [...] :edges [...]}`. Routes directly through the
+  weaver runtime or the connected helper REPL world."
+  ([root-ids]
+   (call-daemon :subgraph root-ids))
+  ([root-ids opts]
+   (call-daemon :subgraph root-ids opts)))

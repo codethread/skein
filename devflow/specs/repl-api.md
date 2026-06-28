@@ -19,6 +19,7 @@ init!
 strand!
 update!
 strand
+supersede!
 burn!
 burn-by-ids!
 defquery!
@@ -27,6 +28,8 @@ queries
 query
 strands
 ready
+declare-acyclic-relation!
+acyclic-relations
 defpattern!
 patterns
 pattern
@@ -41,17 +44,20 @@ weave!
 - **SPEC-003.C3:** `strand weaver repl --stdin` uses the same preloaded, connected helper context, reads forms from stdin, evaluates them in order, prints one direct normal Clojure result per top-level form, and exits. Callers that want one machine-readable payload should wrap work in one top-level `do` or `let`.
 - **SPEC-003.C4:** Helpers that need a weaver fail before connection with remediation that points to `strand weaver repl` or `connect!`; weaver/transport failures surface loudly as Clojure exceptions.
 - **SPEC-003.C5:** `init!` initializes the active weaver store schema.
-- **SPEC-003.C6:** `strand!` creates a strand and returns the created row. Supported arities include a title alone, title with attributes, and title with options containing optional `:active` and `:attributes`.
-- **SPEC-003.C7:** `update!` accepts a strand id and patch map with optional `:title`, `:active`, `:attributes`, and `:edges`. It does not accept removed core lifecycle keys such as `:status` or `:final_at`.
-- **SPEC-003.C8:** `:edges` are maps with `:type`, `:to`, and optional `:attributes`; each edge is written from the updated strand to `:to`.
-- **SPEC-003.C8a:** `burn!` and `burn-by-ids!` physically delete strands and incident edges through weaver burn primitives. Missing ids fail loudly.
+- **SPEC-003.C6:** `strand!` creates a strand and returns the created row. Supported arities include a title alone, title with attributes, and title with options containing optional `:state` and `:attributes`.
+- **SPEC-003.C7:** `update!` accepts a strand id and patch map with optional `:title`, `:state`, `:attributes`, and `:edges`. Generic update accepts `active|closed`; `replaced` is reserved for supersession. Other lifecycle keys are not core strand fields.
+- **SPEC-003.C8:** `:edges` are maps with `:type`, `:to`, and optional `:attributes`; each edge is written from the updated strand to `:to`. Edge `:type` values are open relation names matching `[a-z0-9][a-z0-9._/-]*`.
+- **SPEC-003.C8a:** `supersede!` accepts `(supersede! old-id replacement-id)`, delegates to the weaver supersession operation, stores `replacement --supersedes--> old`, marks the old strand `replaced`, rewires incoming `depends-on` edges, and returns the normalized supersession result.
+- **SPEC-003.C8b:** `burn!` and `burn-by-ids!` physically delete strands and incident edges through weaver burn primitives. Missing ids fail loudly.
 - **SPEC-003.C9:** `defquery!` registers a named query expression or parameterized query map in the active weaver's in-memory query registry.
 - **SPEC-003.C10:** `load-queries!` reads one EDN map of query names to query definitions and merges it into the active weaver's in-memory query registry.
 - **SPEC-003.C11:** `queries` returns the active weaver's in-memory query registry.
 - **SPEC-003.C12:** Query registry contents last only for the active weaver lifetime; reload trusted config or call `defquery!` / `load-queries!` again after weaver restart.
 - **SPEC-003.C13:** `query` returns strands matching an ad hoc query definition or weaver-registered query name, with optional runtime parameters.
-- **SPEC-003.C14:** `strand`, `strands`, `query`, and `ready` return rows with JSON-bearing columns normalized to Clojure values and with `active` and `inactive_at` lifecycle fields.
-- **SPEC-003.C15:** `ready` returns active strands whose direct `depends-on` dependencies are not active and may be further filtered by an ad hoc or registered query.
+- **SPEC-003.C13a:** Query predicates include direct edge-existence forms `[:edge/out relation target-query]` and `[:edge/in relation source-query]`. `relation` is a valid relation-name string or a `[:param :name]` reference resolving to one. Endpoint queries are strand-local and fail loudly if they contain nested edge predicates.
+- **SPEC-003.C14:** `strand`, `strands`, `query`, and `ready` return rows with JSON-bearing columns normalized to Clojure values and with the `state` lifecycle field.
+- **SPEC-003.C15:** `ready` returns active strands whose direct `depends-on` dependencies are not active and may be further filtered by an ad hoc or registered query. This is equivalent to `[:and [:= :state "active"] [:not [:edge/out "depends-on" [:= :state "active"]]]]`.
+- **SPEC-003.C15a:** `declare-acyclic-relation!` declares a valid relation name acyclic in durable storage and is idempotent. It fails loudly if edges of that relation already exist. `acyclic-relations` lists declared acyclic relation names.
 - **SPEC-003.C16:** Blessed library-workspace helpers live in explicit `skein.libs.alpha`, not in the preloaded `skein.repl` helper namespace.
 - **SPEC-003.C17:** `skein.libs.alpha` exposes approved library config helpers, approved-local-root sync helpers, resilient module activation with `use!`, and weaver-lifetime sync/use introspection.
 - **SPEC-003.C18:** `skein.libs.alpha` helpers route to the selected weaver world when called from connected REPL clients. Direct `require` in a connected helper REPL remains local to the helper JVM.
@@ -64,7 +70,7 @@ weave!
 
 Skein ships blessed source-visible runtime transformation namespaces for trusted config and connected REPL workflows:
 
-- `skein.graph.alpha` exposes `(query-ids! query params)`, `(burn-by-id! id)`, `(burn-by-ids! ids)`, `(strands-by-ids ids)`, `(ancestor-root-ids seed-ids opts)`, and `(subgraph root-ids)`. These helpers route to weaver operations for set-oriented query id selection, raw deletion, strand hydration by ids, parent-of feature-root traversal, and parent-of DAG/subgraph expansion.
+- `skein.graph.alpha` exposes `(query-ids! query params)`, `(burn-by-id! id)`, `(burn-by-ids! ids)`, `(strands-by-ids ids)`, `(ancestor-root-ids seed-ids)`, `(ancestor-root-ids seed-ids opts)`, `(subgraph root-ids)`, and `(subgraph root-ids opts)`. Traversal opts may include `:type` for the declared acyclic relation to walk and default to `"parent-of"`; annotation relations fail loudly. `ancestor-root-ids` also preserves `:where`/`:params` filtering.
 - `skein.views.alpha` exposes `(register-view! name fn-sym)`, `(view! name params)`, and `(views)`. View registration accepts a simple view name and a fully qualified function symbol, not an arbitrary client-side function value.
 - `skein.patterns.alpha` exposes `(register-pattern! name fn-sym input-spec)`, `(register-pattern! name doc fn-sym input-spec)`, `(patterns)`, `(pattern name)`, `(explain name)`, and `(weave! name input)`. Pattern functions are weaver-loadable function symbols called with `{:input input}` after input spec validation.
 - `skein.events.alpha` exposes `(register! key types fn-sym)`, `(register! key types fn-sym metadata)`, `(unregister! key)`, `(handlers)`, and `(recent-failures)`. Event registration accepts a stable handler key, a non-empty set of event type keywords, and a fully qualified function symbol resolvable in the weaver JVM.

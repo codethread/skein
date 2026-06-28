@@ -28,8 +28,7 @@ Common row keys:
 ```clojure
 :id
 :title
-:active
-:inactive_at
+:state
 :attributes
 ```
 
@@ -47,10 +46,10 @@ That creates a strand, extracts its `:id`, and stores the id in `s`.
 
 ```clojure
 (strand s)
-(update! s {:active false})
+(update! s {:state "closed"})
 ```
 
-Inactive strands stay in the store and receive `:inactive_at`. Use `burn!` for explicit deletion.
+Closed strands stay in the store with `:state "closed"`. Use `burn!` for explicit deletion.
 
 ## Collections
 
@@ -74,11 +73,11 @@ means: for one strand row, check whether its user attribute `owner` is `"ct"`.
 ```clojure
 (->> (strands)
      (filter #(= "ct" (get-in % [:attributes :owner])))
-     (filter :active)
+     (filter #(= "active" (:state %)))
      vec)
 ```
 
-That means: list strands, keep the ones owned by `ct`, keep active rows, and return a vector.
+That means: list strands, keep the ones owned by `ct`, keep active-state rows, and return a vector.
 
 ## Require helper namespaces
 
@@ -96,7 +95,7 @@ The aliases let you call functions like `libs/sync!`, `graph/strands-by-ids`, an
 (strand! "Title")
 (strand! "Title" {:owner "ct"})
 (strand! "Scratch" {:temporary "true"})
-(update! strand-id {:active false})
+(update! strand-id {:state "closed"})
 (burn! strand-id)
 (strand strand-id)
 (strands)

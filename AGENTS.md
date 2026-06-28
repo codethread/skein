@@ -48,7 +48,7 @@ printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$world/config
 
 strand --config-dir "$world" weaver start
 strand --config-dir "$world" init
-design=$(strand --config-dir "$world" add "Sketch model" --active false --attr priority=high)
+design=$(strand --config-dir "$world" add "Sketch model" --state closed --attr priority=high)
 docs=$(strand --config-dir "$world" add "Write docs" --attr owner=agent)
 strand --config-dir "$world" update "$docs" --edge depends-on:$design
 strand --config-dir "$world" ready
@@ -63,7 +63,7 @@ strand --config-dir "$world" weaver repl
 
 ```clojure
 (init!)
-(def design (:id (strand! "Sketch model" {:priority "high"} {:active false})))
+(def design (:id (strand! "Sketch model" {:priority "high"} {:state "closed"})))
 (def docs (:id (strand! "Write docs" {:owner "agent"})))
 (update! docs {:edges [{:type "depends-on" :to design}]})
 (defquery! 'agent-owned '[:= [:attr :owner] "agent"])

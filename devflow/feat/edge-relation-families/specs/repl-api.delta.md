@@ -13,8 +13,8 @@ This delta extends trusted Clojure workflows with state-based lifecycle, core su
 ## ERF-DELTA-003.P2 Contract changes
 
 - **ERF-DELTA-003.CC1:** `skein.repl/strand!` accepts `:state` in its options map. Valid create values are `"active"` and `"closed"`; omitted state defaults to `"active"`. `"replaced"` is produced only by the supersession helper.
-- **ERF-DELTA-003.CC2:** `skein.repl/update!` accepts `:state` values `"active"` and `"closed"`; it no longer accepts `:active` or removed lifecycle fields, and it does not manually set `"replaced"`.
-- **ERF-DELTA-003.CC3:** REPL-returned strand rows expose `state` and do not expose `active` or `inactive_at`.
+- **ERF-DELTA-003.CC2:** `skein.repl/update!` accepts `:state` values `"active"` and `"closed"`; it no longer accepts legacy boolean lifecycle query field or removed lifecycle fields, and it does not manually set `"replaced"`.
+- **ERF-DELTA-003.CC3:** REPL-returned strand rows expose `state` and do not expose `active` or `legacy inactive timestamp column`.
 - **ERF-DELTA-003.CC4:** `ready` returns strands with `state="active"` whose direct `depends-on` targets are not `state="active"`.
 - **ERF-DELTA-003.CC5:** `skein.repl` exposes or routes a core supersession helper, with final name to be set during implementation planning. The helper accepts old/replacement ids and delegates to the weaver supersession operation.
 - **ERF-DELTA-003.CC6:** The supersession helper atomically records `replacement --supersedes--> old`, sets `old.state="replaced"`, and rewires incoming `depends-on` edges from old to replacement. It fails loudly on missing ids, invalid states, self-supersession, or cycles.
@@ -25,8 +25,8 @@ This delta extends trusted Clojure workflows with state-based lifecycle, core su
 - **ERF-DELTA-003.CC11:** Endpoint queries are strand-local in this feature: they may use ordinary field, attribute, comparison, set-membership, existence/missing, and logical predicates, but may not contain nested edge predicates.
 - **ERF-DELTA-003.CC12:** A custom ready-like query can be authored through existing named-query workflows, for example `[:and [:= :state "active"] [:not [:edge/out "requires" [:= :state "active"]]]]`, then consumed through `query` or `strand list --query`. The built-in `ready` helper continues to use the shipped `depends-on` readiness battery.
 - **ERF-DELTA-003.CC13:** `skein.relations.alpha` exposes the annotation catalog as data-first Clojure values and simple lookup helpers. The catalog is advisory and is not required to write valid custom annotation relation names.
-- **ERF-DELTA-003.CC14:** `skein.graph.alpha` exposes trusted helpers to declare and inspect acyclic relations. The helpers route through the selected weaver when called from connected helper REPLs and execute directly inside the active weaver JVM when called from trusted config/library code.
-- **ERF-DELTA-003.CC15:** Acyclic declaration helpers are not preloaded into `skein.repl` as bare convenience names. Users explicitly require the blessed graph namespace when they need relation-schema operations.
+- **ERF-DELTA-003.CC14:** `skein.repl` exposes trusted helpers to declare and inspect acyclic relations through the selected weaver.
+- **ERF-DELTA-003.CC15:** Graph traversal helpers remain in `skein.graph.alpha`; users explicitly require the blessed graph namespace when they need relation-scoped traversal operations.
 - **ERF-DELTA-003.CC16:** `skein.graph.alpha/ancestor-root-ids` accepts seed ids plus opts containing an optional `:type` relation name and existing `:where`/`:params` filtering. Omitted `:type` uses the shipped `parent-of` battery.
 - **ERF-DELTA-003.CC17:** `skein.graph.alpha/subgraph` accepts root ids plus optional opts containing `:type`. Omitted `:type` uses the shipped `parent-of` battery.
 - **ERF-DELTA-003.CC18:** Graph traversal helpers fail loudly when asked to traverse a relation that is not declared acyclic. They do not provide cycle-aware traversal over annotation relations in this feature.

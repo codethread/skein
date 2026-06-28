@@ -20,7 +20,7 @@ Ship the source-visible annotation relation catalog and align active devflow fea
 ## ERF-TASK-007.P3 Done when
 
 - **ERF-TASK-007.DW1:** Focused tests for `skein.relations.alpha` pass.
-- **ERF-TASK-007.DW2:** `rg ':active|--active|inactive_at|allowed edge type|allowed edge types|final graph acyclicity|state "replaced"|:state "replaced"' devflow/feat --glob '!batch-graph-upsert/**'` shows no stale active-feature implementation contracts outside the deferred batch graph upsert handoff.
+- **ERF-TASK-007.DW2:** `rg 'legacy boolean lifecycle query field|legacy boolean lifecycle flag|legacy inactive timestamp column|closed relation allowlist|whole-graph cycle invariant|manual replaced-state assignment|manual replaced-state assignment' devflow/feat --glob '!batch-graph-upsert/**'` shows no stale active-feature implementation contracts outside the deferred batch graph upsert handoff.
 - **ERF-TASK-007.DW3:** Catalog docs/data clearly mark annotation conventions as behavior-free.
 
 ## ERF-TASK-007.P4 Out of scope

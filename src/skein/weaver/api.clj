@@ -454,7 +454,7 @@
       (throw (ex-info "Edge target strand not found" {:to to :type type})))
     (db/add-edge! tx {:from id :to to :type type :attributes (or attributes {})})))
 
-(def ^:private update-patch-keys #{:title :active :attributes :edges})
+(def ^:private update-patch-keys #{:title :state :attributes :edges})
 
 (defn- reject-unknown-update-keys! [patch]
   (let [unknown (seq (remove update-patch-keys (keys patch)))]
@@ -463,14 +463,14 @@
 
 (defn update [runtime id patch]
   (reject-unknown-update-keys! patch)
-  (let [{:keys [title active attributes edges]} patch
+  (let [{:keys [title state attributes edges]} patch
         result (jdbc/with-transaction [tx (ds runtime)]
                  (let [before (or (some-> (db/get-strand tx id) normalize)
                                   (throw (ex-info "Strand not found" {:strand-id id})))]
                    (apply-edges! tx id edges)
                    (let [after (normalize (db/update-strand! tx id (cond-> {}
                                                                      (contains? patch :title) (assoc :title title)
-                                                                     (contains? patch :active) (assoc :active active)
+                                                                     (contains? patch :state) (assoc :state state)
                                                                      (contains? patch :attributes) (assoc :attributes attributes))))]
                      {:before before :after after})))]
     (enqueue-event! runtime (assoc (event-base :strand/updated)
@@ -479,6 +479,24 @@
                                    :strand/before (:before result)
                                    :strand/after (:after result)))
     (:after result)))
+
+(defn supersede [runtime old-id replacement-id]
+  (let [result (normalize (db/supersede-strand! (ds runtime) old-id replacement-id))]
+    (enqueue-event! runtime (assoc (event-base :strand/superseded)
+                                   :strand/id old-id
+                                   :strand/old-id old-id
+                                   :strand/replacement-id replacement-id
+                                   :strand/before (get-in result [:old :before])
+                                   :strand/after (get-in result [:old :after])
+                                   :supersession/supersedes-edge (:supersedes-edge result)
+                                   :supersession/rewired-dependencies (:rewired-dependencies result)))
+    result))
+
+(defn declare-acyclic-relation! [runtime relation]
+  (db/declare-acyclic-relation! (ds runtime) relation))
+
+(defn acyclic-relations [runtime]
+  (db/list-acyclic-relations (ds runtime)))
 
 (defn show [runtime id]
   (normalize (db/get-strand (ds runtime) id)))
@@ -530,11 +548,14 @@
   ([runtime seed-ids opts]
    (db/ancestor-root-ids (ds runtime) seed-ids opts)))
 
-(defn subgraph [runtime root-ids]
-  (let [{:keys [strands edges] :as result} (db/subgraph (ds runtime) root-ids)]
-    (assoc result
-           :strands (normalize strands)
-           :edges (normalize edges))))
+(defn subgraph
+  ([runtime root-ids]
+   (subgraph runtime root-ids {}))
+  ([runtime root-ids opts]
+   (let [{:keys [strands edges] :as result} (db/subgraph (ds runtime) root-ids opts)]
+     (assoc result
+            :strands (normalize strands)
+            :edges (normalize edges)))))
 
 (defn- canonical-view-name [view-name]
   (query/canonical-query-name view-name))

@@ -12,7 +12,7 @@ This delta adds durable relation-schema operations, state-based readiness, core 
 
 ## ERF-DELTA-002.P2 Contract changes
 
-- **ERF-DELTA-002.CC1:** Weaver API strand rows expose `state` and do not expose old `active` or `inactive_at` lifecycle fields.
+- **ERF-DELTA-002.CC1:** Weaver API strand rows expose `state` and do not expose old `active` or `legacy inactive timestamp column` lifecycle fields.
 - **ERF-DELTA-002.CC2:** Generic add/update/batch/pattern mutation paths accept `state` where they previously accepted `active`, but only with values `active` or `closed`. The `replaced` state is set only by the supersession operation.
 - **ERF-DELTA-002.CC3:** The weaver-owned storage schema includes durable acyclic relation declarations. Runtime startup/config reload does not own relation semantics; it reads and mutates durable relation declarations only through storage-backed operations.
 - **ERF-DELTA-002.CC4:** Storage initialization installs the shipped acyclic declarations for `depends-on`, `parent-of`, and `supersedes` before accepting edge writes that rely on those batteries.

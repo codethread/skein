@@ -30,7 +30,7 @@ Then use it from another terminal:
 
 ```sh
 strand init
-strand add "Sketch strand model" --active false --attr example_outcome=sketched
+strand add "Sketch strand model" --state closed --attr example_outcome=sketched
 strand add "Write docs" --attr owner=agent
 strand list
 strand ready
@@ -67,7 +67,7 @@ Then use it from another terminal:
 
 ```sh
 strand --config-dir "$world" init
-strand --config-dir "$world" add "Sketch strand model" --active false --attr example_outcome=sketched
+strand --config-dir "$world" add "Sketch strand model" --state closed --attr example_outcome=sketched
 ```
 
 Explicit `--config-dir <dir>` worlds keep config in `<dir>/config.json`, runtime state in `<dir>/state`, and strand data in `<dir>/data/skein.sqlite`.
@@ -76,11 +76,11 @@ Explicit `--config-dir <dir>` worlds keep config in `<dir>/config.json`, runtime
 
 Skein stores:
 
-- strands with generated text ids, titles, `active`, `inactive_at`, timestamps, and JSON attributes;
-- strand edges with a type, direction, and JSON attributes;
-- `depends-on` edges used to calculate readiness.
+- strands with generated text ids, titles, lifecycle `state`, timestamps, and JSON attributes;
+- strand edges with an open relation name, direction, and JSON attributes;
+- declared acyclic operational relations: `depends-on`, `parent-of`, and `supersedes`.
 
-`active` is the only core lifecycle concept. Inactive strands are retained with `inactive_at`; destructive cleanup uses explicit `burn`. Outcomes, categories, temporary markers, or other workflow concepts are user attributes chosen by your world, not built-in fields.
+`state` is the only core lifecycle field. Active strands participate in readiness; closed and replaced strands are retained; destructive cleanup uses explicit `burn`. `strand supersede <old-id> <replacement-id>` records `replacement --supersedes--> old`, marks the old strand `replaced`, and rewires direct dependents. Outcomes, categories, temporary markers, or other workflow concepts are user attributes chosen by your world, not built-in fields.
 
 ## Runtime customization
 

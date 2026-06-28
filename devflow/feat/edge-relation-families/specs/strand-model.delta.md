@@ -12,11 +12,11 @@ This delta replaces boolean `active` lifecycle and closed/global edge behavior w
 
 ## ERF-DELTA-001.P2 Contract changes
 
-- **ERF-DELTA-001.CC1:** Strand records replace `active` and `inactive_at` with required `state`. Valid values are `active`, `closed`, and `replaced`.
+- **ERF-DELTA-001.CC1:** Strand records replace `active` and `legacy inactive timestamp column` with required `state`. Valid values are `active`, `closed`, and `replaced`.
 - **ERF-DELTA-001.CC2:** `state="active"` means the strand participates in readiness and can block dependents through active `depends-on` edges.
 - **ERF-DELTA-001.CC3:** `state="closed"` means the strand is intentionally inactive with no core replacement semantics.
 - **ERF-DELTA-001.CC4:** `state="replaced"` means the strand is inactive because another strand supersedes it. The replacement is discovered by querying incoming `supersedes` edges, not by a `replaced_by` column.
-- **ERF-DELTA-001.CC5:** The shipped schema and public APIs do not accept old lifecycle fields or aliases: no `active`, no `inactive_at`, no `:active` query field, and no compatibility booleans.
+- **ERF-DELTA-001.CC5:** The shipped schema and public APIs do not accept old lifecycle fields or aliases: no `active`, no `legacy inactive timestamp column`, no legacy boolean lifecycle query field, and no compatibility booleans.
 - **ERF-DELTA-001.CC5a:** Generic create/update/batch/pattern lifecycle inputs accept only `active` or `closed`. `replaced` is reserved for the core supersession transaction so no replaced strand can exist without replacement lineage.
 - **ERF-DELTA-001.CC6:** An edge's `edge_type` is a relation name: a lowercase portable string matching `[a-z0-9][a-z0-9._/-]*`. Relation names are stored exactly as supplied and are not case-folded or otherwise canonicalized.
 - **ERF-DELTA-001.CC7:** `strand_edges` stores any valid relation name. Valid relation names outside Skein's operational batteries and annotation catalog are accepted as userland relation names.

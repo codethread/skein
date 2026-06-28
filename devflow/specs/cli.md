@@ -24,11 +24,12 @@ Commands:
 
 ```text
 init
-add <title> [--active true|false] [--attr key=value ...] [--attr-file key=path ...] [--attr-stdin key] [--attributes-stdin]
-update <id> [--title title] [--active true|false] [--attr key=value ...] [--edge edge-type:to-id ...]
+add <title> [--state active|closed] [--attr key=value ...] [--attr-file key=path ...] [--attr-stdin key] [--attributes-stdin]
+update <id> [--title title] [--state active|closed] [--attr key=value ...] [--edge edge-type:to-id ...]
 show <id>
+supersede <old-id> <replacement-id>
 burn <id>
-list [--active true|false] [--query name] [--param key=value ...]
+list [--state active|closed|replaced] [--query name] [--param key=value ...]
 ready [--query name] [--param key=value ...]
 weave --pattern <name>
 pattern explain <name>
@@ -45,18 +46,19 @@ weaver status
 - **SPEC-002.C3:** `source`, when required, must resolve to an absolute path to the Skein source checkout root containing `deps.edn`. A leading `~` (or `~/`) is expanded to the user home directory before validation. Relative paths, missing directories, and directories without `deps.edn` fail before launching Clojure.
 - **SPEC-002.C4:** Public strand/weaver commands emit JSON. `--format` and config-file output format settings are not supported.
 - **SPEC-002.C5:** Normal strand/query/status/stop commands connect to `weaver.sock` for the selected world and do not require `source` once the weaver is running. They fail loudly when no weaver is running, when `weaver.json`/socket state is stale or malformed, or when protocol/identity verification fails.
-- **SPEC-002.C6:** `add` creates a strand with generated id, active state, timestamps, and CLI attributes. `--active` defaults to `true`.
+- **SPEC-002.C6:** `add` creates a strand with generated id, lifecycle state, timestamps, and CLI attributes. `--state` defaults to `active` and accepts `active|closed`; `replaced` is reserved for supersession.
 - **SPEC-002.C6a:** `--attr key=value` writes one string-valued attribute and may be repeated.
 - **SPEC-002.C6b:** `--attr-file key=path` reads the exact file contents and writes that string as attribute `key`; it may be repeated.
 - **SPEC-002.C6c:** `--attr-stdin key` reads all stdin and writes that string as attribute `key`; it may appear at most once.
 - **SPEC-002.C6d:** `--attributes-stdin` reads exactly one JSON object from stdin and merges its properties into the attributes map, preserving JSON value types from that object.
 - **SPEC-002.C6e:** `--attr-stdin` and `--attributes-stdin` are mutually exclusive because both consume stdin. Attribute merge precedence is `--attr` highest, then `--attr-file` / `--attr-stdin`, then `--attributes-stdin` lowest. Cross-priority duplicate keys are allowed and resolved by precedence; duplicate keys within one priority fail loudly.
-- **SPEC-002.C7:** `update` patches title, active state, attributes, and strand edges for one existing strand.
+- **SPEC-002.C7:** `update` patches title, lifecycle state, attributes, and strand edges for one existing strand. Generic update accepts `active|closed`; it cannot set `replaced`.
 - **SPEC-002.C8:** `--edge edge-type:to-id` creates or updates an outgoing edge from the updated strand to the target strand.
-- **SPEC-002.C9:** `add`, `update`, `show`, `list`, and `ready` return JSON with normalized `attributes` and fields `active` and `inactive_at`; they do not emit `status` or `final_at`.
-- **SPEC-002.C9a:** `burn <id>` physically deletes one strand and its incident edges, returning a JSON summary of burned ids and count.
-- **SPEC-002.C10:** `ready` returns active strands whose direct `depends-on` dependencies are all inactive or absent.
-- **SPEC-002.C11:** `list` and `ready` accept an optional named query from weaver memory with `--query` and repeated string-valued `--param key=value` runtime parameters. `list` also accepts optional `--active true|false`; callers that care about liveness should pass it explicitly.
+- **SPEC-002.C9:** `add`, `update`, `supersede`, `show`, `list`, and `ready` return JSON from the weaver with normalized `attributes` and `state`; they do not emit old lifecycle fields `active` or `inactive_at`.
+- **SPEC-002.C9a:** `supersede <old-id> <replacement-id>` delegates to the weaver supersession transaction, stores `replacement --supersedes--> old`, marks the old strand `replaced`, rewires incoming `depends-on` edges, and returns the normalized supersession result.
+- **SPEC-002.C9b:** `burn <id>` physically deletes one strand and its incident edges, returning a JSON summary of burned ids and count.
+- **SPEC-002.C10:** `ready` returns strands with `state="active"` and no direct `depends-on` target whose `state` is `active`.
+- **SPEC-002.C11:** `list` and `ready` accept an optional named query from weaver memory with `--query` and repeated string-valued `--param key=value` runtime parameters. `list` also accepts optional `--state active|closed|replaced`; callers that care about lifecycle should pass it explicitly.
 - **SPEC-002.C12:** `--where`, `--status`, and `--format` are not part of the public Go CLI. Rich EDN query authoring belongs in trusted weaver config and REPL workflows.
 - **SPEC-002.C13:** The CLI has no query registry mutation/listing commands and does not accept `--query-file`; query loading is a trusted weaver config or REPL workflow, and registry contents last only for the weaver lifetime.
 - **SPEC-002.C13a:** `weave --pattern <name>` reads exactly one JSON value from stdin, sends it to an already registered weaver-side pattern, and returns the pattern-created batch result as JSON with `created` rows and `refs`. Empty stdin, malformed JSON, trailing JSON values, missing/blank pattern names, and positional args fail before mutation.

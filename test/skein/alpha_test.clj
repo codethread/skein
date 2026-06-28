@@ -51,7 +51,7 @@
         (let [batch-result (batch/apply! {:refs {:feature (:id feature)
                                                  :task (:id task)}
                                           :strands [{:ref :task
-                                                     :active false
+                                                     :state "closed"
                                                      :attributes {:owner "agent" :phase "batched"}}
                                                     {:ref :batch-task
                                                      :title "Batch task"
@@ -63,12 +63,12 @@
               created (first (:created batch-result))
               updated (first (:updated batch-result))]
           (is (= (:id created) (get-in batch-result [:refs :batch-task])))
-          (is (= {:title "Batch task" :active true :attributes {:owner "agent"}}
-                 (select-keys created [:title :active :attributes])))
+          (is (= {:title "Batch task" :state "active" :attributes {:owner "agent"}}
+                 (select-keys created [:title :state :attributes])))
           (is (= {:id (:id task)
-                  :active false
+                  :state "closed"
                   :attributes {:owner "agent" :phase "batched"}}
-                 (select-keys (:after updated) [:id :active :attributes]))))))))
+                 (select-keys (:after updated) [:id :state :attributes]))))))))
 
 (deftest batch-alpha-helper-routes-through-connected-weaver-world
   (with-runtime
@@ -89,8 +89,8 @@
                                                  :attributes {:owner "connected"}}]})
                 created (first (:created result))]
             (is (= (:id created) (get-in result [:refs :connected-task])))
-            (is (= {:title "Connected task" :active true :attributes {:owner "connected"}}
-                   (select-keys created [:title :active :attributes])))
+            (is (= {:title "Connected task" :state "active" :attributes {:owner "connected"}}
+                   (select-keys created [:title :state :attributes])))
             (is (= [(:id created)] (mapv :id (api/list rt))))))))))
 
 (deftest alpha-helpers-route-through-connected-helper-context

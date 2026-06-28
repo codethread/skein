@@ -1,15 +1,20 @@
 (ns skein.query
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.spec.alpha :as s]
+            [clojure.string :as str]
+            [skein.specs :as specs]))
 
-(def fields
-  {:id "t.id"
-   :title "t.title"
-   :active "t.active"
-   :created_at "t.created_at"
-   :updated_at "t.updated_at"
-   :inactive_at "t.inactive_at"})
+(def ^:private field-columns
+  {:id "id"
+   :title "title"
+   :state "state"
+   :created_at "created_at"
+   :updated_at "updated_at"})
+
+(def ^:dynamic *strand-alias* "t")
+(def ^:dynamic *allow-edge-predicates* true)
+(def ^:dynamic *validating-query-def* false)
 
 (defn- fail! [message data]
   (throw (ex-info message data)))
@@ -33,13 +38,13 @@
 
 (defn- compile-field [field]
   (cond
-    (contains? fields field) {:sql (fields field) :params []}
+    (contains? field-columns field) {:sql (str *strand-alias* "." (field-columns field)) :params []}
 
     (and (vector? field) (= :attr (first field)))
-    {:sql "json_extract(t.attributes, ?)" :params [(attr-path (rest field))]}
+    {:sql (str "json_extract(" *strand-alias* ".attributes, ?)") :params [(attr-path (rest field))]}
 
     :else
-    (fail! "Unknown query field" {:field field :allowed (keys fields)})))
+    (fail! "Unknown query field" {:field field :allowed (keys field-columns)})))
 
 (defn- param-value [params [_ k]]
   (when-not (keyword? k)
@@ -61,6 +66,32 @@
 (defn- join-compiled [operator compiled]
   {:sql (str "(" (str/join (str " " operator " ") (map :sql compiled)) ")")
    :params (vec (mapcat :params compiled))})
+
+(defn- relation-value [relation params]
+  (let [relation (if (and (vector? relation) (= :param (first relation)))
+                   (if *validating-query-def*
+                     "skein-query-param"
+                     (param-value params relation))
+                   relation)]
+    (when-not (s/valid? ::specs/edge-type relation)
+      (fail! "Edge predicate relation must be a valid relation name" {:relation relation}))
+    relation))
+
+(defn- compile-edge [direction relation endpoint-query params]
+  (when-not *allow-edge-predicates*
+    (fail! "Endpoint queries must not contain nested edge predicates" {:query endpoint-query}))
+  (let [relation (relation-value relation params)
+        [endpoint-alias join-clause candidate-clause]
+        (case direction
+          :out ["target" "target.id = e.to_strand_id" (str "e.from_strand_id = " *strand-alias* ".id")]
+          :in ["source" "source.id = e.from_strand_id" (str "e.to_strand_id = " *strand-alias* ".id")])
+        endpoint (binding [*strand-alias* endpoint-alias
+                           *allow-edge-predicates* false]
+                   (compile-expr endpoint-query params))]
+    {:sql (str "EXISTS (SELECT 1 FROM strand_edges e "
+               "JOIN strands " endpoint-alias " ON " join-clause " "
+               "WHERE " candidate-clause " AND e.edge_type = ? AND " (:sql endpoint) ")")
+     :params (vec (cons relation (:params endpoint)))}))
 
 (defn compile-expr
   ([expr] (compile-expr expr {}))
@@ -110,6 +141,12 @@
                   (when-not (= 1 (count args)) (fail! ":missing requires one field" {:expr expr}))
                   (let [compiled (compile-field (first args))]
                     {:sql (str (:sql compiled) " IS NULL") :params (:params compiled)}))
+       :edge/out (do
+                   (when-not (= 2 (count args)) (fail! ":edge/out requires relation and target query" {:expr expr}))
+                   (compile-edge :out (first args) (second args) params))
+       :edge/in (do
+                  (when-not (= 2 (count args)) (fail! ":edge/in requires relation and source query" {:expr expr}))
+                  (compile-edge :in (first args) (second args) params))
        (fail! "Unknown query operator" {:operator op :expr expr})))))
 
 (defn read-edn-file [path]
@@ -161,9 +198,10 @@
 
 (defn validate-query-def! [query-def]
   (let [params (if (map? query-def)
-                 (zipmap (:params query-def) (repeat ["__skein_query_param__"]))
+                 (zipmap (:params query-def) (repeat ["skein-query-param"]))
                  {})]
-    (compile-query query-def params))
+    (binding [*validating-query-def* true]
+      (compile-query query-def params)))
   query-def)
 
 (defn compile-query [query-def params]

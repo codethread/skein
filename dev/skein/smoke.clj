@@ -10,6 +10,9 @@
 (def repl-smoke-db "smoke-repl.sqlite")
 (def strand-bin (.getAbsolutePath (java.io.File. "cli/bin/strand")))
 (def checkout-root (.getAbsolutePath (java.io.File. ".")))
+(def smoke-run-root
+  (doto (java.io.File. "/tmp" (str "sk" (.pid (java.lang.ProcessHandle/current))))
+    (.mkdirs)))
 
 (defn titles [rows]
   (mapv :title rows))
@@ -19,7 +22,7 @@
     (.delete (java.io.File. (str db-file suffix)))))
 
 (defn smoke-config-dir [db-file]
-  (java.nio.file.Paths/get (str db-file ".config-dir") (make-array String 0)))
+  (.resolve (.toPath smoke-run-root) (str db-file ".config-dir")))
 
 (defn smoke-world-db [db-file]
   (str (.resolve (smoke-config-dir db-file) "data/skein.sqlite")))
@@ -99,7 +102,7 @@
     (.getCanonicalPath marker)))
 
 (defn outside-repo-dir []
-  (doto (java.io.File. (System/getProperty "java.io.tmpdir") "skein-smoke-outside-repo")
+  (doto (java.io.File. smoke-run-root "outside-repo")
     (.mkdirs)))
 
 (defn write-client-config-to-dir! [config-dir]
@@ -169,7 +172,7 @@
         start (run-process! "Go CLI weaver start help succeeds" [strand-bin "weaver" "start" "--help"])]
     (doseq [needle ["Available Commands:" "add" "list" "weaver"]]
       (assert-contains root needle "Go CLI root help shows command tree"))
-    (doseq [needle ["add <title>" "--active" "--attr"]]
+    (doseq [needle ["add <title>" "--state" "--attr"]]
       (assert-contains add needle "Go CLI command help shows flags"))
     (doseq [needle ["start" "status" "stop"]]
       (assert-contains weaver needle "Go CLI subcommand help shows children"))
@@ -184,7 +187,7 @@
   (stop-cli-daemon-config! (write-client-config! db-file) daemon))
 
 (defn smoke-config-dir-named [name]
-  (java.nio.file.Paths/get (str name ".config-dir") (make-array String 0)))
+  (.resolve (.toPath smoke-run-root) (str name ".config-dir")))
 
 (defn bootstrap-config-dir [db-file label]
   (.getCanonicalPath (.toFile (smoke-config-dir-named (str db-file "." label)))))
@@ -332,24 +335,28 @@
       (try
         (assert= "base layered" (slurp marker) "selected config-dir init.clj activates layered local library during weaver startup")
         (run-cli! db-file "init")
-            (let [design (cli-add! db-file "Sketch strand graph model" "--active=false" "--attr" "priority=high")
+            (let [design (cli-add! db-file "Sketch strand graph model" "--state=closed" "--attr" "priority=high")
                   schema (cli-add! db-file "Create SQLite schema" "--attr" "priority=high")
                   docs (cli-add! db-file "Write usage notes" "--attr" "owner=agent")]
               (run-cli! db-file "update" schema "--edge" (str "depends-on:" design))
               (run-cli! db-file "update" docs "--edge" (str "depends-on:" schema))
               (assert= ["Create SQLite schema"]
                        (titles (parse-json (run-cli! db-file "ready")))
-                       "Go CLI ready sees strands with inactive dependencies")
-              (run-cli! db-file "update" schema "--active=false")
+                       "Go CLI ready sees strands with closed dependencies")
+              (run-cli! db-file "update" schema "--state=closed")
               (assert= ["Write usage notes"]
                        (titles (parse-json (run-cli! db-file "ready")))
-                       "Go CLI update active changes readiness")
-              (let [inactive-schema (parse-json (run-cli! db-file "show" schema))]
-                (assert= false
-                         (:active inactive-schema)
-                         "Go CLI show exposes active lifecycle")
-                (assert (:inactive_at inactive-schema)
-                        (str "Go CLI show exposes inactive_at for inactive persistent strands\n" inactive-schema)))
+                       "Go CLI update state changes readiness")
+              (let [closed-schema (parse-json (run-cli! db-file "show" schema))]
+                (assert= "closed"
+                         (:state closed-schema)
+                         "Go CLI show exposes state lifecycle"))
+              (let [replacement-schema (cli-add! db-file "Create replacement schema")
+                    result (parse-json (run-cli! db-file "supersede" schema replacement-schema))]
+                (assert= "replaced" (get-in result [:old :after :state]) "Go CLI supersede marks old strand replaced")
+                (assert= replacement-schema (:replacement-id result) "Go CLI supersede reports replacement strand")
+                (assert= docs (get-in result [:rewired-dependencies 0 :from]) "Go CLI supersede rewires incoming depends-on edges")
+                (run-cli! db-file "update" replacement-schema "--state=closed"))
               (let [scratch (cli-add! db-file "Temporary scratch strand" "--attr" "temporary=true")]
                 (run-cli! db-file "burn" scratch)
                 (assert (not (some #{"Temporary scratch strand"}
@@ -362,10 +369,11 @@
                 (assert= (.getPath (metadata/socket-file (smoke-world db-file)))
                          (:socket_path status)
                          "Go CLI weaver status reports socket metadata")
-                (let [stdin-output (run-cli-stdin! db-file "(do\n  (require '[skein.libs.alpha :as libs])\n  (defquery! 'agent-owned '[:= [:attr :owner] \"agent\"])\n  {:strand-count (count (strands))\n   :ready-titles (mapv :title (ready))\n   :syncs (libs/syncs)\n   :base (libs/use :smoke/lib)\n   :layer (libs/use :smoke/layer)\n   :optional (libs/use :smoke/optional-missing)})\n" "weaver" "repl" "--stdin")
+                (let [stdin-output (run-cli-stdin! db-file "(do\n  (require '[skein.libs.alpha :as libs])\n  (defquery! 'agent-owned '[:= [:attr :owner] \"agent\"])\n  (defquery! 'replacement-lineage '[:edge/out \"supersedes\" [:= :state \"replaced\"]])\n  {:strand-count (count (strands))\n   :ready-titles (mapv :title (ready))\n   :lineage-titles (mapv :title (query 'replacement-lineage))\n   :syncs (libs/syncs)\n   :base (libs/use :smoke/lib)\n   :layer (libs/use :smoke/layer)\n   :optional (libs/use :smoke/optional-missing)})\n" "weaver" "repl" "--stdin")
                       payload (edn/read-string stdin-output)]
-                  (assert= 3 (:strand-count payload) "Go CLI weaver repl --stdin prints direct form result")
+                  (assert= 4 (:strand-count payload) "Go CLI weaver repl --stdin prints direct form result")
                   (assert= ["Write usage notes"] (:ready-titles payload) "Go CLI weaver repl --stdin has connected helper context")
+                  (assert= ["Create replacement schema"] (:lineage-titles payload) "Go CLI weaver repl --stdin can run relation edge predicates")
                   (assert= :loaded (get-in payload [:syncs :libs 'smoke/lib :status]) "Go CLI weaver repl --stdin introspects loaded library sync state")
                   (assert= :failed (get-in payload [:syncs :libs 'smoke/missing :status]) "Go CLI weaver repl --stdin introspects missing library sync failure")
                   (assert= :loaded (get-in payload [:base :status]) "Go CLI weaver repl --stdin sees base module use state")
@@ -383,7 +391,7 @@
                                          "  (require '[skein.batch.alpha :as batch])\n"
                                          "  (let [result (batch/apply! {:refs {:docs \"" docs "\" :design \"" design "\"}\n"
                                          "                              :strands [{:ref :docs\n"
-                                         "                                         :active true\n"
+                                         "                                         :state \"active\"\n"
                                          "                                         :attributes {:owner \"agent\" :batch \"updated\"}}\n"
                                          "                                        {:ref :batch-followup\n"
                                          "                                         :title \"Batch follow-up\"\n"
@@ -411,29 +419,29 @@
                   (assert= docs (get-in batch-result [:refs :docs]) "batch smoke keeps bound existing ref in final refs")
                   (assert= design (get-in batch-result [:refs :design]) "batch smoke keeps burned ref in final refs")
                   (assert= batch-followup-id (:id batch-created) "batch smoke returns created row matching new ref")
-                  (assert= {:title "Batch follow-up" :active true :attributes {:owner "agent" :batch "created"}}
-                           (select-keys batch-created [:title :active :attributes])
+                  (assert= {:title "Batch follow-up" :state "active" :attributes {:owner "agent" :batch "created"}}
+                           (select-keys batch-created [:title :state :attributes])
                            "batch smoke returns normalized created row")
                   (assert= {:ref :docs :id docs}
                            (select-keys batch-updated [:ref :id])
                            "batch smoke returns updated row identity")
-                  (assert= {:id docs :title "Write usage notes" :active true :attributes {:owner "agent"}}
-                           (select-keys (:before batch-updated) [:id :title :active :attributes])
+                  (assert= {:id docs :title "Write usage notes" :state "active" :attributes {:owner "agent"}}
+                           (select-keys (:before batch-updated) [:id :title :state :attributes])
                            "batch smoke returns updated before row")
-                  (assert= {:id docs :active true :attributes {:owner "agent" :batch "updated"}}
-                           (select-keys (:after batch-updated) [:id :active :attributes])
+                  (assert= {:id docs :state "active" :attributes {:owner "agent" :batch "updated"}}
+                           (select-keys (:after batch-updated) [:id :state :attributes])
                            "batch smoke returns updated after row")
                   (assert= {:ref :design :id design}
                            (select-keys batch-burned [:ref :id])
                            "batch smoke returns burned row identity")
-                  (assert= {:id design :title "Sketch strand graph model" :active false :attributes {:priority "high"}}
-                           (select-keys (:before batch-burned) [:id :title :active :attributes])
+                  (assert= {:id design :title "Sketch strand graph model" :state "closed" :attributes {:priority "high"}}
+                           (select-keys (:before batch-burned) [:id :title :state :attributes])
                            "batch smoke returns burned before row")
-                  (assert= {:id docs :title "Write usage notes" :active true :attributes {:owner "agent" :batch "updated"}}
-                           (select-keys (:docs batch-payload) [:id :title :active :attributes])
+                  (assert= {:id docs :title "Write usage notes" :state "active" :attributes {:owner "agent" :batch "updated"}}
+                           (select-keys (:docs batch-payload) [:id :title :state :attributes])
                            "batch smoke can observe updated graph state through REPL reads")
-                  (assert= {:id batch-followup-id :title "Batch follow-up" :active true :attributes {:owner "agent" :batch "created"}}
-                           (select-keys (:batch-followup batch-payload) [:id :title :active :attributes])
+                  (assert= {:id batch-followup-id :title "Batch follow-up" :state "active" :attributes {:owner "agent" :batch "created"}}
+                           (select-keys (:batch-followup batch-payload) [:id :title :state :attributes])
                            "batch smoke can observe created graph state through REPL reads")
                   (assert= ["Write usage notes"]
                            (:ready-titles batch-payload)
@@ -455,10 +463,10 @@
       (try
         (repl/connect! (:config-dir world))
         (repl/init!)
-        (let [a (:id (repl/strand! "First strand" {} {:active false}))
+        (let [a (:id (repl/strand! "First strand" {} {:state "closed"}))
               b (:id (repl/strand! "Second strand" {:owner "agent"}))]
           (repl/update! b {:edges [{:type "depends-on" :to a}]})
-          (assert= ["Second strand"] (titles (repl/ready)) "skein.repl ready returns strands with inactive dependencies")
+          (assert= ["Second strand"] (titles (repl/ready)) "skein.repl ready returns strands with closed dependencies")
           (repl/defquery! 'agent-owner '[:= [:attr :owner] "agent"])
           (assert= ["Second strand"]
                    (titles (repl/strands 'agent-owner))
@@ -466,21 +474,32 @@
           (assert= ["Second strand"]
                    (titles (repl/query '[:= [:attr :owner] "agent"]))
                    "skein.repl retains EDN-rich ad hoc query debugging")
-          (repl/update! b {:active false})
-          (let [inactive-b (repl/strand b)]
-            (assert= false (:active inactive-b) "skein.repl update! updates active")
-            (assert (:inactive_at inactive-b)
-                    (str "skein.repl exposes inactive_at for inactive persistent strands\n" inactive-b)))
+          (repl/update! b {:state "closed"})
+          (let [closed-b (repl/strand b)]
+            (assert= "closed" (:state closed-b) "skein.repl update! updates state"))
           (let [scratch (:id (repl/strand! "Scratch REPL strand" {:temporary "true"}))]
             (repl/burn! scratch)
             (assert (nil? (repl/strand scratch))
-                    "skein.repl burn! deletes a scratch strand row")))
+                    "skein.repl burn! deletes a scratch strand row"))
+          (let [old (:id (repl/strand! "Old REPL strand"))
+                replacement (:id (repl/strand! "Replacement REPL strand"))
+                dependent (:id (repl/strand! "Dependent REPL strand"))]
+            (repl/update! dependent {:edges [{:type "depends-on" :to old}]})
+            (let [result (repl/supersede! old replacement)]
+              (assert= "replaced" (get-in result [:old :after :state]) "skein.repl supersede! marks old strand replaced")
+              (assert= replacement (:replacement-id result) "skein.repl supersede! reports replacement id")
+              (assert= #{dependent}
+                       (set (map :from (:rewired-dependencies result)))
+                       "skein.repl supersede! rewires direct dependents"))))
         (finally
           (runtime/stop! runtime))))
     (finally
       (clean-runtime-artifacts! db-file))))
 
 (defn -main [& [db-file]]
-  (smoke-cli! (if db-file (str db-file ".cli") cli-smoke-db))
-  (smoke-repl! (if db-file (str db-file ".repl") repl-smoke-db))
-  (println "\nSmoke completed with weaver-backed Go CLI and REPL flows."))
+  (try
+    (smoke-cli! (if db-file (str db-file ".cli") cli-smoke-db))
+    (smoke-repl! (if db-file (str db-file ".repl") repl-smoke-db))
+    (println "\nSmoke completed with weaver-backed Go CLI and REPL flows.")
+    (finally
+      (delete-tree! (.toPath smoke-run-root)))))

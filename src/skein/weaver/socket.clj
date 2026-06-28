@@ -10,7 +10,7 @@
            [org.sqlite SQLiteException]))
 
 (def allowed-operations
-  #{"init" "add" "update" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-explain" "status" "stop"})
+  #{"init" "add" "update" "supersede" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-explain" "status" "stop"})
 
 (def required-request-keys #{"protocol_version" "request_id" "weaver_id" "operation" "arguments" "options"})
 
@@ -39,6 +39,8 @@
   (ex-info "Database is not initialized; run `strand init` first" {:code "database/not-initialized"}))
 
 (defn- string-map? [m] (and (map? m) (every? string? (vals m))))
+(def ^:private readable-states #{"active" "closed" "replaced"})
+(def ^:private generic-states #{"active" "closed"})
 (defn- valid-edge? [edge]
   (and (map? edge)
        (= #{"type" "to"} (set (keys edge)))
@@ -51,32 +53,35 @@
     (when-not
       (case op
         "init" (= {} args)
-        "list" (and (every? #{"active"} (keys args))
-                    (or (not (contains? args "active")) (boolean? (get args "active"))))
+        "list" (and (every? #{"state"} (keys args))
+                    (or (not (contains? args "state")) (contains? readable-states (get args "state"))))
         "ready" (= {} args)
         "status" (= {} args)
         "stop" (= {} args)
-        "add" (and (every? #{"title" "attributes" "active"} (keys args))
+        "add" (and (every? #{"title" "attributes" "state"} (keys args))
                    (contains? args "title")
                    (contains? args "attributes")
                    (string? (get args "title"))
                    (map? (get args "attributes"))
-                   (or (not (contains? args "active")) (boolean? (get args "active"))))
-        "update" (and (every? #{"id" "title" "active" "attributes" "edges"} (keys args))
+                   (or (not (contains? args "state")) (contains? generic-states (get args "state"))))
+        "update" (and (every? #{"id" "title" "state" "attributes" "edges"} (keys args))
                       (contains? args "id")
                       (string? (get args "id"))
                       (or (not (contains? args "title")) (nil? (get args "title")) (string? (get args "title")))
-                      (or (not (contains? args "active")) (nil? (get args "active")) (boolean? (get args "active")))
+                      (or (not (contains? args "state")) (nil? (get args "state")) (contains? generic-states (get args "state")))
                       (or (not (contains? args "attributes")) (nil? (get args "attributes") ) (map? (get args "attributes")))
                       (or (not (contains? args "edges")) (and (vector? (get args "edges")) (every? valid-edge? (get args "edges"))) ))
         "show" (and (= #{"id"} (set (keys args))) (string? (get args "id")))
+        "supersede" (and (= #{"old_id" "replacement_id"} (set (keys args)))
+                          (string? (get args "old_id"))
+                          (string? (get args "replacement_id")))
         "burn" (and (= #{"id"} (set (keys args))) (string? (get args "id")))
-        "list-query" (and (every? #{"query" "params" "active"} (keys args))
+        "list-query" (and (every? #{"query" "params" "state"} (keys args))
                           (contains? args "query")
                           (contains? args "params")
                           (string? (get args "query"))
                           (string-map? (get args "params"))
-                          (or (not (contains? args "active")) (boolean? (get args "active"))))
+                          (or (not (contains? args "state")) (contains? readable-states (get args "state"))))
         "ready-query" (and (= #{"query" "params"} (set (keys args)))
                            (string? (get args "query"))
                            (string-map? (get args "params")))
@@ -145,8 +150,8 @@
 (defn- dispatch-query [runtime op args]
   (let [qdef ((api 'resolve-query) runtime (query-name (get args "query")))
         params (query-params qdef (get args "params"))
-        qdef (if (contains? args "active")
-               [:and (query/query-expr qdef params) [:= :active (get args "active")]]
+        qdef (if (contains? args "state")
+               [:and (query/query-expr qdef params) [:= :state (get args "state")]]
                qdef)]
     ((api op) runtime qdef params)))
 
@@ -155,7 +160,7 @@
     "init" ((api 'init) runtime)
     "add" ((api 'add) runtime (cond-> {:title (get args "title")
                                          :attributes (get args "attributes")}
-                                  (contains? args "active") (assoc :active (get args "active"))))
+                                  (contains? args "state") (assoc :state (get args "state"))))
     "update" ((api 'update) runtime (get args "id")
               (cond-> {}
                 (contains? args "edges") (assoc :edges (mapv (fn [edge]
@@ -163,12 +168,13 @@
                                                                  :to (get edge "to")})
                                                               (get args "edges")))
                 (some? (get args "title")) (assoc :title (get args "title"))
-                (some? (get args "active")) (assoc :active (get args "active"))
+                (some? (get args "state")) (assoc :state (get args "state"))
                 (some? (get args "attributes")) (assoc :attributes (get args "attributes"))))
     "show" ((api 'show) runtime (get args "id"))
+    "supersede" ((api 'supersede) runtime (get args "old_id") (get args "replacement_id"))
     "burn" ((api 'burn-by-id) runtime (get args "id"))
-    "list" (if (contains? args "active")
-             ((api 'list) runtime [:= :active (get args "active")] {})
+    "list" (if (contains? args "state")
+             ((api 'list) runtime [:= :state (get args "state")] {})
              ((api 'list) runtime))
     "ready" ((api 'ready) runtime)
     "list-query" (dispatch-query runtime 'list args)

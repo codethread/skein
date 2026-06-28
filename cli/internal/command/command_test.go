@@ -29,7 +29,7 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "burn", "list", "ready", "weave", "pattern", "weaver"} {
+	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "supersede", "burn", "list", "ready", "weave", "pattern", "weaver"} {
 		if !strings.Contains(root, want) {
 			t.Fatalf("root help missing %q in:\n%s", want, root)
 		}
@@ -38,9 +38,28 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"add <title>", "--active", "--attr", "--attr-file", "--attr-stdin", "--attributes-stdin"} {
+	for _, want := range []string{"add <title>", "--state", "--attr", "--attr-file", "--attr-stdin", "--attributes-stdin"} {
 		if !strings.Contains(add, want) {
 			t.Fatalf("add help missing %q in:\n%s", want, add)
+		}
+	}
+	for _, command := range []string{"add", "update", "list"} {
+		help, err := run(command, "--help")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(help, "--state") || strings.Contains(help, "--"+"active") {
+			t.Fatalf("%s help should expose --state and omit old lifecycle flag:\n%s", command, help)
+		}
+	}
+
+	supersede, err := run("supersede", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"supersede <old-id> <replacement-id>", "supersedes", "marks old replaced", "update --edge"} {
+		if !strings.Contains(supersede, want) {
+			t.Fatalf("supersede help missing %q in:\n%s", want, supersede)
 		}
 	}
 
@@ -75,7 +94,8 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 		{"ready", "--query", ""},
 		{"add", "x", "extra"},
 		{"add", "x", "--status", "bogus"},
-		{"add", "x", "--active", "maybe"},
+		{"add", "x", "--" + "active", "false"},
+		{"add", "x", "--state", "replaced"},
 		{"add", "x", "--priority", "high"},
 		{"add", "x", "--parent", "id"},
 		{"add", "x", "--attr", "novalue"},
@@ -83,7 +103,13 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 		{"update", "id", "--edge", "depends-on"},
 		{"update", "id", "--edge", ":target"},
 		{"update", "id", "--edge", "depends-on:"},
+		{"update", "id", "--" + "active", "false"},
+		{"update", "id", "--state", "replaced"},
 		{"update", "id", "--priority", "high"},
+		{"supersede", "old"},
+		{"supersede", "old", "new", "extra"},
+		{"list", "--" + "active", "false"},
+		{"list", "--state", "bogus"},
 		{"list", "--param", "novalue"},
 		{"weave"},
 		{"weave", "extra", "--pattern", "x"},
@@ -553,7 +579,7 @@ func (f *fakeClient) Call(op string, args map[string]any) (any, error) {
 	if f.result != nil {
 		return f.result, nil
 	}
-	return map[string]any{"id": "task-1", "title": "Write docs", "active": true, "attributes": map[string]any{}}, nil
+	return map[string]any{"id": "task-1", "title": "Write docs", "state": "active", "attributes": map[string]any{}}, nil
 }
 
 func testConfig(t *testing.T) string {
@@ -578,7 +604,7 @@ func TestQueryCommandsUseSocketClientPayloads(t *testing.T) {
 	if strings.TrimSpace(out) != `[{"id":"task-1"}]` {
 		t.Fatalf("unexpected list output: %q", out)
 	}
-	out, err = run("--config-dir", cfg, "list", "--active", "false")
+	out, err = run("--config-dir", cfg, "list", "--state", "closed")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,8 +618,8 @@ func TestQueryCommandsUseSocketClientPayloads(t *testing.T) {
 	if fc.calls[0].op != "list" || !reflect.DeepEqual(fc.calls[0].args, map[string]any{}) {
 		t.Fatalf("bad list call: %#v", fc.calls[0])
 	}
-	if fc.calls[1].op != "list" || !reflect.DeepEqual(fc.calls[1].args, map[string]any{"active": false}) {
-		t.Fatalf("bad list active call: %#v", fc.calls[1])
+	if fc.calls[1].op != "list" || !reflect.DeepEqual(fc.calls[1].args, map[string]any{"state": "closed"}) {
+		t.Fatalf("bad list state call: %#v", fc.calls[1])
 	}
 	expected := map[string]any{"query": "by-owner", "params": map[string]any{"owner": "agent"}}
 	if fc.calls[2].op != "ready-query" || !reflect.DeepEqual(fc.calls[2].args, expected) {
@@ -710,6 +736,34 @@ func TestAddAttributeInputsFailLoudly(t *testing.T) {
 	}
 }
 
+func TestSupersedeCommandUsesSocketPayloadAndJsonOutput(t *testing.T) {
+	cfg := testConfig(t)
+	orig := newClient
+	result := map[string]any{
+		"old": map[string]any{"before": map[string]any{"id": "old", "state": "active"}, "after": map[string]any{"id": "old", "state": "replaced"}},
+		"replacement_id": "new",
+		"supersedes_edge": map[string]any{"from_strand_id": "new", "to_strand_id": "old", "edge_type": "supersedes"},
+		"rewired_dependencies": []any{},
+	}
+	fc := &fakeClient{result: result}
+	newClient = func(o Options) Caller { return fc }
+	t.Cleanup(func() { newClient = orig })
+	out, err := run("--config-dir", cfg, "supersede", "old", "new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("supersede output is not JSON: %q", out)
+	}
+	if got["replacement_id"] != "new" {
+		t.Fatalf("unexpected supersede output: %#v", got)
+	}
+	if len(fc.calls) != 1 || fc.calls[0].op != "supersede" || !reflect.DeepEqual(fc.calls[0].args, map[string]any{"old_id": "old", "replacement_id": "new"}) {
+		t.Fatalf("bad supersede call: %#v", fc.calls)
+	}
+}
+
 func TestStrandCommandsUseSocketClientPayloads(t *testing.T) {
 	cfg := testConfig(t)
 	orig := newClient
@@ -720,10 +774,10 @@ func TestStrandCommandsUseSocketClientPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(out) != `{"active":true,"attributes":{},"id":"task-1","title":"Write docs"}` {
+	if strings.TrimSpace(out) != `{"attributes":{},"id":"task-1","state":"active","title":"Write docs"}` {
 		t.Fatalf("expected JSON row, got %q", out)
 	}
-	if out, err = run("--config-dir", cfg, "update", "task-1", "--active=false", "--edge", "depends-on:task-0"); err != nil || !strings.Contains(out, `"id":"task-1"`) {
+	if out, err = run("--config-dir", cfg, "update", "task-1", "--state=closed", "--edge", "depends-on:task-0"); err != nil || !strings.Contains(out, `"id":"task-1"`) {
 		t.Fatalf("update output/error = %q/%v", out, err)
 	}
 	if _, err = run("--config-dir", cfg, "show", "task-1"); err != nil {
@@ -738,13 +792,13 @@ func TestStrandCommandsUseSocketClientPayloads(t *testing.T) {
 	if fc.calls[0].op != "add" || fc.calls[0].args["title"] != "Write docs" {
 		t.Fatalf("bad add call: %#v", fc.calls[0])
 	}
-	if _, ok := fc.calls[0].args["active"]; ok {
-		t.Fatalf("add should omit default active: %#v", fc.calls[0])
+	if _, ok := fc.calls[0].args["state"]; ok {
+		t.Fatalf("add should omit default state: %#v", fc.calls[0])
 	}
 	if !reflect.DeepEqual(fc.calls[0].args["attributes"], map[string]any{"owner": "agent"}) {
 		t.Fatalf("bad attrs: %#v", fc.calls[0].args)
 	}
-	expectedUpdate := map[string]any{"id": "task-1", "title": nil, "active": false, "attributes": nil, "edges": []map[string]any{{"type": "depends-on", "to": "task-0"}}}
+	expectedUpdate := map[string]any{"id": "task-1", "title": nil, "state": "closed", "attributes": nil, "edges": []map[string]any{{"type": "depends-on", "to": "task-0"}}}
 	if fc.calls[1].op != "update" || !reflect.DeepEqual(fc.calls[1].args, expectedUpdate) {
 		t.Fatalf("bad update call: %#v", fc.calls[1])
 	}

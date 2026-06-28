@@ -151,17 +151,17 @@ func TestTaskAndQueryCommandsRunOutsideCheckoutWithoutSource(t *testing.T) {
 	if err := runStrand(bin, dir, runDir, "update", docs, "--edge", "depends-on:"+design, "--attr", "phase=write"); err != nil {
 		t.Fatal(err)
 	}
-	if err := runStrand(bin, dir, runDir, "update", design, "--active", "false"); err != nil {
+	if err := runStrand(bin, dir, runDir, "update", design, "--state", "closed"); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := outputStrand(bin, dir, runDir, "list", "--active", "false"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
-		t.Fatalf("list active=false output/error = %q/%v", out, err)
+	if out, err := outputStrand(bin, dir, runDir, "list", "--state", "closed"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
+		t.Fatalf("list state=closed output/error = %q/%v", out, err)
 	}
 	if out, err := outputStrand(bin, dir, runDir, "list", "--query", "by-owner", "--param", "owner=agent"); err != nil || !strings.Contains(out, docs) || !strings.Contains(out, design) {
 		t.Fatalf("list query output/error = %q/%v", out, err)
 	}
-	if out, err := outputStrand(bin, dir, runDir, "list", "--query", "by-owner", "--param", "owner=agent", "--active", "false"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
-		t.Fatalf("list query active=false output/error = %q/%v", out, err)
+	if out, err := outputStrand(bin, dir, runDir, "list", "--query", "by-owner", "--param", "owner=agent", "--state", "closed"); err != nil || !strings.Contains(out, design) || strings.Contains(out, docs) {
+		t.Fatalf("list query state=closed output/error = %q/%v", out, err)
 	}
 	if out, err := outputStrand(bin, dir, runDir, "ready", "--query", "by-owner", "--param", "owner=agent"); err != nil || !strings.Contains(out, docs) || strings.Contains(out, design) {
 		t.Fatalf("ready query output/error = %q/%v", out, err)

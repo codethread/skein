@@ -17,6 +17,9 @@
    :burn-by-ids 'skein.weaver.api/burn-by-ids
    :list 'skein.weaver.api/list
    :ready 'skein.weaver.api/ready
+   :supersede 'skein.weaver.api/supersede
+   :declare-acyclic-relation! 'skein.weaver.api/declare-acyclic-relation!
+   :acyclic-relations 'skein.weaver.api/acyclic-relations
    :register-query 'skein.weaver.api/register-query
    :load-queries 'skein.weaver.api/load-queries
    :queries 'skein.weaver.api/queries
@@ -200,6 +203,7 @@
 (defn init [db-file & [opts]] (call db-file (or opts {}) :init))
 (defn add [db-file task & [opts]] (call db-file (or opts {}) :add task))
 (defn update [db-file id patch & [opts]] (call db-file (or opts {}) :update id patch))
+(defn supersede [db-file old-id replacement-id & [opts]] (call db-file (or opts {}) :supersede old-id replacement-id))
 (defn show [db-file id & [opts]] (call db-file (or opts {}) :show id))
 (defn list
   ([db-file]

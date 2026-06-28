@@ -14,7 +14,7 @@ Finish the feature by updating current specs/docs/smoke examples, running full v
 - **ERF-TASK-008.MI2:** Update `devflow/TENETS.md` with the staged TEN-005 replacement when implementation behavior matches it.
 - **ERF-TASK-008.MI3:** Update public docs and contributor/agent guides: `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `docs/getting-started.md`, `docs/skein.md`, `docs/clojure-crash-course.md`, and `dev/user.clj` examples.
 - **ERF-TASK-008.MI4:** Update `dev/skein/smoke.clj` to exercise `--state`, state-based readiness, relation predicates if practical, and the supersession command/helper through disposable config-dir worlds.
-- **ERF-TASK-008.MI5:** Remove old lifecycle schema from current code/docs. No compatibility examples for `active`, `inactive_at`, `--active`, or `:active` should remain in source, public docs, canonical specs, or active feature docs after Task 9 has adapted batch graph upsert.
+- **ERF-TASK-008.MI5:** Remove old lifecycle schema from current code/docs. No compatibility examples for legacy boolean lifecycle columns, legacy boolean lifecycle flag, or legacy boolean lifecycle query field should remain in source, public docs, canonical specs, or active feature docs after Task 9 has adapted batch graph upsert.
 - **ERF-TASK-008.MI6:** Do not edit `devflow/archive`. Grep checks for removed lifecycle schema must exclude archived historical devflow folders only.
 - **ERF-TASK-008.MI7:** Run the full validation suite and clean generated artifacts.
 
