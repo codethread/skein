@@ -15,7 +15,6 @@ Root specs are canonical for shipped behavior:
 
 ## Active features
 
-- `batch-graph-upsert` — proposed transactional batch graph mutation primitive with local refs.
 - `edge-relation-families` — proposed state lifecycle model, operational relation families, core supersession, edge predicates, and relation-scoped traversal.
 - `library-author-testing-support` — proposed library-author testing helpers and weaver storage support.
 
@@ -38,3 +37,4 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-27__patterned-weave` — shipped named weaver-side patterns for owner-controlled strand DAG creation from JSON CLI input.
 - `26-06-27__weaver-event-system` — shipped weaver-owned semantic strand mutation events with trusted async handlers.
 - `26-06-28__cli-attribute-inputs` — shipped file, stdin, and bulk JSON attribute input sources for `strand add`.
+- `26-06-28__batch-graph-upsert` — shipped transactional trusted Clojure batch graph mutation primitive with local refs, create/update/burn/edge upsert support, weaver events, and `skein.batch.alpha/apply!`.

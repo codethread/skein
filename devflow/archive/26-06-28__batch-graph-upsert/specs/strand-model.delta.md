@@ -3,7 +3,7 @@
 **Document ID:** `BGU-DELTA-001`
 **Root spec:** [strand-model.md](../../specs/strand-model.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Reviewed
+**Status:** Merged
 **Last Updated:** 2026-06-28
 
 ## BGU-DELTA-001.P1 Summary

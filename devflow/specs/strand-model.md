@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-001`
 **Status:** Implemented
-**Last Updated:** 2026-06-26
+**Last Updated:** 2026-06-28
 **Code:** `src/skein/db.clj`
 
 ## SPEC-001.P1 Purpose
@@ -41,18 +41,32 @@ A `depends-on` edge from strand `A` to strand `B` means `A` is blocked by `B` wh
 
 The edge graph is acyclic. Self-edges and writes that introduce a directed cycle fail.
 
-## SPEC-001.P6 Readiness
+## SPEC-001.P6 Batch graph mutation
+
+Core storage exposes a transactional batch graph mutation primitive for trusted workflows. A batch payload may contain top-level `:refs`, `:strands`, `:edges`, and `:burn` entries and commits atomically: every valid strand, edge, and burn mutation commits, or no graph mutation commits.
+
+Batch-local refs are unqualified, non-blank keywords. Top-level `:refs` bind local refs to existing durable strand ids, and each existing strand id may be bound by at most one ref in a payload. Missing bound ids, duplicate aliases, invalid ref names, duplicate strand refs, combined update/burn of one ref, and references to unknown refs fail loudly before mutation.
+
+A strand entry addressed to a bound ref updates that strand. Supported patch fields are `:title`, `:active`, and `:attributes`. A strand entry addressed to an unbound ref creates a strand, requires a non-blank `:title`, accepts optional `:active` and `:attributes`, and extends the final ref table with the generated durable id.
+
+Burn entries address existing bound refs only. Burning a newly created ref, burning an unknown ref, or burning a ref patched in the same payload fails loudly. Successful burns physically delete strands and incident edges using normal burn semantics.
+
+Batch edge entries are explicit operations addressed by local refs. The initial supported operation is `{:op :upsert ...}` with `:from`, `:to`, `:type`, and optional `:attributes`. Edge upsert inserts a missing edge or replaces attributes on an existing matching `(from, to, type)` edge. Edge upsert validates endpoint refs, target existence after create/update resolution, allowed edge type, JSON object attributes, self-edge prohibition, final graph acyclicity, and that neither endpoint is burned in the same payload. Omitted edges do not imply deletion or replacement; unsupported edge operations fail loudly.
+
+A batch result includes the final ref table and normalized summaries of created strands, updated before/after rows, burned ids with pre-delete rows, and edge outcomes.
+
+## SPEC-001.P7 Readiness
 
 A ready strand is an active strand with no direct `depends-on` dependency whose target strand is still active. Inactive strands do not block readiness.
 
-## SPEC-001.P7 Persistence
+## SPEC-001.P8 Persistence
 
 The `strands` table stores lifecycle fields as columns and attributes as JSON `TEXT`. The `strand_edges` table stores typed relationships and edge attributes as JSON `TEXT`. The default weaver-owned database filename is `skein.sqlite`. JSONB assumptions are not part of this contract.
 
-## SPEC-001.P8 Query fields
+## SPEC-001.P9 Query fields
 
 Queryable core fields include `:id`, `:title`, `:active`, `:inactive_at`, `:created_at`, `:updated_at`, and attribute paths. The removed `:status` and `:final_at` fields and old status values are not accepted by the core query compiler.
 
-## SPEC-001.P9 Deferred
+## SPEC-001.P10 Deferred
 
 Parent-scoped lifecycle rules, attribute-level metadata, per-attribute timestamps, category/outcome taxonomies, and durable audit/tombstone records for deletion are not part of the current model.

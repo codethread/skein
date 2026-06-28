@@ -2,8 +2,8 @@
 
 **Document ID:** `SPEC-003`
 **Status:** Implemented
-**Last Updated:** 2026-06-27
-**Code:** `src/skein/repl.clj`
+**Last Updated:** 2026-06-28
+**Code:** `src/skein/repl.clj`, `src/skein/batch/alpha.clj`
 
 ## SPEC-003.P1 Purpose
 
@@ -68,10 +68,11 @@ Skein ships blessed source-visible runtime transformation namespaces for trusted
 - `skein.views.alpha` exposes `(register-view! name fn-sym)`, `(view! name params)`, and `(views)`. View registration accepts a simple view name and a fully qualified function symbol, not an arbitrary client-side function value.
 - `skein.patterns.alpha` exposes `(register-pattern! name fn-sym input-spec)`, `(register-pattern! name doc fn-sym input-spec)`, `(patterns)`, `(pattern name)`, `(explain name)`, and `(weave! name input)`. Pattern functions are weaver-loadable function symbols called with `{:input input}` after input spec validation.
 - `skein.events.alpha` exposes `(register! key types fn-sym)`, `(register! key types fn-sym metadata)`, `(unregister! key)`, `(handlers)`, and `(recent-failures)`. Event registration accepts a stable handler key, a non-empty set of event type keywords, and a fully qualified function symbol resolvable in the weaver JVM.
+- `skein.batch.alpha` exposes `(apply! payload)` for transactional batch graph mutation payloads with `:refs`, `:strands`, `:edges`, and `:burn`. It returns normalized Clojure data from the weaver operation, including final refs, created rows, updated before/after rows, burned rows, and edge outcomes, without a JSON envelope.
 
 Helpers execute weaver-side when called from `init.clj` or activated runtime libraries, and route to the selected weaver world when called from connected REPL clients. Connected helper REPL users who want to register new view, pattern, or event handler functions should place them in weaver-loadable config/library code and register their symbols. View, pattern, and event registrations are weaver-lifetime runtime state unless user config reloads them on startup.
 
-User config may require `skein.graph.alpha`, `skein.patterns.alpha`, `skein.views.alpha`, and `skein.events.alpha` so users can inspect and extend the blessed path. These built-in namespaces come from the Skein checkout on the weaver classpath; they do not require `libs.edn` approval.
+User config may require `skein.graph.alpha`, `skein.patterns.alpha`, `skein.views.alpha`, `skein.events.alpha`, and `skein.batch.alpha` so users can inspect and extend the blessed path. These built-in namespaces come from the Skein checkout on the weaver classpath; they do not require `libs.edn` approval.
 
 Event handlers receive one event map and may perform trusted side effects, including calling Skein APIs. They are dispatched asynchronously after successful mutation commits; handler return values are ignored. `(events/recent-failures)` returns bounded, data-first failure records for handler exceptions. Handler exceptions do not fail the already-committed mutation.
 

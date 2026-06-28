@@ -6,7 +6,7 @@
 **RFC:** None
 **Root specs:** [Strand Model](../../specs/strand-model.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
 **Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md), [REPL API delta](./specs/repl-api.delta.md), [CLI Surface delta](./specs/cli.delta.md)
-**Status:** Reviewed
+**Status:** Shipped
 **Last Updated:** 2026-06-28
 
 ## BGU-PLAN-001.P1 Goal and scope
@@ -82,3 +82,12 @@ Outcome: tests and smoke prove the core paths, existing weave compatibility rema
 ## BGU-PLAN-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
+
+- Task 1: Added storage-level `skein.db/apply-batch!` for refs/creates/updates/edge upserts/burns. Smoke validation was run from a short `/tmp/skein-copy` checkout because the repo path makes Unix-domain socket paths exceed the platform limit during smoke startup.
+- Task 2: Added storage-level `apply-batch!` coverage for successful mixed graph mutation, fail-loud validation without mutation, edge replacement/cycle behavior, and transaction rollback. Root-path smoke still hits the known socket path limit, so smoke was validated from a short `/tmp` checkout.
+- Task 3: Added `skein.weaver.api/apply-batch` with `:batch/applied` followed by compatibility fanout carrying only shared `:batch/id`; edge-only batches emit only the batch event. Root-path smoke still hits the known socket path limit, so smoke was validated from a short `/tmp` checkout. Review follow-up strengthened tests for multi-row deterministic fanout order and exact fanout `:batch/*` keys; top-level batch edge outcomes remain represented on `:batch/applied` rather than duplicated into compatibility strand patches.
+- Task 4: Added explicit `skein.batch.alpha/apply!` routing through direct weaver runtime calls or connected helper REPL client plumbing, and updated root/user docs after review noted canonical spec drift. Root-path smoke still hits the known socket path limit, so smoke was validated from a short `/tmp` checkout.
+- Task 5: Added weaver/helper integration coverage for normalized batch result shape, deterministic batch event fanout, direct and connected `skein.batch.alpha/apply!` routing, and create-only `weave!` compatibility. Root-path smoke still hits the known socket path limit, so smoke was validated from a short `/tmp` checkout.
+- Task 6: Extended CLI smoke to call `skein.batch.alpha/apply!` through `strand weaver repl --stdin`, covering bound refs, a created ref, an existing update, an edge upsert, and an existing burn while checking result shape plus final graph observations through REPL and CLI reads. Root-path smoke still hits the known socket path limit; the same smoke suite passes from a short `/tmp` checkout.
+- Task 7: Promoted shipped batch graph upsert contracts into root strand model, weaver runtime, REPL API, and CLI specs; marked feature-local deltas merged; set feature status to Shipped. Validation run: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`; root-path `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke` still fails with Unix-domain socket path length, and the same smoke suite passes from `/tmp/skein-smoke-short`. Deferred scope remains future public CLI batch commands and explicit edge delete/replace operations.
+- Finish archive: Archived the shipped feature under `devflow/archive/26-06-28__batch-graph-upsert/` and updated the devflow README index. No RFCs were linked or archived. Cut/deferred scope remains future public CLI batch commands and explicit edge delete/replace operations.

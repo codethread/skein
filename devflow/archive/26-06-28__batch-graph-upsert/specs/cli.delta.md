@@ -3,7 +3,7 @@
 **Document ID:** `BGU-DELTA-004`
 **Root spec:** [cli.md](../../specs/cli.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Reviewed
+**Status:** Merged
 **Last Updated:** 2026-06-28
 
 ## BGU-DELTA-004.P1 Summary

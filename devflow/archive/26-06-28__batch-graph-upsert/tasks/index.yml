@@ -2,35 +2,35 @@ tasks:
   - id: 1
     description: Implement core batch mutation
     task_file: tasks/001-implement-core-batch-mutation.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: Add core batch mutation tests
     task_file: tasks/002-add-core-batch-mutation-tests.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: Wire weaver batch API events
     task_file: tasks/003-wire-weaver-batch-api-events.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 4
     description: Add batch alpha helper
     task_file: tasks/004-add-batch-alpha-helper.md
-    status: pending
+    status: complete
     blocked_by: [3]
   - id: 5
     description: Cover weaver helper integration
     task_file: tasks/005-cover-weaver-helper-integration.md
-    status: pending
+    status: complete
     blocked_by: [3, 4]
   - id: 6
     description: Add smoke coverage and verify CLI unchanged
     task_file: tasks/006-add-smoke-coverage-and-verify-cli-unchanged.md
-    status: pending
+    status: complete
     blocked_by: [2, 5]
   - id: 7
     description: Promote specs and finish feature
     task_file: tasks/007-promote-specs-and-finish-feature.md
-    status: pending
+    status: complete
     blocked_by: [6]

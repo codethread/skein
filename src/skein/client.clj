@@ -39,6 +39,7 @@
    :resolve-pattern 'skein.weaver.api/resolve-pattern
    :pattern-explain 'skein.weaver.api/pattern-explain
    :weave! 'skein.weaver.api/weave!
+   :apply-batch 'skein.weaver.api/apply-batch
    :approved-libs 'skein.weaver.api/approved-libs
    :sync-approved-libs 'skein.weaver.api/sync-approved-libs
    :approved-lib-syncs 'skein.weaver.api/approved-lib-syncs

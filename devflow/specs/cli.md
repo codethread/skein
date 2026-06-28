@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-002`
 **Status:** Implemented
-**Last Updated:** 2026-06-26
+**Last Updated:** 2026-06-28
 **Related RFCs:** [RFC-002 Task Query DSL](../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-go-cli-migration.md)
 **Code:** `cli/`, `src/skein/weaver`
 
@@ -69,8 +69,9 @@ weaver status
 - **SPEC-002.C18:** `weaver repl --stdin` reads Clojure forms from stdin, evaluates them in the same connected helper context as the interactive REPL, prints one direct normal Clojure result per top-level form, and exits non-zero on read/eval errors. It does not impose a JSON or EDN response envelope.
 - **SPEC-002.C19:** `weaver repl` and `weaver repl --stdin` are the public CLI paths for users and agents that need to run trusted library-workspace Clojure code against a running weaver world.
 - **SPEC-002.C20:** `weaver status` validates metadata and socket identity and reports health, selected config/data paths, weaver-owned database path, pid, weaver identity, socket endpoint, and nREPL endpoint. `weaver stop` stops only the matched weaver over the socket and waits for `weaver.edn`, `weaver.json`, and `weaver.sock` cleanup.
-- **SPEC-002.C21:** Runtime library workspace and runtime transformation operations happen through selected config-dir `init.clj`, blessed `skein.*.alpha` namespaces, and trusted REPL workflows, not through strand/query CLI commands. Runtime library and view support do not change the JSON socket allowlist or add package/library/view activation commands.
+- **SPEC-002.C21:** Runtime library workspace and runtime transformation operations happen through selected config-dir `init.clj`, blessed `skein.*.alpha` namespaces, and trusted REPL workflows, not through strand/query CLI commands. Runtime library, view, and batch graph mutation support do not change the JSON socket allowlist or add package/library/view/batch activation commands.
+- **SPEC-002.C22:** No `strand batch`, arbitrary JSON graph patch, or public batch mutation command is part of the current CLI surface. Users and agents that need transactional batch graph mutation use `strand weaver repl`, `strand weaver repl --stdin`, trusted config, activated libraries, or existing pattern-backed `weave` creation workflows.
 
 ## SPEC-002.P4 Deferred
 
-`by-attr`, bespoke dependency inspection commands, `link`, `done`, `batch`, public CLI EDN query expressions, query registry mutation commands, pattern registry mutation commands, view commands, plugin/package commands, compatibility `todo` binaries, legacy Clojure CLI entrypoints, and fallback discovery of old `atom` worlds or `daemon.*` artifacts are not part of the public CLI.
+`by-attr`, bespoke dependency inspection commands, `link`, `done`, `batch`, arbitrary JSON graph patch commands, public CLI EDN query expressions, query registry mutation commands, pattern registry mutation commands, view commands, plugin/package commands, compatibility `todo` binaries, legacy Clojure CLI entrypoints, and fallback discovery of old `atom` worlds or `daemon.*` artifacts are not part of the public CLI.

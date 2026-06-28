@@ -334,6 +334,89 @@
         (is (wait-until #(some (fn [event] (= "after-reload" (:event/id event)))
                               @delivered-events)))))))
 
+(deftest weaver-apply-batch-emits-batch-event-before-compatibility-fanout
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (let [existing-b (api/add rt {:title "Existing B" :attributes {:owner "agent"}})
+            existing-a (api/add rt {:title "Existing A" :attributes {:owner "agent"}})
+            burned (api/add rt {:title "Burned"})]
+        (reset! delivered-events [])
+        (api/register-event-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
+                                     'skein.weaver-test/capture-event {})
+        (let [result (api/apply-batch rt {:refs {:existing-b (:id existing-b)
+                                                 :existing-a (:id existing-a)
+                                                 :burned (:id burned)}
+                                          :strands [{:ref :existing-b
+                                                     :active false
+                                                     :attributes {:phase "done-b"}}
+                                                    {:ref :created-z
+                                                     :title "Created Z"
+                                                     :attributes {:kind "z"}}
+                                                    {:ref :existing-a
+                                                     :attributes {:phase "done-a"}}
+                                                    {:ref :created-a
+                                                     :title "Created A"
+                                                     :attributes {:kind "a"}}]
+                                          :edges [{:op :upsert
+                                                   :from :created-z
+                                                   :to :existing-b
+                                                   :type "depends-on"
+                                                   :attributes {:reason "test"}}]
+                                          :burn [:burned]})
+              events (wait-for-events 6)
+              [batch-event add-z-event add-a-event update-b-event update-a-event burn-event] events
+              batch-id (:batch/id batch-event)
+              batch-keys (fn [event]
+                           (set (filter #(= "batch" (namespace %)) (keys event))))]
+          (is (= [:batch/applied :strand/added :strand/added :strand/updated :strand/updated :strand/burned]
+                 (mapv :event/type events)))
+          (is (string? batch-id))
+          (is (= (repeat 5 batch-id)
+                 (map :batch/id [add-z-event add-a-event update-b-event update-a-event burn-event])))
+          (is (= #{:refs :created :updated :burned :edges} (set (keys result))))
+          (is (= #{:existing-b :existing-a :burned :created-z :created-a} (set (keys (:refs result)))))
+          (is (= 2 (count (:created result))))
+          (is (= 2 (count (:updated result))))
+          (is (= 1 (count (:burned result))))
+          (is (= 1 (count (:edges result))))
+          (is (= (:refs result) (:batch/refs batch-event)))
+          (is (= (:created result) (:batch/created batch-event)))
+          (is (= (:updated result) (:batch/updated batch-event)))
+          (is (= (:burned result) (:batch/burned batch-event)))
+          (is (= (:edges result) (:batch/edges batch-event)))
+          (is (= #{:batch/id} (batch-keys add-z-event) (batch-keys add-a-event)
+                 (batch-keys update-b-event) (batch-keys update-a-event) (batch-keys burn-event)))
+          (is (= (mapv :id (:created result))
+                 (mapv :strand/id [add-z-event add-a-event])))
+          (is (= (mapv :id (:updated result))
+                 (mapv :strand/id [update-b-event update-a-event])))
+          (is (= (:id existing-b) (:strand/id update-b-event)))
+          (is (= {:active false :attributes {:phase "done-b"}} (:strand/patch update-b-event)))
+          (is (= (:id existing-a) (:strand/id update-a-event)))
+          (is (= {:attributes {:phase "done-a"}} (:strand/patch update-a-event)))
+          (is (= [(:id burned)] (:strand/burned-ids burn-event)))
+          (is (= [burned] (:strand/before burn-event)))
+          (Thread/sleep 100)
+          (is (= [:batch/applied :strand/added :strand/added :strand/updated :strand/updated :strand/burned]
+                 (mapv :event/type @delivered-events))))))))
+
+(deftest weaver-apply-batch-edge-only-emits-only-batch-event
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (let [from (api/add rt {:title "From"})
+            to (api/add rt {:title "To"})]
+        (reset! delivered-events [])
+        (api/register-event-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
+                                     'skein.weaver-test/capture-event {})
+        (let [result (api/apply-batch rt {:refs {:from (:id from) :to (:id to)}
+                                          :edges [{:op :upsert :from :from :to :to :type "related-to"}]})
+              events (wait-for-events 1)]
+          (Thread/sleep 100)
+          (is (= [:batch/applied] (mapv :event/type @delivered-events)))
+          (is (= (:edges result) (:batch/edges (first events)))))))))
+
 (deftest weaver-burn-by-ids-event-captures-pre-delete-rows-and-requested-ids
   (with-runtime
     (fn [rt _]
@@ -487,6 +570,22 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern function"
                             (api/register-pattern! rt 'bad 'unqualified ::pattern-input))))))
+
+(deftest weaver-weave-create-only-contract-remains-compatible
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
+      (let [result (api/weave! rt :dev-task {:title "Compatible weave"})
+            [impl review] (:created result)]
+        (is (= #{:refs :created} (set (keys result))))
+        (is (= {"impl" (:id impl) "review" (:id review)} (:refs result)))
+        (is (= ["Compatible weave" "Review: Compatible weave"] (mapv :title (:created result))))
+        (is (= [{:from_strand_id (:id review)
+                 :to_strand_id (:id impl)
+                 :edge_type "depends-on"}]
+               (db/execute! (:datasource rt)
+                            ["SELECT from_strand_id, to_strand_id, edge_type FROM strand_edges"])))))))
 
 (deftest weaver-pattern-failures-validate-before-code-and-rollback
   (with-runtime

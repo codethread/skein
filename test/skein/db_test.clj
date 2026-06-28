@@ -132,3 +132,133 @@
                #{{"design" (get refs "design")} {"docs" (get refs "docs")}}))
         (is (= [{:to_strand_id (get refs "design") :edge_type "depends-on"}]
                (db/execute! ds ["SELECT to_strand_id, edge_type FROM strand_edges WHERE from_strand_id = ?" (get refs "docs")])))))))
+
+(defn edge-rows [ds]
+  (mapv #(update % :attributes db/<-json)
+        (db/execute! ds ["SELECT from_strand_id, to_strand_id, edge_type, attributes FROM strand_edges ORDER BY from_strand_id, to_strand_id, edge_type"])))
+
+(defn graph-snapshot [ds]
+  {:strands (mapv #(update % :attributes db/<-json) (db/all-strands ds))
+   :edges (edge-rows ds)})
+
+(defn assert-batch-fails-without-mutation [ds message-re payload]
+  (let [before (graph-snapshot ds)]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo message-re
+                          (db/apply-batch! ds payload)))
+    (is (= before (graph-snapshot ds)))))
+
+(deftest apply-batch-happy-path-mutates-graph-and-returns-final-refs
+  (with-db
+    (fn [ds]
+      (let [old-doc (db/add-strand! ds {:title "Old doc" :attributes {:state "draft"}})
+            old-design (db/add-strand! ds {:title "Old design"})
+            dependency (db/add-strand! ds {:title "Dependency"})
+            result (db/apply-batch! ds {:refs {:old-doc (:id old-doc)
+                                               :old-design (:id old-design)
+                                               :dependency (:id dependency)}
+                                        :strands [{:ref :old-doc
+                                                   :active false
+                                                   :attributes {:state "superseded"}}
+                                                  {:ref :new-doc
+                                                   :title "New doc"
+                                                   :attributes {:kind "doc"}}]
+                                        :edges [{:op :upsert
+                                                 :from :new-doc
+                                                 :to :dependency
+                                                 :type "depends-on"
+                                                 :attributes {:reason "needed"}}]
+                                        :burn [:old-design]})
+            new-doc-id (get-in result [:refs :new-doc])]
+        (is (= {:old-doc (:id old-doc)
+                :old-design (:id old-design)
+                :dependency (:id dependency)
+                :new-doc new-doc-id}
+               (:refs result)))
+        (is (string? new-doc-id))
+        (is (= #{(:id old-doc) (:id dependency) new-doc-id}
+               (set (map :id (db/all-strands ds)))))
+        (is (= {:title "Old doc" :active false :attributes {:state "superseded"}}
+               (select-keys (update (db/get-strand ds (:id old-doc)) :attributes db/<-json)
+                            [:title :active :attributes])))
+        (is (= [{:from_strand_id new-doc-id
+                 :to_strand_id (:id dependency)
+                 :edge_type "depends-on"
+                 :attributes {:reason "needed"}}]
+               (edge-rows ds)))))))
+
+(deftest apply-batch-validates-shape-without-mutation
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))]
+        (doseq [[message payload]
+                [[#"Unknown keys" {:refs {:a a} :surprise true}]
+                 [#"must be a map" {:refs []}]
+                 [#"must be a vector" {:refs {:a a} :strands {}}]
+                 [#"must be a vector" {:refs {:a a} :edges {}}]
+                 [#"must be a vector" {:refs {:a a} :burn {}}]
+                 [#"Strand ids not found" {:refs {:missing "nope"}}]
+                 [#"Batch refs" {:refs {(keyword "") a}}]]]
+          (assert-batch-fails-without-mutation ds message payload))))))
+
+(deftest apply-batch-validates-ref-bindings-without-mutation
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))]
+        (doseq [[message payload]
+                [[#"Multiple batch refs" {:refs {:a a :b a}}]
+                 [#"Batch refs" {:refs {"a" a}}]
+                 [#"Batch refs" {:refs {:ns/a a}}]
+                 [#"Batch refs" {:refs {:a a} :edges [{:op :upsert :from :a :to "b" :type "depends-on"}]}]
+                 [#"Batch refs" {:refs {:a a} :edges [{:op :upsert :from :a :to :ns/b :type "depends-on"}]}]
+                 [#"Batch refs" {:refs {:a a} :burn ["b"]}]
+                 [#"Batch refs" {:refs {:a a} :burn [:ns/b]}]
+                 [#"unknown ref" {:refs {:a a} :edges [{:op :upsert :from :a :to :missing :type "depends-on"}]}]
+                 [#"existing bound refs" {:refs {:a a} :burn [:missing]}]]]
+          (assert-batch-fails-without-mutation ds message payload))))))
+
+(deftest apply-batch-validates-strand-and-burn-conflicts-without-mutation
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))]
+        (doseq [[message payload]
+                [[#"requires a non-blank" {:strands [{:ref :new}]}]
+                 [#"Duplicate batch strand ref" {:strands [{:ref :new :title "One"} {:ref :new :title "Two"}]}]
+                 [#"existing bound refs" {:strands [{:ref :new :title "New"}] :burn [:new]}]
+                 [#"both mutated and burned" {:refs {:a a} :strands [{:ref :a :title "Changed"}] :burn [:a]}]]]
+          (assert-batch-fails-without-mutation ds message payload))))))
+
+(deftest apply-batch-validates-edge-behavior-and-replaces-attributes
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            c (:id (db/add-strand! ds {:title "C"}))]
+        (db/add-edge! ds {:from b :to c :type "depends-on" :attributes {}})
+        (assert-batch-fails-without-mutation ds #"Unsupported batch edge operation"
+                                             {:refs {:a a :b b} :edges [{:op :delete :from :a :to :b :type "depends-on"}]})
+        (assert-batch-fails-without-mutation ds #"burned ref"
+                                             {:refs {:a a :b b} :burn [:b]
+                                              :edges [{:op :upsert :from :a :to :b :type "depends-on"}]})
+        (assert-batch-fails-without-mutation ds #"create a cycle"
+                                             {:refs {:a a :b b :c c}
+                                              :edges [{:op :upsert :from :c :to :b :type "depends-on"}]})
+        (db/add-edge! ds {:from a :to b :type "related-to" :attributes {:old true}})
+        (db/apply-batch! ds {:refs {:a a :b b}
+                             :edges [{:op :upsert :from :a :to :b :type "related-to" :attributes {:new true}}]})
+        (is (= {:new true}
+               (-> (db/execute-one! ds ["SELECT attributes FROM strand_edges WHERE from_strand_id = ? AND to_strand_id = ? AND edge_type = 'related-to'" a b])
+                   :attributes
+                   db/<-json)))))))
+
+(deftest apply-batch-rolls-back-earlier-valid-mutations
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            c (:id (db/add-strand! ds {:title "C"}))]
+        (db/add-edge! ds {:from b :to c :type "depends-on" :attributes {}})
+        (assert-batch-fails-without-mutation ds #"create a cycle"
+                                             {:refs {:a a :b b :c c}
+                                              :strands [{:ref :a :title "Changed before failure"}
+                                                        {:ref :new :title "Created before failure"}]
+                                              :edges [{:op :upsert :from :c :to :b :type "depends-on"}]})))))

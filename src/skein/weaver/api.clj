@@ -409,6 +409,45 @@
                                    :strand created))
     created))
 
+(defn- strand-patch-for-ref [payload ref]
+  (some (fn [strand]
+          (when (= ref (:ref strand))
+            (dissoc strand :ref)))
+        (:strands payload)))
+
+(defn- enqueue-batch-fanout! [runtime batch-id payload result]
+  (doseq [created (:created result)]
+    (enqueue-event! runtime (assoc (event-base :strand/added)
+                                   :batch/id batch-id
+                                   :strand/id (:id created)
+                                   :strand created)))
+  (doseq [{:keys [ref id before after]} (:updated result)]
+    (enqueue-event! runtime (assoc (event-base :strand/updated)
+                                   :batch/id batch-id
+                                   :strand/id id
+                                   :strand/patch (strand-patch-for-ref payload ref)
+                                   :strand/before before
+                                   :strand/after after)))
+  (when (seq (:burned result))
+    (enqueue-event! runtime (assoc (event-base :strand/burned)
+                                   :batch/id batch-id
+                                   :strand/requested-ids (mapv :id (:burned result))
+                                   :strand/burned-ids (mapv :id (:burned result))
+                                   :strand/before (mapv :before (:burned result))))))
+
+(defn apply-batch [runtime payload]
+  (let [result (normalize (db/apply-batch! (ds runtime) payload))
+        batch-id (str (UUID/randomUUID))]
+    (enqueue-event! runtime (assoc (event-base :batch/applied)
+                                   :batch/id batch-id
+                                   :batch/refs (:refs result)
+                                   :batch/created (:created result)
+                                   :batch/updated (:updated result)
+                                   :batch/burned (:burned result)
+                                   :batch/edges (:edges result)))
+    (enqueue-batch-fanout! runtime batch-id payload result)
+    result))
+
 (defn- apply-edges! [tx id edges]
   (doseq [{:keys [to type attributes]} edges]
     (when-not (db/get-strand tx to)

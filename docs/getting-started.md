@@ -87,7 +87,7 @@ Fresh `strand init` creates missing workspace files without overwriting existing
 
 Create your own config or library files when you need runtime behavior. `init.clj` is the place to load approved libraries, register queries, register weave patterns, register views, register event handlers, or call your own install functions.
 
-Built-in `skein.graph.alpha`, `skein.patterns.alpha`, `skein.views.alpha`, and `skein.events.alpha` come from the configured Skein checkout. User/community libraries are approved separately in `libs.edn` and synced through `skein.libs.alpha`.
+Built-in `skein.graph.alpha`, `skein.patterns.alpha`, `skein.views.alpha`, `skein.events.alpha`, and `skein.batch.alpha` come from the configured Skein checkout. User/community libraries are approved separately in `libs.edn` and synced through `skein.libs.alpha`. Require `skein.batch.alpha` explicitly when you want `(batch/apply! payload)` for transactional graph mutations.
 
 Example pattern and view setup in your own startup-loaded library:
 

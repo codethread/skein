@@ -1,5 +1,6 @@
 (ns skein.alpha-test
-  (:require [skein.graph.alpha :as graph]
+  (:require [skein.batch.alpha :as batch]
+            [skein.graph.alpha :as graph]
             [skein.views.alpha :as views]
             [clojure.test :refer [deftest is]]
             [skein.client]
@@ -46,7 +47,51 @@
         (is (= [{:name "daily" :fn 'skein.alpha-test/test-view}]
                (views/views)))
         (is (= {:alpha-view {:owner "agent"}}
-               (views/view! 'daily {:owner "agent"})))))))
+               (views/view! 'daily {:owner "agent"})))
+        (let [batch-result (batch/apply! {:refs {:feature (:id feature)
+                                                 :task (:id task)}
+                                          :strands [{:ref :task
+                                                     :active false
+                                                     :attributes {:owner "agent" :phase "batched"}}
+                                                    {:ref :batch-task
+                                                     :title "Batch task"
+                                                     :attributes {:owner "agent"}}]
+                                          :edges [{:op :upsert
+                                                   :from :batch-task
+                                                   :to :feature
+                                                   :type "depends-on"}]})
+              created (first (:created batch-result))
+              updated (first (:updated batch-result))]
+          (is (= (:id created) (get-in batch-result [:refs :batch-task])))
+          (is (= {:title "Batch task" :active true :attributes {:owner "agent"}}
+                 (select-keys created [:title :active :attributes])))
+          (is (= {:id (:id task)
+                  :active false
+                  :attributes {:owner "agent" :phase "batched"}}
+                 (select-keys (:after updated) [:id :active :attributes]))))))))
+
+(deftest batch-alpha-helper-routes-through-connected-weaver-world
+  (with-runtime
+    (fn [rt]
+      (repl/connect! (:config-dir (:metadata rt)))
+      (api/init rt)
+      ;; The helper must see no in-process runtime on the caller thread so it takes
+      ;; the connected-client path, while the same-JVM nREPL server still needs the
+      ;; active runtime to service that client request.
+      (let [caller-thread (Thread/currentThread)
+            runtime-cell (reify clojure.lang.IDeref
+                           (deref [_]
+                             (when-not (= caller-thread (Thread/currentThread))
+                               rt)))]
+        (with-redefs [runtime/current-runtime runtime-cell]
+          (let [result (batch/apply! {:strands [{:ref :connected-task
+                                                 :title "Connected task"
+                                                 :attributes {:owner "connected"}}]})
+                created (first (:created result))]
+            (is (= (:id created) (get-in result [:refs :connected-task])))
+            (is (= {:title "Connected task" :active true :attributes {:owner "connected"}}
+                   (select-keys created [:title :active :attributes])))
+            (is (= [(:id created)] (mapv :id (api/list rt))))))))))
 
 (deftest alpha-helpers-route-through-connected-helper-context
   (with-redefs [runtime/current-runtime (atom nil)

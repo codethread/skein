@@ -626,7 +626,7 @@ Covers:
 - `strand weaver repl --stdin` behavior;
 - query registration and execution;
 - `skein.libs.alpha` helpers;
-- graph, view, and event helper namespaces;
+- graph, view, event, and explicit batch helper namespaces;
 - runtime library workspace activation.
 
 Read this when writing trusted Clojure forms, config code, local libraries, or custom query/view workflows.

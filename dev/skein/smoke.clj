@@ -376,7 +376,71 @@
                           (str "Go CLI weaver repl --stdin must not wrap output in a CLI response envelope\n" stdin-output))
                   (assert= ["Write usage notes"]
                            (titles (parse-json (run-cli! db-file "list" "--query" "agent-owned")))
-                           "Go CLI list --query consumes weaver query state from outside the repo"))))
+                           "Go CLI list --query consumes weaver query state from outside the repo"))
+                (let [batch-output (run-cli-stdin!
+                                    db-file
+                                    (str "(do\n"
+                                         "  (require '[skein.batch.alpha :as batch])\n"
+                                         "  (let [result (batch/apply! {:refs {:docs \"" docs "\" :design \"" design "\"}\n"
+                                         "                              :strands [{:ref :docs\n"
+                                         "                                         :active true\n"
+                                         "                                         :attributes {:owner \"agent\" :batch \"updated\"}}\n"
+                                         "                                        {:ref :batch-followup\n"
+                                         "                                         :title \"Batch follow-up\"\n"
+                                         "                                         :attributes {:owner \"agent\" :batch \"created\"}}]\n"
+                                         "                              :edges [{:op :upsert\n"
+                                         "                                       :from :batch-followup\n"
+                                         "                                       :to :docs\n"
+                                         "                                       :type \"depends-on\"\n"
+                                         "                                       :attributes {:source \"smoke\"}}]\n"
+                                         "                              :burn [:design]})]\n"
+                                         "    {:result result\n"
+                                         "     :docs (strand \"" docs "\")\n"
+                                         "     :batch-followup (strand (get-in result [:refs :batch-followup]))\n"
+                                         "     :ready-titles (mapv :title (ready))}))\n")
+                                    "weaver" "repl" "--stdin")
+                      batch-payload (edn/read-string batch-output)
+                      batch-result (:result batch-payload)
+                      batch-followup-id (get-in batch-result [:refs :batch-followup])
+                      batch-created (first (:created batch-result))
+                      batch-updated (first (:updated batch-result))
+                      batch-burned (first (:burned batch-result))]
+                  (assert= 1 (count (:created batch-result)) "batch smoke returns exactly one created row")
+                  (assert= 1 (count (:updated batch-result)) "batch smoke returns exactly one updated row")
+                  (assert= 1 (count (:burned batch-result)) "batch smoke returns exactly one burned row")
+                  (assert= docs (get-in batch-result [:refs :docs]) "batch smoke keeps bound existing ref in final refs")
+                  (assert= design (get-in batch-result [:refs :design]) "batch smoke keeps burned ref in final refs")
+                  (assert= batch-followup-id (:id batch-created) "batch smoke returns created row matching new ref")
+                  (assert= {:title "Batch follow-up" :active true :attributes {:owner "agent" :batch "created"}}
+                           (select-keys batch-created [:title :active :attributes])
+                           "batch smoke returns normalized created row")
+                  (assert= {:ref :docs :id docs}
+                           (select-keys batch-updated [:ref :id])
+                           "batch smoke returns updated row identity")
+                  (assert= {:id docs :title "Write usage notes" :active true :attributes {:owner "agent"}}
+                           (select-keys (:before batch-updated) [:id :title :active :attributes])
+                           "batch smoke returns updated before row")
+                  (assert= {:id docs :active true :attributes {:owner "agent" :batch "updated"}}
+                           (select-keys (:after batch-updated) [:id :active :attributes])
+                           "batch smoke returns updated after row")
+                  (assert= {:ref :design :id design}
+                           (select-keys batch-burned [:ref :id])
+                           "batch smoke returns burned row identity")
+                  (assert= {:id design :title "Sketch strand graph model" :active false :attributes {:priority "high"}}
+                           (select-keys (:before batch-burned) [:id :title :active :attributes])
+                           "batch smoke returns burned before row")
+                  (assert= {:id docs :title "Write usage notes" :active true :attributes {:owner "agent" :batch "updated"}}
+                           (select-keys (:docs batch-payload) [:id :title :active :attributes])
+                           "batch smoke can observe updated graph state through REPL reads")
+                  (assert= {:id batch-followup-id :title "Batch follow-up" :active true :attributes {:owner "agent" :batch "created"}}
+                           (select-keys (:batch-followup batch-payload) [:id :title :active :attributes])
+                           "batch smoke can observe created graph state through REPL reads")
+                  (assert= ["Write usage notes"]
+                           (:ready-titles batch-payload)
+                           "batch smoke observes persisted depends-on edge through connected helper readiness reads")
+                  (assert (not (some #{"Sketch strand graph model"}
+                                     (titles (parse-json (run-cli! db-file "list")))))
+                          "batch smoke burn removes existing strand from public CLI reads"))))
         (finally
           (stop-cli-daemon! db-file weaver))))
     (finally

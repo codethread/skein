@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-004`
 **Status:** Implemented
-**Last Updated:** 2026-06-27
+**Last Updated:** 2026-06-28
 **Related RFCs:** [RFC-002 Task Query DSL](../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-go-cli-migration.md)
 **Code:** `src/skein/weaver`, `src/skein/client.clj`, `cli/`
 
@@ -33,7 +33,7 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 ## SPEC-004.P4 API boundary
 
 - **SPEC-004.C15:** `skein.weaver.api` is the semantic boundary used by clients. Transport-specific eval strings, JSON envelopes, nREPL messages, and wire details are not the durable product API.
-- **SPEC-004.C16:** Weaver API operations cover the current stripped strand surface and trusted runtime state helpers: initialize storage, add strand, update strand, show strand, burn strands, list strands, ready strands, register one named query, load named queries, list registered query definitions, resolve a named query, execute list/ready through a named query, read approved library config, sync approved libraries, inspect approved-library sync state, reload selected config-dir `init.clj`, activate one module with `use!`, inspect module-use state, execute set-oriented runtime transformation primitives (`query-ids`, `burn-by-id`, `burn-by-ids`, `strands-by-ids`, `ancestor-root-ids`, and `subgraph`), register/list/invoke weaver-memory views, register/list/resolve/explain/invoke weaver-memory weave patterns, and register/unregister/list/inspect trusted event handlers.
+- **SPEC-004.C16:** Weaver API operations cover the current stripped strand surface and trusted runtime state helpers: initialize storage, add strand, update strand, show strand, burn strands, list strands, ready strands, register one named query, load named queries, list registered query definitions, resolve a named query, execute list/ready through a named query, read approved library config, sync approved libraries, inspect approved-library sync state, reload selected config-dir `init.clj`, activate one module with `use!`, inspect module-use state, execute set-oriented runtime transformation primitives (`query-ids`, `burn-by-id`, `burn-by-ids`, `strands-by-ids`, `ancestor-root-ids`, and `subgraph`), register/list/invoke weaver-memory views, register/list/resolve/explain/invoke weaver-memory weave patterns, register/unregister/list/inspect trusted event handlers, and apply transactional batch graph mutation payloads.
 - **SPEC-004.C17:** Weaver API return values are Clojure data with JSON-bearing database columns normalized before transport-specific formatting. Strand rows use `active` and `inactive_at`; they do not expose core `status` or `final_at`.
 - **SPEC-004.C18:** Weaver API failures preserve domain error information well enough for clients to exit non-zero with useful messages.
 
@@ -86,7 +86,7 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 
 ## SPEC-004.P10 Runtime transformation primitives
 
-- **SPEC-004.C51:** Skein ships blessed source-visible `skein.graph.alpha` and `skein.views.alpha` namespaces for trusted runtime transformation workflows. They build on the runtime library workspace model but are built-in namespaces, not user/community libraries requiring `libs.edn` approval.
+- **SPEC-004.C51:** Skein ships blessed source-visible `skein.graph.alpha`, `skein.views.alpha`, and `skein.batch.alpha` namespaces for trusted runtime transformation workflows. They build on the runtime library workspace model but are built-in namespaces, not user/community libraries requiring `libs.edn` approval.
 - **SPEC-004.C52:** `query-ids` returns a vector of strand ids for an ad hoc query definition or registered query name, ordered by the same stable strand ordering as `list` query results.
 - **SPEC-004.C53:** `burn-by-id` and `burn-by-ids` physically delete strands and incident edges. `burn-by-ids` preserves first-occurrence input order with duplicates collapsed in its `:burned` result, returns `{:burned [] :count 0}` for empty input, and fails loudly if any requested id is missing.
 - **SPEC-004.C53a:** `strands-by-ids` accepts a collection of strand ids, collapses duplicate ids by first occurrence, returns normalized strand rows in that first-occurrence input order, returns `[]` for empty input, and fails loudly if any requested id is missing.
@@ -96,6 +96,7 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 - **SPEC-004.C57:** View invocation resolves the registered function symbol in the weaver JVM and calls it with one context map containing at least `:params`. View functions are read-only transformations in this feature; mutating workflows require a separate contract.
 - **SPEC-004.C58:** View registry contents are weaver-lifetime runtime state and are not durable across restarts. Registry introspection returns serializable entries, not function objects.
 - **SPEC-004.C59:** View registry weaver operation names are `:register-view!`, `:view!`, and `:views`.
+- **SPEC-004.C59a:** Batch graph mutation uses the weaver operation name `:apply-batch`. It accepts the trusted batch payload contract and returns normalized Clojure data without requiring JSON socket exposure.
 - **SPEC-004.C60:** Pattern registry entries are named by simple unqualified names and point to an optional non-blank doc string, fully qualified Clojure function symbol, and input spec name resolvable in the weaver JVM. Duplicate registration replaces the prior entry for reload workflows.
 - **SPEC-004.C61:** Pattern invocation validates input against the registered spec before calling user code, invokes the function with `{:input input}`, requires a batch strand vector return value, and delegates persistence to `skein.db/add-strand-batch!` for id generation, ref resolution, edge insertion, cycle checks, and transactionality.
 - **SPEC-004.C62:** Pattern explanation returns serializable guidance containing the pattern name, optional doc string, function symbol string, input spec string, printable spec form, and expanded schema details when available. This is caller guidance; invocation-time spec validation remains authoritative.
@@ -112,7 +113,7 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 - **SPEC-004.C70:** Runtime config reload stops event dispatch, discards queued events that have not started handling, clears event handlers and recent handler failures, restarts dispatch, then re-runs selected config-dir `init.clj`. Reload does not unload Clojure namespaces or remove already-loaded vars.
 - **SPEC-004.C71:** Events are Clojure maps with at least `:event/type`, `:event/id`, `:event/at`, and `:event/source`. Strand mutation events currently include `:strand/added`, `:strand/updated`, and `:strand/burned`.
 - **SPEC-004.C72:** Add events include `:strand/id` and the normalized created `:strand`. Update events include `:strand/id`, submitted `:strand/patch` including any `:edges`, normalized `:strand/before`, and normalized `:strand/after`. Burn events include `:strand/requested-ids`, `:strand/burned-ids`, and normalized pre-delete `:strand/before` rows.
-- **SPEC-004.C73:** Events are emitted by Skein mutation operations after the database mutation succeeds, not by SQLite triggers or table watchers. Edge writes performed through `update` are represented by the same `:strand/updated` event in the MVP; batch mutation events are deferred until a blessed batch mutation API exists.
+- **SPEC-004.C73:** Events are emitted by Skein mutation operations after the database mutation succeeds, not by SQLite triggers or table watchers. Edge writes performed through `update` are represented by the same `:strand/updated` event in the MVP. Successful batch graph mutation emits `:batch/applied` first with final refs, created rows, updated before/after rows, burned ids/before rows, and edge outcomes. It then emits compatibility fanout in deterministic order: created strand events in result order, updated strand events in result order, and one aggregate `:strand/burned` event when any strands are burned. Compatibility fanout events include only a shared `:batch/id` for correlation; edge-only batch effects are represented by `:batch/applied` only.
 - **SPEC-004.C74:** Event dispatch is asynchronous through a single sequential worker with a bounded queue. Enqueueing fails loudly when the queue is full. Recent handler failures are bounded to the latest 100 entries and include handler key, function symbol, event id/type, exception message, and time.
 
 ## SPEC-004.P11 Removed compatibility

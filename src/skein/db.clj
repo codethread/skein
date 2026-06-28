@@ -87,7 +87,7 @@
   ds)
 
 
-(declare get-strand add-edge!)
+(declare get-strand update-strand! add-edge! strands-by-ids)
 
 (def ^:private batch-strand-keys #{:title :active :attributes :ref :edges})
 (def ^:private batch-edge-keys #{:type :to :attributes})
@@ -373,16 +373,172 @@
           (throw (ex-info "Strand ids not found" {:context context :missing missing})))))
     ids))
 
+(defn- delete-strands! [ds ids]
+  (doseq [id ids]
+    (execute! ds ["DELETE FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" id id])
+    (execute! ds ["DELETE FROM strands WHERE id = ?" id])))
+
 (defn burn-by-ids! [ds ids]
   (let [ids (require-existing-strand-ids! ds ids :burn-by-ids)]
     (jdbc/with-transaction [tx ds]
-      (doseq [id ids]
-        (execute! tx ["DELETE FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" id id])
-        (execute! tx ["DELETE FROM strands WHERE id = ?" id]))
+      (delete-strands! tx ids)
       {:burned ids :count (count ids)})))
 
 (defn burn-by-id! [ds id]
   (burn-by-ids! ds [id]))
+
+(def ^:private batch-mutation-top-level-keys #{:refs :strands :edges :burn})
+(def ^:private batch-mutation-strand-keys #{:ref :title :active :attributes})
+(def ^:private batch-mutation-edge-keys #{:op :from :to :type :attributes})
+
+(defn- require-batch-ref! [ref context]
+  (when-not (and (keyword? ref)
+                 (nil? (namespace ref))
+                 (not (str/blank? (name ref))))
+    (throw (ex-info "Batch refs must be unqualified non-blank keywords"
+                    {:context context :ref ref})))
+  ref)
+
+(defn- require-vector-section! [value section]
+  (when-not (vector? value)
+    (throw (ex-info "Batch section must be a vector" {:section section :value value})))
+  value)
+
+(defn- require-map-section! [value section]
+  (when-not (map? value)
+    (throw (ex-info "Batch section must be a map" {:section section :value value})))
+  value)
+
+(defn- duplicate-keys-by-value [m]
+  (->> m
+       (group-by val)
+       (keep (fn [[id entries]]
+               (when (< 1 (count entries))
+                 {:id id :refs (mapv key entries)})))
+       vec))
+
+(defn- duplicate-item [xs]
+  (->> xs frequencies (some (fn [[x n]] (when (< 1 n) x)))))
+
+(defn- section [payload k default require-fn]
+  (require-fn (if (contains? payload k) (get payload k) default) k))
+
+(defn- valid-title? [title]
+  (and (string? title) (not (str/blank? title))))
+
+(defn- normalize-batch-payload! [payload]
+  (when-not (map? payload)
+    (throw (ex-info "Batch payload must be a map" {:value payload})))
+  (require-no-unknown-keys! payload batch-mutation-top-level-keys :batch)
+  (let [refs (section payload :refs {} require-map-section!)
+        strands (section payload :strands [] require-vector-section!)
+        edges (section payload :edges [] require-vector-section!)
+        burn (section payload :burn [] require-vector-section!)]
+    (doseq [[ref id] refs]
+      (require-batch-ref! ref :refs)
+      (when-not (string? id)
+        (throw (ex-info "Batch ref targets must be durable strand id strings" {:ref ref :id id}))))
+    (when-let [dupes (seq (duplicate-keys-by-value refs))]
+      (throw (ex-info "Multiple batch refs cannot alias the same existing strand id" {:duplicates dupes})))
+    (doseq [[idx strand] (map-indexed vector strands)]
+      (when-not (map? strand)
+        (throw (ex-info "Batch strand entry must be a map" {:index idx :strand strand})))
+      (reject-removed-lifecycle-fields! strand :batch-strand)
+      (reject-unknown-strand-keys! strand batch-mutation-strand-keys :batch-strand)
+      (when-not (contains? strand :ref)
+        (throw (ex-info "Batch strand entry requires :ref" {:index idx :strand strand})))
+      (require-batch-ref! (:ref strand) :strands)
+      (when (contains? strand :title)
+        (when-not (valid-title? (:title strand))
+          (throw (ex-info "Batch strand :title must be a non-blank string" {:index idx :strand strand}))))
+      (when (contains? strand :active)
+        (require-boolean! (:active strand) :active))
+      (when (contains? strand :attributes)
+        (require-json-object-encodable! (:attributes strand) :strand)))
+    (when-let [duplicate-ref (duplicate-item (map :ref strands))]
+      (throw (ex-info "Duplicate batch strand ref" {:ref duplicate-ref})))
+    (doseq [[idx ref] (map-indexed vector burn)]
+      (require-batch-ref! ref {:section :burn :index idx}))
+    (when-let [duplicate-ref (duplicate-item burn)]
+      (throw (ex-info "Duplicate batch burn ref" {:ref duplicate-ref})))
+    (doseq [[idx edge] (map-indexed vector edges)]
+      (when-not (map? edge)
+        (throw (ex-info "Batch edge entry must be a map" {:index idx :edge edge})))
+      (require-no-unknown-keys! edge batch-mutation-edge-keys :batch-edge)
+      (when-not (= :upsert (:op edge))
+        (throw (ex-info "Unsupported batch edge operation" {:index idx :op (:op edge)})))
+      (doseq [k [:from :to]]
+        (when-not (contains? edge k)
+          (throw (ex-info "Batch edge endpoint is required" {:index idx :field k :edge edge})))
+        (require-batch-ref! (get edge k) {:section :edges :index idx :field k}))
+      (when-not (s/valid? ::specs/edge-type (:type edge))
+        (throw (ex-info "Batch edge :type must be one of the allowed edge types"
+                        {:index idx :edge edge :allowed specs/allowed-edge-types})))
+      (require-json-object-encodable! (:attributes edge) :edge))
+    {:refs refs :strands strands :edges edges :burn burn}))
+
+(defn apply-batch! [ds payload]
+  (let [{:keys [refs strands edges burn]} (normalize-batch-payload! payload)]
+    (jdbc/with-transaction [tx ds]
+      (require-existing-strand-ids! tx (vals refs) :batch-refs)
+      (let [strand-refs (set (map :ref strands))
+            burn-refs (set burn)
+            bound-refs (set (keys refs))
+            known-refs (into bound-refs strand-refs)]
+        (doseq [strand strands]
+          (when-not (contains? refs (:ref strand))
+            (when-not (valid-title? (:title strand))
+              (throw (ex-info "Batch strand create requires a non-blank :title"
+                              {:ref (:ref strand) :strand strand})))))
+        (doseq [ref burn]
+          (when-not (contains? refs ref)
+            (throw (ex-info "Batch burn refs must name existing bound refs" {:ref ref}))))
+        (when-let [ref (first (filter strand-refs burn-refs))]
+          (throw (ex-info "Batch ref cannot be both mutated and burned" {:ref ref})))
+        (doseq [{:keys [from to]} edges]
+          (doseq [ref [from to]]
+            (when-not (contains? known-refs ref)
+              (throw (ex-info "Batch edge references unknown ref" {:ref ref})))
+            (when (contains? burn-refs ref)
+              (throw (ex-info "Batch edge cannot reference a burned ref" {:ref ref})))))
+        (let [{final-refs :refs created-rows :rows}
+              (reduce (fn [acc strand]
+                        (if (contains? refs (:ref strand))
+                          acc
+                          (let [created-row (add-strand! tx (select-keys strand [:title :active :attributes]))]
+                            (-> acc
+                                (update :refs assoc (:ref strand) (:id created-row))
+                                (update :rows conj created-row)))))
+                      {:refs refs :rows []}
+                      strands)
+              updated (->> strands
+                           (keep (fn [strand]
+                                   (when-let [id (get refs (:ref strand))]
+                                     {:ref (:ref strand)
+                                      :id id
+                                      :before (get-strand tx id)
+                                      :after (update-strand! tx id (dissoc strand :ref))})))
+                           vec)
+              edge-outcomes (mapv (fn [edge]
+                                    (let [from-id (get final-refs (:from edge))
+                                          to-id (get final-refs (:to edge))]
+                                      {:op :upsert
+                                       :from (:from edge)
+                                       :to (:to edge)
+                                       :type (:type edge)
+                                       :edge (add-edge! tx {:from from-id
+                                                            :to to-id
+                                                            :type (:type edge)
+                                                            :attributes (:attributes edge)})}))
+                                  edges)
+              burn-ids (mapv final-refs burn)
+              burned-rows (strands-by-ids tx burn-ids)]
+          (delete-strands! tx burn-ids)
+          {:refs final-refs
+           :created created-rows
+           :updated updated
+           :burned (mapv (fn [ref id row] {:ref ref :id id :before row}) burn burn-ids burned-rows)
+           :edges edge-outcomes})))))
 
 (defn strands-by-ids [ds ids]
   (let [ids (require-existing-strand-ids! ds ids :strands-by-ids)]
