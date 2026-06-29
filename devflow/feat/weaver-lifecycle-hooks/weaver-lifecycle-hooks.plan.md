@@ -121,3 +121,10 @@ Append notes here. Do not rewrite earlier notes.
 - Factored `db/supersede-strand-in-transaction!` so `api/supersede` can run normal supersession mutation in its own transaction, invoke `:strand/supersede-before-commit`, and commit only after hook approval.
 - Supersede hook context carries old/replacement ids, normalized old before/after rows, supersedes edge candidate, and rewired dependency candidate data; rejection rolls back state, supersedes edge, rewiring, and event enqueue.
 - Validation passed: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.
+
+### WLH-PLAN-001.DN6 Task 5 implementation — 2026-06-29
+
+- Factored graph batch mutation with `db/apply-batch-in-transaction!` so `api/apply-batch` owns the transaction, normalizes per-strand batch attributes, invokes `:batch/apply-before-commit`, and enqueues events only after hook approval.
+- Batch hook context uses the common apply schema with normalized payload/result data; hook rejection rolls back mixed create/update/edge/burn work atomically.
+- Kept the MVP seam narrow: direct `db/apply-batch!` behavior remains unchanged and no CLI batch surface was added.
+- Validation passed: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`, `(cd cli && go test ./...)`, and `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke`.

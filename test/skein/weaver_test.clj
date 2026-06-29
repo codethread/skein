@@ -4,6 +4,7 @@
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.test :refer [deftest is testing]]
+            [skein.batch.alpha :as batch]
             [skein.weaver.api :as api]
             [skein.weaver.config :as weaver-config]
             [skein.weaver.metadata :as metadata]
@@ -574,15 +575,83 @@
       (api/init rt)
       (let [from (api/add rt {:title "From"})
             to (api/add rt {:title "To"})]
+        (reset! hook-contexts [])
         (reset! delivered-events [])
         (api/register-event-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
                                      'skein.weaver-test/capture-event {})
+        (api/register-hook! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
         (let [result (api/apply-batch rt {:refs {:from (:id from) :to (:id to)}
                                           :edges [{:op :upsert :from :from :to :to :type "related-to"}]})
-              events (wait-for-events 1)]
+              events (wait-for-events 1)
+              context (last @hook-contexts)]
           (Thread/sleep 100)
           (is (= [:batch/applied] (mapv :event/type @delivered-events)))
-          (is (= (:edges result) (:batch/edges (first events)))))))))
+          (is (= (:edges result) (:batch/edges (first events))))
+          (is (= [] (:batch/created context) (:batch/updated context) (:batch/burned context)))
+          (is (= (:edges result) (:batch/edge-ops context))))))))
+
+(deftest weaver-apply-batch-hooks-normalize-context-and-reject-atomically
+  (with-runtime
+    (fn [rt _]
+      (api/init rt)
+      (reset! hook-contexts [])
+      (reset! delivered-events [])
+      (api/register-event-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
+                                   'skein.weaver-test/capture-event {})
+      (api/register-hook! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {})
+      (api/register-hook! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
+      (let [existing (api/add rt {:title "Existing" :attributes {:owner "agent"}})
+            burnable (api/add rt {:title "Burnable"})]
+        (reset! hook-contexts [])
+        (reset! delivered-events [])
+        (let [payload {:refs {:existing (:id existing) :burnable (:id burnable)}
+                       :strands [{:ref :existing :attributes {"storyPoints" "5"}}
+                                 {:ref :created :title "Created" :attributes {"storyPoints" "3"}}]
+                       :edges [{:op :upsert :from :created :to :existing :type "depends-on" :attributes {:raw "edge"}}]
+                       :burn [:burnable]}
+              result (batch/apply! payload)
+              context (last @hook-contexts)
+              batch-event (first (filter #(= :batch/applied (:event/type %)) (wait-for-events 5)))]
+          (is (= {:storyPoints 3} (get-in result [:created 0 :attributes])))
+          (is (= {:owner "agent" :storyPoints 5} (get-in result [:updated 0 :after :attributes])))
+          (is (= :batch/apply-before-commit (:hook/type context)))
+          (is (= :weaver-api (:request/source context)))
+          (is (= :apply-batch (:request/operation context)))
+          (is (= :batch/apply (:mutation/operation context)))
+          (is (= :apply (:batch/source context)))
+          (is (= #{:refs :strands :edges :burn} (set (keys (:batch/payload context)))))
+          (is (= "3" (get-in context [:batch/payload :strands 1 :attributes "storyPoints"])))
+          (is (= (:refs result) (:batch/refs context)))
+          (is (= (:created result) (:batch/created context)))
+          (is (= (:updated result) (:batch/updated context)))
+          (is (= (:burned result) (:batch/burned context)))
+          (is (= (:edges result) (:batch/edge-ops context)))
+          (is (= result {:refs (:batch/refs batch-event)
+                         :created (:batch/created batch-event)
+                         :updated (:batch/updated batch-event)
+                         :burned (:batch/burned batch-event)
+                         :edges (:batch/edges batch-event)})))
+        (api/unregister-hook! rt :capture-batch)
+        (api/register-hook! rt :reject-batch #{:batch/apply-before-commit} 'skein.weaver-test/rejecting-hook {})
+        (let [keep (api/add rt {:title "Keep" :attributes {:stable true}})
+              burn-reject (api/add rt {:title "Burn reject"})
+              before (db-test/graph-snapshot (:datasource rt))]
+          (reset! delivered-events [])
+          (try
+            (api/apply-batch rt {:refs {:keep (:id keep) :burn (:id burn-reject)}
+                                 :strands [{:ref :keep :attributes {"storyPoints" "8"}}
+                                           {:ref :created :title "Rejected create" :attributes {"storyPoints" "13"}}]
+                                 :edges [{:op :upsert :from :created :to :keep :type "depends-on"}]
+                                 :burn [:burn]})
+            (is false "expected batch hook rejection")
+            (catch clojure.lang.ExceptionInfo e
+              (is (= "hook/failed" (:code (ex-data e))))
+              (is (= :batch/apply-before-commit (:hook/type (ex-data e))))
+              (is (= :reject-batch (:hook/key (ex-data e))))
+              (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
+          (Thread/sleep 100)
+          (is (= before (db-test/graph-snapshot (:datasource rt))))
+          (is (empty? @delivered-events)))))))
 
 (deftest weaver-burn-by-ids-event-captures-pre-delete-rows-and-requested-ids
   (with-runtime

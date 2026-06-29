@@ -606,7 +606,7 @@
 (defn- valid-title? [title]
   (and (string? title) (not (str/blank? title))))
 
-(defn- normalize-batch-payload! [payload]
+(defn ^:no-doc normalize-batch-payload! [payload]
   (when-not (map? payload)
     (throw (ex-info "Batch payload must be a map" {:value payload})))
   (require-no-unknown-keys! payload batch-mutation-top-level-keys :batch)
@@ -657,73 +657,77 @@
       (require-json-object-encodable! (:attributes edge) :edge))
     {:refs refs :strands strands :edges edges :burn burn}))
 
+(defn ^:no-doc apply-batch-in-transaction!
+  [tx payload]
+  (let [{:keys [refs strands edges burn]} (normalize-batch-payload! payload)]
+    (require-existing-strand-ids! tx (vals refs) :batch-refs)
+    (let [strand-refs (set (map :ref strands))
+          burn-refs (set burn)
+          bound-refs (set (keys refs))
+          known-refs (into bound-refs strand-refs)]
+      (doseq [strand strands]
+        (when-not (contains? refs (:ref strand))
+          (when-not (valid-title? (:title strand))
+            (throw (ex-info "Batch strand create requires a non-blank :title"
+                            {:ref (:ref strand) :strand strand})))))
+      (doseq [ref burn]
+        (when-not (contains? refs ref)
+          (throw (ex-info "Batch burn refs must name existing bound refs" {:ref ref}))))
+      (when-let [ref (first (filter strand-refs burn-refs))]
+        (throw (ex-info "Batch ref cannot be both mutated and burned" {:ref ref})))
+      (doseq [{:keys [from to]} edges]
+        (doseq [ref [from to]]
+          (when-not (contains? known-refs ref)
+            (throw (ex-info "Batch edge references unknown ref" {:ref ref})))
+          (when (contains? burn-refs ref)
+            (throw (ex-info "Batch edge cannot reference a burned ref" {:ref ref})))))
+      (let [{final-refs :refs created-rows :rows}
+            (reduce (fn [acc strand]
+                      (if (contains? refs (:ref strand))
+                        acc
+                        (let [created-row (add-strand! tx (select-keys strand [:title :state :attributes]))]
+                          (-> acc
+                              (update :refs assoc (:ref strand) (:id created-row))
+                              (update :rows conj created-row)))))
+                    {:refs refs :rows []}
+                    strands)
+            updated (->> strands
+                         (keep (fn [strand]
+                                 (when-let [id (get refs (:ref strand))]
+                                   {:ref (:ref strand)
+                                    :id id
+                                    :before (get-strand tx id)
+                                    :after (update-strand! tx id (dissoc strand :ref))})))
+                         vec)
+            edge-outcomes (mapv (fn [edge]
+                                  (let [from-id (get final-refs (:from edge))
+                                        to-id (get final-refs (:to edge))]
+                                    {:op :upsert
+                                     :from (:from edge)
+                                     :to (:to edge)
+                                     :type (:type edge)
+                                     :edge (add-edge! tx {:from from-id
+                                                          :to to-id
+                                                          :type (:type edge)
+                                                          :attributes (:attributes edge)})}))
+                                edges)
+            burn-ids (mapv final-refs burn)
+            burned-rows (strands-by-ids tx burn-ids)]
+        (delete-strands! tx burn-ids)
+        {:refs final-refs
+         :created created-rows
+         :updated updated
+         :burned (mapv (fn [ref id row] {:ref ref :id id :before row}) burn burn-ids burned-rows)
+         :edges edge-outcomes}))))
+
 (defn apply-batch!
   "Apply a mixed batch mutation transaction.
 
   Payload refs bind existing and newly-created strands, edges are upserted, and burns
   delete strands after mutation validation succeeds."
   [ds payload]
-  (let [{:keys [refs strands edges burn]} (normalize-batch-payload! payload)]
-    (jdbc/with-transaction [tx ds]
-      (require-existing-strand-ids! tx (vals refs) :batch-refs)
-      (let [strand-refs (set (map :ref strands))
-            burn-refs (set burn)
-            bound-refs (set (keys refs))
-            known-refs (into bound-refs strand-refs)]
-        (doseq [strand strands]
-          (when-not (contains? refs (:ref strand))
-            (when-not (valid-title? (:title strand))
-              (throw (ex-info "Batch strand create requires a non-blank :title"
-                              {:ref (:ref strand) :strand strand})))))
-        (doseq [ref burn]
-          (when-not (contains? refs ref)
-            (throw (ex-info "Batch burn refs must name existing bound refs" {:ref ref}))))
-        (when-let [ref (first (filter strand-refs burn-refs))]
-          (throw (ex-info "Batch ref cannot be both mutated and burned" {:ref ref})))
-        (doseq [{:keys [from to]} edges]
-          (doseq [ref [from to]]
-            (when-not (contains? known-refs ref)
-              (throw (ex-info "Batch edge references unknown ref" {:ref ref})))
-            (when (contains? burn-refs ref)
-              (throw (ex-info "Batch edge cannot reference a burned ref" {:ref ref})))))
-        (let [{final-refs :refs created-rows :rows}
-              (reduce (fn [acc strand]
-                        (if (contains? refs (:ref strand))
-                          acc
-                          (let [created-row (add-strand! tx (select-keys strand [:title :state :attributes]))]
-                            (-> acc
-                                (update :refs assoc (:ref strand) (:id created-row))
-                                (update :rows conj created-row)))))
-                      {:refs refs :rows []}
-                      strands)
-              updated (->> strands
-                           (keep (fn [strand]
-                                   (when-let [id (get refs (:ref strand))]
-                                     {:ref (:ref strand)
-                                      :id id
-                                      :before (get-strand tx id)
-                                      :after (update-strand! tx id (dissoc strand :ref))})))
-                           vec)
-              edge-outcomes (mapv (fn [edge]
-                                    (let [from-id (get final-refs (:from edge))
-                                          to-id (get final-refs (:to edge))]
-                                      {:op :upsert
-                                       :from (:from edge)
-                                       :to (:to edge)
-                                       :type (:type edge)
-                                       :edge (add-edge! tx {:from from-id
-                                                            :to to-id
-                                                            :type (:type edge)
-                                                            :attributes (:attributes edge)})}))
-                                  edges)
-              burn-ids (mapv final-refs burn)
-              burned-rows (strands-by-ids tx burn-ids)]
-          (delete-strands! tx burn-ids)
-          {:refs final-refs
-           :created created-rows
-           :updated updated
-           :burned (mapv (fn [ref id row] {:ref ref :id id :before row}) burn burn-ids burned-rows)
-           :edges edge-outcomes})))))
+  (jdbc/with-transaction [tx ds]
+    (apply-batch-in-transaction! tx payload)))
 
 (defn strands-by-ids
   "Return existing strand rows in first-seen id order.

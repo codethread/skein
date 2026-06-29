@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: Gate graph batch mutation
     task_file: tasks/005-gate-graph-batch-mutation.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 6
     description: Gate pattern weave batches

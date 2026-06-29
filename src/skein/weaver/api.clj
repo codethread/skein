@@ -572,10 +572,46 @@
                                    :strand/burned-ids (mapv :id (:burned result))
                                    :strand/before (mapv :before (:burned result))))))
 
+(defn- normalize-batch-strand-attributes [runtime payload]
+  (clojure.core/update payload :strands
+                       (fn [strands]
+                         (mapv (fn [{:keys [ref attributes] :as strand}]
+                                 (if (nil? attributes)
+                                   strand
+                                   (assoc strand :attributes
+                                          (run-transform-hooks runtime
+                                                               :attributes/normalize
+                                                               {:hook/value attributes
+                                                                :request/source :weaver-api
+                                                                :request/operation :apply-batch
+                                                                :mutation/operation :batch/apply
+                                                                :batch/ref ref
+                                                                :strand/patch strand}))))
+                               strands))))
+
+(defn- batch-apply-context [payload result]
+  {:request/source :weaver-api
+   :request/operation :apply-batch
+   :mutation/operation :batch/apply
+   :batch/source :apply
+   :batch/payload payload
+   :batch/refs (:refs result)
+   :batch/created (:created result)
+   :batch/updated (:updated result)
+   :batch/burned (:burned result)
+   :batch/edge-ops (:edges result)})
+
 (defn apply-batch
   "Apply a graph batch atomically and enqueue batch plus strand fanout events."
   [runtime payload]
-  (let [result (normalize (db/apply-batch! (ds runtime) payload))
+  (let [submitted-payload payload
+        normalized-payload (normalize-batch-strand-attributes runtime (db/normalize-batch-payload! payload))
+        result (jdbc/with-transaction [tx (ds runtime)]
+                 (let [result (normalize (db/apply-batch-in-transaction! tx normalized-payload))]
+                   (run-validation-hooks! runtime
+                                          :batch/apply-before-commit
+                                          (batch-apply-context submitted-payload result))
+                   result))
         batch-id (str (UUID/randomUUID))]
     (enqueue-event! runtime (assoc (event-base :batch/applied)
                                    :batch/id batch-id
@@ -584,7 +620,7 @@
                                    :batch/updated (:updated result)
                                    :batch/burned (:burned result)
                                    :batch/edges (:edges result)))
-    (enqueue-batch-fanout! runtime batch-id payload result)
+    (enqueue-batch-fanout! runtime batch-id normalized-payload result)
     result))
 
 (defn- apply-edges! [tx id edges]
