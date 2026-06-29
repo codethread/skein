@@ -4,9 +4,12 @@ all: build install bootstrap
 
 GO_CLI := ./cli/cmd/strand
 BIN := ./cli/bin/strand
-CONFIG_HOME ?= $(if $(XDG_CONFIG_HOME),$(XDG_CONFIG_HOME),$(HOME)/.config)
-SKEIN_CONFIG ?= $(CONFIG_HOME)/skein
-CONFIG_DIR := $(SKEIN_CONFIG)
+
+# Optional explicit disposable world; leave empty to use repo-local bootstrap via `strand init`.
+BOOTSTRAP_CONFIG_DIR ?=
+
+# Default config-dir for local workflows (repo `.skein` when not explicitly overridden).
+CONFIG_DIR := $(if $(strip $(BOOTSTRAP_CONFIG_DIR)),$(BOOTSTRAP_CONFIG_DIR),$(CURDIR)/.skein)
 CONFIG_FILE := $(CONFIG_DIR)/config.json
 AGENTS_FILE := $(CONFIG_DIR)/AGENTS.md
 CLAUDE_FILE := $(CONFIG_DIR)/CLAUDE.md
@@ -17,24 +20,20 @@ build:
 install:
 	go install $(GO_CLI)
 
-# Quick bootstrap matching README.md setup steps.
+# Bootstrap matching repo-first CLI flow: install strand and run repo-local `strand init`.
 bootstrap:
-	@if ! command -v jq >/dev/null 2>&1; then \
-		echo "jq is required for bootstrap (required by README.md)" >&2; \
-		exit 1; \
-	fi
 	go install $(GO_CLI)
 	mkdir -p "$(CONFIG_DIR)"
-	@if [ ! -e "$(CONFIG_FILE)" ] && [ ! -L "$(CONFIG_FILE)" ]; then \
-		printf '{"configFormat":"alpha","source":"%s"}\n' "$(CURDIR)" | jq . > "$(CONFIG_FILE)"; \
+	@if [ -n "$(BOOTSTRAP_CONFIG_DIR)" ]; then \
+		strand --config-dir "$(BOOTSTRAP_CONFIG_DIR)" init --source "$(CURDIR)"; \
 	else \
-		echo "Preserving existing $(CONFIG_FILE)"; \
+		strand init --source "$(CURDIR)"; \
 	fi
 	@if [ ! -e "$(AGENTS_FILE)" ] && [ ! -L "$(AGENTS_FILE)" ]; then \
-		printf '%s\n' 'Always read <source-dir>/docs/skein.md where source-dir = !`cat config.json | jq '\''.source'\''` first.' > "$(AGENTS_FILE)"; \
+		printf '%s\n' 'Always read $(CURDIR)/docs/skein.md from repo root before running commands.' > "$(AGENTS_FILE)"; \
 	fi
 	@if [ ! -e "$(CLAUDE_FILE)" ] && [ ! -L "$(CLAUDE_FILE)" ]; then \
-		ln -s AGENTS.md "$(CLAUDE_FILE)"; \
+		ln -sf AGENTS.md "$(CLAUDE_FILE)"; \
 	fi
 
 open-config: bootstrap
