@@ -1,4 +1,5 @@
 (ns skein.weaver.metadata
+  "Publish, read, and clean up weaver runtime metadata files."
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
@@ -7,27 +8,39 @@
            [java.nio.file Files StandardCopyOption]
            [java.util UUID]))
 
-(def protocol-version 1)
-(def json-file-name "weaver.json")
-(def edn-file-name "weaver.edn")
-(def socket-file-name "weaver.sock")
+(def ^:private protocol-version 1)
+(def ^:private json-file-name "weaver.json")
+(def ^:private edn-file-name "weaver.edn")
+(def ^:private socket-file-name "weaver.sock")
 
-(defn canonical-db-path [db-file]
+(defn canonical-db-path
+  "Return the canonical filesystem path for `db-file`."
+  [db-file]
   (.getPath (.getCanonicalFile (io/file db-file))))
 
-(defn metadata-file [world]
+(defn metadata-file
+  "Return the EDN metadata file for `world`."
+  [world]
   (io/file (:state-dir world) edn-file-name))
 
-(defn json-metadata-file [world]
+(defn json-metadata-file
+  "Return the JSON metadata file for `world`."
+  [world]
   (io/file (:state-dir world) json-file-name))
 
-(defn socket-file [world]
+(defn socket-file
+  "Return the Unix-domain socket file for `world`."
+  [world]
   (io/file (:state-dir world) socket-file-name))
 
-(defn new-nonce []
+(defn new-nonce
+  "Return a fresh weaver identity nonce."
+  []
   (str (UUID/randomUUID)))
 
-(defn metadata-shape [{:keys [pid host port canonical-db-path nonce started-at world]}]
+(defn metadata-shape
+  "Return the canonical EDN metadata map for a running weaver."
+  [{:keys [pid host port canonical-db-path nonce started-at world]}]
   (let [socket-path (.getPath (socket-file world))]
     {:pid pid
      :transport :nrepl
@@ -41,7 +54,9 @@
      :socket-path socket-path
      :started-at started-at}))
 
-(defn json-metadata-shape [metadata]
+(defn- json-metadata-shape
+  "Return the public JSON metadata shape consumed by non-Clojure clients."
+  [metadata]
   {"protocol_version" protocol-version
    "pid" (:pid metadata)
    "weaver_id" (:nonce metadata)
@@ -54,7 +69,9 @@
    "nrepl" {"host" (get-in metadata [:endpoint :host])
              "port" (get-in metadata [:endpoint :port])}})
 
-(defn write-atomic! [file data]
+(defn- write-atomic!
+  "Write pretty-printed EDN `data` to `file` via an atomic rename."
+  [file data]
   (.mkdirs (.getParentFile file))
   (let [tmp (io/file (.getParentFile file) (str (.getName file) "." (new-nonce) ".tmp"))]
     (spit tmp (with-out-str (pprint/pprint data)))
@@ -64,7 +81,9 @@
                                                 StandardCopyOption/REPLACE_EXISTING]))
     file))
 
-(defn write-raw-atomic! [file content]
+(defn- write-raw-atomic!
+  "Write raw string `content` to `file` via an atomic rename."
+  [file content]
   (.mkdirs (.getParentFile file))
   (let [tmp (io/file (.getParentFile file) (str (.getName file) "." (new-nonce) ".tmp"))]
     (spit tmp content)
@@ -74,7 +93,9 @@
                                                 StandardCopyOption/REPLACE_EXISTING]))
     file))
 
-(defn publish! [metadata]
+(defn publish!
+  "Publish EDN and JSON metadata files for `metadata`."
+  [metadata]
   (let [world {:state-dir (:state-dir metadata)}
         file (metadata-file world)]
     (write-atomic! file metadata)
@@ -82,22 +103,34 @@
                        (json/write-str (json-metadata-shape metadata)))
     file))
 
-(defn read-metadata [world]
+(defn read-metadata
+  "Read the EDN metadata map for `world`, returning nil when absent."
+  [world]
   (let [file (metadata-file world)]
     (when (.exists file)
       (edn/read-string (slurp file)))))
 
-(defn delete! [world]
+(defn delete!
+  "Delete metadata and socket files for `world`."
+  [world]
   (.delete (metadata-file world))
   (.delete (json-metadata-file world))
   (.delete (socket-file world)))
 
-(defn pid-alive? [pid]
-  (boolean (some-> (ProcessHandle/of pid) (.orElse nil) .isAlive)))
+(defn pid-alive?
+  "Return true when `pid` identifies a live OS process."
+  [pid]
+  (boolean (some-> (ProcessHandle/of (long pid)) (.orElse nil) .isAlive)))
 
-(defn stale-or-missing? [metadata]
+(defn- valid-pid? [pid]
+  (and (integer? pid)
+       (<= Long/MIN_VALUE pid Long/MAX_VALUE)))
+
+(defn stale-or-missing?
+  "Return true when metadata is absent, malformed, unsupported, or points at a dead process."
+  [metadata]
   (not (and (map? metadata)
-            (int? (:pid metadata))
+            (valid-pid? (:pid metadata))
             (pid-alive? (:pid metadata))
             (= :nrepl (:transport metadata))
             (= protocol-version (:protocol-version metadata))
