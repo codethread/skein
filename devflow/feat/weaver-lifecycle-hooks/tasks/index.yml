@@ -1,0 +1,41 @@
+tasks:
+  - id: 1
+    description: Add hook registry helpers
+    task_file: tasks/001-add-hook-registry-helpers.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Add hook runner and attr normalization
+    task_file: tasks/002-add-hook-runner-and-attr-normalization.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: Gate simple strand mutations
+    task_file: tasks/003-gate-simple-strand-mutations.md
+    status: pending
+    blocked_by: [2]
+  - id: 4
+    description: Gate supersession transaction
+    task_file: tasks/004-gate-supersession-transaction.md
+    status: pending
+    blocked_by: [2]
+  - id: 5
+    description: Gate graph batch mutation
+    task_file: tasks/005-gate-graph-batch-mutation.md
+    status: pending
+    blocked_by: [2]
+  - id: 6
+    description: Gate pattern weave batches
+    task_file: tasks/006-gate-pattern-weave-batches.md
+    status: pending
+    blocked_by: [5]
+  - id: 7
+    description: Add socket payload hooks
+    task_file: tasks/007-add-socket-payload-hooks.md
+    status: pending
+    blocked_by: [2]
+  - id: 8
+    description: Promote specs and validate
+    task_file: tasks/008-promote-specs-and-validate.md
+    status: pending
+    blocked_by: [3, 4, 6, 7]
