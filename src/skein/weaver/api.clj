@@ -1,7 +1,7 @@
 (ns skein.weaver.api
+  "Trusted in-process API for manipulating strands and weaver runtime registries."
   (:refer-clojure :exclude [list update use])
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+  (:require [clojure.java.io :as io]
             [clojure.repl.deps :as repl-deps]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
@@ -12,11 +12,15 @@
   (:import [java.time Instant]
            [java.util UUID]))
 
-(defn normalize-row [row]
+(defn- normalize-row
+  "Decode JSON-backed row fields returned by persistence."
+  [row]
   (cond-> row
     (string? (:attributes row)) (clojure.core/update :attributes db/<-json)))
 
-(defn normalize [result]
+(defn- normalize
+  "Recursively decode persistence-shaped rows into Clojure data."
+  [result]
   (cond
     (map? result) (into {} (map (fn [[k v]] [k (normalize v)])) (normalize-row result))
     (sequential? result) (mapv normalize result)
@@ -88,7 +92,9 @@
   (when-not (and (string? (:local/root entry)) (not (str/blank? (:local/root entry))))
     (throw (ex-info "Library entry requires non-blank string :local/root" {:lib lib :local/root (:local/root entry)}))))
 
-(defn normalize-approved-libs [runtime config]
+(defn- normalize-approved-libs
+  "Validate libs.edn data and resolve approved local roots for this runtime."
+  [runtime config]
   (when-not (map? config)
     (throw (ex-info "libs.edn must contain a map" {:config config})))
   (when-let [unknown (seq (remove #{:libs} (keys config)))]
@@ -102,7 +108,9 @@
                             :root (canonical-root runtime (:local/root entry))}]))
                (:libs config))})
 
-(defn approved-libs [runtime]
+(defn approved-libs
+  "Read and validate the runtime libs.edn allowlist."
+  [runtime]
   (let [file (libs-file runtime)]
     (cond
       (not (.exists file))
@@ -115,7 +123,7 @@
       (normalize-approved-libs
        runtime
        (try
-         (edn/read-string (slurp file))
+         (query/read-edn-file file)
          (catch Throwable t
            (throw (ex-info "libs.edn is malformed or unreadable" {:file (.getPath file)} t))))))))
 
@@ -131,7 +139,7 @@
   (let [deps-file (io/file root "deps.edn")]
     (when-not (.isFile deps-file)
       (throw (ex-info "Local root must contain deps.edn" {:root root})))
-    (let [deps (edn/read-string (slurp deps-file))
+    (let [deps (query/read-edn-file deps-file)
           paths (or (:paths deps) ["src"])]
       (when-not (and (vector? paths) (every? string? paths))
         (throw (ex-info "Local root deps.edn :paths must be a vector of strings" {:root root :paths paths})))
@@ -171,7 +179,9 @@
           (sync-failed lib entry :runtime-add-failed {:message (ex-message t)
                                                       :class (str (class t))}))))))
 
-(defn sync-approved-libs [runtime]
+(defn sync-approved-libs
+  "Load approved local libraries into the runtime classloader and record sync status."
+  [runtime]
   (reset! (approved-lib-sync-state runtime) {})
   (let [approved (approved-libs runtime)
         results (into (sorted-map)
@@ -180,10 +190,14 @@
     (reset! (approved-lib-sync-state runtime) results)
     {:libs results}))
 
-(defn approved-lib-syncs [runtime]
+(defn approved-lib-syncs
+  "Return the most recent approved library sync results."
+  [runtime]
   {:libs (into (sorted-map) @(approved-lib-sync-state runtime))})
 
-(defn reload-config! [runtime]
+(defn reload-config!
+  "Reload config-dir init.clj after clearing runtime registries and event handlers."
+  [runtime]
   (let [file (io/file (config-dir runtime) "init.clj")]
     (when-not (.isFile file)
       (throw (ex-info "Selected config-dir has no init.clj to reload"
@@ -203,7 +217,7 @@
          :file canonical-file
          :return result}))))
 
-(def allowed-use-keys #{:ns :file :libs :after :call :required?})
+(def ^:private allowed-use-keys #{:ns :file :libs :after :call :required?})
 
 (defn- validate-use-opts! [key opts]
   (when-not (keyword? key)
@@ -326,7 +340,14 @@
    :class (str (class t))
    :data (ex-data t)})
 
-(defn use! [runtime key opts]
+(defn use!
+  "Load a runtime module and record its module-use state under keyword key.
+
+  Opts load either a synced namespace via `:ns` or a file via `:file`, and may
+  include `:call` to invoke a no-arg function after load. Returns a registry
+  entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
+  rethrow after recording failure metadata."
+  [runtime key opts]
   (validate-use-opts! key opts)
   (when-let [file (:file opts)]
     (module-file runtime file))
@@ -361,22 +382,30 @@
               (throw t))
             result))))))
 
-(defn uses [runtime]
+(defn uses
+  "Return module-use registry entries keyed by keyword."
+  [runtime]
   (into (sorted-map) @(module-use-state runtime)))
 
-(defn use [runtime key]
+(defn use
+  "Return the module-use registry entry for key, or nil when absent."
+  [runtime key]
   (get @(module-use-state runtime) key))
 
 (defn- validated-query-entry [[query-name query-def]]
   [(query/canonical-query-name query-name)
    (query/validate-query-def! query-def)])
 
-(defn register-query [runtime query-name query-def]
+(defn register-query
+  "Register a named query definition in the runtime query registry."
+  [runtime query-name query-def]
   (let [entry (validated-query-entry [query-name query-def])]
     (swap! (query-registry runtime) conj entry)
     (into {} [entry])))
 
-(defn load-queries [runtime query-defs]
+(defn load-queries
+  "Merge validated named query definitions into the runtime query registry."
+  [runtime query-defs]
   (let [validated-query-defs (into {} (map validated-query-entry) query-defs)]
     (swap! (query-registry runtime) merge validated-query-defs)
     validated-query-defs))
@@ -385,19 +414,29 @@
   (or @runtime/current-runtime
       (throw (ex-info "No weaver runtime is active" {}))))
 
-(defn register-query! [query-name query-def]
+(defn register-query!
+  "Register a named query definition and return its canonical API shape."
+  [query-name query-def]
   (register-query (current-runtime) query-name query-def))
 
-(defn load-queries! [query-defs]
+(defn load-queries!
+  "Load multiple named query definitions and return their canonical API shape."
+  [query-defs]
   (load-queries (current-runtime) query-defs))
 
-(defn queries [runtime]
+(defn queries
+  "Return registered query definitions keyed by canonical string name."
+  [runtime]
   (into (sorted-map) @(query-registry runtime)))
 
-(defn resolve-query [runtime query-name]
+(defn resolve-query
+  "Return the registered query definition for a simple symbol or keyword name."
+  [runtime query-name]
   (query/query-def @(query-registry runtime) query-name))
 
-(defn init [runtime]
+(defn init
+  "Initialize the runtime database schema."
+  [runtime]
   (db/init! (ds runtime))
   {:database "initialized"})
 
@@ -407,7 +446,9 @@
    :event/at (str (Instant/now))
    :event/source :skein.weaver.api})
 
-(defn add [runtime strand]
+(defn add
+  "Create a strand, enqueue a creation event, and return the normalized strand."
+  [runtime strand]
   (let [created (normalize (db/add-strand! (ds runtime) strand))]
     (enqueue-event! runtime (assoc (event-base :strand/added)
                                    :strand/id (:id created)
@@ -440,7 +481,9 @@
                                    :strand/burned-ids (mapv :id (:burned result))
                                    :strand/before (mapv :before (:burned result))))))
 
-(defn apply-batch [runtime payload]
+(defn apply-batch
+  "Apply a graph batch atomically and enqueue batch plus strand fanout events."
+  [runtime payload]
   (let [result (normalize (db/apply-batch! (ds runtime) payload))
         batch-id (str (UUID/randomUUID))]
     (enqueue-event! runtime (assoc (event-base :batch/applied)
@@ -466,7 +509,9 @@
     (when unknown
       (throw (ex-info "Unknown strand update fields" {:fields (vec unknown)})))))
 
-(defn update [runtime id patch]
+(defn update
+  "Update a strand and/or add edges atomically, then enqueue an update event."
+  [runtime id patch]
   (reject-unknown-update-keys! patch)
   (let [{:keys [title state attributes edges]} patch
         result (jdbc/with-transaction [tx (ds runtime)]
@@ -485,7 +530,9 @@
                                    :strand/after (:after result)))
     (:after result)))
 
-(defn supersede [runtime old-id replacement-id]
+(defn supersede
+  "Replace one strand with another and enqueue a supersession event."
+  [runtime old-id replacement-id]
   (let [result (normalize (db/supersede-strand! (ds runtime) old-id replacement-id))]
     (enqueue-event! runtime (assoc (event-base :strand/superseded)
                                    :strand/id old-id
@@ -497,16 +544,24 @@
                                    :supersession/rewired-dependencies (:rewired-dependencies result)))
     result))
 
-(defn declare-acyclic-relation! [runtime relation]
+(defn declare-acyclic-relation!
+  "Declare an edge relation as acyclic for future graph writes."
+  [runtime relation]
   (db/declare-acyclic-relation! (ds runtime) relation))
 
-(defn acyclic-relations [runtime]
+(defn acyclic-relations
+  "Return declared acyclic edge relation names."
+  [runtime]
   (db/list-acyclic-relations (ds runtime)))
 
-(defn show [runtime id]
+(defn show
+  "Return one normalized strand by id, or nil when absent."
+  [runtime id]
   (normalize (db/get-strand (ds runtime) id)))
 
-(defn burn-by-ids [runtime ids]
+(defn burn-by-ids
+  "Delete strands by id and enqueue burn events for removed rows."
+  [runtime ids]
   (let [requested-ids (vec ids)
         {:keys [before result]} (jdbc/with-transaction [tx (ds runtime)]
                                   {:before (normalize (db/strands-by-ids tx requested-ids))
@@ -517,43 +572,57 @@
                                    :strand/before before))
     result))
 
-(defn burn-by-id [runtime id]
+(defn burn-by-id
+  "Delete one strand by id and return burn metadata."
+  [runtime id]
   (burn-by-ids runtime [id]))
 
 (defn list
+  "Return strands visible to `runtime`, optionally filtered by a query definition."
   ([runtime]
    (normalize (db/all-strands (ds runtime))))
   ([runtime query-def params]
    (normalize (db/all-strands (ds runtime) query-def params))))
 
-(defn list-query [runtime query-name params]
+(defn list-query
+  "Return strands matching a registered query definition."
+  [runtime query-name params]
   (list runtime (resolve-query runtime query-name) params))
 
 (defn ready
+  "Return ready strands for `runtime`, optionally filtered by a query definition."
   ([runtime]
    (normalize (db/ready-strands (ds runtime))))
   ([runtime query-def params]
    (normalize (db/ready-strands (ds runtime) query-def params))))
 
-(defn ready-query [runtime query-name params]
+(defn ready-query
+  "Return ready strands from the result set of a registered query definition."
+  [runtime query-name params]
   (ready runtime (resolve-query runtime query-name) params))
 
-(defn query-ids [runtime query-or-name params]
+(defn query-ids
+  "Return strand ids matching a query expression or registered query definition."
+  [runtime query-or-name params]
   (let [query-def (if (or (vector? query-or-name) (map? query-or-name))
                     query-or-name
                     (resolve-query runtime query-or-name))]
     (db/query-strand-ids (ds runtime) query-def params)))
 
-(defn strands-by-ids [runtime ids]
+(defn strands-by-ids
+  "Return normalized strands for ids, preserving first-seen input order."
+  [runtime ids]
   (normalize (db/strands-by-ids (ds runtime) ids)))
 
 (defn ancestor-root-ids
+  "Return ancestor root ids reachable from `seed-ids`."
   ([runtime seed-ids]
    (ancestor-root-ids runtime seed-ids {}))
   ([runtime seed-ids opts]
    (db/ancestor-root-ids (ds runtime) seed-ids opts)))
 
 (defn subgraph
+  "Return a normalized strand subgraph rooted at `root-ids`."
   ([runtime root-ids]
    (subgraph runtime root-ids {}))
   ([runtime root-ids opts]
@@ -579,13 +648,17 @@
 (defn- validate-op-fn-symbol! [fn-sym]
   (validate-fn-symbol! "Operation" fn-sym))
 
-(defn register-view! [runtime view-name fn-sym]
+(defn register-view!
+  "Register a named view function for trusted in-process rendering."
+  [runtime view-name fn-sym]
   (let [name (canonical-view-name view-name)
         entry {:name name :fn (validate-view-fn-symbol! fn-sym)}]
     (swap! (view-registry runtime) assoc name entry)
     entry))
 
-(defn views [runtime]
+(defn views
+  "Return registered view metadata ordered by name."
+  [runtime]
   (mapv val (sort-by key @(view-registry runtime))))
 
 (defn- resolve-view [runtime view-name]
@@ -595,7 +668,9 @@
                                            :canonical-view canonical-name
                                            :available (sort (keys @(view-registry runtime)))})))))
 
-(defn view! [runtime view-name params]
+(defn view!
+  "Invoke a registered view function with params."
+  [runtime view-name params]
   (let [{fn-sym :fn} (resolve-view runtime view-name)]
     (with-library-classloader
       runtime
@@ -690,6 +765,7 @@
     doc (assoc :doc (validate-pattern-doc! doc))))
 
 (defn register-pattern!
+  "Register a trusted weaver pattern handler and input spec."
   ([pattern-name fn-sym input-spec]
    (register-pattern! (current-runtime) pattern-name fn-sym input-spec))
   ([a b c d]
@@ -703,10 +779,14 @@
      (swap! (pattern-registry runtime) assoc (:name entry) entry)
      entry)))
 
-(defn patterns [runtime]
+(defn patterns
+  "Return registered weave pattern metadata ordered by name."
+  [runtime]
   (mapv val (sort-by key @(pattern-registry runtime))))
 
-(defn resolve-pattern [runtime pattern-name]
+(defn resolve-pattern
+  "Return the registered weave pattern for a simple symbol or keyword name."
+  [runtime pattern-name]
   (let [canonical-name (canonical-pattern-name pattern-name)]
     (or (get @(pattern-registry runtime) canonical-name)
         (throw (ex-info "Pattern not found" {:pattern pattern-name
@@ -744,7 +824,9 @@
       true (assoc :summary "Input must satisfy this clojure.spec contract. For key specs, see required/optional entries for each key's own predicate.")
       keys-summary (merge keys-summary))))
 
-(defn pattern-explain [runtime pattern-name]
+(defn pattern-explain
+  "Describe a registered weave pattern and its input spec."
+  [runtime pattern-name]
   (let [{:keys [name doc fn input-spec]} (resolve-pattern runtime pattern-name)
         contract (pattern-input-contract input-spec)]
     (cond-> (merge {:name name
@@ -775,7 +857,9 @@
          (when (seq problems)
            (str ": " (str/join "; " (map #(problem-message contract %) problems)))))))
 
-(defn weave! [runtime pattern-name input]
+(defn weave!
+  "Validate pattern input, invoke the pattern, and apply its create-only batch."
+  [runtime pattern-name input]
   (let [{fn-sym :fn input-spec :input-spec} (resolve-pattern runtime pattern-name)]
     (spec-form input-spec)
     (when-not (s/valid? input-spec input)
@@ -846,7 +930,9 @@
       (throw (ex-info "Event handler metadata must contain only data-first values" {:metadata metadata})))
     metadata))
 
-(defn register-event-handler! [runtime key types fn-sym metadata]
+(defn register-event-handler!
+  "Register a trusted event handler for selected event types."
+  [runtime key types fn-sym metadata]
   (let [entry {:key (validate-event-handler-key! key)
                :types (validate-event-types! types)
                :fn fn-sym
@@ -855,19 +941,27 @@
     (swap! (:handler-registry (event-system runtime)) assoc (:key entry) entry)
     (dissoc entry :fn-value)))
 
-(defn unregister-event-handler! [runtime key]
+(defn unregister-event-handler!
+  "Remove a registered event handler by key."
+  [runtime key]
   (let [key (validate-event-handler-key! key)]
     (swap! (:handler-registry (event-system runtime)) dissoc key)
     {:unregistered key}))
 
-(defn event-handlers [runtime]
+(defn event-handlers
+  "Return registered event handler metadata."
+  [runtime]
   (mapv #(dissoc % :fn-value)
         (sort-by (comp pr-str :key) (vals @(:handler-registry (event-system runtime))))))
 
-(defn recent-event-failures [runtime]
+(defn recent-event-failures
+  "Return recent asynchronous event handler failures."
+  [runtime]
   @(:recent-failures (event-system runtime)))
 
-(defn enqueue-event! [runtime event]
+(defn enqueue-event!
+  "Submit an event to the runtime event system."
+  [runtime event]
   (when-not (map? event)
     (throw (ex-info "Event must be a map" {:event event})))
   (doseq [k [:event/type :event/id :event/at :event/source]]

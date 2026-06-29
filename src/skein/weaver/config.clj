@@ -1,4 +1,5 @@
 (ns skein.weaver.config
+  "Resolve Skein weaver world directories from XDG defaults or an explicit config dir."
   (:require [clojure.java.io :as io]))
 
 (defn- env-or [k fallback]
@@ -19,6 +20,11 @@
    :db-path (str data-dir "/skein.sqlite")})
 
 (defn world
+  "Return the config, state, and data paths for a weaver world.
+
+  With no argument, uses XDG base directories under the user's home. With
+  `config-dir`, derives isolated state and data directories below that canonical
+  directory."
   ([]
    (let [home (user-home)
          config-home (env-or "XDG_CONFIG_HOME" (str home "/.config"))

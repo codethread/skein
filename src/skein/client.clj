@@ -1,4 +1,8 @@
 (ns skein.client
+  "Thin Clojure client for calling a running Skein weaver over nREPL.
+
+  This namespace validates published weaver metadata, verifies daemon identity,
+  and routes public client operations to the daemon-owned API surface."
   (:refer-clojure :exclude [list update])
   (:require [clojure.edn :as edn]
             [nrepl.core :as nrepl]
@@ -6,9 +10,9 @@
             [skein.weaver.metadata :as metadata])
   (:import [java.net InetAddress]))
 
-(def default-timeout-ms 2000)
+(def ^:private default-timeout-ms 2000)
 
-(def api-symbols
+(def ^:private api-symbols
   {:init 'skein.weaver.api/init
    :add 'skein.weaver.api/add
    :update 'skein.weaver.api/update
@@ -55,13 +59,21 @@
    :uses 'skein.weaver.api/uses
    :use 'skein.weaver.api/use})
 
-(defn fail [message data]
+(defn- fail
+  "Throw an ExceptionInfo with message and structured client error data."
+  [message data]
   (throw (ex-info message data)))
 
-(defn loopback-host? [host]
+(defn- loopback-host?
+  "Return true when host resolves to a loopback address."
+  [host]
   (.isLoopbackAddress (InetAddress/getByName host)))
 
 (defn metadata-for-world
+  "Return validated runtime metadata for config-dir's weaver world.
+
+  Fails when metadata is missing, stale, for another config dir, or points at a
+  non-loopback endpoint. With no argument, uses the default configured world."
   ([] (metadata-for-world nil))
   ([config-dir]
    (let [world (config/world config-dir)
@@ -80,7 +92,9 @@
                                                           :endpoint (:endpoint meta)}))
      meta)))
 
-(defn metadata-for [db-file]
+(defn- metadata-for
+  "Return validated runtime metadata for the weaver serving db-file."
+  [db-file]
   (let [meta (metadata-for-world nil)
         canonical-path (metadata/canonical-db-path db-file)]
     (when-not (= canonical-path (:canonical-db-path meta))
@@ -89,7 +103,9 @@
                                                     :metadata meta}))
     meta))
 
-(defn fixed-form [op args]
+(defn- fixed-form
+  "Return an nREPL form that invokes a known weaver API operation with args."
+  [op args]
   (let [api-symbol (or (api-symbols op)
                        (fail "Unknown weaver API operation" {:type :skein.client/unknown-operation
                                                               :operation op}))]
@@ -100,13 +116,19 @@
          "(catch Throwable t {:ok false :class (str (class t)) :message (ex-message t) :data (ex-data t)})))"
          ")")))
 
-(defn identity-form []
+(defn- identity-form
+  "Return an nREPL form that reads the connected weaver runtime metadata."
+  []
   "(do (require '[skein.weaver.runtime]) (:metadata @skein.weaver.runtime/current-runtime))")
 
-(defn stop-form []
+(defn- stop-form
+  "Return an nREPL form that schedules the connected weaver to stop."
+  []
   "(do (require '[skein.weaver.runtime]) (let [rt @skein.weaver.runtime/current-runtime] (future (Thread/sleep 50) (skein.weaver.runtime/stop! rt)) {:stopped true}))")
 
-(defn connect [metadata timeout-ms]
+(defn- connect
+  "Open an nREPL connection to the endpoint in validated weaver metadata."
+  [metadata timeout-ms]
   (let [{:keys [host port]} (:endpoint metadata)]
     (try
       (nrepl/connect :host host :port port :timeout timeout-ms)
@@ -115,7 +137,12 @@
                                                                        :endpoint (:endpoint metadata)}
                         e))))))
 
-(defn eval-form [conn form timeout-ms context]
+(defn- eval-form
+  "Evaluate form on conn and return the decoded Clojure value.
+
+  Converts nREPL transport failures, daemon-side exceptions, and missing values
+  into ExceptionInfo with client error data."
+  [conn form timeout-ms context]
   (let [client (nrepl/client conn timeout-ms)
         session (nrepl/client-session client timeout-ms)
         responses (try
@@ -150,7 +177,9 @@
         (fail "Weaver nREPL returned no value" (assoc context :type :skein.client/no-value
                                                      :responses responses))))))
 
-(defn verify-identity! [conn expected timeout-ms]
+(defn- verify-identity!
+  "Verify that conn serves the expected weaver runtime metadata."
+  [conn expected timeout-ms]
   (let [actual (eval-form conn (identity-form) timeout-ms {:operation :identity})]
     (when-not (= (:config-dir expected) (:config-dir actual))
       (fail "Connected weaver serves a different config dir" {:type :skein.client/config-mismatch
@@ -162,33 +191,43 @@
                                                                          :actual (:nonce actual)}))
     actual))
 
-(defn call-world [config-dir {:keys [timeout-ms] :or {timeout-ms default-timeout-ms}} op & args]
+(defn call-world
+  "Call a weaver API operation in config-dir's world and return Clojure data."
+  [config-dir {:keys [timeout-ms] :or {timeout-ms default-timeout-ms}} op & args]
   (let [meta (metadata-for-world config-dir)]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms)
       (eval-form conn (fixed-form op args) timeout-ms {:operation op
                                                        :config-dir (:config-dir meta)}))))
 
-(defn call [db-file {:keys [timeout-ms] :or {timeout-ms default-timeout-ms}} op & args]
+(defn call
+  "Call a weaver API operation for db-file's world and return Clojure data."
+  [db-file {:keys [timeout-ms] :or {timeout-ms default-timeout-ms}} op & args]
   (let [meta (metadata-for db-file)]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms)
       (eval-form conn (fixed-form op args) timeout-ms {:operation op
                                                        :canonical-db-path (:canonical-db-path meta)}))))
 
-(defn status-world [config-dir & [opts]]
+(defn status-world
+  "Return identity metadata for the running weaver in config-dir's world."
+  [config-dir & [opts]]
   (let [timeout-ms (:timeout-ms (or opts {}) default-timeout-ms)
         meta (metadata-for-world config-dir)]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms))))
 
-(defn status [db-file & [opts]]
+(defn status
+  "Return identity metadata for the running weaver serving db-file."
+  [db-file & [opts]]
   (let [timeout-ms (:timeout-ms (or opts {}) default-timeout-ms)
         meta (metadata-for db-file)]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms))))
 
-(defn stop-world [config-dir & [opts]]
+(defn stop-world
+  "Stop the running weaver in config-dir's world."
+  [config-dir & [opts]]
   (let [timeout-ms (:timeout-ms (or opts {}) default-timeout-ms)
         meta (metadata-for-world config-dir)]
     (with-open [conn (connect meta timeout-ms)]
@@ -196,7 +235,9 @@
       (eval-form conn (stop-form) timeout-ms {:operation :stop
                                               :config-dir (:config-dir meta)}))))
 
-(defn stop [db-file & [opts]]
+(defn stop
+  "Stop the running weaver serving db-file."
+  [db-file & [opts]]
   (let [timeout-ms (:timeout-ms (or opts {}) default-timeout-ms)
         meta (metadata-for db-file)]
     (with-open [conn (connect meta timeout-ms)]
@@ -204,12 +245,35 @@
       (eval-form conn (stop-form) timeout-ms {:operation :stop
                                               :canonical-db-path (:canonical-db-path meta)}))))
 
-(defn init [db-file & [opts]] (call db-file (or opts {}) :init))
-(defn add [db-file task & [opts]] (call db-file (or opts {}) :add task))
-(defn update [db-file id patch & [opts]] (call db-file (or opts {}) :update id patch))
-(defn supersede [db-file old-id replacement-id & [opts]] (call db-file (or opts {}) :supersede old-id replacement-id))
-(defn show [db-file id & [opts]] (call db-file (or opts {}) :show id))
+(defn init
+  "Initialize the database served by the weaver for db-file."
+  [db-file & [opts]]
+  (call db-file (or opts {}) :init))
+
+(defn add
+  "Add a strand through the weaver serving db-file."
+  [db-file task & [opts]]
+  (call db-file (or opts {}) :add task))
+
+(defn update
+  "Apply patch to a strand through the weaver serving db-file."
+  [db-file id patch & [opts]]
+  (call db-file (or opts {}) :update id patch))
+
+(defn supersede
+  "Mark old-id as superseded by replacement-id through the weaver serving db-file."
+  [db-file old-id replacement-id & [opts]]
+  (call db-file (or opts {}) :supersede old-id replacement-id))
+
+(defn show
+  "Return a strand by id through the weaver serving db-file."
+  [db-file id & [opts]]
+  (call db-file (or opts {}) :show id))
+
 (defn list
+  "Return strands from the weaver serving db-file.
+
+  With query-def and params, evaluates an ad-hoc query."
   ([db-file]
    (call db-file {} :list))
   ([db-file opts]
@@ -220,6 +284,9 @@
    (call db-file (or opts {}) :list query-def params)))
 
 (defn ready
+  "Return ready strands from the weaver serving db-file.
+
+  With query-def and params, filters readiness through an ad-hoc query."
   ([db-file]
    (call db-file {} :ready))
   ([db-file opts]
@@ -229,20 +296,36 @@
   ([db-file query-def params opts]
    (call db-file (or opts {}) :ready query-def params)))
 
-(defn register-query [db-file query-name query-def & [opts]]
+(defn register-query
+  "Register query-def under query-name in the weaver serving db-file.
+
+  Returns the registered query entry, not the full registry."
+  [db-file query-name query-def & [opts]]
   (call db-file (or opts {}) :register-query query-name query-def))
 
-(defn load-queries [db-file query-defs & [opts]]
+(defn load-queries
+  "Merge query-defs into the daemon query registry for db-file.
+
+  Returns the loaded query entries, not the full registry."
+  [db-file query-defs & [opts]]
   (call db-file (or opts {}) :load-queries query-defs))
 
-(defn queries [db-file & [opts]]
+(defn queries
+  "Return registered daemon queries for db-file."
+  [db-file & [opts]]
   (call db-file (or opts {}) :queries))
 
-(defn resolve-query [db-file query-name & [opts]]
+(defn resolve-query
+  "Resolve query-name in the daemon query registry for db-file."
+  [db-file query-name & [opts]]
   (call db-file (or opts {}) :resolve-query query-name))
 
-(defn list-query [db-file query-name params & [opts]]
+(defn list-query
+  "Return strands matching registered query-name and params for db-file."
+  [db-file query-name params & [opts]]
   (call db-file (or opts {}) :list-query query-name params))
 
-(defn ready-query [db-file query-name params & [opts]]
+(defn ready-query
+  "Return ready strands matching registered query-name and params for db-file."
+  [db-file query-name params & [opts]]
   (call db-file (or opts {}) :ready-query query-name params))

@@ -60,12 +60,16 @@
     :help "Behavior-free causal-note convention."}])
 
 (defn relation
-  "Returns the advisory catalog entry for relation-name, or nil when uncataloged."
+  "Return the advisory catalog entry for relation-name, or nil when uncataloged."
   [relation-name]
   (first (filter #(= (:relation %) relation-name) catalog)))
 
-(defn annotation-relations []
+(defn annotation-relations
+  "Return catalog entries for behavior-free annotation relation conventions."
+  []
   (filterv #(= :annotation (:family %)) catalog))
 
-(defn operational-relations []
+(defn operational-relations
+  "Return catalog entries for shipped operational relation batteries."
+  []
   (filterv #(= :operational (:family %)) catalog))

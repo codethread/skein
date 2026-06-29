@@ -1,4 +1,5 @@
 (ns skein.weaver.runtime
+  "Start, stop, and supervise the in-process weaver daemon runtime."
   (:require [nrepl.server :as nrepl]
             [skein.weaver.config :as config]
             [skein.weaver.metadata :as metadata]
@@ -8,12 +9,17 @@
            [java.time Instant]
            [java.util.concurrent ArrayBlockingQueue TimeUnit]))
 
-(def loopback-host "127.0.0.1")
+(def ^:private loopback-host "127.0.0.1")
 
-(defonce current-runtime (atom nil))
+(defonce ^{:doc "Atom containing the active weaver runtime map for this process, or nil."} current-runtime
+  (atom nil))
 
-(def event-queue-capacity 1024)
-(def recent-event-failure-limit 100)
+(def event-queue-capacity
+  "Maximum number of queued weaver events before enqueueing fails."
+  1024)
+(def ^:private recent-event-failure-limit
+  "Maximum number of recent event handler failures retained in memory."
+  100)
 
 (declare stop! with-library-classloader)
 
@@ -24,7 +30,9 @@
    :running? (atom true)
    :worker (atom nil)})
 
-(defn stop-event-system! [runtime]
+(defn stop-event-system!
+  "Stop the runtime event worker and clear queued events."
+  [runtime]
   (when-let [{:keys [queue running? worker]} (:event-system runtime)]
     (reset! running? false)
     (.clear queue)
@@ -63,13 +71,17 @@
     (reset! (:worker event-system) worker)
     nil))
 
-(defn start-event-system! [runtime]
+(defn start-event-system!
+  "Attach and start a fresh event system on `runtime`."
+  [runtime]
   (let [event-system (event-system-base)
         runtime* (assoc runtime :event-system event-system)]
     (run-event-worker! runtime* event-system)
     runtime*))
 
-(defn restart-event-system! [runtime]
+(defn restart-event-system!
+  "Reset handlers, failures, and worker state for the runtime event system."
+  [runtime]
   (let [{:keys [handler-registry recent-failures queue running?] :as event-system} (:event-system runtime)]
     (stop-event-system! runtime)
     (reset! handler-registry {})
@@ -79,10 +91,14 @@
     (run-event-worker! runtime event-system)
     nil))
 
-(defn current-pid []
+(defn- current-pid
+  "Return the current OS process id."
+  []
   (.pid (ProcessHandle/current)))
 
-(defn init-file [world]
+(defn- init-file
+  "Return the canonical init.clj path for `world`, or nil when absent."
+  [world]
   (let [file (clojure.java.io/file (:config-dir world) "init.clj")]
     (when (.isFile file)
       (.getCanonicalPath file))))
@@ -97,6 +113,10 @@
         (.setContextClassLoader thread previous-loader)))))
 
 (defn start!
+  "Start a weaver runtime for `db-file` and optional `world`.
+
+  Publishes metadata, starts nREPL and JSON socket transports, loads trusted
+  config, and fails if this process already owns a runtime."
   ([] (start! nil {}))
   ([db-file] (start! db-file {}))
   ([db-file {:keys [world]}]
@@ -160,10 +180,14 @@
            (metadata/delete! world)
            (throw t)))))))
 
-(defn status [runtime]
+(defn status
+  "Return the published metadata for `runtime`."
+  [runtime]
   (:metadata runtime))
 
-(defn stop! [runtime]
+(defn stop!
+  "Stop transports, event processing, and metadata for `runtime`."
+  [runtime]
   (stop-event-system! runtime)
   (when-let [socket-runtime (:socket-runtime runtime)]
     (socket/stop! socket-runtime))
@@ -186,7 +210,9 @@
                        (recur more (assoc opts :config-dir dir)))
       (throw (ex-info "Usage: skein.weaver.runtime [--config-dir <dir>]" {:args args})))))
 
-(defn -main [& args]
+(defn -main
+  "Start a foreground weaver process from command-line arguments."
+  [& args]
   (let [{:keys [config-dir]} (parse-main-args args)]
     (start! nil {:world (config/world config-dir)})
     (println "weaver started")

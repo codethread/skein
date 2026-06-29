@@ -1,4 +1,5 @@
 (ns skein.db
+  "SQLite persistence for strands, edges, relation metadata, and graph queries."
   (:import [java.security SecureRandom])
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
@@ -9,28 +10,37 @@
             [skein.query :as query]
             [skein.specs :as specs]))
 
-(def default-db-file "skein.sqlite")
+(def ^:private default-db-file "skein.sqlite")
 
 (def ^:private id-alphabet "abcdefghijklmnopqrstuvwxyz0123456789")
 (def ^:private id-length 5)
 (def ^:private max-id-attempts 32)
 (def ^:private secure-random (SecureRandom.))
 
-(defn generate-id []
+(defn- generate-id
+  "Return a random short strand id candidate."
+  []
   (apply str
          (repeatedly id-length
                      #(nth id-alphabet (.nextInt secure-random (count id-alphabet))))))
 
 (defn datasource
+  "Create a SQLite datasource for db-file, creating parent directories first.
+
+  With no argument, uses the internal default database filename."
   ([] (datasource default-db-file))
   ([db-file]
    (io/make-parents db-file)
    (jdbc/get-datasource {:jdbcUrl (str "jdbc:sqlite:" db-file)})))
 
-(defn execute! [ds sql-params]
+(defn execute!
+  "Execute SQL params against ds and return unqualified lower-case map rows."
+  [ds sql-params]
   (jdbc/execute! ds sql-params {:builder-fn rs/as-unqualified-lower-maps}))
 
-(defn execute-one! [ds sql-params]
+(defn execute-one!
+  "Execute SQL params against ds and return one unqualified lower-case map row."
+  [ds sql-params]
   (jdbc/execute-one! ds sql-params {:builder-fn rs/as-unqualified-lower-maps}))
 
 (defn- require-valid! [spec value message]
@@ -38,14 +48,22 @@
     (throw (ex-info message {:value value :explain (s/explain-str spec value)})))
   value)
 
-(defn ->json [m]
+(defn ->json
+  "Encode an attribute map as JSON object text.
+
+  Nil encodes as an empty JSON object. Invalid attribute values throw."
+  [m]
   (require-valid! ::specs/attributes m "Attributes must be nil or a map that encodes to a JSON object")
   (json/write-str (or m {})))
 
-(defn <-json [s]
+(defn <-json
+  "Decode JSON object text into a keyword-keyed Clojure map.
+
+  Nil decodes as an empty map."
+  [s]
   (json/read-str (or s "{}") :key-fn keyword))
 
-(def schema-sql
+(def ^:private schema-sql
   [["PRAGMA foreign_keys = ON"]
    ["CREATE TABLE IF NOT EXISTS strands (
        id TEXT PRIMARY KEY,
@@ -70,9 +88,9 @@
        relation TEXT PRIMARY KEY
      )"]])
 
-(def required-strand-columns #{"id" "title" "state" "attributes" "created_at" "updated_at"})
-(def required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
-(def shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes"})
+(def ^:private required-strand-columns #{"id" "title" "state" "attributes" "created_at" "updated_at"})
+(def ^:private required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
+(def ^:private shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes"})
 
 (defn- missing-columns [ds table required]
   (seq (remove (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))) required)))
@@ -88,7 +106,11 @@
 
 (declare bootstrap-acyclic-relation!)
 
-(defn init! [ds]
+(defn init!
+  "Initialize ds with the current schema and shipped acyclic relations.
+
+  Existing incompatible schemas throw instead of being migrated implicitly."
+  [ds]
   (doseq [stmt schema-sql]
     (execute! ds stmt))
   (ensure-current-schema! ds)
@@ -167,7 +189,7 @@
       (throw (ex-info "Duplicate batch ref" {:ref duplicate-ref}))))
   strands)
 
-(def strand-columns "id, title, state, attributes, created_at, updated_at")
+(def ^:private strand-columns "id, title, state, attributes, created_at, updated_at")
 
 (def ^:private generic-states #{"active" "closed"})
 
@@ -201,7 +223,12 @@
     (when unknown
       (throw (ex-info "Unknown core strand fields" {:context context :fields (vec unknown)})))))
 
-(defn add-strand! [ds {:keys [title state attributes] :as strand}]
+(defn add-strand!
+  "Create a strand row and return it.
+
+  Generates a unique id, defaults missing state to active, validates core strand fields,
+  and throws if an id cannot be allocated after bounded retries."
+  [ds {:keys [title state attributes] :as strand}]
   (reject-removed-lifecycle-fields! strand :create)
   (reject-unknown-strand-keys! strand strand-input-keys :create)
   (let [strand (merge {:state "active"} strand)]
@@ -220,7 +247,8 @@
           :created (second result)
           :retry (recur (inc attempt)))))))
 
-(defn add-strand-with-edges! [ds strand edges]
+(defn- add-strand-with-edges!
+  [ds strand edges]
   (jdbc/with-transaction [tx ds]
     (let [created-strand (add-strand! tx strand)]
       (doseq [{:keys [to type attributes]} edges]
@@ -232,7 +260,11 @@
                        :attributes attributes}))
       created-strand)))
 
-(defn add-strand-batch! [ds strands]
+(defn add-strand-batch!
+  "Create multiple strands and their batch-local edges in one transaction.
+
+  Symbolic :ref values may be used by edge targets anywhere in the batch."
+  [ds strands]
   (validate-batch! strands)
   (jdbc/with-transaction [tx ds]
     (let [resolve-existing-ref (fn [refs value context]
@@ -285,10 +317,14 @@
                    LIMIT 1"
                   from type type to])))
 
-(defn acyclic-relation? [ds relation]
+(defn acyclic-relation?
+  "Return true when relation is declared acyclic in ds."
+  [ds relation]
   (boolean (execute-one! ds ["SELECT 1 AS found FROM acyclic_relations WHERE relation = ?" relation])))
 
-(defn list-acyclic-relations [ds]
+(defn list-acyclic-relations
+  "Return all declared acyclic relation names in sorted order."
+  [ds]
   (mapv :relation (execute! ds ["SELECT relation FROM acyclic_relations ORDER BY relation"])))
 
 (defn- require-valid-relation-name! [relation]
@@ -312,7 +348,11 @@
       (require-existing-relation-acyclic! ds relation)
       (insert-acyclic-relation! ds relation))))
 
-(defn declare-acyclic-relation! [ds relation]
+(defn declare-acyclic-relation!
+  "Declare relation acyclic before edges of that relation exist.
+
+  Existing declarations are idempotent. Invalid relation names or late declarations throw."
+  [ds relation]
   (require-valid-relation-name! relation)
   (if (acyclic-relation? ds relation)
     {:relation relation :acyclic true}
@@ -328,7 +368,11 @@
              (path-exists? ds type to from))
     (throw (ex-info "Strand edge would create a cycle" {:from from :to to :type type}))))
 
-(defn add-edge! [ds {:keys [from to type attributes] :as edge}]
+(defn add-edge!
+  "Upsert an edge row and return it.
+
+  Validates endpoints, attributes, and acyclicity for declared acyclic relations."
+  [ds {:keys [from to type attributes] :as edge}]
   (require-valid! ::specs/edge-input edge "Invalid edge")
   (require-existing-strand-ids! ds [from to] :edge)
   (require-acyclic-edge! ds from to type)
@@ -370,7 +414,11 @@
                          RETURNING " strand-columns)
                    state strand-id])))
 
-(defn supersede-strand! [ds old-id replacement-id]
+(defn supersede-strand!
+  "Mark old-id as replaced by replacement-id and rewire incoming dependencies.
+
+  Creates a supersedes edge from replacement to old and returns before/after details."
+  [ds old-id replacement-id]
   (jdbc/with-transaction [tx ds]
     (when (= old-id replacement-id)
       (throw (ex-info "A strand cannot supersede itself" {:old-id old-id :replacement-id replacement-id})))
@@ -414,16 +462,24 @@
          :supersedes-edge supersedes-edge
          :rewired-dependencies rewired}))))
 
-(defn get-strand [ds strand-id]
+(defn get-strand
+  "Return the strand row for strand-id, or nil when it does not exist."
+  [ds strand-id]
   (execute-one! ds
                 [(str "SELECT " strand-columns " FROM strands WHERE id = ?")
                  strand-id]))
 
-(defn require-updated-strand [strand-id row]
+(defn- require-updated-strand
+  "Return row or throw a Strand not found error for strand-id."
+  [strand-id row]
   (or row
       (throw (ex-info "Strand not found" {:strand-id strand-id}))))
 
-(defn update-strand! [ds strand-id {:keys [title state attributes] :as patch}]
+(defn update-strand!
+  "Patch a strand row and return the updated row.
+
+  Attribute patches are merged with SQLite json_patch. Unknown or removed core fields throw."
+  [ds strand-id {:keys [title state attributes] :as patch}]
   (reject-removed-lifecycle-fields! patch :update)
   (reject-unknown-strand-keys! patch strand-patch-keys :update)
   (when (and title (str/blank? title))
@@ -447,6 +503,7 @@
 
 
 (defn query-strands
+  "Return strand rows matching query-def and optional query params."
   ([ds query-def]
    (query-strands ds query-def {}))
   ([ds query-def params]
@@ -456,6 +513,7 @@
                               params))))))
 
 (defn query-strand-ids
+  "Return sorted strand ids matching query-def and optional query params."
   ([ds query-def]
    (query-strand-ids ds query-def {}))
   ([ds query-def params]
@@ -492,13 +550,17 @@
     (execute! ds ["DELETE FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" id id])
     (execute! ds ["DELETE FROM strands WHERE id = ?" id])))
 
-(defn burn-by-ids! [ds ids]
+(defn burn-by-ids!
+  "Delete existing strands by id and return burn metadata."
+  [ds ids]
   (let [ids (require-existing-strand-ids! ds ids :burn-by-ids)]
     (jdbc/with-transaction [tx ds]
       (delete-strands! tx ids)
       {:burned ids :count (count ids)})))
 
-(defn burn-by-id! [ds id]
+(defn burn-by-id!
+  "Delete one existing strand by id and return burn metadata."
+  [ds id]
   (burn-by-ids! ds [id]))
 
 (def ^:private batch-mutation-top-level-keys #{:refs :strands :edges :burn})
@@ -591,7 +653,12 @@
       (require-json-object-encodable! (:attributes edge) :edge))
     {:refs refs :strands strands :edges edges :burn burn}))
 
-(defn apply-batch! [ds payload]
+(defn apply-batch!
+  "Apply a mixed batch mutation transaction.
+
+  Payload refs bind existing and newly-created strands, edges are upserted, and burns
+  delete strands after mutation validation succeeds."
+  [ds payload]
   (let [{:keys [refs strands edges burn]} (normalize-batch-payload! payload)]
     (jdbc/with-transaction [tx ds]
       (require-existing-strand-ids! tx (vals refs) :batch-refs)
@@ -654,7 +721,11 @@
            :burned (mapv (fn [ref id row] {:ref ref :id id :before row}) burn burn-ids burned-rows)
            :edges edge-outcomes})))))
 
-(defn strands-by-ids [ds ids]
+(defn strands-by-ids
+  "Return existing strand rows in first-seen id order.
+
+  Duplicate ids are collapsed by first occurrence. Missing ids throw."
+  [ds ids]
   (let [ids (require-existing-strand-ids! ds ids :strands-by-ids)]
     (if (empty? ids)
       []
@@ -665,6 +736,9 @@
         (mapv rows-by-id ids)))))
 
 (defn ancestor-root-ids
+  "Return root ancestor ids for seed-ids along an acyclic relation.
+
+  Optional opts support :type and a query :where filter with :params."
   ([ds seed-ids]
    (ancestor-root-ids ds seed-ids {}))
   ([ds seed-ids {:keys [where params type] :or {type "parent-of"}}]
@@ -721,6 +795,9 @@
                                   (concat seed-ids [type type])))))))))
 
 (defn subgraph
+  "Return strands and relation-scoped edges reachable from root-ids.
+
+  Traversal requires a declared acyclic relation, defaulting to parent-of."
   ([ds root-ids]
    (subgraph ds root-ids {}))
   ([ds root-ids {:keys [type] :or {type "parent-of"}}]
@@ -759,6 +836,7 @@
             :edges edges}))))))
 
 (defn all-strands
+  "Return all strand rows, or rows matching query-def and optional params."
   ([ds]
    (mapv identity (execute! ds [(str "SELECT " strand-columns " FROM strands ORDER BY id")])))
   ([ds query-def]
@@ -767,6 +845,9 @@
    (query-strands ds query-def params)))
 
 (defn ready-strands
+  "Return active strands with no active depends-on blockers.
+
+  Optional query-def and params further filter candidate strands."
   ([ds]
    (mapv identity
          (execute! ds
