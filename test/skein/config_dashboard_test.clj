@@ -70,7 +70,8 @@
   (is (some #(= "task-root" (:name %)) (views/views)))
   (is (some #(= :devflow-coordination-attrs (:key %)) (api/hooks rt)))
   (is (some #(= "devflow-status" (:name %)) (api/ops rt)))
-  (is (some #(= "task-root" (:name %)) (api/ops rt))))
+  (is (some #(= "task-root" (:name %)) (api/ops rt)))
+  (is (some #(= "devflow-supersede" (:name %)) (api/ops rt))))
 
 (deftest devflow-coordination-hook-normalizes-task-id-and-validates-present-attrs
   (with-config-runtime
@@ -239,6 +240,72 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Multiple active devflow tasks matched root lookup"
                             ((requiring-resolve 'config/task-root-op) {:op/argv ["duplicate"]}))))))
+
+(deftest devflow-supersede-op-rewires-dependencies-by-task-key
+  (with-config-runtime
+    (fn [rt]
+      (let [old (add-devflow! rt "Old task" "task" "supersession" {:task_key "old"} [])
+            replacement (add-devflow! rt "Replacement task" "task" "supersession" {:task_key "new"} [])
+            dependent (add-devflow! rt "Dependent task" "task" "supersession" {:task_key "dependent"}
+                                    [{:type "depends-on" :to (:id old)}])
+            result ((requiring-resolve 'config/devflow-supersede-op) {:op/argv ["old" "new"]})
+            old-after (api/show rt (:id old))
+            dependent-graph (api/subgraph rt [(:id dependent)] {:type "depends-on"})]
+        (is (= "devflow-supersede" (:operation result)))
+        (is (= (:id old) (get-in result [:old :id])))
+        (is (= (:id replacement) (get-in result [:replacement :id])))
+        (is (= "replaced" (:state old-after)))
+        (is (= [(:id replacement) (:id old) "supersedes"]
+               ((juxt :from_strand_id :to_strand_id :edge_type)
+                (get-in result [:result :supersedes-edge]))))
+        (is (= #{[(:id dependent) (:id replacement) "depends-on"]}
+               (set (map (juxt :from_strand_id :to_strand_id :edge_type)
+                         (:edges dependent-graph)))))))))
+
+(deftest devflow-supersede-op-rejects-plan-ids-and-ambiguous-refs
+  (with-config-runtime
+    (fn [rt]
+      (let [old-plan (add-devflow! rt "Old plan" "plan" "plan-supersession" {} [])
+            new-plan (add-devflow! rt "New plan" "plan" "plan-supersession" {} [])]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Existing strand id is not a supported devflow old supersession target"
+                              ((requiring-resolve 'config/devflow-supersede-op)
+                               {:op/argv [(:id old-plan) (:id new-plan)]}))))
+      (add-devflow! rt "Task A" "task" "supersession-a" {:task_key "duplicate"} [])
+      (add-devflow! rt "Task B" "review" "supersession-b" {:task_key "duplicate"} [])
+      (add-devflow! rt "Replacement" "task" "supersession-c" {:task_key "replacement"} [])
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Multiple active devflow old strands matched supersession ref"
+                            ((requiring-resolve 'config/devflow-supersede-op)
+                             {:op/argv ["duplicate" "replacement"]}))))))
+
+(deftest devflow-supersede-op-does-not-fallback-from-existing-unsupported-id-to-task-key
+  (with-config-runtime
+    (fn [rt]
+      (let [plan (add-devflow! rt "Plan" "plan" "plan-id-collision" {} [])
+            colliding-task (add-devflow! rt "Colliding task" "task" "plan-id-collision" {:task_key (:id plan)} [])
+            replacement (add-devflow! rt "Replacement" "task" "plan-id-collision" {:task_key "replacement"} [])]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Existing strand id is not a supported devflow old supersession target"
+                              ((requiring-resolve 'config/devflow-supersede-op)
+                               {:op/argv [(:id plan) (:id replacement)]})))
+        (is (= "active" (:state (api/show rt (:id plan)))))
+        (is (= "active" (:state (api/show rt (:id colliding-task)))))
+        (is (= "active" (:state (api/show rt (:id replacement)))))
+        (is (empty? (:edges (api/subgraph rt [(:id replacement)] {:type "supersedes"}))))))))
+
+(deftest task-root-still-resolves-supported-task-supersession-replacement
+  (with-config-runtime
+    (fn [rt]
+      (let [feature (add-devflow! rt "Feature" "plan" "task-supersession-root" {} [])
+            old (add-devflow! rt "Old task" "task" "task-supersession-root" {:task_key "old-rooted"} [])
+            replacement (add-devflow! rt "Replacement review" "review" "task-supersession-root" {:task_key "new-rooted"} [])]
+        (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id old)}
+                                             {:type "parent-of" :to (:id replacement)}]})
+        ((requiring-resolve 'config/devflow-supersede-op) {:op/argv [(:id old) (:id replacement)]})
+        (let [root ((requiring-resolve 'config/task-root-op) {:op/argv [(:id replacement)]})]
+          (is (= (:id replacement) (get-in root [:task :id])))
+          (is (= [(:id feature)] (mapv :id (:roots root)))))))))
 
 (deftest repo-local-startup-and-reload-preserve-dashboard-registrations
   (with-startup-config-runtime

@@ -454,6 +454,14 @@
                     {:argv argv :usage usage})))
   (first argv))
 
+(defn- require-two-args!
+  "Return exactly two argv values, failing loudly on missing or extra args."
+  [op argv usage]
+  (when-not (= 2 (count argv))
+    (throw (ex-info (str op " expects exactly two arguments")
+                    {:argv argv :usage usage})))
+  argv)
+
 (defn devflow-status-op
   "Return active devflow coordination status, optionally scoped by feature.
 
@@ -550,6 +558,69 @@
   [{:keys [params]}]
   (task-root-op {:op/argv [(:task params)]}))
 
+(defn- task-key-supersession-candidates
+  "Return active devflow task/review candidates matching task-key ref."
+  [rt ref]
+  (api/list rt [:and devflow-work-query
+                [:= [:attr :task_key] [:param :task]]]
+            {:task ref}))
+
+(defn- reject-unsupported-supersession-id!
+  "Fail loudly when ref is an existing id that is not an active task/review."
+  [role ref strand]
+  (throw (ex-info (str "Existing strand id is not a supported devflow " role " supersession target")
+                  {:ref ref
+                   :id (:id strand)
+                   :state (:state strand)
+                   :workflow (get-in strand [:attributes :workflow])
+                   :kind (get-in strand [:attributes :kind])})))
+
+(defn- require-one-supersession-target!
+  "Resolve one devflow task/review supersession target or fail loudly.
+
+  Existing strand ids are authoritative: active devflow task/review ids resolve,
+  while plan ids, non-active task/review ids, and other unsupported ids fail
+  instead of falling back to task_key lookup. Non-id refs resolve by unique active
+  devflow task_key."
+  [role rt ref]
+  (let [by-id (strands-by-existing-id rt ref)]
+    (if (seq by-id)
+      (let [strand (first by-id)]
+        (if (active-devflow-task? strand)
+          strand
+          (reject-unsupported-supersession-id! role ref strand)))
+      (let [candidates (task-key-supersession-candidates rt ref)]
+        (case (count candidates)
+          0 (throw (ex-info (str "No active devflow " role " matched supersession ref")
+                            {:ref ref}))
+          1 (first candidates)
+          (throw (ex-info (str "Multiple active devflow " role " strands matched supersession ref")
+                          {:ref ref
+                           :matches (mapv summarize-work-item candidates)})))))))
+
+(defn devflow-supersede-op
+  "Supersede one active devflow task/review with another explicit task/review.
+
+  Usage: `strand op devflow-supersede <old-id-or-task-key> <replacement-id-or-task-key>`.
+  Exact active strand ids take precedence. Task-key lookup is allowed for active
+  devflow task/review strands and must resolve uniquely. Plan supersession is
+  intentionally unsupported because core supersession rewires `depends-on` but
+  not `parent-of` ownership edges. The operation delegates to Skein core
+  supersession so the old strand becomes `replaced`, a `supersedes` edge is
+  recorded, and incoming `depends-on` edges are rewired to the replacement. It
+  never searches for or mutates replacements automatically."
+  [ctx]
+  (let [rt @runtime/current-runtime
+        usage "strand op devflow-supersede <old-id-or-task-key> <replacement-id-or-task-key>"
+        [old-ref replacement-ref] (require-two-args! "devflow-supersede" (:op/argv ctx) usage)
+        old (require-one-supersession-target! "old" rt old-ref)
+        replacement (require-one-supersession-target! "replacement" rt replacement-ref)
+        result (api/supersede rt (:id old) (:id replacement))]
+    {:operation "devflow-supersede"
+     :old (summarize-work-item old)
+     :replacement (summarize-work-item replacement)
+     :result result}))
+
 (defn devflow-conventions-op
   "Return the blessed devflow strand conventions installed by this config."
   [_ctx]
@@ -578,6 +649,9 @@
            {:name "task-root"
             :usage "(skein.views.alpha/view! 'task-root {:task \"<strand-id-or-task-key>\"})"
             :purpose "Read-only lookup for the devflow feature/plan root that owns one task or review."}]
+   :ops [{:name "devflow-supersede"
+          :usage "strand op devflow-supersede <old-id-or-task-key> <replacement-id-or-task-key>"
+          :purpose "Explicitly supersede a devflow task/review through core supersession, rewiring incoming depends-on edges to the replacement. Plan supersession is intentionally unsupported."}]
    :attributes [{:name "workflow" :values ["devflow" "agent-plan"]}
                 {:name "feature" :meaning "Feature slug for feature-scoped queries."}
                 {:name "kind" :values ["plan" "task" "review"]}
@@ -645,7 +719,11 @@
          (api/register-op!
           'task-root
           "Show the devflow feature/plan root that owns one task or review"
-          'config/task-root-op)]
+          'config/task-root-op)
+         (api/register-op!
+          'devflow-supersede
+          "Explicitly supersede a devflow task/review and rewire dependencies"
+          'config/devflow-supersede-op)]
    :ephemeral {:namespace 'skein.libs.ephemeral
                :creator 'skein.libs.ephemeral/ephemeral!
                :burner 'skein.libs.ephemeral/burn-ephemeral!
