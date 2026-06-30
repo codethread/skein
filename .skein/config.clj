@@ -3,6 +3,7 @@
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.events.alpha :as events]
             [skein.libs.ephemeral :as ephemeral]
             [skein.patterns.alpha :as patterns]
             [skein.views.alpha :as views]
@@ -691,6 +692,107 @@
      :closed_count (count closed)
      :closed (mapv summarize-work-item closed)
      :batch result}))
+
+(defonce devflow-summary-notifications
+  (atom []))
+
+(def ^:private devflow-summary-limit
+  50)
+
+(defn- active-devflow-work-in-dag
+  "Return active devflow task/review strands below root-id."
+  [rt root-id]
+  (->> (:strands (api/subgraph rt [root-id] {:type "parent-of"}))
+       (filter active-devflow-task?)
+       (sort-by :id)
+       vec))
+
+(def ^:private devflow-plan-any-state-query
+  [:and
+   [:= [:attr :workflow] "devflow"]
+   [:= [:attr :kind] "plan"]])
+
+(defn- top-level-devflow-root-ids
+  "Return top-level devflow plan root ids for a changed devflow strand."
+  [rt strand]
+  (let [ancestor-roots (api/ancestor-root-ids rt [(:id strand)] {:type "parent-of"
+                                                                 :where devflow-plan-any-state-query})]
+    (cond
+      (seq ancestor-roots) ancestor-roots
+      (and (= "devflow" (get-in strand [:attributes :workflow]))
+           (= "plan" (get-in strand [:attributes :kind]))) [(:id strand)]
+      :else [])))
+
+(defn- completion-summary-key
+  "Return the deduplication key for a root summary produced from event."
+  [event root-id]
+  [(or (:batch/id event) (:event/id event)) root-id])
+
+(defn- devflow-feature-summary
+  "Return a completion summary for root-id when no active task/review children remain."
+  [rt event root-id]
+  (let [root (api/show rt root-id)
+        subgraph (:strands (api/subgraph rt [root-id] {:type "parent-of"}))
+        work (filter #(and (= "devflow" (get-in % [:attributes :workflow]))
+                           (#{"task" "review"} (get-in % [:attributes :kind])))
+                     subgraph)]
+    (when (and root
+               (= "devflow" (get-in root [:attributes :workflow]))
+               (= "plan" (get-in root [:attributes :kind]))
+               (empty? (active-devflow-work-in-dag rt root-id)))
+      {:notification/type :devflow/feature-ready-for-summary
+       :completion/key (completion-summary-key event root-id)
+       :event/id (:event/id event)
+       :event/type (:event/type event)
+       :batch/id (:batch/id event)
+       :feature (feature-slug root)
+       :root (summarize-work-item root)
+       :counts {:work_items (count work)
+                :closed (count (filter #(= "closed" (:state %)) work))
+                :replaced (count (filter #(= "replaced" (:state %)) work))}
+       :work (mapv summarize-work-item (sort-by :id work))})))
+
+(defn- triggering-devflow-strand?
+  "Return true when an update event may make a devflow feature summary relevant."
+  [{:keys [state attributes]}]
+  (and (not= "active" state)
+       (= "devflow" (:workflow attributes))
+       (#{"plan" "task" "review"} (:kind attributes))))
+
+(defn record-devflow-summary-event!
+  "Record read-only in-memory devflow summaries after strand update events.
+
+  The handler never mutates strand storage. It observes post-commit events and
+  keeps recent notifications in daemon memory for dashboard/op introspection."
+  [event]
+  (when (and (= :strand/updated (:event/type event))
+             (triggering-devflow-strand? (:strand/after event)))
+    (let [rt @runtime/current-runtime
+          after (:strand/after event)]
+      (doseq [summary (keep #(devflow-feature-summary rt event %)
+                            (top-level-devflow-root-ids rt after))]
+        (swap! devflow-summary-notifications
+               (fn [notifications]
+                 (if (some #(= (:completion/key summary) (:completion/key %)) notifications)
+                   notifications
+                   (->> (conj notifications summary)
+                        (take-last devflow-summary-limit)
+                        vec))))))))
+
+(defn devflow-summaries-op
+  "Return recent in-memory devflow feature completion summaries.
+
+  Usage: `strand op devflow-summaries`. Summaries are read-only notifications
+  recorded by the repo-local event handler during this weaver lifetime."
+  [_ctx]
+  {:operation "devflow-summaries"
+   :notifications @devflow-summary-notifications})
+
+(defn devflow-summaries-view
+  "Return recent in-memory devflow feature completion summaries."
+  [_ctx]
+  (devflow-summaries-op {}))
+
 (defn- task-key-supersession-candidates
   "Return active devflow task/review candidates matching task-key ref."
   [rt ref]
@@ -781,7 +883,10 @@
             :purpose "Read-only feature dashboard with active features, ready work, blocked work, counts, and coordination metadata."}
            {:name "task-root"
             :usage "(skein.views.alpha/view! 'task-root {:task \"<strand-id-or-task-key>\"})"
-            :purpose "Read-only lookup for the devflow feature/plan root that owns one task or review."}]
+            :purpose "Read-only lookup for the devflow feature/plan root that owns one task or review."}
+           {:name "devflow-summaries"
+            :usage "(skein.views.alpha/view! 'devflow-summaries {})"
+            :purpose "Read-only in-memory summaries recorded when a devflow feature has no active task/review children."}]
    :ops [{:name "devflow-assign"
           :usage "strand op devflow-assign <feature> <task_key> <owner> <branch>"
           :purpose "Atomically assign owner and branch metadata to one active devflow task/review."}
@@ -790,7 +895,10 @@
           :purpose "Atomically close all active devflow strands for a completed feature DAG."}
          {:name "devflow-supersede"
           :usage "strand op devflow-supersede <old-id-or-task-key> <replacement-id-or-task-key>"
-          :purpose "Explicitly supersede a devflow task/review through core supersession, rewiring incoming depends-on edges to the replacement. Plan supersession is intentionally unsupported."}]
+          :purpose "Explicitly supersede a devflow task/review through core supersession, rewiring incoming depends-on edges to the replacement. Plan supersession is intentionally unsupported."}
+         {:name "devflow-summaries"
+          :usage "strand op devflow-summaries"
+          :purpose "Show recent in-memory devflow completion summaries recorded by the event handler."}]
    :attributes [{:name "workflow" :values ["devflow" "agent-plan"]}
                 {:name "feature" :meaning "Feature slug for feature-scoped queries."}
                 {:name "kind" :values ["plan" "task" "review"]}
@@ -824,6 +932,7 @@
    "Create a feature strand plus task/review children for agent work. Input: {feature,title,body?,tasks:[{key,title,body?,kind?,hitl?,depends_on?,task_file?,task_id?,owner?,branch?,validation?}]}. Use body for delegated work context."
    'config/agent-plan
    ::agent-plan-input)
+  (reset! devflow-summary-notifications [])
   (patterns/register-pattern!
    'devflow-plan
    "Create a devflow feature strand plus task/review children. Input: {feature,title,body?,tasks:[{key,title,body?,kind?,hitl?,depends_on?,task_file?,task_id?,owner?,branch?,validation?}]}. Adds workflow=devflow plus task_key/task_file/task_id attrs for scoped ready queries."
@@ -837,7 +946,10 @@
          'config/devflow-dashboard-view)
         (views/register-view!
          'task-root
-         'config/task-root-view)]
+         'config/task-root-view)
+        (views/register-view!
+         'devflow-summaries
+         'config/devflow-summaries-view)]
    :hooks [(api/register-hook!
             :devflow-coordination-attrs
             #{:attributes/normalize}
@@ -870,7 +982,16 @@
          (api/register-op!
           'devflow-supersede
           "Explicitly supersede a devflow task/review and rewire dependencies"
-          'config/devflow-supersede-op)]
+          'config/devflow-supersede-op)
+         (api/register-op!
+          'devflow-summaries
+          "Show recent in-memory devflow completion summaries"
+          'config/devflow-summaries-op)]
+   :events [(events/register!
+             :devflow-summary-recorder
+             #{:strand/updated}
+             'config/record-devflow-summary-event!
+             {:doc "Record in-memory summaries when devflow feature work completes."})]
    :ephemeral {:namespace 'skein.libs.ephemeral
                :creator 'skein.libs.ephemeral/ephemeral!
                :burner 'skein.libs.ephemeral/burn-ephemeral!

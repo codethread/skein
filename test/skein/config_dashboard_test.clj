@@ -2,6 +2,7 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
             [skein.db-test :as db-test]
+            [skein.events.alpha :as events]
             [skein.libs.alpha :as libs]
             [skein.views.alpha :as views]
             [skein.weaver.api :as api]
@@ -68,12 +69,15 @@
   (is (contains? (api/queries rt) "devflow-features"))
   (is (some #(= "devflow-dashboard" (:name %)) (views/views)))
   (is (some #(= "task-root" (:name %)) (views/views)))
+  (is (some #(= "devflow-summaries" (:name %)) (views/views)))
   (is (some #(= :devflow-coordination-attrs (:key %)) (api/hooks rt)))
   (is (some #(= "devflow-status" (:name %)) (api/ops rt)))
   (is (some #(= "task-root" (:name %)) (api/ops rt)))
   (is (some #(= "devflow-assign" (:name %)) (api/ops rt)))
   (is (some #(= "devflow-close-feature" (:name %)) (api/ops rt)))
-  (is (some #(= "devflow-supersede" (:name %)) (api/ops rt))))
+  (is (some #(= "devflow-supersede" (:name %)) (api/ops rt)))
+  (is (some #(= "devflow-summaries" (:name %)) (api/ops rt)))
+  (is (some #(= :devflow-summary-recorder (:key %)) (events/handlers))))
 
 (deftest devflow-coordination-hook-normalizes-task-id-and-validates-present-attrs
   (with-config-runtime
@@ -399,6 +403,60 @@
         (let [root ((requiring-resolve 'config/task-root-op) {:op/argv [(:id replacement)]})]
           (is (= (:id replacement) (get-in root [:task :id])))
           (is (= [(:id feature)] (mapv :id (:roots root)))))))))
+
+(defn- wait-for-notifications
+  "Return devflow summary notifications once pred matches, or nil after timeout."
+  [pred]
+  (let [deadline (+ (System/currentTimeMillis) 2000)]
+    (loop []
+      (let [notifications (:notifications ((requiring-resolve 'config/devflow-summaries-op) {}))]
+        (cond
+          (pred notifications) notifications
+          (< (System/currentTimeMillis) deadline) (do (Thread/sleep 25) (recur))
+          :else nil)))))
+
+(deftest devflow-summary-event-records-when-last-active-work-closes
+  (with-config-runtime
+    (fn [rt]
+      (let [feature (add-devflow! rt "Feature" "plan" "events" {} [])
+            impl (add-devflow! rt "Impl" "task" "events" {:task_key "impl"} [])
+            review (add-devflow! rt "Review" "review" "events" {:task_key "review"} [])]
+        (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id impl)}
+                                             {:type "parent-of" :to (:id review)}]})
+        (api/update rt (:id impl) {:state "closed"})
+        (is (nil? (wait-for-notifications seq)))
+        (api/update rt (:id review) {:state "closed"})
+        (let [notifications (wait-for-notifications seq)
+              summary (last notifications)
+              via-view (views/view! 'devflow-summaries {})]
+          (is (= :devflow/feature-ready-for-summary (:notification/type summary)))
+          (is (= "events" (:feature summary)))
+          (is (= (:id feature) (get-in summary [:root :id])))
+          (is (= {:work_items 2 :closed 2 :replaced 0} (:counts summary)))
+          (is (= #{(:id impl) (:id review)} (set (map :id (:work summary)))))
+          (is (= notifications (:notifications via-view)))
+          (is (= "closed" (:state (api/show rt (:id review))))))))))
+
+(deftest devflow-close-feature-records-one-top-level-summary-with-nested-plan
+  (with-config-runtime
+    (fn [rt]
+      (let [feature (add-devflow! rt "Feature" "plan" "events-close" {} [])
+            impl (add-devflow! rt "Impl" "task" "events-close" {:task_key "impl"} [])
+            nested-plan (add-devflow! rt "Nested plan" "plan" "events-close" {:task_key "nested"} [])
+            nested-task (add-devflow! rt "Nested task" "task" "events-close" {:task_key "nested-task"} [])]
+        (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id impl)}
+                                             {:type "parent-of" :to (:id nested-plan)}]})
+        (api/update rt (:id nested-plan) {:edges [{:type "parent-of" :to (:id nested-task)}]})
+        ((requiring-resolve 'config/devflow-close-feature-op) {:op/argv ["events-close"]})
+        (let [notifications (wait-for-notifications #(= 1 (count %)))
+              summary (first notifications)]
+          (is (= 1 (count notifications)))
+          (is (= "events-close" (:feature summary)))
+          (is (= (:id feature) (get-in summary [:root :id])))
+          (is (not= (:id nested-plan) (get-in summary [:root :id])))
+          (is (= {:work_items 2 :closed 2 :replaced 0} (:counts summary)))
+          (is (= #{(:id impl) (:id nested-task)} (set (map :id (:work summary)))))
+          (is (some? (:batch/id summary))))))))
 
 (deftest repo-local-startup-and-reload-preserve-dashboard-registrations
   (with-startup-config-runtime
