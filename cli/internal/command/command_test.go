@@ -326,23 +326,106 @@ func TestWeaverStartRoutesThroughMill(t *testing.T) {
 	}
 }
 
-func TestWeaverReplRequiresSourceUntilMillOwnedLaunchLands(t *testing.T) {
+func TestWeaverReplUsesMillReturnedSource(t *testing.T) {
 	cfg := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
+	source := tempSource(t)
+	stateDir := filepath.Join(t.TempDir(), "state")
+	origMill := millCall
+	var operation string
+	var world client.MillWorldRequest
+	millCall = func(op string, req client.MillWorldRequest) (any, error) {
+		operation = op
+		world = req
+		return map[string]any{"state": "running", "source": source, "state_dir": stateDir}, nil
+	}
 	origRun := runReplProcess
-	launched := false
+	var launched Options
+	var launchedStdin bool
 	runReplProcess = func(o Options, stdin bool, in io.Reader, out, errOut io.Writer) error {
-		launched = true
+		launched = o
+		launchedStdin = stdin
 		return nil
 	}
-	t.Cleanup(func() { runReplProcess = origRun })
-	if _, err := run("--config-dir", cfg, "weaver", "repl", "--stdin"); err == nil || !strings.Contains(err.Error(), "missing local source config") {
-		t.Fatalf("expected missing source failure, got %v", err)
+	t.Cleanup(func() { millCall = origMill; runReplProcess = origRun })
+	if _, err := run("--config-dir", cfg, "weaver", "repl", "--stdin"); err != nil {
+		t.Fatal(err)
 	}
-	if launched {
-		t.Fatal("repl process launched without source")
+	realCfg, err := filepath.EvalSymlinks(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation != "weaver-repl-context" || world.ConfigDir != realCfg || world.CWD == "" {
+		t.Fatalf("unexpected mill route op=%s world=%#v", operation, world)
+	}
+	if launched.Source != source || launched.StateDir != stateDir || launched.ConfigDir != realCfg || !launchedStdin {
+		t.Fatalf("unexpected repl launch options=%#v stdin=%v", launched, launchedStdin)
+	}
+}
+
+func TestDiscoveredWeaverReplUsesMillReturnedSourceWithoutConfigSource(t *testing.T) {
+	repo := t.TempDir()
+	runGitCommand(t, repo, "init")
+	cfg := filepath.Join(repo, ".skein")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withChdir(t, repo)
+	source := tempSource(t)
+	stateDir := filepath.Join(t.TempDir(), "state")
+	origMill := millCall
+	var world client.MillWorldRequest
+	millCall = func(op string, req client.MillWorldRequest) (any, error) {
+		if op != "weaver-repl-context" {
+			t.Fatalf("unexpected mill op: %s", op)
+		}
+		world = req
+		return map[string]any{"state": "running", "source": source, "state_dir": stateDir}, nil
+	}
+	origRun := runReplProcess
+	var launched Options
+	runReplProcess = func(o Options, stdin bool, in io.Reader, out, errOut io.Writer) error {
+		launched = o
+		return nil
+	}
+	t.Cleanup(func() { millCall = origMill; runReplProcess = origRun })
+	if _, err := run("weaver", "repl", "--stdin"); err != nil {
+		t.Fatal(err)
+	}
+	realCfg, err := filepath.EvalSymlinks(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if world.ConfigDir != realCfg || world.CWD == "" {
+		t.Fatalf("unexpected discovered world request: %#v", world)
+	}
+	if launched.ConfigDir != realCfg || launched.Source != source || launched.StateDir != stateDir {
+		t.Fatalf("unexpected discovered repl launch options: %#v", launched)
+	}
+}
+
+func TestWeaverReplStoppedStateDoesNotRequireSource(t *testing.T) {
+	cfg := testConfig(t)
+	origMill := millCall
+	millCall = func(op string, req client.MillWorldRequest) (any, error) {
+		if op != "weaver-repl-context" {
+			t.Fatalf("unexpected mill op: %s", op)
+		}
+		return map[string]any{"state": "none", "state_dir": filepath.Join(t.TempDir(), "state")}, nil
+	}
+	origRun := runReplProcess
+	runReplProcess = func(o Options, stdin bool, in io.Reader, out, errOut io.Writer) error {
+		t.Fatal("repl process should not launch when weaver is stopped")
+		return nil
+	}
+	t.Cleanup(func() { millCall = origMill; runReplProcess = origRun })
+	if _, err := run("--config-dir", cfg, "weaver", "repl"); err == nil || !strings.Contains(err.Error(), "start one with: strand weaver start") {
+		t.Fatalf("expected weaver start remediation, got %v", err)
 	}
 }
 
@@ -391,8 +474,8 @@ func TestWeaverReplRequiresMill(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := run("--config-dir", cfg, "weaver", "repl"); err == nil || !strings.Contains(err.Error(), "missing local source config") {
-		t.Fatalf("expected missing source failure, got %v", err)
+	if _, err := run("--config-dir", cfg, "weaver", "repl"); err == nil || !strings.Contains(err.Error(), "start one with: mill start") {
+		t.Fatalf("expected mill remediation, got %v", err)
 	}
 }
 

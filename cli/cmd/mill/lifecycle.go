@@ -104,24 +104,45 @@ func (s *server) weaverStatus(req client.MillWorldRequest) (map[string]any, erro
 	if err != nil {
 		return nil, err
 	}
+	return s.weaverStatusForWorld(world), nil
+}
+
+func (s *server) weaverReplContext(req client.MillWorldRequest) (map[string]any, error) {
+	world, err := resolveLifecycleWorld(req)
+	if err != nil {
+		return nil, err
+	}
+	status := s.weaverStatusForWorld(world)
+	if status["state"] != "running" {
+		return status, nil
+	}
+	source, err := resolveLaunchSource(req.CWD)
+	if err != nil {
+		return nil, err
+	}
+	status["source"] = source
+	return status, nil
+}
+
+func (s *server) weaverStatusForWorld(world config.World) map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if status, stale := readStatus(world); status != nil {
 		if stale {
 			status["state"] = "stale"
 		}
-		return status, nil
+		return status
 	}
 	if child := s.children[world.ConfigDir]; child != nil {
 		if child.cmd.Process != nil && processAlive(child.cmd.Process.Pid) {
 			status := baseStatus(world, "starting")
 			status["pid"] = child.cmd.Process.Pid
-			return status, nil
+			return status
 		}
 		status := baseStatus(world, "stopped")
-		return status, nil
+		return status
 	}
-	return baseStatus(world, "none"), nil
+	return baseStatus(world, "none")
 }
 
 func (s *server) stopWeaver(req client.MillWorldRequest) (map[string]any, error) {

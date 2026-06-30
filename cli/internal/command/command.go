@@ -356,9 +356,6 @@ func resolveOptions(o Options) (Options, error) {
 	o.ConfigDir = world.ConfigDir
 	o.StateDir = world.StateDir
 	o.DataDir = world.DataDir
-	if !o.ConfigDirExplicit && o.Source == "" {
-		return o, incompleteDiscoveredWorldError(o)
-	}
 	return o, nil
 }
 
@@ -470,39 +467,36 @@ func (a *App) launchWeaver(o Options) error {
 }
 
 func (a *App) launchRepl(o Options, stdin bool) error {
-	source, err := config.ResolveSource(o.Source)
-	if err != nil {
-		if o.Source == "" {
-			return incompleteDiscoveredWorldError(o)
-		}
-		return err
-	}
-	o.Source = source
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	result, err := millCall("weaver-status", client.MillWorldRequest{CWD: cwd, ConfigDir: o.ConfigDir})
+	result, err := millCall("weaver-repl-context", client.MillWorldRequest{CWD: cwd, ConfigDir: o.ConfigDir})
 	if err != nil {
 		return err
 	}
 	status, ok := result.(map[string]any)
 	if !ok {
-		return errors.New("malformed mill weaver-status response: expected object")
+		return errors.New("malformed mill weaver-repl-context response: expected object")
 	}
 	state, ok := status["state"].(string)
 	if !ok || state == "" {
-		return errors.New("malformed mill weaver-status response: missing state")
+		return errors.New("malformed mill weaver-repl-context response: missing state")
 	}
 	if state != "running" {
 		return fmt.Errorf("no running weaver for selected world (state: %s); start one with: strand weaver start", state)
 	}
 	stateDir, ok := status["state_dir"].(string)
 	if !ok || stateDir == "" {
-		return errors.New("malformed mill weaver-status response: missing state_dir")
+		return errors.New("malformed mill weaver-repl-context response: missing state_dir")
 	}
+	source, ok := status["source"].(string)
+	if !ok || source == "" {
+		return errors.New("malformed mill weaver-repl-context response: missing source")
+	}
+	o.Source = source
 	o.StateDir = stateDir
-	return runReplProcess(o, stdin, os.Stdin, a.Stdout, a.Stderr)
+	return runReplProcess(o, stdin, a.Stdin, a.Stdout, a.Stderr)
 }
 
 func stateFlag(cmd *cobra.Command, allowReplaced bool) (string, error) {

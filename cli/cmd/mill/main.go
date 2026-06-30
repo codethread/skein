@@ -150,6 +150,13 @@ func (s *server) handle(conn net.Conn) {
 			return
 		}
 		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: result})
+	case "weaver-repl-context":
+		result, err := s.weaverReplContext(req.World)
+		if err != nil {
+			_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/weaver-repl-context-failed", "weaver repl context failed", err.Error()))
+			return
+		}
+		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: result})
 	case "weaver-stop":
 		result, err := s.stopWeaver(req.World)
 		if err != nil {

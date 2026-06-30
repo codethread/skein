@@ -153,6 +153,38 @@ func TestStartFailsBeforeLaunchWhenSourceCannotResolve(t *testing.T) {
 	}
 }
 
+func TestWeaverReplContextAddsSourceWithoutPublicStatusIdentity(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
+	source := tempSource(t)
+	cfg := tempConfig(t, source)
+	req := client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg}
+	world, err := config.RuntimeWorld(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
+	writeWeaverMetadata(t, world, cmd.Process.Pid, "weaver-repl")
+	s := server{children: map[string]*weaverChild{}}
+	status, err := s.weaverStatus(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := status["source"]; ok {
+		t.Fatalf("public status must not expose source: %#v", status)
+	}
+	context, err := s.weaverReplContext(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context["state"] != "running" || context["source"] != source || context["state_dir"] == "" {
+		t.Fatalf("unexpected repl context: %#v", context)
+	}
+}
+
 func TestWeaverStatusDistinguishesStaleMetadata(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
 	source := tempSource(t)

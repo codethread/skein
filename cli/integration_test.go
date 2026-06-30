@@ -95,7 +95,6 @@ func TestGoWeaverLifecycleCommands(t *testing.T) {
 }
 
 func TestWeaverReplStdinAttachesThroughMillMetadata(t *testing.T) {
-	t.Skip("helper REPL launch source moves to mill in task 4")
 	dir := shortTempDir(t)
 	writeClientConfig(t, dir)
 	bin := buildStrand(t)
