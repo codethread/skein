@@ -4,8 +4,7 @@
 (libs/use! :skein/libs-ephemeral
   {:ns 'skein.libs.ephemeral
    :call 'skein.libs.ephemeral/install!})
-(libs/use! :skein-src/config
-  {:ns 'config.core
-   :libs #{'skein-src/config}
+(libs/use! :config
+  {:file "config.clj"
    :after [:skein/libs-ephemeral]
-   :call 'config.core/install!})
+   :call 'config/install!})
