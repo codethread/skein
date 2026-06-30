@@ -135,9 +135,16 @@ func (a *App) rootCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		edgeRows, err := parseEdges(cmd)
+		if err != nil {
+			return err
+		}
 		payload := map[string]any{"title": args[0], "attributes": am}
 		if cmd.Flags().Changed("state") {
 			payload["state"] = state
+		}
+		if len(edgeRows) > 0 {
+			payload["edges"] = edgeRows
 		}
 		return a.withConfig(o, func(r Options) error {
 			return a.call(r, "add", payload)
@@ -148,6 +155,7 @@ func (a *App) rootCommand() *cobra.Command {
 	add.Flags().StringArray("attr-file", nil, "string attribute key=path read from file contents (repeatable)")
 	add.Flags().StringArray("attr-stdin", nil, "attribute key whose string value is read from stdin (max once)")
 	add.Flags().Bool("attributes-stdin", false, "read one JSON object from stdin as bulk attributes")
+	add.Flags().StringArray("edge", nil, "outgoing edge edge-type:to-id (repeatable)")
 	root.AddCommand(add)
 
 	update := &cobra.Command{Use: "update <id>", Short: "Update a strand", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -157,18 +165,13 @@ func (a *App) rootCommand() *cobra.Command {
 		}
 		title, _ := cmd.Flags().GetString("title")
 		attrs, _ := cmd.Flags().GetStringArray("attr")
-		edges, _ := cmd.Flags().GetStringArray("edge")
 		am, err := parseKV(attrs, "--attr")
 		if err != nil {
 			return err
 		}
-		edgeRows := make([]map[string]any, 0, len(edges))
-		for _, v := range edges {
-			left, right, ok := strings.Cut(v, ":")
-			if !ok || left == "" || right == "" {
-				return fmt.Errorf("malformed --edge: %s", v)
-			}
-			edgeRows = append(edgeRows, map[string]any{"type": left, "to": right})
+		edgeRows, err := parseEdges(cmd)
+		if err != nil {
+			return err
 		}
 		var titleArg any
 		if cmd.Flags().Changed("title") {
@@ -599,6 +602,19 @@ func (a *App) addAttributes(cmd *cobra.Command) (map[string]any, error) {
 		merged[k] = v
 	}
 	return merged, nil
+}
+
+func parseEdges(cmd *cobra.Command) ([]map[string]any, error) {
+	edges, _ := cmd.Flags().GetStringArray("edge")
+	edgeRows := make([]map[string]any, 0, len(edges))
+	for _, v := range edges {
+		left, right, ok := strings.Cut(v, ":")
+		if !ok || left == "" || right == "" {
+			return nil, fmt.Errorf("malformed --edge: %s", v)
+		}
+		edgeRows = append(edgeRows, map[string]any{"type": left, "to": right})
+	}
+	return edgeRows, nil
 }
 
 func parseKV(vals []string, name string) (map[string]any, error) {

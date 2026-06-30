@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -16,6 +17,10 @@ import (
 )
 
 func TestWeaverLifecycleWithFakeLauncher(t *testing.T) {
+	var logs bytes.Buffer
+	origLogOut := millLogOut
+	millLogOut = &logs
+	t.Cleanup(func() { millLogOut = origLogOut })
 	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
 	source := tempSource(t)
 	cfg := tempConfig(t, source)
@@ -29,6 +34,9 @@ func TestWeaverLifecycleWithFakeLauncher(t *testing.T) {
 		launches++
 		launchedSource = source
 		launchedArgs = append([]string(nil), args...)
+		if out != io.Discard || errOut != io.Discard {
+			t.Fatalf("weaver child output should not be forwarded to mill logs")
+		}
 		cmd := exec.Command("sleep", "60")
 		if err := cmd.Start(); err != nil {
 			return nil, err
@@ -85,6 +93,15 @@ func TestWeaverLifecycleWithFakeLauncher(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(world.StateDir, "weaver.json")); !os.IsNotExist(err) {
 		t.Fatalf("stop should remove weaver.json, stat err=%v", err)
+	}
+	logText := logs.String()
+	for _, want := range []string{"weaver started config_dir=" + world.ConfigDir, "weaver stopped config_dir=" + world.ConfigDir, "pid=" + intString(stoppedPID)} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("missing log %q in:\n%s", want, logText)
+		}
+	}
+	if strings.Contains(logText, "weaver running config_dir=") {
+		t.Fatalf("idempotent start should not log a lifecycle transition:\n%s", logText)
 	}
 }
 

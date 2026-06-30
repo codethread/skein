@@ -31,6 +31,12 @@ type weaverChild struct {
 	done  chan error
 }
 
+var millLogOut io.Writer = os.Stdout
+
+func millLogf(format string, args ...any) {
+	fmt.Fprintf(millLogOut, format+"\n", args...)
+}
+
 var launchWeaver = func(source string, args []string, out, errOut io.Writer) (*exec.Cmd, error) {
 	cmd := exec.Command("clojure", args...)
 	cmd.Dir = source
@@ -90,6 +96,7 @@ func start() error {
 	if err := os.WriteFile(metadataPath, append(b, '\n'), 0o644); err != nil {
 		return err
 	}
+	millLogf("mill listening state_root=%s socket=%s pid=%d", meta.StateRoot, meta.SocketPath, meta.PID)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

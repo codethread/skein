@@ -24,10 +24,10 @@ On top of that model you get two ways to work:
 The CLI stays thin on purpose; runtime customization belongs in trusted config
 and the REPL. See [PHILOSOPHY.md](../devflow/PHILOSOPHY.md) for the reasoning.
 
-Install the CLIs:
+Install the CLIs from the Skein checkout. `make install` records this checkout as the weaver source used by future `strand init` calls.
 
 ```sh
-go install ./cli/cmd/strand ./cli/cmd/mill
+make install
 ```
 
 ## Table of contents
@@ -48,13 +48,13 @@ go install ./cli/cmd/strand ./cli/cmd/mill
 By default `strand` is repo-first: without `--config-dir`, `mill` resolves the current Git worktree root and uses that repo's `.skein` directory as the selected config world. Repo `.skein` is trusted config only; mill-owned
 runtime state, metadata, sockets, and data live under Skein's XDG state root. Outside Git, no-flag commands fail with remediation instead of creating an accidental cwd world or falling back to a global personal world.
 
-Initialize a repo world from the Skein checkout:
+Initialize a repo world from the Git repo you want to use Skein in:
 
 ```sh
-strand init --source "$PWD"
+strand init
 ```
 
-In another repo, pass the checkout path explicitly or set `SKEIN_SOURCE`:
+If you did not install with `make install`, pass the Skein checkout path explicitly or set `SKEIN_SOURCE`:
 
 ```sh
 strand init --source /path/to/skein-src
@@ -69,7 +69,7 @@ with `--config-dir`:
 
 ```sh
 world=$(mktemp -d)
-strand --config-dir "$world" init --source "$PWD"
+strand --config-dir "$world" init
 ```
 
 `--config-dir` is not sticky: pass the same path on **every** command that should

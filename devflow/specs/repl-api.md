@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-003`
 **Status:** Implemented
-**Last Updated:** 2026-06-29
+**Last Updated:** 2026-06-30
 **Code:** `src/skein/repl.clj`, `src/skein/batch/alpha.clj`
 
 ## SPEC-003.P1 Purpose

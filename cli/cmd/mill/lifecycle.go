@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -62,7 +63,7 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 	if err := os.MkdirAll(world.DataDir, 0o755); err != nil {
 		return nil, err
 	}
-	cmd, err := launchWeaver(source, weaverArgs(world), os.Stdout, os.Stderr)
+	cmd, err := launchWeaver(source, weaverArgs(world), io.Discard, io.Discard)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +81,7 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 		delete(s.children, world.ConfigDir)
 		return nil, err
 	}
+	millLogf("weaver started config_dir=%s state_dir=%s pid=%v", world.ConfigDir, world.StateDir, status["pid"])
 	return status, nil
 }
 
@@ -138,6 +140,7 @@ func (s *server) stopWeaver(req client.MillWorldRequest) (map[string]any, error)
 	delete(s.children, world.ConfigDir)
 	status := baseStatus(world, "stopped")
 	status["pid"] = pid
+	millLogf("weaver stopped config_dir=%s state_dir=%s pid=%d", world.ConfigDir, world.StateDir, pid)
 	return status, nil
 }
 

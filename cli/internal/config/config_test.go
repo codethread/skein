@@ -120,6 +120,27 @@ func TestResolveSourceRejectsRelativePath(t *testing.T) {
 	}
 }
 
+func TestInitSourceUsesInstalledSourceBeforeCallerCWD(t *testing.T) {
+	installed := t.TempDir()
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installed, "deps.edn"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "deps.edn"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := InstalledSource
+	InstalledSource = installed
+	t.Cleanup(func() { InstalledSource = old })
+	got, err := InitSource(cwd, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != installed {
+		t.Fatalf("expected installed source, got %q", got)
+	}
+}
+
 func TestBootstrapTargetWorldResolvesRelativeConfigDirAgainstCallerCWD(t *testing.T) {
 	cwd := t.TempDir()
 	world, err := BootstrapTargetWorld(cwd, ".skein")

@@ -26,7 +26,7 @@
     (sequential? result) (mapv normalize result)
     :else result))
 
-(declare enqueue-event! register-built-in-ops! runtime?)
+(declare enqueue-event! register-built-in-ops! runtime? apply-edges!)
 
 (defn- ds [runtime]
   (:datasource runtime))
@@ -561,21 +561,25 @@
    (add runtime strand (request-context :add)))
   ([runtime strand req-ctx]
    (let [created (jdbc/with-transaction [tx (ds runtime)]
-                   (let [strand (if (some? (:attributes strand))
-                                  (assoc strand :attributes (run-transform-hooks runtime
-                                                                                  :attributes/normalize
-                                                                                  (merge req-ctx
-                                                                                         {:hook/value (:attributes strand)
-                                                                                          :mutation/operation :strand/add
-                                                                                          :strand/patch strand})))
-                                  strand)
+                   (let [edges (:edges strand)
+                         strand (cond-> strand
+                                  true (dissoc :edges)
+                                  (some? (:attributes strand))
+                                  (assoc :attributes (run-transform-hooks runtime
+                                                                           :attributes/normalize
+                                                                           (merge req-ctx
+                                                                                  {:hook/value (:attributes strand)
+                                                                                   :mutation/operation :strand/add
+                                                                                   :strand/patch strand}))))
                          created (normalize (db/add-strand! tx strand))]
+                     (apply-edges! tx (:id created) edges)
                      (run-validation-hooks! runtime
                                             :strand/add-before-commit
                                             (merge req-ctx
                                                    {:mutation/operation :strand/add
                                                     :strand/before nil
-                                                    :strand/after created}))
+                                                    :strand/after created
+                                                    :strand/edge-ops (vec edges)}))
                      created))]
      (enqueue-event! runtime (assoc (event-base :strand/added)
                                     :strand/id (:id created)

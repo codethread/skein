@@ -44,6 +44,11 @@ func TestMillStartPublishesMetadataAndStatus(t *testing.T) {
 	if meta["mill_id"] == "" || meta["socket_path"] != filepath.Join(xdg, "skein", "mill.sock") || meta["state_root"] != filepath.Join(xdg, "skein") {
 		t.Fatalf("unexpected metadata: %#v\nserver output: %s", meta, serverOut.String())
 	}
+	for _, want := range []string{"mill listening", "state_root=" + filepath.Join(xdg, "skein"), "socket=" + filepath.Join(xdg, "skein", "mill.sock"), "pid="} {
+		if !strings.Contains(serverOut.String(), want) {
+			t.Fatalf("missing mill start log %q in: %s", want, serverOut.String())
+		}
+	}
 	status := exec.Command(bin, "status")
 	status.Env = append(os.Environ(), "XDG_STATE_HOME="+xdg)
 	out, err := status.CombinedOutput()

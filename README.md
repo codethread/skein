@@ -1,4 +1,6 @@
-# Skein 🧶
+# Skein 🧶 Give your agents a lisp
+
+> skein: A continuous length of thread or wool wound into a loose, long twist so it doesn't tangle
 
 Skein is a small weaver-backed strand graph for coding agents and humans. It stores strands locally in SQLite, exposes a thin JSON-only `strand` CLI for scripts, and keeps richer customization in trusted weaver config and Clojure REPL workflows.
 
@@ -11,37 +13,31 @@ Use it to:
 
 ## Quick start
 
-Install the `strand` and `mill` commands from this checkout, start `mill`, then initialize a repo-local `.skein` world in the Git repository you want to work in:
+Install from this checkout, then start `mill` once:
 
 ```sh
-go install ./cli/cmd/strand ./cli/cmd/mill
+make install
 mill start
-strand init --source /path/to/skein-src
-strand weaver start
 ```
 
-Without `--config-dir`, `strand` selects the current Git repository root. Outside Git, no-flag commands fail loudly instead of creating an accidental cwd world or using a global default.
-
-Then use it from another terminal:
+In the Git repo you want to work in:
 
 ```sh
-strand add "Sketch strand model" --state closed --attr example_outcome=sketched
-strand add "Write docs" --attr owner=agent
+mkdir -p ~/learn-skein
+cd ~/learn-skein
+git init
+strand init
+strand weaver start
+strand add "initial"
+ID=$(strand add "hello" | jq -r '.id')
+strand add "world" --edge depends-on:${ID}
 strand list
 strand ready
-```
-
-The CLI emits JSON for all strand/weaver commands. The `repl` is where Skein really shines (see [docs](./docs/getting-started.md) for more):
-
-```sh
 strand weaver repl
-```
-
-When finished:
-
-```sh
 strand weaver stop
 ```
+
+Without `--config-dir`, `strand` selects the current Git repository root. Outside Git, no-flag commands fail loudly instead of creating an accidental cwd world or using a global default. The CLI emits JSON for all strand/weaver commands; see [Getting started](./docs/getting-started.md) for the full walkthrough.
 
 ### Isolated weavers
 
@@ -49,13 +45,12 @@ For agent/testing work, prefer an explicit disposable world:
 
 ```sh
 world=$(mktemp -d)
-printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$world/config.json"
 ```
 
-Start mill and the weaver:
+With `mill` running:
 
 ```sh
-mill start
+strand --config-dir "$world" init
 strand --config-dir "$world" weaver start
 ```
 

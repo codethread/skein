@@ -12,6 +12,11 @@ import (
 const DefaultInitCLJ = "(require '[skein.libs.alpha :as libs])\n\n(libs/sync!)\n"
 const DefaultSkeinGitignore = "config.json\ninit.local.clj\nlibs.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
 
+// InstalledSource is optionally set at build time by the repo Makefile so
+// mill-routed `strand init` can write config.json without users passing
+// --source or exporting SKEIN_SOURCE after installing from a checkout.
+var InstalledSource string
+
 func BootstrapWorld(cwd, configDir, source string) (World, error) {
 	world, err := BootstrapTargetWorld(cwd, configDir)
 	if err != nil {
@@ -103,6 +108,12 @@ func InitSource(cwd, source string) (string, error) {
 	if source != "" {
 		return ResolveSource(source)
 	}
+	if env := os.Getenv("SKEIN_SOURCE"); env != "" {
+		return ResolveSource(env)
+	}
+	if InstalledSource != "" {
+		return ResolveSource(InstalledSource)
+	}
 	if cwd == "" {
 		var err error
 		cwd, err = os.Getwd()
@@ -113,5 +124,5 @@ func InitSource(cwd, source string) (string, error) {
 	if source, err := ResolveSource(cwd); err == nil {
 		return source, nil
 	}
-	return "", fmt.Errorf("could not resolve Skein source for config.json; run `strand init --source <skein-source>` or set SKEIN_SOURCE")
+	return "", fmt.Errorf("could not resolve Skein source for config.json; install with `make install`, run `strand init --source <skein-source>`, or set SKEIN_SOURCE")
 }

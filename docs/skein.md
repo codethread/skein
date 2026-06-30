@@ -45,6 +45,12 @@ Different config dirs are different worlds. Use `--config-dir <dir>` when you wa
 The ordinary world is repo-local. Without `--config-dir`, `mill` resolves the current Git worktree root and uses that repo's `.skein` directory as the selected config-dir. Outside Git, no-flag commands fail loudly. `strand init` creates or completes `.skein` at the Git root and fails loudly outside Git:
 
 ```sh
+strand init
+```
+
+When installed with `make install` from a Skein checkout, `strand init` can write the source path automatically. If you installed another way, pass the checkout explicitly or set `SKEIN_SOURCE`:
+
+```sh
 strand init --source /path/to/skein-src
 # or
 SKEIN_SOURCE=/path/to/skein-src strand init
@@ -73,18 +79,11 @@ The important file is `config.json`:
 
 ## Agent guidance files
 
-From a Skein source checkout, `strand init --source "$PWD"` is the normal repo bootstrap path. It creates or completes the repo `.skein` world, writes local `config.json` when source resolution succeeds, and leaves shared config files ready to commit.
+From a Skein source checkout, `make install` installs the Go CLIs (`strand` and `mill`) and records the checkout as the default weaver source. After that, use the CLIs directly: `mill start`, `strand init`, and `strand weaver start`.
 
-`make bootstrap` remains a convenience setup path after `mill start` is already running. It can target an explicit disposable config dir with `BOOTSTRAP_CONFIG_DIR=...`. It:
+`strand init` is the normal repo bootstrap path. It creates or completes the repo `.skein` world, writes local `config.json` when source resolution succeeds, and leaves shared config files ready to commit. It does not run `git init` or initialize database storage; weaver startup prepares storage.
 
-- runs `go install ./cli/cmd/strand` and `go install ./cli/cmd/mill`;
-- runs config-only `strand init --source` for the repo or explicit config target;
-- creates `AGENTS.md` only if absent;
-- creates `CLAUDE.md` as a symlink to `AGENTS.md` only if absent.
-
-`AGENTS.md` tells coding agents to read this canonical guide from the configured Skein source checkout. `CLAUDE.md` exists for Claude-oriented tooling.
-
-`make bootstrap` does not overwrite existing Skein config, `AGENTS.md`, or `CLAUDE.md`, so you can customize them after initial setup. It does not run `git init` or initialize database storage; weaver startup prepares storage. User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`.
+User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`.
 
 ## Weaver
 
@@ -546,9 +545,9 @@ This is by design: the system is flexible because attributes and user code are o
 Install from a checkout, start mill, and create a repo-local world:
 
 ```sh
-go install ./cli/cmd/strand ./cli/cmd/mill
+make install
 mill start
-strand init --source "$PWD"
+strand init
 strand weaver start
 ```
 
@@ -556,7 +555,7 @@ For experiments, use a disposable world:
 
 ```sh
 world=$(mktemp -d)
-strand --config-dir "$world" init --source "$PWD"
+strand --config-dir "$world" init
 strand --config-dir "$world" weaver start
 ```
 

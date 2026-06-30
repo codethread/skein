@@ -163,7 +163,6 @@ func TestConfigDirPrecedenceAndValidation(t *testing.T) {
 		t.Fatalf("expected removed config-path error, got %v", err)
 	}
 
-
 }
 
 func TestInitBootstrapsWorkspaceWhenMissingWithoutWeaverInit(t *testing.T) {
@@ -442,6 +441,7 @@ func TestOrdinaryCommandsRequireMill(t *testing.T) {
 
 func TestWeaverStartRequiresMill(t *testing.T) {
 	cfg := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
 	if _, err := run("--config-dir", cfg, "weaver", "start"); err == nil || !strings.Contains(err.Error(), "start one with: mill start") {
 		t.Fatalf("expected mill remediation, got %v", err)
 	}
@@ -449,6 +449,7 @@ func TestWeaverStartRequiresMill(t *testing.T) {
 
 func TestWeaverReplRequiresMill(t *testing.T) {
 	cfg := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
 	source := t.TempDir()
 	if err := os.WriteFile(filepath.Join(source, "deps.edn"), []byte(`{}`), 0644); err != nil {
 		t.Fatal(err)
@@ -499,6 +500,7 @@ func TestNoConfigDirOrdinaryCommandRequiresMillFirst(t *testing.T) {
 
 func TestDiscoveredWeaverLifecycleRequiresMill(t *testing.T) {
 	repo := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
 	cfg := filepath.Join(repo, ".skein")
 	if err := os.MkdirAll(cfg, 0o755); err != nil {
 		t.Fatal(err)
@@ -947,7 +949,7 @@ func TestStrandCommandsUseSocketClientPayloads(t *testing.T) {
 	fc := &fakeClient{}
 	newClient = func(o Options) Caller { return fc }
 	t.Cleanup(func() { newClient = orig })
-	out, err := run("--config-dir", cfg, "add", "Write docs", "--attr", "owner=agent")
+	out, err := run("--config-dir", cfg, "add", "Write docs", "--attr", "owner=agent", "--edge", "depends-on:task-0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -974,6 +976,9 @@ func TestStrandCommandsUseSocketClientPayloads(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fc.calls[0].args["attributes"], map[string]any{"owner": "agent"}) {
 		t.Fatalf("bad attrs: %#v", fc.calls[0].args)
+	}
+	if !reflect.DeepEqual(fc.calls[0].args["edges"], []map[string]any{{"type": "depends-on", "to": "task-0"}}) {
+		t.Fatalf("bad add edges: %#v", fc.calls[0].args)
 	}
 	expectedUpdate := map[string]any{"id": "task-1", "title": nil, "state": "closed", "attributes": nil, "edges": []map[string]any{{"type": "depends-on", "to": "task-0"}}}
 	if fc.calls[1].op != "update" || !reflect.DeepEqual(fc.calls[1].args, expectedUpdate) {

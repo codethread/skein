@@ -77,12 +77,13 @@
         "ready" (= {} args)
         "status" (= {} args)
         "stop" (= {} args)
-        "add" (and (every? #{"title" "attributes" "state"} (keys args))
+        "add" (and (every? #{"title" "attributes" "state" "edges"} (keys args))
                    (contains? args "title")
                    (contains? args "attributes")
                    (string? (get args "title"))
                    (map? (get args "attributes"))
-                   (or (not (contains? args "state")) (contains? generic-states (get args "state"))))
+                   (or (not (contains? args "state")) (contains? generic-states (get args "state")))
+                   (or (not (contains? args "edges")) (and (vector? (get args "edges")) (every? valid-edge? (get args "edges")))))
         "update" (and (every? #{"id" "title" "state" "attributes" "edges"} (keys args))
                       (contains? args "id")
                       (string? (get args "id"))
@@ -196,7 +197,13 @@
   (case op
     "add" ((api 'add) runtime (cond-> {:title (get args "title")
                                          :attributes (get args "attributes")}
-                                  (contains? args "state") (assoc :state (get args "state")))
+                                  (contains? args "state") (assoc :state (get args "state"))
+                                  (contains? args "edges") (assoc :edges (mapv (fn [edge]
+                                                                                  (cond-> {:type (get edge "type")
+                                                                                           :to (get edge "to")}
+                                                                                    (contains? edge "attributes")
+                                                                                    (assoc :attributes (get edge "attributes"))))
+                                                                                (get args "edges"))))
            (request-context op))
     "update" ((api 'update) runtime (get args "id")
               (cond-> {}

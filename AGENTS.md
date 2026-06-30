@@ -2,7 +2,7 @@
 
 Always read `./devflow/TENETS.md` and `./devflow/PHILOSOPHY.md` before all work.
 
-Skein is daemon-core-first: the long-lived weaver owns storage and runtime state; the `strand` CLI stays a thin JSON control surface. Runtime customization belongs in trusted config and REPL workflows.
+Skein is daemon-core-first behind a small Go router: `mill` is the local entrypoint/supervisor, the long-lived weaver owns storage and runtime state, and the `strand` CLI stays a thin JSON control surface. Runtime customization belongs in trusted config and REPL workflows.
 
 Canonical shipped contracts live in root specs:
 
@@ -22,11 +22,11 @@ PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
 Common commands:
 
 ```sh
-go install ./cli/cmd/strand
-strand init --source "$PWD"   # creates/completes repo-local .skein
+make install
+mill start                    # run in a durable terminal
+strand init                   # creates/completes repo-local .skein
 
 strand weaver start
-strand init
 strand list
 strand weaver status
 strand weaver stop
@@ -40,17 +40,22 @@ clojure -M:repl
 Agents must prefer explicit disposable `--config-dir` worlds. Never use or mutate the user's default config/data/state worlds unless explicitly asked.
 
 ```sh
-go install ./cli/cmd/strand
+make install
 world=$(mktemp -d)
-printf '{"configFormat":"alpha","source":"%s"}\n' "$PWD" | jq . > "$world/config.json"
+xdg=$(mktemp -d)
+export XDG_STATE_HOME="$xdg"
+strand --config-dir "$world" init --source "$PWD"
 
+mill start &
+mill_pid=$!
+until mill status >/dev/null 2>&1; do sleep 0.1; done
 strand --config-dir "$world" weaver start
-strand --config-dir "$world" init
 design=$(strand --config-dir "$world" add "Sketch model" --state closed --attr priority=high)
 docs=$(strand --config-dir "$world" add "Write docs" --attr owner=agent)
 strand --config-dir "$world" update "$docs" --edge depends-on:$design
 strand --config-dir "$world" ready
 strand --config-dir "$world" weaver stop
+kill "$mill_pid"
 ```
 
 Use `strand weaver repl` for interactive trusted exploration:
