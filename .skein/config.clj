@@ -153,7 +153,7 @@
   [:workflow :feature :kind :task_key :task_id :task_file :owner :branch :validation])
 
 (def ^:private devflow-context-attrs
-  [:task_key :task_file :task_id :owner :branch :validation])
+  [:task_key :task_file :validation])
 
 (defn- reject-duplicate-logical-attrs!
   "Fail when attrs contains both keyword and JSON string forms of attr."

@@ -108,7 +108,7 @@ rewires incoming `depends-on` edges to the replacement:
 strand op devflow-supersede <old-id-or-task-key> <replacement-id-or-task-key>
 ```
 
-Close an active feature DAG (all active parents/children) atomically:
+Close an active feature DAG by closing active workflow=devflow strands in the selected feature DAG atomically:
 
 ```sh
 strand op devflow-close-feature <feature>

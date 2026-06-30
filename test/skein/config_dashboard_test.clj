@@ -174,14 +174,20 @@
                                                           :title "Empty validation"
                                                           :validation []}]}))))))
 
-(deftest devflow-coordination-hook-allows-generic-kind-when-not-coordination
+(deftest devflow-coordination-hook-allows-generic-owner-and-kind-when-not-coordination
   (with-config-runtime
     (fn [rt]
-      (let [task (api/add rt {:title "Generic kind"
+      (let [task (api/add rt {:title "Generic owner kind"
                              :state "active"
-                             :attributes {:kind "doc"}})]
+                             :attributes {:owner "infra"
+                                          :kind "doc"}})]
         (is (= "doc" (get-in task [:attributes :kind])))
-        (is (= "spike" (get-in (api/update rt (:id task) {:attributes {:kind "spike"}}) [:attributes :kind]))))))
+        (is (= "spike" (get-in (api/update rt (:id task)
+                                {:attributes {:kind "spike" :owner "infra"}})
+                               [:attributes :kind])))
+        (is (= "platform" (get-in (api/update rt (:id task)
+                                   {:attributes {:kind "doc" :owner "platform"}})
+                                   [:attributes :owner]))))))
 
 (deftest devflow-coordination-hook-normalizes-and-rejects-on-update-in-context
   (with-config-runtime
@@ -194,19 +200,23 @@
                                           :feature "update"}})
             updated (api/update rt (:id task) {:attributes {:task_id 77}})]
         (is (= "77" (get-in updated [:attributes :task_id])))
+        ;; kind-only updates do not assert coordination context by default.
+        (is (= "doc" (get-in (api/update rt (:id task)
+                               {:attributes {:kind "doc"}})
+                               [:attributes :kind])))
         (try
           (api/update rt (:id task) {:attributes {:workflow "bad-workflow" :task_key "update-me"}})
           (is false "expected lifecycle rejection for invalid workflow")
           (catch clojure.lang.ExceptionInfo e
             (is (= "hook/failed" (:code (ex-data e))))
-            (is (= "devflow/invalid-coordination-attribute" (:hook/cause-code (ex-data e))))))
+            (is (= "devflow/invalid-coordination-attribute" (:hook/cause-code (ex-data e)))))
+        )
         (try
           (api/update rt (:id task) {:attributes {:kind "doc" :task_key "update-me"}})
           (is false "expected lifecycle rejection for invalid kind")
           (catch clojure.lang.ExceptionInfo e
             (is (= "hook/failed" (:code (ex-data e))))
             (is (= "devflow/invalid-coordination-attribute" (:hook/cause-code (ex-data e))))))))))
-
 
 (deftest devflow-status-unscoped-ready-excludes-plan-strands
   (with-config-runtime
