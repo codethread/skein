@@ -180,14 +180,19 @@
       (let [task (api/add rt {:title "Generic owner kind"
                              :state "active"
                              :attributes {:owner "infra"
-                                          :kind "doc"}})]
+                                          :kind "doc"
+                                          :branch "main"}})]
         (is (= "doc" (get-in task [:attributes :kind])))
+        (is (= "main" (get-in task [:attributes :branch])))
         (is (= "spike" (get-in (api/update rt (:id task)
-                                {:attributes {:kind "spike" :owner "infra"}})
+                                {:attributes {:kind "spike" :owner "infra" :branch "main-feature"}})
                                [:attributes :kind])))
         (is (= "platform" (get-in (api/update rt (:id task)
-                                   {:attributes {:kind "doc" :owner "platform"}})
-                                   [:attributes :owner]))))))
+                                   {:attributes {:kind "doc" :owner "platform" :branch "platform-hotfix"}})
+                                   [:attributes :owner])))
+        (is (= "platform-hotfix" (get-in (api/update rt (:id task)
+                                            {:attributes {:branch "platform-hotfix" :kind "doc"}})
+                                           [:attributes :branch]))))))
 
 (deftest devflow-coordination-hook-normalizes-and-rejects-on-update-in-context
   (with-config-runtime
