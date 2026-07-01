@@ -181,7 +181,7 @@ func (s *server) handle(conn net.Conn) {
 			return
 		}
 		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: result})
-	case "add", "update", "show", "supersede", "burn", "list", "ready", "list-query", "ready-query", "weave", "pattern-list", "pattern-explain", "op", "subgraph":
+	case "add", "update", "show", "supersede", "burn", "list", "ready", "list-query", "ready-query", "weave", "pattern-list", "pattern-explain", "query-list", "query-explain", "op", "subgraph":
 		result, err := s.forwardToWeaver(req.World, req.Operation, req.Payload)
 		if err != nil {
 			if re, ok := err.(*client.ResponseError); ok {

@@ -1,0 +1,31 @@
+tasks:
+  - id: 1
+    description: "Add weaver query introspection API"
+    task_file: "tasks/001-add-weaver-query-introspection-api.md"
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: "Add query socket operations"
+    task_file: "tasks/002-add-query-socket-operations.md"
+    status: complete
+    blocked_by: [1]
+  - id: 3
+    description: "Add cli query command group"
+    task_file: "tasks/003-add-cli-query-command-group.md"
+    status: complete
+    blocked_by: [2]
+  - id: 4
+    description: "Add repl query explain helper"
+    task_file: "tasks/004-add-repl-query-explain-helper.md"
+    status: complete
+    blocked_by: [1]
+  - id: 5
+    description: "Document framing and extend smoke"
+    task_file: "tasks/005-document-framing-and-extend-smoke.md"
+    status: complete
+    blocked_by: [3]
+  - id: 6
+    description: "Promote specs and validate"
+    task_file: "tasks/006-promote-specs-and-validate.md"
+    status: complete
+    blocked_by: [4, 5]

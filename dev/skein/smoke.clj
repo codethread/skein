@@ -1,4 +1,5 @@
 (ns skein.smoke
+  "Run end-to-end smoke coverage for disposable Skein CLI and REPL worlds."
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.string]
@@ -317,8 +318,9 @@
     (spit (java.io.File. lib-root "deps.edn") "{:paths [\"src\"]}\n")
     (spit (java.io.File. workspace "spools.edn") "{:spools {smoke/runtime-lib {:local/root \"spools/smoke-runtime-lib\"}}}\n")
     (spit init-path
-          (str "(ns smoke.startup\n  (:require [clojure.spec.alpha :as s]\n            [skein.runtime.alpha :as runtime]\n            [skein.events.alpha :as events]\n            [skein.graph.alpha :as graph]\n            [skein.hooks.alpha :as hooks]\n            [skein.views.alpha :as views]\n            [skein.weaver.api :as api]))\n(runtime/sync!)\n(api/register-query! 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(s/def ::title string?)\n(s/def ::review-input (s/keys :req-un [::title]))\n(defn reject-blocked-owner [ctx]\n  (when (= \"blocked\" (get-in ctx [:strand/after :attributes :owner]))\n    (throw (ex-info \"smoke hook rejected blocked owner\" {:code :smoke/blocked-owner}))))\n(hooks/register! :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)\n(defn review-pattern [{:keys [input]}]\n  (let [title (:title input)]\n    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n(api/register-pattern! 'review-task 'smoke.startup/review-pattern ::review-input)\n(def event-marker " (pr-str (.getCanonicalPath event-marker)) ")\n(defn record-added! [event]\n  (spit event-marker (:title (:strand event))))\n(defn smoke-owned-view [{:keys [params]}]\n  (let [ids (graph/query-ids! 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :strands (graph/strands-by-ids ids)}))\n(views/register-view! 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n(events/register! :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})\n"))
+          (str "(ns smoke.startup\n  (:require [clojure.spec.alpha :as s]\n            [skein.runtime.alpha :as runtime]\n            [skein.events.alpha :as events]\n            [skein.graph.alpha :as graph]\n            [skein.hooks.alpha :as hooks]\n            [skein.views.alpha :as views]\n            [skein.weaver.api :as api]))\n(runtime/sync!)\n(api/register-query! 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(api/register-query! 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})\n(s/def ::title string?)\n(s/def ::review-input (s/keys :req-un [::title]))\n(defn reject-blocked-owner [ctx]\n  (when (= \"blocked\" (get-in ctx [:strand/after :attributes :owner]))\n    (throw (ex-info \"smoke hook rejected blocked owner\" {:code :smoke/blocked-owner}))))\n(hooks/register! :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)\n(defn review-pattern [{:keys [input]}]\n  (let [title (:title input)]\n    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n(api/register-pattern! 'review-task 'smoke.startup/review-pattern ::review-input)\n(def event-marker " (pr-str (.getCanonicalPath event-marker)) ")\n(defn record-added! [event]\n  (spit event-marker (:title (:strand event))))\n(defn smoke-owned-view [{:keys [params]}]\n  (let [ids (graph/query-ids! 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :strands (graph/strands-by-ids ids)}))\n(views/register-view! 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n(events/register! :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})\n"))
     (let [daemon (start-cli-daemon-config! workspace)]
+
       (try
         (run-cli-config! workspace "weaver" "status")
         (let [loader-state (edn/read-string
@@ -350,9 +352,19 @@
                    (:views payload)
                    "startup registered view is introspectable")
           (assert= "Startup transformed strand" (slurp event-marker) "startup event handler observes async strand add event")
+          (let [query-entry (some #(when (= "smoke-owner" (:name %)) %) (parse-json (run-cli-config! workspace "query" "list")))
+                explanation (parse-json (run-cli-config! workspace "query" "explain" "smoke-owner"))]
+            (assert= {:name "smoke-owner" :params ["owner"] :referenced-params ["owner"]}
+                     query-entry
+                     "query list exposes registered query metadata")
+            (assert= "smoke-owner" (:name explanation) "query explain exposes registered query name")
+            (assert= ["owner"] (:params explanation) "query explain exposes declared params")
+            (assert= ["owner"] (:referenced-params explanation) "query explain exposes referenced params")
+            (assert-contains (:summary explanation) "list --query" "query explain exposes CLI invocation summary"))
           (let [patterns (parse-json (run-cli-config! workspace "pattern" "list"))
                 explanation (parse-json (run-cli-config! workspace "pattern" "explain" "review-task"))
                 woven (parse-json (run-cli-config-stdin! workspace "{\"title\":\"Patterned smoke\"}\n" "weave" "--pattern" "review-task"))]
+
             (assert= ["review-task"] (mapv :name patterns) "pattern list exposes registered patterns")
             (assert= "review-task" (:name explanation) "pattern explain exposes registered pattern")
             (assert= ["Patterned smoke" "Review: Patterned smoke"]

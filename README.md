@@ -105,7 +105,8 @@ Everything else — outcomes, categories, temporary markers, priorities — live
 
 The CLI stays thin on purpose; the power lives in the weaver. It's a real Clojure image — the full language, macros and all — so your customizations can be as expressive as you want, and you can introspect or redefine any of them from a live REPL without a restart.
 
-Richer behavior — named queries, weave patterns, weaver-memory views, event handlers, custom `strand op` commands, and trusted runtime spools — is loaded into your workspace, then consumed by helpers or by small CLI commands such as `list --query <name>` and `weave --pattern <name>`.
+Richer behavior — named queries, weave patterns, weaver-memory views, event handlers, custom `strand op` commands, and trusted runtime spools — is loaded into your workspace, discovered through small read-only CLI groups such as `query list` / `query explain <name>` and `pattern list` / `pattern explain <name>`, then consumed by semantic commands such as `list --query <name>` and `weave --pattern <name>`.
+
 
 Two kinds of code can extend the weaver:
 

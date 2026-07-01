@@ -241,7 +241,27 @@ func (a *App) rootCommand() *cobra.Command {
 	weave.Flags().String("pattern", "", "weaver-registered pattern name")
 	root.AddCommand(weave)
 
-	pattern := &cobra.Command{Use: "pattern", Short: "Inspect weaver-registered patterns"}
+	query := &cobra.Command{
+		Use:   "query",
+		Short: "Inspect weaver-registered queries",
+		Long:  "Inspect weaver-registered queries. Discover queries with list/explain, then apply them with list --query or ready --query and repeated --param key=value.",
+	}
+	query.AddCommand(&cobra.Command{Use: "list", Short: "List registered queries", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		return a.withConfig(o, func(r Options) error { return a.call(r, "query-list", map[string]any{}) })
+	}})
+	query.AddCommand(&cobra.Command{Use: "explain <name>", Short: "Explain a query parameter contract", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(args[0]) == "" {
+			return errors.New("query explain requires a non-empty name")
+		}
+		return a.withConfig(o, func(r Options) error { return a.call(r, "query-explain", map[string]any{"query": args[0]}) })
+	}})
+	root.AddCommand(query)
+
+	pattern := &cobra.Command{
+		Use:   "pattern",
+		Short: "Inspect weaver-registered patterns",
+		Long:  "Inspect weaver-registered patterns. Discover patterns with list/explain, then apply them with weave --pattern for writes.",
+	}
 	pattern.AddCommand(&cobra.Command{Use: "list", Short: "List registered patterns", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		return a.withConfig(o, func(r Options) error { return a.call(r, "pattern-list", map[string]any{}) })
 	}})

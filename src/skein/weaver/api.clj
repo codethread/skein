@@ -471,6 +471,38 @@
   [runtime query-name]
   (query/query-def @(query-registry runtime) query-name))
 
+(defn- query-where [query-def]
+  (if (map? query-def)
+    (:where query-def)
+    query-def))
+
+(defn- query-metadata-entry [[name query-def]]
+  {:name name
+   :params (if (map? query-def) (vec (:params query-def)) [])
+   :referenced-params (query/referenced-params (query-where query-def))})
+
+(defn query-metadata
+  "Return registered query caller metadata ordered by canonical name."
+  ([]
+   (query-metadata (current-runtime)))
+  ([runtime]
+   (mapv query-metadata-entry (queries runtime))))
+
+(defn query-explain
+  "Describe a registered query definition and how CLI callers invoke it."
+  ([query-name]
+   (query-explain (current-runtime) query-name))
+  ([runtime query-name]
+   (let [query-def (resolve-query runtime query-name)
+         name (query/query-lookup-name query-name)
+         where (query-where query-def)]
+     (assoc (query-metadata-entry [name query-def])
+            :where where
+            :definition query-def
+            :where-form (pr-str where)
+            :definition-form (pr-str query-def)
+            :summary "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments."))))
+
 (defn init
   "Initialize the runtime database schema."
   [runtime]

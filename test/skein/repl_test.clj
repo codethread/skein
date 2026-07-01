@@ -258,6 +258,25 @@
         (is (= {"agent-ready" {:params [:owner]
                                 :where [:= [:attr :owner] [:param :owner]]}}
                (repl/queries)))
+        (is (= {:name "agent-ready"
+                :params [:owner]
+                :referenced-params [:owner]
+                :where [:= [:attr :owner] [:param :owner]]
+                :definition {:params [:owner]
+                             :where [:= [:attr :owner] [:param :owner]]}
+                :where-form "[:= [:attr :owner] [:param :owner]]"
+                :definition-form "{:params [:owner], :where [:= [:attr :owner] [:param :owner]]}"
+                :summary "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments."}
+               (repl/query-explain :agent-ready)))
+        (try
+          (repl/query-explain :missing)
+          (is false "missing query should fail loudly")
+          (catch clojure.lang.ExceptionInfo e
+            (is (str/includes? (ex-message e) "Query not found"))
+            (is (= ["agent-ready"] (:available (ex-data e))))))
+        (is (= {"agent-ready" {:params [:owner]
+                                :where [:= [:attr :owner] [:param :owner]]}}
+               (repl/queries)))
         (is (= #{design docs}
                (set (map :id (repl/strands 'agent-ready {:owner "agent"})))))
         (is (= [docs]
@@ -278,6 +297,7 @@
                (repl/defquery! :mine [:= [:attr :owner] "agent"])))
         (is (= {"mine" [:= [:attr :owner] "agent"]}
                (repl/queries)))
+        (is (= "mine" (:name (repl/query-explain "mine"))))
         (is (= [agent] (mapv :id (repl/strands 'mine))))
         (runtime/stop! rt)
         (let [fresh-rt (runtime/start! db-file {:world (test-world (:config-dir (:metadata rt)))})]

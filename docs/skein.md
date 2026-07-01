@@ -139,8 +139,12 @@ strand --workspace "$workspace" show <id>
 strand --workspace "$workspace" list
 strand --workspace "$workspace" ready
 strand --workspace "$workspace" burn <id>
+strand --workspace "$workspace" query list
+strand --workspace "$workspace" query explain <query-name>
+strand --workspace "$workspace" pattern list
 strand --workspace "$workspace" pattern explain <pattern-name>
 printf '{"title":"New work"}\n' | strand --workspace "$workspace" weave --pattern <pattern-name>
+
 ```
 
 The public strand/weaver commands emit JSON. CLI attributes are string-valued `key=value` pairs; richer Clojure data belongs in config or REPL workflows.
@@ -247,12 +251,17 @@ From the live weaver REPL, `defquery!` registers a query for the current weaver 
     [:= [:attr :area] "docs"]])
 ```
 
-Then from the CLI:
+Discover and consume it from the CLI:
 
 ```sh
+strand --workspace "$workspace" query list
+strand --workspace "$workspace" query explain agent-docs
 strand --workspace "$workspace" list --query agent-docs
 strand --workspace "$workspace" ready --query agent-docs
+
 ```
+
+`query list` and `query explain <name>` are the read-only discovery pair for named query definitions. Application stays on the read commands: `list --query <name>` and `ready --query <name>` with repeated `--param key=value` when the query declares runtime params.
 
 Named query registries are not durable by themselves. If you want a query after every weaver restart, register it from startup-loaded code.
 
@@ -442,14 +451,20 @@ Pattern registration lives in trusted Clojure config or spools, not in the publi
   (patterns/register-pattern! 'task 'my.workflow/task-pattern ::task-input))
 ```
 
-CLI callers can inspect the input contract and invoke the pattern with exactly one JSON value on stdin:
+CLI callers can discover registered patterns, inspect the input contract, and invoke the pattern with exactly one JSON value on stdin:
 
 ```sh
+strand --workspace "$workspace" pattern list
 strand --workspace "$workspace" pattern explain task
 printf '{"title":"Implement review flow"}\n' | strand --workspace "$workspace" weave --pattern task
+
 ```
 
+`pattern list` and `pattern explain <name>` are the write-definition discovery pair, parallel to `query list` / `query explain <name>` for read definitions. Application stays on `weave --pattern <name>`.
+
 The pattern function runs inside the weaver and receives `{:input input}`. Its return value must be the same batch vector shape accepted by Skein's batch primitive: strand maps with optional `:ref` and `:edges`. Symbolic refs are transient to the batch and are never durable ids. Input spec failure, malformed batch output, missing refs, invalid durable targets, cycles, and database errors fail loudly and leave no partial batch writes.
+
+`weave --pattern` is the CLI-safe, named, spec-checked, create-only front door over the same transactional batch engine as REPL-only `skein.batch.alpha/apply!`. Raw batch is the trusted loading-dock door: it can create, update, burn, and upsert edges, so it remains a Clojure config/REPL workflow instead of a public CLI command.
 
 Like queries and views, patterns are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload.
 

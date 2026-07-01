@@ -27,6 +27,7 @@
    :register-query 'skein.weaver.api/register-query
    :load-queries 'skein.weaver.api/load-queries
    :queries 'skein.weaver.api/queries
+   :query-explain 'skein.weaver.api/query-explain
    :resolve-query 'skein.weaver.api/resolve-query
    :list-query 'skein.weaver.api/list-query
    :ready-query 'skein.weaver.api/ready-query

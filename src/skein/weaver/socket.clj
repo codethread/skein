@@ -11,7 +11,7 @@
            [org.sqlite SQLiteException]))
 
 (def ^:private allowed-operations
-  #{"add" "update" "supersede" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-list" "pattern-explain" "op" "subgraph" "status" "stop"})
+  #{"add" "update" "supersede" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-list" "pattern-explain" "query-list" "query-explain" "op" "subgraph" "status" "stop"})
 
 (def ^:private required-request-keys
   #{"protocol_version" "request_id" "weaver_id" "operation" "arguments" "options"})
@@ -23,9 +23,6 @@
   {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
    "error" {"type" "protocol" "code" code "message" message "details" (or details {})}})
 
-(defn- success [request-id result]
-  {"protocol_version" 1 "request_id" request-id "ok" true "result" result "error" nil})
-
 (defn- json-safe-value [value]
   (cond
     (nil? value) nil
@@ -36,6 +33,9 @@
     (sequential? value) (mapv json-safe-value value)
     (set? value) (mapv json-safe-value (sort-by pr-str value))
     :else (pr-str value)))
+
+(defn- success [request-id result]
+  {"protocol_version" 1 "request_id" request-id "ok" true "result" result "error" nil})
 
 (defn- domain-error [request-id e]
   (let [message (ex-message e)
@@ -110,6 +110,9 @@
         "pattern-list" (= {} args)
         "pattern-explain" (and (= #{"pattern"} (set (keys args)))
                                (string? (get args "pattern")))
+        "query-list" (= {} args)
+        "query-explain" (and (= #{"query"} (set (keys args)))
+                             (string? (get args "query")))
         "subgraph" (and (every? #{"root_ids" "type"} (keys args))
                         (contains? args "root_ids")
                         (vector? (get args "root_ids"))
@@ -170,12 +173,8 @@
                                                  :request/args (get req "arguments")
                                                  :request/options (get req "options")})))
 
-(defn- query-name [name]
-  (let [trimmed (str/trim name)
-        canonical (if (str/starts-with? trimmed ":") (subs trimmed 1) trimmed)]
-    (when (str/blank? canonical)
-      (throw (ex-info "Query names must not be blank" {:query name})))
-    (symbol canonical)))
+(defn- handle-name [name]
+  (symbol (query/query-lookup-name name)))
 
 (defn- query-params [query-def params]
   (let [declared (set (:params query-def))
@@ -190,7 +189,7 @@
                    declared))))
 
 (defn- dispatch-query [runtime op args]
-  (let [qdef ((api 'resolve-query) runtime (query-name (get args "query")))
+  (let [qdef ((api 'resolve-query) runtime (handle-name (get args "query")))
         params (query-params qdef (get args "params"))
         qdef (if (contains? args "state")
                [:and (query/query-expr qdef params) [:= :state (get args "state")]]
@@ -234,9 +233,11 @@
     "ready" ((api 'ready) runtime)
     "list-query" (dispatch-query runtime 'list args)
     "ready-query" (dispatch-query runtime 'ready args)
-    "weave" ((api 'weave!) runtime (query-name (get args "pattern")) (walk/keywordize-keys (get args "input")) (request-context op))
+    "weave" ((api 'weave!) runtime (handle-name (get args "pattern")) (walk/keywordize-keys (get args "input")) (request-context op))
     "pattern-list" ((api 'patterns) runtime)
-    "pattern-explain" ((api 'pattern-explain) runtime (query-name (get args "pattern")))
+    "pattern-explain" ((api 'pattern-explain) runtime (handle-name (get args "pattern")))
+    "query-list" (json-safe-value ((api 'query-metadata) runtime))
+    "query-explain" (json-safe-value ((api 'query-explain) runtime (handle-name (get args "query"))))
     "subgraph" (let [{:keys [root-ids strands edges]}
                      ((api 'subgraph) runtime (get args "root_ids") (cond-> {}
                                                                         (contains? args "type")
@@ -244,7 +245,7 @@
                  {"root_ids" root-ids
                   "strands" strands
                   "edges" edges})
-    "op" ((api 'op!) runtime (query-name (get args "name")) (get args "args"))
+    "op" ((api 'op!) runtime (handle-name (get args "name")) (get args "args"))
     "status" (status-result runtime)
     "stop" {"stopping" true "pid" (get-in runtime [:metadata :pid]) "weaver_id" (get-in runtime [:metadata :nonce])}))
 

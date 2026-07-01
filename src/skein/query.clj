@@ -184,6 +184,24 @@
       (fail! "Query names must not be blank" {:query query-name}))
     canonical-name))
 
+(defn query-lookup-name
+  "Return the canonical lookup key for a query name from REPL or CLI input.
+
+  String names are trimmed and may use a leading `:` for keyword-style CLI input;
+  symbol and keyword names use the registry-name rules unchanged."
+  [query-name]
+  (if (string? query-name)
+    (let [trimmed (str/trim query-name)
+          canonical-name (if (str/starts-with? trimmed ":")
+                           (subs trimmed 1)
+                           trimmed)]
+      (when (str/blank? canonical-name)
+        (fail! "Query names must not be blank" {:query query-name}))
+      (when (str/includes? canonical-name "/")
+        (fail! "Query names must be unqualified" {:query query-name}))
+      canonical-name)
+    (canonical-query-name query-name)))
+
 (defn- registry-query-name [query-name]
   (if (string? query-name)
     query-name
@@ -195,7 +213,7 @@
   Registry keys may be strings, simple symbols, or simple keywords. Throws ex-info
   with available names when no matching definition exists."
   [registry query-name]
-  (let [canonical-name (canonical-query-name query-name)
+  (let [canonical-name (query-lookup-name query-name)
         normalized-registry (update-keys registry registry-query-name)]
     (or (get normalized-registry canonical-name)
         (fail! "Query not found" {:query query-name
@@ -227,6 +245,33 @@
                        (or (:where query-def)
                            (fail! "Query map must include :where" {:query query-def})))
     :else (fail! "Query definition must be a vector expression or map" {:query query-def})))
+
+(defn referenced-params
+  "Return ordered distinct `[:param kw]` references from a query where expression.
+
+  Walks the query DSL shape without compiling SQL. Parameter references in
+  comparison values, `:in` values, edge relation positions, and nested endpoint
+  queries are all reported in first-seen order. Literal EDN values are not
+  searched. Throws ex-info when a recognized `:param` position does not use a
+  keyword name."
+  [where-expr]
+  (letfn [(param-name [form]
+            (when (and (vector? form) (= :param (first form)))
+              (let [[_ param-name] form]
+                (when-not (keyword? param-name)
+                  (fail! "Query parameter references must use keyword names" {:param param-name}))
+                param-name)))
+          (refs [expr]
+            (when (vector? expr)
+              (let [[op & args] expr]
+                (case op
+                  (:and :or) (mapcat refs args)
+                  :not (refs (first args))
+                  (:= :!= :< :<= :> :>= :in) (keep param-name [(second args)])
+                  (:edge/out :edge/in) (concat (keep param-name [(first args)])
+                                               (refs (second args)))
+                  []))))]
+    (vec (distinct (refs where-expr)))))
 
 (declare compile-query)
 

@@ -44,7 +44,7 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "supersede", "burn", "list", "ready", "graph", "weave", "pattern", "op", "weaver"} {
+	for _, want := range []string{"Available Commands:", "init", "add", "update", "show", "supersede", "burn", "list", "ready", "graph", "weave", "query", "pattern", "op", "weaver"} {
 		if !strings.Contains(root, want) {
 			t.Fatalf("root help missing %q in:\n%s", want, root)
 		}
@@ -83,6 +83,25 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 	for _, want := range []string{"supersede <old-id> <replacement-id>", "supersedes", "marks old replaced", "update --edge"} {
 		if !strings.Contains(supersede, want) {
 			t.Fatalf("supersede help missing %q in:\n%s", want, supersede)
+		}
+	}
+
+	queryHelp, err := run("query", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Inspect weaver-registered queries", "Discover queries with list/explain", "list --query", "ready --query", "--param key=value", "list", "explain"} {
+		if !strings.Contains(queryHelp, want) {
+			t.Fatalf("query help missing %q in:\n%s", want, queryHelp)
+		}
+	}
+	patternHelp, err := run("pattern", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Inspect weaver-registered patterns", "Discover patterns with list/explain", "weave --pattern", "list", "explain"} {
+		if !strings.Contains(patternHelp, want) {
+			t.Fatalf("pattern help missing %q in:\n%s", want, patternHelp)
 		}
 	}
 
@@ -139,6 +158,9 @@ func TestRejectsRemovedAndMalformedInputs(t *testing.T) {
 		{"weave", "extra", "--pattern", "x"},
 		{"pattern", "explain"},
 		{"pattern", "explain", "x", "extra"},
+		{"query", "explain"},
+		{"query", "explain", "x", "extra"},
+		{"query", "list", "extra"},
 		{"graph", "subgraph"},
 		{"graph", "subgraph", "root", "extra"},
 		{"op"},
@@ -187,6 +209,50 @@ func TestPatternListCommandPassesThroughToSocketClientPayloads(t *testing.T) {
 	}
 	if len(fc.calls) != 1 || fc.calls[0].op != "pattern-list" || !reflect.DeepEqual(fc.calls[0].args, map[string]any{}) {
 		t.Fatalf("bad pattern-list call: %#v", fc.calls)
+	}
+}
+
+func TestQueryExplainBlankNameFailsBeforeTransport(t *testing.T) {
+	cfg := testConfig(t)
+	orig := newClient
+	newClient = func(o Options) Caller {
+		t.Fatal("blank query explain name must fail before transport")
+		return nil
+	}
+	t.Cleanup(func() { newClient = orig })
+	_, err := run("--workspace", cfg, "query", "explain", "   ")
+	if err == nil || !strings.Contains(err.Error(), "query explain requires a non-empty name") {
+		t.Fatalf("expected blank name usage error, got %v", err)
+	}
+}
+
+func TestQueryGroupCommandsPassThroughToSocketClientPayloads(t *testing.T) {
+	cfg := testConfig(t)
+	orig := newClient
+	fc := &fakeClient{result: []any{map[string]any{"name": "mine"}}}
+	newClient = func(o Options) Caller { return fc }
+	t.Cleanup(func() { newClient = orig })
+	out, err := run("--workspace", cfg, "query", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != `[{"name":"mine"}]` {
+		t.Fatalf("unexpected query list output: %q", out)
+	}
+	if len(fc.calls) != 1 || fc.calls[0].op != "query-list" || !reflect.DeepEqual(fc.calls[0].args, map[string]any{}) {
+		t.Fatalf("bad query-list call: %#v", fc.calls)
+	}
+
+	fc.result = map[string]any{"name": "mine", "params": []any{"owner"}}
+	out, err = run("--workspace", cfg, "query", "explain", "mine")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != `{"name":"mine","params":["owner"]}` {
+		t.Fatalf("unexpected query explain output: %q", out)
+	}
+	if len(fc.calls) != 2 || fc.calls[1].op != "query-explain" || !reflect.DeepEqual(fc.calls[1].args, map[string]any{"query": "mine"}) {
+		t.Fatalf("bad query-explain call: %#v", fc.calls)
 	}
 }
 

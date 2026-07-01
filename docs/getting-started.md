@@ -216,12 +216,16 @@ for the full predicate DSL:
 (strands 'mine)                             ; list strands matching it
 ```
 
-The CLI can consume the same weaver-memory query during that weaver lifetime:
+The CLI can discover and consume the same weaver-memory query during that weaver lifetime:
 
 ```sh
+strand query list
+strand query explain mine
 strand list --query mine
 strand ready --query mine
 ```
+
+`query list` / `query explain <name>` are read-only discovery commands for named queries. Applying a query stays on `list --query` and `ready --query`.
 
 ## Startup config and runtime helpers
 
@@ -277,7 +281,7 @@ Built-in `skein.*.alpha` namespaces are privileged helpers shipped on the Skein 
    :call 'personal.ops.alpha/install!})
 ```
 
-Require `skein.batch.alpha` explicitly when you want `(batch/apply! payload)` for transactional graph mutations. Package management, source fetching, and install commands are outside this MVP; local roots must already exist.
+Require `skein.batch.alpha` explicitly when you want `(batch/apply! payload)` for transactional graph mutations. `weave --pattern` and `batch/apply!` are two doors into the same transactional engine: `weave` is the CLI-safe, named, spec-checked, create-only front door; raw batch is the trusted REPL/config loading dock that can also update, burn, and upsert edges. Package management, source fetching, and install commands are outside this MVP; local roots must already exist.
 
 Example pattern and view setup in your own startup-loaded spool:
 
@@ -312,12 +316,15 @@ Example pattern and view setup in your own startup-loaded spool:
   (views/register-view! 'owned-view 'my.workflow/owned-view))
 ```
 
-Lower-privilege CLI callers can inspect and invoke registered patterns with JSON stdin:
+Lower-privilege CLI callers can discover, inspect, and invoke registered patterns with JSON stdin:
 
 ```sh
+strand pattern list
 strand pattern explain task
 printf '{"title":"Implement feature"}\n' | strand weave --pattern task
 ```
+
+Pattern discovery mirrors query discovery (`query list` / `query explain <name>`), while application follows the definition type: queries apply through `list --query` / `ready --query`, and patterns apply through `weave --pattern`.
 
 ### Custom operations (`strand op`)
 

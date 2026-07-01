@@ -10,13 +10,12 @@ Root specs are canonical for shipped behavior:
 
 - [Strand Model](./specs/strand-model.md) — strand records, state lifecycle, burn deletion, JSON attributes, relation semantics, and readiness rules.
 - [CLI Surface](./specs/cli.md) — scriptable command contract for agents, including the thin Go `strand` CLI, JSON socket boundary, and hook-rejected command behavior.
-- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL, runtime library workspace helpers, and lifecycle hook helpers.
-- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, metadata, transports, trusted startup config, query registry, runtime library workspace model, and synchronous lifecycle hooks.
+- [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL, runtime spool workspace helpers, and lifecycle hook helpers.
+- [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, metadata, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
 
 ## Active features
 
 - `library-author-testing-support` — proposed library-author testing helpers and weaver storage support.
-- `cli-definition-parity` — proposed CLI parity for named weaver definitions: query introspection (`query list`/`explain`) aligned with patterns, plus explicit `weave`/`batch` framing.
 
 ## Archived features
 
@@ -29,7 +28,7 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-25__daemon-query-registry` — shipped in-memory daemon query registry managed through REPL/config workflows and consumed by CLI named queries.
 - `26-06-25__go-cli-migration` — shipped native Go `todo` CLI over the daemon JSON Unix socket, with JSON-only machine output and Clojure REPL/config retained for rich workflows.
 - `26-06-25__user-daemon-home` — shipped config-dir daemon worlds, fixed selected-world socket discovery, default daemon init, and connected REPL/stdin UX.
-- `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the runtime library workspace model in the canonical root specs.
+- `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the runtime spool workspace model in the canonical root specs.
 - `26-06-26__runtime-library-workspace` — shipped config-dir Clojure library workspaces with `libs.edn`, approved local roots, daemon-side `atom.libs.alpha/sync!` and `use!`, module-use introspection, and replacement of the plugin-directory public extension API.
 - `26-06-26__runtime-transformation-primitives` — shipped built-in `atom.graph.alpha` / `atom.views.alpha` helpers for set-oriented graph/query composition and daemon-memory read-only views.
 - `26-06-26__skein-rename` — shipped Skein/strand/weaver rename, strand model lifecycle/retention, `strand` CLI, and `skein.*` namespaces.
@@ -39,9 +38,10 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-28__cli-attribute-inputs` — shipped file, stdin, and bulk JSON attribute input sources for `strand add`.
 - `26-06-28__batch-graph-upsert` — shipped transactional trusted Clojure batch graph mutation primitive with local refs, create/update/burn/edge upsert support, weaver events, and `skein.batch.alpha/apply!`.
 - `26-06-29__edge-relation-families` — shipped state lifecycle model, declared acyclic relation families, core supersession, edge predicates, relation-scoped traversal, and annotation catalog.
-- `26-06-29__repo-first-config` — shipped repo-local `.skein` world selection, layered shared/local config, local library overrides, and fail-loud no-global default behavior.
+- `26-06-29__repo-first-config` — shipped repo-local `.skein` world selection, layered shared/local config, local extension overrides, and fail-loud no-global default behavior.
 - `26-06-29__weaver-lifecycle-hooks` — shipped synchronous trusted lifecycle hooks for payload gating, attribute normalization, and pre-commit mutation policy.
 - `26-06-30__mill-router-runtime` — shipped local Go `mill` router/supervisor, mill-routed `strand` commands, Git-root repo bootstrap, XDG runtime/data worlds, startup storage initialization, and connected REPL attachment through mill metadata.
 - `26-06-30__mill-owned-source` — shipped mill-owned source resolution, marker-only config, and repository-canonical default weavers shared across linked Git worktrees.
 - `26-07-01__live-weaver-repl-and-runtime-loader` — shipped direct live weaver nREPL attachment, `skein.runtime.alpha` loader/config helper namespace, friendly weaver discovery, and Neovim/Conjure integration.
 - `26-07-01__library-to-spool` — shipped rename of the runtime approved-code-unit surface from library/libs to spool/spools, including `spools.edn`, `:spools`, `skein.spools.*`, and legacy `libs.edn` rejection.
+- `26-07-01__cli-definition-parity` — shipped read-only CLI/socket query introspection (`query list`/`query explain`), `skein.repl/query-explain`, and explicit query/pattern discovery plus weave/batch framing.

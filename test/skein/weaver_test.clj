@@ -1163,6 +1163,56 @@
                                                    [:edge/in "depends-on" [:= :state "active"]]])))
         (is (= {"blocked" edge-query} (api/queries rt)))))))
 
+(deftest weaver-query-introspection-api-describes-registered-definitions
+  (with-runtime
+    (fn [rt _]
+      (let [open-query [:= :state "active"]
+            owner-query {:params [:owner]
+                         :where [:= [:attr :owner] [:param :owner]]}
+            declared-unused-query {:params [:owner :unused]
+                                   :where [:= [:attr :owner] [:param :owner]]}
+            owners-query {:params [:owners]
+                          :where [:in [:attr :owner] [:param :owners]]}
+            literal-query [:= [:attr :payload] [[:param :literal-value]]]
+            relation-query {:params [:relation :owner]
+                            :where [:edge/out [:param :relation]
+                                    [:and
+                                     [:= [:attr :owner] [:param :owner]]
+                                     [:= :state "active"]]]}]
+        (api/load-queries rt {:open open-query
+                              :mine owner-query
+                              :declared-unused declared-unused-query
+                              :owners owners-query
+                              :literal literal-query
+                              :blocked relation-query})
+        (is (= [{:name "blocked" :params [:relation :owner] :referenced-params [:relation :owner]}
+                {:name "declared-unused" :params [:owner :unused] :referenced-params [:owner]}
+                {:name "literal" :params [] :referenced-params []}
+                {:name "mine" :params [:owner] :referenced-params [:owner]}
+                {:name "open" :params [] :referenced-params []}
+                {:name "owners" :params [:owners] :referenced-params [:owners]}]
+               (api/query-metadata rt)))
+        (is (= (api/query-metadata rt) (api/query-metadata)))
+        (is (= {:name "mine"
+                :params [:owner]
+                :referenced-params [:owner]
+                :where (:where owner-query)
+                :definition owner-query
+                :where-form (pr-str (:where owner-query))
+                :definition-form (pr-str owner-query)
+                :summary "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments."}
+               (api/query-explain rt :mine)))
+        (is (= (api/query-explain rt :blocked) (api/query-explain :blocked)))
+        (try
+          (api/query-explain rt :missing)
+          (is false "expected query explain missing query failure")
+          (catch clojure.lang.ExceptionInfo e
+            (is (= "Query not found" (ex-message e)))
+            (is (= {:query :missing
+                    :canonical-query "missing"
+                    :available ["blocked" "declared-unused" "literal" "mine" "open" "owners"]}
+                   (ex-data e)))))))))
+
 (deftest json-socket-operation-surface-stays-thin
   (with-runtime
     (fn [rt _]
@@ -1402,6 +1452,60 @@
         (is (= ["From socket" "Review: From socket"]
                (mapv #(get % "title") (get-in woven ["result" "created"]))))))))
 
+(deftest json-socket-query-list-and-explain
+  (with-runtime
+    (fn [rt _]
+      (let [owner-query {:params [:owner]
+                         :where [:= [:attr :owner] [:param :owner]]}
+            blocked-query {:params [:relation :owner]
+                           :where [:edge/out [:param :relation]
+                                   [:and
+                                    [:= [:attr :owner] [:param :owner]]
+                                    [:= :state "active"]]]}]
+        (api/load-queries rt {:mine owner-query
+                              :blocked blocked-query})
+        (let [listed (socket-request rt "query-list" {})]
+          (is (true? (get listed "ok")))
+          (is (= [{"name" "blocked" "params" ["relation" "owner"] "referenced-params" ["relation" "owner"]}
+                  {"name" "mine" "params" ["owner"] "referenced-params" ["owner"]}]
+                 (get listed "result"))))
+        (let [explained (socket-request rt "query-explain" {"query" ":blocked"})]
+          (is (true? (get explained "ok")))
+          (is (= {"name" "blocked"
+                  "params" ["relation" "owner"]
+                  "referenced-params" ["relation" "owner"]
+                  "where" ["edge/out" ["param" "relation"]
+                           ["and"
+                            ["=" ["attr" "owner"] ["param" "owner"]]
+                            ["=" "state" "active"]]]
+                  "definition" {"params" ["relation" "owner"]
+                                "where" ["edge/out" ["param" "relation"]
+                                         ["and"
+                                          ["=" ["attr" "owner"] ["param" "owner"]]
+                                          ["=" "state" "active"]]]}
+                  "where-form" (pr-str (:where blocked-query))
+                  "definition-form" (pr-str blocked-query)
+                  "summary" "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments."}
+                 (get explained "result"))))
+        (let [missing (socket-request rt "query-explain" {"query" "missing"})]
+          (is (false? (get missing "ok")))
+          (is (= "domain" (get-in missing ["error" "type"])))
+          (is (= "query/not-found" (get-in missing ["error" "code"])))
+          (is (= "missing" (get-in missing ["error" "details" "canonical-query"])))
+          (is (= ["blocked" "mine"] (get-in missing ["error" "details" "available"]))))
+        (doseq [[op args] [["query-list" {"extra" "nope"}]
+                           ["query-explain" {}]
+                           ["query-explain" {"query" 1}]
+                           ["query-explain" {"query" "mine" "extra" "nope"}]]]
+          (let [bad (socket-request rt op args)]
+            (is (false? (get bad "ok")) (str op " " args))
+            (is (= "protocol/malformed-request" (get-in bad ["error" "code"])))))
+        (let [blank (socket-request rt "query-explain" {"query" "  :  "})]
+          (is (false? (get blank "ok")))
+          (is (= "domain" (get-in blank ["error" "type"])))
+          (is (= "domain/error" (get-in blank ["error" "code"])))
+          (is (= "Query names must not be blank" (get-in blank ["error" "message"]))))))))
+
 (deftest json-socket-op-dispatch
   (with-runtime
     (fn [rt _]
@@ -1453,10 +1557,10 @@
     (fn [rt _]
       (api/init rt)
       (reset! hook-contexts [])
-      (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
       (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
       (api/register-query rt 'all [:= :state "active"])
       (let [strand-id (get-in (socket-request rt "add" {"title" "Exempt target" "attributes" {}}) ["result" "id"])]
+        (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
         (reset! hook-contexts [])
         (doseq [[op args] [["status" {}]
                            ["show" {"id" strand-id}]
@@ -1465,7 +1569,9 @@
                            ["list-query" {"query" "all" "params" {}}]
                            ["ready-query" {"query" "all" "params" {}}]
                            ["pattern-list" {}]
-                           ["pattern-explain" {"pattern" "dev-task"}]]]
+                           ["pattern-explain" {"pattern" "dev-task"}]
+                           ["query-list" {}]
+                           ["query-explain" {"query" "all"}]]]
           (is (true? (get (socket-request rt op args) "ok")) op))
         (is (empty? @hook-contexts))
         (let [bad (socket-request rt "op" {"name" "custom" "args" [1]})]

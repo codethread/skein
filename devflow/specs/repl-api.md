@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-003`
 **Status:** Implemented
-**Last Updated:** 2026-06-30
+**Last Updated:** 2026-07-01
 **Code:** `src/skein/repl.clj`, `src/skein/batch/alpha.clj`
 
 ## SPEC-003.P1 Purpose
@@ -25,6 +25,7 @@ burn-by-ids!
 defquery!
 load-queries!
 queries
+query-explain
 query
 strands
 ready
@@ -51,7 +52,7 @@ weave!
 - **SPEC-003.C8b:** `burn!` and `burn-by-ids!` physically delete strands and incident edges through weaver burn primitives. Missing ids fail loudly.
 - **SPEC-003.C9:** `defquery!` registers a named query expression or parameterized query map in the active weaver's in-memory query registry.
 - **SPEC-003.C10:** `load-queries!` reads one EDN map of query names to query definitions and merges it into the active weaver's in-memory query registry.
-- **SPEC-003.C11:** `queries` returns the active weaver's in-memory query registry.
+- **SPEC-003.C11:** `queries` returns the active weaver's in-memory query registry. `query-explain` accepts a simple symbol, keyword, or string query name, resolves it against the active weaver's in-memory query registry, and returns serializable caller guidance with the same core fields as CLI `query explain`: canonical name, declared params, referenced params, the effective where expression, the normalized definition, exact EDN form strings, and a short invocation summary. Missing names fail loudly with the existing `query/not-found` behavior including available names. Explicit connected-client workflows route `query-explain` through the fixed-form client operation table.
 - **SPEC-003.C12:** Query registry contents last only for the active weaver lifetime; reload trusted config or call `defquery!` / `load-queries!` again after weaver restart.
 - **SPEC-003.C13:** `query` returns strands matching an ad hoc query definition or weaver-registered query name, with optional runtime parameters.
 - **SPEC-003.C13a:** Query predicates include direct edge-existence forms `[:edge/out relation target-query]` and `[:edge/in relation source-query]`. `relation` is a valid relation-name string or a `[:param :name]` reference resolving to one. Endpoint queries are strand-local and fail loudly if they contain nested edge predicates.

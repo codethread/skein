@@ -27,7 +27,7 @@ func TestForwardStrandOperationsThroughWeaverSocket(t *testing.T) {
 	writeWeaverMetadata(t, world, os.Getpid(), "weaver-forward")
 
 	s := server{children: map[string]*weaverChild{}}
-	for _, op := range []string{"add", "list", "ready", "pattern-list", "op", "subgraph"} {
+	for _, op := range []string{"add", "list", "ready", "pattern-list", "query-list", "query-explain", "op", "subgraph"} {
 		result, err := s.forwardToWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg}, op, map[string]any{"name": "help"})
 		if err != nil {
 			t.Fatalf("forward %s: %v", op, err)
@@ -36,7 +36,7 @@ func TestForwardStrandOperationsThroughWeaverSocket(t *testing.T) {
 			t.Fatalf("unexpected result for %s: %#v", op, result)
 		}
 	}
-	if strings.Join(received, ",") != "add,list,ready,pattern-list,op,subgraph" {
+	if strings.Join(received, ",") != "add,list,ready,pattern-list,query-list,query-explain,op,subgraph" {
 		t.Fatalf("received operations %v", received)
 	}
 }

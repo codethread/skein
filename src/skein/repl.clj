@@ -95,6 +95,7 @@
     :register-query (apply api/register-query rt args)
     :load-queries (apply api/load-queries rt args)
     :queries (api/queries rt)
+    :query-explain (apply api/query-explain rt args)
     :list (if (seq args) (apply api/list rt args) (api/list rt))
     :list-query (apply api/list-query rt args)
     :ready (if (seq args) (apply api/ready rt args) (api/ready rt))
@@ -226,6 +227,14 @@
   "Return the active weaver's in-memory named query registry."
   []
   (daemon :queries))
+
+(defn query-explain
+  "Return caller guidance for the registered query `query-name`.
+
+  Accepts a simple symbol, keyword, or string name. Missing queries fail loudly
+  with the weaver's query-not-found data, including available query names."
+  [query-name]
+  (daemon :query-explain query-name))
 
 (defn- named-query? [query-or-def]
   (or (symbol? query-or-def) (keyword? query-or-def)))
