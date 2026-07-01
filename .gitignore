@@ -2,5 +2,6 @@
 *.sqlite
 *.sqlite-*
 *.sqlite.repl*
+.nrepl-port
 
 cli/bin/
