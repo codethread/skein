@@ -117,3 +117,4 @@ sqlite3 smoke-cli.sqlite.config-dir/data/skein.sqlite 'select from_strand_id, to
 - Fail loudly on invalid CLI input instead of silently falling back.
 - Keep public CLI machine output JSON-only; EDN belongs to Clojure REPL/config/dev workflows.
 - When changing shipped behavior, update the relevant root spec in `devflow/specs/`.
+- Every Clojure `ns` gets a docstring (string right after the ns symbol) describing its purpose, for `clojure.repl/doc` and editor/cljdoc discovery.
