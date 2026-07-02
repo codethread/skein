@@ -3,7 +3,7 @@
 **Document ID:** `SPEC-001`
 **Status:** Implemented
 **Last Updated:** 2026-07-02
-**Code:** `src/skein/db.clj`
+**Code:** `src/skein/core/db.clj`
 
 ## SPEC-001.P1 Purpose
 
