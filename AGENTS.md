@@ -13,6 +13,11 @@ Canonical shipped contracts live in root specs:
 - [REPL API](./devflow/specs/repl-api.md)
 - [Weaver Runtime](./devflow/specs/daemon-runtime.md)
 
+Userland workflow spool contracts live beside their code:
+
+- [Workflow Engine](./src/skein/spools/workflow.md)
+- [Devflow Lifecycle](./src/skein/spools/devflow.md)
+
 ## Project commands
 
 Use Homebrew OpenJDK when Java is not on the default PATH:

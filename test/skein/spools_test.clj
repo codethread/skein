@@ -1,28 +1,19 @@
 (ns skein.spools-test
+  "Tests for runtime spool workspace surfaces: approved spools.edn and
+  spools.local.edn reading, sync!, layered use!, reload!, event helper routing,
+  connected-client calls, daemon init, and the ephemeral helper spool."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [skein.client :as client]
+            [skein.db-test :as db-test]
             [skein.events.alpha :as events]
             [skein.graph.alpha :as graph]
             [skein.spools.ephemeral :as ephemeral]
+            [skein.spools.test-support :refer [temp-config-dir test-world with-runtime]]
+            [skein.repl :as repl]
             [skein.runtime.alpha :as runtime-alpha]
-            [skein.weaver.config :as daemon-config]
             [skein.weaver.api :as api]
-            [skein.client :as client]
-            [skein.weaver.runtime :as runtime]
-            [skein.db-test :as db-test]
-            [skein.repl :as repl]))
-(defn test-world [config-dir]
-  (daemon-config/world config-dir
-                       (str config-dir "/state")
-                       (str config-dir "/data")))
-
-
-(defn- temp-config-dir []
-  (doto (.toFile (java.nio.file.Files/createTempDirectory
-                  (.toPath (io/file "/tmp"))
-                  "skein-spools-config"
-                  (make-array java.nio.file.attribute.FileAttribute 0)))
-    (.mkdirs)))
+            [skein.weaver.runtime :as runtime]))
 
 (defn- delete-recursive [file]
   (doseq [child (reverse (file-seq file))]
@@ -43,21 +34,6 @@
        rest
        (map first)
        set))
-
-(defn- with-runtime [f]
-  (let [db-file (db-test/temp-db-file)
-        config-dir (temp-config-dir)]
-    (try
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
-        (try
-          (f rt config-dir)
-          (finally
-            (runtime/stop! rt))))
-      (finally
-        (db-test/delete-sqlite-family! db-file)
-        ;; Runtime-added local roots are retained for the process lifetime by tools.deps.
-        ;; Keep temp config dirs so later add-libs calls do not see stale basis entries.
-        nil))))
 
 (defn- write-spools! [config-dir content]
   (spit (io/file config-dir "spools.edn") content))
