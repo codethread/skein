@@ -226,6 +226,21 @@ start! ──▶ next-steps / next-step ──▶ complete! / choose! ──▶ 
   dispatches to `complete!` with pass-through `:notes`/`:attributes`/`:step`/`:by`.
   Supplying `:choice` on a step, or omitting it on a checkpoint, fails loudly.
 
+### Awaiting attention
+
+`await!` blocks in-process until a run is done or needs its coordinator:
+
+```clojure
+(workflow/await! "feat-x" {:timeout-secs 1800 :stall-predicate :treadle})
+```
+
+It returns `{:reason :done|:checkpoint|:gate|:stalled|:timeout :ready [...]
+:done boolean :detail ...}`. Checkpoints of any kind wake the caller, as does
+a ready gate that nothing is fulfilling. Subagent stall detection is pluggable
+through `register-stall-predicate!` so this namespace stays free of any
+executor's vocabulary: the shipped default never stalls, and adapters such as
+the treadle register their own predicate at install time.
+
 ### Procedure join auto-close
 
 A `call` expands to its inner steps plus a `procedure`-role **join** step that
@@ -646,12 +661,3 @@ declarative revise loop.
 - [`skein.spools.treadle`](../../../spools/shuttle/treadle.md) — shipped
   local-root adapter that binds workflow `:subagent` gates to shuttle runs.
 
-## Coordination await
-
-`await!` blocks in-process until a workflow run is done or needs coordinator attention:
-
-```clojure
-(skein.spools.workflow/await! "feat-x" {:timeout-secs 1800 :stall-predicate :treadle})
-```
-
-It returns `{:reason :done|:checkpoint|:gate|:stalled|:timeout :ready [...] :done boolean :detail ...}`. Checkpoints of any kind wake the caller. Subagent stall detection is pluggable through `register-stall-predicate!`; the shipped default never stalls, and adapters such as treadle register vocabulary-specific predicates at install time.

@@ -50,12 +50,13 @@ Default parse strategies are `:raw`, `:claude-json`, and `:pi-json`. The `sh` ha
 |---|---|
 | `(spawn-run! opts)` / `strand op agent spawn ...` | Create one run strand. Required: `:harness`, `:prompt`. Optional: `:title`, `:depends-on`, `:parent`, `:spawned-by`, `:cwd`, `:max-attempts`, `:attrs`. Returns immediately. |
 | `(scan!)` | Spawn every ready pending run not already claimed in this weaver lifetime. Usually called by events and install/reconcile. |
-| `(runs)` / `strand op agent ps` | Return summaries of shuttle runs; `{:active true}` or `--active` filters active runs. |
+| `(runs)` / `strand op agent ps` | Return summaries of shuttle runs; `{:active true}` or `--active` filters active runs, `--for <strand-id>` filters by delegated target. Summaries carry `:for` (the delegated target: `treadle/gate` when present, else a non-`spawned-by` `parent-of` source) with spawning provenance separately visible as `:spawned-by`. |
 | `(await-runs ids opts)` / `strand op agent await ...` | Block until all runs are terminal or timeout. |
+| `strand op agent logs <run-id> [--tail n]` | Read the run's captured `.out`/`.err` harness output from the weaver side; fails loudly when the disposable state files are gone. |
 | `(kill! id)` / `strand op agent kill <id>` | Destroy a live harness process when known and mark the run failed. |
 | `(reconcile!)` | On install, recover active running runs left by a previous weaver lifetime. |
 
-Successful runs set `shuttle/phase "done"`, record `shuttle/result`, and close the run strand. Failed runs remain `active` with `shuttle/phase "failed"` and `shuttle/error`, so dependents stay blocked loudly. Exhausted crash-recovery runs remain active with `shuttle/phase "exhausted"`.
+Successful runs set `shuttle/phase "done"`, record `shuttle/result`, and close the run strand. Failed runs remain `active` with `shuttle/phase "failed"` and `shuttle/error`, so dependents stay blocked loudly. Exhausted crash-recovery runs remain active with `shuttle/phase "exhausted"`. `install!` registers the `agent-failures` named query so failed/exhausted runs are one `strand list --query agent-failures` away instead of requiring the right strand id up front.
 
 Readiness is the only scheduling primitive: a pending run with no active `depends-on` blockers can spawn; a pending run with active blockers waits until graph mutations make it ready.
 
@@ -67,6 +68,7 @@ Readiness is the only scheduling primitive: a pending run with no active `depend
 | `(notes target-id opts)` / `strand op agent notes ...` | Return notes in creation order, optionally filtered by round. |
 | `(council! topic opts)` / `strand op agent council ...` | Spawn multiple member runs plus a synthesizer run sharing one council strand as memory. |
 | `(review! target-id opts)` / `strand op agent review <target-id> ...` | Spawn independent read-only reviewers. Reviewers do not see each other; each appends findings as notes on the target. Optional synthesis is off by default. |
+| `(set-default-review-contract! text)` | Set the workspace-default reviewer contract text (weaver-lifetime, re-set by startup config like harness aliases) so `review!`/`agent review` consume one authoritative policy value; explicit `:contract`/`--contract` still overrides, `nil` restores the generic default. |
 
 Notes carry `shuttle/note-for`, `shuttle/note`, `shuttle/at`, and optional `shuttle/note-by` / `shuttle/round` attributes.
 
@@ -107,10 +109,3 @@ Run parents are connected to children with `parent-of` edges. Notes use the unde
 - [Runtime spool workspace helpers](../../devflow/specs/repl-api.md#spec-003p5-runtime-spool-workspace-helpers) — approved local-root loading contract.
 - [Weaver Runtime](../../devflow/specs/daemon-runtime.md) — event handlers, CLI operation registry, JSON socket transport, and runtime reload behavior.
 
-## Coordination attention helpers
-
-`strand op agent ps --for <strand-id>` filters run summaries by their delegated target. Summaries include `:for` as `treadle/gate` when present, else a non-`spawned-by` `parent-of` source; provenance remains separately visible as `:spawned-by`.
-
-`strand op agent logs <run-id> [--tail n]` reads the run's `shuttle/log` `.out` file and `.err` sibling from the weaver side, failing loudly if disposable state files are gone.
-
-`install!` registers the `agent-failures` named query for active runs whose `shuttle/phase` is `failed` or `exhausted`.

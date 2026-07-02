@@ -88,14 +88,14 @@ If a gate is closed or routed away while its shuttle run is in flight, the compl
 
 Crash-window caveat: spawn idempotency re-adopts only live prior runs. A run that failed before the weaver crash stamped its gate is orphaned (a fresh run spawns beside it), never re-adopted — the failed run stays visible for audit.
 
-## See also
-
-- [`skein.spools.workflow`](../../src/skein/spools/workflow.md) — workflow gates and runtime API.
-- [`skein.spools.shuttle`](./README.md) — shuttle run lifecycle and harness registry.
-- [`test/skein/treadle_test.clj`](../../test/skein/treadle_test.clj) — executable contract tests.
-
 ## Coordination attention
 
 `treadle/install!` registers workflow stall predicate `:treadle`. It reports a ready subagent gate as stalled when the gate has `treadle/error` or its stamped `treadle/run` is in shuttle phase `failed`/`exhausted`; no wall-clock hang policy is applied.
 
 The spool also registers `stalled-gates` and `blocked-deliveries` named queries for coordinator inspection.
+
+## See also
+
+- [`skein.spools.workflow`](../../src/skein/spools/workflow.md) — workflow gates and runtime API.
+- [`skein.spools.shuttle`](./README.md) — shuttle run lifecycle and harness registry.
+- [`test/skein/treadle_test.clj`](../../test/skein/treadle_test.clj) — executable contract tests.
