@@ -104,3 +104,11 @@ Run parents are connected to children with `parent-of` edges. Notes use the unde
 - `test/skein/shuttle_test.clj` — executable coverage for harnesses, readiness, failures, notes, reconciliation, ops, and councils.
 - [Runtime spool workspace helpers](../../devflow/specs/repl-api.md#spec-003p5-runtime-spool-workspace-helpers) — approved local-root loading contract.
 - [Weaver Runtime](../../devflow/specs/daemon-runtime.md) — event handlers, CLI operation registry, JSON socket transport, and runtime reload behavior.
+
+## Coordination attention helpers
+
+`strand op agent ps --for <strand-id>` filters run summaries by their delegated target. Summaries include `:for` as `treadle/gate` when present, else a non-`spawned-by` `parent-of` source; provenance remains separately visible as `:spawned-by`.
+
+`strand op agent logs <run-id> [--tail n]` reads the run's `shuttle/log` `.out` file and `.err` sibling from the weaver side, failing loudly if disposable state files are gone.
+
+`install!` registers the `agent-failures` named query for active runs whose `shuttle/phase` is `failed` or `exhausted`.

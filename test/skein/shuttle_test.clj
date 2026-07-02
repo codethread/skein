@@ -133,7 +133,19 @@
         (is (= (:id parent)
                (get-in (api/show rt (:id child)) [:attributes :shuttle/spawned-by])))
         (is (some #(and (= (:id child) (:to_strand_id %)) (= "parent-of" (:edge_type %)))
-                  (:edges (api/subgraph rt [(:id parent)]))))))))
+                  (:edges (api/subgraph rt [(:id parent)]))))
+        (is (= (:id parent) (:spawned-by (shuttle/run-summary (api/show rt (:id child))))))
+        (is (nil? (:for (shuttle/run-summary (api/show rt (:id child))))))))))
+
+(deftest run-summary-reports-treadle-gate-provenance
+  (with-shuttle
+    (fn [rt]
+      (let [gate (api/add rt {:title "gate"})
+            run (shuttle/spawn-run! {:harness :sh
+                                     :prompt "echo delegated"
+                                     :attrs {"treadle/gate" (:id gate)}})]
+        (is (= (:id gate) (:for (shuttle/run-summary (api/show rt (:id run))))))
+        (await-phase (:id run) #{"done"} 10000)))))
 
 (deftest notes-are-append-only-memory-with-rounds
   (with-shuttle
@@ -261,6 +273,15 @@
                               (shuttle/agent-op {:op/argv ["spawn" "--prompt" "x"]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer"
                               (shuttle/agent-op {:op/argv ["await" "id" "--timeout-secs" "soon"]})))))))
+
+(deftest agent-logs-read-output-and-error-files
+  (with-shuttle
+    (fn [_]
+      (let [spawned (shuttle/agent-op {:op/argv ["spawn" "--harness" "sh" "--prompt" "printf 'a\\nb\\n'; printf 'e\\n' >&2"]})]
+        (shuttle/agent-op {:op/argv ["await" (:id spawned) "--timeout-secs" "10"]})
+        (let [logs (shuttle/agent-op {:op/argv ["logs" (:id spawned) "--tail" "1"]})]
+          (is (= "b" (get-in logs [:out :text])))
+          (is (= "e" (get-in logs [:err :text]))))))))
 
 (deftest council-wires-members-and-synthesizer
   (with-shuttle

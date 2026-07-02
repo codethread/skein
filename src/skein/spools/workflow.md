@@ -645,3 +645,13 @@ declarative revise loop.
 - [README.md](./README.md) — shipped spools index and loading notes.
 - [`skein.spools.treadle`](../../../spools/shuttle/treadle.md) — shipped
   local-root adapter that binds workflow `:subagent` gates to shuttle runs.
+
+## Coordination await
+
+`await!` blocks in-process until a workflow run is done or needs coordinator attention:
+
+```clojure
+(skein.spools.workflow/await! "feat-x" {:timeout-secs 1800 :stall-predicate :treadle})
+```
+
+It returns `{:reason :done|:checkpoint|:gate|:stalled|:timeout :ready [...] :done boolean :detail ...}`. Checkpoints of any kind wake the caller. Subagent stall detection is pluggable through `register-stall-predicate!`; the shipped default never stalls, and adapters such as treadle register vocabulary-specific predicates at install time.

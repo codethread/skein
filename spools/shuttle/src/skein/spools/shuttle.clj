@@ -45,6 +45,11 @@
   [strand k]
   (get-in strand [:attributes (keyword "shuttle" k)]))
 
+(defn- attr
+  "Read a normalized strand attribute by exact keyword."
+  [strand k]
+  (get-in strand [:attributes k]))
+
 (defn- now [] (str (Instant/now)))
 
 ;; ---------------------------------------------------------------------------
@@ -470,6 +475,25 @@
         (api/update (rt) parent-id {:edges [{:type "parent-of" :to (:id run)}]}))
       run)))
 
+(defn- parent-of-sources
+  "Return strand ids with a parent-of edge to `run-id`."
+  [run-id]
+  (->> (api/list (rt))
+       (mapcat (fn [strand]
+                 (for [edge (:edges (api/subgraph (rt) [(:id strand)]))
+                       :when (and (= "parent-of" (:edge_type edge))
+                                  (= run-id (:to_strand_id edge)))]
+                   (:from_strand_id edge))))
+       distinct
+       vec))
+
+(defn- run-for-target
+  "Return the delegated target for `run`, excluding spawned-by provenance."
+  [run]
+  (or (attr run :treadle/gate)
+      (let [spawned-by (sattr run "spawned-by")]
+        (first (remove #(= spawned-by %) (parent-of-sources (:id run)))))))
+
 (defn run-summary
   "Project a run strand into the compact summary shape the op surface returns."
   [run]
@@ -478,6 +502,7 @@
            :state (:state run)
            :phase (sattr run "phase")
            :harness (sattr run "harness")}
+    (run-for-target run) (assoc :for (run-for-target run))
     (sattr run "result") (assoc :result (sattr run "result"))
     (sattr run "error") (assoc :error (sattr run "error"))
     (sattr run "session-id") (assoc :session-id (sattr run "session-id"))
@@ -485,13 +510,16 @@
     (sattr run "attempt") (assoc :attempt (sattr run "attempt"))))
 
 (defn runs
-  "Return summaries of shuttle runs; `{:active true}` filters to active only."
+  "Return summaries of shuttle runs; opts may filter to `:active` or `:for`."
   ([] (runs {}))
-  ([{:keys [active]}]
-   (mapv run-summary
-         (api/list (rt)
-                   (if active [:and [:= :state "active"] run-query] run-query)
-                   {}))))
+  ([{:keys [active for]}]
+   (let [summaries (mapv run-summary
+                         (api/list (rt)
+                                   (if active [:and [:= :state "active"] run-query] run-query)
+                                   {}))]
+     (if for
+       (filterv #(= for (:for %)) summaries)
+       summaries))))
 
 (def ^:private terminal-phases #{"done" "failed" "exhausted"})
 
@@ -749,12 +777,33 @@
              {:round (parse-int! "--round" round)}
              {}))))
 
+(defn- op-logs [argv]
+  (let [{:keys [positional flags]} (parse-argv argv {"--tail" :single})
+        [run-id] positional]
+    (when-not (= 1 (count positional))
+      (fail! "logs requires <run-id>" {:got positional}))
+    (let [run (or (api/show (rt) run-id) (fail! "Run not found" {:id run-id}))
+          log-path (or (sattr run "log") (fail! "Run has no shuttle/log" {:id run-id}))
+          tail (some->> (get flags "--tail") (parse-int! "--tail"))
+          read-file (fn [path]
+                      (let [f (java.io.File. path)]
+                        (when-not (.exists f)
+                          (fail! "Run log file missing" {:id run-id :path path}))
+                        (let [lines (str/split-lines (slurp f))]
+                          (if tail (str/join "\n" (take-last tail lines)) (str/join "\n" lines)))))]
+      {:id run-id
+       :out {:path log-path :text (read-file log-path)}
+       :err {:path (str/replace log-path #"\.out$" ".err")
+             :text (read-file (str/replace log-path #"\.out$" ".err"))}})))
+
 (defn- op-ps [argv]
-  (let [active? (boolean (some #{"--active"} argv))
-        unexpected (vec (remove #{"--active"} argv))]
+  (let [{:keys [positional flags]} (parse-argv argv {"--for" :single})
+        active? (boolean (some #{"--active"} positional))
+        unexpected (vec (remove #{"--active"} positional))]
     (when (seq unexpected)
-      (fail! "ps takes only --active" {:unexpected unexpected}))
-    (runs {:active active?})))
+      (fail! "ps takes only --active and --for" {:unexpected unexpected}))
+    (runs (cond-> {:active active?}
+            (get flags "--for") (assoc :for (get flags "--for"))))))
 
 (defn- op-council [argv]
   (let [{:keys [positional flags]}
@@ -784,11 +833,12 @@
                  (kill! (first args)))
       "note" (op-note args)
       "notes" (op-notes args)
+      "logs" (op-logs args)
       "harnesses" (harnesses)
       "council" (op-council args)
       (fail! "Unknown agent subcommand"
              {:subcommand sub
-              :available ["about" "spawn" "ps" "await" "kill" "note" "notes" "harnesses" "council"]}))))
+              :available ["about" "spawn" "ps" "await" "kill" "note" "notes" "logs" "harnesses" "council"]}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Install
@@ -807,6 +857,10 @@
     (api/register-op! runtime 'agent
                       "Spawn and manage coding-agent runs; `strand op agent about` is the manual"
                       'skein.spools.shuttle/agent-op)
+    (api/register-query! 'agent-failures
+                         [:and [:= :state "active"]
+                          [:= [:attr "shuttle/run"] "true"]
+                          [:in [:attr "shuttle/phase"] ["failed" "exhausted"]]])
     (let [recovered (reconcile!)]
       {:installed true
        :namespace 'skein.spools.shuttle

@@ -125,3 +125,7 @@ world with:
 ```sh
 printf "(do (require '[skein.runtime.alpha :as runtime-alpha]) (runtime-alpha/reload!))\n" | strand --workspace "$world" weaver repl --stdin
 ```
+
+## Coordination attention surface
+
+Use `strand op flow-await <workflow-run-id> [--timeout-secs n]` to block until a workflow is done, reaches any checkpoint, reaches an unattended gate, or a treadle-managed subagent gate stalls. Shuttle run records are excluded from `strand ready --query work`; inspect failed delegation records with `strand list --query agent-failures`, `strand ready --query stalled-gates`, and `strand op agent logs <run-id> --tail 80`.

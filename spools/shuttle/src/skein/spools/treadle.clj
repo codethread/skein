@@ -172,6 +172,21 @@
   [_event]
   (scan!))
 
+(defn gate-stalled?
+  "Return durable stall detail for a ready subagent gate view, or nil.
+
+  A gate is stalled when spawn failed onto `treadle/error`, or its stamped run is
+  in shuttle phase `failed`/`exhausted`. No wall-clock hang policy is applied."
+  [gate-view]
+  (let [gate (api/show (rt) (:id gate-view))
+        run-id (attr gate :treadle/run)
+        run (when run-id (api/show (rt) run-id))]
+    (cond
+      (attr gate :treadle/error) {:gate (:id gate) :error (attr gate :treadle/error)}
+      (contains? #{"failed" "exhausted"} (attr run :shuttle/phase))
+      {:gate (:id gate) :run run-id :phase (attr run :shuttle/phase)
+       :error (attr run :shuttle/error)})))
+
 (defn install!
   "Install the treadle event handler and perform an initial scan.
 
@@ -185,6 +200,15 @@
     (api/register-event-handler! runtime :treadle/engine event-types
                                  'skein.spools.treadle/on-event
                                  {:spool "treadle"})
+    (workflow/register-stall-predicate! :treadle gate-stalled?)
+    (api/register-query! 'stalled-gates
+                         [:and [:= :state "active"]
+                          [:= [:attr "workflow/gate"] "subagent"]
+                          [:exists [:attr "treadle/error"]]])
+    (api/register-query! 'blocked-deliveries
+                         [:and [:= :state "closed"]
+                          [:exists [:attr "treadle/delivery-blocked"]]
+                          [:missing [:attr "treadle/delivered"]]])
     (scan!)
     {:installed true
      :namespace 'skein.spools.treadle}))

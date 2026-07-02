@@ -211,3 +211,14 @@ strand op agent logs <run-id> --tail 80
 - **RFC-011.OUT1:** Open for review. If accepted, implement REC2/REC3
   (queries + ps enrichment) first — pure reads, immediately useful — then
   REC1's `await!` with the treadle-registered stall predicate, then REC4/5.
+- **RFC-011.OUT2 (2026-07-02):** Accepted and implemented via the delegated
+  pipeline. `workflow/await!` shipped with the pluggable stall-predicate
+  registry (treadle registers the real predicate at install; workflow stays
+  vocabulary-free), `agent-failures`/`stalled-gates`/`blocked-deliveries`
+  named queries register at spool install, `run-summary` gains `:for`
+  (strictly the delegated target), `agent ps --for` and `agent logs`
+  shipped, the repo `work` query excludes shuttle run records, and
+  `flow-await` wraps it all as a repo op. Q1 answered: await returns on any
+  ready checkpoint. One scoping note from review: `stalled-gates` covers
+  spawn-side `treadle/error` only — failed/exhausted-run stalls are detected
+  by the stall predicate (a query cannot join gate to run phase).

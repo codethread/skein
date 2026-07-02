@@ -51,6 +51,8 @@
 (s/def ::workflow (s/keys :req-un [::name ::steps]
                          :opt-un [::params ::attributes ::state ::phase]))
 
+(declare stall-predicate-registry)
+
 (defn- fail! [message data]
   (throw (ex-info message data)))
 
@@ -1184,6 +1186,59 @@
        (burn! (:id root)))
      digest)))
 
+(defn- attention
+  "Return the current attention state for workflow run-id."
+  [run-id stall-predicate]
+  (let [ready (next-steps run-id)
+        done (done? run-id)]
+    (cond
+      done {:reason :done :ready ready :done true}
+      (seq (filter #(= "checkpoint" (:kind %)) ready))
+      {:reason :checkpoint :ready ready :done false
+       :detail (first (filter #(= "checkpoint" (:kind %)) ready))}
+      (some (fn [step]
+              (when (:gate step)
+                (or (when (not= "subagent" (:gate step)) {:gate step})
+                    (when-let [detail (stall-predicate step)] {:gate step :stall detail}))))
+            ready)
+      {:reason (if-let [stalled (some (fn [step]
+                                        (when (and (:gate step) (= "subagent" (:gate step)))
+                                          (when-let [detail (stall-predicate step)]
+                                            {:gate step :stall detail})))
+                                      ready)]
+                 :stalled
+                 :gate)
+       :ready ready
+       :done false
+       :detail (or (some (fn [step]
+                           (when (and (:gate step) (= "subagent" (:gate step)))
+                             (when-let [detail (stall-predicate step)]
+                               {:gate step :stall detail})))
+                         ready)
+                   (first (filter :gate ready)))}
+      :else {:reason :waiting :ready ready :done false})))
+
+(defn await!
+  "Block until workflow run-id is done, at a checkpoint, at an unattended gate,
+  stalled according to a registered predicate, or timed out.
+
+  opts: `:timeout-secs` (default 1800) and `:stall-predicate` (default
+  `:default`). Polls every 250ms, matching the shuttle await surface."
+  ([run-id]
+   (await! run-id {}))
+  ([run-id {:keys [timeout-secs stall-predicate]
+            :or {timeout-secs 1800 stall-predicate :default}}]
+   (let [pred (or (get @stall-predicate-registry stall-predicate)
+                  (fail! "Unknown workflow stall predicate" {:stall-predicate stall-predicate
+                                                              :available (sort (keys @stall-predicate-registry))}))
+         deadline (+ (System/currentTimeMillis) (* 1000 (long timeout-secs)))]
+     (loop []
+       (let [state (attention run-id pred)]
+         (cond
+           (not= :waiting (:reason state)) state
+           (>= (System/currentTimeMillis) deadline) (assoc state :reason :timeout)
+           :else (do (Thread/sleep 250) (recur))))))))
+
 (defn- run-result
   "Return the run-mutation result shape: the run's ready step views plus its
   done-ness, in one map. Every run-mutating op (`start!`, `complete!`,
@@ -1418,6 +1473,13 @@
   workflow-name-registry
   (atom {}))
 
+(defonce ^{:private true
+           :doc "Weaver-lifetime map of named stall predicates. Predicates receive
+  a ready gate step view and return truthy detail when coordinator attention is
+  needed. The default predicate never reports a stall."}
+  stall-predicate-registry
+  (atom {:default (constantly nil)}))
+
 (defn register-workflow!
   "Register a workflow constructor under a stable keyword `name`.
 
@@ -1434,6 +1496,20 @@
     (fail! "Workflow registry constructor must be a fully qualified symbol"
            {:name name :constructor constructor-sym}))
   (swap! workflow-name-registry assoc name constructor-sym)
+  name)
+
+(defn register-stall-predicate!
+  "Register a named workflow-await stall predicate.
+
+  Predicates receive a ready gate step view and return nil/false when the gate is
+  still being fulfilled, or truthy detail when coordinator attention is needed.
+  Registration is weaver-lifetime runtime state, mirroring `register-workflow!`."
+  [name pred]
+  (when-not (keyword? name)
+    (fail! "Stall predicate name must be a keyword" {:name name}))
+  (when-not (ifn? pred)
+    (fail! "Stall predicate must be invokable" {:name name}))
+  (swap! stall-predicate-registry assoc name pred)
   name)
 
 (defn workflow-definition

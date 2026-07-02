@@ -141,9 +141,11 @@
            [:= [:attr "workflow/run-id"] [:param :feature]]]})
 
 (def work-query
-  "Query for active actionable work, excluding workflow plumbing strands."
+  "Query for active actionable work, excluding workflow plumbing and shuttle run records."
   [:and
    [:= :state "active"]
+   [:or [:missing [:attr "shuttle/run"]]
+    [:not [:= [:attr "shuttle/run"] "true"]]]
    [:or
     [:missing [:attr "workflow/role"]]
     [:not [:in [:attr "workflow/role"] ["molecule" "digest" "procedure"]]]]])
@@ -492,7 +494,8 @@
          {:name "devflow-status" :usage "strand op devflow-status <feature>"}
          {:name "workflow-runs" :usage "strand op workflow-runs [family]"}
          {:name "current-dags" :usage "strand op current-dags"}
-         {:name "agent-delegate" :usage "strand op agent-delegate <task-id> [--harness <name>] [--prompt <extra>] [--cwd <dir>] [--max-attempts <n>] [--spawned-by <run-id>]"}]
+         {:name "agent-delegate" :usage "strand op agent-delegate <task-id> [--harness <name>] [--prompt <extra>] [--cwd <dir>] [--max-attempts <n>] [--spawned-by <run-id>]"}
+         {:name "flow-await" :usage "strand op flow-await <workflow-run-id> [--timeout-secs <n>]"}]
    :patterns [{:name "agent-plan"
                :purpose "Lightweight CLI-created plan/task DAG for general agent work outside the devflow lifecycle."}]
    :queries [{:name "feature-active"
@@ -632,6 +635,20 @@
                            max-attempts (assoc :max-attempts max-attempts)
                            (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by")))))))
 
+(defn flow-await-op
+  "Block until a workflow run is done or needs coordinator attention.
+
+  Usage: `strand op flow-await <workflow-run-id> [--timeout-secs <n>]`. Uses the
+  treadle stall predicate registered at spool install time."
+  [ctx]
+  (let [usage "strand op flow-await <workflow-run-id> [--timeout-secs <n>]"
+        {:keys [positional flags]} (parse-op-argv "flow-await" (:op/argv ctx)
+                                                  {"--timeout-secs" :single})
+        [run-id] (require-argv-range! "flow-await" positional 1 1 usage)]
+    (workflow/await! run-id (cond-> {:stall-predicate :treadle}
+                              (get flags "--timeout-secs")
+                              (assoc :timeout-secs (parse-long-flag! "--timeout-secs" (get flags "--timeout-secs")))))))
+
 ;; ---------------------------------------------------------------------------
 ;; install!
 ;; ---------------------------------------------------------------------------
@@ -740,4 +757,8 @@
          (api/register-op!
           'agent-delegate
           "Delegate an active task strand to a shuttle agent run"
-          'config/agent-delegate-op)]})
+          'config/agent-delegate-op)
+         (api/register-op!
+          'flow-await
+          "Block until a workflow run needs coordinator attention"
+          'config/flow-await-op)]})

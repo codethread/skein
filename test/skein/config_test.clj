@@ -245,11 +245,13 @@
                             ["Digest" "digest"]
                             ["Step" "step"]
                             ["Checkpoint" "checkpoint"]
+                            ["Run record" nil]
                             ["Plain task" nil]]]
         (api/add rt {:title title
                      :state "active"
                      :attributes (cond-> {:feature "work-query"}
-                                   role (assoc :workflow/role role))}))
+                                   role (assoc :workflow/role role)
+                                   (= title "Run record") (assoc :shuttle/run "true"))}))
       (is (= #{"Step" "Checkpoint" "Plain task"}
              (set (map :title (api/list rt (var-get (requiring-resolve 'config/work-query)) {})))))
       (is (= #{"Step" "Checkpoint" "Plain task"}

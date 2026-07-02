@@ -187,6 +187,41 @@
           (is (= "true" (attr delivered :treadle/delivered)))
           (is (= "held-result" (attr (api/show rt gate-id) :workflow/notes))))))))
 
+(deftest treadle-registers-stall-predicate-for-flow-await
+  (with-treadle
+    (fn [_]
+      (workflow/start! "await-treadle" (workflow/workflow
+                                          "Await treadle"
+                                          (workflow/gate :delegate "Delegate" :subagent
+                                                         :attributes {"shuttle/prompt" "echo no"})) {})
+      (let [result (workflow/await! "await-treadle" {:timeout-secs 10
+                                                     :stall-predicate :treadle})]
+        (is (= :stalled (:reason result)))
+        (is (str/includes? (get-in result [:detail :stall :error]) "shuttle/harness"))))))
+
+(deftest stalled-gates-query-reports-only-spawn-errors
+  (with-treadle
+    (fn [rt]
+      (workflow/start! "query-running" (workflow/workflow
+                                          "Query running"
+                                          (workflow/gate :delegate "Running delegate" :subagent
+                                                         :attributes {"shuttle/harness" "sh-tail"
+                                                                      "shuttle/prompt" "sleep 1; echo ok"})) {})
+      (let [running-gate-id (:id (ready-subagent-gate "query-running"))
+            running-run-id (:id (await-eventually #(run-for-gate running-gate-id) 10000))]
+        (await-eventually #(= "running" (attr (api/show rt running-run-id) :shuttle/phase)) 10000)
+        (is (empty? (filter #(= running-gate-id (:id %))
+                            (api/list-query rt 'stalled-gates {}))))
+        (workflow/start! "query-error" (workflow/workflow
+                                          "Query error"
+                                          (workflow/gate :delegate "Broken delegate" :subagent
+                                                         :attributes {"shuttle/prompt" "echo no"})) {})
+        (let [error-gate-id (:id (ready-subagent-gate "query-error"))]
+          (await-eventually #(attr (api/show rt error-gate-id) :treadle/error) 10000)
+          (is (= [error-gate-id]
+                 (mapv :id (api/list-query rt 'stalled-gates {}))))
+          (await-eventually #(= "closed" (:state (api/show rt running-run-id))) 10000))))))
+
 (deftest non-subagent-gates-are-ignored
   (with-treadle
     (fn [rt]

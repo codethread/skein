@@ -1365,3 +1365,28 @@
         ;; exactly one digest remains for the run and every molecule is burned
         (is (empty? molecules))
         (is (= 1 (count digests)))))))
+
+(deftest await-returns-on-checkpoint-gate-stall-and-timeout
+  (with-runtime
+    (fn [_ _]
+      (workflow/start! "await-checkpoint"
+                       (workflow/workflow "Await checkpoint"
+                         (workflow/checkpoint :decide "Decide" :kind :human
+                                              :choices [:go]))
+                       {})
+      (is (= :checkpoint (:reason (workflow/await! "await-checkpoint" {:timeout-secs 1}))))
+      (workflow/register-stall-predicate! :test-stall (fn [step]
+                                                        (when (= "stalled" (:id step))
+                                                          {:why "test"})))
+      (let [definition (workflow/workflow "Await gate"
+                         (workflow/gate :delegate "Delegate" :subagent))]
+        (workflow/start! "await-gate" definition {})
+        (let [gate-id (:id (first (workflow/next-steps "await-gate")))]
+          (workflow/register-stall-predicate! :test-stall
+                                             (fn [step]
+                                               (when (= gate-id (:id step))
+                                                 {:why "test"})))
+          (let [result (workflow/await! "await-gate" {:timeout-secs 1
+                                                       :stall-predicate :test-stall})]
+            (is (= :stalled (:reason result)))
+            (is (= {:why "test"} (get-in result [:detail :stall])))))))))
