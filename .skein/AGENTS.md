@@ -9,7 +9,8 @@ and `skein.spools.devflow` from the weaver classpath, plus
 - ops: `devflow-start`, `devflow-next`, `devflow-choices`, `devflow-choose`,
   `devflow-complete`, `devflow-advance`, `devflow-describe`,
   `devflow-history`, `devflow-archive`, `devflow-status`, `workflow-runs`,
-  `current-dags`, `agent-delegate`, `devflow-conventions`
+  `current-dags`, `agent-delegate`, `flow-await`, `flow-status`,
+  `devflow-conventions`
 - queries: `work`, `feature-active`, `feature-work`, `feature-owner-work`,
   `feature-run`, `workflow-runs`, `devflow-runs`
 - patterns: `agent-plan`, `delegate-pipeline`
@@ -138,4 +139,4 @@ printf "(do (require '[skein.api.runtime.alpha :as runtime-alpha]) (runtime-alph
 
 ## Coordination attention surface
 
-Use `strand op flow-await <workflow-run-id> [--timeout-secs n]` to block until a workflow is done, reaches any checkpoint, reaches an unattended gate, or a treadle-managed subagent gate stalls. Shuttle run records are excluded from `strand ready --query work`; inspect failed delegation records with `strand list --query agent-failures`, `strand ready --query stalled-gates`, and `strand op agent logs <run-id> --tail 80`.
+Use `strand op flow-await <workflow-run-id> [--timeout-secs n]` to block until a workflow is done, reaches any checkpoint, reaches an unattended gate, or a treadle-managed subagent gate stalls. Use `strand op flow-status <workflow-run-id>` for a read-only JSON status payload that joins workflow run history, the ready frontier, subagent gates, their treadle/shuttle run state, stalled gates, agent failures, and done-ness for renderer consumption. Shuttle run records are excluded from `strand ready --query work`; inspect failed delegation records with `strand list --query agent-failures`, `strand ready --query stalled-gates`, and `strand op agent logs <run-id> --tail 80`.

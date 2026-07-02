@@ -9,7 +9,8 @@
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as daemon-config]
-            [skein.core.weaver.runtime :as runtime]))
+            [skein.core.weaver.runtime :as runtime]
+            [skein.spools.workflow :as workflow]))
 
 (defn- delete-directory!
   "Delete a directory tree rooted at `path` if it exists."
@@ -89,7 +90,7 @@
                    "devflow-choose" "devflow-complete" "devflow-advance"
                    "devflow-describe" "devflow-history" "devflow-archive"
                    "devflow-status" "workflow-runs" "devflow-conventions"
-                   "agent-delegate"]]
+                   "agent-delegate" "flow-await" "flow-status"]]
     (is (some #(= op-name (:name %)) (api/ops rt))))
   (is (some #(= "agent-plan" (:name %)) (api/patterns rt)))
   (is (some #(= "delegate-pipeline" (:name %)) (api/patterns rt)))
@@ -335,6 +336,57 @@
         ;; the engine's checkpoint guard surfaces through the op wrapper
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Cannot complete a checkpoint"
                               (op! "devflow-complete" ["checkpoint-feature"])))))))
+
+(deftest flow-status-op-joins-history-frontier-gates-runs-and-stalls
+  (with-config-runtime
+    (fn [rt]
+      (let [definition (workflow/workflow
+                         "Flow status test"
+                         (workflow/gate :a "Delegate A" :subagent)
+                         (workflow/gate :b "Delegate B" :subagent :depends-on [:a])
+                         (workflow/checkpoint :accept "Accept" :depends-on [:b]
+                                              :choices [:accepted]))]
+        (workflow/start! "flow-status-test" definition {})
+        (let [gate-a (:id (first (workflow/next-steps "flow-status-test")))
+              run-a (api/add rt {:title "Run A"
+                                 :state "closed"
+                                 :attributes {:shuttle/run "true"
+                                              :shuttle/phase "done"
+                                              :shuttle/result "A complete"
+                                              :treadle/gate gate-a
+                                              :treadle/run-id "flow-status-test"}})]
+          (api/update rt gate-a {:attributes {:treadle/run (:id run-a)}})
+          (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
+          (let [gate-b (:id (first (workflow/next-steps "flow-status-test")))
+                run-b (api/add rt {:title "Run B"
+                                   :state "active"
+                                   :attributes {:shuttle/run "true"
+                                                :shuttle/phase "failed"
+                                                :shuttle/error "boom"
+                                                :treadle/gate gate-b
+                                                :treadle/run-id "flow-status-test"}})]
+            (api/update rt gate-b {:attributes {:treadle/run (:id run-b)}})
+            ;; failure summaries are scoped to the requested run: an unrelated
+            ;; failed run and an unrelated error-stamped gate must not leak in
+            (api/add rt {:title "Unrelated failed run"
+                         :attributes {:shuttle/run "true"
+                                      :shuttle/phase "failed"
+                                      :shuttle/error "other workflow"}})
+            (api/add rt {:title "Unrelated stalled gate"
+                         :attributes {:workflow/gate "subagent"
+                                      :treadle/error "spawn failed elsewhere"}})
+            (let [status (op! "flow-status" ["flow-status-test"])
+                  by-title (into {} (map (juxt :title identity)) (:gates status))]
+              (is (= "flow-status" (:operation status)))
+              (is (false? (:done status)))
+              (is (= ["Delegate B"] (mapv :title (:frontier status))))
+              (is (= [:gate-closed] (mapv :type (get-in status [:history 0 :events]))))
+              (is (= "done" (get-in by-title ["Delegate A" :run :shuttle/phase])))
+              (is (= "failed" (get-in by-title ["Delegate B" :run :shuttle/phase])))
+              (is (true? (get-in by-title ["Delegate B" :stalled?])))
+              (is (= #{(:id run-b)} (set (map :id (:agent-failures status)))))
+              (is (empty? (:stalled-gates status)))
+              (is (str/includes? (:dev/mermaid status) "Delegate B (stalled)")))))))))
 
 (defn- assert-treadle-installed-after-config
   "Assert treadle loaded and declares :config in :after — its install! runs an

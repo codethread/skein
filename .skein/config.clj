@@ -600,7 +600,8 @@
          {:name "current-dags" :usage "strand op current-dags"}
          {:name "agent-delegate" :usage "strand op agent-delegate <task-id> [--harness <name>] [--prompt <extra>] [--cwd <dir>] [--max-attempts <n>] [--spawned-by <run-id>]"}
          {:name "agent-review" :usage "strand op agent review <target-id> [--members n] [--harness a,b] [--synthesize]"}
-         {:name "flow-await" :usage "strand op flow-await <workflow-run-id> [--timeout-secs <n>]"}]
+         {:name "flow-await" :usage "strand op flow-await <workflow-run-id> [--timeout-secs <n>]"}
+         {:name "flow-status" :usage "strand op flow-status <workflow-run-id>"}]
    :patterns [{:name "agent-plan"
                :purpose "Lightweight CLI-created plan/task DAG for general agent work outside the devflow lifecycle."}
               {:name "delegate-pipeline"
@@ -775,6 +776,108 @@
                               (get flags "--timeout-secs")
                               (assoc :timeout-secs (parse-long-flag! "--timeout-secs" (get flags "--timeout-secs")))))))
 
+(defn- config-attr
+  "Read strand attribute k, tolerating keyword- or string-keyed maps."
+  [strand k]
+  (let [attrs (:attributes strand)]
+    (or (get attrs k) (get attrs (subs (str k) 1)))))
+
+(defn- compact-run
+  "Return a compact shuttle/treadle state projection for a run strand."
+  [run]
+  (when run
+    (cond-> {:id (:id run)
+             :title (:title run)
+             :state (:state run)
+             :shuttle/phase (config-attr run :shuttle/phase)}
+      (config-attr run :shuttle/harness) (assoc :shuttle/harness (config-attr run :shuttle/harness))
+      (config-attr run :shuttle/error) (assoc :shuttle/error (config-attr run :shuttle/error))
+      (config-attr run :shuttle/result) (assoc :shuttle/result (config-attr run :shuttle/result))
+      (config-attr run :treadle/delivered) (assoc :treadle/delivered (config-attr run :treadle/delivered))
+      (config-attr run :treadle/delivery-blocked) (assoc :treadle/delivery-blocked (config-attr run :treadle/delivery-blocked)))))
+
+(defn- compact-gate
+  "Return a compact workflow gate projection joined to its treadle run."
+  [rt failed-run-ids stalled-gate-ids gate]
+  (let [run-id (config-attr gate :treadle/run)
+        run (when run-id (api/show rt run-id))
+        run-failed? (contains? failed-run-ids run-id)
+        spawn-stalled? (contains? stalled-gate-ids (:id gate))]
+    (cond-> {:id (:id gate)
+             :title (:title gate)
+             :state (:state gate)
+             :gate (config-attr gate :workflow/gate)
+             :treadle/run run-id
+             :run (compact-run run)
+             :stalled? (boolean (or spawn-stalled? run-failed?))}
+      (config-attr gate :treadle/error) (assoc :treadle/error (config-attr gate :treadle/error))
+      spawn-stalled? (assoc :stall/reason "spawn-error")
+      run-failed? (assoc :stall/reason "agent-failure"))))
+
+(defn- run-subagent-gates
+  "Return all subagent gate strands reachable from run-history roots."
+  [rt history]
+  (->> history
+       (mapcat (fn [{:keys [root]}]
+                 (:strands (api/subgraph rt [(:id root)] {:type "parent-of"}))))
+       (filter #(= "subagent" (config-attr % :workflow/gate)))
+       (sort-by :created_at)
+       vec))
+
+(defn- flow-status-mermaid
+  "Return a dev-only Mermaid chain showing ready, stalled, and closed gates."
+  [gates ready-ids]
+  (let [marker (fn [{:keys [id state stalled?]}]
+                 (cond
+                   stalled? "stalled"
+                   (contains? ready-ids id) "ready"
+                   (= "closed" state) "closed"
+                   :else state))
+        nodes (map-indexed (fn [idx gate]
+                             (str "  G" idx "[\"" (:title gate) " (" (marker gate) ")\"]"))
+                           gates)
+        links (map (fn [idx] (str "  G" idx " --> G" (inc idx)))
+                   (range (dec (count gates))))]
+    (str/join "\n" (concat ["flowchart LR"] nodes links))))
+
+(defn flow-status-op
+  "Return workflow flow status by joining history, frontier, gates, runs, and stalls.
+
+  Usage: `strand op flow-status <workflow-run-id>`. The JSON payload is read-only
+  and suitable for renderers; no workflow, shuttle, or treadle state is mutated."
+  [ctx]
+  (let [usage "strand op flow-status <workflow-run-id>"
+        [run-id] (require-argv-range! "flow-status" (:op/argv ctx) 1 1 usage)
+        rt (runtime-alpha/current-runtime)
+        history (workflow/run-history run-id)
+        frontier (workflow/next-steps run-id)
+        done (workflow/done? run-id)
+        run-gates (run-subagent-gates rt history)
+        ;; scope failure summaries to this run's gates and their delegated
+        ;; runs: global stalled/failed records from other workflows must not
+        ;; surface in an unrelated run's payload
+        run-gate-ids (set (map :id run-gates))
+        run-delegated-ids (set (keep #(config-attr % :treadle/run) run-gates))
+        stalled-gates (filterv #(contains? run-gate-ids (:id %))
+                               (api/list rt [:and [:= :state "active"]
+                                             [:= [:attr "workflow/gate"] "subagent"]
+                                             [:exists [:attr "treadle/error"]]] {}))
+        agent-failures (filterv #(contains? run-delegated-ids (:id %))
+                                (api/list rt [:in [:attr "shuttle/phase"] ["failed" "exhausted"]] {}))
+        stalled-gate-ids (set (map :id stalled-gates))
+        failed-run-ids (set (map :id agent-failures))
+        gates (mapv (partial compact-gate rt failed-run-ids stalled-gate-ids) run-gates)
+        ready-ids (set (map :id frontier))]
+    {:operation "flow-status"
+     :run-id run-id
+     :history history
+     :frontier frontier
+     :gates gates
+     :stalled-gates (mapv summarize-strand stalled-gates)
+     :agent-failures (mapv summarize-strand agent-failures)
+     :done done
+     :dev/mermaid (flow-status-mermaid gates ready-ids)}))
+
 ;; ---------------------------------------------------------------------------
 ;; install!
 ;; ---------------------------------------------------------------------------
@@ -894,4 +997,8 @@
          (api/register-op!
           'flow-await
           "Block until a workflow run needs coordinator attention"
-          'config/flow-await-op)]})
+          'config/flow-await-op)
+         (api/register-op!
+          'flow-status
+          "Show workflow flow status for renderer consumption"
+          'config/flow-status-op)]})
