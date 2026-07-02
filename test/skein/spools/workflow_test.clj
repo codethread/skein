@@ -541,6 +541,43 @@
 (defn- loopy-revision-workflow [opts]
   (loopy-workflow (assoc opts :revision true)))
 
+(deftest workflow-start-accepts-var-and-defaults-durable-context
+  (with-runtime
+    (fn [_ _]
+      (workflow/start! "var-start" #'loopy-workflow {:revision :yes})
+      (let [root (workflow/current-root "var-start")]
+        (is (= "skein.spools.workflow-test/loopy-workflow"
+               (get-in root [:attributes :workflow/definition])))
+        (is (= {:revision "yes"}
+               (get-in root [:attributes :workflow/context]))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"pass :context explicitly"
+                            (workflow/start! "bad-context" #'loopy-workflow {:f identity})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-finite numbers are not JSON-safe"
+                            (workflow/start! "nan-context" #'loopy-workflow {:n ##NaN})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-finite numbers are not JSON-safe"
+                            (workflow/start! "inf-context" #'loopy-workflow {:n ##Inf}))))))
+
+(deftest workflow-start-accepts-registered-keyword
+  (with-runtime
+    (fn [_ _]
+      (workflow/register-workflow! :loopy-test 'skein.spools.workflow-test/loopy-workflow)
+      (workflow/start! "keyword-start" :loopy-test {})
+      (is (= "skein.spools.workflow-test/loopy-workflow"
+             (get-in (workflow/current-root "keyword-start") [:attributes :workflow/definition])))
+      (is (= "Orient" (:title (workflow/next-step "keyword-start")))))))
+
+(deftest workflow-describe-accepts-registered-keyword
+  (workflow/register-workflow! :loopy-describe 'skein.spools.workflow-test/loopy-workflow)
+  (is (= "Loopy" (:name (workflow/describe :loopy-describe {})))))
+
+(deftest workflow-start-and-describe-reject-unknown-registered-keyword
+  (with-runtime
+    (fn [_ _]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
+                            (workflow/start! "missing-keyword-start" :missing-workflow {})))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
+                        (workflow/describe :missing-workflow {}))))
+
 (deftest workflow-revise-choice-loops-back-to-a-fresh-revision-round
   (with-runtime
     (fn [_ _]
@@ -911,6 +948,30 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"collides with the root ref"
                           (workflow/compile base-vs-root)))))
 
+(deftest workflow-loop-chain-depends-through-expansions-and-keeps-base-fan-in
+  (let [definition (workflow/workflow
+                     "Chain"
+                     {:params {:tasks (workflow/param :default [{:id "a"} {:id "b"} {:id "c"}])}}
+                     (workflow/step :prep "Prep")
+                     (workflow/step :task (fn [{:keys [item]}] (str "Task " (:id item)))
+                                    :depends-on [:prep]
+                                    :loop {:each :tasks :chain true})
+                     (workflow/step :accept "Accept" :depends-on [:task]))
+        edges (set (map (juxt :from :to :type) (:edges (workflow/compile definition))))
+        described (into {} (map (juxt :id identity)) (:steps (workflow/describe definition)))]
+    (is (contains? edges [:task-a :prep "depends-on"]))
+    (is (contains? edges [:task-b :task-a "depends-on"]))
+    (is (contains? edges [:task-c :task-b "depends-on"]))
+    (is (= [:task-a :task-b :task-c] (:depends-on (described :accept))))))
+
+(deftest workflow-loop-chain-count-uses-previous-count-expansion
+  (let [definition (workflow/workflow
+                     "Count chain"
+                     (workflow/step :round "Round" :loop {:count 3 :chain true}))
+        edges (set (map (juxt :from :to :type) (:edges (workflow/compile definition))))]
+    (is (contains? edges [:round-2 :round-1 "depends-on"]))
+    (is (contains? edges [:round-3 :round-2 "depends-on"]))))
+
 (deftest workflow-loop-condition-and-fan-in-splice-interact
   ;; A condition on a loop step is evaluated against workflow params for every
   ;; expanded copy; excluding all copies leaves a base-id dependent to splice
@@ -937,14 +998,22 @@
     (is (= "true" (get-in default-kind [:attributes "workflow/hitl"])))
     (is (nil? (get-in agent [:attributes "workflow/hitl"])))))
 
-(deftest workflow-run-scoped-views-carry-run-id
+(deftest workflow-run-scoped-views-carry-run-id-and-filter-frontier
   (with-runtime
     (fn [_ _]
-      (let [definition (workflow/workflow "Runid demo" (workflow/step :a "Do A"))
+      (let [definition (workflow/workflow "Runid demo"
+                                          (workflow/step :a "Do A")
+                                          (workflow/gate :handoff "Hand off" :subagent)
+                                          (workflow/checkpoint :decide "Decide" :kind :agent :choices [:ok]))
             started (workflow/start! "runid-run" definition {})]
         (is (= "runid-run" (:run-id (first (:ready started)))))
-        (is (= "runid-run" (:run-id (workflow/next-step "runid-run"))))
-        (is (= ["runid-run"] (mapv :run-id (workflow/next-steps "runid-run"))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow next steps are ready"
+                              (workflow/next-step "runid-run")))
+        (is (= #{"Do A" "Hand off" "Decide"} (set (map :title (workflow/next-steps "runid-run")))))
+        (is (= ["runid-run" "runid-run" "runid-run"] (mapv :run-id (workflow/next-steps "runid-run"))))
+        (is (= ["Hand off"] (mapv :title (workflow/next-gates "runid-run" "subagent"))))
+        (is (= "Decide" (:title (workflow/next-checkpoint "runid-run"))))
+        (is (= ["Decide"] (mapv :title (workflow/next-steps "runid-run" {:kind "checkpoint"}))))
         ;; a bare step-view (no run context) stays unchanged
         (is (not (contains? (workflow/step-view {:id "x" :title "T" :state "active"
                                                  :attributes {"workflow/role" "step"}})

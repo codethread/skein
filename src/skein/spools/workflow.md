@@ -15,9 +15,9 @@ owns no privileged runtime state.
 Core primitives: `workflow`, `step`, `gate`, `checkpoint`, `call`, `param`,
 `compile`, `pour!`, `wisp!`, and `explain`.
 
-The generic runtime API is `start!`, `next-steps`, `next-step`, `complete!`,
-`choose!`, `advance!`, `choice-detail`, `choice-details`, and `done?`, keyed by
-`workflow/run-id`. Routing targets can be registered under stable names with
+The generic runtime API is `start!`, `next-steps`, `next-step`, `next-gates`,
+`next-checkpoint`, `complete!`, `choose!`, `advance!`, `choice-detail`,
+`choice-details`, and `done?`, keyed by `workflow/run-id`. Routing targets can be registered under stable names with
 `register-workflow!`/`workflow-definition`/`registered-workflows` (see §5).
 Higher-level spools such as `skein.spools.devflow` should define opinionated
 workflow definitions and thin convenience wrappers around this namespace.
@@ -104,15 +104,20 @@ params are resolved, so loops see the full workflow param map:
 - **`:count`.** `{:count n}` expands over items `1..n` unchanged.
 - **Id suffix** (`base-id-<suffix>`): the number for `:count`; `(:id item)`
   when the item is a map carrying `:id`; otherwise the item's 1-based position.
+- **Chain.** Add `:chain true` to make expansion `i` depend on expansion `i-1`;
+  expansion 0 keeps the step's declared `:depends-on`. `{:count n :chain true}`
+  chains `base-1 -> base-2 -> ...`; `{:each xs :chain true}` uses the same id
+  suffix rules as non-chained loops.
 - **Fan-in.** Another step's `:depends-on` naming the **base** loop id (the
   pre-expansion id) is rewritten to depend on **all** expanded ids for that
-  loop, so a downstream step can wait on the loop as a whole. Refs naming a
-  genuinely unknown id still fail ref validation (see condition splicing above).
+  loop, even when the loop is chained. This keeps one base-id rule: a downstream
+  step can wait on the loop as a whole. Refs naming a genuinely unknown id still
+  fail ref validation (see condition splicing above).
 
-Conditions on loop steps are evaluated (against the workflow params) per expanded
-copy after render, then spliced like any other step — excluding a loop step
-drops all its copies and reattaches base-id dependents through condition
-splicing.
+Conditions on loop steps are evaluated against the workflow params only (not
+`:item`/`:i`) and therefore include or exclude the whole loop uniformly. Excluded
+loop copies are spliced like any other step, so base-id dependents reattach
+through condition splicing.
 
 ### Gates — external wait points
 
@@ -187,13 +192,23 @@ start! ──▶ next-steps / next-step ──▶ complete! / choose! ──▶ 
 
 - `(start! run-id workflow params opts)` — fails if `run-id` already has an
   active root; pours the workflow with `workflow/run-id run-id`; returns the
-  `{:ready [...] :done boolean}` result.
-- `(next-steps run-id)` — all currently ready, agent-facing step views for
-  the run (vector, possibly empty). Each view carries `:run-id` so a stage
-  cutover is visible in-band; procedure join steps never appear (see below).
+  `{:ready [...] :done boolean}` result. `workflow` may be a pre-built map, a
+  constructor var (`#'my.ns/flow`), or a registered workflow keyword. Var/keyword
+  starts derive `:definition`; when `:context` is absent they default it from
+  `params`, stringifying keyword values and failing loudly on non-JSON-safe
+  values (pass `:context` explicitly for those cases).
+- `(next-steps run-id)` / `(next-steps run-id selector)` — all currently ready,
+  agent-facing step views for the run (vector, possibly empty). Each view carries
+  `:run-id` so a stage cutover is visible in-band; procedure join steps never
+  appear (see below). The optional selector filters by view keys such as `:kind`,
+  `:gate`, `:checkpoint`, or `:checkpoint-kind`.
 - `(next-step run-id)` — convenience wrapper that throws if more than one
-  step is ready; use `next-steps` for workflows with parallel entry points
+  step is ready; use `next-steps`, `next-gates`, or `next-checkpoint` for workflows with parallel entry points
   or fan-out.
+- `(next-gates run-id)` / `(next-gates run-id waiter)` — ready gate views,
+  optionally restricted to one waiter string/keyword such as `:subagent`.
+- `(next-checkpoint run-id)` — the single ready checkpoint view, nil if none,
+  or a loud ambiguity failure if more than one checkpoint is ready.
 - `(complete! run-id)` / `(complete! run-id opts)` — closes a non-checkpoint
   ready step and returns the `{:ready [...] :done boolean}` result.
 - `(choose! run-id choice)` / `(choose! run-id choice input)` /

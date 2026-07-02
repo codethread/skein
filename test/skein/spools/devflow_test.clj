@@ -137,7 +137,7 @@
     (is (= "subagent" (:gate (steps :task-b))))
     (is (= [] (:depends-on (steps :task-a))))
     (is (= [:task-a] (:depends-on (steps :task-b))))
-    (is (= [:task-b] (:depends-on (steps :human-acceptance-afk))))
+    (is (= [:task-a :task-b] (:depends-on (steps :human-acceptance-afk))))
     (is (= ["accepted" "revise" "abort"]
            (mapv :key (:choices (steps :human-acceptance-afk))))))
   (let [payload (workflow/compile

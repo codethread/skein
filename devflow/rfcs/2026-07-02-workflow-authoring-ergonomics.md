@@ -211,3 +211,11 @@ ergonomics*: things every author re-derives, re-types, or hand-rolls.
   shipped duplication in devflow and unblocks RFC-013's pattern), then REC2
   and REC3 together (both are small, test-heavy, and independent), REC4
   deferred by default.
+- **RFC-012.OUT2 (2026-07-02):** Accepted and implemented via the delegated
+  pipeline (implement → review → fix, all shuttle runs). REC1/REC2/REC3/REC5
+  shipped: `:loop {:chain true}` (all-of fan-in kept per Q1), var/keyword
+  `start!`/`describe` with loud unknown-keyword and non-JSON-safe-context
+  failures (Q2 answered: keyword values coerced, non-finite numbers and fns
+  rejected), `next-gates`/`next-checkpoint`/filtered `next-steps`, doc and
+  `explain` parity, and devflow's AFK chain rewritten on chain loops. REC4
+  (`defworkflow`) remains deferred.

@@ -33,13 +33,14 @@
 ;; the declaration map above
 (s/def :skein.spools.workflow.values/params (s/map-of keyword? any?))
 (s/def ::count pos-int?)
+(s/def ::chain boolean?)
 ;; :each resolves against params at expansion time: a literal sequential, a
 ;; keyword naming a resolved param, or a fn of the resolved params map.
 (s/def ::each #(or (sequential? %) (keyword? %) (fn? %)))
 (s/def ::depends-on (s/coll-of ::id-ref :kind vector?))
 (s/def ::condition #(or (keyword? %)
                         (and (vector? %) (#{:= :!=} (first %)) (= 3 (count %)))))
-(s/def ::loop (s/keys :opt-un [::count ::each]))
+(s/def ::loop (s/keys :opt-un [::count ::each ::chain]))
 (s/def ::procedure any?)
 (s/def ::call (s/keys :req-un [::id ::procedure]
                       :opt-un [::title :skein.spools.workflow.values/params ::depends-on ::attributes]))
@@ -110,6 +111,11 @@
                                          (step :design (fn [{:keys [feature]}] (str "Design " feature)))
                                          (checkpoint :signoff "Approve design" :choices [:approved :revise])))
                 :fields {:params "Workflow-level map of keyword param names to param definitions. Param definitions support boolean :required and optional :default."}
+                :runtime {:start! "(start! run-id workflow params opts) accepts a workflow map, constructor var, or registered workflow keyword. Var/keyword starts derive :definition; absent :context defaults from JSON-safe params after keyword values are stringified."
+                          :next-steps "(next-steps run-id selector) filters ready views by keys such as :kind, :gate, :checkpoint, or :checkpoint-kind."
+                          :next-gates "(next-gates run-id) or (next-gates run-id waiter) returns ready gate views."
+                          :next-checkpoint "Returns the single ready checkpoint view, nil when none, and fails loudly when ambiguous."}
+                :registry {:register-workflow! "Register keyword -> fully-qualified constructor symbol for named :next routes and keyword start!/describe."}
                 :step (explain :step)
                 :gate (explain :gate)
                 :checkpoint (explain :checkpoint)
@@ -124,7 +130,7 @@
                      :depends-on "Vector of local refs this step waits for."
                      :attributes "Plain metadata stored on the materialized strand."
                      :condition "Keyword param truthiness, or [:= :param value] / [:!= :param value]."
-                     :loop "Expansion: {:count n} (items 1..n) or {:each xs} where xs is a literal sequential, a keyword naming a param, or a fn of params. Expanded steps render against (merge params {:item item :i idx}); a downstream :depends-on on the base loop id fans in to every expanded id."}}
+                     :loop "Expansion: {:count n} (items 1..n) or {:each xs} where xs is a literal sequential, a keyword naming a param, or a fn of params. Add :chain true to make expansion i depend on expansion i-1 while expansion 0 keeps the step's declared deps. Expanded steps render against (merge params {:item item :i idx}); conditions remain params-only/uniform; a downstream :depends-on on the base loop id fans in to every expanded id."}}
      :gate {:topic :gate
             :summary "A gate is a step whose completion belongs to an external actor. Wait for the waiter; don't do the work yourself."
             :contract (spec-entry ::step
@@ -257,20 +263,28 @@
   "Expand a `:loop` step into one step per item, rendering `:title`,
   `:description`, and `:attributes` against `(merge params {:item item :i idx})`
   so loop steps see both the per-iteration binding (`:i` is the 0-based index)
-  and the workflow params. Non-loop steps pass through unchanged."
+  and the workflow params. With `:chain true`, expansion i depends on expansion
+  i-1 while expansion 0 keeps the step's declared dependencies. Non-loop steps
+  pass through unchanged."
   [step params]
   (if-let [loop-spec (:loop step)]
-    (vec (map-indexed
-          (fn [idx item]
-            (let [env (merge params {:item item :i idx})
-                  suffix (loop-suffix loop-spec item idx)]
-              (-> step
-                  (dissoc :loop)
-                  (update :id #(keyword (str (name (normalize-ref % [:step :id])) "-" suffix)))
-                  (update :title render env)
-                  (update :description render env)
-                  (update :attributes render env))))
-          (loop-values loop-spec params)))
+    (let [base-id (normalize-ref (:id step) [:step :id])
+          items (vec (loop-values loop-spec params))
+          expansion-id (fn [idx item]
+                         (keyword (str (name base-id) "-" (loop-suffix loop-spec item idx))))]
+      (vec (map-indexed
+            (fn [idx item]
+              (let [env (merge params {:item item :i idx})
+                    expanded-id (expansion-id idx item)]
+                (cond-> (-> step
+                            (dissoc :loop)
+                            (assoc :id expanded-id)
+                            (update :title render env)
+                            (update :description render env)
+                            (update :attributes render env))
+                  (and (:chain loop-spec) (pos? idx))
+                  (assoc :depends-on [(expansion-id (dec idx) (nth items (dec idx)))]))))
+            items)))
     [step]))
 
 (defn- call-step? [step]
@@ -763,15 +777,62 @@
     (step-attr step "workflow/gate") (assoc :gate (step-attr step "workflow/gate"))
     (describe-choices step) (assoc :choices (describe-choices step))))
 
+(defn- workflow-var-symbol [v]
+  (let [m (meta v)]
+    (symbol (str (ns-name (:ns m))) (str (:name m)))))
+
+(declare workflow-definition)
+
+(defn- finite-json-number? [value]
+  (cond
+    (instance? Double value) (Double/isFinite value)
+    (instance? Float value) (Float/isFinite value)
+    :else true))
+
+(defn- json-safe-context-value [value path]
+  (cond
+    (nil? value) nil
+    (keyword? value) (name value)
+    (and (number? value) (finite-json-number? value)) value
+    (number? value) (fail! "Workflow params cannot be defaulted into workflow/context; non-finite numbers are not JSON-safe"
+                           {:path path :value value :type (some-> value type str)})
+    (or (string? value) (boolean? value)) value
+    (map? value) (into {} (map (fn [[k v]] [k (json-safe-context-value v (conj path k))])) value)
+    (vector? value) (mapv (fn [[idx v]] (json-safe-context-value v (conj path idx))) (map-indexed vector value))
+    (sequential? value) (mapv (fn [[idx v]] (json-safe-context-value v (conj path idx))) (map-indexed vector value))
+    :else (fail! "Workflow params cannot be defaulted into workflow/context; pass :context explicitly"
+                 {:path path :value value :type (some-> value type str)})))
+
+(defn- default-context [params]
+  (when-not (map? params)
+    (fail! "Workflow context params must be a map" {:params params}))
+  (json-safe-context-value params []))
+
+(defn- workflow-input-plan [workflow-input params]
+  (cond
+    (var? workflow-input)
+    (let [sym (workflow-var-symbol workflow-input)]
+      {:workflow (@workflow-input params) :definition sym})
+
+    (keyword? workflow-input)
+    (let [sym (workflow-definition workflow-input)
+          f (or (requiring-resolve sym)
+                (fail! "Registered workflow cannot be resolved" {:name workflow-input :definition sym}))]
+      {:workflow (f params) :definition sym})
+
+    :else {:workflow workflow-input}))
+
 (defn describe
   "Return a compile-time projection of `workflow` without materializing any strand.
 
-  Loop/call expansion and condition filtering apply exactly as `compile` runs
-  them, so the description matches what would pour for `params`: excluded steps
-  are absent, procedure joins appear as `:procedure` steps, and each checkpoint's
-  choices carry their declared `:input` and their `:next`/`:revise` routing. The
-  result is `{:name … :steps [{:id :title :kind :depends-on :condition :gate
-  :choices [{:key :label :description :input :next|:revise} …]} …]}`.
+  `workflow` may be a workflow map, a constructor var, or a registered workflow
+  keyword. Loop/call expansion and condition filtering apply exactly as
+  `compile` runs them, so the description matches what would pour for `params`:
+  excluded steps are absent, procedure joins appear as `:procedure` steps, and
+  each checkpoint's choices carry their declared `:input` and their
+  `:next`/`:revise` routing. The result is `{:name … :steps [{:id :title :kind
+  :depends-on :condition :gate :choices [{:key :label :description :input
+  :next|:revise} …]} …]}`.
 
   `(describe workflow)` resolves param defaults and fails loudly listing any
   required params without a default; pass `params` to describe a definition that
@@ -779,7 +840,8 @@
   ([workflow]
    (describe workflow {}))
   ([workflow params]
-   (let [[rendered _ _ steps] (resolve-and-normalize workflow params {})]
+   (let [{workflow :workflow} (workflow-input-plan workflow params)
+         [rendered _ _ steps] (resolve-and-normalize workflow params {})]
      {:name (:name rendered)
       :steps (mapv describe-step steps)})))
 
@@ -943,10 +1005,36 @@
 (defn next-steps
   "Return agent-facing ready workflow steps for run-id.
 
-  Each view carries `:run-id` so a stage cutover is visible in-band; a
-  bare `step-view` on a strand without run context stays unchanged."
+  Each view carries `:run-id` so a stage cutover is visible in-band; a bare
+  `step-view` on a strand without run context stays unchanged. An optional
+  selector map filters by `:kind`, `:gate`, `:checkpoint`, or
+  `:checkpoint-kind`."
+  ([run-id]
+   (next-steps run-id {}))
+  ([run-id selector]
+   (require-map! selector [:selector])
+   (let [matches? (fn [step]
+                    (every? (fn [[k v]] (= v (get step k))) selector))]
+     (->> (raw-next-steps run-id)
+          (map #(assoc (step-view %) :run-id run-id))
+          (filter matches?)
+          vec))))
+
+(defn next-gates
+  "Return ready gate step views for run-id, optionally filtered by waiter."
+  ([run-id]
+   (filterv :gate (next-steps run-id)))
+  ([run-id waiter]
+   (next-steps run-id {:gate (name waiter)})))
+
+(defn next-checkpoint
+  "Return the single ready checkpoint view for run-id, nil if none, or fail if ambiguous."
   [run-id]
-  (mapv #(assoc (step-view %) :run-id run-id) (raw-next-steps run-id)))
+  (let [steps (next-steps run-id {:kind "checkpoint"})]
+    (case (count steps)
+      0 nil
+      1 (first steps)
+      (fail! "Multiple workflow checkpoints are ready" {:run-id run-id :steps steps}))))
 
 (defn next-step
   "Return the single ready workflow step for run-id, or fail if ambiguous.
@@ -1111,16 +1199,25 @@
   "Start a workflow run and return the `{:ready [step-view ...] :done boolean}`
   result shape.
 
-  `run-id` is the stable active workflow instance handle. `opts` may include
-  :family, :definition, :context, and :root-attributes. `:ready` is empty when
-  the run has no ready workflow work (e.g. an empty workflow, which also reports
-  `:done true`)."
+  `run-id` is the stable active workflow instance handle. `workflow` may be a
+  pre-built workflow map, a constructor var, or a registered workflow keyword.
+  Var/keyword starts derive `:definition`; when `:context` is absent, params are
+  persisted as context after keyword values are stringified and non-JSON-safe
+  values are rejected loudly. `opts` may include :family, :definition, :context,
+  and :root-attributes. `:ready` is empty when the run has no ready workflow work
+  (e.g. an empty workflow, which also reports `:done true`)."
   ([run-id workflow params]
    (start! run-id workflow params {}))
   ([run-id workflow params opts]
    (when (current-root run-id)
      (fail! "Active workflow run already exists" {:run-id run-id}))
-   (pour! workflow params (merge opts {:run-id run-id}))
+   (let [{resolved-workflow :workflow derived-definition :definition} (workflow-input-plan workflow params)
+         opts (cond-> opts
+                (and derived-definition (not (contains? opts :definition)))
+                (assoc :definition derived-definition)
+                (not (contains? opts :context))
+                (assoc :context (default-context params)))]
+     (pour! resolved-workflow params (merge opts {:run-id run-id})))
    (close-run-if-done! run-id)
    (run-result run-id)))
 
@@ -1596,6 +1693,8 @@
              :active-runs 'skein.spools.workflow/active-runs
              :next-step 'skein.spools.workflow/next-step
              :next-steps 'skein.spools.workflow/next-steps
+             :next-gates 'skein.spools.workflow/next-gates
+             :next-checkpoint 'skein.spools.workflow/next-checkpoint
              :complete 'skein.spools.workflow/complete!
              :choose 'skein.spools.workflow/choose!
              :advance 'skein.spools.workflow/advance!

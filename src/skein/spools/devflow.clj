@@ -65,26 +65,24 @@
       (throw (ex-info "AFK task missing harness resolution"
                       {:task task :delegate-harness delegate-harness})))))
 
-(defn- afk-task-step-id [task]
-  (keyword (str "task-" (task-value task :id))))
-
 (defn- afk-task-prompt [feature task]
   (str "Devflow AFK task for " feature ": " (task-value task :title) "\n\n"
        (or (task-value task :body) (task-value task :title))))
 
-(defn- afk-task-gate [task previous-id delegate-harness delegate-cwd]
-  (workflow/gate (afk-task-step-id task)
-                 (fn [{:keys [feature]}]
-                   (str "Delegate AFK task " (task-value task :id) " for " feature))
+(defn- afk-task-gate [delegate-harness delegate-cwd]
+  (workflow/gate :task
+                 (fn [{:keys [feature item]}]
+                   (str "Delegate AFK task " (task-value item :id) " for " feature))
                  :subagent
-                 :depends-on (if previous-id [previous-id] [])
+                 :loop {:each :tasks :chain true}
                  ;; the prompt renders from resolved params like the title, so
                  ;; direct compile/pour! usage with :feature supplied only as a
                  ;; workflow param cannot bake "nil" into shuttle/prompt
-                 :attributes (cond-> {"devflow/task" (task-value task :id)
-                                      "shuttle/harness" (or (task-value task :harness) delegate-harness)
-                                      "shuttle/prompt" (fn [{:keys [feature]}]
-                                                         (afk-task-prompt feature task))}
+                 :attributes (cond-> {"devflow/task" (fn [{:keys [item]}] (task-value item :id))
+                                      "shuttle/harness" (fn [{:keys [item delegate-harness]}]
+                                                          (or (task-value item :harness) delegate-harness))
+                                      "shuttle/prompt" (fn [{:keys [feature item]}]
+                                                         (afk-task-prompt feature item))}
                                delegate-cwd (assoc "shuttle/cwd" delegate-cwd))))
 
 (def ^:private abort-reason-input
@@ -298,33 +296,24 @@
             :attributes {"devflow/stage" "afk"
                          "devflow/feature" (param-value :feature)}}
            (if tasks
-             (let [gate-steps (loop [remaining tasks
-                                     previous nil
-                                     steps []]
-                                (if-let [task (first remaining)]
-                                  (let [id (afk-task-step-id task)]
-                                    (recur (rest remaining)
-                                           id
-                                           (conj steps (afk-task-gate task previous delegate-harness delegate-cwd))))
-                                  steps))]
-               (conj gate-steps
-                     (workflow/checkpoint :human-acceptance-afk
-                                          (titled "Human acceptance for " " AFK task execution")
-                                          :depends-on [(afk-task-step-id (last tasks))]
-                                          :kind :human
-                                          :choices [{:key :accepted
-                                                     :label "Accept"
-                                                     :description "AFK task execution is accepted; the run is done."}
-                                                    {:key :revise
-                                                     :label "Revise"
-                                                     :description "AFK task execution needs changes; re-run the delegated AFK stage."
-                                                     :revise {:params {:revision true}}}
-                                                    {:key :abort
-                                                     :label "Abort"
-                                                     :description "Stop or abandon this feature after AFK execution."
-                                                     :next :abort
-                                                     :input abort-reason-input}]
-                                          :attributes {"workflow/decision-point" "afk-accepted"})))
+             [(afk-task-gate delegate-harness delegate-cwd)
+              (workflow/checkpoint :human-acceptance-afk
+                                   (titled "Human acceptance for " " AFK task execution")
+                                   :depends-on [:task]
+                                   :kind :human
+                                   :choices [{:key :accepted
+                                              :label "Accept"
+                                              :description "AFK task execution is accepted; the run is done."}
+                                             {:key :revise
+                                              :label "Revise"
+                                              :description "AFK task execution needs changes; re-run the delegated AFK stage."
+                                              :revise {:params {:revision true}}}
+                                             {:key :abort
+                                              :label "Abort"
+                                              :description "Stop or abandon this feature after AFK execution."
+                                              :next :abort
+                                              :input abort-reason-input}]
+                                   :attributes {"workflow/decision-point" "afk-accepted"})]
              [(workflow/step :run-afk-loop
                              (titled "Run or hand off AFK task loop for ")
                              :attributes {"workflow/action-ref" "devflow.tasks.run-afk-loop"
