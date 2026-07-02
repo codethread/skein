@@ -18,6 +18,8 @@ Userland reference spools are indexed in [`src/skein/spools/`](./src/skein/spool
 - [Workflow Engine](./src/skein/spools/workflow.md)
 - [Devflow Lifecycle](./src/skein/spools/devflow.md)
 - [Ephemeral Strands](./src/skein/spools/ephemeral.md)
+- [Agent Shuttle](./spools/shuttle/README.md) (approved local-root spool)
+- [Treadle Gate Bridge](./spools/shuttle/treadle.md) (approved local-root spool)
 
 ## Project commands
 

@@ -28,7 +28,7 @@ Shuttle is shipped as an approved-local-root spool example under `spools/shuttle
    :required? true})
 ```
 
-`install!` registers the default harnesses, a graph-mutation event handler, and the `agent` CLI operation.
+`install!` registers the default harnesses, a graph-mutation event handler, and the `agent` CLI operation. The companion [treadle adapter](./treadle.md) can be loaded after shuttle to fulfill workflow `:subagent` gates with shuttle runs.
 
 ## 3. Harness registry
 
@@ -100,6 +100,7 @@ Run parents are connected to children with `parent-of` edges. Notes use the unde
 
 ## 8. See also
 
+- [treadle.md](./treadle.md) — shipped adapter that bridges workflow `:subagent` gates to shuttle runs.
 - `test/skein/shuttle_test.clj` — executable coverage for harnesses, readiness, failures, notes, reconciliation, ops, and councils.
 - [Runtime spool workspace helpers](../../devflow/specs/repl-api.md#spec-003p5-runtime-spool-workspace-helpers) — approved local-root loading contract.
 - [Weaver Runtime](../../devflow/specs/daemon-runtime.md) — event handlers, CLI operation registry, JSON socket transport, and runtime reload behavior.

@@ -27,6 +27,7 @@ needed — `require` them from `init.clj`, an activated spool, or a live
 | Spool | Contract doc | Purpose |
 |---|---|---|
 | `skein.spools.shuttle` | [spools/shuttle/README.md](../../../spools/shuttle/README.md) | Agent shuttle: readiness-driven headless coding-agent runs, harness aliases, crash reconciliation, append-only run memory, and `strand op agent`. |
+| `skein.spools.treadle` | [spools/shuttle/treadle.md](../../../spools/shuttle/treadle.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning shuttle runs and delivering successful results through `workflow/complete!`. |
 
 ## Reference examples
 

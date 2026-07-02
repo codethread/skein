@@ -137,6 +137,9 @@ for `<waiter>`", so a driving agent can tell work-steps from wait-steps.
   to close a gate without `:by`** (fails loudly) and records `:by` as
   `workflow/outcome-by` on the closed step. Raw `repl/update!` remains the
   trusted escape hatch (TEN-002) for closing any strand directly.
+- A shipped local-root adapter, `skein.spools.treadle`, fulfills ready
+  `:subagent` gates by spawning shuttle runs and closing the gate with the
+  run's result. See `spools/shuttle/treadle.md`.
 
 **Dynamic fan-out needs no primitive.** The run subgraph is recomputed live
 from the graph on every poll, so userland may add strands to a running
@@ -625,3 +628,5 @@ declarative revise loop.
   runtime fns of this namespace as symbol-valued maps, for trusted
   registration by name (mirrors devflow's registries in `devflow.md` §5).
 - [README.md](./README.md) — shipped spools index and loading notes.
+- [`skein.spools.treadle`](../../../spools/shuttle/treadle.md) — shipped
+  local-root adapter that binds workflow `:subagent` gates to shuttle runs.
