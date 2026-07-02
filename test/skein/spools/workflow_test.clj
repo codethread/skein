@@ -692,7 +692,10 @@
 (defn- cyclic-procedure-workflow [_params]
   (workflow/workflow "Cyclic procedure"
                      (workflow/step :work "Do work")
-                     (workflow/call :again cyclic-procedure-workflow {} :depends-on [:work])))
+                     ;; recursive edge by symbol while the entry call passes the
+                     ;; fn value: both must canonicalize to one identity
+                     (workflow/call :again 'skein.spools.workflow-test/cyclic-procedure-workflow {}
+                                    :depends-on [:work])))
 
 (deftest workflow-compile-fails-loudly-on-cyclic-procedure-call
   ;; conditions filter steps only after procedure expansion, so a cyclic
@@ -702,6 +705,13 @@
                         (workflow/compile
                          (workflow/workflow "Cyclic root"
                                             (workflow/call :outer cyclic-procedure-workflow {}))))))
+
+(deftest workflow-compile-resolves-symbol-procedures
+  (let [payload (workflow/compile
+                 (workflow/workflow "Symbol procedure demo"
+                                    (workflow/call :quality 'skein.spools.workflow-test/toastie-quality-workflow {})))]
+    (is (= #{:molecule :quality :quality--inspect}
+           (set (map :ref (:strands payload)))))))
 
 (deftest workflow-step-view-reads-keyword-and-string-keyed-attributes
   ;; strand attributes arrive keyword-keyed in-memory but string-keyed after a

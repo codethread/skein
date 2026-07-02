@@ -290,19 +290,23 @@
             :procedure procedure
             :path (mapv #(if (symbol? %) % (type %)) *procedure-path*)})))
 
-(defn- resolve-procedure [procedure]
-  (cond
-    (symbol? procedure) (or (requiring-resolve procedure)
-                            (fail! "Workflow procedure symbol cannot be resolved" {:procedure procedure}))
-    :else procedure))
+(defn- resolve-procedure
+  ;; Deref so a symbol yields the same canonical value (map or fn) as a direct
+  ;; reference — cycle detection and dispatch must not depend on which form the
+  ;; author used.
+  [procedure]
+  (if (symbol? procedure)
+    (if-let [resolved (requiring-resolve procedure)]
+      @resolved
+      (fail! "Workflow procedure symbol cannot be resolved" {:procedure procedure}))
+    procedure))
 
 (defn- procedure-workflow [procedure params]
-  (let [procedure (resolve-procedure procedure)]
-    (cond
-      (map? procedure) procedure
-      (fn? procedure) (procedure params)
-      :else (fail! "Workflow procedure must be a workflow map, function, or resolvable symbol"
-                   {:procedure procedure}))))
+  (cond
+    (map? procedure) procedure
+    (fn? procedure) (procedure params)
+    :else (fail! "Workflow procedure must be a workflow map, function, or resolvable symbol"
+                 {:procedure procedure})))
 
 (defn- prefixed-ref [call-id ref]
   (keyword (str (name call-id) "--" (name (normalize-ref ref [:procedure :ref])))))
@@ -316,7 +320,7 @@
 
 (defn- expand-call-step [call-step params]
   (let [call-id (normalize-ref (:id call-step) [:call :id])
-        procedure (:procedure call-step)
+        procedure (resolve-procedure (:procedure call-step))
         _ (require-acyclic-procedure! call-id procedure)
         params (merge params (or (:params call-step) {}))
         workflow (procedure-workflow procedure params)
