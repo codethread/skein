@@ -17,6 +17,13 @@
   (fn [params]
     (get params k)))
 
+(def ^:private abort-reason-input
+  "Declared choice input for every abort choice: a required `:reason` recorded on
+  the abort step and surfaced with the choice (workflow.md §5). `choose!` fails
+  loudly before any mutation when it is omitted."
+  [{:key :reason :required true
+    :description "Why the feature is being aborted; recorded on the abort step."}])
+
 (defn intake-workflow
   "Return the mandatory brief intake workflow.
 
@@ -37,7 +44,7 @@
                   "devflow/feature" (param-value :feature)
                   "devflow/worktree-check" (param-value :worktree-check)}}
     (workflow/checkpoint :create-or-confirm-worktree
-                         (titled "[HITL] Create or confirm feature worktree for ")
+                         (titled "Create or confirm feature worktree for ")
                          :kind :human
                          :condition [:!= :revision true]
                          :choices [{:key :created-worktree
@@ -49,9 +56,9 @@
                                    {:key :abort
                                     :label "Abort"
                                     :description "Stop the feature before any substantive work begins."
-                                    :next 'skein.spools.devflow/abort-workflow}]
-                         :attributes {"workflow/hitl" "true"
-                                      "workflow/decision-point" "worktree-ready"
+                                    :next :abort
+                                    :input abort-reason-input}]
+                         :attributes {"workflow/decision-point" "worktree-ready"
                                       "workflow/action-ref" "devflow.worktree.ensure"
                                       "workflow/instruction" "Create a new feature worktree before doing discovery or code work. If this agent is already running inside the correct feature worktree, choose already-in-worktree."})
     (workflow/step :capture-brief
@@ -65,24 +72,12 @@
                          :choices [{:key :proposal-ready
                                     :label "Proposal ready"
                                     :description "Scope is clear enough; create the proposal workflow next."
-                                    :next 'skein.spools.devflow/enter-proposal-workflow}
+                                    :next :proposal}
                                    {:key :needs-more-brief
                                     :label "Needs more brief"
-                                    :description "Scope is incomplete; route back through intake to gather more brief before proposing."
-                                    :next 'skein.spools.devflow/intake-revision-workflow}]
+                                    :description "Scope is incomplete; revise intake to gather more brief before proposing."
+                                    :revise {:params {:revision true}}}]
                          :attributes {"workflow/decision-point" "scope-ready"})))
-
-(defn intake-revision-workflow
-  "Return the intake workflow for a revision round.
-
-  Routed to from `:discuss-scope`'s `:needs-more-brief` choice; re-runs intake
-  with `:revision true` so the already-satisfied worktree checkpoint is skipped
-  and discovery resumes at `:capture-brief`. Returns `{:workflow w :params p}`
-  so the revision params (including the carried-forward start opts) are
-  authoritative over the new round's params and persisted context."
-  [opts]
-  (let [params (assoc opts :revision true)]
-    {:workflow (intake-workflow params) :params params}))
 
 (defn agent-review-workflow
   "Return a reusable one-step agent review procedure."
@@ -127,35 +122,23 @@
                    :title (titled "Complete agent review for " " proposal")
                    :depends-on [:write-proposal])
     (workflow/checkpoint :human-signoff-proposal
-                         (titled "[HITL] Human sign-off for " " proposal")
+                         (titled "Human sign-off for " " proposal")
                          :depends-on [:agent-review-proposal]
                          :kind :human
                          :choices [{:key :approved
                                     :label "Approve"
                                     :description "Proposal is accepted; continue to spec and plan work."
-                                    :next 'skein.spools.devflow/enter-spec-plan-workflow}
+                                    :next :spec-plan}
                                    {:key :revise
                                     :label "Revise"
-                                    :description "Proposal needs changes; route back through the proposal stage to revise and re-review before proceeding."
-                                    :next 'skein.spools.devflow/proposal-revision-workflow}
+                                    :description "Proposal needs changes; revise the proposal stage and re-review before proceeding."
+                                    :revise {:params {:revision true}}}
                                    {:key :abort
                                     :label "Abort"
                                     :description "Stop this feature intentionally. Do not proceed to spec or plan work."
-                                    :next 'skein.spools.devflow/abort-workflow}]
-                         :attributes {"workflow/hitl" "true"
-                                      "workflow/decision-point" "proposal-signed-off"})))
-
-(defn proposal-revision-workflow
-  "Return the proposal workflow for a revision round.
-
-  Routed to from `:human-signoff-proposal`'s `:revise` choice; re-runs the
-  proposal stage with `:revision true` so `:inspect-context` is skipped and
-  work resumes at `:write-proposal`. Returns `{:workflow w :params p}` so the
-  revision params are authoritative over the new round's params and persisted
-  context, regardless of the choice input."
-  [opts]
-  (let [params (assoc opts :revision true)]
-    {:workflow (proposal-workflow params) :params params}))
+                                    :next :abort
+                                    :input abort-reason-input}]
+                         :attributes {"workflow/decision-point" "proposal-signed-off"})))
 
 (defn route-after-plan-workflow
   "Return the post-plan route-choice workflow."
@@ -171,11 +154,11 @@
                          :choices [{:key :task-breakdown
                                     :label "Task breakdown"
                                     :description "Create an AFK/HITL task queue before implementation."
-                                    :next 'skein.spools.devflow/enter-task-breakdown-workflow}
+                                    :next :tasks}
                                    {:key :direct-implementation
                                     :label "Direct implementation"
                                     :description "Proceed directly to implementation because the reviewed plan is small and settled."
-                                    :next 'skein.spools.devflow/enter-direct-implementation-workflow}]
+                                    :next :direct-implementation}]
                          :attributes {"workflow/decision-point" "choose-tasks-or-implementation"})))
 
 (defn spec-plan-workflow
@@ -206,34 +189,23 @@
                    :title (titled "Complete agent review for " " spec deltas and plan")
                    :depends-on [:write-plan])
     (workflow/checkpoint :human-signoff-spec-plan
-                         (titled "[HITL] Human sign-off for " " spec deltas and plan")
+                         (titled "Human sign-off for " " spec deltas and plan")
                          :depends-on [:agent-review-spec-plan]
                          :kind :human
                          :choices [{:key :approved
                                     :label "Approve"
                                     :description "Spec deltas and plan are accepted; choose tasks or direct implementation next."
-                                    :next 'skein.spools.devflow/enter-route-after-plan-workflow}
+                                    :next :route-after-plan}
                                    {:key :revise
                                     :label "Revise"
-                                    :description "Spec deltas or plan need changes; route back through the spec/plan stage to revise and re-review before proceeding."
-                                    :next 'skein.spools.devflow/spec-plan-revision-workflow}
+                                    :description "Spec deltas or plan need changes; revise the spec/plan stage and re-review before proceeding."
+                                    :revise {:params {:revision true}}}
                                    {:key :abort
                                     :label "Abort"
                                     :description "Stop this feature intentionally before implementation."
-                                    :next 'skein.spools.devflow/abort-workflow}]
-                         :attributes {"workflow/hitl" "true"
-                                      "workflow/decision-point" "plan-signed-off"})))
-
-(defn spec-plan-revision-workflow
-  "Return the spec/plan workflow for a revision round.
-
-  Routed to from `:human-signoff-spec-plan`'s `:revise` choice; re-runs the
-  spec/plan stage with `:revision true`. Returns `{:workflow w :params p}` so
-  the revision params are authoritative over the new round's params and persisted
-  context, regardless of the choice input."
-  [opts]
-  (let [params (assoc opts :revision true)]
-    {:workflow (spec-plan-workflow params) :params params}))
+                                    :next :abort
+                                    :input abort-reason-input}]
+                         :attributes {"workflow/decision-point" "plan-signed-off"})))
 
 (defn run-afk-loop-workflow
   "Return the post-task-signoff AFK loop workflow."
@@ -269,34 +241,23 @@
                    :title (titled "Complete agent review for " " task queue")
                    :depends-on [:write-tasks])
     (workflow/checkpoint :human-signoff-tasks
-                         (titled "[HITL] Human sign-off for " " task queue")
+                         (titled "Human sign-off for " " task queue")
                          :depends-on [:agent-review-tasks]
                          :kind :human
                          :choices [{:key :approved
                                     :label "Approve"
                                     :description "Task queue is accepted; run or hand off the AFK loop next."
-                                    :next 'skein.spools.devflow/enter-run-afk-loop-workflow}
+                                    :next :run-afk-loop}
                                    {:key :revise
                                     :label "Revise"
-                                    :description "Task queue needs changes; route back through the task-breakdown stage to revise and re-review before execution."
-                                    :next 'skein.spools.devflow/task-breakdown-revision-workflow}
+                                    :description "Task queue needs changes; revise the task-breakdown stage and re-review before execution."
+                                    :revise {:params {:revision true}}}
                                    {:key :abort
                                     :label "Abort"
                                     :description "Stop this feature before task execution."
-                                    :next 'skein.spools.devflow/abort-workflow}]
-                         :attributes {"workflow/hitl" "true"
-                                      "workflow/decision-point" "tasks-signed-off"})))
-
-(defn task-breakdown-revision-workflow
-  "Return the task-breakdown workflow for a revision round.
-
-  Routed to from `:human-signoff-tasks`'s `:revise` choice; re-runs the
-  task-breakdown stage with `:revision true`. Returns `{:workflow w :params p}`
-  so the revision params are authoritative over the new round's params and
-  persisted context, regardless of the choice input."
-  [opts]
-  (let [params (assoc opts :revision true)]
-    {:workflow (task-breakdown-workflow params) :params params}))
+                                    :next :abort
+                                    :input abort-reason-input}]
+                         :attributes {"workflow/decision-point" "tasks-signed-off"})))
 
 (defn direct-implementation-workflow
   "Return the post-plan direct implementation workflow for small, settled changes.
@@ -324,7 +285,7 @@
                    :title (titled "Complete implementation review for ")
                    :depends-on [:validate])
     (workflow/checkpoint :human-acceptance
-                         (titled "[HITL] Human acceptance for " " implementation")
+                         (titled "Human acceptance for " " implementation")
                          :depends-on [:review-implementation]
                          :kind :human
                          :choices [{:key :accepted
@@ -332,65 +293,14 @@
                                     :description "Implementation is accepted; continue to finish/archive work."}
                                    {:key :revise
                                     :label "Revise"
-                                    :description "Implementation needs changes; route back through the implementation stage to revise and re-review before acceptance."
-                                    :next 'skein.spools.devflow/direct-implementation-revision-workflow}
+                                    :description "Implementation needs changes; revise the implementation stage and re-review before acceptance."
+                                    :revise {:params {:revision true}}}
                                    {:key :abort
                                     :label "Abort"
                                     :description "Stop or abandon this feature after implementation review."
-                                    :next 'skein.spools.devflow/abort-workflow}]
-                         :attributes {"workflow/hitl" "true"
-                                      "workflow/decision-point" "implementation-accepted"})))
-
-(defn direct-implementation-revision-workflow
-  "Return the direct implementation workflow for a revision round.
-
-  Routed to from `:human-acceptance`'s `:revise` choice; re-runs the
-  implementation stage with `:revision true`. Returns `{:workflow w :params p}`
-  so the revision params are authoritative over the new round's params and
-  persisted context, regardless of the choice input."
-  [opts]
-  (let [params (assoc opts :revision true)]
-    {:workflow (direct-implementation-workflow params) :params params}))
-
-(defn- fresh-stage-entry
-  "Return continuation params/workflow for entering `constructor` as a new stage.
-
-  Loop-control state like `:revision` is stage-local; without resetting it, a
-  round approved after a revise would carry `:revision true` in context into
-  every downstream stage."
-  [constructor params]
-  (let [params (dissoc params :revision)]
-    {:workflow (constructor params) :params params}))
-
-(defn enter-proposal-workflow
-  "Route into the proposal stage with stage-local loop state reset."
-  [params]
-  (fresh-stage-entry proposal-workflow params))
-
-(defn enter-spec-plan-workflow
-  "Route into the spec-plan stage with stage-local loop state reset."
-  [params]
-  (fresh-stage-entry spec-plan-workflow params))
-
-(defn enter-route-after-plan-workflow
-  "Route into the post-plan route choice with stage-local loop state reset."
-  [params]
-  (fresh-stage-entry route-after-plan-workflow params))
-
-(defn enter-task-breakdown-workflow
-  "Route into the task breakdown stage with stage-local loop state reset."
-  [params]
-  (fresh-stage-entry task-breakdown-workflow params))
-
-(defn enter-run-afk-loop-workflow
-  "Route into the AFK execution stage with stage-local loop state reset."
-  [params]
-  (fresh-stage-entry run-afk-loop-workflow params))
-
-(defn enter-direct-implementation-workflow
-  "Route into the direct implementation stage with stage-local loop state reset."
-  [params]
-  (fresh-stage-entry direct-implementation-workflow params))
+                                    :next :abort
+                                    :input abort-reason-input}]
+                         :attributes {"workflow/decision-point" "implementation-accepted"})))
 
 (defn abort-workflow
   "Return a tiny workflow that records intentional feature abortion."
@@ -421,9 +331,31 @@
    (run-afk-loop-workflow opts)
    (direct-implementation-workflow opts)])
 
+(defn- root-stage
+  "Return the active devflow stage string for feature, or nil when the run is done."
+  [feature]
+  (let [root (workflow/current-root feature)]
+    (or (get-in root [:attributes :devflow/stage])
+        (get-in root [:attributes "devflow/stage"]))))
+
+(defn- add-stage
+  "Add stage to a ready step view when both are present."
+  [stage step]
+  (when step
+    (cond-> step stage (assoc :stage stage))))
+
+(defn- add-current-stage
+  "Add the feature's current stage to every ready step in a mutation result."
+  [feature result]
+  (let [stage (root-stage feature)]
+    (update result :ready #(mapv (partial add-stage stage) %))))
+
 (defn start!
-  "Start the devflow intake workflow for `feature` and return the initial
-  agent-facing ready step views (a vector, possibly with more than one entry)."
+  "Start the devflow intake workflow for `feature` and return the engine
+  `{:ready [step-view ...] :done boolean}` result shape.
+
+  Each ready step view carries the current devflow `:stage` while the run has an
+  active stage root."
   ([feature]
    (start! feature {}))
   ([feature opts]
@@ -434,15 +366,17 @@
    (let [context (reduce-kv (fn [m k v] (assoc m k (if (keyword? v) (name v) v)))
                             {:feature feature}
                             opts)]
-     (workflow/start!
+     (add-current-stage
       feature
-      (intake-workflow context)
-      {:feature feature}
-      {:family "devflow"
-       :definition 'skein.spools.devflow/intake-workflow
-       ;; seed start opts into context so they survive intake revision loops
-       ;; rather than resetting to their defaults
-       :context context}))))
+      (workflow/start!
+       feature
+       (intake-workflow context)
+       {:feature feature}
+       {:family "devflow"
+        :definition 'skein.spools.devflow/intake-workflow
+        ;; seed start opts into context so they survive intake revision loops
+        ;; rather than resetting to their defaults
+        :context context})))))
 
 (defn feature-roots
   "Return active devflow workflow roots for `feature`."
@@ -451,14 +385,15 @@
     (if root [root] [])))
 
 (defn next-steps
-  "Return agent-facing ready devflow steps for `feature`."
+  "Return agent-facing ready devflow steps for `feature`, each carrying `:stage`."
   [feature]
-  (workflow/next-steps feature))
+  (let [stage (root-stage feature)]
+    (mapv (partial add-stage stage) (workflow/next-steps feature))))
 
 (defn next-step
   "Return the single agent-facing ready devflow step for `feature`, or fail if ambiguous."
   [feature]
-  (workflow/next-step feature))
+  (add-stage (root-stage feature) (workflow/next-step feature)))
 
 (defn choice-details
   "Return choice explanations for the current devflow checkpoint.
@@ -481,44 +416,114 @@
    (workflow/choice-detail feature choice opts)))
 
 (defn complete!
-  "Close the current devflow step for `feature` and return the next
-  agent-facing ready step views.
+  "Close the current devflow step for `feature` and return the engine
+  `{:ready [step-view ...] :done boolean}` result shape.
 
   opts may include `:step`, `:notes`, and `:attributes`; see
   `skein.spools.workflow/complete!`."
   ([feature]
    (complete! feature {}))
   ([feature opts]
-   (workflow/complete! feature opts)))
+   (add-current-stage feature (workflow/complete! feature opts))))
 
 (defn choose!
-  "Record a devflow checkpoint choice and return the next agent-facing ready
-  step views.
+  "Record a devflow checkpoint choice and return the engine
+  `{:ready [step-view ...] :done boolean}` result shape.
 
   opts may include `:step`; see `skein.spools.workflow/choose!`."
   ([feature choice]
-   (workflow/choose! feature choice))
+   (add-current-stage feature (workflow/choose! feature choice)))
   ([feature choice input]
-   (workflow/choose! feature choice input))
+   (add-current-stage feature (workflow/choose! feature choice input)))
   ([feature choice input opts]
-   (workflow/choose! feature choice input opts)))
+   (add-current-stage feature (workflow/choose! feature choice input opts))))
 
-(def workflow-registry
-  "Workflow constructors exposed by the devflow spool."
+(defn advance!
+  "Advance the current devflow step or checkpoint for `feature`.
+
+  Delegates to `skein.spools.workflow/advance!` and adds the active devflow
+  `:stage` to returned ready step views. opts may include `:choice`, `:input`,
+  `:notes`, `:step`, `:by`, and `:attributes`."
+  ([feature]
+   (advance! feature {}))
+  ([feature opts]
+   (add-current-stage feature (workflow/advance! feature opts))))
+
+(def stage-workflows
+  "Devflow stage constructors registered with the engine under stable routing
+  names. Forward `:next` choices reference these keyword names; `register-workflows!`
+  registers each with `skein.spools.workflow/register-workflow!`."
   {:intake 'skein.spools.devflow/intake-workflow
-   :intake-revision 'skein.spools.devflow/intake-revision-workflow
    :proposal 'skein.spools.devflow/proposal-workflow
-   :proposal-revision 'skein.spools.devflow/proposal-revision-workflow
    :spec-plan 'skein.spools.devflow/spec-plan-workflow
-   :spec-plan-revision 'skein.spools.devflow/spec-plan-revision-workflow
    :route-after-plan 'skein.spools.devflow/route-after-plan-workflow
    :tasks 'skein.spools.devflow/task-breakdown-workflow
-   :tasks-revision 'skein.spools.devflow/task-breakdown-revision-workflow
    :run-afk-loop 'skein.spools.devflow/run-afk-loop-workflow
    :direct-implementation 'skein.spools.devflow/direct-implementation-workflow
-   :direct-implementation-revision 'skein.spools.devflow/direct-implementation-revision-workflow
    :agent-review 'skein.spools.devflow/agent-review-workflow
-   :cycle 'skein.spools.devflow/devflow-cycle})
+   :abort 'skein.spools.devflow/abort-workflow})
+
+(def workflow-registry
+  "Workflow constructors exposed by the devflow spool: the engine-registered
+  stage constructors (see `stage-workflows`) plus `:cycle`, the ordered
+  composable stage list."
+  (assoc stage-workflows :cycle 'skein.spools.devflow/devflow-cycle))
+
+(def ^:private describe-placeholder-params
+  "Placeholder params used to render stage titles when describing devflow workflow
+  shapes. A description reports structure, not a specific run, so `:feature` (and
+  the abort/review stages' `:reason`/`:artifact`) are stand-in strings."
+  {:feature "<feature>" :reason "<reason>" :artifact "<artifact>"})
+
+(defn describe
+  "Return the compile-time shape of a devflow stage, or of the whole cycle.
+
+  With no argument, returns a vector describing every stage in `devflow-cycle`, in
+  order. With a registered stage key (a key of `stage-workflows`, e.g.
+  `:proposal`), returns that one stage's description. Shapes come from
+  `skein.spools.workflow/describe`; titles render against placeholder params
+  because a description is run-independent. Fails loudly on an unknown stage key."
+  ([]
+   (mapv #(workflow/describe % describe-placeholder-params)
+         (devflow-cycle describe-placeholder-params)))
+  ([stage]
+   (let [sym (or (get stage-workflows stage)
+                 (throw (ex-info "Unknown devflow stage"
+                                 {:stage stage :stages (vec (keys stage-workflows))})))]
+     (workflow/describe ((requiring-resolve sym) describe-placeholder-params)
+                        describe-placeholder-params))))
+
+(defn history
+  "Return the ordered run history for devflow `feature` (see
+  `skein.spools.workflow/run-history`)."
+  [feature]
+  (workflow/run-history feature))
+
+(defn archive!
+  "Archive a finished devflow `feature` into one closed digest strand (see
+  `skein.spools.workflow/archive-run!`). Fails loudly if the feature still has an
+  active root. opts may include `:title` and `:attributes`."
+  ([feature]
+   (workflow/archive-run! feature))
+  ([feature opts]
+   (workflow/archive-run! feature opts)))
+
+(defn register-workflows!
+  "Register every devflow stage constructor with the engine's weaver-lifetime
+  workflow registry under its stable name (see `stage-workflows`).
+
+  Idempotent: duplicate names replace, so a reload re-points in-flight runs'
+  named `:next` routes at the reloaded constructors. Called on namespace load
+  (for REPL use) and from `install!` (startup config); returns the registered
+  name -> constructor map."
+  []
+  (into {}
+        (map (fn [[name sym]] [name (workflow/register-workflow! name sym)]))
+        stage-workflows))
+
+;; Register on namespace load so a live `weaver repl` require resolves named
+;; routes before `install!` runs; startup config re-registers via `install!`.
+(register-workflows!)
 
 (def command-registry
   "Agent-facing commands exposed by the devflow spool."
@@ -528,7 +533,11 @@
    :choice-details 'skein.spools.devflow/choice-details
    :choice-detail 'skein.spools.devflow/choice-detail
    :choose 'skein.spools.devflow/choose!
-   :complete 'skein.spools.devflow/complete!})
+   :complete 'skein.spools.devflow/complete!
+   :advance 'skein.spools.devflow/advance!
+   :describe 'skein.spools.devflow/describe
+   :history 'skein.spools.devflow/history
+   :archive 'skein.spools.devflow/archive!})
 
 (defn workflows
   "Return devflow workflow constructors by stable key."
@@ -541,9 +550,14 @@
   command-registry)
 
 (defn install!
-  "Return installation metadata for the devflow workflow spool."
+  "Return installation metadata for the devflow workflow spool.
+
+  Re-registers the stage constructors with the engine registry (see
+  `register-workflows!`) so named `:next` routes resolve after a startup or
+  reload."
   []
   {:installed true
    :namespace 'skein.spools.devflow
    :commands command-registry
-   :workflows workflow-registry})
+   :workflows workflow-registry
+   :registered (register-workflows!)})

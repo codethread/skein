@@ -97,6 +97,13 @@ func (e *ResponseError) Error() string {
 	if e.Code == "database/not-initialized" {
 		return message
 	}
+	// ex-data details are the machine-readable half of a fail-loudly error;
+	// agents scripting the CLI need them, so append them as compact JSON
+	if len(e.Details) > 0 {
+		if encoded, err := json.Marshal(e.Details); err == nil {
+			message = fmt.Sprintf("%s details=%s", message, encoded)
+		}
+	}
 	if e.Code != "" {
 		return fmt.Sprintf("weaver %s error (%s): %s", e.Type, e.Code, message)
 	}

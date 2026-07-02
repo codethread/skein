@@ -1094,24 +1094,25 @@
         (let [burn-target (api/add rt {:title "Burn reject"})
               edge-target (api/add rt {:title "Burn edge target"})]
           (api/update rt (:id burn-target) {:edges [{:type "depends-on" :to (:id edge-target)}]})
-          (Thread/sleep 100)
-          (reset! delivered-events [])
-          (api/register-hook! rt :reject-burn #{:strand/burn-before-commit} 'skein.weaver-test/rejecting-hook {})
-          (try
-            (api/burn-by-ids rt [(:id burn-target)])
-            (is false "expected burn hook rejection")
-            (catch clojure.lang.ExceptionInfo e
-              (is (= "hook/failed" (:code (ex-data e))))
-              (is (= :strand/burn-before-commit (:hook/type (ex-data e))))
-              (is (= :reject-burn (:hook/key (ex-data e))))
-              (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-          (Thread/sleep 100)
-          (is (= burn-target (api/show rt (:id burn-target))))
-          (is (= [{:found 1}]
-                 (db/execute! (:datasource rt)
-                              ["SELECT 1 AS found FROM strand_edges WHERE from_strand_id = ? AND to_strand_id = ? AND edge_type = 'depends-on'"
-                               (:id burn-target) (:id edge-target)])))
-          (is (empty? @delivered-events)))))))
+          (let [burn-target (api/show rt (:id burn-target))]
+            (Thread/sleep 100)
+            (reset! delivered-events [])
+            (api/register-hook! rt :reject-burn #{:strand/burn-before-commit} 'skein.weaver-test/rejecting-hook {})
+            (try
+              (api/burn-by-ids rt [(:id burn-target)])
+              (is false "expected burn hook rejection")
+              (catch clojure.lang.ExceptionInfo e
+                (is (= "hook/failed" (:code (ex-data e))))
+                (is (= :strand/burn-before-commit (:hook/type (ex-data e))))
+                (is (= :reject-burn (:hook/key (ex-data e))))
+                (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
+            (Thread/sleep 100)
+            (is (= burn-target (api/show rt (:id burn-target))))
+            (is (= [{:found 1}]
+                   (db/execute! (:datasource rt)
+                                ["SELECT 1 AS found FROM strand_edges WHERE from_strand_id = ? AND to_strand_id = ? AND edge_type = 'depends-on'"
+                                 (:id burn-target) (:id edge-target)])))
+            (is (empty? @delivered-events))))))))
 
 (deftest weaver-query-registry-add-load-list-and-resolve
   (with-runtime

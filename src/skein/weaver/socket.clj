@@ -4,6 +4,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.walk :as walk]
+            [skein.db :as db]
             [skein.query :as query])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
@@ -296,7 +297,10 @@
                                   [response stop?] (if line
                                                      (handle-request @runtime-state line)
                                                      [(protocol-error nil "protocol/malformed-request" "Empty request" {}) false])]
-                              (.write wrt (json/write-str response))
+                              ;; db/json-key keeps namespaced keyword keys
+                              ;; (:workflow/role and friends from keywordized
+                              ;; attribute reads) faithful in client JSON
+                              (.write wrt (json/write-str response :key-fn db/json-key))
                               (.newLine wrt)
                               (.flush wrt)
                               (when stop?

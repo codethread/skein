@@ -48,13 +48,27 @@
     (throw (ex-info message {:value value :explain (s/explain-str spec value)})))
   value)
 
+(defn json-key
+  "Render a map key as JSON object key text, preserving keyword/symbol namespaces.
+
+  data.json's default write key-fn renders keywords via `name`, silently
+  dropping the namespace, so `:workflow/role` and `:devflow/role` would collide
+  as `\"role\"`. Rendering the full `ns/name` form keeps keyword keys a fixed
+  point of the JSON round-trip (`<-json` keywordizes them back)."
+  [k]
+  (if (instance? clojure.lang.Named k)
+    (if-let [key-ns (namespace k)]
+      (str key-ns "/" (name k))
+      (name k))
+    (str k)))
+
 (defn ->json
   "Encode an attribute map as JSON object text.
 
   Nil encodes as an empty JSON object. Invalid attribute values throw."
   [m]
   (require-valid! ::specs/attributes m "Attributes must be nil or a map that encodes to a JSON object")
-  (json/write-str (or m {})))
+  (json/write-str (or m {}) :key-fn json-key))
 
 (defn <-json
   "Decode JSON object text into a keyword-keyed Clojure map.

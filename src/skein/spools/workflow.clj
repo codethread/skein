@@ -68,7 +68,8 @@
 (def ^:private checkpoint-opt-keys (into step-opt-keys #{:kind :choices}))
 (def ^:private call-opt-keys #{:title :depends-on :attributes})
 (def ^:private workflow-opt-keys #{:params :attributes :state :phase})
-(def ^:private choice-opt-keys #{:key :label :description :next})
+(def ^:private choice-opt-keys #{:key :label :description :next :input :revise})
+(def ^:private choice-input-opt-keys #{:key :required :description})
 
 (defn- require-valid! [spec value message]
   (when-not (s/valid? spec value)
@@ -540,13 +541,52 @@
       (non-blank-string? k) k
       :else (fail! "Workflow checkpoint choices require a non-blank key" {:choice choice}))))
 
+(defn- input-key-name [decl]
+  (let [k (:key decl)]
+    (cond
+      (keyword? k) (name k)
+      (symbol? k) (name k)
+      (non-blank-string? k) k
+      :else (fail! "Workflow choice :input entries require a non-blank :key" {:input decl}))))
+
+(defn- choice-input-attr
+  "Return the JSON-safe stored form of a checkpoint choice's `:input` declaration:
+  a vector of string-keyed maps carrying each input key's name, its required flag,
+  and an optional description. Rejects unknown declaration keys loudly (TEN-003),
+  matching the other builder opts."
+  [input]
+  (when-not (vector? input)
+    (fail! "Workflow choice :input must be a vector of declaration maps" {:input input}))
+  (mapv (fn [decl]
+          (require-map! decl [:choice :input])
+          (reject-unknown-keys! decl choice-input-opt-keys :choice-input)
+          (when (and (contains? decl :required) (not (boolean? (:required decl))))
+            (fail! "Workflow choice :input :required must be a boolean" {:input decl}))
+          (when (and (contains? decl :description) (not (string? (:description decl))))
+            (fail! "Workflow choice :input :description must be a string" {:input decl}))
+          (cond-> {"key" (input-key-name decl)
+                   "required" (boolean (:required decl))}
+            (:description decl) (assoc "description" (:description decl))))
+        input))
+
+(defn- revise-params-attr
+  "Return the override params stored for a checkpoint choice's `:revise` directive.
+  `:revise` must be a map carrying a `:params` map (TEN-003); the params are the
+  authoritative overrides re-poured over the run's own definition at `choose!`."
+  [revise]
+  (when-not (and (map? revise) (map? (:params revise)))
+    (fail! "Workflow choice :revise must be a map with a :params map" {:revise revise}))
+  (:params revise))
+
 (defn- choice-detail-attr [choice]
   (when (map? choice)
     (let [k (choice-name choice)]
       [k (cond-> {}
            (:label choice) (assoc "label" (:label choice))
            (:description choice) (assoc "description" (:description choice))
-           (:next choice) (assoc "next" (str (:next choice))))])))
+           (:next choice) (assoc "next" (str (:next choice)))
+           (:revise choice) (assoc "revise" (revise-params-attr (:revise choice)))
+           (:input choice) (assoc "input" (choice-input-attr (:input choice))))])))
 
 (defn- choice-details-attr [choices]
   (not-empty (into {} (keep choice-detail-attr choices))))
@@ -554,6 +594,13 @@
 (defn- reject-unknown-choice-keys! [choices]
   (doseq [choice choices :when (map? choice)]
     (reject-unknown-keys! choice choice-opt-keys :choice))
+  choices)
+
+(defn- reject-next-and-revise! [choices]
+  (doseq [choice choices
+          :when (and (map? choice) (contains? choice :next) (contains? choice :revise))]
+    (fail! "Workflow choice :next and :revise are mutually exclusive"
+           {:choice (choice-name choice)}))
   choices)
 
 (defn- require-unique-choice-keys! [choices]
@@ -578,17 +625,28 @@
 
   Checkpoints are ordinary strands with consistent workflow metadata for HITL,
   review, routing, or external wait points. `:choices` may be simple keywords or
-  maps with `:key`, `:label`, `:description`, and optional `:next` metadata."
+  maps with `:key`, `:label`, `:description`, optional `:next` routing (a symbol
+  or a registered workflow name — see `register-workflow!`), an optional
+  `:revise {:params {...}}` directive (mutually exclusive with `:next`) that
+  re-pours the run's own definition with authoritative param overrides, and an
+  optional `:input` declaration (a vector of `{:key :required :description}` maps
+  surfaced with the choice and enforced by `choose!`).
+
+  A `:kind :human` checkpoint (the default) is the canonical human-in-the-loop
+  signal: the builder auto-stamps `workflow/hitl \"true\"` so callers never set
+  it by hand."
   [id title & {:as opts}]
   (reject-unknown-keys! opts checkpoint-opt-keys :checkpoint)
   (let [kind (or (:kind opts) :human)
-        choices (some-> (:choices opts) reject-unknown-choice-keys! require-unique-choice-keys!)
+        choices (some-> (:choices opts) reject-unknown-choice-keys! reject-next-and-revise! require-unique-choice-keys!)
         details (choice-details-attr choices)]
     (-> (apply step id title (apply concat (seq (dissoc opts :kind :choices))))
         (update :attributes merge
                 {"workflow/role" "checkpoint"
                  "workflow/checkpoint" (name id)
                  "workflow/checkpoint-kind" (name kind)}
+                (when (= kind :human)
+                  {"workflow/hitl" "true"})
                 (when choices
                   {"workflow/choices" (mapv choice-name choices)})
                 (when details
@@ -606,6 +664,26 @@
                        [{} body])]
     (reject-unknown-keys! opts workflow-opt-keys :workflow)
     (merge opts {:name name :steps (vec steps)})))
+
+(defn- resolve-and-normalize
+  "Return `[rendered-workflow resolved-params root-ref normalized-steps]` — the
+  materialization-free front half shared by `compile` and `describe`.
+
+  Validates the workflow and params, resolves params (defaults + required
+  checks), renders workflow-level fields (step render fns stay live so
+  `normalize-steps` can render loop steps against per-item params), and
+  expands/condition-filters/splices the steps. Materializes nothing."
+  [workflow params opts]
+  (require-map! workflow [:workflow])
+  (require-valid! :skein.spools.workflow.values/params params "Invalid workflow params")
+  (require-valid-workflow! workflow)
+  (let [params (resolve-params workflow params)
+        rendered (assoc (render (dissoc workflow :steps) params)
+                        :steps (:steps workflow))
+        _ (require-non-blank! (:name rendered) [:name])
+        root-ref (normalize-ref (or (:root-ref opts) :molecule) [:root-ref])
+        steps (normalize-steps rendered params root-ref)]
+    [rendered params root-ref steps]))
 
 (defn compile
   "Return a batch payload for a workflow molecule or wisp.
@@ -626,18 +704,8 @@
   ([workflow params]
    (compile workflow params {}))
   ([workflow params opts]
-   (require-map! workflow [:workflow])
-   (require-valid! :skein.spools.workflow.values/params params "Invalid workflow params")
-   (require-valid-workflow! workflow)
    (let [phase (or (:phase opts) (:phase workflow) :molecule)
-         params (resolve-params workflow params)
-         ;; Render only workflow-level fields here; step render fns stay live
-         ;; so normalize-steps can render loop steps against per-item params.
-         workflow (assoc (render (dissoc workflow :steps) params)
-                         :steps (:steps workflow))
-         _ (require-non-blank! (:name workflow) [:name])
-         root-ref (normalize-ref (or (:root-ref opts) :molecule) [:root-ref])
-         steps (normalize-steps workflow params root-ref)
+         [workflow params root-ref steps] (resolve-and-normalize workflow params opts)
          root {:ref root-ref
                :title (:name workflow)
                :state (or (:state workflow) "active")
@@ -658,6 +726,62 @@
      {:strands (into [root] (mapv #(step-strand % phase) steps))
       :edges (vec (concat (parent-edges root-ref steps)
                           (dependency-edges steps)))})))
+
+(defn- step-attr
+  "Read string-keyed workflow attribute `k` off a normalized step's `:attributes`
+  map (builders write the `workflow/*` vocabulary string-keyed)."
+  [step k]
+  (get (:attributes step) k))
+
+(defn- describe-choice
+  "Project one checkpoint choice into `{:key … :label … :description … :input …
+  :next|:revise …}` from its stored `workflow/choice-details` entry (`detail`,
+  nil for a bare-keyword choice)."
+  [name detail]
+  (cond-> {:key name}
+    (get detail "label") (assoc :label (get detail "label"))
+    (get detail "description") (assoc :description (get detail "description"))
+    (get detail "input") (assoc :input (get detail "input"))
+    (get detail "next") (assoc :next (get detail "next"))
+    (get detail "revise") (assoc :revise (get detail "revise"))))
+
+(defn- describe-choices
+  "Project a checkpoint step's choices in declared order, or nil for a non-checkpoint."
+  [step]
+  (when-let [choices (step-attr step "workflow/choices")]
+    (let [details (or (step-attr step "workflow/choice-details") {})]
+      (mapv #(describe-choice % (get details %)) choices))))
+
+(defn- describe-step
+  "Project one normalized step into its compile-time description."
+  [step]
+  (cond-> {:id (normalize-ref (:id step) [:steps :id])
+           :title (:title step)
+           :kind (or (step-attr step "workflow/role") "step")
+           :depends-on (:depends-on step)}
+    (:condition step) (assoc :condition (:condition step))
+    (step-attr step "workflow/gate") (assoc :gate (step-attr step "workflow/gate"))
+    (describe-choices step) (assoc :choices (describe-choices step))))
+
+(defn describe
+  "Return a compile-time projection of `workflow` without materializing any strand.
+
+  Loop/call expansion and condition filtering apply exactly as `compile` runs
+  them, so the description matches what would pour for `params`: excluded steps
+  are absent, procedure joins appear as `:procedure` steps, and each checkpoint's
+  choices carry their declared `:input` and their `:next`/`:revise` routing. The
+  result is `{:name … :steps [{:id :title :kind :depends-on :condition :gate
+  :choices [{:key :label :description :input :next|:revise} …]} …]}`.
+
+  `(describe workflow)` resolves param defaults and fails loudly listing any
+  required params without a default; pass `params` to describe a definition that
+  needs them."
+  ([workflow]
+   (describe workflow {}))
+  ([workflow params]
+   (let [[rendered _ _ steps] (resolve-and-normalize workflow params {})]
+     {:name (:name rendered)
+      :steps (mapv describe-step steps)})))
 
 (defn pour!
   "Materialize `workflow` as a persistent molecule strand graph."
@@ -768,7 +892,7 @@
       []
       (->> ready
            (filter #(contains? ids (:id %)))
-           (remove #(= "molecule" (attr % :workflow/role)))
+           (remove #(contains? #{"molecule" "procedure"} (attr % :workflow/role)))
            vec))))
 
 (defn- raw-next-step [run-id]
@@ -817,14 +941,19 @@
       (attr step :skills) (assoc :skills (attr step :skills)))))
 
 (defn next-steps
-  "Return agent-facing ready workflow steps for run-id."
+  "Return agent-facing ready workflow steps for run-id.
+
+  Each view carries `:run-id` so a stage cutover is visible in-band; a
+  bare `step-view` on a strand without run context stays unchanged."
   [run-id]
-  (mapv step-view (raw-next-steps run-id)))
+  (mapv #(assoc (step-view %) :run-id run-id) (raw-next-steps run-id)))
 
 (defn next-step
-  "Return the single ready workflow step for run-id, or fail if ambiguous."
+  "Return the single ready workflow step for run-id, or fail if ambiguous.
+
+  The view carries `:run-id` (see `next-steps`)."
   [run-id]
-  (step-view (raw-next-step run-id)))
+  (some-> (raw-next-step run-id) step-view (assoc :run-id run-id)))
 
 (def ^:private workflow-work-roles #{"step" "checkpoint" "procedure"})
 
@@ -858,14 +987,134 @@
   (let [root (current-root run-id)]
     (or (nil? root) (run-work-done? (:id root)))))
 
+(defn- run-molecule-roots
+  "Return every molecule root ever poured for run-id (active or closed), ordered
+  by creation. Empty when the run never existed."
+  [run-id]
+  (->> (repl/query [:and
+                    [:= [:attr "workflow/run-id"] run-id]
+                    [:= [:attr "workflow/role"] "molecule"]])
+       (sort-by :created_at)
+       vec))
+
+(def ^:private history-event-roles
+  ;; Procedure joins (role "procedure") are engine bookkeeping with no
+  ;; user-facing outcome, so run-history projects only step/checkpoint closes.
+  #{"step" "checkpoint"})
+
+(defn- history-event
+  "Project one closed step/checkpoint strand into a history event. A checkpoint is
+  a `:choice`, a closed gate is a `:gate-closed`, and any other step is a
+  `:step-closed`; `:at` is the strand's `updated_at`, used for event ordering."
+  [strand]
+  (let [role (attr strand :workflow/role)
+        gate (attr strand :workflow/gate)
+        type (cond
+               (= "checkpoint" role) :choice
+               gate :gate-closed
+               :else :step-closed)]
+    (cond-> {:type type
+             :id (:id strand)
+             :title (:title strand)
+             :at (:updated_at strand)}
+      (attr strand :workflow/outcome) (assoc :outcome (attr strand :workflow/outcome))
+      (attr strand :workflow/outcome-by) (assoc :by (attr strand :workflow/outcome-by))
+      (attr strand :workflow/outcome-input) (assoc :input (attr strand :workflow/outcome-input))
+      (attr strand :workflow/notes) (assoc :notes (attr strand :workflow/notes)))))
+
+(defn- molecule-history
+  "Project one molecule root into `{:root {…} :events [event …]}`, its events being
+  every closed step/checkpoint strand in the root's subgraph, ordered by `:at`."
+  [root]
+  (let [events (->> (:strands (graph/subgraph [(:id root)]))
+                    (filter #(and (= "closed" (:state %))
+                                  (contains? history-event-roles (attr % :workflow/role))))
+                    (map history-event)
+                    (sort-by :at)
+                    vec)]
+    {:root (cond-> {:id (:id root)
+                    :title (:title root)
+                    :state (:state root)
+                    :created_at (:created_at root)}
+             (attr root :devflow/stage) (assoc :stage (attr root :devflow/stage)))
+     :events events}))
+
+(defn run-history
+  "Return a read-only, creation-ordered projection of every molecule ever poured
+  for run-id (any state) as a vector of
+  `{:root {:id :title :stage :state :created_at} :events [{:type :id :title
+  :outcome :by :input :notes :at} …]}` maps.
+
+  `:type` is `:step-closed`, `:choice`, or `:gate-closed`; events are ordered by
+  their strand's `updated_at`; `:stage` is present only when a molecule carries a
+  `devflow/stage`. Writes nothing and fails loudly (TEN-003) for a run that never
+  had a root strand."
+  [run-id]
+  (let [roots (run-molecule-roots run-id)]
+    (when (empty? roots)
+      (fail! "Unknown workflow run" {:run-id run-id}))
+    (mapv molecule-history roots)))
+
+(defn- run-summary
+  "Return a compact, JSON-safe summary of `history`: one string-keyed entry per
+  molecule (in creation order) carrying its stage title, its `devflow/stage` when
+  present, and the ordered checkpoint outcomes recorded in that molecule."
+  [history]
+  (mapv (fn [{:keys [root events]}]
+          (cond-> {"title" (:title root)
+                   "outcomes" (->> events (filter #(= :choice (:type %))) (mapv :outcome))}
+            (:stage root) (assoc "stage" (:stage root))))
+        history))
+
+(defn archive-run!
+  "Squash a finished run's molecules into one closed digest strand and return it.
+
+  Fails loudly (TEN-003) for an unknown run or one that still has an active root.
+  Every molecule subgraph of the run is burned; the single digest is stamped
+  `workflow/role \"digest\"`, `workflow/run-id`, `workflow/squashed-count`, and a
+  compact JSON-safe `workflow/summary` of the history (stage titles + checkpoint
+  outcomes). opts may override the digest `:title` and merge extra `:attributes`."
+  ([run-id]
+   (archive-run! run-id {}))
+  ([run-id {:keys [title attributes]}]
+   (when-not (root-strand-exists? run-id)
+     (fail! "Unknown workflow run" {:run-id run-id}))
+   (when (current-root run-id)
+     (fail! "Cannot archive a run with an active root" {:run-id run-id}))
+   (let [roots (run-molecule-roots run-id)
+         summary (run-summary (mapv molecule-history roots))
+         squashed-count (reduce + 0 (map #(count (:strands (graph/subgraph [(:id %)]))) roots))
+         digest (repl/strand!
+                 (or title (str "Digest for run " run-id))
+                 (merge {"workflow/role" "digest"
+                         "workflow/run-id" run-id
+                         "workflow/squashed-count" squashed-count
+                         "workflow/summary" summary}
+                        attributes)
+                 {:state "closed"})]
+     (doseq [root roots]
+       (burn! (:id root)))
+     digest)))
+
+(defn- run-result
+  "Return the run-mutation result shape: the run's ready step views plus its
+  done-ness, in one map. Every run-mutating op (`start!`, `complete!`,
+  `choose!`, `advance!`) returns this so callers never guess whether an empty
+  `:ready` means the run finished or merely stalled."
+  [run-id]
+  {:ready (next-steps run-id)
+   :done (done? run-id)})
+
 (declare close-run-if-done!)
 
 (defn start!
-  "Start a workflow run and return its agent-facing ready step views.
+  "Start a workflow run and return the `{:ready [step-view ...] :done boolean}`
+  result shape.
 
   `run-id` is the stable active workflow instance handle. `opts` may include
-  :family, :definition, :context, and :root-attributes. Returns an empty
-  vector when the run has no ready workflow work (e.g. an empty workflow)."
+  :family, :definition, :context, and :root-attributes. `:ready` is empty when
+  the run has no ready workflow work (e.g. an empty workflow, which also reports
+  `:done true`)."
   ([run-id workflow params]
    (start! run-id workflow params {}))
   ([run-id workflow params opts]
@@ -873,10 +1122,21 @@
      (fail! "Active workflow run already exists" {:run-id run-id}))
    (pour! workflow params (merge opts {:run-id run-id}))
    (close-run-if-done! run-id)
-   (next-steps run-id)))
+   (run-result run-id)))
 
-(defn- detail-view [detail]
-  (into {} (map (fn [[k v]] [(if (keyword? k) (name k) k) v])) detail))
+(defn- string-keyed [m]
+  (into {} (map (fn [[k v]] [(if (keyword? k) (name k) k) v])) m))
+
+(defn- detail-view
+  "Return a checkpoint choice's stored detail map with string keys. The nested
+  `input` declaration (a vector of maps) is string-keyed too, because the JSON
+  round-trip keywordizes nested map keys on read (`skein.db/<-json`)."
+  [detail]
+  (reduce-kv (fn [acc k v]
+               (let [k (if (keyword? k) (name k) k)]
+                 (assoc acc k (if (= k "input") (mapv string-keyed v) v))))
+             {}
+             detail))
 
 (defn choice-details
   "Return choice explanations for run-id's current workflow checkpoint, keyed by
@@ -929,17 +1189,77 @@
     (not-empty (merge (or attributes {})
                       (when notes {"workflow/notes" notes})))))
 
+(defn- depends-on-edges
+  "Return the depends-on adjacency (from-id -> #{to-id ...}) internal to
+  `strand-ids`. Subgraph expansion can reach external blockers, so edges with an
+  endpoint outside the set are dropped to keep join readiness run-local."
+  [strand-ids]
+  (let [ids (set strand-ids)]
+    (reduce (fn [acc {:keys [from_strand_id to_strand_id]}]
+              (if (and (contains? ids from_strand_id) (contains? ids to_strand_id))
+                (update acc from_strand_id (fnil conj #{}) to_strand_id)
+                acc))
+            {}
+            (:edges (graph/subgraph strand-ids {:type "depends-on"})))))
+
+(defn- cascade-join-ids
+  "Return the `procedure` join strand ids under root-id's run that become fully
+  satisfied once `closing-ids` close, cascading through chained joins.
+
+  A join (role `\"procedure\"`) depends-on its expansion's exit steps, so it is
+  closeable once every strand it depends-on is closed (or is itself closing);
+  closing the last inner step beneath a join thus closes the join in the same
+  transaction, and a join that is the last inner step of an outer join cascades
+  likewise. Joins never surface as ready work (see `raw-next-steps`)."
+  [root-id closing-ids]
+  (let [strands (:strands (graph/subgraph [root-id]))
+        by-id (into {} (map (juxt :id identity)) strands)
+        deps (depends-on-edges (map :id strands))
+        joins (filter #(= "procedure" (attr % :workflow/role)) strands)]
+    (loop [closed (set closing-ids)
+           result #{}]
+      (let [newly (for [join joins
+                        :let [id (:id join)]
+                        :when (and (= "active" (:state join))
+                                   (not (contains? closed id))
+                                   (every? (fn [to]
+                                             (or (contains? closed to)
+                                                 (= "closed" (:state (by-id to)))))
+                                           (get deps id #{})))]
+                    id)]
+        (if (empty? newly)
+          result
+          (recur (into closed newly) (into result newly)))))))
+
+(defn- close-batch
+  "Return one batch payload closing `primary-id` (merging `primary-attrs`) plus
+  each cascaded procedure `join-ids` (stamped `workflow/outcome-by \"engine\"`
+  for provenance), updating each existing strand in place by its durable id ref."
+  [primary-id primary-attrs join-ids]
+  (let [primary (cond-> {:ref (keyword primary-id) :state "closed"}
+                  (seq primary-attrs) (assoc :attributes primary-attrs))
+        joins (mapv (fn [id]
+                      {:ref (keyword id) :state "closed"
+                       :attributes {"workflow/outcome-by" "engine"}})
+                    join-ids)
+        strands (into [primary] joins)]
+    {:refs (into {} (map (fn [s] [(:ref s) (name (:ref s))])) strands)
+     :strands strands}))
+
 (defn complete!
   "Close the current ready non-checkpoint workflow step for run-id and return
-  the next agent-facing ready step views.
+  the `{:ready [step-view ...] :done boolean}` result shape.
 
   opts may include `:step` (materialized strand id) to select among multiple
   ready steps; without it, exactly one step must be ready. opts may also
   include `:notes` (string, stored as \"workflow/notes\") and `:attributes`
   (map merged onto the closed step). Closing a gate step (one built with
   `gate`) additionally requires a non-blank `:by`, recorded as
-  \"workflow/outcome-by\" to persist who closed it. All validation happens
-  before any mutation."
+  \"workflow/outcome-by\" to persist who closed it.
+
+  When the closed step is the last active inner step beneath a `procedure`
+  join, the join closes in the same transaction (see `cascade-join-ids`). All
+  validation happens before any mutation."
   ([run-id]
    (complete! run-id {}))
   ([run-id opts]
@@ -953,16 +1273,38 @@
          (fail! "Gate steps require a non-blank :by to record who closed them"
                 {:run-id run-id :step (step-view step) :gate gate :by (:by opts)}))
        (let [attrs (cond-> (or (close-attributes! opts) {})
-                     gate (assoc "workflow/outcome-by" (:by opts)))]
-         (repl/update! (:id step) (cond-> {:state "closed"}
-                                     (seq attrs) (assoc :attributes attrs)))
+                     gate (assoc "workflow/outcome-by" (:by opts)))
+             root (current-root run-id)
+             join-ids (cascade-join-ids (:id root) #{(:id step)})]
+         (batch/apply! (close-batch (:id step) (not-empty attrs) join-ids))
          (close-run-if-done! run-id)
-         (next-steps run-id))))))
+         (run-result run-id))))))
 
 (defn- raw-choice-detail [step choice]
   (let [details (attr step :workflow/choice-details)]
     (or (get details choice)
         (get details (keyword choice)))))
+
+(defn- validate-choice-input!
+  "Fail loudly (TEN-003) before any mutation when a checkpoint choice declares
+  required `:input` keys absent from `input`.
+
+  The declaration travels in the checkpoint's stored `workflow/choice-details`
+  (see D1.2) under string key names; a required key counts as supplied whether
+  the caller's `input` map names it as a keyword or a string, so the surfaced
+  declaration round-trips straight back into `choose!`."
+  [run-id step choice input]
+  (when-let [decls (some-> (raw-choice-detail step choice) detail-view (get "input"))]
+    (let [required (->> decls (filter #(get % "required")) (map #(get % "key")))
+          supplied? (fn [k] (and (map? input)
+                                 (or (contains? input (keyword k))
+                                     (contains? input k))))
+          missing (remove supplied? required)]
+      (when (seq missing)
+        (fail! "Choice input is missing required keys"
+               {:run-id run-id :choice choice
+                :missing (vec missing)
+                :input-declaration decls})))))
 
 (defn- close-workflow-root! [root]
   (doseq [strand (:strands (graph/subgraph [(:id root)]))]
@@ -970,6 +1312,55 @@
                (contains? #{"molecule" "step" "checkpoint" "procedure"}
                           (attr strand :workflow/role)))
       (repl/update! (:id strand) {:state "closed"}))))
+
+(defonce ^{:private true
+           :doc "Weaver-lifetime map of registered workflow name (keyword) ->
+  fully qualified constructor symbol. Re-registered from startup code like named
+  queries and patterns; `defonce` so a bare namespace reload keeps existing runs'
+  named routes resolvable until startup re-registration runs."}
+  workflow-name-registry
+  (atom {}))
+
+(defn register-workflow!
+  "Register a workflow constructor under a stable keyword `name`.
+
+  `name` is a keyword; `constructor-sym` is a fully qualified symbol resolving to
+  a workflow constructor. Registration is weaver-lifetime in-memory state
+  (mirroring named queries/patterns), re-established from startup config. A
+  duplicate `name` replaces the prior entry, so reloading a workflow re-points
+  existing in-flight runs' named `:next` routes at the new constructor. Returns
+  `name`."
+  [name constructor-sym]
+  (when-not (keyword? name)
+    (fail! "Workflow registry name must be a keyword" {:name name}))
+  (when-not (qualified-symbol? constructor-sym)
+    (fail! "Workflow registry constructor must be a fully qualified symbol"
+           {:name name :constructor constructor-sym}))
+  (swap! workflow-name-registry assoc name constructor-sym)
+  name)
+
+(defn workflow-definition
+  "Return the constructor symbol registered under keyword `name`, failing loudly
+  (TEN-003) when `name` is not registered."
+  [name]
+  (or (get @workflow-name-registry name)
+      (fail! "Unknown registered workflow"
+             {:name name :registered (vec (keys @workflow-name-registry))})))
+
+(defn registered-workflows
+  "Return the current registry map of workflow name (keyword) -> constructor symbol."
+  []
+  @workflow-name-registry)
+
+(defn- resolve-next-symbol
+  "Resolve a checkpoint choice's stored `:next` target to a workflow constructor
+  symbol. A stored keyword name (`\":proposal\"`) resolves through the
+  weaver-lifetime registry (failing loudly on an unregistered name); any other
+  value is read as a fully qualified fn symbol directly."
+  [next-str]
+  (if (str/starts-with? next-str ":")
+    (workflow-definition (keyword (subs next-str 1)))
+    (symbol next-str)))
 
 (defn- continuation-plan
   "Interpret a `:next` fn's return value into the continuation workflow and its
@@ -986,35 +1377,94 @@
     {:workflow (:workflow result) :params (get result :params call-params)}
     {:workflow result :params call-params}))
 
-(defn- route-plan
-  "Return the routing plan for a checkpoint choice with a `:next` continuation,
-  or nil for a terminal choice.
+(defn- stage-param-keys
+  "Return the stage-local override param keys recorded on `root` (as keywords).
 
-  The plan carries the old root and the continuation batch payload, compiled
-  once against the same run-id/family/phase `pour!` uses. Continuation params
-  come from the `:next` fn: either the merged context+input (workflow-map
-  return) or the fn's own `:params` (`{:workflow w :params p}` return, see
-  `continuation-plan`); those params are also persisted as the new root's
-  `workflow/context`, making the continuation authoritative over its own
-  params. The payload is compiled once and applied only after the old root
-  closes, so two active roots never share one run-id."
+  A `:revise` route stamps the keys it overrode under `workflow/stage-params`;
+  a later `:next` route drops them from the continuation params so a stage-local
+  loop flag (e.g. `:revision`) never leaks downstream once the stage is left."
+  [root]
+  (mapv keyword (or (attr root :workflow/stage-params) [])))
+
+(defn- stage-params-attrs
+  "Return the root attribute recording `override-params`' keys as stage-local, or
+  nil when there are no overrides."
+  [override-params]
+  (when (seq override-params)
+    {"workflow/stage-params" (mapv name (keys override-params))}))
+
+(defn- next-plan
+  "Return the routing plan for a `:next` continuation (a symbol or registered
+  name). Continuation params come from the `:next` fn: either the merged
+  context+input (workflow-map return) or the fn's own `:params`
+  (`{:workflow w :params p}` return, see `continuation-plan`). The current root's
+  stage-local override keys (see `stage-param-keys`) are dropped from those
+  params so leaving the stage sheds its loop state. Params persist as the new
+  root's `workflow/context`, and the resolved constructor symbol as its
+  `workflow/definition` so a later `:revise` can re-pour the stage."
+  [run-id step next-str input]
+  (let [next-sym (resolve-next-symbol next-str)
+        workflow-fn (or (requiring-resolve next-sym)
+                        (fail! "Choice next workflow cannot be resolved"
+                               {:run-id run-id :next next-sym}))
+        root (current-root run-id)
+        context (or (attr root :workflow/context) {})
+        call-params (apply dissoc (merge context input) (stage-param-keys root))
+        {:keys [workflow params]} (continuation-plan (workflow-fn call-params) call-params)
+        payload (compile workflow params
+                         {:run-id run-id
+                          :family (attr root :workflow/family)
+                          :definition next-sym
+                          :context params
+                          :phase :molecule})]
+    {:old-root root :payload payload}))
+
+(defn- revise-plan
+  "Return the routing plan for a `:revise` choice: re-pour the current root's own
+  `workflow/definition` under the same run-id with authoritative override params.
+
+  Params are `(merge context choice-input override-params)`, the `:revise`
+  overrides winning, and persist as the new root's `workflow/context`; the
+  overridden keys are recorded as stage-local (see `stage-params-attrs`). Fails
+  loudly (TEN-003) when the root has no resolvable `workflow/definition`."
+  [run-id step choice input override-params]
+  (let [root (current-root run-id)
+        def-str (or (attr root :workflow/definition)
+                    (fail! "Cannot revise a run whose root has no workflow/definition"
+                           {:run-id run-id :choice choice}))
+        definition-sym (symbol def-str)
+        definition-fn (or (requiring-resolve definition-sym)
+                          (fail! "Root workflow/definition cannot be resolved"
+                                 {:run-id run-id :definition definition-sym}))
+        context (or (attr root :workflow/context) {})
+        params (merge context input override-params)
+        result (definition-fn params)
+        workflow (if (and (map? result) (contains? result :workflow)) (:workflow result) result)
+        payload (compile workflow params
+                         {:run-id run-id
+                          :family (attr root :workflow/family)
+                          :definition definition-sym
+                          :context params
+                          :root-attributes (stage-params-attrs override-params)
+                          :phase :molecule})]
+    {:old-root root :payload payload}))
+
+(defn- route-plan
+  "Return the routing plan for a checkpoint choice, or nil for a terminal choice.
+
+  A `:next` choice routes to a continuation (symbol or registered name; see
+  `next-plan`); a `:revise` choice re-pours the run's own definition with
+  override params (see `revise-plan`). The plan carries the old root and the
+  continuation batch payload, compiled once before any mutation and applied only
+  after the old root closes, so two active roots never share one run-id."
   [run-id step choice input]
-  (when-not (map? input)
-    (fail! "Choice input must be a map" {:run-id run-id :choice choice :input input}))
-  (when-let [next-sym (some-> (raw-choice-detail step choice) detail-view (get "next") symbol)]
-    (let [workflow-fn (or (requiring-resolve next-sym)
-                          (fail! "Choice next workflow cannot be resolved"
-                                 {:run-id run-id :choice choice :next next-sym}))
-          root (current-root run-id)
-          context (or (attr root :workflow/context) {})
-          call-params (merge context input)
-          {:keys [workflow params]} (continuation-plan (workflow-fn call-params) call-params)
-          payload (compile workflow params
-                           {:run-id run-id
-                            :family (attr root :workflow/family)
-                            :context params
-                            :phase :molecule})]
-      {:old-root root :payload payload})))
+  (let [detail (some-> (raw-choice-detail step choice) detail-view)
+        next-str (get detail "next")
+        revise-params (get detail "revise")]
+    (cond
+      next-str (next-plan run-id step next-str input)
+      revise-params (revise-plan run-id step choice input revise-params)
+      :else nil)))
 
 (defn- routed-batch
   "Return one batch payload that atomically closes the chosen checkpoint (with
@@ -1047,7 +1497,7 @@
 
 (defn choose!
   "Record a checkpoint choice for run-id, optionally pour its continuation,
-  and return the next agent-facing ready step views.
+  and return the `{:ready [step-view ...] :done boolean}` result shape.
 
   opts may include `:step` (materialized strand id) to select among multiple
   ready checkpoints; without it, exactly one checkpoint must be ready. opts may
@@ -1055,10 +1505,15 @@
   checkpoint alongside \"workflow/outcome\"/\"workflow/outcome-input\" to
   persist who made the choice (unenforced per TEN-002).
 
-  A routed choice (one whose selection carries `:next`) closes out the current
-  workflow's remaining steps and pours the continuation under the same run-id,
-  all in one transactional `batch/apply!` (see `routed-batch`). All validation
-  happens before any mutation."
+  When the chosen choice declares required `:input` keys, `choose!` fails loudly
+  before any mutation if `input` omits them (see `validate-choice-input!`). A
+  routed choice — one carrying `:next` (a symbol or registered name) or
+  `:revise` (re-pour the run's own definition with override params) — closes out
+  the current workflow's remaining steps and pours the continuation under the
+  same run-id, all in one transactional `batch/apply!` (see `routed-batch`); a
+  terminal choice that closes the last inner step beneath a `procedure` join
+  closes the join in the same transaction. All validation happens before any
+  mutation."
   ([run-id choice]
    (choose! run-id choice {} {}))
   ([run-id choice input]
@@ -1068,22 +1523,55 @@
    (let [choice (if (keyword? choice) (name choice) (str choice))
          step (or (resolve-ready-step run-id opts)
                   (fail! "No ready workflow checkpoint" {:run-id run-id}))]
+     (when-not (map? input)
+       (fail! "Choice input must be a map" {:run-id run-id :choice choice :input input}))
      (when-not (= "checkpoint" (attr step :workflow/role))
        (fail! "Current workflow step is not a checkpoint" {:run-id run-id :step (step-view step)}))
      (let [choices (set (attr step :workflow/choices))]
        (when-not (contains? choices choice)
          (fail! "Choice is not valid for checkpoint" {:run-id run-id :choice choice :valid choices})))
+     (validate-choice-input! run-id step choice input)
      (let [route (route-plan run-id step choice input)
            outcome (cond-> {"workflow/outcome" choice
                             "workflow/outcome-input" input}
                      (contains? opts :by) (assoc "workflow/outcome-by" (:by opts)))]
        (if route
          (batch/apply! (routed-batch route step outcome))
-         (repl/update! (:id step) {:attributes outcome :state "closed"}))
+         (batch/apply! (close-batch (:id step) outcome
+                                    (cascade-join-ids (:id (current-root run-id)) #{(:id step)}))))
        ;; also covers a routed continuation that poured no active work, so the
        ;; new root cannot linger active on a logically finished run
        (close-run-if-done! run-id)
-       (next-steps run-id)))))
+       (run-result run-id)))))
+
+(defn advance!
+  "Advance run-id by one ready step regardless of its kind, returning the
+  `{:ready [step-view ...] :done boolean}` result shape.
+
+  Resolves the ready step (honoring an optional `:step` selector). When it is a
+  checkpoint, `opts` must carry `:choice` (fail loudly otherwise); `advance!`
+  dispatches to `choose!` with that choice, its `:input` (default `{}`), and the
+  pass-through `:by`/`:step` opts. When it is a plain step, `:choice` must be
+  absent (fail loudly otherwise); `advance!` dispatches to `complete!` with the
+  pass-through `:notes`/`:attributes`/`:step`/`:by` opts."
+  ([run-id]
+   (advance! run-id {}))
+  ([run-id opts]
+   (require-map! opts [:opts])
+   (let [step (or (resolve-ready-step run-id opts)
+                  (fail! "No ready workflow step" {:run-id run-id}))]
+     (if (= "checkpoint" (attr step :workflow/role))
+       (do
+         (when-not (contains? opts :choice)
+           (fail! "advance! on a checkpoint requires a :choice"
+                  {:run-id run-id :step (step-view step)}))
+         (choose! run-id (:choice opts) (get opts :input {})
+                  (select-keys opts [:by :step])))
+       (do
+         (when (contains? opts :choice)
+           (fail! "advance! on a step must not supply a :choice"
+                  {:run-id run-id :step (step-view step)}))
+         (complete! run-id (select-keys opts [:notes :attributes :step :by])))))))
 
 (defn install!
   "Return installation metadata for this alpha workflow spool."
@@ -1101,7 +1589,8 @@
               :wisp 'skein.spools.workflow/wisp!
               :bond 'skein.spools.workflow/bond!
               :squash 'skein.spools.workflow/squash!
-              :burn 'skein.spools.workflow/burn!}
+              :burn 'skein.spools.workflow/burn!
+              :describe 'skein.spools.workflow/describe}
    :runtime {:start 'skein.spools.workflow/start!
              :current-root 'skein.spools.workflow/current-root
              :active-runs 'skein.spools.workflow/active-runs
@@ -1109,6 +1598,12 @@
              :next-steps 'skein.spools.workflow/next-steps
              :complete 'skein.spools.workflow/complete!
              :choose 'skein.spools.workflow/choose!
+             :advance 'skein.spools.workflow/advance!
              :choice-detail 'skein.spools.workflow/choice-detail
              :choice-details 'skein.spools.workflow/choice-details
-             :done? 'skein.spools.workflow/done?}})
+             :done? 'skein.spools.workflow/done?
+             :run-history 'skein.spools.workflow/run-history
+             :archive-run 'skein.spools.workflow/archive-run!}
+   :registry {:register-workflow 'skein.spools.workflow/register-workflow!
+              :workflow-definition 'skein.spools.workflow/workflow-definition
+              :registered-workflows 'skein.spools.workflow/registered-workflows}})

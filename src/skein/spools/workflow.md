@@ -16,10 +16,18 @@ Core primitives: `workflow`, `step`, `gate`, `checkpoint`, `call`, `param`,
 `compile`, `pour!`, `wisp!`, and `explain`.
 
 The generic runtime API is `start!`, `next-steps`, `next-step`, `complete!`,
-`choose!`, `choice-detail`, `choice-details`, and `done?`, keyed by
-`workflow/run-id`. Higher-level spools such as `skein.spools.devflow` should
-define opinionated workflow definitions and thin convenience wrappers around
-this namespace.
+`choose!`, `advance!`, `choice-detail`, `choice-details`, and `done?`, keyed by
+`workflow/run-id`. Routing targets can be registered under stable names with
+`register-workflow!`/`workflow-definition`/`registered-workflows` (see §5).
+Higher-level spools such as `skein.spools.devflow` should define opinionated
+workflow definitions and thin convenience wrappers around this namespace.
+
+Every run-mutating op (`start!`, `complete!`, `choose!`, `advance!`) returns
+one `{:ready [step-view ...] :done boolean}` map: `:ready` is the run's ready
+step views (as `next-steps` would return them) and `:done` is its done-ness, so
+an empty `:ready` never leaves a caller guessing whether the run finished or
+merely stalled. The pure queries `next-steps`/`next-step` still return step
+views directly.
 
 ## 2. Credit
 
@@ -153,13 +161,13 @@ should never name the tool. Instead:
   vocabulary (e.g. `:instruction`, `:skills`) belongs to the workflow
   author's mapping table, which fails loudly on unbound actions and unknown
   keys (TEN-003); the engine anticipates nothing.
-- **Round-trip constraint:** bindings ride `workflow/context` across routed
-  loop rounds, and the JSON layer keywordizes map keys on read and writes
-  keyword keys via `name` — a NAMESPACED keyword key silently loses its
-  namespace. Data that round-trips must therefore use simple,
-  non-namespaced keyword keys (`:pr.ci.wait`, `:instruction`), and the
-  definition maps them onto the canonical string attribute vocabulary
-  (`"workflow/instruction"`) when building step attributes.
+- **Round-trip note:** bindings ride `workflow/context` across routed loop
+  rounds. The JSON layer keywordizes map keys on read and writes keyword
+  keys with their full `ns/name` form (`skein.db/json-key`), so keyword keys
+  round-trip faithfully. Binding keys conventionally stay simple
+  (`:pr.ci.wait`, `:instruction`), and the definition maps them onto the
+  canonical string attribute vocabulary (`"workflow/instruction"`) when
+  building step attributes.
 
 The pull-request model in `test/skein/spools/workflow_test.clj`
 (`workflow-pr-flow-rebinds-forge-without-spool-changes`) is the reference for
@@ -175,20 +183,40 @@ start! ──▶ next-steps / next-step ──▶ complete! / choose! ──▶ 
 ```
 
 - `(start! run-id workflow params opts)` — fails if `run-id` already has an
-  active root; pours the workflow with `workflow/run-id run-id`; returns
-  `(next-steps run-id)`.
+  active root; pours the workflow with `workflow/run-id run-id`; returns the
+  `{:ready [...] :done boolean}` result.
 - `(next-steps run-id)` — all currently ready, agent-facing step views for
-  the run (vector, possibly empty).
+  the run (vector, possibly empty). Each view carries `:run-id` so a stage
+  cutover is visible in-band; procedure join steps never appear (see below).
 - `(next-step run-id)` — convenience wrapper that throws if more than one
   step is ready; use `next-steps` for workflows with parallel entry points
   or fan-out.
 - `(complete! run-id)` / `(complete! run-id opts)` — closes a non-checkpoint
-  ready step and returns `(next-steps run-id)`.
+  ready step and returns the `{:ready [...] :done boolean}` result.
 - `(choose! run-id choice)` / `(choose! run-id choice input)` /
   `(choose! run-id choice input opts)` — records a checkpoint decision,
-  optionally routes to a continuation (`:next`), and returns
-  `(next-steps run-id)`. Revision loops route `:next` back to the same stage
+  optionally routes to a continuation (`:next`), and returns the
+  `{:ready [...] :done boolean}` result. When the chosen choice declares
+  required `:input` keys, `choose!` fails loudly before any mutation if they
+  are missing (see §5). Revision loops route `:next` back to the same stage
   (see §5).
+- `(advance! run-id)` / `(advance! run-id opts)` — one verb that advances the
+  run regardless of the ready step's kind, returning the same result shape.
+  When the resolved ready step is a checkpoint, `opts` must carry `:choice`
+  (and may carry `:input`, default `{}`, plus pass-through `:by`/`:step`) and it
+  dispatches to `choose!`; when it is a step, `:choice` must be absent and it
+  dispatches to `complete!` with pass-through `:notes`/`:attributes`/`:step`/`:by`.
+  Supplying `:choice` on a step, or omitting it on a checkpoint, fails loudly.
+
+### Procedure join auto-close
+
+A `call` expands to its inner steps plus a `procedure`-role **join** step that
+depends on the procedure's exit steps (see §3). Joins never surface as ready
+work: when `complete!`/`choose!` closes the last active inner step beneath a
+join, the join closes in the same `batch/apply!` transaction (stamped
+`workflow/outcome-by "engine"` for provenance), and a join that is itself the
+last inner step of an outer join cascades likewise. Agents therefore never
+complete a bookkeeping join by hand.
 
 **`complete!` opts** (trailing map, all optional):
 
@@ -214,7 +242,8 @@ A run is **done** iff every strand in the root subgraph with
 `workflow/role` in `#{"step" "checkpoint" "procedure"}` is `"closed"`. This
 is checked (and the root closed if true) after every mutation that could
 finish the run — `start!` (in case a workflow has zero steps), `complete!`,
-and `choose!`.
+and `choose!`. Procedure joins still count as work that must be closed; the
+engine's join auto-close (above) is what closes them, not the agent.
 
 This is stricter than "nothing is ready": a step blocked by a
 userland-added `depends-on`, or a whole run parent-blocked by a `bond!` on
@@ -233,14 +262,47 @@ never `complete!`, on a checkpoint.
 {:key :approved
  :label "Approve"
  :description "Continue to implementation."
- :next 'my.ns/next-workflow-fn}
+ :next :next-stage            ; a registered name, or a fn symbol
+ :input [{:key :reason :required true :description "Why this decision"}]}
 ```
 
 | Choice map key | Effect |
 |---|---|
 | `:key` | Choice name (required, unique per checkpoint). |
 | `:label`, `:description` | Stored in `workflow/choice-details` for `choice-details`/`choice-detail`. |
-| `:next` | Symbol naming a 1-arg fn called with the merged params (see below). Its return is compiled as the **continuation** workflow. |
+| `:next` | Routing target: a **registered workflow name** (keyword, see "Named workflows" below) or a **symbol** naming a 1-arg fn. Resolved at `choose!` time and called with the merged params (see below); its return is compiled as the **continuation** workflow. Mutually exclusive with `:revise`. |
+| `:revise` | `{:params {...}}` — re-pour the run's **own** `workflow/definition` with authoritative param overrides (see "`:revise`" below). Mutually exclusive with `:next`; supplying both fails loudly at build time. |
+| `:input` | Vector of `{:key :required :description}` maps declaring the choice input this decision expects; unknown declaration keys fail loudly like other builder opts. |
+
+### Named workflows — the routing registry
+
+`:next` may name a workflow registered under a stable keyword instead of a raw
+fn symbol:
+
+```clojure
+(workflow/register-workflow! :spec-plan 'my.ns/spec-plan-workflow)
+(workflow/workflow-definition :spec-plan)   ; => 'my.ns/spec-plan-workflow (fails loudly if unknown)
+(workflow/registered-workflows)             ; => {:spec-plan 'my.ns/spec-plan-workflow ...}
+```
+
+The registry is **weaver-lifetime in-memory state**, re-registered from startup
+config exactly like named queries and patterns (there is no durable registry
+storage). A duplicate name **replaces** the prior entry, so reloading a workflow
+re-points every in-flight run's not-yet-chosen named routes at the new
+constructor. A `:next` keyword is resolved through the registry at `choose!`
+time and **fails loudly on an unregistered name**, before any mutation. A
+routed continuation records the resolved constructor symbol as its own
+`workflow/definition`, so a later `:revise` at that stage can re-pour it.
+
+### `:input` — declared choice input
+
+A choice may declare the input `choose!` expects as a vector of
+`{:key kw :required bool :description str}` maps. The declaration is stored
+JSON-safely under the choice's `workflow/choice-details` entry and surfaced
+(string-keyed) by `choice-details`/`choice-detail` as `"input"`, so a driving
+agent can see what a decision needs before making it. Before any mutation,
+`choose!` fails loudly when a required key is absent from the passed `input`
+map, carrying the missing keys and the full declaration in the ex-data.
 
 ### `:next` — routing to a continuation
 
@@ -281,53 +343,64 @@ a continuation that re-pours it (see "Loops — revise by routing" below), or
 design the checkpoint so all prerequisite work is `:depends-on` the checkpoint
 itself.
 
-**Constraint — `:next` persists a stringified symbol** resolved via
-`requiring-resolve` at `choose!` time, not at compile time. Renaming or removing
-the target fn after a run has poured but before its checkpoint is chosen breaks
-that in-flight run. There is no registry indirection yet; treat
-workflow-continuation fn names as part of the in-flight run's durability
-contract.
+**Constraint — durability of routing targets.** A **symbol** `:next` persists a
+stringified symbol resolved via `requiring-resolve` at `choose!` time, not at
+compile time; renaming or removing that fn after a run has poured but before its
+checkpoint is chosen breaks the in-flight run. A **registered-name** `:next`
+persists the keyword and resolves through the registry at `choose!` time, so
+re-registering the name (a reload) re-points the run without breaking it — the
+registry is the indirection layer. Treat a raw fn symbol as part of the
+in-flight run's durability contract; prefer a registered name for anything that
+may be renamed or reloaded.
 
-### Loops — revise by routing
+### `:revise` — re-pour the run's own definition
 
-There is no reopen/reactivate mechanism. A revise-style "go back and redo"
-choice is modelled as a **tail call**: its `:next` routes back to the same
-stage (or a thin revision variant of it), so `choose!` closes the checkpoint
-and old root (outcome e.g. `"revise"`) and pours a **fresh** stage subgraph
-under the same `run-id`. Each iteration is thus an immutable subgraph — the
-whole loop history stays in the graph, squashable, never mutated in place.
+A `:revise {:params {...}}` choice is the declarative revision loop: instead of
+routing to a named continuation, it re-pours the **run's own**
+`workflow/definition` under the same `run-id`, with params
+`(merge context choice-input override-params)` where the `:revise` `:params`
+are authoritative and persist as the new root's `workflow/context`. It needs no
+hand-written revision wrapper fn. The run's root must carry a resolvable
+`workflow/definition` (seed it via start/`opts :definition`, which routed
+continuations also set for their stage); `:revise` **fails loudly** when it is
+absent. Same single-transaction cutover as `:next` (see below).
 
-The pattern: a stage constructor takes a `:revision` flag and declares a
-matching param (`:revision (param :default false)`); a thin revision fn wraps the
-stage constructor with `:revision true`, returning `{:workflow w :params p}` so
-the revision params win over any choice input and `p` persists as the new root's
-`workflow/context`. A `:condition [:!= :revision true]` gates the work that must
-not repeat; on a revision round the excluded step drops out and condition
-splicing (§3) reattaches its dependents, so the round is ready at the first
-genuinely-repeatable step.
+There is no reopen/reactivate mechanism: each round is a **fresh** immutable
+subgraph poured under the same `run-id`, so the whole loop history stays in the
+graph, squashable, never mutated in place. A `:condition [:!= :revision true]`
+gates the work that must not repeat; on a revision round the excluded step drops
+out and condition splicing (§3) reattaches its dependents, so the round is ready
+at the first genuinely-repeatable step.
 
 ```clojure
+(workflow/register-workflow! :spec-plan 'my.ns/spec-plan-workflow)
+
 (defn proposal-workflow [{:keys [revision] :as _opts}]
   (workflow/workflow
     "Proposal"
     {:params {:feature (workflow/param :required true)
               :revision (workflow/param :default (boolean revision))}}
     (workflow/step :inspect-context "Orient"
-                   :condition [:!= :revision true])   ; skip on later rounds
+                   :condition [:!= :revision true])   ; skip on revise rounds
     (workflow/step :write-proposal "Write proposal"
                    :depends-on [:inspect-context])
     (workflow/checkpoint :signoff "Sign off"
                          :depends-on [:write-proposal]
-                         :choices [{:key :approved :next 'my.ns/spec-plan-workflow}
-                                   {:key :revise :next 'my.ns/proposal-revision-workflow}])))
-
-(defn proposal-revision-workflow [opts]
-  (let [params (assoc opts :revision true)]
-    {:workflow (proposal-workflow params) :params params}))
+                         :choices [{:key :approved :next :spec-plan}          ; forward: registered name
+                                   {:key :revise :revise {:params {:revision true}}}]))) ; loop: re-pour self
 ```
 
-A routed `:revise` is an ordinary `:next` continuation, so the same transaction
-and the same "closes out the remaining steps" warning above apply unchanged.
+### Stage-local override params
+
+`:revise` override params are **stage-local**. The overridden keys are recorded
+on the re-poured root as `workflow/stage-params`; when a later `:next`/named
+route leaves the stage, `route-plan` drops those keys from the continuation
+params. So a `:revision true` forced by a revise round never leaks into a
+downstream stage's `workflow/context` after the round is approved. Other context
+values pass through untouched.
+
+A routed `:revise` is an ordinary transactional continuation, so the same
+"closes out the remaining steps" warning above applies unchanged.
 
 ## 6. Molecule ops
 
@@ -351,6 +424,83 @@ already falls out of edge *absence* (the ready frontier is the parallel
 set), and failure-routing belongs in checkpoint choices with `:next` until
 the runtime grows a failure concept for edges to key off.
 
+## 6a. Describing and archiving
+
+Three read/lifecycle projections let a user (or an agent) inspect a workflow's
+shape and a run's story without reading source, and fold a finished run into a
+single digest.
+
+| Fn | Effect |
+|---|---|
+| `(describe workflow)` / `(describe workflow params)` | Compile-time projection of a workflow definition — **materializes nothing**. |
+| `(run-history run-id)` | Read-only, creation-ordered projection of every molecule ever poured for a run. |
+| `(archive-run! run-id)` / `(archive-run! run-id {:title .. :attributes ..})` | Squash a finished run's molecules into one closed digest strand. |
+
+### `describe`
+
+`describe` runs the same param resolution, loop/call expansion, and
+`:condition` filtering as `compile`, then projects the result instead of
+building strands — so the description matches exactly what would pour for
+`params`. It returns:
+
+```clojure
+{:name "…"
+ :steps [{:id :draft :title "Draft widgets" :kind "step" :depends-on []
+          :condition [:!= :revision true]}
+         {:id :signoff :title "Sign off" :kind "checkpoint" :depends-on [:refine]
+          :choices [{:key "approve" :label "Approve" :next "my.ns/stage-b"}
+                    {:key "revise" :label "Revise" :revise {:revision true}
+                     :input [{"key" "reason" "required" true "description" "…"}]}]}]}
+```
+
+Each step carries `:id`, `:title`, `:kind` (`"step"`/`"checkpoint"`/`"procedure"`,
+so a `call`'s procedure join shows as `:procedure`), and `:depends-on`; a
+conditioned step adds `:condition`, a gate adds `:gate`, and a checkpoint adds
+`:choices`. Each choice carries its `:key` plus any declared `:label`,
+`:description`, `:input` (the D1.2 declaration), and its routing target
+(`:next` string or `:revise` override-param map). A `:condition`-excluded step is
+**absent** (its dependents splice through it, §3), so the ready frontier reads
+straight off the description. `(describe workflow)` resolves param defaults and
+**fails loudly** listing any required params without a default; pass `params`
+otherwise.
+
+### `run-history`
+
+`run-history` returns a vector — one entry per molecule ever poured for the run
+(any state: the active round plus every closed prior round/stage), ordered by
+molecule `created_at`:
+
+```clojure
+[{:root {:id "9i9la" :title "Stage A" :state "closed" :created_at "…"}   ; :stage added when the root carries devflow/stage
+  :events [{:type :choice :id "bl4pw" :title "Sign off" :at "…"
+            :outcome "revise" :input {:reason "needs work"}}
+           {:type :step-closed :id "i1b44" :title "Refine draft" :at "…" :notes "…"}]}
+ …]
+```
+
+Each event is a **closed** `step` or `checkpoint` strand (procedure joins, being
+engine bookkeeping, are omitted): a checkpoint is `:choice`, a closed gate is
+`:gate-closed`, any other step is `:step-closed`. An event carries `:type`,
+`:id`, `:title`, `:at`, and — when present — `:outcome`, `:by`, `:input`, and
+`:notes`. Events are ordered by their strand's `updated_at` (`:at`); because
+that timestamp is second-resolution, events closed in the same transaction (e.g.
+a routed checkpoint and the steps it force-closes) tie and fall back to strand-id
+order, so treat within-second event order as unordered. `run-history` writes
+nothing and **fails loudly** for a run that never had a root strand.
+
+### `archive-run!`
+
+`archive-run!` **fails loudly** for an unknown run or one that still has an
+active root, then replaces every molecule subgraph of the run with **one** closed
+digest strand (`repl/strand!`, then `burn!` on each molecule) and returns it. The
+digest is stamped `workflow/role "digest"`, `workflow/run-id`,
+`workflow/squashed-count` (total strands folded), and a compact JSON-safe
+`workflow/summary` — one entry per molecule (creation order) with its stage
+title, its `devflow/stage` (when present), and the ordered checkpoint
+`outcomes`. `opts` may override the digest `:title` and merge extra
+`:attributes`. Like `squash!` (§6), the original graph is burned, so a later
+`run-history` for the archived run fails loudly.
+
 ## 7. Attribute vocabulary
 
 This table is the extension API: spools built on top of
@@ -365,26 +515,28 @@ plain string-keyed `TEXT`/JSON values on the strand's `:attributes` map.
 | `workflow/wisp` | `"true"` when phase is wisp. | `compile`, root strand only, when phase is `:wisp`. |
 | `workflow/run-id` | Stable run handle used by `start!`/`next-steps`/`complete!`/`choose!`/`current-root`. | `compile`, from `opts :run-id` (root strand only). |
 | `workflow/family` | Grouping label across related runs (e.g. `"devflow"`). Carried forward into `:next` continuations. | `compile`, from `opts :family` (root strand only). |
-| `workflow/definition` | Stringified symbol naming the workflow definition fn/var. | `compile`, from `opts :definition` (root strand only). |
-| `workflow/context` | Map merged with checkpoint choice input to build `:next` continuation params (also carries revision-loop state forward). | `compile`, from `opts :context` (root strand only); read back by `route-plan`. |
+| `workflow/definition` | Stringified symbol naming the workflow definition fn/var; the constructor `:revise` re-pours and that routed continuations record for their stage. | `compile`, from `opts :definition` (root strand only; set by start, `:revise`, and named/symbol `:next` routing). |
+| `workflow/context` | Map merged with checkpoint choice input to build `:next`/`:revise` continuation params (also carries revision-loop state forward). | `compile`, from `opts :context` (root strand only); read back by `route-plan`. |
+| `workflow/stage-params` | Vector of the stage-local override key names a `:revise` round set; dropped from continuation params when a later `:next` route leaves the stage. | `route-plan` (`:revise`), root strand only. |
 | `workflow/gate` | Freeform waiter/actor hint marking a step an external wait point (`"ci"`, `"human"`, `"subagent"`, …). Surfaced by `step-view` as `:gate`; makes `complete!` require `:by`. | `gate` builder. |
 | `workflow/checkpoint` | Stable checkpoint id (the step's own local id). | `checkpoint` builder. |
 | `workflow/checkpoint-kind` | Decision owner: `"human"` or `"agent"` (unenforced, provenance only — TEN-002). | `checkpoint` builder, from `:kind`. |
 | `workflow/choices` | Vector of allowed choice-name strings. | `checkpoint` builder, from `:choices`. |
-| `workflow/choice-details` | Map of choice name → `{"label" .. "description" .. "next" ..}`. | `checkpoint` builder, from map-form `:choices` entries. |
+| `workflow/choice-details` | Map of choice name → `{"label" .. "description" .. "next" .. "input" [{"key" .. "required" .. "description" ..} ..]}`. `"input"` holds a choice's declared input requirement. | `checkpoint` builder, from map-form `:choices` entries. |
 | `workflow/decision-point` | Freeform label naming what the checkpoint decides (devflow convention). | Caller-supplied `:attributes`, e.g. devflow. |
-| `workflow/hitl` | `"true"` marking a human-in-the-loop checkpoint (devflow convention). | Caller-supplied `:attributes`, e.g. devflow. |
+| `workflow/hitl` | `"true"` marking a human-in-the-loop checkpoint. `:kind :human` is the canonical signal. | `checkpoint` builder, auto-stamped for every `:kind :human` checkpoint. |
 | `workflow/action-ref` | Semantic name of the action an agent should perform for this step (`"devflow.worktree.ensure"`, `"pr.ci.wait"`); the tool-binding key for forge-agnostic definitions (see "Tool bindings"). | Caller-supplied `:attributes`. |
 | `workflow/instruction` | Freeform instruction text surfaced in `step-view`. | Caller-supplied `:attributes`. |
 | `workflow/artifact` | Pointer to the artifact a step produces, surfaced in `step-view` (falls back to `devflow/artifact` if unset). | Caller-supplied `:attributes`. |
 | `workflow/outcome` | The choice name recorded when a checkpoint closes via a `:next`-routed or plain choice. | `choose!`, on the checkpoint step, at close. |
 | `workflow/outcome-input` | The `input` map passed to `choose!`. | `choose!`, on the checkpoint step, at close. |
-| `workflow/outcome-by` | Actor identity that closed the strand. | `choose!` (checkpoint close, when opts supply `:by`); `complete!` (gate close, where `:by` is mandatory). |
+| `workflow/outcome-by` | Actor identity that closed the strand; `"engine"` on an auto-closed procedure join. | `choose!` (checkpoint close, when opts supply `:by`); `complete!` (gate close, where `:by` is mandatory); join auto-close (`"engine"`). |
 | `workflow/notes` | Freeform notes recorded when a step closes. | `complete!`, from `opts :notes`. |
 | `workflow/procedure` | Name of the `call` id whose expansion this join step represents. | `expand-call-step`, on the procedure join step. |
 | `workflow/bond` | `"sequential"` — recorded on the bond edge itself, marking a cross-molecule bond. | `bond!`. |
 | `workflow/squashed-root` | Root id of the subgraph a digest strand replaced. | `squash!`. |
-| `workflow/squashed-count` | Number of strands in the squashed subgraph. | `squash!`. |
+| `workflow/squashed-count` | Number of strands folded into a digest. | `squash!` (one subgraph); `archive-run!` (all a run's molecules). |
+| `workflow/summary` | Compact JSON-safe run summary on an `archive-run!` digest: a vector of `{"title" .. "stage" .. "outcomes" [..]}` maps, one per archived molecule in creation order. | `archive-run!`. |
 | `skills` | Freeform skill/tool hint for a step (not `workflow/`-namespaced; devflow convention, surfaced by `step-view`). | Caller-supplied `:attributes`. |
 
 Other plain (non-`workflow/`-namespaced) attributes pass through from a
@@ -418,36 +570,34 @@ field into a plain `"description"` attribute.
                                    {:key :revise
                                     :label "Revise"
                                     :description "Send implementation back and re-run the stage."
-                                    :next 'my.ns/ship-revision-workflow}])))
+                                    :revise {:params {:revision true}}}])))
 
-(defn ship-revision-workflow [params]
-  ;; {:workflow w :params p} keeps the revision params authoritative over the
-  ;; choice input for the new round's compile and persisted context
-  (let [p (assoc params :revision true)]
-    {:workflow (ship-workflow p) :params p}))
-
-;; run — set :context so the revise loop carries :feature forward
+;; run — seed :definition so :revise can re-pour ship-workflow, and :context so
+;; the revise loop carries :feature forward. Every mutation returns
+;; {:ready [...] :done bool}; each ready view also carries :run-id "ship-feature-x".
 (workflow/start! "ship-feature-x" (ship-workflow {:feature "feature x"})
-                 {:feature "feature x"} {:context {:feature "feature x"}})
-;; => [{:id :design ...}]
+                 {:feature "feature x"}
+                 {:definition 'my.ns/ship-workflow :context {:feature "feature x"}})
+;; => {:ready [{:id :design ...}] :done false}
 
 (workflow/complete! "ship-feature-x")
-;; => [{:id :implement ...}]
+;; => {:ready [{:id :implement ...}] :done false}
 
 (workflow/complete! "ship-feature-x")
-;; => [{:id :signoff :kind "checkpoint" :choices ["approved" "revise"] ...}]
+;; => {:ready [{:id :signoff :kind "checkpoint" :choices ["approved" "revise"] ...}] :done false}
 
 ;; revise: closes this round's root and pours a fresh one under the same
 ;; run-id; :design is condition-skipped, so the round is ready at :implement
 (workflow/choose! "ship-feature-x" :revise {})
-;; => [{:id :implement ...}]
+;; => {:ready [{:id :implement ...}] :done false}
 
-(workflow/complete! "ship-feature-x")
-;; => [{:id :signoff ...}]
+;; advance! also drives the run one step regardless of kind
+(workflow/advance! "ship-feature-x")
+;; => {:ready [{:id :signoff ...}] :done false}
 
 ;; approve: closes the checkpoint; no :next means the run is now done
 (workflow/choose! "ship-feature-x" :approved {})
-;; => []   ; run auto-closes: all step/checkpoint/procedure strands are closed
+;; => {:ready [] :done true}   ; all step/checkpoint/procedure strands closed
 
 (workflow/done? "ship-feature-x")
 ;; => true
@@ -455,18 +605,18 @@ field into a plain `"description"` attribute.
 
 A checkpoint choice with `:next` routes to a continuation workflow and closes
 out the rest of the current run (see §5) — see `skein.spools.devflow`'s
-`proposal-workflow` → `spec-plan-workflow` hand-off for a routed hand-off, and
-its `human-signoff-proposal` `:revise` → `proposal-revision-workflow` for a
-revise-by-routing loop.
+`proposal-workflow` `:approved` → `:spec-plan` for a named routed hand-off, and
+its `human-signoff-proposal` `:revise {:params {:revision true}}` for a
+declarative revise loop.
 
 ## 9. See also
 
 - `skein.spools.devflow` — the reference higher-level spool built on this
   namespace: opinionated devflow-stage workflow definitions and thin
   `start!`/`next-step`/`complete!`/`choose!` wrappers keyed by feature name
-  instead of a raw run-id. Its revise-style choices route back through their
-  own stage (revise-by-routing, §5) rather than dead-ending the run. See
-  `devflow.md`.
+  instead of a raw run-id. It registers its stages under stable names and uses
+  `:revise` choices for its revision loops (§5) rather than dead-ending the run
+  or hand-writing revision wrappers. See `devflow.md`.
 - `(skein.spools.workflow/explain)` / `(explain topic)` — machine-readable
   contracts for `:workflow`, `:step`, `:gate`, `:checkpoint`, and `:call`,
   intended for agents to call before constructing workflow data instead of

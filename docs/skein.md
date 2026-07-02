@@ -79,11 +79,11 @@ From a Skein source checkout, `make install` installs the Go CLIs (`strand` and 
 User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`.
 
 When working in this repository, also read [`.skein/AGENTS.md`](../.skein/AGENTS.md).
-This repo-local guidance documents the installed devflow coordination conventions
-loaded from `.skein/config.clj`, including the `devflow-plan` and `agent-plan`
-patterns, feature-scoped ready queries, views, custom ops, and
-owner/branch/task attributes that agents should use for coordinated feature
-work.
+This repo-local guidance documents the installed runtime surface loaded from
+`.skein/init.clj` and `.skein/config.clj`: the shipped `skein.spools.workflow`
+and `skein.spools.devflow` spools, the `devflow-*` CLI ops that drive the
+feature lifecycle, feature-scoped queries, and the `agent-plan` pattern for
+lightweight work DAGs.
 
 ## Weaver
 

@@ -1,128 +1,112 @@
 Always read `docs/skein.md` from the repository root before changing this Skein config.
 
-This repo's `.skein` world installs a blessed devflow coordination config from
-`.skein/config.clj` via `.skein/init.clj`. It registers startup-loaded runtime
-state for agent coordination:
+This repo's `.skein` world is thin glue over the shipped reference spools.
+`.skein/init.clj` activates `skein.spools.ephemeral`, `skein.spools.workflow`,
+and `skein.spools.devflow` from the weaver classpath, then loads
+`.skein/config.clj`, which registers:
 
-- patterns: `devflow-plan`, `agent-plan`
-- queries: `feature-active`, `feature-work`, `feature-owner-work`,
-  `feature-task-scope`, `devflow-active`, `devflow-features`, `devflow-work`,
-  `current-dag-roots`
-- views: `devflow-dashboard`, `task-root`, `devflow-summaries`
-- ops: `current-dags`, `devflow-status`, `devflow-conventions`, `task-root`,
-  `devflow-assign`, `devflow-close-feature`, `devflow-supersede`,
-  `devflow-summaries`
+- ops: `devflow-start`, `devflow-next`, `devflow-choices`, `devflow-choose`,
+  `devflow-complete`, `devflow-advance`, `devflow-describe`,
+  `devflow-history`, `devflow-archive`, `devflow-status`, `workflow-runs`,
+  `current-dags`, `devflow-conventions`
+- queries: `work`, `feature-active`, `feature-work`, `feature-owner-work`,
+  `feature-run`, `workflow-runs`, `devflow-runs`
+- patterns: `agent-plan`
 
-## Blessed devflow attributes
+Contracts for the underlying spools live beside their code:
+[`src/skein/spools/workflow.md`](../src/skein/spools/workflow.md) (engine) and
+[`src/skein/spools/devflow.md`](../src/skein/spools/devflow.md) (lifecycle).
+Run `strand op devflow-conventions` for the live installed surface.
 
-Devflow strands are ordinary Skein strands with repo-local attributes:
+## Driving the devflow lifecycle
 
-- `workflow`: `devflow` for feature work created by `devflow-plan`, or
-  `agent-plan` for general agent work.
-- `feature`: stable feature slug; use it to scope lists, ready work, dashboards,
-  worktrees, and branch names.
-- `kind`: `plan`, `task`, or `review`.
-- `task_key`: pattern-local stable task key such as `impl`, `docs`, or `review`.
-- `task_id`: optional external/devflow numeric task id, normalized to a string.
-- `task_file`: optional path to a devflow task artifact.
-- `owner`: optional agent/person assignment.
-- `branch`: optional worktree/branch coordination hint.
-- `validation`: optional vector of validation commands or expectations.
-- `body`: issue-style context for delegated work. Include problem, scope,
-  acceptance criteria, constraints, relevant files, and validation expectations.
-
-For feature work, set `branch` to the branch/worktree the assignee should use,
-for example `devflow-skein-coordination` or
-`agent/<feature>/<task_key>`. Use `owner` plus `branch` together when assigning a
-ready item so other agents can avoid duplicate work.
-
-## Creating coordinated work
-
-Prefer `devflow-plan` for repo devflow feature DAGs. It creates one
-`kind=plan` feature root with `parent-of` edges to task/review children and
-records coordination attributes for scoped ready queries.
+The feature name is the workflow run-id. Each stage pours a molecule of
+ordinary strands; checkpoints route between stages (see devflow.md §2 for the
+stage map).
 
 ```sh
-strand pattern explain devflow-plan
-printf '%s' '{
-  "feature":"devflow-skein-coordination",
-  "title":"Feature: Devflow Skein coordination",
-  "body":"Coordinate implementation, docs, validation, and review.",
-  "tasks":[
-    {"key":"impl","title":"Implement config support","owner":"agent-a","branch":"devflow-skein-coordination","validation":["clojure -M:test"]},
-    {"key":"docs","title":"Document blessed coordination conventions","owner":"agent-docs","branch":"devflow-skein-coordination","depends_on":["impl"]},
-    {"key":"review","kind":"review","title":"Review feature","depends_on":["docs"]}
-  ]
-}' | strand weave --pattern devflow-plan
-```
-
-Use `agent-plan` for non-devflow agent DAGs that still need the same task keys,
-owner, branch, validation, and scoped-ready conventions.
-
-## Finding ready work
-
-Use feature-scoped ready queries whenever multiple features, multiple agents, or
-multiple linked worktrees share the same repo-local `.skein` world. Linked
-worktrees resolve to the same canonical repo world by default, so unscoped
-`strand ready` can return unrelated work.
-
-```sh
-strand ready --query feature-work --param feature=<feature>
-strand ready --query feature-owner-work --param feature=<feature> --param owner=<agent>
-strand ready --query feature-task-scope --param feature=<feature> --param task=<task-key-or-task-id-or-task-file>
-strand ready --query devflow-work
-```
-
-Use `feature-active`/`devflow-active` with `strand list` when you want all active
-matching strands, not readiness-filtered work:
-
-```sh
-strand list --query feature-active --param feature=<feature>
-strand list --query devflow-features
-```
-
-For dashboards and root lookups, use trusted REPL/view workflows or the matching
-ops:
-
-```sh
+strand op devflow-start <feature> [required|already-in-worktree-ok]
+strand op devflow-next <feature>
+strand op devflow-choices <feature>
+strand op devflow-choose <feature> <choice> ['{"key":"value"}'] [step=<id>]
+strand op devflow-complete <feature> ['notes'] [step=<id>]
+strand op devflow-advance <feature> [choice] ['{"key":"value"}'] ['notes'] [step=<id>]
+strand op devflow-describe [stage-key]
+strand op devflow-history <feature>
+strand op devflow-archive <feature>
 strand op devflow-status <feature>
-strand op current-dags
-strand op task-root <strand-id-or-task-key>
-printf "(do (require '[skein.views.alpha :as views]) (views/view! 'devflow-dashboard {:feature \"<feature>\"}))\n" | strand weaver repl --stdin
 ```
 
-## Assignment, supersession, and closeout
+Rules of the road:
 
-Update coordination metadata for one task/review with atomic owner/branch
-assignment:
+- Step views tell you what to do: act on `instruction`/`action-ref`/`artifact`,
+  then `devflow-complete` or the unified `devflow-advance`. Record what
+  happened in `notes`.
+- A `checkpoint` step view is decided with `devflow-choose` or
+  `devflow-advance <feature> <choice>`, never `devflow-complete`. Checkpoints
+  marked `workflow/hitl` are human decisions: stop and ask the user, do not
+  choose for them.
+- Aborting requires a reason: `strand op devflow-choose <feature> abort '{"reason":"..."}'`.
+- A routed choice closes out the current stage's remaining steps — it is a hard
+  cutover, not a pause (workflow.md §5).
+- The same commands are available in the trusted REPL via
+  `skein.spools.devflow` (`start!`, `next-steps`, `choose!`, `complete!`, ...),
+  which also exposes composition (`devflow-cycle`, stage constructors) that the
+  CLI intentionally does not.
+
+Discover active runs and actionable work:
 
 ```sh
-strand op devflow-assign <feature> <task_key> <owner> <branch>
+strand ready --query work
+strand list --query work --state active
+strand list --query devflow-runs
+strand op workflow-runs devflow
+strand list --query feature-run --param feature=<feature>
 ```
 
-Use explicit supersession when replacing a devflow task/review strand so core
-Skein records the `supersedes` edge, marks the old strand `replaced`, and
-rewires incoming `depends-on` edges to the replacement:
+`work` is the default repo-local ready query for agents: it keeps normal tasks,
+workflow steps, and checkpoints visible, but hides bookkeeping strands whose
+`workflow/role` is `molecule`, `procedure`, or `digest`.
+
+## Custom workflows
+
+Author ad-hoc workflow molecules from the REPL with `skein.spools.workflow`
+(`workflow`, `step`, `gate`, `checkpoint`, `call`, `pour!`, `start!`). Call
+`(skein.spools.workflow/explain)` for machine-readable builder contracts before
+constructing definitions.
+
+## Lightweight plans (agent-plan)
+
+For small non-lifecycle work DAGs, use the `agent-plan` pattern instead of raw
+`add`/`update` commands:
 
 ```sh
-strand op devflow-supersede <old-id-or-task-key> <replacement-id-or-task-key>
+strand pattern explain agent-plan
+printf '%s' '{
+  "feature":"<slug>",
+  "title":"Feature: <name>",
+  "tasks":[
+    {"key":"impl","title":"Implement <outcome>","validation":["clojure -M:test"]},
+    {"key":"review","kind":"review","title":"Review <outcome>","depends_on":["impl"]}
+  ]
+}' | strand weave --pattern agent-plan
+strand ready --query feature-work --param feature=<slug>
 ```
 
-Close an active feature DAG by closing active workflow=devflow strands in the selected feature DAG atomically:
+Any strand delegated to another agent must include a descriptive `body`
+attribute. Use `owner` plus `branch` together when assigning ready work so
+other agents avoid duplicating it. Delegated agents must read their assigned
+strand, append `progress` attributes while working, set `status=implemented`
+when their scoped work is ready for coordinator verification, never close their
+own assigned strand, and never mutate sibling or parent strands unless the
+assignment explicitly says so.
+
+## Config changes
+
+Smoke test config changes in a disposable `--workspace` world when possible; do
+not reload the main canonical weaver unless explicitly asked. Reload a selected
+world with:
 
 ```sh
-strand op devflow-close-feature <feature>
-strand op devflow-summaries
-```
-
-Task keys must match exactly one active devflow task/review. Plan supersession
-is intentionally unsupported because core supersession rewires dependencies, not
-parent ownership.
-
-Smoke test config changes in a separate disposable `--config-dir` world when
-possible. Do not reload the main canonical weaver unless explicitly asked. For a
-disposable or intentionally selected world, reload with:
-
-```sh
-printf "(do (require '[skein.runtime.alpha :as runtime-alpha]) (runtime-alpha/reload!))\n" | strand --config-dir "$world" weaver repl --stdin
+printf "(do (require '[skein.runtime.alpha :as runtime-alpha]) (runtime-alpha/reload!))\n" | strand --workspace "$world" weaver repl --stdin
 ```

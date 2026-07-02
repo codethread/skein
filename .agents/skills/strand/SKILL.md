@@ -59,7 +59,10 @@ constraints, relevant files, and validation expectations.
 2. Inspect registered patterns; use `strand pattern explain <name>` for the live contract.
 3. Create or update the plan graph with the best fitting pattern or minimal raw commands.
 4. Add `body` context to any strand that may be delegated.
-5. Run `strand ready` and pick from ready work, not the full list.
+5. Run `strand ready` and pick from ready work, not the full list. In this
+   repository's default `.skein` workspace, prefer `strand ready --query work`
+   so workflow molecule/procedure/digest plumbing stays hidden while steps and
+   checkpoints remain visible.
 6. If a ready strand has `hitl=true`, stop and ask the user before doing it.
 7. Complete one ready strand or one tightly related pair.
 8. Run relevant validation.
@@ -84,6 +87,8 @@ strand pattern explain agent-plan
 printf '%s' '{"feature":"<slug>","title":"Feature: <name>","body":"Problem, scope, and acceptance criteria.","tasks":[{"key":"impl","title":"Implement <outcome>","body":"Implementation context for an offloaded agent."},{"key":"validate","title":"Validate <outcome>","kind":"review","body":"Validation expectations.","depends_on":["impl"]}]}' \
   | strand weave --pattern agent-plan
 strand ready
+# In skein-src's repo-local .skein workspace, prefer:
+strand ready --query work
 ```
 
 Mark done:
@@ -121,6 +126,14 @@ printf "(defquery! 'agent-owned '[:= [:attr :owner] \"agent\"])\n" \
 strand list --query agent-owned
 strand ready --query agent-owned
 ```
+
+## Delegated-agent contract in skein-src
+
+When working from a delegated strand in this repository, read the assigned
+strand first, record progress with `strand update <id> --attr progress=...`, and
+set `--attr status=implemented` when the scoped implementation is ready for the
+coordinator to verify. Do not close your assigned strand, and do not mutate
+sibling or parent strands unless the assignment explicitly says so.
 
 ## Validation and finish
 
