@@ -362,7 +362,10 @@ Reload clears weaver-lifetime spool sync state, module-use state, named queries,
 
 ## Authoring your own spool code
 
-Skein treats runtime extensions as trusted Clojure code. A common layout is:
+Skein treats runtime extensions as trusted Clojure code. Before writing your
+own, see the [shipped reference spools](../src/skein/spools/README.md) — a
+workflow engine, a devflow lifecycle, and an ephemeral-strand helper that
+double as worked examples of spool design. A common layout is:
 
 ```text
 workspace/

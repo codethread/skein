@@ -215,3 +215,4 @@ The intake root additionally carries `devflow/worktree-check`
   molecule ops, and the full `workflow/*` attribute vocabulary.
 - `(skein.spools.workflow/explain topic)` — machine-readable builder contracts
   agents can call before constructing workflow data.
+- [README.md](./README.md) — shipped spools index and loading notes.

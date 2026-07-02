@@ -474,3 +474,4 @@ revise-by-routing loop.
 - `(skein.spools.workflow/install!)` — installation metadata: the builder and
   runtime fns of this namespace as symbol-valued maps, for trusted
   registration by name (mirrors devflow's registries in `devflow.md` §5).
+- [README.md](./README.md) — shipped spools index and loading notes.
