@@ -14,6 +14,11 @@ needed — `require` them from `init.clj`, an activated spool, or a live
 (require '[skein.spools.workflow :as workflow])
 ```
 
+Blessed alpha helpers such as `skein.api.peers.alpha` are also explicit-require
+userland APIs for trusted config and REPL workflows. Use that namespace's
+`peers`, `peer`, and `call!` helpers when a shipped spool or repo config needs
+to discover and invoke same-machine sibling weavers.
+
 ## Index
 
 | Spool | Contract doc | Purpose |
@@ -21,6 +26,7 @@ needed — `require` them from `init.clj`, an activated spool, or a live
 | `skein.spools.workflow` | [workflow.md](./workflow.md) | Workflow engine: plain-data definitions compiled to strand batches, with loops, gates, checkpoints, routing, and rebindable tool bindings. |
 | `skein.spools.devflow` | [devflow.md](./devflow.md) | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
 | `skein.spools.ephemeral` | [ephemeral.md](./ephemeral.md) | Small helper for temporary, parent-owned strands marked and burned via a userland attribute. |
+| `skein.spools.guild` | [guild.md](./guild.md) | Versioned public weaver op API declarations, `guild.describe` introspection, and loud structured deprecation for local peer coordination. |
 
 ## Approved local-root examples
 
@@ -59,7 +65,8 @@ as the worked example of authoring your own spool
 - Workflow definitions accept pure-data **tool bindings** (`workflow.md`
   §3), so a consumer rebinds steps to their own tooling from trusted config
   without touching these namespaces.
-- Every spool exposes `install!` metadata (fns as symbol maps) for trusted
-  registration by name.
+- Some spools expose `install!` metadata (fns as symbol maps) for trusted
+  registration by name; others use `install!` for side-effectful setup such as
+  registering weaver ops. See each contract doc for exact behavior.
 - To author and load your own spool from a workspace-local root, follow
   [Authoring your own spool code](../docs/skein.md#authoring-your-own-spool-code).

@@ -115,7 +115,7 @@ Two kinds of code can extend the weaver:
 
 Reference spools ship with Skein in [`spools/`](./spools/README.md), with sources under `spools/src` — a workflow engine, a devflow lifecycle, and an ephemeral-strand helper — each documented beside its code and driven end-to-end by its tests.
 
-Fresh `strand init` creates a repo's config files: `.skein/init.clj`, `.skein/spools.edn`, `.skein/.gitignore`, and a local `.skein/config.json` alpha marker. Commit the shared files (`init.clj`, `spools.edn`) for behavior the whole repo gets; keep personal spools in gitignored `init.local.clj` / `spools.local.edn`.
+Fresh `strand init` creates a repo's config files: `.skein/config.json`, `.skein/init.clj`, `.skein/spools.edn`, and `.skein/.gitignore`. Commit the shared files (`config.json`, `init.clj`, `spools.edn`) for behavior the whole repo gets; keep personal overlays in gitignored `config.local.json`, `init.local.clj`, and `spools.local.edn`.
 
 `strand init` does not persist a source path. Mill resolves the Skein source for weaver/REPL launch from `SKEIN_SOURCE`, the install-time source, or a canonical Skein checkout as the working directory.
 

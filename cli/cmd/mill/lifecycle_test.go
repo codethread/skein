@@ -145,11 +145,83 @@ func TestWeaverListIncludesSupervisedAndMetadataDiscovered(t *testing.T) {
 	}
 }
 
+func TestFriendlyNameUsesConfigNameAndLocalOverlay(t *testing.T) {
+	source := tempSource(t)
+	cfg := tempConfig(t, source)
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","name":"shared"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	world, err := config.RuntimeWorld(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := friendlyName(world, "")
+	if err != nil || name != "shared" {
+		t.Fatalf("config name should win over basename, got name=%q err=%v", name, err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "config.local.json"), []byte(`{"name":"local"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	name, err = friendlyName(world, "")
+	if err != nil || name != "local" {
+		t.Fatalf("local overlay should win, got name=%q err=%v", name, err)
+	}
+	name, err = friendlyName(world, "explicit")
+	if err != nil || name != "explicit" {
+		t.Fatalf("explicit name should win, got name=%q err=%v", name, err)
+	}
+}
+
+func TestFriendlyNameFallsBackToBasename(t *testing.T) {
+	source := tempSource(t)
+	cfg := tempConfig(t, source)
+	world, err := config.RuntimeWorld(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := friendlyName(world, "")
+	if err != nil || name != filepath.Base(world.ConfigDir) {
+		t.Fatalf("basename fallback failed, got name=%q err=%v", name, err)
+	}
+}
+
 func TestFriendlyNameRejectsWhitespaceOnly(t *testing.T) {
 	world := config.World{ConfigDir: filepath.Join(t.TempDir(), "cfg")}
 	if _, err := friendlyName(world, " \t\n"); err == nil || !strings.Contains(err.Error(), "must not be blank") {
 		t.Fatalf("expected blank name error, got %v", err)
 	}
+}
+
+func TestStartPassesConfiguredNameToWeaverMetadata(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
+	source := tempSource(t)
+	cfg := tempConfig(t, source)
+	if err := os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"configFormat":"alpha","name":"shop-fe"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	orig := launchWeaver
+	launchWeaver = func(source string, args []string, out, errOut io.Writer) (*exec.Cmd, error) {
+		cmd := exec.Command("sleep", "60")
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		world, err := config.RuntimeWorld(configDirArg(args))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeWeaverMetadataWithName(t, world, cmd.Process.Pid, "weaver-shop-fe", nameArg(args))
+		return cmd, nil
+	}
+	t.Cleanup(func() { launchWeaver = orig })
+	s := server{children: map[string]*weaverChild{}}
+	status, err := s.startWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status["name"] != "shop-fe" {
+		t.Fatalf("configured name not published in metadata: %#v", status)
+	}
+	s.stopAll()
 }
 
 func TestValidateMetadataRejectsWhitespaceOnlyName(t *testing.T) {
@@ -445,6 +517,15 @@ func configDirArg(args []string) string {
 	return ""
 }
 
+func nameArg(args []string) string {
+	for i, arg := range args {
+		if arg == "--name" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
 func tempSource(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -490,10 +571,15 @@ func tempConfigWithoutSource(t *testing.T) string {
 
 func writeWeaverMetadata(t *testing.T, world config.World, pid int, id string) {
 	t.Helper()
+	writeWeaverMetadataWithName(t, world, pid, id, filepath.Base(world.ConfigDir))
+}
+
+func writeWeaverMetadataWithName(t *testing.T, world config.World, pid int, id string, name string) {
+	t.Helper()
 	if err := os.MkdirAll(world.StateDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	meta := `{"protocol_version":1,"pid":` + intString(pid) + `,"database_path":"` + world.DBPath + `","weaver_id":"` + id + `","config_dir":"` + world.ConfigDir + `","state_dir":"` + world.StateDir + `","data_dir":"` + world.DataDir + `","name":"` + filepath.Base(world.ConfigDir) + `","socket_path":"` + filepath.Join(world.StateDir, "weaver.sock") + `","started_at":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","nrepl":{"host":"127.0.0.1","port":5555}}`
+	meta := `{"protocol_version":1,"pid":` + intString(pid) + `,"database_path":"` + world.DBPath + `","weaver_id":"` + id + `","config_dir":"` + world.ConfigDir + `","state_dir":"` + world.StateDir + `","data_dir":"` + world.DataDir + `","name":"` + name + `","socket_path":"` + filepath.Join(world.StateDir, "weaver.sock") + `","started_at":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","nrepl":{"host":"127.0.0.1","port":5555}}`
 	if err := os.WriteFile(filepath.Join(world.StateDir, "weaver.json"), []byte(meta), 0o644); err != nil {
 		t.Fatal(err)
 	}

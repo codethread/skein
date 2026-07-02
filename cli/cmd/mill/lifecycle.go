@@ -55,6 +55,13 @@ func friendlyName(world config.World, requested string) (string, error) {
 		}
 		return requested, nil
 	}
+	cfg, _, err := config.Load(world.ConfigDir)
+	if err != nil {
+		return "", err
+	}
+	if cfg.Name != "" {
+		return cfg.Name, nil
+	}
 	base := filepath.Base(world.ConfigDir)
 	if base == "." || base == string(filepath.Separator) || strings.TrimSpace(base) == "" {
 		return "", fmt.Errorf("unable to derive weaver name from workspace %s", world.ConfigDir)

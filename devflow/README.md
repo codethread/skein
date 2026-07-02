@@ -55,3 +55,4 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-07-02__attention-surface` — shipped coordinator attention/read surfaces for workflow and Shuttle/Treadle runs.
 - `26-07-02__delegation-composition` — shipped shared delegation policy, review recipe, attribute-driven delegation defaults, and delegated pipeline pattern.
 - `26-07-02__docs-pass-review` — archived approved documentation review notes.
+- `26-07-02__weaver-guild` — shipped local weaver peering: portable config-declared weaver names, `skein.api.peers.alpha` discovery/`call!` client, and the `skein.spools.guild` op-declaration spool.

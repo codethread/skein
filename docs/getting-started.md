@@ -233,17 +233,18 @@ Fresh `strand init` creates missing workspace files without overwriting existing
 
 ```text
 .skein/
-  .gitignore       # commit: ignore local/runtime artifacts
-  init.clj         # commit: shared trusted startup config
-  spools.edn         # commit: shared approved local-root spools
-  config.json      # gitignored: local alpha config marker
-  init.local.clj   # gitignored: personal startup overlay
-  spools.local.edn   # gitignored: personal approved-spool overlay
+  .gitignore          # commit: ignore local/runtime artifacts
+  config.json         # commit: shared alpha workspace config
+  init.clj            # commit: shared trusted startup config
+  spools.edn          # commit: shared approved local-root spools
+  config.local.json   # gitignored: personal config overlay
+  init.local.clj      # gitignored: personal startup overlay
+  spools.local.edn    # gitignored: personal approved-spool overlay
 ```
 
-Generated `.skein/.gitignore` ignores `config.json`, `init.local.clj`,
+Generated `.skein/.gitignore` ignores `config.local.json`, `init.local.clj`,
 `spools.local.edn`, and accidental `state/`, `data/`, `weaver.*`, and SQLite/runtime artifacts. Normal runtime metadata, sockets, and SQLite data live under mill-owned XDG state paths, not in `.skein`.
-`init.clj` and `spools.edn` are suitable to commit when the repo wants shared
+`config.json`, `init.clj`, and `spools.edn` are suitable to commit when the repo wants shared
 Skein behavior. The generated `init.clj` is a small resilient bootstrap:
 
 ```clojure

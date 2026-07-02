@@ -88,6 +88,86 @@ func TestLoadAcceptsValidAlphaConfig(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsConfigName(t *testing.T) {
+	d := t.TempDir()
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","name":"shop-fe"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := Load(d)
+	if err != nil {
+		t.Fatalf("expected name to load, got %v", err)
+	}
+	if c.Name != "shop-fe" {
+		t.Fatalf("unexpected name: %#v", c)
+	}
+}
+
+func TestLoadAppliesLocalNameOverlay(t *testing.T) {
+	d := t.TempDir()
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","name":"shared"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, LocalConfigFileName), []byte(`{"name":"local"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := Load(d)
+	if err != nil {
+		t.Fatalf("expected overlay to load, got %v", err)
+	}
+	if c.Name != "local" {
+		t.Fatalf("overlay did not win: %#v", c)
+	}
+}
+
+func TestLoadRejectsInvalidConfigNames(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+	}{
+		{"blank", `{"configFormat":"alpha","name":" \t"}`},
+		{"non-string", `{"configFormat":"alpha","name":123}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := t.TempDir()
+			if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(tc.json), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "client config name must be a non-blank string") {
+				t.Fatalf("expected name validation error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidLocalOverlay(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+		want string
+	}{
+		{"config-format", `{"configFormat":"alpha"}`, "local client config must not declare configFormat"},
+		{"unknown-key", `{"where":"x"}`, "unsupported local client config key: where"},
+		{"blank-name", `{"name":""}`, "local client config name must be a non-blank string"},
+		{"non-string-name", `{"name":false}`, "local client config name must be a non-blank string"},
+		{"malformed", `{"name":`, "malformed local client config"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := t.TempDir()
+			if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(d, LocalConfigFileName), []byte(tc.json), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q error, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestResolveSourceSupportsLeadingHomeExpansion(t *testing.T) {
 	home := t.TempDir()
 	homeSource := filepath.Join(home, "skein")

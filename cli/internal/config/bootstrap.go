@@ -10,7 +10,7 @@ import (
 )
 
 const DefaultInitCLJ = "(require '[skein.api.runtime.alpha :as runtime-alpha])\n\n(runtime-alpha/sync!)\n"
-const DefaultSkeinGitignore = "config.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
+const DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
 
 func BootstrapWorld(cwd, configDir, source string) (World, error) {
 	world, err := BootstrapTargetWorld(cwd, configDir)

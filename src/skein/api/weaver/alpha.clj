@@ -981,7 +981,9 @@
   (let [{fn-sym :fn name :name} (resolve-op runtime op-name)]
     (with-spool-classloader
       runtime
-      #((requiring-resolve fn-sym) {:op/name name :op/argv (vec argv)}))))
+      #((requiring-resolve fn-sym) {:op/name name
+                                    :op/argv (vec argv)
+                                    :op/runtime-metadata (:metadata runtime)}))))
 
 (defn op-help-handler
   "Return help for `strand op` and currently registered operations."

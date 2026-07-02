@@ -9,9 +9,10 @@ import (
 )
 
 const ConfigFileName = "config.json"
+const LocalConfigFileName = "config.local.json"
 const DefaultDBFileName = "skein.sqlite"
 
-var allowedKeys = map[string]bool{"configFormat": true}
+var allowedKeys = map[string]bool{"configFormat": true, "name": true}
 
 var InstalledSource string
 
@@ -25,6 +26,7 @@ type World struct {
 
 type Config struct {
 	ConfigFormat string `json:"configFormat"`
+	Name         string `json:"name,omitempty"`
 	Source       string `json:"-"`
 }
 
@@ -90,7 +92,59 @@ func Load(configDir string) (Config, World, error) {
 	if c.ConfigFormat != "alpha" {
 		return Config{}, World{}, fmt.Errorf("unsupported client config configFormat: %s", c.ConfigFormat)
 	}
+	if v, ok := raw["name"]; ok {
+		name, err := parseConfigName("client config name", v)
+		if err != nil {
+			return Config{}, World{}, err
+		}
+		c.Name = name
+	}
+	if err := applyLocalOverlay(&c, filepath.Join(w.ConfigDir, LocalConfigFileName)); err != nil {
+		return Config{}, World{}, err
+	}
 	return c, w, nil
+}
+
+func parseConfigName(label string, raw json.RawMessage) (string, error) {
+	var name string
+	if err := json.Unmarshal(raw, &name); err != nil {
+		return "", fmt.Errorf("%s must be a non-blank string", label)
+	}
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("%s must be a non-blank string", label)
+	}
+	return name, nil
+}
+
+func applyLocalOverlay(c *Config, path string) error {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return fmt.Errorf("malformed local client config: %w", err)
+	}
+	for k := range raw {
+		switch k {
+		case "name":
+		case "configFormat":
+			return fmt.Errorf("local client config must not declare configFormat")
+		default:
+			return fmt.Errorf("unsupported local client config key: %s", k)
+		}
+	}
+	if v, ok := raw["name"]; ok {
+		name, err := parseConfigName("local client config name", v)
+		if err != nil {
+			return err
+		}
+		c.Name = name
+	}
+	return nil
 }
 
 func ResolveSource(source string) (string, error) {

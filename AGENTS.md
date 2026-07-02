@@ -18,6 +18,7 @@ Userland reference spools are indexed in [`spools/`](./spools/README.md), with s
 - [Workflow Engine](./spools/workflow.md)
 - [Devflow Lifecycle](./spools/devflow.md)
 - [Ephemeral Strands](./spools/ephemeral.md)
+- [Weaver Guild](./spools/guild.md)
 - [Agent Shuttle](./spools/shuttle/README.md) (approved local-root spool)
 - [Treadle Gate Bridge](./spools/shuttle/treadle.md) (approved local-root spool)
 

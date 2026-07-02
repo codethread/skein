@@ -18,9 +18,10 @@ Skein is daemon-core-first behind a small router. You start `mill` once, ask it 
 
 ```text
 selected workspace (normally canonical repo .skein)
-  config.json      -> local, gitignored alpha config marker
-  init.clj         -> shared trusted startup code loaded by the weaver
-  init.local.clj   -> personal startup overlay loaded after init.clj
+  config.json        -> shared alpha workspace config
+  config.local.json  -> personal config overlay
+  init.clj           -> shared trusted startup code loaded by the weaver
+  init.local.clj     -> personal startup overlay loaded after init.clj
   spools.edn         -> shared approved local spool roots
   spools.local.edn   -> personal approved-spool overlay
   spools/            -> optional local spools
@@ -74,7 +75,7 @@ The important file is `config.json`:
 
 From a Skein source checkout, `make install` installs the Go CLIs (`strand` and `mill`) and records the checkout as mill's default source for weaver launch and the thin nREPL attach client. After that, use the CLIs directly: `mill start`, `strand init`, and `strand weaver start`.
 
-`strand init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes local `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. It does not run `git init`, persist source, or initialize database storage; weaver startup prepares storage.
+`strand init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. It does not run `git init`, persist source, or initialize database storage; weaver startup prepares storage.
 
 User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`.
 
@@ -324,7 +325,7 @@ For the ordinary repo-local `.skein` workspace, it creates or ensures:
 - `.skein/spools/` directory;
 - `.skein/spools.edn` only if absent, with `{:spools {}}`;
 - `.skein/init.clj` only if absent, with the default below;
-- `.skein/.gitignore` only if absent, ignoring local config overlays such as `config.json`, `init.local.clj`, and `spools.local.edn`.
+- `.skein/.gitignore` only if absent, ignoring local config overlays such as `config.local.json`, `init.local.clj`, and `spools.local.edn`.
 
 Explicit `--workspace` standalone workspaces bootstrap the selected workspace directory directly. Existing `config.json`, `spools.edn`, `init.clj`, and `.gitignore` are preserved.
 

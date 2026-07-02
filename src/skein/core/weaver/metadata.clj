@@ -132,19 +132,24 @@
   (and (integer? pid)
        (<= Long/MIN_VALUE pid Long/MAX_VALUE)))
 
+(defn valid-metadata?
+  "Return true when `metadata` has the supported weaver runtime metadata shape."
+  [metadata]
+  (and (map? metadata)
+       (valid-pid? (:pid metadata))
+       (= :nrepl (:transport metadata))
+       (= protocol-version (:protocol-version metadata))
+       (string? (:config-dir metadata))
+       (not (str/blank? (:name metadata)))
+       (string? (:data-dir metadata))
+       (string? (:socket-path metadata))
+       (string? (get-in metadata [:endpoint :host]))
+       (int? (get-in metadata [:endpoint :port]))
+       (string? (:canonical-db-path metadata))
+       (string? (:nonce metadata))))
+
 (defn stale-or-missing?
   "Return true when metadata is absent, malformed, unsupported, or points at a dead process."
   [metadata]
-  (not (and (map? metadata)
-            (valid-pid? (:pid metadata))
-            (pid-alive? (:pid metadata))
-            (= :nrepl (:transport metadata))
-            (= protocol-version (:protocol-version metadata))
-            (string? (:config-dir metadata))
-            (not (str/blank? (:name metadata)))
-            (string? (:data-dir metadata))
-            (string? (:socket-path metadata))
-            (string? (get-in metadata [:endpoint :host]))
-            (int? (get-in metadata [:endpoint :port]))
-            (string? (:canonical-db-path metadata))
-            (string? (:nonce metadata)))))
+  (not (and (valid-metadata? metadata)
+            (pid-alive? (:pid metadata)))))

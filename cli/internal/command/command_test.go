@@ -341,6 +341,10 @@ func TestInitBootstrapsWorkspaceWhenMissingWithoutWeaverInit(t *testing.T) {
 	}
 	if got := string(mustReadFile(t, filepath.Join(cfg, ".gitignore"))); got != config.DefaultSkeinGitignore {
 		t.Fatalf("unexpected .gitignore contents: %q", got)
+	} else if strings.Contains(got, "config.json\n") {
+		t.Fatalf("generated .gitignore must not ignore config.json: %q", got)
+	} else if !strings.Contains(got, "config.local.json\n") {
+		t.Fatalf("generated .gitignore must ignore config.local.json: %q", got)
 	}
 }
 

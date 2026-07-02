@@ -1,0 +1,31 @@
+tasks:
+  - id: 1
+    description: Config-declared weaver name with local overlay and mill resolution
+    task_file: tasks/001-config-declared-weaver-name.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Bootstrap gitignore returns config.json to VCS
+    task_file: tasks/002-bootstrap-gitignore-config-json.md
+    status: complete
+    blocked_by: []
+  - id: 3
+    description: skein.api.peers.alpha discovery of sibling weavers
+    task_file: tasks/003-peers-alpha-discovery.md
+    status: complete
+    blocked_by: []
+  - id: 4
+    description: skein.api.peers.alpha call! JSON socket peer client
+    task_file: tasks/004-peers-alpha-call-client.md
+    status: complete
+    blocked_by: [3]
+  - id: 5
+    description: skein.spools.guild versioned op declaration spool
+    task_file: tasks/005-guild-spool.md
+    status: complete
+    blocked_by: []
+  - id: 6
+    description: Guild docs, cross-references, and full validation
+    task_file: tasks/006-docs-crossrefs-validation.md
+    status: complete
+    blocked_by: [1, 2, 3, 4, 5]
