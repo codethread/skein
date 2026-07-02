@@ -13,12 +13,14 @@ and `skein.spools.devflow` from the weaver classpath, plus
 - queries: `work`, `feature-active`, `feature-work`, `feature-owner-work`,
   `feature-run`, `workflow-runs`, `devflow-runs`
 - patterns: `agent-plan`
-- shuttle harness aliases: `pi-main` (delegation default; `strand op agent
-  harnesses` lists all). Delegate existing task strands with `strand op
-  agent-delegate <task-id>`; raw `strand op agent spawn` remains the escape
-  hatch for custom shuttle runs (manual: `strand op agent about`). Workflow
-  `:subagent` gates are fulfilled automatically by the treadle
-  (`spools/shuttle/treadle.md`).
+- shuttle harness aliases: `pi-main` (delegation default), plus claude tiers
+  matched to roles — `explore` (haiku: fan-out search/read-only recon),
+  `grunt` (sonnet: tests and mechanical work), `build` (opus: feature
+  building, reviews, councils). `strand op agent harnesses` lists all.
+  Delegate existing task strands with `strand op agent-delegate <task-id>`;
+  raw `strand op agent spawn` remains the escape hatch for custom shuttle
+  runs (manual: `strand op agent about`). Workflow `:subagent` gates are
+  fulfilled automatically by the treadle (`spools/shuttle/treadle.md`).
 
 Contracts for the underlying spools live beside their code:
 [`src/skein/spools/workflow.md`](../src/skein/spools/workflow.md) (engine) and

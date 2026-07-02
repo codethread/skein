@@ -657,7 +657,21 @@
   [(shuttle/defalias! :pi-main
      {:alias-of :pi
       :extra-args ["--agent" "main"]
-      :doc "pi main agent with scout subagents; preferred delegation harness."})])
+      :doc "pi main agent with scout subagents; preferred delegation harness."})
+   ;; claude tiers mirror how we use agents: haiku explores, sonnet does
+   ;; tests/grunt work, opus builds features and sits on councils
+   (shuttle/defalias! :explore
+     {:alias-of :claude
+      :extra-args ["--model" "haiku"]
+      :doc "Claude Haiku: fast read-only exploration and fan-out search."})
+   (shuttle/defalias! :grunt
+     {:alias-of :claude
+      :extra-args ["--model" "sonnet"]
+      :doc "Claude Sonnet: tests, mechanical edits, and grunt work."})
+   (shuttle/defalias! :build
+     {:alias-of :claude
+      :extra-args ["--model" "opus"]
+      :doc "Claude Opus: feature building, reviews, and council seats."})])
 
 (defn install!
   "Install repo-local Skein runtime configuration."
