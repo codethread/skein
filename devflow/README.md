@@ -48,3 +48,10 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-07-02__workflow-engine-review` — shipped the `skein.spools.workflow` engine (plain-data definitions, loop-by-routing, gates, checkpoints, forge-agnostic step bindings) and the `skein.spools.devflow` lifecycle spool built on it; folder holds the review findings and step-bindings plan records.
 - `26-07-02__workflow-ergonomics` — shipped workflow/devflow ergonomics: run mutation result maps, choice input declarations, stage-aware ready views, `advance!`, procedure join auto-close, named route/revise support, describe/history/archive helpers, and repo-local `.skein` ops/query guidance.
 - `26-07-02__shuttle-spool` — shipped approved-local-root Shuttle spool for readiness-driven headless coding-agent runs, harness aliases, crash reconciliation, append-only run memory, and `strand op agent`.
+- `26-07-02__treadle` — shipped the Shuttle-backed treadle adapter for `workflow/gate "subagent"` fulfillment.
+- `26-07-02__agent-delegate` — shipped the repo-local `strand op agent-delegate` helper for delegating ready task strands through Shuttle.
+- `26-07-02__afk-gates` — shipped delegated Devflow AFK task gates with human acceptance checkpoint.
+- `26-07-02__ns-tiers` — shipped namespace tiering and the root `spools/` home.
+- `26-07-02__attention-surface` — shipped coordinator attention/read surfaces for workflow and Shuttle/Treadle runs.
+- `26-07-02__delegation-composition` — shipped shared delegation policy, review recipe, attribute-driven delegation defaults, and delegated pipeline pattern.
+- `26-07-02__docs-pass-review` — archived approved documentation review notes.

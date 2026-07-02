@@ -1,7 +1,7 @@
 # Delegation Composition and Reuse
 
 **Document ID:** `RFC-013`
-**Status:** Open
+**Status:** Implemented
 **Date:** 2026-07-02
 **Related:** [RFC-010](./2026-07-02-shuttle-backed-coordination.md) (REC4, REC5, Q3), [RFC-011](./2026-07-02-coordination-attention-surface.md), [RFC-012](./2026-07-02-workflow-authoring-ergonomics.md), [Shuttle spool](../../spools/shuttle/README.md) (`council!`), [Treadle spool](../../spools/shuttle/treadle.md), [agent-delegate feature](../feat/agent-delegate/proposal.md), [afk-gates feature](../feat/afk-gates/proposal.md), [`.skein/AGENTS.md`](../../.skein/AGENTS.md)
 

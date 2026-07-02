@@ -1,7 +1,7 @@
 # Workflow Authoring Ergonomics
 
 **Document ID:** `RFC-012`
-**Status:** Open
+**Status:** Implemented
 **Date:** 2026-07-02
 **Related:** [Workflow spool](../../src/skein/spools/workflow.md) (§3 loops, §4 run lifecycle, §5 routing), [Devflow spool](../../src/skein/spools/devflow.md), [afk-gates feature](../feat/afk-gates/proposal.md), [RFC-011](./2026-07-02-coordination-attention-surface.md)
 

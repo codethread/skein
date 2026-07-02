@@ -1,7 +1,7 @@
 # Coordination Attention Surface
 
 **Document ID:** `RFC-011`
-**Status:** Open
+**Status:** Implemented
 **Date:** 2026-07-02
 **Related:** [RFC-010](./2026-07-02-shuttle-backed-coordination.md) (Q6, G4), [Shuttle spool](../../spools/shuttle/README.md), [Treadle spool](../../spools/shuttle/treadle.md), [Workflow spool](../../src/skein/spools/workflow.md), [agent-delegate feature](../feat/agent-delegate/proposal.md), [afk-gates feature](../feat/afk-gates/proposal.md)
 

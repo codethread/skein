@@ -1,7 +1,7 @@
 # Shuttle-backed Agent Coordination
 
 **Document ID:** `RFC-010`
-**Status:** Open
+**Status:** Implemented
 **Date:** 2026-07-02
 **Related:** [Shuttle spool](../../spools/shuttle/src/skein/spools/shuttle.clj), [Workflow spool](../../src/skein/spools/workflow.md), [Devflow spool](../../src/skein/spools/devflow.md), [Workflow ergonomics archive](../archive/26-07-02__workflow-ergonomics/), [Shuttle spool proposal](../feat/shuttle-spool/proposal.md), [Strand Model](../specs/strand-model.md), [Weaver Runtime](../specs/daemon-runtime.md), [CLI Surface](../specs/cli.md)
 
@@ -243,12 +243,18 @@ strand op agent spawn --harness claude --depends-on "$r1" --depends-on "$r2" \
 - **RFC-010.OUT2 (2026-07-02):** Accepted in part and dogfooded. Shuttle is
   activated in the canonical repo workspace (C1), and the REC8 workflow gate
   bridge shipped as the `skein.spools.treadle` spool
-  ([feature folder](../feat/treadle/proposal.md), contract in
+  ([feature folder](../archive/26-07-02__treadle/proposal.md), contract in
   `spools/shuttle/treadle.md`) — built, reviewed, and fixed entirely through
   Shuttle-delegated agent runs coordinated over strands. Q2 and Q7 are
   resolved by the treadle design (spawn only at gate readiness; the contract
   is `workflow/gate "subagent"` plus `shuttle/*` request attributes). One REC2
   refinement: inside workflow molecules the run is linked to its gate by a
   `delegates` annotation edge, not `parent-of`, which would surface the run as
-  workflow work. The repo-local `agent-delegate` helper for plain task strands
-  (REC3) remains open.
+  workflow work.
+- **RFC-010.OUT3 (2026-07-02):** Implemented follow-up slices archived:
+  `agent-delegate` shipped the repo-local helper for plain task strands
+  ([feature folder](../archive/26-07-02__agent-delegate/proposal.md)), and
+  `afk-gates` shipped delegated Devflow AFK task execution via subagent gates
+  ([feature folder](../archive/26-07-02__afk-gates/proposal.md)). Broader
+  composition and attention gaps moved into RFC-011/RFC-013 and were archived
+  with their own implementation reviews.

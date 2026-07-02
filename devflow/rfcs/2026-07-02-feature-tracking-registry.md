@@ -3,7 +3,7 @@
 **Document ID:** `RFC-014`
 **Status:** Open
 **Date:** 2026-07-02
-**Related:** [RFC-011](./2026-07-02-coordination-attention-surface.md) (attention surface for workflow runs), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), [weaver-guild feature](../feat/weaver-guild/proposal.md) (branch `weaver-guild`; cross-weaver tie-in), strand skill (`.agents/skills/strand/SKILL.md`)
+**Related:** [RFC-011](./2026-07-02-coordination-attention-surface.md) (attention surface for workflow runs), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), weaver-guild feature (`devflow/feat/weaver-guild/proposal.md` on branch `weaver-guild`; cross-weaver tie-in), [strand skill](../../.agents/skills/strand/SKILL.md)
 
 ## RFC-014.P1 Problem
 
@@ -36,8 +36,9 @@ side effects.
 - **RFC-014.G2:** The answer is awaitable: a coordinator can block until a
   feature (or the whole repo) quiesces, mirroring `flow-await`.
 - **RFC-014.G3:** Near-zero ceremony. Strand-tracked flows should get
-  registry presence for free; everything else should need exactly one call
-  or command.
+  registry presence for free; everything else should need one registration
+  call plus normal completion, with ongoing liveness derived rather than
+  manually maintained wherever possible.
 - **RFC-014.G4:** Staleness is visible, not silent: an entry whose driver
   died reads as stale, never as "quiet" (TEN-003).
 
@@ -83,12 +84,16 @@ op family) with `feature-track`, `feature-finish`, a `features` query, and a
 Ship a small `skein.spools.roster` on the classpath beside
 workflow/devflow: a tiny attribute vocabulary (`roster/feature`,
 `roster/owner`, `roster/worktree`, `roster/branch`, `roster/engine`,
-`roster/heartbeat`) plus helpers — `track!`, `heartbeat!`, `finish!`,
+`roster/heartbeat`) plus helpers — `track!`, `finish!`,
 `roster` (query), `await-quiet!` (block until no active, non-stale entries
 for a scope). An event-handler adapter stamps roster attributes onto
 workflow/devflow roots from their existing `family`/`feature` attributes, so
 strand-tracked flows register for free; file-based loops and ad hoc sessions
 make one `track!` call (or `strand op` equivalent registered by the spool).
+Liveness is derived, not manually maintained: any graph mutation by the
+tracked driver counts as a heartbeat, and an explicit `heartbeat!` exists
+only for engines that never touch the graph between registration and finish
+(the honest cost for those engines is periodic touches, acknowledged in C1).
 
 - Pros: consistent vocabulary everywhere; awaitable (G2); free for
   strand-tracked flows (G3); staleness explicit via heartbeat (G4); and the
@@ -117,7 +122,10 @@ make one `track!` call (or `strand op` equivalent registered by the spool).
 
 - **RFC-014.C1:** Harness touchpoints: the devflow AFK loop scripts call
   `track!`/`finish!` (or the spool's op) at loop start/end; interactive
-  sessions get the convention from the strand skill.
+  sessions get the convention from the strand skill. Engines that never
+  mutate the graph mid-run additionally need periodic `heartbeat!` touches
+  (e.g. per task-cycle in the AFK loop) or their entries will read stale —
+  more than one call, and the RFC accepts that cost for those engines.
 - **RFC-014.C2:** Merge gating becomes graph-native: "can I merge?" is
   `await-quiet!` scoped to main-checkout entries instead of polling
   `git status`.
