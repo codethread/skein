@@ -17,6 +17,8 @@ _No active items currently listed here._
 - [ ] `uuy5f` Build the shared roster/backlog-style feature tracking spool for active work: consistent attributes, `track!`/`finish!`, roster query, and `await-quiet!`. Source: `devflow/rfcs/2026-07-02-feature-tracking-registry.md` (`RFC-014.REC1`, `RFC-014.REC3`).
 - [ ] `le0lm` Fix strand op agent status listing closed tasks as awaiting_verification
 - [ ] `d5af5` Declarative review fan-out: small-agent reviewer registry in .skein
+- [ ] `0nd97` Fix agent delegate --ready double-reporting a just-delegated task in both delegated and skipped. Source: interactive-runs smoke; lazy skip-reason evaluation in `op-delegate` after delegation mutates run state.
+- [ ] `e8azs` Chime example rule: notify the human when an interactive shuttle session is waiting (attach hint on `shuttle/mode=interactive` entering `running`). Source: interactive-runs design council follow-up; deliberately userland so shuttle stays decoupled from chime.
 
 ## Refinement
 
@@ -29,6 +31,7 @@ _No active items currently listed here._
 - [ ] `ti9yj` Expose roster entries through weaver-guild peering so manager weavers can inspect in-flight work across repos. Source: `RFC-014.C3`; related stable feature: `spools/guild.md`. Note: retain as post-roster/guild integration; once roster exists, publish a versioned guild op such as `guild.roster.v1` or include roster in a describe-compatible repo API.
 - [ ] `d0cbq` Design and implement a minimal weaver scheduler primitive for proactive durable wakeups: `wake-at` + handler symbol, restart re-arm, reload-safe lifecycle, and data-first introspection. Source: `devflow/rfcs/2026-06-29-weaver-scheduler.md` (`RFC-009.OUT1`). Note: storage shape has been decided in `RFC-009.Q1.OUT`: use dedicated weaver-owned SQLite tables, not first-class strand records.
 - [ ] `sh835` Add real Xerial SQLite in-memory daemon-world support with explicit storage metadata/status semantics, not a fake filesystem path. Source: `RFC-005.REC7`, `RFC-005.C8`, `RFC-005.C9`; spikes: `devflow/spikes/2026-06-26-sqlite-memory-lifecycle.md`, `devflow/spikes/2026-06-26-storage-metadata-contract.md`.
+- [ ] `spya2` Decide an interactive-session concurrency cap. Source: interactive-runs design (deferred per TEN-004). Note: readiness plus per-task interactive delegation bounds it in practice; revisit only if real usage shows session pile-up, and build it as agents-spool supervision policy, not shuttle engine scheduling.
 
 ## Completed
 
