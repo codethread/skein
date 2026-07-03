@@ -41,10 +41,10 @@ _No active items currently listed here._
 - [x] `r4268` Rebase spool-git-distribution + devflow-extraction onto main, revalidate, HITL merge sign-off (gate for all fold-in work)
 - [x] `fyu6x` Docs pass: git spool distribution + devflow extraction (spools/README, devflow.md banner, root AGENTS.md coordination section, docs/skein.md, writing-shared-spools link)
 - [x] `16u3p` Promote spool-checkout-root from skein.spools.test-support into skein.test.alpha (LAT-PLAN-001.DN3)
-- [ ] `sjd2m` Make devflow.spool self-hosting: own test suite (skein.test.alpha tiers) + contract doc, resync dual sha pins in skein-src
+- [x] `sjd2m` Make devflow.spool self-hosting: own test suite (skein.test.alpha tiers) + contract doc, resync dual sha pins in skein-src
 - [x] `aybst` Harden git spool fetch: concurrent same-sha fetch race resolves as cache hit; add fetched-but-missing-effective-root test (SGD review follow-ups)
 - [x] `xrip3` RFC-018: spool.edn :needs targeting skein-shipped namespaces (first case: devflow.spool cannot declare its skein.spools.workflow dependency)
 - [x] `7xq0a` Nested agent docs convention: .skein/AGENTS.md root treatment + CLAUDE.md symlink (confirm interpretation with owner first)
-- [ ] `g12p5` REFINEMENT: consent policy for tools.deps :deps in local-kind spool roots (shared-file vs local-file asymmetry) — human decision required
+- [x] `g12p5` REFINEMENT: consent policy for tools.deps :deps in local-kind spool roots (shared-file vs local-file asymmetry) — human decision required
 - [x] `o3syz` Fold session flake evidence into test-concurrency RFC (chime notifier, shuttle reap-manual, weaver batch-event handler race + cheap targeted fix)
-- [ ] `lw9fq` Bulk work-item authoring ergonomics: attr-file/stdin drift, batch creation path for bodies+edges (friction observed 2026-07-03)
+- [x] `lw9fq` Bulk work-item authoring ergonomics: attr-file/stdin drift, batch creation path for bodies+edges (friction observed 2026-07-03)
