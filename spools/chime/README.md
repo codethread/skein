@@ -9,8 +9,9 @@ matching notices through a user-bound local notifier command.
 Chime knows nothing about any particular workflow or attribute vocabulary: it
 ships **no rules and no notifier**. A workspace's trusted config decides what
 deserves attention (rules) and each developer decides how to be told
-(notifier). It owns only weaver-lifetime state: the notifier binding, rules,
-deduplication memory, and recent failures.
+(notifier). It owns only runtime-local weaver-lifetime state: the notifier
+binding, rules, deduplication memory, batch scan memory, and recent failures are
+kept on the active runtime and isolated from other runtimes in the same JVM.
 
 Chime spawns a user-configured local process with the user's authority, so it
 is an approved local-root spool like shuttle rather than a shipped classpath

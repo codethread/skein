@@ -25,16 +25,12 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
-(defn- reset-engine! []
-  (reset! @#'shuttle/in-flight {}))
-
 (defn- with-shuttle
   "Run f with a fresh weaver runtime that has the shuttle installed."
   [f]
   (let [db-file (db-test/temp-db-file)
         config-dir (temp-config-dir)]
     (try
-      (reset-engine!)
       (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
         (try
           (shuttle/install!)
@@ -42,7 +38,6 @@
           (finally
             (runtime/stop! rt))))
       (finally
-        (reset-engine!)
         (db-test/delete-sqlite-family! db-file)))))
 
 (defn- await-phase
@@ -60,29 +55,31 @@
           :else (do (Thread/sleep 50) (recur)))))))
 
 (deftest harness-registry-validates-and-resolves-aliases
-  (shuttle/register-default-harnesses!)
-  (testing "definition validation fails loudly"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"argv"
-                          (shuttle/defharness! :bad {:argv []})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                          (shuttle/defharness! :bad {:argv ["x"] :nope 1})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"parse"
-                          (shuttle/defharness! :bad {:argv ["x"] :parse :yaml}))))
-  (testing "alias layering flattens onto the base harness"
-    (shuttle/defharness! :base {:argv ["tool" "-p"] :parse :raw})
-    (shuttle/defalias! :fast {:alias-of :base :extra-args ["--model" "fast"]})
-    (shuttle/defalias! :fast-reviewer {:alias-of :fast :prompt-prefix "Review: "})
-    (let [effective (shuttle/resolve-harness :fast-reviewer)]
-      (is (= ["tool" "-p"] (:argv effective)))
-      (is (= ["--model" "fast"] (:extra-args effective)))
-      (is (= "Review: " (:prompt-prefix effective)))))
-  (testing "alias cycles and missing harnesses fail loudly"
-    (shuttle/defalias! :a {:alias-of :b})
-    (shuttle/defalias! :b {:alias-of :a})
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cycle"
-                          (shuttle/resolve-harness :a)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Harness not found"
-                          (shuttle/resolve-harness :missing)))))
+  (with-shuttle
+    (fn [_rt]
+      (shuttle/register-default-harnesses!)
+      (testing "definition validation fails loudly"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"argv"
+                              (shuttle/defharness! :bad {:argv []})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                              (shuttle/defharness! :bad {:argv ["x"] :nope 1})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"parse"
+                              (shuttle/defharness! :bad {:argv ["x"] :parse :yaml}))))
+      (testing "alias layering flattens onto the base harness"
+        (shuttle/defharness! :base {:argv ["tool" "-p"] :parse :raw})
+        (shuttle/defalias! :fast {:alias-of :base :extra-args ["--model" "fast"]})
+        (shuttle/defalias! :fast-reviewer {:alias-of :fast :prompt-prefix "Review: "})
+        (let [effective (shuttle/resolve-harness :fast-reviewer)]
+          (is (= ["tool" "-p"] (:argv effective)))
+          (is (= ["--model" "fast"] (:extra-args effective)))
+          (is (= "Review: " (:prompt-prefix effective)))))
+      (testing "alias cycles and missing harnesses fail loudly"
+        (shuttle/defalias! :a {:alias-of :b})
+        (shuttle/defalias! :b {:alias-of :a})
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cycle"
+                              (shuttle/resolve-harness :a)))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Harness not found"
+                              (shuttle/resolve-harness :missing)))))))
 
 (deftest run-spawns-when-ready-and-captures-result
   (with-shuttle
@@ -251,7 +248,6 @@
         config-dir (temp-config-dir)
         repo-root (.getCanonicalPath (io/file "spools/shuttle"))]
     (try
-      (reset-engine!)
       (spit (io/file config-dir "spools.edn")
             (pr-str {:spools {'skein.spools/shuttle {:local/root repo-root}}}))
       (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
@@ -269,5 +265,4 @@
           (finally
             (runtime/stop! rt))))
       (finally
-        (reset-engine!)
         (db-test/delete-sqlite-family! db-file)))))

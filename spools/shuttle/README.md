@@ -30,7 +30,7 @@ Shuttle is shipped as an approved-local-root spool example under `spools/shuttle
    :required? true})
 ```
 
-`install!` registers the default harnesses, a graph-mutation event handler, and runs crash reconciliation with a first scan. It does **not** register any `strand op` verbs. Load the [agents spool](../agents/README.md) after shuttle for the `strand op agent` surface, and the companion [treadle adapter](./treadle.md) to fulfill workflow `:subagent` gates with shuttle runs.
+`install!` registers the default harnesses, a graph-mutation event handler, and runs crash reconciliation with a first scan. Harnesses, live in-flight process ownership, preamble extensions, and default review contract text are runtime-local weaver-lifetime state, isolated from other runtimes in the same JVM. It does **not** register any `strand op` verbs. Load the [agents spool](../agents/README.md) after shuttle for the `strand op agent` surface, and the companion [treadle adapter](./treadle.md) to fulfill workflow `:subagent` gates with shuttle runs.
 
 ## 3. Harness registry
 

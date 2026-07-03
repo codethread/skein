@@ -20,15 +20,12 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.api.weaver.alpha :as api]
-            [skein.api.current.alpha :as current])
+            [skein.api.current.alpha :as current]
+            [skein.api.runtime.alpha :as runtime])
   (:import [java.lang ProcessBuilder$Redirect ProcessHandle]
            [java.time Instant]))
 
-(defonce ^:private harness-registry (atom {}))
 
-;; run-id -> {:phase :claimed|:running, :process Process} — weaver-lifetime
-;; ownership of live child processes; survives config reload via defonce.
-(defonce ^:private in-flight (atom {}))
 
 (def ^:private default-max-attempts 3)
 
@@ -41,6 +38,22 @@
 
 (defn- rt []
   (or *runtime* (current/runtime)))
+
+(defn- state []
+  (runtime/spool-state (rt) ::state
+                       #(hash-map :harness-registry (atom {})
+                                  ;; run-id -> {:phase :claimed|:running, :process Process}
+                                  :in-flight (atom {})
+                                  :preamble-extension (atom nil)
+                                  :default-review-contract (atom nil))))
+
+(defn- harness-registry [] (:harness-registry (state)))
+(defn- in-flight [] (:in-flight (state)))
+(defn- preamble-extension [] (:preamble-extension (state)))
+(defn- default-review-contract
+  "Workspace review-contract override atom; nil means the generic contract applies."
+  []
+  (:default-review-contract (state)))
 
 (defn- sattr
   "Read the `shuttle/<k>` attribute from a normalized strand."
@@ -87,7 +100,7 @@
     (when-let [parse (:parse def)]
       (when-not (parse-strategies parse)
         (fail! "Unknown harness :parse strategy" {:harness key :parse parse :supported parse-strategies})))
-    (swap! harness-registry assoc key def)
+    (swap! (harness-registry) assoc key def)
     {:harness key :def def}))
 
 (defn defalias!
@@ -104,7 +117,7 @@
       (fail! "Alias def contains unknown keys" {:alias key :keys (vec unknown)}))
     (when-not (:alias-of def)
       (fail! "Alias def requires :alias-of" {:alias key :def def}))
-    (swap! harness-registry assoc key def)
+    (swap! (harness-registry) assoc key def)
     {:alias key :def def}))
 
 (defn resolve-harness
@@ -116,8 +129,8 @@
          prompt-prefix ""]
     (when (contains? seen key)
       (fail! "Harness alias chain contains a cycle" {:harness (harness-key name) :cycle (conj seen key)}))
-    (let [def (or (get @harness-registry key)
-                  (fail! "Harness not found" {:harness key :available (sort (keys @harness-registry))}))]
+    (let [def (or (get @(harness-registry) key)
+                  (fail! "Harness not found" {:harness key :available (sort (keys @(harness-registry)))}))]
       (if-let [base (:alias-of def)]
         (recur (harness-key base)
                (conj seen key)
@@ -137,7 +150,7 @@
             (:alias-of def) (assoc :alias-of (name (harness-key (:alias-of def))))
             (:argv def) (assoc :argv (:argv def))
             (:doc def) (assoc :doc (:doc def))))
-        (sort-by key @harness-registry)))
+        (sort-by key @(harness-registry))))
 
 (defn register-default-harnesses!
   "Register the shipped harness definitions, keeping any existing entries."
@@ -154,7 +167,7 @@
               :preamble? false
               :doc "Shell harness: the prompt is the script, stdout is the result. Intended for tests and plumbing."}}]
     (doseq [[key def] defaults]
-      (when-not (contains? @harness-registry key)
+      (when-not (contains? @(harness-registry) key)
         (defharness! key def)))
     (harnesses)))
 
@@ -190,7 +203,7 @@
   []
   (str "env XDG_STATE_HOME=" (state-root) " strand --workspace " (workspace-dir)))
 
-(defonce ^:private preamble-extension (atom nil))
+
 
 (defn set-preamble-extension!
   "Register additional preamble text appended after shuttle's engine contract.
@@ -201,7 +214,7 @@
   [text]
   (when-not (and (string? text) (not (str/blank? text)))
     (fail! "Preamble extension must be non-blank text" {:text text}))
-  (let [[old _] (swap-vals! preamble-extension #(or % text))]
+  (let [[old _] (swap-vals! (preamble-extension) #(or % text))]
     (when (and old (not= old text))
       (fail! "Preamble extension already registered" {}))
     {:preamble-extension true}))
@@ -221,7 +234,7 @@
          " (init.clj, spools.edn, config.json, libs.edn): if strand commands fail, report the"
          " exact error as your result instead of repairing the environment.\n"
          "- Your final message is captured automatically as this run's result; end with a clear, self-contained report for your caller.\n"
-         (when-let [extension @preamble-extension]
+         (when-let [extension @(preamble-extension)]
            (str extension "\n"))
          "[task]\n"
          prompt-prefix)))
@@ -325,7 +338,7 @@
   (let [exit (.waitFor ^Process process)
         stdout (read-file-safe out-file)
         current (api/show (rt) id)]
-    (swap! in-flight dissoc id)
+    (swap! (in-flight) dissoc id)
     (when-not (= "failed" (sattr current "phase"))
       (if (zero? exit)
       (let [{:keys [result session-id parse-error]}
@@ -376,7 +389,7 @@
                                             :err-file err-file
                                             :stdin (when (= :stdin (:prompt-via harness)) prompt)})]
           (reset! process-ref process)
-          (swap! in-flight assoc id {:phase :running :process process})
+          (swap! (in-flight) assoc id {:phase :running :process process})
           (update-run! id (cond-> {"shuttle/pid" (.pid ^Process process)}
                             (process-start-instant process)
                             (assoc "shuttle/pid-started-at" (process-start-instant process)))
@@ -384,14 +397,14 @@
           (finish-run! id process harness out-file err-file)))
       (catch Throwable t
         (some-> ^Process @process-ref (.destroy))
-        (swap! in-flight dissoc id)
+        (swap! (in-flight) dissoc id)
         (try
           (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " "))))
           (catch Throwable _
             nil)))))))
 
 (defn- claim! [id]
-  (let [[old _new] (swap-vals! in-flight (fn [m]
+  (let [[old _new] (swap-vals! (in-flight) (fn [m]
                                            (if (contains? m id)
                                              m
                                              (assoc m id {:phase :claimed}))))]
@@ -442,7 +455,7 @@
   dependents stay blocked) when `shuttle/max-attempts` is spent. Returns a
   summary of respawned and exhausted run ids."
   []
-  (let [orphans (remove #(contains? @in-flight (:id %))
+  (let [orphans (remove #(contains? @(in-flight) (:id %))
                         (api/list (rt) running-query {}))
         summary (reduce
                  (fn [acc run]
@@ -571,14 +584,18 @@
   "Kill a run's harness process and mark the run failed."
   [id]
   (let [run (or (api/show (rt) id) (fail! "Run not found" {:id id}))
-        handle (get @in-flight id)]
-    (if-let [process (:process handle)]
-      (.destroy ^Process process)
-      (if-let [handle (run-process-handle run)]
-        (.destroy ^ProcessHandle handle)
-        (fail! "Run has no live process" {:id id})))
-    (swap! in-flight dissoc id)
+        process (:process (get @(in-flight) id))
+        process-handle (when-not process (run-process-handle run))]
+    (when-not (or process process-handle)
+      (fail! "Run has no live process" {:id id}))
+    ;; Mark failed before destroying: the run's waiter thread is blocked in
+    ;; waitFor until the destroy, and must see the failed phase when it wakes
+    ;; so it does not overwrite this error with its own exit stamp.
     (mark-failed! id "killed by request")
+    (if process
+      (.destroy ^Process process)
+      (.destroy ^ProcessHandle process-handle))
+    (swap! (in-flight) dissoc id)
     {:killed id}))
 
 (defn note!
@@ -629,25 +646,20 @@
   "Default contract text for independent shuttle reviews."
   "Review the target read-only. Report prioritized findings with file:line references when applicable. Do not modify files or close strands. Append your findings as a note on the target strand, then end with the same findings as your final result.")
 
-(defonce ^{:private true
-           :doc "Weaver-lifetime default review contract override. Startup
-  config sets it so higher-level agent spools consume the workspace's one
-  authoritative policy text without callers passing :contract by hand."}
-  default-review-contract
-  (atom nil))
+
 
 (defn set-default-review-contract!
   "Set the workspace default review contract text; nil restores the generic one."
   [text]
   (when (and (some? text) (or (not (string? text)) (str/blank? text)))
     (fail! "Default review contract must be a non-blank string or nil" {:text text}))
-  (reset! default-review-contract text)
+  (reset! (default-review-contract) text)
   {:default-review-contract (boolean text)})
 
 (defn default-review-contract-text
   "Return the effective workspace review contract text."
   []
-  (or @default-review-contract generic-review-contract))
+  (or @(default-review-contract) generic-review-contract))
 
 ;; ---------------------------------------------------------------------------
 ;; Install

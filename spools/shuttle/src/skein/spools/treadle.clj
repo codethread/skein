@@ -10,12 +10,11 @@
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.api.weaver.alpha :as api]
-            [skein.api.current.alpha :as current]))
+            [skein.api.current.alpha :as current]
+            [skein.api.runtime.alpha :as runtime]))
 
 (def ^:private event-types
   #{:strand/added :strand/updated :batch/applied :strand/burned :strand/superseded})
-
-(defonce ^:private scan-monitor (Object.))
 
 (defn- fail! [message data]
   (throw (ex-info message data)))
@@ -26,6 +25,11 @@
 
 (defn- rt []
   (or *runtime* (current/runtime)))
+
+(defn- state []
+  (runtime/spool-state (rt) ::state #(hash-map :scan-monitor (Object.))))
+
+(defn- scan-monitor [] (:scan-monitor (state)))
 
 (defn- attr
   "Read attribute `k` tolerating keyword- or string-keyed maps (mirrors
@@ -167,7 +171,7 @@
   (let [runtime (rt)]
     (binding [*runtime* runtime
               shuttle/*runtime* runtime]
-      (locking scan-monitor
+      (locking (scan-monitor)
         (doseq [run (finished-undelivered-runs)]
           (deliver-run! run))
         (spawn-ready-gates!)

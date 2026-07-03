@@ -23,9 +23,10 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (temp-config-dir)]
     (try
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
+      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
+                                        :publish? false})]
         (try
-          (f rt config-dir)
+          (runtime/with-runtime-binding rt #(f rt config-dir))
           (finally
             (runtime/stop! rt))))
       (finally

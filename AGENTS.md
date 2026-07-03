@@ -27,7 +27,11 @@ Userland reference spools are indexed in [`spools/`](./spools/README.md), with s
 - [Treadle Gate Bridge](./spools/shuttle/treadle.md) (approved local-root spool)
 - [Chime Notifications](./spools/chime/README.md) (approved local-root spool)
 
-Namespace tiers are intentional: `skein.api.*.alpha` is the blessed spool-facing API with accretion-based compatibility within each subnamespace, `skein.core.*` is internal and may change freely, `skein.spools.*` is the authorable/reference spool layer, and `skein.repl` is the human interactive surface.
+Namespace tiers are intentional: `skein.api.*.alpha` is the blessed spool-facing API with accretion-based compatibility within each subnamespace, `skein.core.*` is internal and may change freely, `skein.spools.*` is the authorable/reference spool layer, `skein.repl` is the human interactive surface, and `skein.userland.alpha` is a userland-only terse ergonomics layer — a strict downstream consumer tier that no `skein.*` namespace may ever require.
+
+Contributor and userland guidance docs live in [`docs/`](./docs):
+
+- [Writing shared spools](./docs/writing-shared-spools.md) — composability-over-ergonomics rules for spools others will run, and the `skein.userland.alpha` layering pattern for your own config.
 
 ## Project commands
 
@@ -134,3 +138,6 @@ sqlite3 smoke-cli.sqlite.workspace/data/skein.sqlite 'select from_strand_id, to_
 - Keep public CLI machine output JSON-only; EDN belongs to Clojure REPL/config/dev workflows.
 - When changing shipped behavior, update the relevant root spec in `devflow/specs/`.
 - Every Clojure `ns` gets a docstring (string right after the ns symbol) describing its purpose, for `clojure.repl/doc` and editor/cljdoc discovery.
+- Runtime publication discipline: a real weaver process publishes exactly one ambient runtime (atomic, double-publish fails loudly). Everything else — tests, fixtures, embedded/tooling runtimes — starts with `:publish? false` and passes the runtime explicitly or runs under `skein.core.weaver.runtime/with-runtime-binding`. Never reach for the published singleton outside daemon startup/REPL ergonomics paths.
+- Spool state is runtime-owned via `skein.api.runtime.alpha/spool-state`; no module-level atoms in spools.
+- Never `:keys`-destructure `:fn` (or any clojure.core macro name) into a local: a local named `fn` silently shadows the `fn` macro and turns later thunks into eager calls. Rename on destructure instead: `{fn-sym :fn}`.

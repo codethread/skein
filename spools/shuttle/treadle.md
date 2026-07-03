@@ -35,6 +35,9 @@ Install treadle **after** any startup config that registers harness aliases:
 (e.g. `pi-main`) must already be registered or that gate is stamped
 `treadle/error` on every cold start.
 
+Gate scans serialize on a runtime-owned monitor: independent weaver runtimes
+in one JVM scan independently and never block each other.
+
 ## Gate request attributes
 
 | Attribute | Required | Meaning |

@@ -26,25 +26,21 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
-(defn- reset-chime! []
-  (reset! @#'chime/notifier-binding nil)
-  (reset! @#'chime/rule-registry {})
-  (reset! @#'chime/seen-notifications #{})
-  (reset! @#'chime/failure-log []))
-
 (defn- with-chime [f]
   (let [db-file (db-test/temp-db-file)
         config-dir (temp-config-dir)]
     (try
-      (reset-chime!)
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
+      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
+                                        :publish? false})]
         (try
-          (chime/install!)
-          (f rt config-dir)
+          (runtime/with-runtime-binding
+            rt
+            (fn []
+              (chime/install!)
+              (f rt config-dir)))
           (finally
             (runtime/stop! rt))))
       (finally
-        (reset-chime!)
         (db-test/delete-sqlite-family! db-file)))))
 
 (defn- write-notifier! [dir out-file]
@@ -76,6 +72,32 @@
     out-file))
 
 ;; --- test rules over a neutral attribute vocabulary ------------------------
+
+(deftest chime-rules-are-owned-by-runtime
+  (let [db-a (db-test/temp-db-file)
+        db-b (db-test/temp-db-file)
+        config-a (temp-config-dir)
+        config-b (temp-config-dir)]
+    (try
+      (let [rt-a (runtime/start! db-a {:world (test-world (.getCanonicalPath config-a))
+                                       :publish? false})
+            rt-b (runtime/start! db-b {:world (test-world (.getCanonicalPath config-b))
+                                       :publish? false})]
+        (try
+          (runtime/with-runtime-binding rt-a
+            #(chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule))
+          (runtime/with-runtime-binding rt-b
+            #(chime/defrule! :needs-human 'skein.chime-test/needs-human-ready-rule))
+          (is (= [:phase-failed]
+                 (runtime/with-runtime-binding rt-a #(mapv :name (chime/rules)))))
+          (is (= [:needs-human]
+                 (runtime/with-runtime-binding rt-b #(mapv :name (chime/rules)))))
+          (finally
+            (runtime/stop! rt-a)
+            (runtime/stop! rt-b))))
+      (finally
+        (db-test/delete-sqlite-family! db-a)
+        (db-test/delete-sqlite-family! db-b)))))
 
 (defn- test-attr [strand k]
   (let [attrs (:attributes strand)]
@@ -214,7 +236,9 @@
                              :attributes {"phase" "failed"
                                           "error" "boom"}})]
         (chime/scan! {:strand/id (:id run)})
-        (eventually #(file-contains? out-file "flaky run"))
+        ;; Wait for the record terminator, not the title: the notifier script
+        ;; writes TITLE first and "---" last, and snapshotting mid-write races.
+        (eventually #(file-contains? out-file "---"))
         (let [once (slurp out-file)]
           (chime/scan! {:strand/id (:id run)})
           (Thread/sleep 150)
@@ -253,29 +277,3 @@
         (chime/scan! {:strand/id (:id strand)})
         (is (= :rule (:kind (last (chime/failures)))))
         (is (= :invalid (:rule (last (chime/failures)))))))))
-
-(deftest spool-loads-through-approved-spool-workspace-flow
-  (let [db-file (db-test/temp-db-file)
-        config-dir (temp-config-dir)
-        repo-root (.getCanonicalPath (io/file "spools/chime"))]
-    (try
-      (reset-chime!)
-      (spit (io/file config-dir "spools.edn")
-            (pr-str {:spools {'skein.spools/chime {:local/root repo-root}}}))
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
-        (try
-          (let [synced ((requiring-resolve 'skein.api.runtime.alpha/sync!) rt)
-                used ((requiring-resolve 'skein.api.runtime.alpha/use!)
-                      rt :chime {:ns 'skein.spools.chime
-                              :spools ['skein.spools/chime]
-                              :call 'skein.spools.chime/install!
-                              :required? true})]
-            (is (contains? #{:loaded :already-available}
-                           (get-in synced [:spools 'skein.spools/chime :status])))
-            (is (= :loaded (:status used)))
-            (is (some #(= :chime/engine (:key %)) (api/event-handlers rt))))
-          (finally
-            (runtime/stop! rt))))
-      (finally
-        (reset-chime!)
-        (db-test/delete-sqlite-family! db-file)))))

@@ -3,7 +3,7 @@
   spools.local.edn reading, sync!, layered use!, reload!, event helper routing,
   daemon init, and the ephemeral helper spool."
   (:require [clojure.java.io :as io]
-            [clojure.test :refer [deftest is testing]]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.core.client :as client]
             [skein.core.db-test :as db-test]
             [skein.api.events.alpha :as events]
@@ -19,7 +19,12 @@
   (doseq [child (reverse (file-seq file))]
     (.delete child)))
 
+;; Namespace-level on purpose: event handlers are registered by symbol and
+;; resolved to top-level vars, so capture state cannot be a per-test local.
+;; Reset by the :each fixture below; the runner never splits a namespace.
 (def reload-deliveries (atom []))
+
+(use-fixtures :each (fn [f] (reset! reload-deliveries []) (f)))
 
 (defn fresh-reload-handler [event]
   (swap! reload-deliveries conj (:event/id event)))

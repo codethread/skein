@@ -6,18 +6,29 @@
   only weaver-lifetime runtime state and composes the public weaver/event API."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as api])
+            [skein.api.weaver.alpha :as api]
+            [skein.api.runtime.alpha :as runtime])
   (:import [java.io OutputStreamWriter]
            [java.time Instant]))
 
 (def ^:private event-types
   #{:strand/added :strand/updated :batch/applied :strand/burned :strand/superseded})
 
-(defonce ^:private notifier-binding (atom nil))
-(defonce ^:private rule-registry (atom {}))
-(defonce ^:private seen-notifications (atom #{}))
-(defonce ^:private failure-log (atom []))
-(defonce ^:private scanned-batch-ids (atom []))
+(declare rt)
+
+(defn- state []
+  (runtime/spool-state (rt) ::state
+                       #(hash-map :notifier-binding (atom nil)
+                                  :rule-registry (atom {})
+                                  :seen-notifications (atom #{})
+                                  :failure-log (atom [])
+                                  :scanned-batch-ids (atom []))))
+
+(defn- notifier-binding [] (:notifier-binding (state)))
+(defn- rule-registry [] (:rule-registry (state)))
+(defn- seen-notifications [] (:seen-notifications (state)))
+(defn- failure-log [] (:failure-log (state)))
+(defn- scanned-batch-ids [] (:scanned-batch-ids (state)))
 
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous notifier worker threads."
@@ -36,19 +47,19 @@
 
 (defn- record-failure! [entry]
   (let [full (assoc entry :at (now))]
-    (swap! failure-log #(->> (conj (vec %) full) (take-last 100) vec))
+    (swap! (failure-log) #(->> (conj (vec %) full) (take-last 100) vec))
     full))
 
 (defn failures
   "Return recorded notifier, process, and rule failures for this weaver lifetime."
   []
-  @failure-log)
+  @(failure-log))
 
 (defn reset-seen!
   "Clear per-weaver notification deduplication and batch-scan state."
   []
-  (reset! seen-notifications #{})
-  (reset! scanned-batch-ids [])
+  (reset! (seen-notifications) #{})
+  (reset! (scanned-batch-ids) [])
   {:seen 0})
 
 (defn- validate-notifier! [binding]
@@ -67,13 +78,13 @@
   final argument and writes the body to stdin. Rebinding replaces the prior
   value; pass a valid binding after every weaver startup or config reload."
   [binding]
-  (reset! notifier-binding (validate-notifier! binding))
-  {:notifier @notifier-binding})
+  (reset! (notifier-binding) (validate-notifier! binding))
+  {:notifier @(notifier-binding)})
 
 (defn notifier
   "Return the current notifier binding, or nil when none is bound."
   []
-  @notifier-binding)
+  @(notifier-binding))
 
 (defn- validate-notification! [notification]
   (when-not (map? notification)
@@ -119,7 +130,7 @@
   failure instead of silently dropping the notification."
   [notification]
   (let [notification (validate-notification! notification)]
-    (if-let [binding @notifier-binding]
+    (if-let [binding @(notifier-binding)]
       (let [result (atom {:status :started
                           :argv (conj (:argv binding) (:title notification))
                           :title (:title notification)})]
@@ -154,21 +165,21 @@
   [name fn-symbol]
   (let [key (rule-name name)]
     (resolve-rule-fn fn-symbol)
-    (swap! rule-registry assoc key {:name key :fn fn-symbol})
+    (swap! (rule-registry) assoc key {:name key :fn fn-symbol})
     {:rule key :fn fn-symbol}))
 
 (defn rules
   "Return registered notification rules ordered by name."
   []
-  (mapv second (sort-by key @rule-registry)))
+  (mapv second (sort-by key @(rule-registry))))
 
 (defn remove-rule!
   "Remove a registered notification rule by name."
   [name]
   (let [key (rule-name name)]
-    (when-not (contains? @rule-registry key)
-      (fail! "Rule not found" {:rule key :available (sort (keys @rule-registry))}))
-    (swap! rule-registry dissoc key)
+    (when-not (contains? @(rule-registry) key)
+      (fail! "Rule not found" {:rule key :available (sort (keys @(rule-registry)))}))
+    (swap! (rule-registry) dissoc key)
     {:removed key}))
 
 (defn- affected-strands [_event]
@@ -184,16 +195,17 @@
 
 (defn- already-scanned-batch? [event]
   (when-let [batch-id (:batch/id event)]
-    (let [[old _] (swap-vals! scanned-batch-ids
+    (let [[old _] (swap-vals! (scanned-batch-ids)
                               (fn [ids]
                                 (if (some #(= batch-id %) ids)
                                   ids
                                   (vec (take-last scanned-batch-memory (conj ids batch-id))))))]
       (boolean (some #(= batch-id %) old)))))
 
-(defn- dispatch-rule! [context strand {:keys [name fn]}]
+;; :fn is renamed on destructure: a local named `fn` shadows the fn macro.
+(defn- dispatch-rule! [context strand {:keys [name] fn-sym :fn}]
   (let [seen-key [name (:id strand)]
-        rule-fn @(resolve-rule-fn fn)
+        rule-fn @(resolve-rule-fn fn-sym)
         notification (try
                        (when-let [notification (rule-fn (assoc context :strand strand))]
                          (validate-notification! notification))
@@ -205,14 +217,14 @@
                                            :data (ex-data t)})
                          nil))]
     (if notification
-      (when-not (contains? @seen-notifications seen-key)
+      (when-not (contains? @(seen-notifications) seen-key)
         ;; mark seen only when the notifier process actually started, so a
         ;; missing or failing notifier does not permanently swallow the alert
         (when (= :started (:status (notify! notification)))
-          (swap! seen-notifications conj seen-key)))
+          (swap! (seen-notifications) conj seen-key)))
       ;; the condition no longer holds: re-arm so a later recurrence
       ;; (the rule stops matching, then matches again later) notifies again
-      (swap! seen-notifications disj seen-key))))
+      (swap! (seen-notifications) disj seen-key))))
 
 (defn scan!
   "Evaluate registered rules against currently affected strands.
@@ -222,15 +234,15 @@
   `:batch/id`, and only the first event of a batch triggers a scan."
   ([event]
    (if (already-scanned-batch? event)
-     {:scanned 0 :rules (count @rule-registry) :skipped :batch/already-scanned}
+     {:scanned 0 :rules (count @(rule-registry)) :skipped :batch/already-scanned}
      (let [runtime (rt)]
        (binding [*runtime* runtime]
          (let [strands (affected-strands event)
                context {:event event :ready-ids (ready-id-set)}]
            (doseq [strand strands
-                   rule (vals @rule-registry)]
+                   rule (vals @(rule-registry))]
              (dispatch-rule! context strand rule))
-           {:scanned (count strands) :rules (count @rule-registry)})))))
+           {:scanned (count strands) :rules (count @(rule-registry))})))))
   ([] (scan! {:event/type :manual/scan})))
 
 (defn on-event
@@ -252,4 +264,4 @@
      :namespace 'skein.spools.chime
      :handler :chime/engine
      :rules (mapv :name (rules))
-     :notifier-bound? (boolean @notifier-binding)}))
+     :notifier-bound? (boolean @(notifier-binding))}))

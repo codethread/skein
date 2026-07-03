@@ -12,8 +12,15 @@
 
 (def ^:private loopback-host "127.0.0.1")
 
-(defonce ^{:doc "Atom containing the active weaver runtime map for this process, or nil."} current-runtime
+(defonce ^{:doc "Atom containing the published ambient weaver runtime map for this process, or nil."} current-runtime
   (atom nil))
+
+(def ^:dynamic *runtime*
+  "Dynamically bound runtime for trusted in-process startup, reload, and nREPL code."
+  nil)
+
+(defonce ^:private nrepl-port-runtimes
+  (atom {}))
 
 (def event-queue-capacity
   "Maximum number of queued weaver events before enqueueing fails."
@@ -22,7 +29,7 @@
   "Maximum number of recent event handler failures retained in memory."
   100)
 
-(declare stop! with-spool-classloader)
+(declare stop! with-spool-classloader with-runtime-binding)
 
 (defn- event-system-base []
   {:handler-registry (atom {})
@@ -50,13 +57,17 @@
                     (while @(:running? event-system)
                       (when-let [event (.poll ^ArrayBlockingQueue (:queue event-system) 100 TimeUnit/MILLISECONDS)]
                         (when @(:running? event-system)
-                          (doseq [{:keys [key types fn fn-value]} (vals @(:handler-registry event-system))
+                          ;; :fn stays un-destructured: a local named `fn` would
+                          ;; shadow the fn macro in the handler thunks below.
+                          (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
                                   :when (contains? types (:event/type event))]
                             (try
-                              (with-spool-classloader runtime #(fn-value event))
+                              (with-runtime-binding
+                                runtime
+                                #(with-spool-classloader runtime (fn [] (fn-value event))))
                               (catch Throwable t
                                 (let [failure {:handler/key key
-                                               :handler/fn fn
+                                               :handler/fn (:fn handler)
                                                :event/id (:event/id event)
                                                :event/type (:event/type event)
                                                :exception/message (ex-message t)
@@ -124,6 +135,18 @@
                      :file (.getCanonicalPath file)}))))
         startup-file-names))
 
+(defn with-runtime-binding
+  "Call `f` with runtime as the thread-local ambient runtime."
+  [runtime f]
+  (binding [*runtime* runtime]
+    (f)))
+
+(defn runtime-for-nrepl-port
+  "Return the runtime serving an nREPL server port, or fail loudly when unknown."
+  [port]
+  (or (get @nrepl-port-runtimes port)
+      (throw (ex-info "No Skein runtime registered for nREPL port" {:port port}))))
+
 (defn load-startup-files!
   "Load present selected-workspace startup files in startup order.
 
@@ -131,15 +154,18 @@
   throw with file path context so startup/reload abort loudly. Returns entries
   containing each loaded file path and its final return value."
   [runtime world]
-  (mapv (fn [{:keys [file] :as startup-file}]
-          (try
-            (assoc startup-file :return (with-spool-classloader runtime #(load-file file)))
-            (catch Throwable t
-              (throw (ex-info "Selected workspace startup file failed to load"
-                              {:config-dir (:config-dir world)
-                               :file file}
-                              t)))))
-        (startup-files world)))
+  (with-runtime-binding
+    runtime
+    (fn []
+      (mapv (fn [{:keys [file] :as startup-file}]
+              (try
+                (assoc startup-file :return (with-spool-classloader runtime #(load-file file)))
+                (catch Throwable t
+                  (throw (ex-info "Selected workspace startup file failed to load"
+                                  {:config-dir (:config-dir world)
+                                   :file file}
+                                  t)))))
+            (startup-files world)))))
 
 (defn- with-spool-classloader [runtime f]
   (let [thread (Thread/currentThread)
@@ -157,11 +183,13 @@
   "Start a weaver runtime for `db-file` and optional `world`.
 
   Publishes metadata, starts nREPL and JSON socket transports, loads trusted
-  config, and fails if this process already owns a runtime."
+  config, and by default publishes the runtime as this process's ambient runtime.
+  Set `:publish? false` to start an unpublished runtime that can coexist with
+  other runtimes in the same JVM."
   ([] (start! nil {}))
   ([db-file] (start! db-file {}))
-  ([db-file {:keys [world name]}]
-   (when @current-runtime
+  ([db-file {:keys [world name publish?] :or {publish? true}}]
+   (when (and publish? @current-runtime)
      (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
    (let [world (or world (config/world))
          db-file (or db-file (:db-path world))
@@ -197,6 +225,7 @@
                          :hook-registry (atom {})
                          :approved-spool-sync-state (atom {})
                          :module-use-state (atom {})
+                         :spool-state (atom {})
                          :spool-classloader (clojure.lang.DynamicClassLoader.
                                                (.getContextClassLoader (Thread/currentThread)))
                          :server server
@@ -207,15 +236,21 @@
          (let [socket-runtime (socket/start! runtime-state (:socket-path meta) #(stop! @runtime-state))
                runtime (assoc runtime-base :socket-runtime socket-runtime)]
            (reset! runtime-state runtime)
-           (reset! current-runtime runtime)
-           ((requiring-resolve 'skein.api.weaver.alpha/register-built-in-ops!) runtime)
+           (swap! nrepl-port-runtimes assoc port runtime)
+           (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
+             (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
+           (with-runtime-binding runtime #((requiring-resolve 'skein.api.weaver.alpha/register-built-in-ops!) runtime))
            (load-startup-files! runtime world)
            (let [published-runtime (assoc runtime :metadata-file (metadata/publish! meta))]
              (reset! runtime-state published-runtime)
-             (reset! current-runtime published-runtime)
+             (swap! nrepl-port-runtimes assoc port published-runtime)
+             (when publish?
+               (compare-and-set! current-runtime runtime published-runtime))
              published-runtime))
          (catch Throwable t
-           (reset! current-runtime nil)
+           (swap! nrepl-port-runtimes dissoc port)
+           (when publish?
+             (compare-and-set! current-runtime @runtime-state nil))
            (stop-event-system! @runtime-state)
            (when-let [socket-runtime (:socket-runtime @runtime-state)]
              (socket/stop! socket-runtime))
@@ -236,8 +271,9 @@
     (socket/stop! socket-runtime))
   (when-let [server (:server runtime)]
     (nrepl/stop-server server))
-  (when (= runtime @current-runtime)
-    (reset! current-runtime nil))
+  (when-let [port (get-in runtime [:metadata :endpoint :port])]
+    (swap! nrepl-port-runtimes dissoc port))
+  (swap! current-runtime (fn [published] (if (= published runtime) nil published)))
   (when-let [state-dir (get-in runtime [:metadata :state-dir])]
     (metadata/delete! {:state-dir state-dir}))
   {:stopped true})

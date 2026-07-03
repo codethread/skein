@@ -114,7 +114,7 @@
   ;; agent review must consume the one authoritative policy text by default;
   ;; the text ships from skein.spools.agents, the accessor stays on shuttle
   (is (= (var-get (requiring-resolve 'skein.spools.agents/review-contract))
-         @@(requiring-resolve 'skein.spools.shuttle/default-review-contract)))
+         ((requiring-resolve 'skein.spools.shuttle/default-review-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :backlog-blocked :backlog-completed :backlog-started
           :hitl-checkpoint-ready :treadle-error]

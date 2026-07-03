@@ -50,7 +50,7 @@
   (with-runtime
     (fn [rt _]
       (guild/install! "fallback-guild")
-      (is (= "fallback-guild" (:guild (guild/describe-op {}))))
+      (is (= "fallback-guild" (:guild (guild/describe-op {:op/runtime rt}))))
       (guild/defop! 'gate.close.v1 {:doc "Close v1" :spec ::close-input}
                     'skein.guild-test/close-handler)
       (guild/defop! 'gate.close.v2 {:doc "Close v2" :spec ::close-input}
@@ -86,7 +86,7 @@
 
 (deftest malformed-guild-declarations-fail-loudly
   (with-runtime
-    (fn [_ _]
+    (fn [rt _]
       (guild/install!)
       (testing "unknown defop opts"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown guild option keys"
@@ -102,7 +102,7 @@
       (testing "unresolved handlers fail before public registration"
         (is (thrown? java.io.FileNotFoundException
                      (guild/defop! 'bad.resolve.v1 {:doc "x"} 'missing.guild/handler)))
-        (is (not-any? #(= "bad.resolve.v1" (:name %)) (api/ops @runtime/current-runtime))))
+        (is (not-any? #(= "bad.resolve.v1" (:name %)) (api/ops rt))))
       (testing "deprecating an unregistered op fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not registered"
                               (guild/deprecate! 'missing.v1 {:replacement "missing.v2"})))))))

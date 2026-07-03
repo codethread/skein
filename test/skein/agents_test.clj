@@ -22,22 +22,21 @@
 (defn- test-world [config-dir]
   (daemon-config/world config-dir (str config-dir "/state") (str config-dir "/data")))
 
-(defn- reset-engine! []
-  (reset! @#'shuttle/in-flight {}))
-
 (defn- with-agents [f]
   (let [db-file (db-test/temp-db-file)
         config-dir (temp-config-dir)]
     (try
-      (reset-engine!)
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
+      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
+                                        :publish? false})]
         (try
-          (shuttle/install!)
-          (agents/install!)
-          (f rt)
+          (runtime/with-runtime-binding
+            rt
+            (fn []
+              (shuttle/install!)
+              (agents/install!)
+              (f rt)))
           (finally (runtime/stop! rt))))
       (finally
-        (reset-engine!)
         (db-test/delete-sqlite-family! db-file)))))
 
 (defn- await-phase [rt id phases]

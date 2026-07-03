@@ -1,6 +1,6 @@
 (ns skein.core.client-test
   (:refer-clojure :exclude [list update])
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is use-fixtures]]
             [nrepl.core :as nrepl]
             [skein.core.client :as client]
             [skein.api.weaver.alpha :as api]
@@ -28,7 +28,12 @@
 (defn client-test-view [{:keys [params]}]
   {:client-view params})
 
+;; Namespace-level on purpose: hooks are registered by symbol and resolved
+;; to top-level vars, so capture state cannot be a per-test local. Reset by
+;; the :each fixture below; the runner never splits a namespace across threads.
 (def client-hook-contexts (atom []))
+
+(use-fixtures :each (fn [f] (reset! client-hook-contexts []) (f)))
 
 (defn client-capture-hook [ctx]
   (swap! client-hook-contexts conj ctx)
@@ -54,6 +59,30 @@
 
 (defn call-world-with-opts [world opts op & args]
   (apply client/call-world (:config-dir world) opts op args))
+
+(deftest client-routes-each-unpublished-nrepl-endpoint-to-own-runtime
+  (let [db-a (db-test/temp-db-file)
+        db-b (db-test/temp-db-file)
+        world-a (temp-world)
+        world-b (temp-world)
+        rt-a (runtime/start! db-a {:world world-a :publish? false})
+        rt-b (runtime/start! db-b {:world world-b :publish? false})]
+    (try
+      (is (= {:database "initialized"} (call-world world-a :init)))
+      (is (= {:database "initialized"} (call-world world-b :init)))
+      (let [a (call-world world-a :add {:title "From A" :attributes {:runtime "a"}})
+            b (call-world world-b :add {:title "From B" :attributes {:runtime "b"}})]
+        (is (= [a] (call-world world-a :list)))
+        (is (= [b] (call-world world-b :list)))
+        (is (= (:metadata rt-a) (client/status-world (:config-dir world-a) {:state-dir (:state-dir world-a)})))
+        (is (= (:metadata rt-b) (client/status-world (:config-dir world-b) {:state-dir (:state-dir world-b)}))))
+      (finally
+        (runtime/stop! rt-a)
+        (runtime/stop! rt-b)
+        (db-test/delete-sqlite-family! db-a)
+        (db-test/delete-sqlite-family! db-b)
+        (delete-tree! (java.io.File. (:config-dir world-a)))
+        (delete-tree! (java.io.File. (:config-dir world-b)))))))
 
 (deftest client-calls-running-daemon-and-returns-clojure-data
   (with-runtime

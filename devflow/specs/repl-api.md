@@ -3,7 +3,7 @@
 **Document ID:** `SPEC-003`
 **Status:** Implemented
 **Last Updated:** 2026-07-03
-**Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`
+**Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`, `src/skein/userland/alpha.clj`
 
 ## SPEC-003.P1 Purpose
 
@@ -60,9 +60,9 @@ weave!
 - **SPEC-003.C15:** `ready` returns active strands whose direct `depends-on` dependencies are not active and may be further filtered by an ad hoc or registered query. This is equivalent to `[:and [:= :state "active"] [:not [:edge/out "depends-on" [:= :state "active"]]]]`.
 - **SPEC-003.C15a:** `declare-acyclic-relation!` declares a valid relation name acyclic in durable storage and is idempotent. It fails loudly if edges of that relation already exist. `acyclic-relations` lists declared acyclic relation names.
 - **SPEC-003.C16:** Blessed spool-workspace helpers live in explicit `skein.api.runtime.alpha`, not in the preloaded `skein.repl` helper namespace.
-- **SPEC-003.C17:** `skein.api.runtime.alpha` exposes approved spool config helpers, approved-local-root sync helpers, resilient module activation with `use!`, and weaver-lifetime sync/use introspection.
+- **SPEC-003.C17:** `skein.api.runtime.alpha` exposes approved spool config helpers, approved-local-root sync helpers, resilient module activation with `use!`, weaver-lifetime sync/use introspection, and a blessed runtime-local spool-state accessor for trusted spools.
 - **SPEC-003.C18:** `skein.api.runtime.alpha` helpers all take the target runtime as their first argument. Trusted startup/config/spool code that needs the active in-process runtime captures it with `(skein.api.current.alpha/runtime)` at an entry point and threads it explicitly. Connected-client workflows do not route through `skein.api.runtime.alpha`; humans use `skein.repl`, and trusted tests or tools use `skein.core.client` with explicit workspace arguments.
-- **SPEC-003.C19:** `skein.api.runtime.alpha` is the documented spool-workspace path. Namespace tiers are contractual: `skein.api.*.alpha` promises accretion-based back-compat within each subnamespace; breaking rethinks move to a new subnamespace. `skein.core.*` promises nothing and is for engine internals; trusted users may require it or read raw SQLite when they accept compatibility cost. `skein.spools.*` is the authorable/reference spool layer. `skein.repl` is the interactive human surface.
+- **SPEC-003.C19:** `skein.api.runtime.alpha` is the documented spool-workspace path. Namespace tiers are contractual: `skein.api.*.alpha` promises accretion-based back-compat within each subnamespace; breaking rethinks move to a new subnamespace. `skein.core.*` promises nothing and is for engine internals; trusted users may require it or read raw SQLite when they accept compatibility cost. `skein.spools.*` is the authorable/reference spool layer. `skein.repl` is the interactive human surface. `skein.userland.alpha` is the userland-only terse ergonomics tier: strictly downstream, never required by any `skein.*` namespace (SPEC-003.C24–C27).
 - **SPEC-003.C20:** `defpattern!` registers a simple pattern name, optional non-blank doc string, fully qualified function symbol, and input spec name in the active weaver's in-memory pattern registry. Supported arities are `(defpattern! name fn-sym input-spec)` and `(defpattern! name doc fn-sym input-spec)`. Duplicate registration replaces the prior entry. The same operations are available through the blessed `skein.api.patterns.alpha` namespace for trusted startup config and activated spools when callers pass the runtime explicitly.
 - **SPEC-003.C21:** `patterns`, `pattern`, and `pattern-explain` inspect active weaver pattern state. Missing pattern lookup fails loudly. Explanations return serializable caller guidance based on the registered spec.
 - **SPEC-003.C22:** `weave!` validates input against the registered spec, calls the registered function with `{:input input}`, requires the result to be a valid batch strand vector, and creates the batch atomically through the weaver.
@@ -77,7 +77,7 @@ Skein ships blessed source-visible runtime transformation namespaces for trusted
 - `skein.api.events.alpha` exposes `(register! runtime key types fn-sym)`, `(register! runtime key types fn-sym metadata)`, `(unregister! runtime key)`, `(handlers runtime)`, and `(recent-failures runtime)`.
 - `skein.api.hooks.alpha` exposes `(register! runtime key types fn-sym)`, `(register! runtime key types fn-sym opts)`, `(unregister! runtime key)`, and `(hooks runtime)`. Hook keys are stable keywords, symbols, or non-blank strings; hook type sets are non-empty keyword sets; function symbols are fully qualified and weaver-resolvable; `opts` may include `:order` and data-first metadata. Registration replaces by key, `hooks` returns deterministic data-first entries, validation hooks return normally or throw, and transform hooks return `{:hook/value replacement}`.
 - `skein.api.peers.alpha` exposes `(peers)` (data-first sibling weaver metadata rows with staleness), `(peer name-or-workspace)` (resolve one running peer; bare tokens are logical names, explicitly path-like input matches workspaces; unknown/stale/ambiguous fail loudly), and `(call! peerish op args)` (invoke one allowlisted public JSON socket operation on a resolved peer). All three are client-side: they read published runtime metadata and speak to peer sockets from the calling process, behaving identically inside the live weaver JVM and in explicit connected client/test workflows. See the Weaver Runtime spec, SPEC-004.P10c.
-- `skein.api.current.alpha` exposes `(runtime)`, the sole public facade for reading the active in-process weaver runtime. It fails loudly when no active runtime exists and never falls back to connected-client state.
+- `skein.api.current.alpha` exposes `(runtime)`, the sole public facade for reading the active in-process weaver runtime. It fails loudly when no active runtime exists and never falls back to connected-client state. It also exposes `(with-runtime* runtime thunk)` and the `(with-runtime runtime & body)` macro, the blessed scoping twins that bind `runtime` as the thread-local ambient runtime for a dynamic extent so nested `(runtime)` reads and explicit-runtime callees agree without threading the runtime through every call.
 - `skein.api.batch.alpha` exposes `(apply! runtime payload)` for transactional batch graph mutation payloads with `:refs`, `:strands`, `:edges`, and `:burn`. It returns normalized Clojure data from the weaver operation, including final refs, created rows, updated before/after rows, burned rows, and edge outcomes, without a JSON envelope.
 
 Helpers execute weaver-side when called from `init.clj`, activated runtime spools, or the live weaver REPL after the caller passes an explicit runtime. Connected client users who want to register new view, pattern, event handler, or hook functions should place them in weaver-loadable config/spool code and register their symbols through `skein.repl` or trusted `skein.core.client` calls. View, pattern, event, and hook registrations are weaver-lifetime runtime state unless user config reloads them on startup.
@@ -110,6 +110,47 @@ Helpers include:
 Malformed `use!` options always throw. Unmet `:spools` requirements record and return `{:status :skipped ...}` before target loading, with reasons including `:not-approved`, `:not-synced`, or `:sync-failed` when known. Unmet `:after` requirements record and return `{:status :skipped ...}` with reason `:missing-after`. Load or call exceptions record and return `{:status :failed ...}` by default; `:required? true` rethrows after recording. Raw `require` remains the strict fail-fast path for required config.
 
 Maven/remote dependency coordinates, version-range matching, alternate approved-spool config files, source fetching, and direct explicit-client `require` of newly synced weaver spools are outside the MVP contract.
+
+## SPEC-003.P5a Userland ergonomics module
+
+`skein.userland.alpha` is a blessed but **userland-only** terse ergonomics layer
+over the explicit-runtime API. It lets trusted userland config (`init.clj`),
+local glue, and tooling hold one weaver runtime and make terse calls
+(`(ready)`, `(strand! "title")`) instead of threading the runtime through every
+`skein.api.*.alpha` call. Ergonomics at the cost of hidden ambient resolution is
+a trade users are allowed to make; skein namespaces are not.
+
+- **SPEC-003.C24:** `skein.userland.alpha` is a strict downstream consumer tier.
+  No `skein.*` namespace — engine, blessed API, shipped spool, or `skein.repl` —
+  may require it. This invariant is guarded by a test that fails if any
+  repo-owned `skein.*` or shipped-spool source requires the module. Shared/distributed
+  spools are held to the same rule by review and the shared-spool guidance doc.
+- **SPEC-003.C25:** It holds one runtime and resolves every terse call in order:
+  the innermost `with-runtime` scope, then the `bind!` default, then
+  `skein.api.current.alpha/runtime` (active startup binding or published
+  runtime), else a loud failure with userland remediation (TEN-003). It works
+  with unpublished runtimes and performs no connected-client routing.
+- **SPEC-003.C26:** `bind!`/`unbind!`/`bound` manage a module-local default
+  runtime; `bind!` does not publish a process ambient runtime and affects only
+  this module's terse calls. `(with-runtime runtime & body)` (macro) and
+  `(with-runtime* runtime thunk)` (fn) additionally bind the shared ambient
+  runtime for their dynamic extent (via `skein.api.current.alpha`), so nested
+  reads and shared code see the same runtime; independent scopes do not
+  cross-talk. `(runtime)` returns the resolved runtime as an escape hatch for
+  the explicit-runtime surface this module does not wrap (graph, views, events,
+  hooks).
+- **SPEC-003.C27:** The terse wrappers mirror `skein.repl`'s vocabulary bound to
+  the resolved runtime: `init!`, `strand!`, `strand`, `update!`, `supersede!`,
+  `burn!`, `strands`, `query`, `ready`, `defquery!`, `load-queries!`, `queries`,
+  `query-explain`, `declare-acyclic-relation!`, `acyclic-relations`,
+  `defpattern!`, `patterns`, `pattern`, `pattern-explain`, `weave!`, and `apply!`
+  (batch). One deliberate signature divergence: `load-queries!` takes an
+  already-parsed EDN map of named query definitions, not the file path
+  `skein.repl/load-queries!` reads from disk — trusted in-process code owns its
+  own I/O. Positioning: `skein.repl` is the interactive human, connection-aware
+  surface; `skein.userland.alpha` is the trusted userland-code surface holding an
+  explicit in-process runtime. Same terse vocabulary, different runtime
+  ownership model.
 
 ## SPEC-003.P6 Example spool init
 

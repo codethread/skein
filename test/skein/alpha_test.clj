@@ -3,7 +3,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.hooks.alpha :as hooks]
             [skein.api.views.alpha :as views]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is use-fixtures]]
             [skein.core.client]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as daemon-config]
@@ -35,7 +35,12 @@
 (defn test-view [{:keys [params]}]
   {:alpha-view params})
 
+;; Namespace-level on purpose: hooks are registered by symbol and resolved
+;; to top-level vars, so capture state cannot be a per-test local. Reset by
+;; the :each fixture below; the runner never splits a namespace across threads.
 (def alpha-hook-contexts (atom []))
+
+(use-fixtures :each (fn [f] (reset! alpha-hook-contexts []) (f)))
 
 (defn test-hook [_ctx]
   :ok)

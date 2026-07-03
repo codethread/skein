@@ -236,7 +236,7 @@
   (reset! (op-registry runtime) {})
   (reset! (hook-registry runtime) {})
   (runtime/clear-event-system-for-reload! runtime)
-  (register-built-in-ops! runtime))
+  (runtime/with-runtime-binding runtime #(register-built-in-ops! runtime)))
 
 (defn reload-config!
   "Reload selected config-dir startup files after clearing runtime registries."
@@ -518,13 +518,14 @@
         (or (:code data)
             (recur (ex-cause t)))))))
 
-(defn- hook-failure-data [hook-type {:keys [key fn]} throwable]
+;; :fn is renamed on destructure: a local named `fn` shadows the fn macro.
+(defn- hook-failure-data [hook-type {:keys [key] fn-sym :fn} throwable]
   (let [data (ex-data throwable)
         code (cause-code throwable)]
     (cond-> {:code "hook/failed"
              :hook/type hook-type
              :hook/key key
-             :hook/fn fn
+             :hook/fn fn-sym
              :exception/class (str (class throwable))
              :exception/message (ex-message throwable)}
       data (assoc :exception/data data)
@@ -1071,10 +1072,11 @@
 (defn pattern-explain
   "Describe a registered weave pattern and its input spec."
   [runtime pattern-name]
-  (let [{:keys [name doc fn input-spec]} (resolve-pattern runtime pattern-name)
+  ;; :fn is renamed on destructure: a local named `fn` shadows the fn macro.
+  (let [{:keys [name doc input-spec] fn-sym :fn} (resolve-pattern runtime pattern-name)
         contract (pattern-input-contract input-spec)]
     (cond-> (merge {:name name
-                    :fn (str fn)
+                    :fn (str fn-sym)
                     :input-spec (str input-spec)
                     :spec-form (:spec-form contract)}
                    (select-keys contract [:summary :required :optional]))

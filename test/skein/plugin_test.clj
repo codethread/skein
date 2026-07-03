@@ -15,7 +15,8 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
+    (let [rt (runtime/start! db-file {:world (test-world config-dir)
+                                    :publish? false})]
       (try
         (f rt)
         (finally

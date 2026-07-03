@@ -11,11 +11,20 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as weaver]))
+            [skein.api.weaver.alpha :as weaver]
+            [skein.api.runtime.alpha :as runtime]))
 
-(def ^:private guild-ops (atom {}))
-(def ^:private deprecated-ops (atom {}))
-(def ^:private fallback-guild-name (atom nil))
+
+
+(defn- state [rt]
+  (runtime/spool-state rt ::state
+                       #(hash-map :guild-ops (atom {})
+                                  :deprecated-ops (atom {})
+                                  :fallback-guild-name (atom nil))))
+
+(defn- guild-ops [rt] (:guild-ops (state rt)))
+(defn- deprecated-ops [rt] (:deprecated-ops (state rt)))
+(defn- fallback-guild-name [rt] (:fallback-guild-name (state rt)))
 
 (def ^:private defop-opt-keys #{:doc :spec})
 (def ^:private deprecate-opt-keys #{:replacement :since})
@@ -61,15 +70,15 @@
 (defn dispatch-op
   "Dispatch a guild-declared operation after parsing and validating input."
   [{:op/keys [name argv] :as ctx}]
-  (let [{:keys [handler spec]} (or (get @guild-ops name)
+  (let [{:keys [handler spec]} (or (get @(guild-ops (:op/runtime ctx)) name)
                                   (fail! "Guild op is not registered" {:op name}))
         input (validate-input! name spec (parse-input argv))]
     ((requiring-resolve handler) (assoc ctx :guild/input input))))
 
 (defn deprecated-op
   "Fail loudly for a deprecated guild operation."
-  [{:op/keys [name]}]
-  (let [{:keys [replacement since]} (or (get @deprecated-ops name)
+  [{:op/keys [name] :as ctx}]
+  (let [{:keys [replacement since]} (or (get @(deprecated-ops (:op/runtime ctx)) name)
                                        (fail! "Guild op is not deprecated" {:op name}))]
     (fail! "Guild op is deprecated"
            (cond-> {:code :op/deprecated
@@ -99,8 +108,8 @@
                        :handler handler-fn-sym}
                 (:doc opts) (assoc :doc (:doc opts))
                 (:spec opts) (assoc :spec (:spec opts)))]
-    (swap! guild-ops assoc (:name entry) entry)
-    (swap! deprecated-ops dissoc (:name entry))
+    (swap! (guild-ops (current/runtime)) assoc (:name entry) entry)
+    (swap! (deprecated-ops (current/runtime)) dissoc (:name entry))
     entry))
 
 (defn- guild-name [name]
@@ -121,30 +130,30 @@
   (when-not (contains? opts :replacement)
     (fail! "Guild deprecation requires :replacement" {:opts opts}))
   (let [op-name (guild-name name)
-        entry (or (get @guild-ops op-name)
+        entry (or (get @(guild-ops (current/runtime)) op-name)
                   (fail! "Guild op is not registered" {:op name}))
         deprecated (select-keys opts [:replacement :since])]
     (weaver/register-op! (current/runtime) name (:doc entry) 'skein.spools.guild/deprecated-op)
-    (swap! guild-ops dissoc (:name entry))
-    (swap! deprecated-ops assoc (:name entry) (assoc deprecated :doc (:doc entry)))
+    (swap! (guild-ops (current/runtime)) dissoc (:name entry))
+    (swap! (deprecated-ops (current/runtime)) assoc (:name entry) (assoc deprecated :doc (:doc entry)))
     (assoc deprecated :name (:name entry))))
 
 (defn describe-op
   "Return JSON-safe metadata describing the installed guild API."
-  [{:op/keys [runtime-metadata]}]
+  [{:op/keys [runtime-metadata] :as ctx}]
   {:guild (or (:name runtime-metadata)
               (:friendly-name runtime-metadata)
-              @fallback-guild-name)
+              @(fallback-guild-name (:op/runtime ctx)))
    :active (mapv (fn [[name {:keys [doc spec]}]]
                    (cond-> {:name name}
                      doc (assoc :doc doc)
                      spec (merge (spec-summary spec))))
-                 (sort-by key @guild-ops))
+                 (sort-by key @(guild-ops (:op/runtime ctx))))
    :deprecated (mapv (fn [[name {:keys [replacement since doc]}]]
                        (cond-> {:name name :replacement replacement}
                          doc (assoc :doc doc)
                          since (assoc :since since)))
-                     (sort-by key @deprecated-ops))})
+                     (sort-by key @(deprecated-ops (:op/runtime ctx))))})
 
 (defn install!
   "Install the built-in `guild.describe` operation.
@@ -157,7 +166,7 @@
   ([guild-name]
    (when (and (some? guild-name) (not (and (string? guild-name) (not (str/blank? guild-name)))))
      (fail! "Guild name must be a non-blank string" {:guild/name guild-name}))
-   (reset! guild-ops {})
-   (reset! deprecated-ops {})
-   (reset! fallback-guild-name guild-name)
+   (reset! (guild-ops (current/runtime)) {})
+   (reset! (deprecated-ops (current/runtime)) {})
+   (reset! (fallback-guild-name (current/runtime)) guild-name)
    (weaver/register-op! (current/runtime) 'guild.describe "Describe this weaver's guild operation API" 'skein.spools.guild/describe-op)))

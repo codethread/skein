@@ -1,0 +1,266 @@
+(ns skein.userland.alpha
+  "Userland-only terse ergonomics over the explicit-runtime Skein API.
+
+  RFC-016 made runtime passing explicit everywhere: `skein.api.*.alpha` take the
+  target weaver runtime as their first argument. That is right for engine and
+  shared-spool code, but userland config (`init.clj`), local glue, and tooling
+  that legitimately work against ONE runtime end up threading it through every
+  call. This module lets trusted userland code hold a single runtime once - via
+  `bind!` or a `with-runtime` scope - and then make terse calls like
+  `(ready)` or `(strand! \"title\")`. Hidden ambient magic is a trade USERS are
+  allowed to make; skein namespaces are not.
+
+  Positioning vs `skein.repl`: same terse vocabulary, different runtime
+  ownership model. `skein.repl` is the interactive HUMAN surface - it is
+  connection-aware (`connect!` plus a remote nREPL client bridge) and routes to a
+  published/connected weaver. This module is the trusted USERLAND-CODE surface -
+  it holds one in-process runtime (published OR unpublished, e.g. tests and
+  embedded tooling that started with `:publish? false`), does no connection
+  routing, and fails loudly when no runtime is resolvable. Connected/interactive
+  work belongs in `skein.repl`; hold-your-own-runtime work belongs here.
+
+  Runtime resolution order for every terse call: the innermost `with-runtime`
+  scope, then the `bind!` default, then `skein.api.current.alpha/runtime` (the
+  active startup binding or the published runtime), else a loud failure
+  (TEN-003). `with-runtime` also binds the shared ambient runtime so nested
+  `(current/runtime)` reads and explicit-runtime callees see the same runtime;
+  `bind!` is module-local and only affects this module's terse calls, so scope
+  the shared ambient with `with-runtime` when nested/shared code must agree.
+
+  USERLAND-ONLY, FOREVER: no `skein.*` namespace may require this module. It is a
+  strict downstream consumer tier and must never sit upstream of the engine,
+  blessed API, shipped spools, or REPL surface. Shared/distributed spools must
+  keep taking the runtime explicitly (see docs/writing-shared-spools.md); this
+  ergonomics layer is for workspace-local config, tests, and glue only."
+  (:require [skein.api.current.alpha :as current]
+            [skein.api.batch.alpha :as batch]
+            [skein.api.weaver.alpha :as api]))
+
+(def ^:dynamic ^:private *scope*
+  "Innermost `with-runtime` runtime, or nil. Beats the `bind!` default."
+  nil)
+
+(defonce ^:private bound-runtime
+  (atom nil))
+
+(defn bind!
+  "Set `runtime` as the module-local default for terse calls, and return it.
+
+  Affects only `skein.userland.alpha` terse calls; it does not publish a process
+  ambient runtime. Use `with-runtime` to scope the shared ambient runtime for
+  nested or shared code. A `with-runtime` scope overrides this default."
+  [runtime]
+  (when (nil? runtime)
+    (throw (ex-info "Cannot bind! a nil runtime; call (unbind!) to clear the default" {})))
+  (reset! bound-runtime runtime)
+  runtime)
+
+(defn unbind!
+  "Clear the module-local default runtime and return nil."
+  []
+  (reset! bound-runtime nil)
+  nil)
+
+(defn bound
+  "Return the module-local default runtime set by `bind!`, or nil."
+  []
+  @bound-runtime)
+
+(defn- resolve-runtime
+  "Return the scope, bound, or ambient runtime, failing loudly when none exists."
+  []
+  (or *scope*
+      @bound-runtime
+      (try
+        (current/runtime)
+        (catch clojure.lang.ExceptionInfo _
+          (throw (ex-info "No Skein runtime for skein.userland.alpha; call (bind! rt), wrap in (with-runtime rt ...), or run inside a started/published weaver."
+                          {}))))))
+
+(defn runtime
+  "Return the resolved terse-call runtime for explicit `skein.api.*.alpha` use.
+
+  Escape hatch for reaching the surface this module does not wrap (graph, views,
+  events, hooks): grab the runtime and call the explicit-runtime API directly."
+  []
+  (resolve-runtime))
+
+(defn with-runtime*
+  "Call `thunk` with `runtime` as the terse-call and shared ambient runtime."
+  [runtime thunk]
+  (binding [*scope* runtime]
+    (current/with-runtime* runtime thunk)))
+
+(defmacro with-runtime
+  "Evaluate `body` with `runtime` as the terse-call and shared ambient runtime.
+
+  Overrides the `bind!` default for its dynamic extent and also binds the shared
+  ambient runtime, so nested `(current/runtime)` reads and explicit-runtime
+  callees resolve to the same runtime. Independent `with-runtime` scopes on
+  different runtimes do not cross-talk."
+  [runtime & body]
+  `(with-runtime* ~runtime (fn [] ~@body)))
+
+(defn init!
+  "Initialize the resolved runtime's store schema."
+  []
+  (api/init (resolve-runtime)))
+
+(def ^:private strand-core-keys #{:title :state :attributes :edges})
+
+(defn- reject-core-attribute-keys! [attributes]
+  (when (map? attributes)
+    (when-let [core-keys (seq (filter strand-core-keys (keys attributes)))]
+      (throw (ex-info "Two-argument strand! treats the second argument as attributes; pass lifecycle fields as the third argument"
+                      {:keys (vec core-keys)}))))
+  attributes)
+
+(defn strand!
+  "Create a strand in the resolved runtime and return the created row.
+
+  Accepts a title, optional attributes map, and optional lifecycle/options map
+  such as `{:state \"closed\"}`. The two-argument form is attributes-only and
+  rejects core strand fields instead of treating them as attributes."
+  ([title]
+   (strand! title {} {}))
+  ([title attributes]
+   (strand! title (reject-core-attribute-keys! attributes) {}))
+  ([title attributes lifecycle]
+   (api/add (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
+
+(defn strand
+  "Return the normalized strand row for `id`, or nil when no such strand exists."
+  [id]
+  (api/show (resolve-runtime) id))
+
+(defn update!
+  "Apply `patch` to strand `id` and return the normalized update result."
+  [id patch]
+  (api/update (resolve-runtime) id patch))
+
+(defn supersede!
+  "Replace `old-id` with `replacement-id` and return the supersession result."
+  [old-id replacement-id]
+  (api/supersede (resolve-runtime) old-id replacement-id))
+
+(defn burn!
+  "Physically delete one or more strands and their incident edges.
+
+  Missing ids fail loudly. Returns the weaver burn summary."
+  ([id]
+   (api/burn-by-id (resolve-runtime) id))
+  ([id & ids]
+   (api/burn-by-ids (resolve-runtime) (vec (cons id ids)))))
+
+(defn declare-acyclic-relation!
+  "Declare `relation` as a durable acyclic structural relation (idempotent)."
+  [relation]
+  (api/declare-acyclic-relation! (resolve-runtime) relation))
+
+(defn acyclic-relations
+  "Return sorted relation names declared acyclic in the resolved runtime."
+  []
+  (api/acyclic-relations (resolve-runtime)))
+
+(defn defquery!
+  "Register `query-name` to `query-def` in the resolved runtime query registry."
+  [query-name query-def]
+  (api/register-query (resolve-runtime) query-name query-def))
+
+(defn load-queries!
+  "Merge one EDN map of named query definitions into the resolved runtime.
+
+  Deliberately diverges from `skein.repl/load-queries!`, which takes a file
+  path and reads EDN from disk: trusted in-process code owns its own I/O."
+  [registry]
+  (api/load-queries (resolve-runtime) registry))
+
+(defn queries
+  "Return the resolved runtime's in-memory named query registry."
+  []
+  (api/queries (resolve-runtime)))
+
+(defn query-explain
+  "Return caller guidance for the registered query `query-name`.
+
+  Missing queries fail loudly with the weaver's query-not-found data."
+  [query-name]
+  (api/query-explain (resolve-runtime) query-name))
+
+(defn- named-query? [query-or-def]
+  (or (symbol? query-or-def) (keyword? query-or-def)))
+
+(defn query
+  "Return strands matching an ad hoc query definition or named query.
+
+  `query-or-def` may be a registered query symbol/keyword or a query predicate
+  form. `params` supplies runtime values for parameterized queries."
+  ([query-or-def]
+   (query query-or-def {}))
+  ([query-or-def params]
+   (let [runtime (resolve-runtime)]
+     (if (named-query? query-or-def)
+       (api/list-query runtime query-or-def params)
+       (api/list runtime query-or-def params)))))
+
+(defn strands
+  "Return resolved-runtime strands, optionally filtered by a query.
+
+  With no arguments, returns all strands. With a query definition or registered
+  query name, delegates to `query` with optional params."
+  ([]
+   (api/list (resolve-runtime)))
+  ([query-or-def]
+   (query query-or-def))
+  ([query-or-def params]
+   (query query-or-def params)))
+
+(defn ready
+  "Return active strands whose direct `depends-on` dependencies are not active.
+
+  Optional query arguments further filter the ready set using an ad hoc predicate
+  or registered query name with params."
+  ([]
+   (api/ready (resolve-runtime)))
+  ([query-or-def]
+   (ready query-or-def {}))
+  ([query-or-def params]
+   (let [runtime (resolve-runtime)]
+     (if (named-query? query-or-def)
+       (api/ready-query runtime query-or-def params)
+       (api/ready runtime query-or-def params)))))
+
+(defn defpattern!
+  "Register a runtime pattern in the resolved runtime pattern registry.
+
+  Accepts a pattern name, optional non-blank doc string, fully qualified function
+  symbol, and input spec name. Duplicate names replace prior entries."
+  ([pattern-name fn-sym input-spec]
+   (api/register-pattern! (resolve-runtime) pattern-name fn-sym input-spec))
+  ([pattern-name doc fn-sym input-spec]
+   (api/register-pattern! (resolve-runtime) pattern-name doc fn-sym input-spec)))
+
+(defn patterns
+  "Return the resolved runtime's in-memory pattern registry."
+  []
+  (api/patterns (resolve-runtime)))
+
+(defn pattern
+  "Return the registered pattern named `pattern-name`. Missing patterns fail loudly."
+  [pattern-name]
+  (api/resolve-pattern (resolve-runtime) pattern-name))
+
+(defn pattern-explain
+  "Return serializable input guidance for the registered pattern `pattern-name`."
+  [pattern-name]
+  (api/pattern-explain (resolve-runtime) pattern-name))
+
+(defn weave!
+  "Invoke the registered pattern `pattern-name` with `input` and create its batch."
+  [pattern-name input]
+  (api/weave! (resolve-runtime) pattern-name input))
+
+(defn apply!
+  "Apply one transactional batch graph mutation `payload` to the resolved runtime."
+  [payload]
+  (batch/apply! (resolve-runtime) payload))

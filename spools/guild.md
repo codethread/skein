@@ -27,7 +27,8 @@ approval is needed:
 ```
 
 `install!` registers the built-in `guild.describe` op and resets the spool's
-weaver-lifetime declaration state for reload-friendly startup. It may also take
+runtime-local weaver-lifetime declaration state for reload-friendly startup. The
+declaration state is isolated from other runtimes in the same JVM. It may also take
 a non-blank fallback guild name for contexts without runtime metadata:
 
 ```clojure

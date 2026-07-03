@@ -9,13 +9,9 @@
             [skein.core.db :as db]
             [skein.api.weaver.alpha :as api]))
 
-(defn- reset-engines! []
-  (reset! @#'shuttle/in-flight {}))
-
 (defn- with-treadle [f]
   (with-runtime
     (fn [rt _]
-      (reset-engines!)
       (shuttle/install!)
       (shuttle/defharness! :sh-tail {:argv ["sh" "-c" "tail -n 1 | sh"]
                                       :prompt-via :stdin

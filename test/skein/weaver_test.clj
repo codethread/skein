@@ -3,8 +3,9 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
-            [clojure.test :refer [deftest is testing]]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.api.batch.alpha :as batch]
+            [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
@@ -36,9 +37,9 @@
   ([start-options f]
    (let [db-file (db-test/temp-db-file)
          world (or (:world start-options) (temp-world))
-         rt (runtime/start! db-file (assoc (or start-options {}) :world world))]
+         rt (runtime/start! db-file (assoc (or start-options {}) :world world :publish? false))]
      (try
-       (f rt db-file)
+       (runtime/with-runtime-binding rt #(f rt db-file))
        (finally
          (runtime/stop! rt)
          (db-test/delete-sqlite-family! db-file)
@@ -50,6 +51,10 @@
 (defn test-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
 
+;; Namespace-level on purpose: handlers/hooks/patterns are registered by
+;; symbol and resolved to top-level vars, so their capture state cannot be
+;; per-test locals. The runner never splits a namespace across threads, and
+;; the :each fixture below resets this state between tests.
 (def delivered-events (atom []))
 (def handler-started (atom (promise)))
 (def handler-release (atom (promise)))
@@ -69,7 +74,7 @@
 (defn burn-temporary-children-on-inactive-parent [event]
   (when (and (= "active" (get-in event [:strand/before :state]))
              (= "closed" (get-in event [:strand/after :state])))
-    (let [rt @runtime/current-runtime
+    (let [rt (current/runtime)
           root-id (:strand/id event)
           children (remove #(= root-id (:id %)) (:strands (api/subgraph rt [root-id])))
           temporary-child-ids (->> children
@@ -164,6 +169,17 @@
 
 (def pattern-call-count (atom 0))
 
+(use-fixtures :each
+  (fn [f]
+    (reset! delivered-events [])
+    (reset! handler-started (promise))
+    (reset! handler-release (promise))
+    (reset! cleanup-events [])
+    (reset! hook-contexts [])
+    (reset! expected-hook-loader nil)
+    (reset! pattern-call-count 0)
+    (f)))
+
 (defn test-pattern [{:keys [input]}]
   (let [title (or (:title input) (get input "title"))]
     [{:ref 'impl
@@ -247,7 +263,7 @@
 
 (deftest startup-uses-independent-xdg-world-dirs-and-initializes-storage
   (let [world (temp-world)
-        rt (runtime/start! nil {:world world})]
+        rt (runtime/start! nil {:world world :publish? false})]
     (try
       (let [metadata (:metadata rt)]
         (is (= (:config-dir world) (:config-dir metadata)))
@@ -264,6 +280,45 @@
         (runtime/stop! rt)
         (delete-tree! (io/file (:config-dir world) ".."))))))
 
+(deftest unpublished-runtimes-coexist-with-isolated-storage-and-registries
+  (let [world-a (temp-world)
+        world-b (temp-world)
+        db-a (db-test/temp-db-file)
+        db-b (db-test/temp-db-file)
+        rt-a (runtime/start! db-a {:world world-a :publish? false})
+        rt-b (runtime/start! db-b {:world world-b :publish? false})]
+    (try
+      (api/init rt-a)
+      (api/init rt-b)
+      (api/register-query rt-a 'mine [:= [:attr :owner] "a"])
+      (api/register-query rt-b 'mine [:= [:attr :owner] "b"])
+      (let [a (api/add rt-a {:title "A" :attributes {:owner "a"}})
+            b (api/add rt-b {:title "B" :attributes {:owner "b"}})]
+        (is (= [(:id a)] (mapv :id (api/list-query rt-a 'mine {}))))
+        (is (= [(:id b)] (mapv :id (api/list-query rt-b 'mine {}))))
+        (is (nil? (api/show rt-a (:id b))))
+        (is (nil? (api/show rt-b (:id a)))))
+      (finally
+        (runtime/stop! rt-a)
+        (runtime/stop! rt-b)
+        (db-test/delete-sqlite-family! db-a)
+        (db-test/delete-sqlite-family! db-b)
+        (delete-tree! (io/file (:config-dir world-a) ".."))
+        (delete-tree! (io/file (:config-dir world-b) ".."))))))
+
+(deftest unpublished-startup-config-resolves-current-runtime
+  (let [world (temp-world)
+        marker (io/file (:config-dir world) "startup-runtime.edn")]
+    (spit (io/file (:config-dir world) "init.clj")
+          (str "(require '[skein.api.current.alpha :as current])\n"
+               "(spit " (pr-str (str marker)) " (pr-str (get-in (current/runtime) [:metadata :nonce])))\n"))
+    (let [rt (runtime/start! nil {:world world :publish? false})]
+      (try
+        (is (= (get-in rt [:metadata :nonce]) (read-string (slurp marker))))
+        (finally
+          (runtime/stop! rt)
+          (delete-tree! (io/file (:config-dir world) "..")))))))
+
 (deftest startup-fails-clearly-when-required-main-dirs-are-missing
   (let [parse-main-args (ns-resolve 'skein.core.weaver.runtime 'parse-main-args)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--workspace is required"
@@ -279,7 +334,7 @@
       (spit (io/file (:config-dir world) "init.clj")
             "(throw (ex-info \"init boom\" {:source :shared}))\n")
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"startup file failed"
-                            (runtime/start! nil {:world world})))
+                            (runtime/start! nil {:world world :publish? false})))
       (is (nil? (metadata/read-metadata world)))
       (is (not (.exists (io/file (:state-dir world) "weaver.json"))))
       (finally
@@ -295,7 +350,7 @@
       (spit (io/file (:config-dir world) "init.local.clj")
             (str "(let [xs (read-string (slurp " (pr-str (str order-file)) "))]\n"
                  "  (spit " (pr-str (str order-file)) " (pr-str (conj xs :local))))\n:local\n"))
-      (let [rt (runtime/start! db-file {:world world})]
+      (let [rt (runtime/start! db-file {:world world :publish? false})]
         (try
           (is (= [:shared :local] (read-string (slurp order-file))))
           (finally
@@ -311,7 +366,7 @@
     (try
       (spit (io/file (:config-dir world) "init.clj")
             (str "(spit " (pr-str (str marker)) " (pr-str :shared))\n"))
-      (let [rt (runtime/start! db-file {:world world})]
+      (let [rt (runtime/start! db-file {:world world :publish? false})]
         (try
           (is (= :shared (read-string (slurp marker))))
           (finally
@@ -327,7 +382,7 @@
       (spit (io/file (:config-dir world) "init.local.clj")
             "(throw (ex-info \"local boom\" {:source :local}))\n")
       (try
-        (runtime/start! db-file {:world world})
+        (runtime/start! db-file {:world world :publish? false})
         (is false "expected startup failure")
         (catch clojure.lang.ExceptionInfo e
           (is (= "Selected workspace startup file failed to load" (ex-message e)))
@@ -1699,7 +1754,7 @@
 
 (deftest runtime-uses-world-default-database-and-directories
   (let [world (temp-world)
-        rt (runtime/start! nil {:world world})]
+        rt (runtime/start! nil {:world world :publish? false})]
     (try
       (is (= (.getPath (.getCanonicalFile (io/file (:db-path world))))
              (get-in rt [:metadata :canonical-db-path])))
@@ -1717,27 +1772,12 @@
         init (io/file (:config-dir world) "init.clj")]
     (try
       (spit init "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api]) (api/register-query (current/runtime) 'trusted [:= :state \"active\"])")
-      (let [rt (runtime/start! nil {:world world})]
+      (let [rt (runtime/start! nil {:world world :publish? false})]
         (try
           (is (= {"trusted" [:= :state "active"]} (api/queries rt)))
           (finally
             (runtime/stop! rt))))
       (finally
-        (delete-tree! (io/file (:config-dir world)))))))
-
-(deftest runtime-init-failures-do-not-publish-metadata
-  (let [world (temp-world)
-        init (io/file (:config-dir world) "init.clj")]
-    (try
-      (spit init "(throw (ex-info \"init failed\" {}))")
-      (is (thrown? Exception (runtime/start! nil {:world world})))
-      (is (nil? @runtime/current-runtime))
-      (is (nil? (metadata/read-metadata world)))
-      (is (false? (.exists (metadata/json-metadata-file world))))
-      (is (false? (.exists (metadata/socket-file world))))
-      (finally
-        (runtime/stop! @runtime/current-runtime)
-        (metadata/delete! world)
         (delete-tree! (io/file (:config-dir world)))))))
 
 (deftest runtime-metadata-rejects-blank-friendly-name
@@ -1909,7 +1949,7 @@
             (is (= false (get response "ok")))
             (is (= "protocol/identity-mismatch" (get-in response ["error" "code"]))))))
       (Thread/sleep 100)
-      (is (some? @runtime/current-runtime)))))
+      (is (.exists (metadata/socket-file (:metadata rt)))))))
 
 (deftest json-socket-rejects-malformed-stop-without-shutdown
   (with-runtime
@@ -1928,12 +1968,12 @@
             (is (= false (get response "ok")))
             (is (= "protocol/malformed-request" (get-in response ["error" "code"]))))))
       (Thread/sleep 100)
-      (is (some? @runtime/current-runtime)))))
+      (is (.exists (metadata/socket-file (:metadata rt)))))))
 
 (deftest json-socket-stop-cleans-runtime
   (let [db-file (db-test/temp-db-file)
         world (temp-world)
-        rt (runtime/start! db-file {:world world})]
+        rt (runtime/start! db-file {:world world :publish? false})]
     (try
       (reset! hook-contexts [])
       (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
@@ -1942,11 +1982,10 @@
         (is (= true (get-in response ["result" "stopping"])))
         (is (empty? @hook-contexts)))
       (Thread/sleep 250)
-      (is (nil? @runtime/current-runtime))
       (is (false? (.exists (metadata/socket-file (:metadata rt)))))
       (is (false? (.exists (metadata/json-metadata-file (:metadata rt)))))
       (finally
-        (runtime/stop! @runtime/current-runtime)
+        (runtime/stop! rt)
         (db-test/delete-sqlite-family! db-file)))))
 
 (deftest metadata-shape-detects-missing-and-stale-files
@@ -1973,7 +2012,7 @@
       (spit socket-file "orphaned")
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"cannot prove weaver world is stale"
-                            (runtime/start! nil {:world world})))
+                            (runtime/start! nil {:world world :publish? false})))
       (is (.exists socket-file))
       (finally
         (metadata/delete! world)
@@ -1982,7 +2021,7 @@
 (deftest runtime-stop-removes-metadata
   (let [db-file (db-test/temp-db-file)
         world (temp-world)
-        rt (runtime/start! db-file {:world world})]
+        rt (runtime/start! db-file {:world world :publish? false})]
     (try
       (runtime/stop! rt)
       (is (nil? (metadata/read-metadata world)))
@@ -1995,11 +2034,11 @@
 (deftest runtime-rejects-duplicate-live-metadata
   (let [db-file (db-test/temp-db-file)
         world (temp-world)
-        rt (runtime/start! db-file {:world world})]
+        rt (runtime/start! db-file {:world world :publish? false})]
     (try
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"already active"
-                            (runtime/start! db-file {:world world})))
+                            #"metadata already exists"
+                            (runtime/start! db-file {:world world :publish? false})))
       (finally
         (runtime/stop! rt)
         (db-test/delete-sqlite-family! db-file)))))

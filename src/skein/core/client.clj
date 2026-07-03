@@ -109,9 +109,14 @@
    :weave! {:request/source :nrepl :request/operation :weave}
    :apply-batch {:request/source :nrepl :request/operation :apply-batch}})
 
+(defn- runtime-form
+  "Return code that resolves the runtime serving the connected nREPL port."
+  [port]
+  (str "(skein.core.weaver.runtime/runtime-for-nrepl-port " port ")"))
+
 (defn- fixed-form
   "Return an nREPL form that invokes a known weaver API operation with args."
-  [op args]
+  [op args port]
   (let [api-symbol (or (api-symbols op)
                        (fail "Unknown weaver API operation" {:type :skein.core.client/unknown-operation
                                                               :operation op}))
@@ -120,20 +125,20 @@
                     (conj (hooked-operation-request-contexts op)))]
     (str "(do "
          "(require '[skein.api.weaver.alpha] '[skein.core.weaver.runtime]) "
-         "(let [args '" (pr-str call-args) "] "
-         "(try {:ok true :value (apply " api-symbol " @skein.core.weaver.runtime/current-runtime args)} "
+         "(let [rt " (runtime-form port) " args '" (pr-str call-args) "] "
+         "(try {:ok true :value (apply " api-symbol " rt args)} "
          "(catch Throwable t {:ok false :class (str (class t)) :message (ex-message t) :data (ex-data t)})))"
          ")")))
 
 (defn- identity-form
   "Return an nREPL form that reads the connected weaver runtime metadata."
-  []
-  "(do (require '[skein.core.weaver.runtime]) (:metadata @skein.core.weaver.runtime/current-runtime))")
+  [port]
+  (str "(do (require '[skein.core.weaver.runtime]) (:metadata " (runtime-form port) "))"))
 
 (defn- stop-form
   "Return an nREPL form that schedules the connected weaver to stop."
-  []
-  "(do (require '[skein.core.weaver.runtime]) (let [rt @skein.core.weaver.runtime/current-runtime] (future (Thread/sleep 50) (skein.core.weaver.runtime/stop! rt)) {:stopped true}))")
+  [port]
+  (str "(do (require '[skein.core.weaver.runtime]) (let [rt " (runtime-form port) "] (future (Thread/sleep 50) (skein.core.weaver.runtime/stop! rt)) {:stopped true}))"))
 
 (defn- connect
   "Open an nREPL connection to the endpoint in validated weaver metadata."
@@ -189,7 +194,7 @@
 (defn- verify-identity!
   "Verify that conn serves the expected weaver runtime metadata."
   [conn expected timeout-ms]
-  (let [actual (eval-form conn (identity-form) timeout-ms {:operation :identity})]
+  (let [actual (eval-form conn (identity-form (get-in expected [:endpoint :port])) timeout-ms {:operation :identity})]
     (when-not (= (:config-dir expected) (:config-dir actual))
       (fail "Connected weaver serves a different config dir" {:type :skein.core.client/config-mismatch
                                                                :expected (:config-dir expected)
@@ -210,8 +215,8 @@
   (let [meta (metadata-for-world config-dir state-dir)]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms)
-      (eval-form conn (fixed-form op args) timeout-ms {:operation op
-                                                       :config-dir (:config-dir meta)}))))
+      (eval-form conn (fixed-form op args (get-in meta [:endpoint :port])) timeout-ms {:operation op
+                                                                                       :config-dir (:config-dir meta)}))))
 
 (defn status-world
   "Return identity metadata for the running weaver in config-dir's world."
@@ -228,5 +233,5 @@
         meta (metadata-for-world config-dir (:state-dir opts))]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms)
-      (eval-form conn (stop-form) timeout-ms {:operation :stop
-                                              :config-dir (:config-dir meta)}))))
+      (eval-form conn (stop-form (get-in meta [:endpoint :port])) timeout-ms {:operation :stop
+                                                                              :config-dir (:config-dir meta)}))))

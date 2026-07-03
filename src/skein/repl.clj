@@ -108,7 +108,8 @@
 
 (defn- daemon [op & args]
   (call-daemon
-   #(if-let [rt (when-not (connected?) @weaver-runtime/current-runtime)]
+   #(if-let [rt (when-not (connected?) (or weaver-runtime/*runtime*
+                                      @weaver-runtime/current-runtime))]
       (in-process-call rt op args)
       (let [dir (config-dir)]
         (apply client/call-world dir (client-opts) op args)))))
