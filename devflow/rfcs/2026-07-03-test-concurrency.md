@@ -167,3 +167,45 @@ Three features, strictly sequenced:
 Success criteria: full suite green under the concurrent runner with a
 meaningful wall-clock reduction from the 34s baseline; `-M:smoke` unchanged;
 a follow-up LAT task can start two weaver worlds in one test JVM.
+
+## RFC-016.P7 Observed pre-existing flakes (2026-07-03 session evidence)
+
+A 2026-07-03 session surfaced three tests that pass solo and on rerun but flap
+under full-suite parallel load. These are not regressions from this RFC's work;
+they were reproduced on unmodified `main`, and they matter here because the
+concurrent runner (D3) turns latent async-timing assumptions into real races.
+The parallel runner **must not** be declared green while these still flap.
+Line numbers drifted since first observation, so tests are cited by name.
+
+- **RFC-016.P7.1 — `chime-test/notifier-binding-and-manual-notify`
+  (`test/skein/chime_test.clj`).** The `notify!` assertions await only the
+  `TITLE=` line via `eventually`, then assert the `BODY=` line with a plain
+  `is`. Under load the notifier subprocess has written the title but not yet the
+  body when the second assertion fires. A per-test fix is to await the body line
+  the same way (`eventually #(file-contains? out-file "BODY=Body text")`) before
+  asserting, or await notifier-process quiescence.
+- **RFC-016.P7.2 — `shuttle-test/reap-manual-leaves-the-session-to-the-human`
+  (`test/skein/shuttle_test.clj`).** This unit test runs against the in-file
+  `fake-mux` backend (`spawn-interactive!` hardcodes `:backend :fake-mux`, a
+  plain detached process; real tmux is exercised by smoke, not here), so the
+  race is backend-agnostic: a `:reap :manual` run is expected to leave its
+  interactive session's detached process alive for the human after the target
+  closes, but the `(is (process-alive? pid))` assertion races the
+  spawn/detach/reap liveness transition under load. Needs the same
+  session-liveness settling the runner-level concurrency work will have to
+  provide, or a per-test wait keyed on the detached process's own state rather
+  than wall-clock ordering.
+- **RFC-016.P7.3 — `weaver-test/weaver-apply-batch-emits-batch-event-before-compatibility-fanout`
+  (`test/skein/weaver_test.clj`) — cheap targeted per-test fix candidate,
+  independent of D3.** The test creates its fixture strands with `api/add`,
+  then `reset!`s the capture vector, then registers the `:capture` event
+  handler — so the handler is registered *after* the fixture `:strand/added`
+  events are emitted. Under load a queued fixture `:strand/added` event is
+  delivered after registration and shifts the expected event vector by one,
+  cascading 1–18 assertion failures depending on timing. The fix is entirely
+  local to the test and does not depend on any runner-level concurrency work:
+  register the capture handler *before* creating the fixture strands, or drain /
+  await event-system quiescence after the fixtures and before `reset!`+register,
+  so no fixture event can leak into the captured stream. Worth landing on its
+  own regardless of D3's schedule. When D3.3 (test hygiene) lands, fold P7.1 and
+  P7.2 in the same pass; P7.3 need not wait for it.
