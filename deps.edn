@@ -8,7 +8,7 @@
         org.slf4j/slf4j-nop {:mvn/version "1.7.36"}
         com.bhauman/rebel-readline {:mvn/version "0.1.5"}}
  :aliases
- {:test {:extra-paths ["test" "spools/shuttle/src"]
+ {:test {:extra-paths ["test" "spools/shuttle/src" "spools/chime/src"]
          :jvm-opts ["--enable-native-access=ALL-UNNAMED"]
          :main-opts ["-m" "skein.test-runner"]}
   :repl {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
