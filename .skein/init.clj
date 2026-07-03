@@ -10,6 +10,16 @@
 (runtime-alpha/use! :skein/spools-devflow
   {:ns 'skein.spools.devflow
    :call 'skein.spools.devflow/install!})
+(runtime-alpha/use! :macros/patterns
+  {:ns 'skein.macros.patterns
+   :spools ['skein.macros/macros]
+   :required? true})
+(runtime-alpha/use! :macros/demo
+  {:ns 'skein.macros.demo
+   :spools ['skein.macros/macros]
+   :after [:macros/patterns]
+   :call 'skein.macros.demo/install!
+   :required? true})
 (runtime-alpha/use! :skein/spools-shuttle
   {:ns 'skein.spools.shuttle
    :spools ['skein.spools/shuttle]

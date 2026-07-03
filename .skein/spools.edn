@@ -1,2 +1,3 @@
 {:spools {skein.spools/shuttle {:local/root "../spools/shuttle"}
-          skein.spools/chime {:local/root "../spools/chime"}}}
+          skein.spools/chime {:local/root "../spools/chime"}
+          skein.macros/macros {:local/root "spools/macros"}}}
