@@ -75,6 +75,15 @@ func TestHelpIncludesCommandTree(t *testing.T) {
 			t.Fatalf("%s help should expose --state and omit old lifecycle flag:\n%s", command, help)
 		}
 	}
+	updateHelp, err := run("update", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"update <id>", "--attr", "--attr-file", "--attr-stdin"} {
+		if !strings.Contains(updateHelp, want) {
+			t.Fatalf("update help missing %q in:\n%s", want, updateHelp)
+		}
+	}
 
 	supersede, err := run("supersede", "--help")
 	if err != nil {
@@ -1055,6 +1064,50 @@ func TestAddReadsSingleAttributeFromStdin(t *testing.T) {
 	expected := map[string]any{"body": "# Plan\n"}
 	if !reflect.DeepEqual(fc.calls[0].args["attributes"], expected) {
 		t.Fatalf("bad stdin attributes: %#v", fc.calls[0].args)
+	}
+}
+
+func TestUpdateTitleOnlyOmitsAttributes(t *testing.T) {
+	cfg := testConfig(t)
+	orig := newClient
+	fc := &fakeClient{}
+	newClient = func(o Options) Caller { return fc }
+	t.Cleanup(func() { newClient = orig })
+	_, err := run("--workspace", cfg, "update", "task-1", "--title", "Retitle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]any{"id": "task-1", "title": "Retitle", "state": nil, "attributes": nil, "edges": []map[string]any{}}
+	if len(fc.calls) != 1 || fc.calls[0].op != "update" || !reflect.DeepEqual(fc.calls[0].args, expected) {
+		t.Fatalf("title-only update must omit attributes from payload: %#v", fc.calls)
+	}
+}
+
+func TestUpdateMergesFileAndStdinAttributeInputs(t *testing.T) {
+	cfg := testConfig(t)
+	file := filepath.Join(t.TempDir(), "body.md")
+	if err := os.WriteFile(file, []byte("body from file"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	orig := newClient
+	fc := &fakeClient{}
+	newClient = func(o Options) Caller { return fc }
+	t.Cleanup(func() { newClient = orig })
+	_, err := run("--workspace", cfg, "update", "task-1", "--attr-file", "body="+file, "--attr", "owner=agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedFile := map[string]any{"body": "body from file", "owner": "agent"}
+	if fc.calls[0].op != "update" || !reflect.DeepEqual(fc.calls[0].args["attributes"], expectedFile) {
+		t.Fatalf("bad update file attributes: %#v", fc.calls[0])
+	}
+	_, err = runWithStdin("notes from stdin", "--workspace", cfg, "update", "task-1", "--attr-stdin", "notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedStdin := map[string]any{"notes": "notes from stdin"}
+	if !reflect.DeepEqual(fc.calls[1].args["attributes"], expectedStdin) {
+		t.Fatalf("bad update stdin attributes: %#v", fc.calls[1])
 	}
 }
 

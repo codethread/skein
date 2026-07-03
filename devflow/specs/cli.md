@@ -30,7 +30,7 @@ Commands:
 ```text
 init
 add <title> [--state active|closed] [--attr key=value ...] [--attr-file key=path ...] [--attr-stdin key] [--attributes-stdin] [--edge edge-type:to-id ...]
-update <id> [--title title] [--state active|closed] [--attr key=value ...] [--edge edge-type:to-id ...]
+update <id> [--title title] [--state active|closed] [--attr key=value ...] [--attr-file key=path ...] [--attr-stdin key] [--edge edge-type:to-id ...]
 show <id>
 supersede <old-id> <replacement-id>
 burn <id>
@@ -64,7 +64,7 @@ weaver status
 - **SPEC-002.C6c:** `--attr-stdin key` reads all stdin and writes that string as attribute `key`; it may appear at most once.
 - **SPEC-002.C6d:** `--attributes-stdin` reads exactly one JSON object from stdin and merges its properties into the attributes map, preserving JSON value types from that object.
 - **SPEC-002.C6e:** `--attr-stdin` and `--attributes-stdin` are mutually exclusive because both consume stdin. Attribute merge precedence is `--attr` highest, then `--attr-file` / `--attr-stdin`, then `--attributes-stdin` lowest. Cross-priority duplicate keys are allowed and resolved by precedence; duplicate keys within one priority fail loudly.
-- **SPEC-002.C7:** `update` patches title, lifecycle state, attributes, and strand edges for one existing strand. Generic update accepts `active|closed`; it cannot set `replaced`.
+- **SPEC-002.C7:** `update` patches title, lifecycle state, attributes, and strand edges for one existing strand. Generic update accepts `active|closed`; it cannot set `replaced`. `--attr`, `--attr-file`, and `--attr-stdin` follow the same string-valued attribute input contracts and precedence as `add`; `--attributes-stdin` remains add-only.
 - **SPEC-002.C8:** `--edge edge-type:to-id` on `add` or `update` creates or updates an outgoing edge from the new/updated strand to the target strand.
 - **SPEC-002.C9:** `add`, `update`, `supersede`, `show`, `list`, and `ready` return JSON from the weaver with normalized `attributes` and `state`; they do not emit old lifecycle fields `active` or `inactive_at`.
 - **SPEC-002.C9a:** `supersede <old-id> <replacement-id>` delegates to the weaver supersession transaction, stores `replacement --supersedes--> old`, marks the old strand `replaced`, rewires incoming `depends-on` edges, and returns the normalized supersession result.

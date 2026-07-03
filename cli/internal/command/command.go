@@ -172,8 +172,7 @@ func (a *App) rootCommand() *cobra.Command {
 			return err
 		}
 		title, _ := cmd.Flags().GetString("title")
-		attrs, _ := cmd.Flags().GetStringArray("attr")
-		am, err := parseKV(attrs, "--attr")
+		am, err := a.addAttributes(cmd)
 		if err != nil {
 			return err
 		}
@@ -190,7 +189,7 @@ func (a *App) rootCommand() *cobra.Command {
 			stateArg = state
 		}
 		var attrArg any
-		if len(attrs) > 0 {
+		if attributeInputsChanged(cmd) {
 			attrArg = am
 		}
 		return a.withConfig(o, func(r Options) error {
@@ -199,7 +198,9 @@ func (a *App) rootCommand() *cobra.Command {
 	}}
 	update.Flags().String("title", "", "new strand title")
 	update.Flags().String("state", "active", "strand lifecycle state: active or closed")
-	update.Flags().StringArray("attr", nil, "string attribute key=value (repeatable)")
+	update.Flags().StringArray("attr", nil, "string attribute key=value (repeatable; highest priority)")
+	update.Flags().StringArray("attr-file", nil, "string attribute key=path read from file contents (repeatable)")
+	update.Flags().StringArray("attr-stdin", nil, "attribute key whose string value is read from stdin (max once)")
 	update.Flags().StringArray("edge", nil, "outgoing edge edge-type:to-id (repeatable)")
 	root.AddCommand(update)
 
@@ -680,6 +681,11 @@ func (a *App) addAttributes(cmd *cobra.Command) (map[string]any, error) {
 		merged[k] = v
 	}
 	return merged, nil
+}
+
+func attributeInputsChanged(cmd *cobra.Command) bool {
+	// attributes-stdin is registered by add, not update; keep this shared helper aligned with both callers.
+	return cmd.Flags().Changed("attr") || cmd.Flags().Changed("attr-file") || cmd.Flags().Changed("attr-stdin") || cmd.Flags().Changed("attributes-stdin")
 }
 
 func parseEdges(cmd *cobra.Command) ([]map[string]any, error) {
