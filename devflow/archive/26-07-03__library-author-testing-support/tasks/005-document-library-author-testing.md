@@ -24,7 +24,7 @@ References:
   - author test-JVM tests requiring Skein namespaces
   - weaver-world tests using `skein.test.alpha`
   - classpath boundary between author test JVM and weaver JVM/library classloader
-  - `libs.edn`, `libs/sync!`, and `libs/use!` test workflow
+  - `spools.edn`, `skein.api.runtime.alpha/sync!`, and `skein.api.runtime.alpha/use!` test workflow
   - `:storage :sqlite-file` versus `:storage :sqlite-memory`
   - short temp path guidance for Unix socket limits
   - CI checkout/pinning against a selected Skein commit/tag
@@ -35,7 +35,7 @@ References:
 ## TASK-005.P3 Done when
 
 - `docs/library-authoring.md` gives an external author enough information to set up tests against a selected Skein checkout.
-- The docs distinguish test-JVM `require` from weaver-side `libs/sync!`/`use!`.
+- The docs distinguish test-JVM `require` from weaver-side `sync!`/`use!`.
 - Examples use `skein.test.alpha` and do not rely on the user's default `~/.config/skein` world.
 - The docs do not imply package registry, installer, lockfile, or CLI package commands.
 

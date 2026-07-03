@@ -14,9 +14,9 @@ References:
 
 ## TASK-006.P2 Implementation notes
 
-- Migrate the selected dogfood targets from `test/skein/libs_test.clj` to use `skein.test.alpha`:
-  - `weaver-init-runs-with-library-classloader-after-sync`
-  - `connected-client-use-executes-in-weaver-runtime`
+- Migrate the selected dogfood targets from `test/skein/spools_test.clj` to use `skein.test.alpha`:
+  - `daemon-init-runs-with-spool-classloader-after-sync`
+  - `connected-client-use-executes-in-daemon-runtime`
 - Keep tests that need direct runtime/storage manipulation on lower-level helpers.
 - Add or confirm focused in-repo coverage for both `:storage :sqlite-file` and `:storage :sqlite-memory` through the public helper.
 - Keep canonical `clojure -M:smoke` file-backed. Do not replace smoke with in-memory storage.
@@ -25,7 +25,7 @@ References:
 
 ## TASK-006.P3 Done when
 
-- The selected `libs_test.clj` dogfood cases use `skein.test.alpha` and still assert the same author-visible behavior.
+- The selected `spools_test.clj` dogfood cases use `skein.test.alpha` and still assert the same author-visible behavior.
 - Lower-level tests still cover storage/runtime internals directly.
 - In-repo tests cover the helper with both file-backed and in-memory storage modes.
 

@@ -126,5 +126,6 @@ Use `strand weaver repl` to attach directly to the running weaver's nREPL for tr
 - [Skein user reference](./docs/skein.md)
 - [Getting started](./docs/getting-started.md)
 - [Shipped reference spools](./spools/README.md)
+- [Library authoring](./docs/library-authoring.md)
 - [Clojure crash course](./docs/clojure-crash-course.md)
 - [Devflow specs](./devflow/specs/)

@@ -2,40 +2,40 @@ tasks:
   - id: 1
     description: "Add weaver storage handles"
     task_file: "tasks/001-add-daemon-storage-handles.md"
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: "Support sqlite memory runtime"
     task_file: "tasks/002-support-sqlite-memory-runtime.md"
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: "Update storage metadata status"
     task_file: "tasks/003-update-storage-metadata-status.md"
-    status: pending
+    status: complete
     blocked_by: [1, 2]
   - id: 4
     description: "Add skein test alpha"
     task_file: "tasks/004-add-atom-test-alpha.md"
-    status: pending
+    status: complete
     blocked_by: [2, 3]
   - id: 5
     description: "Document library author testing"
     task_file: "tasks/005-document-library-author-testing.md"
-    status: pending
+    status: complete
     blocked_by: [4]
   - id: 6
     description: "Dogfood helper internally"
     task_file: "tasks/006-dogfood-helper-internally.md"
-    status: pending
+    status: complete
     blocked_by: [4]
   - id: 7
     description: "Validate external fixture workflow"
     task_file: "tasks/007-validate-external-fixture-workflow.md"
-    status: pending
+    status: complete
     blocked_by: [4, 5]
   - id: 8
     description: "Promote specs and validate"
     task_file: "tasks/008-promote-specs-and-validate.md"
-    status: pending
+    status: complete
     blocked_by: [6, 7]

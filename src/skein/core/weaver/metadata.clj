@@ -39,13 +39,33 @@
   []
   (str (UUID/randomUUID)))
 
+(def ^:private storage-kinds #{:sqlite-file :sqlite-memory})
+
+(defn- require-storage-identity!
+  "Fail loudly unless storage kind, label, and path are mutually consistent."
+  [{:keys [storage-kind storage-label canonical-db-path]}]
+  (when-not (contains? storage-kinds storage-kind)
+    (throw (ex-info "Unknown weaver storage kind" {:storage-kind storage-kind})))
+  (when (str/blank? storage-label)
+    (throw (ex-info "Weaver storage label must not be blank" {:storage-label storage-label})))
+  (case storage-kind
+    :sqlite-file (when-not (= storage-label canonical-db-path)
+                   (throw (ex-info "File storage label must be the canonical database path"
+                                   {:storage-label storage-label :canonical-db-path canonical-db-path})))
+    :sqlite-memory (when (some? canonical-db-path)
+                     (throw (ex-info "In-memory storage must not publish a database path"
+                                     {:canonical-db-path canonical-db-path}))))
+  nil)
+
 (defn metadata-shape
   "Return the canonical EDN metadata map for a running weaver."
-  [{:keys [pid host port canonical-db-path nonce started-at world name]}]
+  [{:keys [pid host port storage-kind storage-label canonical-db-path nonce started-at world name]
+    :as shape}]
   (let [socket-path (.getPath (socket-file world))
         name (or name (.getName (io/file (:config-dir world))))]
     (when (str/blank? name)
       (throw (ex-info "Weaver name must not be blank" {:name name})))
+    (require-storage-identity! shape)
     {:pid pid
      :transport :nrepl
      :protocol-version protocol-version
@@ -54,6 +74,8 @@
      :name name
      :state-dir (:state-dir world)
      :data-dir (:data-dir world)
+     :storage-kind storage-kind
+     :storage-label storage-label
      :canonical-db-path canonical-db-path
      :nonce nonce
      :socket-path socket-path
@@ -69,6 +91,8 @@
    "state_dir" (:state-dir metadata)
    "name" (:name metadata)
    "data_dir" (:data-dir metadata)
+   "database_kind" (name (:storage-kind metadata))
+   "database_label" (:storage-label metadata)
    "database_path" (:canonical-db-path metadata)
    "socket_path" (:socket-path metadata)
    "started_at" (:started-at metadata)
@@ -132,6 +156,17 @@
   (and (integer? pid)
        (<= Long/MIN_VALUE pid Long/MAX_VALUE)))
 
+(defn- valid-storage-identity?
+  "Return true when storage kind, label, and path are mutually consistent."
+  [{:keys [storage-kind storage-label canonical-db-path]}]
+  (case storage-kind
+    :sqlite-file (and (string? canonical-db-path)
+                      (= storage-label canonical-db-path))
+    :sqlite-memory (and (nil? canonical-db-path)
+                        (string? storage-label)
+                        (not (str/blank? storage-label)))
+    false))
+
 (defn valid-metadata?
   "Return true when `metadata` has the supported weaver runtime metadata shape."
   [metadata]
@@ -145,7 +180,7 @@
        (string? (:socket-path metadata))
        (string? (get-in metadata [:endpoint :host]))
        (int? (get-in metadata [:endpoint :port]))
-       (string? (:canonical-db-path metadata))
+       (valid-storage-identity? metadata)
        (string? (:nonce metadata))))
 
 (defn stale-or-missing?

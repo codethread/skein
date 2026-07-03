@@ -280,6 +280,65 @@
         (runtime/stop! rt)
         (delete-tree! (io/file (:config-dir world) ".."))))))
 
+(deftest runtime-owns-a-file-storage-handle
+  (let [world (temp-world)
+        rt (runtime/start! nil {:world world :publish? false})]
+    (try
+      (let [storage (:storage rt)]
+        (is (= :sqlite-file (:storage-kind storage)))
+        (is (= (:db-path world) (:canonical-db-path storage)))
+        (is (= (:canonical-db-path storage) (:storage-label storage)))
+        (is (= (:datasource rt) (:connectable storage)))
+        (is (nil? (:close-fn storage))))
+      (finally
+        (runtime/stop! rt)
+        (delete-tree! (io/file (:config-dir world) ".."))))))
+
+(deftest memory-storage-runtime-serves-weaver-api-without-a-db-file
+  (let [world (temp-world)
+        rt (runtime/start! nil {:world world :publish? false :storage :sqlite-memory})]
+    (try
+      (is (= :sqlite-memory (get-in rt [:storage :storage-kind])))
+      (is (nil? (get-in rt [:storage :canonical-db-path])))
+      (is (false? (.exists (io/file (:data-dir world) "skein.sqlite"))))
+      (testing "metadata and status report memory storage without a fake path"
+        (is (= :sqlite-memory (get-in rt [:metadata :storage-kind])))
+        (is (nil? (get-in rt [:metadata :canonical-db-path])))
+        (is (false? (metadata/stale-or-missing? (:metadata rt))))
+        (let [json-disk (json/read-str (slurp (metadata/json-metadata-file (:metadata rt))))]
+          (is (= "sqlite-memory" (get json-disk "database_kind")))
+          (is (= (get-in rt [:metadata :storage-label]) (get json-disk "database_label")))
+          (is (contains? json-disk "database_path"))
+          (is (nil? (get json-disk "database_path"))))
+        (let [status (socket-request rt "status" {})]
+          (is (true? (get status "ok")))
+          (is (= "sqlite-memory" (get-in status ["result" "database_kind"])))
+          (is (nil? (get-in status ["result" "database_path"])))))
+      (let [strand (api/add rt {:title "Mem strand" :attributes {:owner "mem"}})]
+        (is (= [(:id strand)] (mapv :id (api/ready rt)))))
+      (testing "concurrent weaver API calls at test scale"
+        (let [ids (->> (range 10)
+                       (mapv (fn [i] (future (:id (api/add rt {:title (str "c" i)})))))
+                       (mapv deref))]
+          (is (= 10 (count (distinct ids))))
+          (is (= 11 (count (api/list rt))))))
+      (finally
+        (runtime/stop! rt)
+        (delete-tree! (io/file (:config-dir world) ".."))))
+    (testing "storage is destroyed with the runtime"
+      (is (thrown? java.sql.SQLException (db/all-strands (:datasource rt)))))))
+
+(deftest storage-selection-fails-loudly-on-bad-input
+  (let [world (temp-world)]
+    (try
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not take a database file"
+                            (runtime/start! (db-test/temp-db-file)
+                                            {:world world :publish? false :storage :sqlite-memory})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown weaver storage kind"
+                            (runtime/start! nil {:world world :publish? false :storage :postgres})))
+      (finally
+        (delete-tree! (io/file (:config-dir world) ".."))))))
+
 (deftest unpublished-runtimes-coexist-with-isolated-storage-and-registries
   (let [world-a (temp-world)
         world-b (temp-world)
@@ -1828,6 +1887,8 @@
             from-disk (edn/read-string (slurp file))
             json-disk (json/read-str (slurp (metadata/json-metadata-file (:metadata rt))))]
         (is (= canonical (:canonical-db-path status)))
+        (is (= :sqlite-file (:storage-kind status)))
+        (is (= canonical (:storage-label status)))
         (is (= status from-disk))
         (is (= file (metadata/metadata-file (:metadata rt))))
         (is (pos-int? (get-in status [:endpoint :port])))
@@ -1838,6 +1899,8 @@
         (is (= 1 (:protocol-version status)))
         (is (string? (:socket-path status)))
         (is (= canonical (get json-disk "database_path")))
+        (is (= "sqlite-file" (get json-disk "database_kind")))
+        (is (= canonical (get json-disk "database_label")))
         (is (= (:nonce status) (get json-disk "weaver_id")))
         (is (= (:socket-path status) (get json-disk "socket_path")))
         (is (= "127.0.0.1" (get-in json-disk ["nrepl" "host"])))

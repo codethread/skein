@@ -3,7 +3,7 @@
 **Document ID:** `SPEC-003`
 **Status:** Implemented
 **Last Updated:** 2026-07-03
-**Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`, `src/skein/userland/alpha.clj`
+**Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`, `src/skein/userland/alpha.clj`, `src/skein/test`
 
 ## SPEC-003.P1 Purpose
 
@@ -179,3 +179,10 @@ A selected workspace `spools.edn` approves local roots:
 The REPL API does not expose old helper names such as `task!`, `task`, or `tasks`, or bespoke helpers such as `depends!`, `edge!`, `done!`, `by-attr`, `deps`, `blocking`, or `graph`. Those are either covered by `update!` or the generic query/API helpers.
 
 The REPL API does not add CLI package authoring commands, package installation, source fetching, or plugin-directory loading.
+
+## SPEC-003.P8 Author-side test helpers
+
+- **SPEC-003.C28:** `skein.test.alpha` is the blessed author-side test namespace for disposable weaver worlds. It ships from `src/skein/test/alpha.clj` so external library test JVMs can require it by adding a selected Skein checkout as a tools.deps `:local/root` test dependency. It is a dev/test helper loaded in the author's test JVM, not a weaver runtime activation API and not a public CLI surface. The durable vocabulary is `with-weaver-world`, `weaver-world-fixture` (binding `*weaver-world*` for `clojure.test` fixtures), and `repl!`.
+- **SPEC-003.C29:** `with-weaver-world` creates an isolated generated workspace (or uses an explicit `:root`), writes requested `config.json`, `spools.edn`, `init.clj`, and workspace-relative fixture files, starts an unpublished in-process weaver runtime with explicit storage selection (`:sqlite-file` default, `:sqlite-memory` supported), binds an orchestration context map for the body, and stops the weaver and cleans up deterministically afterwards. Worlds nest and run concurrently. Startup, fixture, eval, stop, and cleanup failures fail loudly; cleanup failures during body failure attach as suppressed exceptions rather than masking the body error. Helpers never touch the user's default config/data/state workspaces, and generated worlds use short temp roots to stay inside Unix socket path limits.
+- **SPEC-003.C30:** `repl!` evaluates weaver-routed form strings (or forms rendered with pr-str) against the world's weaver over its real nREPL transport with the runtime ambiently bound, so `skein.api.current.alpha/runtime` resolves to the test weaver. Results must be EDN-readable data; weaver-side and transport failures throw ExceptionInfo with weaver/client context. The helper deliberately provides no strand/query wrappers, assertion DSLs, spool activation wrappers, or CLI subprocess helpers.
+- **SPEC-003.C31:** The context map exposes orchestration facts only: `:config-dir`, `:state-dir`, `:data-dir`, `:db-path` (file storage only), `:storage`, `:source` (the Skein checkout on the test classpath), `:runtime`, `:metadata`, and `:timeout-ms`.

@@ -3,8 +3,8 @@
 **Document ID:** `LAT-DELTA-002`
 **Root spec:** [repl-api.md](../../../specs/repl-api.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
-**Last Updated:** 2026-06-26
+**Status:** Merged
+**Last Updated:** 2026-07-03
 
 ## LAT-DELTA-002.P1 Summary
 
@@ -13,7 +13,7 @@ The REPL/helper surface gains a blessed author-side test namespace, tentatively 
 ## LAT-DELTA-002.P2 Contract changes
 
 - **LAT-DELTA-002.CC1:** `skein.test.alpha` provides a small `clojure.test`-friendly API for disposable weaver worlds. It ships from Skein's source-visible runtime paths, specifically `src/skein/test/alpha.clj`, so external library test JVMs can require it by adding the selected Skein checkout as a tools.deps `:local/root` test dependency. The initial durable helper vocabulary is expected to include `with-weaver-world`, `weaver-world-fixture`, and `repl!` or equivalent names.
-- **LAT-DELTA-002.CC2:** `with-weaver-world` creates or uses an explicit isolated config-dir, writes requested `config.json`, `libs.edn`, `init.clj`, and fixture files, starts an in-process weaver runtime, binds a context map for the test body, and stops/cleans up in `finally`.
+- **LAT-DELTA-002.CC2:** `with-weaver-world` creates or uses an explicit isolated config-dir, writes requested `config.json`, `spools.edn`, `init.clj`, and fixture files, starts an in-process weaver runtime (unpublished, `:publish? false`, so worlds may nest and run concurrently per RFC-016), binds a context map for the test body, and stops/cleans up in `finally`.
 - **LAT-DELTA-002.CC3:** `weaver-world-fixture` provides the same lifecycle for `clojure.test` fixture usage, likely through a dynamic context var.
 - **LAT-DELTA-002.CC4:** `repl!` evaluates weaver-routed forms against the test weaver and returns Clojure data or throws with weaver/client context. It does not wrap strand commands, library activation, or assertions.
 - **LAT-DELTA-002.CC5:** The helper context includes orchestration facts such as config-dir, state-dir, data-dir, source checkout, runtime metadata, storage kind, and runtime handle. It intentionally does not include strand-specific wrappers or CLI subprocess helpers.
@@ -26,7 +26,7 @@ The REPL/helper surface gains a blessed author-side test namespace, tentatively 
 ### LAT-DELTA-002.D1 Author-side helper, weaver-side behavior
 
 - **Decision:** `skein.test.alpha` runs in the author's test JVM but drives real weaver-side behavior through runtime startup and weaver-routed forms.
-- **Rationale:** This keeps tests idiomatic Clojure while preserving the important classpath boundary: direct test-JVM `require` is distinct from weaver `libs/sync!` and `use!`.
+- **Rationale:** This keeps tests idiomatic Clojure while preserving the important classpath boundary: direct test-JVM `require` is distinct from weaver-side `skein.api.runtime.alpha/sync!` and `use!`.
 - **Rejected:** Loading `skein.test.alpha` as weaver startup API or adding public CLI testing commands.
 
 ### LAT-DELTA-002.D2 Minimal orchestration, no strand DSL

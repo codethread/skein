@@ -3,7 +3,7 @@
 **Document ID:** `RFC-016`
 **Status:** Implemented
 **Date:** 2026-07-03
-**Related:** [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [Library Author Testing RFC](2026-06-26-library-author-testing.md), [Library Author Testing feature](../feat/library-author-testing-support/proposal.md), [Shuttle spool](../../spools/shuttle/README.md), [Chime spool](../../spools/chime/README.md)
+**Related:** [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [Library Author Testing RFC](../archive/26-07-03__library-author-testing-support/rfcs/2026-06-26-library-author-testing.md), [Library Author Testing feature](../archive/26-07-03__library-author-testing-support/proposal.md), [Shuttle spool](../../spools/shuttle/README.md), [Chime spool](../../spools/chime/README.md)
 
 ## RFC-016.P1 Problem
 

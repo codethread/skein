@@ -1,6 +1,7 @@
 (ns skein.core.db-test
   (:require [clojure.spec.alpha :as s]
             [clojure.test :refer [deftest is testing]]
+            [next.jdbc :as jdbc]
             [skein.core.db :as db]
             [skein.core.query :as query]
             [skein.core.specs :as specs]))
@@ -472,3 +473,22 @@
                                               :strands [{:ref :a :title "Changed before failure"}
                                                         {:ref :new :title "Created before failure"}]
                                               :edges [{:op :upsert :from :c :to :b :type "depends-on"}]})))))
+
+(deftest memory-storage-runs-schema-crud-and-transactions-on-held-connection
+  (let [{:keys [connectable close-fn] :as storage} (db/memory-storage)]
+    (is (= :sqlite-memory (:storage-kind storage)))
+    (is (nil? (:canonical-db-path storage)))
+    (try
+      (db/init! connectable)
+      (let [strand (db/add-strand! connectable {:title "Mem"})]
+        (is (= "Mem" (:title (db/get-strand connectable (:id strand))))))
+      (testing "with-transaction rolls back on failure"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"boom"
+                              (jdbc/with-transaction [tx connectable]
+                                (db/add-strand! tx {:title "Rolled back"})
+                                (throw (ex-info "boom" {})))))
+        (is (= ["Mem"] (mapv :title (db/all-strands connectable)))))
+      (finally
+        (close-fn)))
+    (testing "use after close fails loudly"
+      (is (thrown? java.sql.SQLException (db/all-strands connectable))))))

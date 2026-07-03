@@ -1,6 +1,8 @@
 (ns skein.core.db
   "SQLite persistence for strands, edges, relation metadata, and graph queries."
-  (:import [java.security SecureRandom])
+  (:import [java.security SecureRandom]
+           [java.sql DriverManager]
+           [java.util UUID])
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
@@ -37,6 +39,38 @@
    ;; DEFERRED transactions upgrading mid-transaction fail fast by design.
    (jdbc/get-datasource {:jdbcUrl (str "jdbc:sqlite:" db-file
                                        "?busy_timeout=5000&transaction_mode=IMMEDIATE")})))
+
+(defn file-storage
+  "Return a file-backed SQLite storage handle for db-file.
+
+  A storage handle is the weaver runtime's storage identity: :storage-kind,
+  :storage-label, :canonical-db-path (file storage only), a next.jdbc-compatible
+  :connectable, and an optional :close-fn the owning runtime must call on stop.
+  File-backed datasources open a connection per operation, so this handle has
+  no :close-fn."
+  [db-file]
+  (let [canonical (.getPath (.getCanonicalFile (io/file db-file)))]
+    {:storage-kind :sqlite-file
+     :storage-label canonical
+     :canonical-db-path canonical
+     :connectable (datasource canonical)}))
+
+(defn memory-storage
+  "Return an in-memory SQLite storage handle backed by one held connection.
+
+  Xerial keeps an in-memory database alive only while a connection anchors it,
+  so the :connectable is a single held java.sql.Connection — a datasource would
+  open a fresh connection per operation and lose the schema. :close-fn destroys
+  the database; later use fails loudly with the driver's connection-closed
+  error. One held connection makes this serialized trusted test storage, not
+  production-like pooled storage."
+  []
+  (let [conn (DriverManager/getConnection "jdbc:sqlite::memory:")]
+    {:storage-kind :sqlite-memory
+     :storage-label (str "sqlite-memory:" (UUID/randomUUID))
+     :canonical-db-path nil
+     :connectable conn
+     :close-fn #(.close conn)}))
 
 (defn execute!
   "Execute SQL params against ds and return unqualified lower-case map rows."

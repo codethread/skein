@@ -176,8 +176,47 @@
       (finally
         (.setContextClassLoader thread previous-loader)))))
 
+(defn with-runtime-and-spool-classloader
+  "Call `f` with runtime ambiently bound and the runtime spool classloader as
+  the thread's context classloader, matching trusted startup-file evaluation.
+
+  Also rebinds Compiler/LOADER onto the spool classloader: inside an outer
+  eval (such as an nREPL session) a compiler loader is already bound, so the
+  context classloader alone would not let require/load in `f` see synced spool
+  sources."
+  [runtime f]
+  (with-runtime-binding
+    runtime
+    #(with-spool-classloader
+       runtime
+       (fn []
+         (clojure.lang.Var/pushThreadBindings
+          {clojure.lang.Compiler/LOADER (clojure.lang.DynamicClassLoader. (:spool-classloader runtime))})
+         (try
+           (f)
+           (finally
+             (clojure.lang.Var/popThreadBindings)))))))
+
 (defn- default-name [world]
   (.getName (clojure.java.io/file (:config-dir world))))
+
+(defn- close-storage!
+  "Close weaver-owned storage resources for `runtime`, when the handle has any."
+  [runtime]
+  (when-let [close-fn (get-in runtime [:storage :close-fn])]
+    (close-fn))
+  nil)
+
+(defn- storage-for
+  "Normalize trusted storage selection into a storage handle."
+  [storage db-file world]
+  (case (or storage :sqlite-file)
+    :sqlite-file (db/file-storage (or db-file (:db-path world)))
+    :sqlite-memory (if db-file
+                     (throw (ex-info "In-memory weaver storage does not take a database file"
+                                     {:storage storage :db-file db-file}))
+                     (db/memory-storage))
+    (throw (ex-info "Unknown weaver storage kind" {:storage storage}))))
 
 (defn start!
   "Start a weaver runtime for `db-file` and optional `world`.
@@ -185,15 +224,15 @@
   Publishes metadata, starts nREPL and JSON socket transports, loads trusted
   config, and by default publishes the runtime as this process's ambient runtime.
   Set `:publish? false` to start an unpublished runtime that can coexist with
-  other runtimes in the same JVM."
+  other runtimes in the same JVM. Trusted callers may select `:storage
+  :sqlite-memory` for a weaver-lifetime in-memory database; file-backed SQLite
+  in the selected workspace remains the default."
   ([] (start! nil {}))
   ([db-file] (start! db-file {}))
-  ([db-file {:keys [world name publish?] :or {publish? true}}]
+  ([db-file {:keys [world name publish? storage] :or {publish? true}}]
    (when (and publish? @current-runtime)
      (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
    (let [world (or world (config/world))
-         db-file (or db-file (:db-path world))
-         canonical-path (metadata/canonical-db-path db-file)
          existing (metadata/read-metadata world)
          socket-file (metadata/socket-file world)]
      (when-not (metadata/stale-or-missing? existing)
@@ -204,7 +243,8 @@
                                                                                                     :socket-path (.getPath socket-file)})))
      (.mkdirs (clojure.java.io/file (:state-dir world)))
      (.mkdirs (clojure.java.io/file (:data-dir world)))
-     (let [ds (db/datasource canonical-path)
+     (let [storage (storage-for storage db-file world)
+           ds (:connectable storage)
            _ (db/init! ds)
            server (nrepl/start-server :bind loopback-host :port 0)
            port (:port server)
@@ -212,12 +252,15 @@
            meta (metadata/metadata-shape {:pid (current-pid)
                                           :host loopback-host
                                           :port port
-                                          :canonical-db-path canonical-path
+                                          :storage-kind (:storage-kind storage)
+                                          :storage-label (:storage-label storage)
+                                          :canonical-db-path (:canonical-db-path storage)
                                           :nonce nonce
                                           :world world
                                           :name (or name (default-name world))
                                           :started-at (str (Instant/now))})
-           runtime-base {:datasource ds
+           runtime-base {:storage storage
+                         :datasource ds
                          :query-registry (atom {})
                          :view-registry (atom {})
                          :pattern-registry (atom {})
@@ -255,6 +298,7 @@
            (when-let [socket-runtime (:socket-runtime @runtime-state)]
              (socket/stop! socket-runtime))
            (nrepl/stop-server server)
+           (close-storage! @runtime-state)
            (metadata/delete! world)
            (throw t)))))))
 
@@ -264,13 +308,16 @@
   (:metadata runtime))
 
 (defn stop!
-  "Stop transports, event processing, and metadata for `runtime`."
+  "Stop transports, event processing, storage, and metadata for `runtime`."
   [runtime]
   (stop-event-system! runtime)
   (when-let [socket-runtime (:socket-runtime runtime)]
     (socket/stop! socket-runtime))
   (when-let [server (:server runtime)]
     (nrepl/stop-server server))
+  ;; Storage closes only after transports and event dispatch stop, so no
+  ;; in-flight weaver work can observe closed storage.
+  (close-storage! runtime)
   (when-let [port (get-in runtime [:metadata :endpoint :port])]
     (swap! nrepl-port-runtimes dissoc port))
   (swap! current-runtime (fn [published] (if (= published runtime) nil published)))

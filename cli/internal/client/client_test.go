@@ -15,7 +15,8 @@ func writeMeta(t *testing.T, stateDir, sock string, pid int) {
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	m := Metadata{ProtocolVersion: 1, PID: pid, DatabasePath: filepath.Join(filepath.Dir(stateDir), "data", "skein.sqlite"), DaemonID: "daemon-1", ConfigDir: filepath.Dir(stateDir), StateDir: stateDir, DataDir: filepath.Join(filepath.Dir(stateDir), "data"), Name: filepath.Base(filepath.Dir(stateDir)), SocketPath: sock, StartedAt: "now"}
+	dbPath := filepath.Join(filepath.Dir(stateDir), "data", "skein.sqlite")
+	m := Metadata{ProtocolVersion: 1, PID: pid, DatabaseKind: "sqlite-file", DatabaseLabel: dbPath, DatabasePath: &dbPath, DaemonID: "daemon-1", ConfigDir: filepath.Dir(stateDir), StateDir: stateDir, DataDir: filepath.Join(filepath.Dir(stateDir), "data"), Name: filepath.Base(filepath.Dir(stateDir)), SocketPath: sock, StartedAt: "now"}
 	m.NREPL.Host = "127.0.0.1"
 	m.NREPL.Port = 9999
 	b, _ := json.Marshal(m)
@@ -158,5 +159,58 @@ func TestMalformedLifecycleResults(t *testing.T) {
 	_, err = New(Config{StateDir: stateDir}).Call("status", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "invalid status result") {
 		t.Fatalf("expected malformed status result, got %v", err)
+	}
+}
+
+func TestValidateStorageIdentity(t *testing.T) {
+	path := func(s string) *string { return &s }
+	cases := []struct {
+		name    string
+		m       Metadata
+		wantErr bool
+	}{
+		{"file consistent", Metadata{DatabaseKind: "sqlite-file", DatabaseLabel: "/a/b.sqlite", DatabasePath: path("/a/b.sqlite")}, false},
+		{"file label mismatch", Metadata{DatabaseKind: "sqlite-file", DatabaseLabel: "/a", DatabasePath: path("/b")}, true},
+		{"file null path", Metadata{DatabaseKind: "sqlite-file", DatabaseLabel: "/a"}, true},
+		{"file empty path", Metadata{DatabaseKind: "sqlite-file", DatabaseLabel: "", DatabasePath: path("")}, true},
+		{"memory consistent", Metadata{DatabaseKind: "sqlite-memory", DatabaseLabel: "sqlite-memory:x"}, false},
+		{"memory with fake path", Metadata{DatabaseKind: "sqlite-memory", DatabaseLabel: "x", DatabasePath: path("/a")}, true},
+		{"memory with empty-string path", Metadata{DatabaseKind: "sqlite-memory", DatabaseLabel: "x", DatabasePath: path("")}, true},
+		{"memory missing label", Metadata{DatabaseKind: "sqlite-memory"}, true},
+		{"memory blank label", Metadata{DatabaseKind: "sqlite-memory", DatabaseLabel: "   "}, true},
+		{"unknown kind", Metadata{DatabaseKind: "postgres", DatabaseLabel: "x"}, true},
+		{"missing kind", Metadata{DatabaseLabel: "x", DatabasePath: path("/a")}, true},
+	}
+	for _, c := range cases {
+		if err := ValidateStorageIdentity(c.m); (err != nil) != c.wantErr {
+			t.Fatalf("%s: got err=%v wantErr=%v", c.name, err, c.wantErr)
+		}
+	}
+}
+
+func TestStatusValidatesMemoryStorageWithNullPath(t *testing.T) {
+	base, err := os.MkdirTemp("/tmp", "td-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(base) })
+	stateDir := filepath.Join(base, "state")
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	m := Metadata{ProtocolVersion: 1, PID: os.Getpid(), DatabaseKind: "sqlite-memory", DatabaseLabel: "sqlite-memory:test", DaemonID: "daemon-1", ConfigDir: base, StateDir: stateDir, DataDir: filepath.Join(base, "data"), Name: "mem", StartedAt: "now"}
+	m.NREPL.Host = "127.0.0.1"
+	m.NREPL.Port = 9999
+	sock := serve(t, stateDir, func(req map[string]any) map[string]any {
+		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": true, "error": nil,
+			"result": map[string]any{"healthy": true, "protocol_version": 1, "pid": float64(m.PID), "database_kind": "sqlite-memory", "database_label": "sqlite-memory:test", "database_path": nil, "weaver_id": m.DaemonID, "socket_path": filepath.Join(stateDir, "weaver.sock"), "config_dir": m.ConfigDir, "state_dir": m.StateDir, "data_dir": m.DataDir, "name": m.Name, "started_at": m.StartedAt, "nrepl": map[string]any{"host": "127.0.0.1", "port": float64(9999)}}}
+	})
+	m.SocketPath = sock
+	b, _ := json.Marshal(m)
+	if err := os.WriteFile(filepath.Join(stateDir, "weaver.json"), b, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(Config{StateDir: stateDir}).Call("status", map[string]any{}); err != nil {
+		t.Fatalf("expected memory-storage status to validate, got %v", err)
 	}
 }

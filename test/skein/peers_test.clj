@@ -32,6 +32,8 @@
    :name name
    :state-dir (.getPath state-dir)
    :data-dir (.getPath (io/file workspace "data"))
+   :storage-kind :sqlite-file
+   :storage-label (.getPath (io/file workspace "data" "skein.sqlite"))
    :canonical-db-path (.getPath (io/file workspace "data" "skein.sqlite"))
    :nonce (str "nonce-" name "-" (System/nanoTime))
    :socket-path (.getPath (metadata/socket-file {:state-dir (.getPath state-dir)}))

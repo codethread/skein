@@ -3,8 +3,8 @@
 **Document ID:** `LAT-DELTA-003`
 **Root spec:** [cli.md](../../../specs/cli.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
-**Last Updated:** 2026-06-26
+**Status:** Merged
+**Last Updated:** 2026-07-03
 
 ## LAT-DELTA-003.P1 Summary
 

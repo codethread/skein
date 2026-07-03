@@ -1,7 +1,7 @@
 # Library Author Testing Support
 
 **Document ID:** `RFC-005`
-**Status:** Open
+**Status:** Implemented
 **Date:** 2026-06-26
 **Related:** [Daemon Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md), [Runtime Library Workspace](../archive/26-06-26__runtime-library-workspace/), [Spikes](../spikes/)
 
@@ -80,4 +80,4 @@ Future implementation slices and spike-derived work are tracked in [`../../BACKL
 
 ## RFC-005.P8 Outcome
 
-- **RFC-005.OUT1:** Open for review. Pending implementation work has been moved to [`../../BACKLOG.md`](../../BACKLOG.md).
+- **RFC-005.OUT1:** Implemented by the `library-author-testing-support` feature (archived beside this RFC) on 2026-07-03: storage handles with real in-memory SQLite, explicit storage metadata/status, `skein.test.alpha`, docs, and dogfooding.

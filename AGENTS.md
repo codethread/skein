@@ -32,6 +32,7 @@ Namespace tiers are intentional: `skein.api.*.alpha` is the blessed spool-facing
 Contributor and userland guidance docs live in [`docs/`](./docs):
 
 - [Writing shared spools](./docs/writing-shared-spools.md) — composability-over-ergonomics rules for spools others will run, and the `skein.userland.alpha` layering pattern for your own config.
+- [Library authoring](./docs/library-authoring.md) — testing spools/libraries against a selected Skein checkout: local-root test deps, testing tiers, `skein.test.alpha` weaver worlds, and the test-JVM vs weaver classpath boundary.
 
 ## Project commands
 

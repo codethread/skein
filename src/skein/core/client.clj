@@ -218,6 +218,38 @@
       (eval-form conn (fixed-form op args (get-in meta [:endpoint :port])) timeout-ms {:operation op
                                                                                        :config-dir (:config-dir meta)}))))
 
+(defn- raw-form
+  "Return an nREPL form that evaluates code under the connected runtime binding.
+
+  Code evaluates via load-string so its top-level forms compile one at a time
+  and in-code requires/aliases work like they do at a REPL. It runs under the
+  runtime spool classloader so synced spool namespaces are requirable, matching
+  trusted startup-file evaluation."
+  [code port]
+  (str "(do "
+       "(require '[skein.core.weaver.runtime]) "
+       "(let [rt " (runtime-form port) "] "
+       "(skein.core.weaver.runtime/with-runtime-and-spool-classloader rt "
+       "(fn [] (try {:ok true :value (clojure.core/load-string " (pr-str code) ")} "
+       "(catch Throwable t "
+       ;; load-string wraps thrown exceptions in CompilerException; report the cause
+       "(let [t (if (and (instance? clojure.lang.Compiler$CompilerException t) (ex-cause t)) (ex-cause t) t)] "
+       "{:ok false :class (str (class t)) :message (ex-message t) :data (ex-data t)})))))))"))
+
+(defn eval-in-world
+  "Evaluate weaver-routed code in config-dir's world and return Clojure data.
+
+  `code` is a form string evaluated in the weaver runtime's thread-local
+  ambient binding, so `skein.api.current.alpha/runtime` resolves to the
+  connected weaver. Result values must be EDN-readable; weaver-side exceptions
+  and transport failures throw ExceptionInfo with client error context."
+  [config-dir {:keys [timeout-ms state-dir] :or {timeout-ms default-timeout-ms}} code]
+  (let [meta (metadata-for-world config-dir state-dir)]
+    (with-open [conn (connect meta timeout-ms)]
+      (verify-identity! conn meta timeout-ms)
+      (eval-form conn (raw-form code (get-in meta [:endpoint :port])) timeout-ms {:operation :eval
+                                                                                  :config-dir (:config-dir meta)}))))
+
 (defn status-world
   "Return identity metadata for the running weaver in config-dir's world."
   [config-dir & [opts]]

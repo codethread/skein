@@ -24,7 +24,11 @@ type Config struct {
 type Metadata struct {
 	ProtocolVersion int    `json:"protocol_version"`
 	PID             int    `json:"pid"`
-	DatabasePath    string `json:"database_path"`
+	DatabaseKind  string `json:"database_kind"`
+	DatabaseLabel string `json:"database_label"`
+	// Pointer so a JSON null (required for sqlite-memory) is distinguishable
+	// from an accidental empty string.
+	DatabasePath    *string `json:"database_path"`
 	DaemonID        string `json:"weaver_id"`
 	ConfigDir       string `json:"config_dir"`
 	StateDir        string `json:"state_dir"`
@@ -190,8 +194,11 @@ func (c *SocketClient) metadata() (Metadata, string, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return Metadata{}, "", fmt.Errorf("%w: %v", c.daemonStateError("malformed weaver metadata"), err)
 	}
-	if m.ProtocolVersion != protocolVersion || m.PID == 0 || m.DatabasePath == "" || m.DaemonID == "" || m.ConfigDir == "" || m.StateDir == "" || m.DataDir == "" || strings.TrimSpace(m.Name) == "" || m.SocketPath == "" || m.StartedAt == "" || m.NREPL.Host == "" || m.NREPL.Port == 0 {
+	if m.ProtocolVersion != protocolVersion || m.PID == 0 || m.DaemonID == "" || m.ConfigDir == "" || m.StateDir == "" || m.DataDir == "" || strings.TrimSpace(m.Name) == "" || m.SocketPath == "" || m.StartedAt == "" || m.NREPL.Host == "" || m.NREPL.Port == 0 {
 		return Metadata{}, "", c.daemonStateError("malformed weaver metadata: missing required fields")
+	}
+	if err := ValidateStorageIdentity(m); err != nil {
+		return Metadata{}, "", c.daemonStateError("malformed weaver metadata: %v", err)
 	}
 	if c.Config.ConfigDir != "" && !samePath(m.ConfigDir, c.Config.ConfigDir) {
 		return Metadata{}, "", c.daemonStateError("weaver metadata config dir mismatch: %s", m.ConfigDir)
@@ -208,11 +215,51 @@ func (c *SocketClient) metadata() (Metadata, string, error) {
 	return m, file, nil
 }
 
+// DatabasePathString returns the file-backed database path, or "" when the
+// metadata carries no path (sqlite-memory publishes an explicit null).
+func (m Metadata) DatabasePathString() string {
+	if m.DatabasePath == nil {
+		return ""
+	}
+	return *m.DatabasePath
+}
+
+// ValidateStorageIdentity fails unless database kind, label, and path are
+// mutually consistent: sqlite-file requires a non-blank label == path;
+// sqlite-memory requires a non-blank label and a null path.
+func ValidateStorageIdentity(m Metadata) error {
+	if strings.TrimSpace(m.DatabaseLabel) == "" {
+		return fmt.Errorf("blank weaver storage label for kind %q", m.DatabaseKind)
+	}
+	switch m.DatabaseKind {
+	case "sqlite-file":
+		if m.DatabasePath == nil || strings.TrimSpace(*m.DatabasePath) == "" || m.DatabaseLabel != *m.DatabasePath {
+			return fmt.Errorf("inconsistent sqlite-file storage metadata: label %q path %q", m.DatabaseLabel, m.DatabasePathString())
+		}
+	case "sqlite-memory":
+		if m.DatabasePath != nil {
+			return fmt.Errorf("inconsistent sqlite-memory storage metadata: label %q path %q", m.DatabaseLabel, *m.DatabasePath)
+		}
+	default:
+		return fmt.Errorf("unknown weaver storage kind %q", m.DatabaseKind)
+	}
+	return nil
+}
+
+// sameStatusDatabasePath compares a status response database_path against
+// metadata: sqlite-memory publishes an explicit JSON null, never a fake path.
+func sameStatusDatabasePath(v any, meta Metadata) bool {
+	if meta.DatabasePath == nil {
+		return v == nil
+	}
+	return v == *meta.DatabasePath
+}
+
 func validateLifecycleResult(operation string, result any, meta Metadata) error {
 	switch operation {
 	case "status":
 		m, ok := result.(map[string]any)
-		if !ok || m["healthy"] != true || m["protocol_version"] != float64(protocolVersion) || !samePositivePID(m["pid"], meta.PID) || m["database_path"] != meta.DatabasePath || m["weaver_id"] != meta.DaemonID || m["socket_path"] != meta.SocketPath || m["config_dir"] != meta.ConfigDir || m["state_dir"] != meta.StateDir || m["data_dir"] != meta.DataDir || m["name"] != meta.Name || m["started_at"] != meta.StartedAt || !validNREPL(m["nrepl"]) {
+		if !ok || m["healthy"] != true || m["protocol_version"] != float64(protocolVersion) || !samePositivePID(m["pid"], meta.PID) || m["database_kind"] != meta.DatabaseKind || m["database_label"] != meta.DatabaseLabel || !sameStatusDatabasePath(m["database_path"], meta) || m["weaver_id"] != meta.DaemonID || m["socket_path"] != meta.SocketPath || m["config_dir"] != meta.ConfigDir || m["state_dir"] != meta.StateDir || m["data_dir"] != meta.DataDir || m["name"] != meta.Name || m["started_at"] != meta.StartedAt || !validNREPL(m["nrepl"]) {
 			return errors.New("malformed weaver response: invalid status result")
 		}
 	case "stop":

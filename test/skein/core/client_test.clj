@@ -193,7 +193,11 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"metadata is missing or stale"
                             (call-world world :list)))
-      (metadata/publish! {:pid 1 :canonical-db-path canonical :state-dir (:state-dir world)})
+      (metadata/publish! {:pid 1
+                          :storage-kind :sqlite-file
+                          :storage-label canonical
+                          :canonical-db-path canonical
+                          :state-dir (:state-dir world)})
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"metadata is missing or stale"
                             (call-world world :list)))
@@ -209,6 +213,8 @@
         meta (metadata/metadata-shape {:pid 1
                                        :host "127.0.0.1"
                                        :port 1
+                                       :storage-kind :sqlite-file
+                                       :storage-label canonical
                                        :canonical-db-path canonical
                                        :nonce "unreachable"
                                        :world world})]

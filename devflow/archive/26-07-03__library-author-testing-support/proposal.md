@@ -1,13 +1,13 @@
 # Library Author Testing Support Proposal
 
 **Document ID:** `LAT-PROP-001`
-**Last Updated:** 2026-06-26
+**Last Updated:** 2026-07-03
 **Related RFCs:** [RFC-005 Library Author Testing Support](../../rfcs/2026-06-26-library-author-testing.md)
 **Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
 
 ## LAT-PROP-001.P1 Problem
 
-Skein's runtime library model asks users and community authors to write normal trusted Clojure libraries, approve them through `libs.edn`, and activate them inside weaver worlds. Authors currently lack a first-class way to test those libraries against a selected Skein checkout without copying internal smoke helpers, misunderstanding test-JVM versus weaver-JVM classpaths, or accidentally touching the user's default weaver world.
+Skein's runtime library model asks users and community authors to write normal trusted Clojure libraries, approve them through `spools.edn`, and activate them inside weaver worlds. Authors currently lack a first-class way to test those libraries against a selected Skein checkout without copying internal smoke helpers, misunderstanding test-JVM versus weaver-JVM classpaths, or accidentally touching the user's default weaver world.
 
 The testing story also needs storage support designed correctly from the start. File-backed SQLite weaver worlds match the normal user path, while real Xerial SQLite in-memory weaver worlds offer clean isolated integration tests. If `skein.test.alpha` is designed around only filesystem database paths, later in-memory support may distort the public helper API.
 
@@ -16,7 +16,7 @@ The testing story also needs storage support designed correctly from the start. 
 - **LAT-PROP-001.G1:** Provide documented library-author testing guidance covering pure Clojure tests, Skein namespace tests, and weaver-world integration tests.
 - **LAT-PROP-001.G2:** Add a blessed author-side `skein.test.alpha` helper namespace for idiomatic `clojure.test` weaver-world tests.
 - **LAT-PROP-001.G3:** Refactor weaver storage enough to support both file-backed SQLite and real Xerial SQLite in-memory storage through one coherent runtime storage model.
-- **LAT-PROP-001.G4:** Preserve the real runtime-library workflow in tests: config-dir, `libs.edn`, `init.clj`, `libs/sync!`, `libs/use!`, weaver-side execution, and cleanup.
+- **LAT-PROP-001.G4:** Preserve the real runtime-spool workflow in tests: workspace dir, `spools.edn`, `init.clj`, `skein.api.runtime.alpha/sync!`, `skein.api.runtime.alpha/use!`, weaver-side execution, and cleanup.
 - **LAT-PROP-001.G5:** Keep the public CLI thin; library testing is a docs/test-helper/weaver-runtime concern, not a new package command surface.
 - **LAT-PROP-001.G6:** Dogfood the new helpers in Skein's own blessed library tests where they model author-visible behavior.
 

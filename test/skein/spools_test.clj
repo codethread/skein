@@ -13,7 +13,8 @@
             [skein.repl :as repl]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.weaver.alpha :as api]
-            [skein.core.weaver.runtime :as runtime]))
+            [skein.core.weaver.runtime :as runtime]
+            [skein.test.alpha :as t]))
 
 (defn- delete-recursive [file]
   (doseq [child (reverse (file-seq file))]
@@ -298,31 +299,37 @@
                             :status :already-available}}}
                (runtime-alpha/sync! rt)))))))
 
+;; Dogfoods skein.test.alpha for author-visible weaver-world behavior
+;; (LAT-PLAN-001.PH6). Uses an explicit :root because synced local roots must
+;; outlive the world: deleting an add-libs'ed root leaves stale basis entries
+;; for later syncs in this JVM.
 (deftest daemon-init-runs-with-spool-classloader-after-sync
-  (let [db-file (db-test/temp-db-file)
-        config-dir (temp-config-dir)
+  (let [root (temp-config-dir)
         suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
         ns-sym (symbol (str "demo.init-synced-" suffix))
         lib (symbol (str "demo/init-lib-" suffix))
-        result-file (io/file config-dir "init-result.edn")]
-    (write-local-lib! config-dir "init-demo" ns-sym)
+        ns-path (-> (str ns-sym)
+                    (.replace \- \_)
+                    (.replace \. java.io.File/separatorChar))
+        result-file (io/file root "init-result.edn")]
     (try
-      (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/init-demo"}}}))
-      (spit (io/file config-dir "init.clj")
-            (str "(do\n"
-                 "  (require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime-alpha])\n"
-                 "  (spit " (pr-str (str result-file))
-                 " (pr-str (runtime-alpha/sync! (current/runtime)))))\n"))
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
-        (try
-          (is (= :loaded (get-in (read-string (slurp result-file)) [:spools lib :status])))
-          (is (= :loaded (get-in (runtime-alpha/syncs rt) [:spools lib :status])))
-          (finally
-            (runtime/stop! rt))))
+      (t/with-weaver-world [ctx {:root (.getPath root)
+                                 :spools-edn {:spools {lib {:local/root "spools/init-demo"}}}
+                                 :files {(str "spools/init-demo/src/" ns-path ".clj")
+                                         (str "(ns " ns-sym ")\n(defn marker [] :synced-lib-loaded)\n")
+                                         "spools/init-demo/deps.edn" "{:paths [\"src\"]}\n"}
+                                 :init (str "(require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime-alpha])\n"
+                                            "(spit " (pr-str (str result-file))
+                                            " (pr-str (runtime-alpha/sync! (current/runtime))))\n")}]
+        (is (= :loaded (get-in (read-string (slurp result-file)) [:spools lib :status])))
+        (is (= :loaded (get-in (t/repl! ctx "(require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime-alpha]) (runtime-alpha/syncs (current/runtime))")
+                               [:spools lib :status])))
+        (testing "repl! forms run under the spool classloader, so synced namespaces are requirable"
+          (is (= :synced-lib-loaded
+                 (t/repl! ctx (str "(require '" ns-sym ") (" ns-sym "/marker)"))))))
       (finally
-        (db-test/delete-sqlite-family! db-file)
         (when-not (.exists result-file)
-          (delete-recursive config-dir))))))
+          (delete-recursive root))))))
 
 (deftest sync-clears-stale-state-before-structural-failure
   (with-runtime
@@ -627,17 +634,22 @@
                                                  :call 'demo.gated-effect/install!}))))
         (is (false? (.exists side-effect-file)))))))
 
+;; Dogfoods skein.test.alpha for author-visible connected-client behavior
+;; (LAT-PLAN-001.PH6). Explicit :root so the module's install! side-effect file
+;; has a path known before the world starts.
 (deftest connected-client-use-executes-in-daemon-runtime
-  (with-runtime
-    (fn [rt config-dir]
-      (let [result-file (io/file config-dir "connected-result.edn")]
-        (write-module-file! config-dir "modules/connected.clj"
-                            (str "(ns demo.connected)\n"
-                                 "(defn install! [] (spit " (pr-str (str result-file)) " (pr-str :daemon-called)) :ok)\n"))
-        (let [config-path (get-in rt [:metadata :config-dir])
-              result (client/call-world config-path {} :use! :connected {:file "modules/connected.clj"
-                                                                         :call 'demo.connected/install!})]
+  (let [root (temp-config-dir)
+        result-file (io/file root "connected-result.edn")]
+    (try
+      (t/with-weaver-world [ctx {:root (.getPath root)
+                                 :files {"modules/connected.clj"
+                                         (str "(ns demo.connected)\n"
+                                              "(defn install! [] (spit " (pr-str (str result-file)) " (pr-str :daemon-called)) :ok)\n")}}]
+        (let [result (client/call-world (:config-dir ctx) {} :use! :connected {:file "modules/connected.clj"
+                                                                               :call 'demo.connected/install!})]
           (is (= :loaded (:status result)))
           (is (= :ok (get-in result [:call :return])))
           (is (= :daemon-called (read-string (slurp result-file))))
-          (is (= :loaded (:status (client/call-world config-path {} :use :connected)))))))))
+          (is (= :loaded (:status (client/call-world (:config-dir ctx) {} :use :connected))))))
+      (finally
+        (delete-recursive root)))))

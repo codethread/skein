@@ -16,9 +16,9 @@ References:
 ## TASK-003.P2 Implementation notes
 
 - Inspect and update metadata/status paths in:
-  - `src/skein/weaver/metadata.clj`
-  - `src/skein/weaver/socket.clj`
-  - `src/skein/client.clj`
+  - `src/skein/core/weaver/metadata.clj`
+  - `src/skein/core/weaver/socket.clj`
+  - `src/skein/core/client.clj`
   - Go CLI metadata/status parsing under `cli/internal`
   - affected tests under `test/` and `cli/`
 - For `:sqlite-file`:

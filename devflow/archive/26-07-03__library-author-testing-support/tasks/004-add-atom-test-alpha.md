@@ -22,8 +22,8 @@ References:
   - `repl!`
 - The helper should:
   - create short-path isolated config dirs by default
-  - write `config.json`, `libs.edn`, `init.clj`, and config-dir-relative fixture files from options
-  - start an in-process weaver runtime
+  - write `config.json`, `spools.edn`, `init.clj`, and config-dir-relative fixture files from options
+  - start an in-process weaver runtime (unpublished, `:publish? false`, per RFC-016, so weaver worlds nest and parallelize)
   - expose a context map with config/state/data dirs, source checkout, storage kind, metadata, and runtime handle
   - stop the weaver and clean up in `finally`
   - fail loudly on startup, init, eval, stop, or cleanup errors
@@ -35,7 +35,7 @@ References:
 ## TASK-004.P3 Done when
 
 - `skein.test.alpha` can be required from the normal Skein source path.
-- A test can load a fixture library through disposable `libs.edn`, call `libs/sync!`, and activate it through `libs/use!` via weaver-routed forms.
+- A test can load a fixture spool through disposable `spools.edn`, call `skein.api.runtime.alpha/sync!`, and activate it through `skein.api.runtime.alpha/use!` via weaver-routed forms.
 - Both file-backed and in-memory storage work through the same helper shape.
 - Helper-generated worlds avoid long Unix socket paths where practical.
 

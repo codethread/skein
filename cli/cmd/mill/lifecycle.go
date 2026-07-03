@@ -293,7 +293,7 @@ func readStatusFile(path string) (map[string]any, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, fmt.Errorf("malformed weaver metadata %s: %w", path, err)
 	}
-	world := config.World{ConfigDir: m.ConfigDir, StateDir: m.StateDir, DataDir: m.DataDir, DBPath: m.DatabasePath}
+	world := config.World{ConfigDir: m.ConfigDir, StateDir: m.StateDir, DataDir: m.DataDir, DBPath: m.DatabasePathString()}
 	if staleReason := validateMetadata(world, m); staleReason != "" {
 		if strings.HasPrefix(staleReason, "pid ") {
 			st := statusFromMetadata(m, "stale")
@@ -307,25 +307,33 @@ func readStatusFile(path string) (map[string]any, error) {
 
 func statusFromMetadata(m client.Metadata, state string) map[string]any {
 	return map[string]any{
-		"state":         state,
-		"config_dir":    m.ConfigDir,
-		"state_dir":     m.StateDir,
-		"data_dir":      m.DataDir,
-		"database_path": m.DatabasePath,
-		"name":          m.Name,
-		"pid":           m.PID,
-		"weaver_id":     m.DaemonID,
-		"socket_path":   m.SocketPath,
-		"nrepl":         m.NREPL,
-		"started_at":    m.StartedAt,
+		"state":          state,
+		"config_dir":     m.ConfigDir,
+		"state_dir":      m.StateDir,
+		"data_dir":       m.DataDir,
+		"database_kind":  m.DatabaseKind,
+		"database_label": m.DatabaseLabel,
+		"database_path":  m.DatabasePath,
+		"name":           m.Name,
+		"pid":            m.PID,
+		"weaver_id":      m.DaemonID,
+		"socket_path":    m.SocketPath,
+		"nrepl":          m.NREPL,
+		"started_at":     m.StartedAt,
 	}
 }
 
 func validateMetadata(world config.World, m client.Metadata) string {
-	if m.ProtocolVersion != 1 || m.PID == 0 || m.DatabasePath == "" || m.DaemonID == "" || m.ConfigDir == "" || m.StateDir == "" || m.DataDir == "" || strings.TrimSpace(m.Name) == "" || m.SocketPath == "" || m.StartedAt == "" || m.NREPL.Host == "" || m.NREPL.Port == 0 {
+	if m.ProtocolVersion != 1 || m.PID == 0 || m.DaemonID == "" || m.ConfigDir == "" || m.StateDir == "" || m.DataDir == "" || strings.TrimSpace(m.Name) == "" || m.SocketPath == "" || m.StartedAt == "" || m.NREPL.Host == "" || m.NREPL.Port == 0 {
 		return "malformed weaver metadata: missing required fields"
 	}
-	if !samePath(m.ConfigDir, world.ConfigDir) || !samePath(m.StateDir, world.StateDir) || !samePath(m.DataDir, world.DataDir) || !samePath(m.DatabasePath, world.DBPath) || !samePath(m.SocketPath, filepath.Join(world.StateDir, "weaver.sock")) {
+	if err := client.ValidateStorageIdentity(m); err != nil {
+		return err.Error()
+	}
+	if m.DatabaseKind != "sqlite-file" {
+		return fmt.Sprintf("mill supervises file-backed weavers; unsupported storage kind %q", m.DatabaseKind)
+	}
+	if !samePath(m.ConfigDir, world.ConfigDir) || !samePath(m.StateDir, world.StateDir) || !samePath(m.DataDir, world.DataDir) || !samePath(m.DatabasePathString(), world.DBPath) || !samePath(m.SocketPath, filepath.Join(world.StateDir, "weaver.sock")) {
 		return "weaver metadata identity mismatch"
 	}
 	if !processAlive(m.PID) {
@@ -391,12 +399,15 @@ func baseStatusWithName(world config.World, state string, requestedName string) 
 		name = ""
 	}
 	return map[string]any{
-		"state":         state,
-		"config_dir":    world.ConfigDir,
-		"state_dir":     world.StateDir,
-		"data_dir":      world.DataDir,
-		"database_path": world.DBPath,
-		"name":          name,
+		"state":      state,
+		"config_dir": world.ConfigDir,
+		"state_dir":  world.StateDir,
+		"data_dir":   world.DataDir,
+		// mill-managed workspace weavers are always file-backed SQLite
+		"database_kind":  "sqlite-file",
+		"database_label": world.DBPath,
+		"database_path":  world.DBPath,
+		"name":           name,
 	}
 }
 
