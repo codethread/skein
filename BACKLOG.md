@@ -12,8 +12,6 @@ _No active items currently listed here._
 
 ## Ready
 
-- [ ] `wbs6r` Complete library author testing support: isolated daemon-world test helpers, docs, explicit storage selection, and narrow dogfooding migration. Source: `devflow/rfcs/2026-06-26-library-author-testing.md` (`RFC-005.OUT1`); active feature folder: `devflow/feat/library-author-testing-support/`.
-- [ ] `nq2pg` Document library author setup and testing tiers, including local-root dependency guidance and daemon/test JVM classpath boundaries. Source: `RFC-005.C1`, `RFC-005.C7`, `devflow/spikes/2026-06-26-library-author-classpath.md`.
 - [ ] `uuy5f` Build the shared roster/backlog-style feature tracking spool for active work: consistent attributes, `track!`/`finish!`, roster query, and `await-quiet!`. Source: `devflow/rfcs/2026-07-02-feature-tracking-registry.md` (`RFC-014.REC1`, `RFC-014.REC3`).
 - [ ] `le0lm` Fix strand op agent status listing closed tasks as awaiting_verification
 - [ ] `d5af5` Declarative review fan-out: small-agent reviewer registry in .skein
@@ -22,7 +20,7 @@ _No active items currently listed here._
 
 ## Refinement
 
-- [ ] `emsff` Evaluate CLI-backed smoke/conformance helpers for library authors after daemon-world helpers prove out. Source: `RFC-005.NG7`, `RFC-005.REC6`. Note: retain as a post-`skein.test.alpha` follow-up; re-evaluate only after daemon-world helpers and docs ship, and keep CLI subprocess support out of the first helper contract.
+- [ ] `emsff` Evaluate CLI-backed smoke/conformance helpers for library authors after daemon-world helpers prove out. Source: `RFC-005.NG7`, `RFC-005.REC6` (archived at `devflow/archive/26-07-03__library-author-testing-support/rfcs/`). Note: retain as a post-`skein.test.alpha` follow-up; prerequisites shipped 2026-07-03 via `wbs6r`, so this is now eligible for re-evaluation on explicit human go-ahead; keep CLI subprocess support out of the first helper contract.
 - [ ] `q8qcw` Decide scheduler missed-fire and clock-jump policy, including whether to add a slow safety tick. Source: `RFC-009.Q2`, `RFC-009.Q3`. Note: resolve during scheduler design after storage shape; keep policy minimal with fail-loud malformed schedules, at-least-once delivery, userland recurrence, and an explicit safety-tick decision.
 - [ ] `jbwxz` Decide whether scheduler wakes share the existing async dispatch queue and whether read-only CLI scheduler introspection is worth adding. Source: `RFC-009.Q4`, `RFC-009.Q5`. Note: merge into scheduler primitive design; confirm shared async queue as the default, then decide whether initial introspection is REPL/API-only or also read-only CLI.
 - [ ] `a00co` Build timer/deadline workflow gates on top of the scheduler primitive once it exists. Source: `RFC-009.C8`; related stable features: `spools/workflow.md`, `spools/shuttle/treadle.md`. Note: retain as a dependent userland follow-up after the scheduler primitive ships; avoid adding core workflow scheduler semantics.
@@ -30,11 +28,13 @@ _No active items currently listed here._
 - [ ] `w1t3o` Decide active-work heartbeat/staleness semantics and finished-entry lifecycle for the roster spool. Source: `RFC-014.Q1`, `RFC-014.Q2`, `RFC-014.C4`. Note: retain as roster design slice; define heartbeat threshold, stale display, and deliberate cleanup/finish behavior without auto-hiding stale entries.
 - [ ] `ti9yj` Expose roster entries through weaver-guild peering so manager weavers can inspect in-flight work across repos. Source: `RFC-014.C3`; related stable feature: `spools/guild.md`. Note: retain as post-roster/guild integration; once roster exists, publish a versioned guild op such as `guild.roster.v1` or include roster in a describe-compatible repo API.
 - [ ] `d0cbq` Design and implement a minimal weaver scheduler primitive for proactive durable wakeups: `wake-at` + handler symbol, restart re-arm, reload-safe lifecycle, and data-first introspection. Source: `devflow/rfcs/2026-06-29-weaver-scheduler.md` (`RFC-009.OUT1`). Note: storage shape has been decided in `RFC-009.Q1.OUT`: use dedicated weaver-owned SQLite tables, not first-class strand records.
-- [ ] `sh835` Add real Xerial SQLite in-memory daemon-world support with explicit storage metadata/status semantics, not a fake filesystem path. Source: `RFC-005.REC7`, `RFC-005.C8`, `RFC-005.C9`; spikes: `devflow/spikes/2026-06-26-sqlite-memory-lifecycle.md`, `devflow/spikes/2026-06-26-storage-metadata-contract.md`.
 - [ ] `spya2` Decide an interactive-session concurrency cap. Source: interactive-runs design (deferred per TEN-004). Note: readiness plus per-task interactive delegation bounds it in practice; revisit only if real usage shows session pile-up, and build it as agents-spool supervision policy, not shuttle engine scheduling.
 
 ## Completed
 
+- [x] `wbs6r` Complete library author testing support: shipped storage handles, in-memory SQLite for trusted tests, explicit storage metadata/status, `skein.test.alpha`, docs, and dogfooding. Feature archived at `devflow/archive/26-07-03__library-author-testing-support/` with RFC-005 and its spikes.
+- [x] `nq2pg` Document library author setup and testing tiers: shipped as `docs/library-authoring.md` (local-root dependency guidance, testing tiers, weaver/test JVM classpath boundaries) via `wbs6r`.
+- [x] `sh835` Add real Xerial SQLite in-memory daemon-world support with explicit storage metadata/status semantics: implemented within `wbs6r` scope (RFC-005.NG4a keeps in-memory in the library-testing feature); closed as merged into that feature.
 - [x] `8kisd` Investigate refinement backlog items: audited refinement entries for current relevance; results synthesized from delegated run `4z4f9`. Outdated delegated-agent failure visibility item was removed; retained items now carry notes.
 - [x] `h5lcx` Decide scheduler durable wake storage shape: delegated run `osia1` recommended dedicated weaver-owned SQLite storage; decision recorded in `devflow/rfcs/2026-06-29-weaver-scheduler.md`.
   - amend: user does not agree, veto
