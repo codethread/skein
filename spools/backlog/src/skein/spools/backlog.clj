@@ -6,8 +6,11 @@
   stores the strand id; the strand carries `backlog/*` attributes and can be the
   parent of feature plans and task DAGs."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.events.alpha :as events]
+            [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]))
 
 (def ^:private backlog-file-name "BACKLOG.md")
@@ -149,6 +152,76 @@
      :item (select-keys strand [:id :title :state :attributes])
      :row (row-by-id (:id strand))
      :file backlog-file-name}))
+
+;; backlog-batch weave pattern
+(s/def ::non-blank-string non-blank-string?)
+(s/def ::key ::non-blank-string)
+(s/def ::title ::non-blank-string)
+(s/def ::body ::non-blank-string)
+(s/def ::deps (s/coll-of ::non-blank-string :kind vector?))
+(def ^:private batch-item-keys #{:key :title :body :deps})
+(def ^:private batch-input-keys #{:items})
+
+(defn- known-keys?
+  "Return true when map m contains only allowed keys."
+  [allowed m]
+  (empty? (remove allowed (keys m))))
+
+(s/def ::batch-item
+  (s/and map?
+         #(known-keys? batch-item-keys %)
+         (s/keys :req-un [::key ::title]
+                 :opt-un [::body ::deps])))
+(s/def ::items (s/coll-of ::batch-item :kind vector? :min-count 1))
+(s/def ::backlog-batch-input
+  (s/and map?
+         #(known-keys? batch-input-keys %)
+         (s/keys :req-un [::items])))
+
+(defn- duplicate-item
+  "Return the first duplicate value in xs, or nil."
+  [xs]
+  (some (fn [[v n]] (when (> n 1) v)) (frequencies xs)))
+
+(defn- item-ref
+  "Return the batch-local symbol for item key."
+  [key]
+  (symbol key))
+
+(defn backlog-batch
+  "Create backlog item strands with bodies and depends-on edges.
+
+  Input shape: {:items [{:key \"slug\" :title \"Title\" :body \"optional\"
+  :deps [\"sibling-key-or-existing-strand-id\"]}]}. `deps` values matching sibling
+  keys become batch-local edges; all other values are treated as durable strand
+  ids and fail loudly if absent. BACKLOG.md rows are appended by the installed
+  batch event handler after the create-only weave has committed strand ids."
+  [{:keys [input]}]
+  (let [{:keys [items]} input
+        keys (mapv :key items)]
+    (when-let [duplicate-key (duplicate-item keys)]
+      (throw (ex-info "backlog-batch item keys must be unique" {:key duplicate-key})))
+    (let [sibling-keys (set keys)]
+      (mapv (fn [{:keys [key title body deps]}]
+              (cond-> {:ref (item-ref key)
+                       :title title
+                       :attributes (item-attributes (cond-> {}
+                                                   body (assoc "--body" body)))}
+                (seq deps)
+                (assoc :edges (mapv (fn [dep]
+                                       {:type "depends-on"
+                                        :to (if (contains? sibling-keys dep)
+                                              (item-ref dep)
+                                              dep)})
+                                     deps))))
+            items))))
+
+(defn append-backlog-batch-rows!
+  "Append BACKLOG.md rows for a committed backlog-batch weave event."
+  [{pattern-name :pattern/name created :batch/created}]
+  (when (= "backlog-batch" pattern-name)
+    (doseq [{:keys [id title]} created]
+      (append-row! id title))))
 
 (defn- attr-value
   "Return a strand attribute by string or keyword key."
@@ -298,10 +371,16 @@
                 file-attr backlog-file-name
                 :kind "feature"}
    :commands [{:usage "strand op backlog add <title> [--body <text>] [--source <path-or-url>]"}
+              {:usage "strand weave --pattern backlog-batch < batch.json"}
               {:usage "strand op backlog next"}
               {:usage "strand op backlog claim <id> [--owner <name>] [--branch <branch>] [--worktree <path>]"}
               {:usage "strand op backlog finish <id> [--outcome done|abandoned]"}
-              {:usage "strand op backlog sync"}]})
+              {:usage "strand op backlog sync"}]
+   :patterns [{:name "backlog-batch"
+               :input {:items [{:key "slug"
+                                :title "Feature title"
+                                :body "optional body"
+                                :deps ["sibling-key-or-existing-strand-id"]}]}}]})
 
 (defn backlog-op
   "Dispatch `strand op backlog ...` subcommands."
@@ -344,6 +423,13 @@
      :ops [(api/register-op! rt 'backlog
                              "Manage the BACKLOG.md feature queue backed by Skein strands"
                              'skein.spools.backlog/backlog-op)]
+     :pattern (patterns/register-pattern! rt 'backlog-batch
+                                          "Create backlog item strands with bodies, depends-on edges, and BACKLOG.md rows."
+                                          'skein.spools.backlog/backlog-batch
+                                          ::backlog-batch-input)
+     :event-handler (events/register! rt :backlog-batch-rows #{:batch/applied}
+                                      'skein.spools.backlog/append-backlog-batch-rows!
+                                      {:doc "Append BACKLOG.md rows after backlog-batch weaves commit."})
      :queries [(api/register-query! rt 'backlog-items [:= [:attr item-attr] "true"])
                (api/register-query! rt 'backlog-unstarted
                                     [:and

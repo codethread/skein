@@ -26,6 +26,15 @@
 (defn- op! [rt & argv]
   (api/op! rt 'backlog argv))
 
+(defn- eventually
+  [f]
+  (loop [attempt 0]
+    (let [result (f)]
+      (cond
+        result result
+        (< attempt 50) (do (Thread/sleep 20) (recur (inc attempt)))
+        :else nil))))
+
 (deftest backlog-add-next-claim-and-finish-round-trip
   (with-runtime
     (fn [rt config-dir]
@@ -78,3 +87,48 @@
                    "- [ ] `" id "` Duplicated feature again\n"))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"out of sync"
                               (op! rt "sync")))))))
+
+(deftest backlog-batch-weave-creates-items-rows-and-dependencies
+  (with-runtime
+    (fn [rt config-dir]
+      (install-backlog! rt config-dir)
+      (let [existing (api/add rt {:title "Existing blocker"})
+            result (api/weave! rt :backlog-batch
+                               {:items [{:key "design"
+                                         :title "Design batch"
+                                         :body "Design body"}
+                                        {:key "docs"
+                                         :title "Write docs"
+                                         :deps ["design" (:id existing)]}]})
+            design-id (get-in result [:refs "design"])
+            docs-id (get-in result [:refs "docs"])
+            design (api/show rt design-id)
+            docs (api/show rt docs-id)
+            edge-set (set (map (juxt :from_strand_id :to_strand_id :edge_type)
+                               (:edges (api/subgraph rt [docs-id] {:type "depends-on"}))))]
+        (is (eventually #(let [file (backlog-file config-dir)]
+                           (when (.exists file)
+                             (let [file-text (slurp file)]
+                               (and (str/includes? file-text (str "- [ ] `" design-id "` Design batch"))
+                                    (str/includes? file-text (str "- [ ] `" docs-id "` Write docs"))))))))
+        (is (= "Design batch" (:title design)))
+        (is (= "Design body" (get-in design [:attributes :body])))
+        (is (= "true" (get-in docs [:attributes :backlog/item])))
+        (is (contains? edge-set [docs-id design-id "depends-on"]))
+        (is (contains? edge-set [docs-id (:id existing) "depends-on"]))
+        (is (= true (:ok (op! rt "sync"))))))))
+
+(deftest backlog-batch-weave-fails-loudly
+  (with-runtime
+    (fn [rt config-dir]
+      (install-backlog! rt config-dir)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Pattern input failed spec validation"
+                            (api/weave! rt :backlog-batch
+                                        {:items [{:key "x" :title "X" :surprise true}]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"item keys must be unique"
+                            (api/weave! rt :backlog-batch
+                                        {:items [{:key "x" :title "X"}
+                                                 {:key "x" :title "Again"}]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target strand not found"
+                            (api/weave! rt :backlog-batch
+                                        {:items [{:key "x" :title "X" :deps ["missing-strand"]}]}))))))

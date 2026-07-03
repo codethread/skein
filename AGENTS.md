@@ -172,6 +172,8 @@ The helper creates a backlog item strand and appends a Markdown checkbox row:
 - [ ] `<strand-id>` Build the thing; see devflow/rfcs/...
 ```
 
+For bulk authoring, use `strand weave --pattern backlog-batch` with JSON on stdin: `{"items":[{"key":"design","title":"Design feature","body":"..."},{"key":"docs","title":"Write docs","deps":["design","existing-strand-id"]}]}`. The pattern creates all backlog item strands and `depends-on` edges atomically, then appends the same `BACKLOG.md` rows as `backlog add`.
+
 Agents asked to "pick up the next backlog item" should run `strand op backlog next`, claim the returned id with `strand op backlog claim <id> --owner <name> --branch <branch> --worktree <path>`, then create feature plans, devflow runs, or task DAGs under that backlog strand using `parent-of`. The backlog strand is the parent/audit root; child strands are the executable work. Finish with `strand op backlog finish <id>` after merge, archive, or explicit abandonment, and run `strand op backlog sync` when checking for drift between `BACKLOG.md` and the strand graph.
 
 ### Custom workflows
