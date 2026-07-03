@@ -193,6 +193,13 @@ without the override read the manifest from the cached git tree. `:deps/root` is
 git-only because a local root can already point directly at any subdirectory you
 want to use.
 
+Local roots approved from shared `spools.edn` follow the same dependency-consent
+rule as git roots: their `deps.edn` must not declare tools.deps `:deps`. Shared
+workspace config may approve source roots, but it cannot consent to pulling
+transitive Maven/git dependencies into another developer's weaver. Declare spool
+dependencies in `spool.edn :needs`, or put trusted checkout-only tools.deps
+dependencies behind a developer-owned, gitignored `spools.local.edn` override.
+
 ## The pattern pair
 
 ### A shared spool exposes explicit-runtime functions

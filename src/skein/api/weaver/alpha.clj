@@ -487,6 +487,33 @@
         (throw (ex-info "Local root classpath entry must be a directory" {:root root :path (.getPath path)})))
       (.addURL ^clojure.lang.DynamicClassLoader loader (.toURL (.toURI path))))))
 
+(defn- shared-source-local-spool? [entry]
+  (and (= :local (:kind entry))
+       (= :shared (get-in entry [:source :kind]))))
+
+(defn- reject-unapproved-tools-deps! [entry]
+  (let [deps-file (io/file (:root entry) "deps.edn")]
+    (when (.isFile deps-file)
+      (let [deps (query/read-edn-file deps-file)]
+        (when (seq (:deps deps))
+          (case (:kind entry)
+            :git
+            (throw (ex-info "Git spool deps.edn must not declare :deps; declare needed spools as spool.edn :needs instead"
+                            {:root (:root entry) :deps (vec (keys (:deps deps)))}))
+
+            :local
+            (when (shared-source-local-spool? entry)
+              (throw (ex-info (str "Shared spools.edn local spool deps.edn must not declare :deps; "
+                                   "shared file " (get-in entry [:source :file])
+                                   " cannot consent to transitive tools.deps dependencies. "
+                                   "Declare needed spools as spool.edn :needs, or put trusted local-only deps in gitignored spools.local.edn.")
+                              {:root (:root entry)
+                               :deps-file (.getPath deps-file)
+                               :source-file (get-in entry [:source :file])
+                               :deps (vec (keys (:deps deps)))})))
+
+            nil))))))
+
 (defn- materialize-git-spool-outcome
   "Materialize a git entry, returning {:fetch ...} or {:failed <sync-failed>}.
 
@@ -525,16 +552,10 @@
         (if failed
           (cond-> failed fetch (clojure.core/update 1 assoc :fetch fetch))
           (try
-            ;; Third-party git spools may not smuggle transitive resolution in
-            ;; through their own deps.edn: dependencies are approved coordinates
-            ;; declared as spool.edn :needs, never tools.deps :deps.
-            (when (= :git (:kind entry))
-              (let [deps-file (io/file (:root entry) "deps.edn")]
-                (when (.isFile deps-file)
-                  (let [deps (query/read-edn-file deps-file)]
-                    (when (seq (:deps deps))
-                      (throw (ex-info "Git spool deps.edn must not declare :deps; declare needed spools as spool.edn :needs instead"
-                                      {:root (:root entry) :deps (vec (keys (:deps deps)))})))))))
+            ;; Shared approvals must not smuggle transitive tools.deps
+            ;; resolution; dependencies are approved spool coordinates unless a
+            ;; developer opts into local-only deps from gitignored config.
+            (reject-unapproved-tools-deps! entry)
             (let [added (with-spool-classloader
                           runtime
                           #(binding [clojure.core/*repl* true]

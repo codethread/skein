@@ -1,2 +1,1 @@
-{:paths ["src"]
- :deps {skein.spools/shuttle {:local/root "../shuttle"}}}
+{:paths ["src"]}

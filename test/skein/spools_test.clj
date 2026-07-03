@@ -773,6 +773,50 @@
         (is (#{:loaded :already-available}
              (get-in (runtime-alpha/sync! rt) [:spools lib :status])))))))
 
+(deftest sync-shared-local-spool-rejects-transitive-deps
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.shared_local_deps_" suffix))
+            lib (symbol (str "demo/shared-local-deps-" suffix))
+            root (write-local-lib! config-dir (str "shared-local-deps-" suffix) ns-sym)]
+        (spit (io/file root "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.example/lib {:mvn/version "1.0.0"}}}))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/shared-local-deps-" suffix)}}}))
+        (let [result (get-in (runtime-alpha/sync! rt) [:spools lib])]
+          (is (= :failed (:status result)))
+          (is (= :runtime-add-failed (:reason result)))
+          (is (re-find #"must not declare :deps" (:message result)))
+          (is (re-find #"spools\.edn" (:message result)))
+          (is (re-find #"cannot consent to transitive tools\.deps dependencies" (:message result)))
+          (is (re-find #"spools\.local\.edn" (:message result))))))))
+
+(deftest sync-local-spools-local-root-still-allows-transitive-deps
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.local_deps_" suffix))
+            lib (symbol (str "demo/local-deps-" suffix))
+            root (write-local-lib! config-dir (str "local-deps-" suffix) ns-sym)]
+        (spit (io/file root "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.clojure/data.json {:mvn/version "2.5.1"}}}))
+        (write-local-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/local-deps-" suffix)}}}))
+        (is (#{:loaded :already-available}
+             (get-in (runtime-alpha/sync! rt) [:spools lib :status])))))))
+
+(deftest sync-shared-local-spool-without-transitive-deps-still-loads
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.shared_local_no_deps_" suffix))
+            lib (symbol (str "demo/shared-local-no-deps-" suffix))]
+        (write-local-lib! config-dir (str "shared-local-no-deps-" suffix) ns-sym)
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/shared-local-no-deps-" suffix)}}}))
+        (is (#{:loaded :already-available}
+             (get-in (runtime-alpha/sync! rt) [:spools lib :status])))))))
+
 (deftest sync-git-spool-rejects-transitive-deps
   (with-runtime
     (fn [rt config-dir]
