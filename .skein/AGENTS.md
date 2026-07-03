@@ -5,9 +5,11 @@ This repo's `.skein` world is thin glue over the shipped reference spools.
 and `skein.spools.devflow` from the weaver classpath, plus
 `skein.spools.shuttle` and `skein.spools.treadle` from the approved
 `spools/shuttle` local root and `skein.spools.chime` from the approved
-`spools/chime` local root (notifier bound to `cc-notify`; HITL checkpoints,
-agent failures, and stalled gates raise desktop notifications), then loads
-`.skein/config.clj`, which registers:
+`spools/chime` local root (HITL checkpoints, agent failures, and stalled
+gates raise notifications; each developer binds their own notifier command
+in gitignored `init.local.clj`, e.g. `(chime/set-notifier! {:argv
+["cc-notify"]})` — unbound chime records loud notifier-missing failures
+instead), then loads `.skein/config.clj`, which registers:
 
 - ops: `devflow-start`, `devflow-next`, `devflow-choices`, `devflow-choose`,
   `devflow-complete`, `devflow-advance`, `devflow-describe`,

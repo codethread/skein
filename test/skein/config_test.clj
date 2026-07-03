@@ -63,10 +63,11 @@
                           {:local/root (.getCanonicalPath (io/file "spools/shuttle"))}
                           'skein.spools/chime
                           {:local/root (.getCanonicalPath (io/file "spools/chime"))}}}))
-  ;; config.clj binds chime's notifier to the real cc-notify command; overlay
-  ;; the personal init.local.clj hook (loaded after init.clj on startup and on
-  ;; every reload) so test-created HITL checkpoints do not raise desktop
-  ;; notifications on developer machines.
+  ;; The shipped config leaves chime's notifier to each developer's personal
+  ;; init.local.clj. Bind an inert command through that same overlay hook
+  ;; (loaded after init.clj on startup and on every reload) so the test also
+  ;; exercises the overlay path, a developer's real init.local.clj is never
+  ;; read, and test-created HITL checkpoints record no notifier-missing noise.
   (spit (io/file target "init.local.clj")
         (pr-str '(do (require '[skein.spools.chime :as chime])
                      (chime/set-notifier! {:argv ["true"]})))))

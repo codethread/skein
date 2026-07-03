@@ -15,9 +15,10 @@
    :spools ['skein.spools/shuttle]
    :call 'skein.spools.shuttle/install!
    :required? true})
-;; Chime installs before config: config.clj binds the cc-notify notifier, and
-;; the binding must land after install! so a reload cannot leave rules armed
-;; without their notifier.
+;; Chime installs here with no notifier bound: the notifier command is a
+;; personal choice, so each developer binds their own in gitignored
+;; init.local.clj (loaded after this file on startup and reload). Unbound
+;; chime records loud notifier-missing failures instead of notifying.
 (runtime-alpha/use! :skein/spools-chime
   {:ns 'skein.spools.chime
    :spools ['skein.spools/chime]
