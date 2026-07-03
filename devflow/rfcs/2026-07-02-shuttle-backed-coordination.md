@@ -95,7 +95,7 @@ Pain points to address:
 | -- | ------- | ---- | ---- |
 | RFC-010.O1 | Keep using harness-native subagents and only document better etiquette. | No implementation work; keeps coordination flexible. | Leaves delegation invisible, non-durable, non-queryable, and hard to resume; repeats the exact workflow-ergonomics pain. |
 | RFC-010.O2 | Use Shuttle manually via `strand op agent spawn` whenever a coordinator wants a subagent. | Immediate value; run state/result become durable; no additional abstraction required. | Still leaves prompt construction, parent links, depends-on wiring, and status conventions to each coordinator. |
-| RFC-010.O3 | Add repo-local patterns/ops that create task-linked Shuttle runs from ready work. | Encodes local delegation conventions; keeps core and spools small; makes most agent delegation graph-native while preserving manual opt-in. | Repo-specific surface must be maintained; prompt templates can drift from `.skein/AGENTS.md`; still needs coordinator verification/closure. |
+| RFC-010.O3 | Add repo-local patterns/ops that create task-linked Shuttle runs from ready work. | Encodes local delegation conventions; keeps core and spools small; makes most agent delegation graph-native while preserving manual opt-in. | Repo-specific surface must be maintained; prompt templates can drift from the root `AGENTS.md` coordination section; still needs coordinator verification/closure. |
 | RFC-010.O4 | Add a generic Shuttle/workflow bridge that fulfills workflow gates automatically based on step attributes. | Most seamless for lifecycle workflows; a workflow step can declare an agent gate and let the graph execute it. | Higher coupling risk; needs careful idempotency and failure semantics; premature if manual/pattern delegation has not settled. |
 | RFC-010.O5 | Build a full autonomous coordinator that watches all ready work, chooses harnesses, spawns agents, validates, closes tasks, and advances devflow. | Maximally automated. | Too much policy in one system; likely violates TEN-004/TEN-006; hard to debug and unsafe around HITL/final validation boundaries. |
 
@@ -149,7 +149,7 @@ Pain points to address:
 - **RFC-010.C2:** `.skein/config.clj` likely gains one small delegation helper
   (pattern or op), plus query/view conventions for task-linked Shuttle runs and
   active/failed delegated work.
-- **RFC-010.C3:** `.skein/AGENTS.md` and the local strand skill should teach the
+- **RFC-010.C3:** the root `AGENTS.md` "Repo coordination workspace" section (formerly `.skein/AGENTS.md`) and the local strand skill should teach the
   new default delegation loop: inspect ready work, delegate with Shuttle when
   appropriate, monitor `agent ps`/run strands, verify result, then close the
   coordination strand.
