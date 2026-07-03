@@ -1,9 +1,9 @@
 # Agents Spool: a Cross-Harness Subagent Surface over Shuttle
 
 **Document ID:** `RFC-015`
-**Status:** Accepted
+**Status:** Implemented
 **Date:** 2026-07-03
-**Related:** [Agent Shuttle](../../spools/shuttle/README.md), [Treadle Gate Bridge](../../spools/shuttle/treadle.md), [Shuttle-backed Agent Coordination](./2026-07-02-shuttle-backed-coordination.md) (RFC-010), [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), repo workspace policy in `.skein/config.clj`, `.agents/skills/strand/SKILL.md`
+**Related:** [Agent Shuttle](../../../../spools/shuttle/README.md), [Treadle Gate Bridge](../../../../spools/shuttle/treadle.md), [Shuttle-backed Agent Coordination](../../../rfcs/2026-07-02-shuttle-backed-coordination.md) (RFC-010), [Weaver Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), repo workspace policy in [`.skein/config.clj`](../../../../.skein/config.clj), [`.agents/skills/strand/SKILL.md`](../../../../.agents/skills/strand/SKILL.md)
 
 ## RFC-015.P1 Problem
 
@@ -65,5 +65,5 @@ Evidence from the `runtime-ownership` feature (2026-07-03), which was coordinate
 
 ## RFC-015.P7 Outcome
 
-- **RFC-015.OUT1:** Pending decision.
-- **RFC-015.OUT2 (2026-07-03):** Accepted with the dogfooded surface of RFC-015.REC5–REC7 and the companion manual (RFC-015.C7). Decision followed empirical validation across four models / three harness CLIs, including tool-stripped headless runs. Implementation proceeds in `devflow/feat/agents-spool/` (proposal + lean plan; no AFK task queue — coordination runs through shuttle-delegated agents directly). The shipped spool doc must include a human-facing user guide: high-level concepts, the load-bearing vocabulary agents already understand, how to prompt agents so they use the surface effectively, and guidance on migrating harness-native subagent usage into this shared abstraction (the cross-provider portability motive).
+- **RFC-015.OUT1 (2026-07-03):** Accepted with the dogfooded surface of RFC-015.REC5–REC7 and the companion manual (RFC-015.C7). Decision followed empirical validation across four models / three harness CLIs, including tool-stripped headless runs. Implementation proceeds in `devflow/feat/agents-spool/` (proposal + lean plan; no AFK task queue — coordination runs through shuttle-delegated agents directly). The shipped spool doc must include a human-facing user guide: high-level concepts, the load-bearing vocabulary agents already understand, how to prompt agents so they use the surface effectively, and guidance on migrating harness-native subagent usage into this shared abstraction (the cross-provider portability motive).
+- **RFC-015.OUT2 (2026-07-03):** Implemented by merge commit `fa34573` / feature commit `66c2a4c`. The shipped implementation adds `spools/agents`, moves the `strand op agent` surface and `agent-plan` pattern there, keeps shuttle as the run engine, migrates repo config/init/skills to the new ownership, and ships the required human user guide in `spools/agents/README.md`.

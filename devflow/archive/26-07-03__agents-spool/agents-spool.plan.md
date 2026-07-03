@@ -1,9 +1,9 @@
 # Agents Spool Plan
 
-**Status:** Reviewed
+**Status:** Shipped
 **Last Updated:** 2026-07-03
 **Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-015](../../rfcs/2026-07-03-agents-spool.md) — the [op manual draft](../../rfcs/2026-07-03-agents-spool.op-manual.md) is the authoritative surface contract for this build.
+**RFC:** [RFC-015](./rfcs/2026-07-03-agents-spool.md) — the [op manual draft](./rfcs/2026-07-03-agents-spool.op-manual.md) is the authoritative surface contract for this build.
 
 Deliberately lean: no `tasks/` queue or AFK loop. Coordination runs through shuttle-delegated agent runs from an `agent-plan` strand DAG (per RFC-015.OUT2), with the coordinator (owner session) verifying and closing task strands.
 
@@ -24,3 +24,4 @@ Deliberately lean: no `tasks/` queue or AFK loop. Coordination runs through shut
 ## Developer Notes
 
 - 2026-07-03: Plan created after RFC-015 acceptance. Surface pre-validated (RFC-015.C7); implementation risk concentrates in the engine seam split and keeping the manual/behavior in lockstep.
+- 2026-07-03: Shipped in merge commit `fa34573` / feature commit `66c2a4c`. Delivered `spools/agents` as the `strand op agent` owner, reduced shuttle to the run engine, migrated repo config/init/skill guidance, added the human user guide in `spools/agents/README.md`, and validated with `clojure -M:test`, `cli/go test ./...`, `clojure -M:smoke`, `git diff --check`, and Shuttle review. No cut scope.
