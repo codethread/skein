@@ -12,6 +12,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.patterns.alpha :as patterns]
+            [skein.spools.chime :as chime]
             [skein.spools.devflow :as devflow]
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
@@ -927,6 +928,9 @@
    :harnesses (register-harness-aliases!)
    ;; agent review consumes the one authoritative policy text by default
    :review-contract (shuttle/set-default-review-contract! delegation-policy-text)
+   ;; chime sends attention notices through the local cc-notify service:
+   ;; title as the final argv element, body on stdin
+   :notifier (chime/set-notifier! {:argv ["cc-notify"]})
    :patterns [(patterns/register-pattern!
                'agent-plan
                "Create a feature strand plus task/review children for agent work. Input: {feature,title,body?,tasks:[{key,title,body?,kind?,hitl?,depends_on?,owner?,branch?,validation?,harness?,cwd?,max-attempts?}]}. Use body for delegated work context."
