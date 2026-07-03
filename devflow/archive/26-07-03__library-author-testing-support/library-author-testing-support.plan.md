@@ -3,7 +3,7 @@
 **Document ID:** `LAT-PLAN-001`
 **Feature:** `library-author-testing-support`
 **Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-005 Library Author Testing Support](../../rfcs/2026-06-26-library-author-testing.md)
+**RFC:** [RFC-005 Library Author Testing Support](./rfcs/2026-06-26-library-author-testing.md)
 **Root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
 **Feature specs:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md)
 **Status:** Shipped
@@ -87,7 +87,7 @@ Outcome: Migrate the weaver-world library-author-style cases `daemon-init-runs-w
 
 ## LAT-PLAN-001.P8 Task context
 
-- **LAT-PLAN-001.TC1:** RFC and spike context lives in `devflow/rfcs/2026-06-26-library-author-testing.md` and `devflow/spikes/2026-06-26-*.md`.
+- **LAT-PLAN-001.TC1:** RFC and spike context lives beside this plan in [./rfcs/](./rfcs/) and [./spikes/](./spikes/).
 - **LAT-PLAN-001.TC2:** The storage lifecycle spike found that held `java.sql.Connection` works; datasource-only in-memory fails because each connection sees a fresh DB.
 - **LAT-PLAN-001.TC3:** The metadata spike recommends explicit storage kind/label and file-only database path.
 - **LAT-PLAN-001.TC4:** The API spike recommends minimal `skein.test.alpha`: `with-weaver-world`, `weaver-world-fixture`, `repl!`, no strand wrappers, no CLI helpers. The helper must ship from `src/skein/test/alpha.clj`.

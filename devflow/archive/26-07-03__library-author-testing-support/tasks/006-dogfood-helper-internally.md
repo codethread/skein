@@ -10,7 +10,7 @@ References:
 
 - [Plan](../library-author-testing-support.plan.md) `LAT-PLAN-001.PH6`
 - [REPL API delta](../specs/repl-api.delta.md)
-- [Smoke feasibility spike](../../../spikes/2026-06-26-smoke-memory-feasibility.md)
+- [Smoke feasibility spike](../spikes/2026-06-26-smoke-memory-feasibility.md)
 
 ## TASK-006.P2 Implementation notes
 

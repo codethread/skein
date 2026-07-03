@@ -10,8 +10,8 @@ References:
 
 - [Plan](../library-author-testing-support.plan.md) `LAT-PLAN-001.PH4`
 - [REPL API delta](../specs/repl-api.delta.md)
-- [API shape spike](../../../spikes/2026-06-26-atom-test-alpha-api.md)
-- [Classpath spike](../../../spikes/2026-06-26-library-author-classpath.md)
+- [API shape spike](../spikes/2026-06-26-atom-test-alpha-api.md)
+- [Classpath spike](../spikes/2026-06-26-library-author-classpath.md)
 
 ## TASK-004.P2 Implementation notes
 

@@ -10,7 +10,7 @@ References:
 
 - [Plan](../library-author-testing-support.plan.md) `LAT-PLAN-001.PH1`
 - [Weaver runtime delta](../specs/daemon-runtime.delta.md)
-- [SQLite lifecycle spike](../../../spikes/2026-06-26-sqlite-memory-lifecycle.md)
+- [SQLite lifecycle spike](../spikes/2026-06-26-sqlite-memory-lifecycle.md)
 
 ## TASK-001.P2 Implementation notes
 

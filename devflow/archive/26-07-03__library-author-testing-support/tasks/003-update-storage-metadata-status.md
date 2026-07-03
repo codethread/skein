@@ -11,7 +11,7 @@ References:
 - [Plan](../library-author-testing-support.plan.md) `LAT-PLAN-001.PH3`
 - [Weaver runtime delta](../specs/daemon-runtime.delta.md)
 - [CLI delta](../specs/cli.delta.md)
-- [Storage metadata spike](../../../spikes/2026-06-26-storage-metadata-contract.md)
+- [Storage metadata spike](../spikes/2026-06-26-storage-metadata-contract.md)
 
 ## TASK-003.P2 Implementation notes
 

@@ -3,7 +3,7 @@
 **Document ID:** `RFC-005`
 **Status:** Implemented
 **Date:** 2026-06-26
-**Related:** [Daemon Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md), [Runtime Library Workspace](../archive/26-06-26__runtime-library-workspace/), [Spikes](../spikes/)
+**Related:** [Daemon Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), [CLI Surface](../../../specs/cli.md), [Runtime Library Workspace](../../26-06-26__runtime-library-workspace/), [Spikes](../spikes/)
 
 ## RFC-005.P1 Problem
 
@@ -76,7 +76,7 @@ The current guidance is mostly conceptual: write pure Clojure tests where possib
 
 ## RFC-005.P7 Follow-up tracking
 
-Future implementation slices and spike-derived work are tracked in [`../../BACKLOG.md`](../../BACKLOG.md). This RFC remains the design rationale; the backlog is the canonical home for pending work items.
+Future implementation slices and spike-derived work are tracked in [`BACKLOG.md`](../../../../BACKLOG.md). This RFC remains the design rationale; the backlog is the canonical home for pending work items.
 
 ## RFC-005.P8 Outcome
 

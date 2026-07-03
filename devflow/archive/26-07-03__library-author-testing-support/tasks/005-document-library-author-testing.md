@@ -10,9 +10,9 @@ References:
 
 - [Plan](../library-author-testing-support.plan.md) `LAT-PLAN-001.PH5`
 - [Proposal](../proposal.md)
-- [RFC-005](../../../rfcs/2026-06-26-library-author-testing.md)
-- [Classpath spike](../../../spikes/2026-06-26-library-author-classpath.md)
-- [API shape spike](../../../spikes/2026-06-26-atom-test-alpha-api.md)
+- [RFC-005](../rfcs/2026-06-26-library-author-testing.md)
+- [Classpath spike](../spikes/2026-06-26-library-author-classpath.md)
+- [API shape spike](../spikes/2026-06-26-atom-test-alpha-api.md)
 
 ## TASK-005.P2 Implementation notes
 

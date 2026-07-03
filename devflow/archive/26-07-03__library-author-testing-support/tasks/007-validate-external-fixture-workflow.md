@@ -10,8 +10,8 @@ References:
 
 - [Plan](../library-author-testing-support.plan.md) `LAT-PLAN-001.V4`
 - [Library author docs task](./005-document-library-author-testing.md)
-- [Classpath spike](../../../spikes/2026-06-26-library-author-classpath.md)
-- [API shape spike](../../../spikes/2026-06-26-atom-test-alpha-api.md)
+- [Classpath spike](../spikes/2026-06-26-library-author-classpath.md)
+- [API shape spike](../spikes/2026-06-26-atom-test-alpha-api.md)
 
 ## TASK-007.P2 Implementation notes
 
