@@ -164,6 +164,53 @@
           (is (not (contains? board :unknown-status))))
         (is (= "abandoned" (get-in (api/show rt done-id) [:attributes :kanban/status])))))))
 
+(deftest kanban-board-needs-review-frontier
+  (with-runtime
+    (fn [rt config-dir]
+      (install-kanban! rt config-dir)
+      (let [card-id (get-in (op! rt "add" "Reviewable feature") [:card :id])]
+        (op! rt "claim" card-id "--owner" "agent" "--branch" "review-branch")
+        (testing "needs-review is always present and empty before any review work"
+          (is (= [] (:needs-review (op! rt "board")))))
+        (let [ready-review (api/add rt {:title "Review ready" :attributes {:kind "review"}})
+              impl (api/add rt {:title "Implement" :attributes {:kind "task"}})
+              blocked-review (api/add rt {:title "Review blocked" :attributes {:kind "review"}})]
+          (api/update rt card-id {:edges [{:type "parent-of" :to (:id ready-review)}
+                                          {:type "parent-of" :to (:id impl)}
+                                          {:type "parent-of" :to (:id blocked-review)}]})
+          ;; blocked-review depends on impl, so it stays out of the ready frontier
+          (api/update rt (:id blocked-review) {:edges [{:type "depends-on" :to (:id impl)}]})
+          (testing "needs-review surfaces only ready review children with the card branch"
+            (let [entries (:needs-review (op! rt "board"))]
+              (is (vector? entries))
+              (is (= [(:id ready-review)] (mapv #(get-in % [:item :id]) entries)))
+              (is (= card-id (:card (first entries))))
+              (is (= "review-branch" (:branch (first entries)))))))))))
+
+(deftest kanban-card-related-both-directions
+  (with-runtime
+    (fn [rt config-dir]
+      (install-kanban! rt config-dir)
+      (let [a-id (get-in (op! rt "add" "Card A") [:card :id])
+            b-id (get-in (op! rt "add" "Card B") [:card :id])
+            edge (fn [related] (mapv (fn [e] [(:relation e) (get-in e [:strand :id])]) related))]
+        ;; A depends-on B: A is the dependent, B is the dependency
+        (api/update rt a-id {:edges [{:type "depends-on" :to b-id}]})
+        (testing "the dependent card sees the depends-on direction"
+          (is (= [["depends-on" b-id]] (edge (:related (op! rt "card" a-id))))))
+        (testing "the dependency card sees the depended-on-by direction"
+          (is (= [["depended-on-by" a-id]] (edge (:related (op! rt "card" b-id))))))
+        (testing "incoming edges from non-card strands surface too"
+          ;; regression: depends-on subgraph expansion walks outgoing edges only,
+          ;; so a card-rooted scan never saw task -> card blockers
+          (let [task (api/add rt {:title "Cross-feature task" :attributes {:kind "task"}})]
+            (api/update rt (:id task) {:edges [{:type "depends-on" :to b-id}]})
+            (is (= #{["depended-on-by" a-id] ["depended-on-by" (:id task)]}
+                   (set (edge (:related (op! rt "card" b-id))))))))
+        (testing "related is always present and empty for an unlinked card"
+          (let [c-id (get-in (op! rt "add" "Card C") [:card :id])]
+            (is (= [] (:related (op! rt "card" c-id))))))))))
+
 (deftest kanban-batch-weave-creates-cards-and-dependencies
   (with-runtime
     (fn [rt config-dir]

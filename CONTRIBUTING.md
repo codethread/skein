@@ -77,6 +77,17 @@ Runtime spool startup config may use:
 
 Shipped `skein.api.*.alpha` namespaces are privileged built-in helpers. `spools.edn` approves user/community local roots; `skein.api.runtime.alpha/sync!` makes approved roots available; `runtime-alpha/use!` activates modules for the weaver lifetime.
 
+## Work tracking: the kanban board
+
+The user↔agent work board is strand-backed, not a separate app: `spools/kanban.md` is the contract and `strand kanban about` is the live manual. Everything you ask for becomes a `feature` card.
+
+- `strand kanban board` — high-level overview. The `claimed` lane is work in progress, each card carrying its `owner`, `branch`, and latest handover; `needs-review` lists what awaits your attention and where (ready review work, per card and branch).
+- `strand kanban card <id>` — one card's notes, latest handover, active work, and `related` (adjacent cards linked by `depends-on`).
+- `strand branches [branch]` — what is happening inside a feature branch: the cards on it and their substrands.
+- New ideas enter with `strand kanban add "..."`; use `--status refinement` for not-yet-actionable ideas and `strand kanban promote <id>` when one is ready to work.
+
+Agents follow the fuller board contract in `AGENTS.md` (claim/notes/handover rules); this section is the human-side overview.
+
 ## Validation
 
 ```sh

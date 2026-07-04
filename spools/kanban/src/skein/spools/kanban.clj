@@ -339,6 +339,42 @@
   [strand]
   (= "true" (attr-value strand note-attr)))
 
+(defn- truthy-attr?
+  "Return true for a JSON-decoded boolean true or its string form."
+  [v]
+  (or (true? v) (= "true" v)))
+
+(defn- review-item?
+  "Return true when strand marks itself for human review.
+
+  Any of hitl, workflow/hitl (boolean true or \"true\"), or kind \"review\"."
+  [strand]
+  (or (truthy-attr? (attr-value strand :hitl))
+      (truthy-attr? (attr-value strand :workflow/hitl))
+      (= "review" (attr-value strand :kind))))
+
+(defn- card-relations
+  "Return depends-on relations touching card-id, sorted by other-endpoint id.
+
+  Roots the subgraph at every strand id because depends-on expansion only
+  walks outgoing edges: rooting at the card (or even all cards) never yields
+  edges whose dependent is an unrelated strand, so incoming edges from
+  non-card work would be dropped. The full root set keeps every edge incident
+  to the card visible, both directions, any strand, any state."
+  [rt card-id]
+  (let [all-ids (mapv :id (api/list rt))
+        {:keys [strands edges]} (api/subgraph rt all-ids {:type "depends-on"})
+        by-id (into {} (map (juxt :id identity)) strands)]
+    (->> edges
+         (keep (fn [{:keys [from_strand_id to_strand_id]}]
+                 (cond
+                   (= card-id from_strand_id) [to_strand_id "depends-on"]
+                   (= card-id to_strand_id) [from_strand_id "depended-on-by"]
+                   :else nil)))
+         (sort-by first)
+         (mapv (fn [[other relation]]
+                 {:relation relation :strand (summarize-strand (by-id other))})))))
+
 (defn- card-subtree
   "Return the card's parent-of subgraph split into notes and work strands."
   [rt card]
@@ -376,7 +412,8 @@
      :latest-handover (some->> notes (filter #(= "true" (attr-value % handover-attr))) first compact-note)
      :notes (mapv compact-note notes)
      :active-work (mapv summarize-strand active-work)
-     :ready (mapv summarize-strand ready)}))
+     :ready (mapv summarize-strand ready)
+     :related (card-relations rt (:id card))}))
 
 ;; ---------------------------------------------------------------------------
 ;; board
@@ -422,17 +459,40 @@
            first
            compact-note))
 
+(defn- needs-review-entries
+  "Return review-frontier entries across claimed feature cards.
+
+  An entry qualifies when a card descendant is active, in the engine ready
+  frontier, and marks human review. Sorted by card id then item id."
+  [rt claimed-features]
+  (let [ready-ids (set (map :id (api/ready rt)))]
+    (->> claimed-features
+         (mapcat (fn [card]
+                   (let [{:keys [work]} (card-subtree rt card)
+                         branch (attr-value card :branch)]
+                     (->> work
+                          (filter #(and (= "active" (:state %))
+                                        (contains? ready-ids (:id %))
+                                        (review-item? %)))
+                          (map (fn [item]
+                                 (cond-> {:card (:id card) :item (summarize-strand item)}
+                                   branch (assoc :branch branch))))))))
+         (sort-by (juxt :card #(get-in % [:item :id])))
+         vec)))
+
 (defn board
   "Return the grouped board snapshot: epics, feature lanes, closed count.
 
   Claimed cards carry their latest handover so a cold agent can see in one
-  call who is working where and how to pick up interrupted work."
+  call who is working where and how to pick up interrupted work.
+  `:needs-review` aggregates the human-review frontier across claimed cards."
   []
   (let [rt (current/runtime)
         all (cards)
         active (filter #(= "active" (:state %)) all)
         epics (filterv #(= "epic" (card-type %)) active)
         features (remove #(= "epic" (card-type %)) active)
+        claimed-features (filter #(= "claimed" (attr-value % status-attr)) features)
         membership (epic-membership rt epics)
         with-epic (fn [card]
                     (cond-> (compact-card card)
@@ -455,7 +515,8 @@
                               (cond-> (with-epic card)
                                 (latest-handover-for rt card)
                                 (assoc :latest-handover (latest-handover-for rt card))))
-                            (by-created (filter #(= "claimed" (attr-value % status-attr)) features)))
+                            (by-created claimed-features))
+             :needs-review (needs-review-entries rt claimed-features)
              :closed {:count (count (filter #(= "closed" (:state %)) all))}}
       ;; active cards outside the known lanes are drift; surface them loudly
       (seq unknown) (assoc :unknown-status unknown))))

@@ -177,6 +177,12 @@ Agents asked to "pick up the next card" should run `strand kanban next`, claim t
 
 **Notes and handovers.** Record significant decisions as you work with `strand kanban note <card-id> "..." --author <name>`, and always leave a handover before stopping or at interruption risk: `strand kanban note <card-id> --handover --author <name> "Done: ... Next: ... Validation: ... Gotchas: ..."`. Crash recovery is self-discovering: `strand kanban board` shows claimed cards with their latest handover; `strand kanban card <id>` returns the card, notes, active work, and ready frontier.
 
+Staying aware of adjacent work:
+
+- `strand kanban board` also returns `needs-review`: the human-review frontier aggregated across claimed cards — ready `hitl`/`review` work grouped by card with its branch — so a human sees what awaits attention and where.
+- Inside a feature branch, `strand branches "$(git branch --show-current)"` shows the feature cards being worked on there and their substrands.
+- Relate adjacent work with `depends-on` edges (`strand update <a> --edge depends-on:<b>`) and check `related` in `strand kanban card <id>` when claiming or resuming, so agents see each other's blockers and dependents.
+
 ### Branch work visibility
 
 Every piece of work happening on a branch has exactly one **active work root strand** stamped with `branch` (plus `owner`, and `worktree` when one exists), with all execution strands hanging beneath it via `parent-of`. `kanban claim` stamps card roots; for non-card work (ad hoc `agent-plan` roots, coordination strands), stamp the root yourself: `strand update <root-id> --attr branch=<branch> --attr owner=<name>`. Children do not need their own `branch` attr — they are reachable from the root.
