@@ -15,6 +15,7 @@
             [clojure.string :as str]
             [skein.api.patterns.alpha :as patterns]
             [skein.spools.agents :as agents]
+            [skein.spools.carder :as carder]
             [skein.spools.chime :as chime]
             [skein.spools.devflow :as devflow]
             [skein.spools.shuttle :as shuttle]
@@ -533,6 +534,7 @@
          {:name "devflow-status" :usage "strand op devflow-status <feature>"}
          {:name "workflow-runs" :usage "strand op workflow-runs [family]"}
          {:name "current-dags" :usage "strand op current-dags"}
+         {:name "carder-report" :usage "strand op carder-report [--days <n>] [--include-plumbing true|false]"}
          {:name "agent" :usage "strand op agent about — the delegation manual (spawn/delegate/retry/status/ps/await/logs/kill/note/notes/council/review); shipped by skein.spools.agents"}
          {:name "flow-await" :usage "strand op flow-await <workflow-run-id> [--timeout-secs <n>]"}
          {:name "flow-status" :usage "strand op flow-status <workflow-run-id>"}]
@@ -592,6 +594,50 @@
     (catch NumberFormatException _
       (throw (ex-info (str flag " must be an integer")
                       {:flag flag :value value})))))
+
+(defn- parse-boolean-flag!
+  "Parse a boolean-valued flag, failing loudly on malformed input."
+  [flag value]
+  (case value
+    "true" true
+    "false" false
+    (throw (ex-info (str flag " must be true or false")
+                    {:flag flag :value value}))))
+
+(defn- backlog-root-orphan?
+  "Return true when an orphan row is an unclaimed backlog root.
+
+  Pending backlog items intentionally start life as root records in BACKLOG.md;
+  they are queue entries, not graph hygiene problems. Claimed backlog roots keep
+  surfacing so missing task/devflow children stay visible."
+  [row]
+  (and (= "true" (config-attr row :backlog/item))
+       (= "pending" (config-attr row :backlog/status))))
+
+(defn- suppress-expected-carder-orphans
+  "Return report with expected repo-local orphan rows removed."
+  [report]
+  (let [rows (remove backlog-root-orphan? (get-in report [:orphans :rows]))]
+    (assoc report :orphans {:count (count rows) :rows (vec rows)})))
+
+(defn carder-report-op
+  "Return the carder graph hygiene report for active work.
+
+  Usage: `strand op carder-report [--days <n>] [--include-plumbing true|false]`.
+  This is a read-only wrapper around `skein.spools.carder/report` for checking
+  stale active strands, orphaned strands, and work blocked by failed agent runs.
+  Repo-local expected backlog queue roots are suppressed from the orphan list."
+  [ctx]
+  (let [{:keys [flags]} (parse-op-argv "carder-report" (:op/argv ctx)
+                                       {"--days" :single
+                                        "--include-plumbing" :single})]
+    (suppress-expected-carder-orphans
+     (carder/report (cond-> {}
+                      (get flags "--days")
+                      (assoc :days (parse-long-flag! "--days" (get flags "--days")))
+                      (get flags "--include-plumbing")
+                      (assoc :include-plumbing? (parse-boolean-flag! "--include-plumbing"
+                                                                     (get flags "--include-plumbing"))))))))
 
 (defn flow-await-op
   "Block until a workflow run is done or needs coordinator attention.
@@ -907,6 +953,11 @@
           'current-dags
           "Show active parent-of work DAGs with active depends-on edges"
           'config/current-dags-op)
+         (api/register-op!
+          runtime
+          'carder-report
+          "Show read-only carder graph hygiene report"
+          'config/carder-report-op)
          (api/register-op!
           runtime
           'devflow-start
