@@ -1,0 +1,155 @@
+// Core plumbing for the shuttle dashboard: CLI/argv parsing, workspace
+// resolution, and the strand JSON access primitives that tab modules build
+// their own fetchers on. Everything reaches the coordination world through the
+// public strand JSON CLI (TEN-006 — the CLI is the safe consumption surface;
+// no trusted REPL eval needed). The weaver transport is one JSON response per
+// request — there is no streaming — so tabs poll strandJson() themselves.
+
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Fields every tab's detail view reads. Each tab's row type extends this so the
+// shared DetailView stays strand-generic; a new tab only adds its list columns.
+export type DetailRow = {
+  id: string;
+  title?: string;
+  state: string;
+  phase?: string;
+  branch: string;
+  createdAt: string;
+  updatedAt: string;
+  attrs: Record<string, unknown>;
+};
+
+// The `strand show` / `strand list` record: attributes plus the timestamps and
+// identity every tab reads. Tabs narrow the JSON to this shared shape rather
+// than re-typing it inline.
+export type StrandRecord = {
+  id: string;
+  title?: string;
+  state: string;
+  attributes: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+// A string attribute or its fallback; strand attributes are untyped JSON.
+export const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(scriptDir, "../..");
+
+export const opts = { interval: 2, all: false, once: false, workspace: "" };
+const argv = process.argv.slice(2);
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === "--interval") opts.interval = Number(argv[++i]);
+  else if (a === "--all") opts.all = true;
+  else if (a === "--once") opts.once = true;
+  else if (a === "--workspace") opts.workspace = argv[++i];
+  else if (a === "--help" || a === "-h") {
+    console.log("usage: bun scripts/shuttle-dash/index.tsx [--interval secs] [--all] [--once] [--workspace dir]");
+    process.exit(0);
+  } else {
+    console.error(`unknown flag: ${a}`);
+    process.exit(2);
+  }
+}
+if (!Number.isFinite(opts.interval) || opts.interval <= 0) {
+  console.error(`--interval must be a positive number of seconds, got: ${opts.interval}`);
+  process.exit(2);
+}
+
+async function run(cmd: string[], cwd: string): Promise<{ code: number; out: string; err: string }> {
+  // Never hand a child the controlling pty: Bun's default inherited stdin lets
+  // strand/git reset terminal modes, which silently drops Ink out of raw mode
+  // and leaves keys line-buffered after the first interactive poll.
+  const proc = Bun.spawn(cmd, { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { code, out, err };
+}
+
+async function resolveWorkspace(): Promise<string> {
+  if (opts.workspace) return resolve(opts.workspace);
+  // git-common-dir points at the canonical root's .git even from a linked
+  // worktree, so every checkout dashboards the same coordination world.
+  const git = await run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], repoRoot);
+  if (git.code !== 0) throw new Error(`cannot resolve canonical repo root: ${git.err.trim()}`);
+  return resolve(dirname(git.out.trim()), ".skein");
+}
+
+const workspace = await resolveWorkspace();
+export const workspaceRoot = dirname(workspace);
+
+export async function strandJson(args: string[]): Promise<unknown> {
+  const cmd = ["strand", "--workspace", workspace, ...args];
+  const res = await run(cmd, repoRoot);
+  if (res.code !== 0) throw new Error(`${cmd.join(" ")}\n${(res.err || res.out).trim()}`);
+  return JSON.parse(res.out);
+}
+
+export async function strandShow(id: string): Promise<StrandRecord> {
+  return (await strandJson(["show", id])) as StrandRecord;
+}
+
+// Fold a strand record into the shared DetailView row. branch and phase are
+// joined in by the caller — they come from git / the run summary, not the strand
+// record itself.
+export function detailRowFrom(rec: StrandRecord, extra: { branch: string; phase?: string }): DetailRow {
+  return {
+    id: rec.id,
+    title: rec.title,
+    state: rec.state,
+    phase: extra.phase,
+    branch: extra.branch,
+    createdAt: rec.created_at,
+    updatedAt: rec.updated_at,
+    attrs: rec.attributes,
+  };
+}
+
+// Render Graphviz DOT to preformatted boxart via the graph-easy binary on PATH.
+// DOT is written to a throwaway temp file (never the child's stdin) so the spawn
+// keeps the same no-controlling-pty discipline as every other child here — a
+// child handed the pty resets terminal modes and drops Ink out of raw mode. The
+// result is captured async; graph-easy can be slow on large graphs, so callers
+// fold the returned lines in without blocking the render loop. A missing binary
+// (ENOENT) or a non-zero exit returns an `error` for the caller's fallback path
+// rather than throwing, so the pane never goes blank.
+export async function renderBoxart(dot: string, format = "boxart"): Promise<{ lines: string[] | null; error: string | null }> {
+  let dir: string | null = null;
+  try {
+    dir = mkdtempSync(join(tmpdir(), "shuttle-dash-graph-"));
+    const file = join(dir, "graph.dot");
+    writeFileSync(file, dot);
+    const res = await run(["graph-easy", file, "--as", format], repoRoot);
+    if (res.code !== 0) return { lines: null, error: (res.err || res.out).trim() || `graph-easy exited ${res.code}` };
+    return { lines: res.out.replace(/\n+$/, "").split("\n"), error: null };
+  } catch (e) {
+    return { lines: null, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export async function branchFor(cwd: string, cache: Map<string, string>): Promise<string> {
+  const hit = cache.get(cwd);
+  if (hit !== undefined) return hit;
+  const res = await run(["git", "-C", cwd, "branch", "--show-current"], repoRoot);
+  const branch = res.code === 0 ? res.out.trim() || "(detached)" : "-";
+  cache.set(cwd, branch);
+  return branch;
+}
+
+export function parseInstant(s: string | undefined): Date | undefined {
+  if (!s) return undefined;
+  // strand created_at is "YYYY-MM-DD HH:MM:SS" in UTC without a zone marker
+  const d = new Date(/^\d{4}-\d{2}-\d{2} /.test(s) ? s.replace(" ", "T") + "Z" : s);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}

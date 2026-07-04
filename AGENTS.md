@@ -58,6 +58,7 @@ mill weaver stop
 clojure -M:test
 (cd cli && go test ./...)
 clojure -M:repl
+make dash                     # code-owner TUI over the live coordination world: agent runs/plans, kanban board, devflow (scripts/shuttle-dash/, Ink app polling the strand CLI)
 ```
 
 ## Agent operation quick reference
