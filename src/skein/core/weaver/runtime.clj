@@ -276,7 +276,7 @@
            runtime-base (start-event-system! runtime-base)
            runtime-state (atom runtime-base)]
        (try
-         (let [socket-runtime (socket/start! runtime-state (:socket-path meta) #(stop! @runtime-state))
+         (let [socket-runtime (socket/start! runtime-state (:socket-path meta))
                runtime (assoc runtime-base :socket-runtime socket-runtime)]
            (reset! runtime-state runtime)
            (swap! nrepl-port-runtimes assoc port runtime)
@@ -355,11 +355,28 @@
                   (recur more (assoc opts :name name)))
       (throw (ex-info "Usage: skein.core.weaver.runtime --workspace <dir> --state-dir <dir> --data-dir <dir> [--name <name>]" {:args args})))))
 
+(defn- install-signal-shutdown!
+  "Run the clean stop path on SIGTERM/SIGINT (and normal JVM exit).
+
+  A JVM shutdown hook is the portable handler for both termination signals; it
+  drives `stop!`, which takes transports down, closes storage, and removes the
+  weaver.edn/weaver.json/weaver.sock artifacts. This replaces the removed socket
+  `stop` operation (SPEC-004-D003.C3). Signal delivery itself is not unit-tested
+  in-JVM; the artifact cleanup it invokes is covered by the programmatic
+  `stop!` tests."
+  []
+  (.addShutdownHook (Runtime/getRuntime)
+                    (Thread. (fn []
+                               (when-let [rt @current-runtime]
+                                 (stop! rt)))
+                             "skein-weaver-signal-shutdown")))
+
 (defn -main
   "Start a foreground weaver process from command-line arguments."
   [& args]
   (let [{:keys [config-dir state-dir data-dir name]} (parse-main-args args)]
     (start! nil {:world (config/world config-dir state-dir data-dir) :name name})
+    (install-signal-shutdown!)
     (println "weaver started")
     (while @current-runtime
       (Thread/sleep 100))))

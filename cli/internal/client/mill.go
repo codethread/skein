@@ -79,11 +79,11 @@ func MillCallPayload(operation string, world MillWorldRequest, payload map[strin
 		// The mill side allows 60s for JVM boot plus trusted startup config, so
 		// the client protocol deadline must cover that whole request.
 		deadline = 65 * time.Second
-	case "op":
-		// Registered weaver operations run arbitrary trusted code (e.g. a
-		// blocking await over agent runs); match the long weaver-leg deadline
-		// instead of the short protocol deadline used for core requests.
-		deadline = 30 * time.Minute
+	case "weaver-stop":
+		// Stop signals the weaver and waits for its shutdown hook to clean up
+		// runtime metadata (supervised child or metadata-discovered pid), which
+		// can outlast the short default protocol deadline.
+		deadline = 15 * time.Second
 	}
 	_ = conn.SetDeadline(time.Now().Add(deadline))
 	if err := json.NewEncoder(conn).Encode(req); err != nil {

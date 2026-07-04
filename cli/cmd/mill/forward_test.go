@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,65 +13,121 @@ import (
 	"skein-strand-cli/internal/config"
 )
 
-func TestForwardStrandOperationsThroughWeaverSocket(t *testing.T) {
+func TestInvokeRelaysSingleWeaverResponse(t *testing.T) {
 	world, cfg := forwardWorld(t)
-	received := []string{}
-	serveFakeWeaver(t, world, func(req map[string]any) map[string]any {
-		received = append(received, req["operation"].(string))
-		if req["cwd"] != nil || req["config_dir"] != nil {
-			t.Fatalf("routing fields leaked into weaver request: %#v", req)
-		}
-		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": true, "result": map[string]any{"operation": req["operation"]}}
+	var gotReq map[string]any
+	serveFakeWeaverStream(t, world, func(req map[string]any) [][]byte {
+		gotReq = req
+		return [][]byte{mustFrame(t, map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": true, "result": map[string]any{"title": "hello"}, "error": nil})}
 	})
-	writeWeaverMetadata(t, world, os.Getpid(), "weaver-forward")
+	writeWeaverMetadata(t, world, os.Getpid(), "weaver-invoke")
 
-	s := server{children: map[string]*weaverChild{}}
-	for _, op := range []string{"add", "list", "ready", "pattern-list", "query-list", "query-explain", "op", "subgraph"} {
-		result, err := s.forwardToWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg}, op, map[string]any{"name": "help"})
-		if err != nil {
-			t.Fatalf("forward %s: %v", op, err)
-		}
-		if result.(map[string]any)["operation"] != op {
-			t.Fatalf("unexpected result for %s: %#v", op, result)
-		}
+	frames := runInvoke(t, cfg, map[string]any{"name": "add", "argv": []any{"hello"}, "payloads": map[string]any{}})
+	if gotReq["operation"] != "invoke" || gotReq["weaver_id"] != "weaver-invoke" {
+		t.Fatalf("weaver did not receive an invoke frame: %#v", gotReq)
 	}
-	if strings.Join(received, ",") != "add,list,ready,pattern-list,query-list,query-explain,op,subgraph" {
-		t.Fatalf("received operations %v", received)
+	args, ok := gotReq["arguments"].(map[string]any)
+	if !ok || args["name"] != "add" {
+		t.Fatalf("invoke envelope not forwarded verbatim as arguments: %#v", gotReq["arguments"])
+	}
+	if len(frames) != 1 || frames[0]["ok"] != true || frames[0]["result"].(map[string]any)["title"] != "hello" {
+		t.Fatalf("single response not relayed verbatim: %#v", frames)
 	}
 }
 
-func TestForwardReportsNoSelectedWorldWeaver(t *testing.T) {
+func TestInvokeRelaysStreamFramesVerbatim(t *testing.T) {
+	world, cfg := forwardWorld(t)
+	serveFakeWeaverStream(t, world, func(req map[string]any) [][]byte {
+		id := req["request_id"]
+		return [][]byte{
+			mustFrame(t, map[string]any{"protocol_version": 1, "request_id": id, "stream": true}),
+			mustFrame(t, map[string]any{"i": 0}),
+			mustFrame(t, map[string]any{"i": 1}),
+			mustFrame(t, map[string]any{"protocol_version": 1, "request_id": id, "done": true, "success": true, "result": map[string]any{"emitted": 2}}),
+		}
+	})
+	writeWeaverMetadata(t, world, os.Getpid(), "weaver-stream")
+
+	frames := runInvoke(t, cfg, map[string]any{"name": "test-stream", "argv": []any{}, "payloads": map[string]any{}})
+	if len(frames) != 4 {
+		t.Fatalf("expected header + 2 emitted + terminator, got %#v", frames)
+	}
+	if frames[0]["stream"] != true {
+		t.Fatalf("first frame is not a stream header: %#v", frames[0])
+	}
+	if frames[1]["i"] != float64(0) || frames[2]["i"] != float64(1) {
+		t.Fatalf("emitted lines not relayed verbatim: %#v", frames)
+	}
+	if frames[3]["done"] != true || frames[3]["success"] != true {
+		t.Fatalf("terminator not relayed verbatim: %#v", frames[3])
+	}
+}
+
+func TestInvokeReportsNoSelectedWorldWeaver(t *testing.T) {
 	_, cfg := forwardWorld(t)
-	_, err := (&server{}).forwardToWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg}, "list", nil)
-	if err == nil || !strings.Contains(err.Error(), "strand weaver start") {
-		t.Fatalf("expected start remediation, got %v", err)
+	frames := runInvoke(t, cfg, map[string]any{"name": "list", "argv": []any{}, "payloads": map[string]any{}})
+	if len(frames) != 1 || frames[0]["ok"] != false {
+		t.Fatalf("expected a single error frame, got %#v", frames)
+	}
+	errFrame := frames[0]["error"].(map[string]any)
+	if errFrame["code"] != "mill/no-selected-weaver" {
+		t.Fatalf("expected no-selected-weaver error, got %#v", errFrame)
 	}
 }
 
-func TestForwardReportsStaleSelectedWorldWeaver(t *testing.T) {
+func TestInvokeReportsStaleSelectedWorldWeaver(t *testing.T) {
 	world, cfg := forwardWorld(t)
 	if err := os.WriteFile(filepath.Join(world.StateDir, "weaver.json"), []byte(`{bad`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := (&server{}).forwardToWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg}, "list", nil)
-	re, ok := err.(*client.ResponseError)
-	if !ok || re.Code != "mill/stale-selected-weaver" || re.Details["stale_reason"] == nil {
-		t.Fatalf("expected stale selected-world error, got %#v", err)
+	frames := runInvoke(t, cfg, map[string]any{"name": "list", "argv": []any{}, "payloads": map[string]any{}})
+	if len(frames) != 1 || frames[0]["ok"] != false {
+		t.Fatalf("expected a single error frame, got %#v", frames)
+	}
+	errFrame := frames[0]["error"].(map[string]any)
+	if errFrame["code"] != "mill/stale-selected-weaver" || errFrame["details"].(map[string]any)["stale_reason"] == nil {
+		t.Fatalf("expected stale-selected-weaver error, got %#v", errFrame)
 	}
 }
 
-func TestForwardPropagatesWeaverDomainError(t *testing.T) {
-	world, cfg := forwardWorld(t)
-	serveFakeWeaver(t, world, func(req map[string]any) map[string]any {
-		return map[string]any{"protocol_version": 1, "request_id": req["request_id"], "ok": false, "error": map[string]any{"type": "domain", "code": "strand/not-found", "message": "missing", "details": map[string]any{"id": "nope"}}}
-	})
-	writeWeaverMetadata(t, world, os.Getpid(), "weaver-forward")
-
-	_, err := (&server{}).forwardToWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg}, "show", map[string]any{"id": "nope"})
-	re, ok := err.(*client.ResponseError)
-	if !ok || re.Code != "strand/not-found" || re.Type != "domain" {
-		t.Fatalf("expected propagated domain error, got %#v", err)
+// runInvoke drives handleInvoke over an in-memory pipe and returns the relayed
+// NDJSON frames.
+func runInvoke(t *testing.T, cfg string, envelope map[string]any) []map[string]any {
+	t.Helper()
+	s := server{children: map[string]*weaverChild{}}
+	req := client.MillRequest{ProtocolVersion: client.MillProtocolVersion, RequestID: "req-1", Operation: "invoke", World: client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg}, Payload: envelope}
+	clientConn, srvConn := net.Pipe()
+	go func() {
+		s.handleInvoke(srvConn, req)
+		_ = srvConn.Close()
+	}()
+	defer clientConn.Close()
+	_ = clientConn.SetDeadline(time.Now().Add(5 * time.Second))
+	var frames []map[string]any
+	r := bufio.NewReader(clientConn)
+	for {
+		line, err := r.ReadBytes('\n')
+		if len(line) > 0 {
+			var frame map[string]any
+			if uerr := json.Unmarshal(line, &frame); uerr != nil {
+				t.Fatalf("relayed a non-JSON frame %q: %v", line, uerr)
+			}
+			frames = append(frames, frame)
+		}
+		if err != nil {
+			break
+		}
 	}
+	return frames
+}
+
+func mustFrame(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 func forwardWorld(t *testing.T) (config.World, string) {
@@ -97,7 +152,10 @@ func forwardWorld(t *testing.T) (config.World, string) {
 	return world, cfg
 }
 
-func serveFakeWeaver(t *testing.T, world config.World, handler func(map[string]any) map[string]any) {
+// serveFakeWeaverStream stands up a weaver socket that decodes the invoke
+// request and writes the handler's frames as NDJSON, one flushed line each,
+// then closes — mirroring the real weaver's single/stream response shape.
+func serveFakeWeaverStream(t *testing.T, world config.World, handler func(map[string]any) [][]byte) {
 	t.Helper()
 	socket := filepath.Join(world.StateDir, "weaver.sock")
 	_ = os.Remove(socket)
@@ -119,7 +177,12 @@ func serveFakeWeaver(t *testing.T, world config.World, handler func(map[string]a
 				if err := json.NewDecoder(bufio.NewReader(c)).Decode(&req); err != nil {
 					return
 				}
-				_ = json.NewEncoder(c).Encode(handler(req))
+				w := bufio.NewWriter(c)
+				for _, frame := range handler(req) {
+					_, _ = w.Write(frame)
+					_, _ = w.Write([]byte("\n"))
+					_ = w.Flush()
+				}
 			}(conn)
 		}
 	}()

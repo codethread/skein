@@ -407,6 +407,41 @@ func TestStopCleansStaleMetadata(t *testing.T) {
 
 }
 
+func TestStopSignalsNonSupervisedWeaverByPID(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
+	source := tempSource(t)
+	cfg := tempConfig(t, source)
+	world, err := config.RuntimeWorld(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	// A real metadata-discovered weaver is not this mill's child, so the OS
+	// reaps it on exit. Mirror that by reaping here; otherwise the killed sleep
+	// lingers as an unreaped zombie and kill(0) still reports it alive.
+	reaped := make(chan struct{})
+	go func() { _, _ = cmd.Process.Wait(); close(reaped) }()
+	t.Cleanup(func() { _ = cmd.Process.Kill(); <-reaped })
+	writeWeaverMetadata(t, world, cmd.Process.Pid, "unsupervised-weaver")
+
+	// No child handle: the weaver is metadata-discovered, so stop must signal it
+	// by pid (the socket stop op no longer exists) and then clean its metadata.
+	s := server{children: map[string]*weaverChild{}}
+	status, err := s.stopWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg})
+	if err != nil || status["state"] != "stopped" || status["pid"].(int) != cmd.Process.Pid {
+		t.Fatalf("bad unsupervised stop %#v err=%v", status, err)
+	}
+	if processAlive(cmd.Process.Pid) {
+		t.Fatalf("unsupervised stop should terminate pid %d", cmd.Process.Pid)
+	}
+	if _, err := os.Stat(filepath.Join(world.StateDir, "weaver.json")); !os.IsNotExist(err) {
+		t.Fatalf("unsupervised stop should remove weaver.json, stat err=%v", err)
+	}
+}
+
 func TestDifferentReposHaveDistinctRuntimeDirsAndStopSelectedOnly(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
 	source := tempSource(t)

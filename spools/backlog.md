@@ -32,12 +32,12 @@ Feature plans, devflow runs, review strands, and task DAGs should hang under the
 Install registers one operation:
 
 ```sh
-strand op backlog about
-strand op backlog add "Feature idea" [--body "Longer context"] [--source devflow/rfcs/...]
-strand op backlog next
-strand op backlog claim <id> [--owner agent] [--branch feature-branch] [--worktree /path]
-strand op backlog finish <id> [--outcome done|abandoned]
-strand op backlog sync
+strand backlog about
+strand backlog add "Feature idea" [--body "Longer context"] [--source devflow/rfcs/...]
+strand backlog next
+strand backlog claim <id> [--owner agent] [--branch feature-branch] [--worktree /path]
+strand backlog finish <id> [--outcome done|abandoned]
+strand backlog sync
 ```
 
 `next` returns the first unchecked, active, `pending` backlog item in file order from the actionable backlog sections. `claim` marks it `claimed` but leaves the checkbox unchecked. `finish` closes the strand and checks the row. `sync` fails loudly if the Markdown file and graph disagree. Refinement items are not actionable until a human explicitly moves or adds them through the backlog flow.

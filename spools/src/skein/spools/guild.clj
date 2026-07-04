@@ -67,6 +67,24 @@
                 :explain explain}))))
   input)
 
+(defn- op-registered? [rt name]
+  (try
+    (weaver/resolve-op rt name)
+    true
+    (catch clojure.lang.ExceptionInfo _
+      false)))
+
+(defn- register-or-replace-op!
+  "Upsert a guild op in the weaver registry.
+
+  The guild owns its op lifecycle through its own state atoms and (re)declares
+  ops as it installs, deprecates, and reloads; the registry's loud-collision
+  default is the wrong policy here, so re-declaration is an explicit replace."
+  [rt name doc handler-sym]
+  (if (op-registered? rt name)
+    (weaver/replace-op! rt name doc handler-sym)
+    (weaver/register-op! rt name doc handler-sym)))
+
 (defn dispatch-op
   "Dispatch a guild-declared operation after parsing and validating input."
   [{:op/keys [name argv] :as ctx}]
@@ -103,7 +121,7 @@
   (requiring-resolve handler-fn-sym)
   (when-let [spec (:spec opts)]
     (require-spec-name! spec))
-  (let [registered (weaver/register-op! (current/runtime) name (:doc opts) 'skein.spools.guild/dispatch-op)
+  (let [registered (register-or-replace-op! (current/runtime) name (:doc opts) 'skein.spools.guild/dispatch-op)
         entry (cond-> {:name (:name registered)
                        :handler handler-fn-sym}
                 (:doc opts) (assoc :doc (:doc opts))
@@ -133,7 +151,7 @@
         entry (or (get @(guild-ops (current/runtime)) op-name)
                   (fail! "Guild op is not registered" {:op name}))
         deprecated (select-keys opts [:replacement :since])]
-    (weaver/register-op! (current/runtime) name (:doc entry) 'skein.spools.guild/deprecated-op)
+    (register-or-replace-op! (current/runtime) name (:doc entry) 'skein.spools.guild/deprecated-op)
     (swap! (guild-ops (current/runtime)) dissoc (:name entry))
     (swap! (deprecated-ops (current/runtime)) assoc (:name entry) (assoc deprecated :doc (:doc entry)))
     (assoc deprecated :name (:name entry))))
@@ -169,4 +187,4 @@
    (reset! (guild-ops (current/runtime)) {})
    (reset! (deprecated-ops (current/runtime)) {})
    (reset! (fallback-guild-name (current/runtime)) guild-name)
-   (weaver/register-op! (current/runtime) 'guild.describe "Describe this weaver's guild operation API" 'skein.spools.guild/describe-op)))
+   (register-or-replace-op! (current/runtime) 'guild.describe "Describe this weaver's guild operation API" 'skein.spools.guild/describe-op)))

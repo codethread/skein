@@ -1,6 +1,6 @@
 # Clojure crash course for Skein users
 
-This is a tiny Clojure primer for using `strand weaver repl`.
+This is a tiny Clojure primer for using `mill weaver repl`.
 
 ## Calls
 

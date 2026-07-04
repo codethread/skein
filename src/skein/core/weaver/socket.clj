@@ -1,24 +1,37 @@
 (ns skein.core.weaver.socket
-  "Serve the weaver JSON protocol over a Unix-domain socket."
+  "Serve the weaver JSON protocol over a Unix-domain socket.
+
+  The socket exposes exactly two operations: `invoke`, which carries an op
+  envelope (SPEC-004-D003.C1) and dispatches to the runtime op registry, and a
+  minimal `status` health/identity check. Responses self-describe as a single
+  one-frame result or as a header/NDJSON-lines/terminator stream (C2). Weaver
+  shutdown is signal-driven (C3); there is no socket `stop` operation."
   (:require [clojure.data.json :as json]
-            [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.walk :as walk]
-            [skein.core.db :as db]
-            [skein.core.query :as query])
+            [clojure.java.io :as io]
+            [skein.core.db :as db])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
            [java.nio.channels Channels ClosedChannelException ServerSocketChannel]
+           [java.util.concurrent ExecutionException]
            [org.sqlite SQLiteException]))
 
-(def ^:private allowed-operations
-  #{"add" "update" "supersede" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-list" "pattern-explain" "query-list" "query-explain" "op" "subgraph" "status" "stop"})
+(def ^:private allowed-operations #{"invoke" "status"})
 
 (def ^:private required-request-keys
   #{"protocol_version" "request_id" "weaver_id" "operation" "arguments" "options"})
 
-(def ^:private payload-hook-operations
-  #{"add" "update" "supersede" "burn" "weave" "op"})
+(def ^:private invoke-arg-keys
+  #{"name" "argv" "payloads" "cwd" "worktree_root" "git_common_dir" "workspace" "timeout" "client"})
+
+;; Standard-class ops with no envelope `timeout` get this server-side deadline.
+;; No server deadline existed before op-only dispatch; this mirrors the client's
+;; historical core-request protocol deadline (cli/internal/client RequestDeadline
+;; = 10s). Long-blocking ops must register `:deadline-class :unbounded` (or be
+;; invoked with an explicit `--timeout`); the task-9 spool cutover reclassifies
+;; the blocking agent/flow ops that previously relied on the client long-deadline
+;; special case.
+(def ^:private default-standard-deadline-ms 10000)
 
 (defn- protocol-error [request-id code message details]
   {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
@@ -38,94 +51,66 @@
 (defn- success [request-id result]
   {"protocol_version" 1 "request_id" request-id "ok" true "result" result "error" nil})
 
-(defn- domain-error [request-id e]
+(defn- error-envelope [e]
   (let [message (ex-message e)
         details (or (ex-data e) {})]
-    {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
-     "error" {"type" "domain"
-              "code" (or (:code details)
-                         (if (and (:canonical-query details) (contains? details :available)) "query/not-found" "domain/error"))
-              "message" message
-              "details" (json-safe-value (dissoc details :code))}}))
+    {"type" "domain"
+     "code" (or (:code details)
+                (if (and (:canonical-query details) (contains? details :available)) "query/not-found" "domain/error"))
+     "message" message
+     "details" (json-safe-value (dissoc details :code))}))
+
+(defn- domain-error [request-id e]
+  {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
+   "error" (error-envelope e)})
+
+(defn- transport-error [request-id e]
+  {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
+   "error" {"type" "transport" "code" "transport/server-error" "message" (ex-message e) "details" {}}})
 
 (defn- uninitialized-db-error? [e]
   (and (instance? SQLiteException e)
        (str/includes? (or (ex-message e) "") "no such table:")))
 
 (defn- uninitialized-db-exception []
-  (ex-info "Database is not initialized; run `strand init` first" {:code "database/not-initialized"}))
+  (ex-info "Database is not initialized; run `mill init` first" {:code "database/not-initialized"}))
+
+(defn- error-frame
+  "Turn a thrown exception into a single error frame, honoring the domain vs
+  transport taxonomy and the uninitialized-db domain remap."
+  [request-id e]
+  (cond
+    (instance? clojure.lang.ExceptionInfo e) (domain-error request-id e)
+    (uninitialized-db-error? e) (domain-error request-id (uninitialized-db-exception))
+    :else (transport-error request-id e)))
 
 (defn- string-map? [m] (and (map? m) (every? string? (vals m))))
-(def ^:private readable-states #{"active" "closed" "replaced"})
-(def ^:private generic-states #{"active" "closed"})
-(defn- valid-edge? [edge]
-  (and (map? edge)
-       (every? #{"type" "to" "attributes"} (keys edge))
-       (contains? edge "type")
-       (contains? edge "to")
-       (string? (get edge "type"))
-       (string? (get edge "to"))
-       (or (not (contains? edge "attributes"))
-           (map? (get edge "attributes")))))
+
+(defn- valid-invoke-args? [args]
+  (and (map? args)
+       (every? invoke-arg-keys (keys args))
+       (contains? args "name")
+       (string? (get args "name"))
+       (not (str/blank? (get args "name")))
+       (contains? args "argv")
+       (vector? (get args "argv"))
+       (every? string? (get args "argv"))
+       (contains? args "payloads")
+       (string-map? (get args "payloads"))
+       (or (not (contains? args "cwd")) (string? (get args "cwd")))
+       (or (not (contains? args "worktree_root")) (string? (get args "worktree_root")))
+       (or (not (contains? args "git_common_dir")) (string? (get args "git_common_dir")))
+       (or (not (contains? args "workspace")) (string? (get args "workspace")))
+       (or (not (contains? args "timeout")) (and (number? (get args "timeout")) (pos? (get args "timeout"))))
+       (or (not (contains? args "client")) (map? (get args "client")))))
 
 (defn- argument-error [req]
   (let [op (get req "operation")
         args (get req "arguments")]
-    (when-not
-      (case op
-        "list" (and (every? #{"state"} (keys args))
-                    (or (not (contains? args "state")) (contains? readable-states (get args "state"))))
-        "ready" (= {} args)
-        "status" (= {} args)
-        "stop" (= {} args)
-        "add" (and (every? #{"title" "attributes" "state" "edges"} (keys args))
-                   (contains? args "title")
-                   (contains? args "attributes")
-                   (string? (get args "title"))
-                   (map? (get args "attributes"))
-                   (or (not (contains? args "state")) (contains? generic-states (get args "state")))
-                   (or (not (contains? args "edges")) (and (vector? (get args "edges")) (every? valid-edge? (get args "edges")))))
-        "update" (and (every? #{"id" "title" "state" "attributes" "edges"} (keys args))
-                      (contains? args "id")
-                      (string? (get args "id"))
-                      (or (not (contains? args "title")) (nil? (get args "title")) (string? (get args "title")))
-                      (or (not (contains? args "state")) (nil? (get args "state")) (contains? generic-states (get args "state")))
-                      (or (not (contains? args "attributes")) (nil? (get args "attributes")) (map? (get args "attributes")))
-                      (or (not (contains? args "edges")) (and (vector? (get args "edges")) (every? valid-edge? (get args "edges")))))
-        "show" (and (= #{"id"} (set (keys args))) (string? (get args "id")))
-        "supersede" (and (= #{"old_id" "replacement_id"} (set (keys args)))
-                          (string? (get args "old_id"))
-                          (string? (get args "replacement_id")))
-        "burn" (and (= #{"id"} (set (keys args))) (string? (get args "id")))
-        "list-query" (and (every? #{"query" "params" "state"} (keys args))
-                          (contains? args "query")
-                          (contains? args "params")
-                          (string? (get args "query"))
-                          (string-map? (get args "params"))
-                          (or (not (contains? args "state")) (contains? readable-states (get args "state"))))
-        "ready-query" (and (= #{"query" "params"} (set (keys args)))
-                           (string? (get args "query"))
-                           (string-map? (get args "params")))
-        "weave" (and (= #{"pattern" "input"} (set (keys args)))
-                     (string? (get args "pattern")))
-        "pattern-list" (= {} args)
-        "pattern-explain" (and (= #{"pattern"} (set (keys args)))
-                               (string? (get args "pattern")))
-        "query-list" (= {} args)
-        "query-explain" (and (= #{"query"} (set (keys args)))
-                             (string? (get args "query")))
-        "subgraph" (and (every? #{"root_ids" "type"} (keys args))
-                        (contains? args "root_ids")
-                        (vector? (get args "root_ids"))
-                        (every? string? (get args "root_ids"))
-                        (or (not (contains? args "type"))
-                            (string? (get args "type"))))
-        "op" (and (= #{"name" "args"} (set (keys args)))
-                  (string? (get args "name"))
-                  (not (str/blank? (get args "name")))
-                  (vector? (get args "args"))
-                  (every? string? (get args "args")))
-        false)
+    (when-not (case op
+                "status" (= {} args)
+                "invoke" (valid-invoke-args? args)
+                false)
       (protocol-error (get req "request_id") "protocol/malformed-request" "operation arguments do not match protocol" {"operation" op}))))
 
 (defn- validate-request [metadata req]
@@ -168,118 +153,154 @@
 (defn- api [sym]
   (requiring-resolve (symbol "skein.api.weaver.alpha" (name sym))))
 
-(defn- run-payload-hooks! [runtime req]
-  (when (payload-hook-operations (get req "operation"))
-    ((api 'run-payload-received-hooks!) runtime {:request/source :json-socket
-                                                 :request/operation (keyword (get req "operation"))
-                                                 :request/id (get req "request_id")
-                                                 :request/args (get req "arguments")
-                                                 :request/options (get req "options")})))
+(defn- invoke-envelope
+  "Build the `op!` envelope from decoded invoke arguments.
 
-(defn- handle-name [name]
-  (symbol (query/query-lookup-name name)))
+  `workspace` and `client` are socket-level diagnostics and are not threaded into
+  op handler context (SPEC-004-D003.C1)."
+  [args]
+  (cond-> {:payloads (get args "payloads")}
+    (contains? args "cwd") (assoc :cwd (get args "cwd"))
+    (contains? args "worktree_root") (assoc :worktree-root (get args "worktree_root"))
+    (contains? args "git_common_dir") (assoc :git-common-dir (get args "git_common_dir"))
+    (contains? args "timeout") (assoc :timeout (get args "timeout"))))
 
-(defn- query-params [query-def params]
-  (let [declared (set (:params query-def))
-        declared-names (set (map name declared))
-        provided (set (keys params))]
-    (when-let [unknown (seq (remove declared-names provided))]
-      (throw (ex-info "Unknown query parameters" {:params (vec unknown)
-                                                   :declared (vec declared)})))
-    (into {} (keep (fn [k]
-                     (when (contains? params (name k))
-                       [k (get params (name k))]))
-                   declared))))
+(defn- run-payload-hooks-if-mutating!
+  "Gate a mutating invoke behind `:payload/received` hooks (SPEC-004-D003.C4).
 
-(defn- dispatch-query [runtime op args]
-  (let [qdef ((api 'resolve-query) runtime (handle-name (get args "query")))
-        params (query-params qdef (get args "params"))
-        qdef (if (contains? args "state")
-               [:and (query/query-expr qdef params) [:= :state (get args "state")]]
-               qdef)]
-    ((api op) runtime qdef params)))
+  Read-class ops skip payload hooks. The hook context carries the decoded
+  envelope as `:request/args` plus the canonical op name; hooks may reject but
+  not transform, so a throw here surfaces as a domain error before dispatch."
+  [runtime entry request-id args options]
+  (when (= :mutating (:hook-class entry))
+    ((api 'run-payload-received-hooks!) runtime
+     {:request/source :json-socket
+      :request/operation :invoke
+      :request/id request-id
+      :request/args args
+      :request/options options
+      :op/name (:name entry)})))
 
-(defn- request-context [op]
-  {:request/source :json-socket
-   :request/operation (keyword op)})
+(defn- effective-deadline-ms
+  "Effective deadline for a single-result invoke (SPEC-004-D003.C5).
 
-(defn- dispatch [runtime op args]
-  (case op
-    "add" ((api 'add) runtime (cond-> {:title (get args "title")
-                                         :attributes (get args "attributes")}
-                                  (contains? args "state") (assoc :state (get args "state"))
-                                  (contains? args "edges") (assoc :edges (mapv (fn [edge]
-                                                                                  (cond-> {:type (get edge "type")
-                                                                                           :to (get edge "to")}
-                                                                                    (contains? edge "attributes")
-                                                                                    (assoc :attributes (get edge "attributes"))))
-                                                                                (get args "edges"))))
-           (request-context op))
-    "update" ((api 'update) runtime (get args "id")
-              (cond-> {}
-                (contains? args "edges") (assoc :edges (mapv (fn [edge]
-                                                                (cond-> {:type (get edge "type")
-                                                                         :to (get edge "to")}
-                                                                  (contains? edge "attributes")
-                                                                  (assoc :attributes (get edge "attributes"))))
-                                                              (get args "edges")))
-                (some? (get args "title")) (assoc :title (get args "title"))
-                (some? (get args "state")) (assoc :state (get args "state"))
-                (some? (get args "attributes")) (assoc :attributes (get args "attributes")))
-              (request-context op))
-    "show" ((api 'show) runtime (get args "id"))
-    "supersede" ((api 'supersede) runtime (get args "old_id") (get args "replacement_id") (request-context op))
-    "burn" ((api 'burn-by-ids) runtime [(get args "id")] (request-context op))
-    "list" (if (contains? args "state")
-             ((api 'list) runtime [:= :state (get args "state")] {})
-             ((api 'list) runtime))
-    "ready" ((api 'ready) runtime)
-    "list-query" (dispatch-query runtime 'list args)
-    "ready-query" (dispatch-query runtime 'ready args)
-    "weave" ((api 'weave!) runtime (handle-name (get args "pattern")) (walk/keywordize-keys (get args "input")) (request-context op))
-    "pattern-list" ((api 'patterns) runtime)
-    "pattern-explain" ((api 'pattern-explain) runtime (handle-name (get args "pattern")))
-    "query-list" (json-safe-value ((api 'query-metadata) runtime))
-    "query-explain" (json-safe-value ((api 'query-explain) runtime (handle-name (get args "query"))))
-    "subgraph" (let [{:keys [root-ids strands edges]}
-                     ((api 'subgraph) runtime (get args "root_ids") (cond-> {}
-                                                                        (contains? args "type")
-                                                                        (assoc :type (get args "type"))))]
-                 {"root_ids" root-ids
-                  "strands" strands
-                  "edges" edges})
-    "op" ((api 'op!) runtime (handle-name (get args "name")) (get args "args"))
-    "status" (status-result runtime)
-    "stop" {"stopping" true "pid" (get-in runtime [:metadata :pid]) "weaver_id" (get-in runtime [:metadata :nonce])}))
+  Envelope `timeout` overrides the op's deadline class; `:unbounded` yields nil."
+  [entry envelope]
+  (cond
+    (contains? envelope :timeout) (:timeout envelope)
+    (= :unbounded (:deadline-class entry)) nil
+    :else default-standard-deadline-ms))
 
-(defn handle-request
-  "Handle one newline-delimited JSON protocol request.
+(defn- invoke-op! [runtime op-name argv envelope]
+  ((api 'op!) runtime (symbol op-name) argv envelope))
 
-  Returns `[response stop?]`, where `stop?` asks the socket loop to stop the
-  runtime after the response is flushed."
-  [runtime line]
+(defn- deadline-exceeded [op-name deadline-ms]
+  (ex-info "Operation exceeded its deadline"
+           {:code "operation/deadline-exceeded"
+            :op/name op-name
+            :deadline-ms deadline-ms}))
+
+(defn- invoke-with-deadline
+  "Run the op, enforcing `deadline-ms` when set.
+
+  Cancellation semantics: the op runs in a future; on expiry the future is
+  cancelled with interruption and a structured `operation/deadline-exceeded`
+  domain error is thrown. The connection then writes exactly that error frame and
+  abandons the future, so no orphan success frame follows a reported timeout.
+  Interruption is cooperative: work already committed is not rolled back."
+  [runtime op-name argv envelope deadline-ms]
+  (if (nil? deadline-ms)
+    (invoke-op! runtime op-name argv envelope)
+    (let [fut (future (invoke-op! runtime op-name argv envelope))
+          result (try
+                   (deref fut deadline-ms ::timeout)
+                   (catch ExecutionException e
+                     (throw (or (.getCause e) e))))]
+      (if (= ::timeout result)
+        (do (future-cancel fut)
+            (throw (deadline-exceeded op-name deadline-ms)))
+        result))))
+
+(defn- stream-header [request-id]
+  {"protocol_version" 1 "request_id" request-id "stream" true})
+
+(defn- stream-terminator [request-id success? result error]
+  (cond-> {"protocol_version" 1 "request_id" request-id "done" true "success" success?}
+    success? (assoc "result" result)
+    (not success?) (assoc "error" error)))
+
+(defn- handle-stream-invoke!
+  "Serve a `:stream? true` op: header frame, emitted NDJSON lines, terminator.
+
+  Payload gating runs before the header; a hook rejection yields a single error
+  frame (no header). Once the header is written the op's own failure becomes an
+  error terminator. Stream ops run unbounded on the connection thread; the
+  handler's `:op/emit!` writes one flushed line per value and its return value
+  becomes the success terminator payload (SPEC-004-D003.C2)."
+  [runtime request-id args entry envelope write-frame!]
+  (let [op-name (:name entry)
+        hook-error (try
+                     (run-payload-hooks-if-mutating! runtime entry request-id args {})
+                     nil
+                     (catch Exception e (error-frame request-id e)))]
+    (if hook-error
+      (write-frame! hook-error)
+      (do
+        (write-frame! (stream-header request-id))
+        (try
+          (let [emit! (fn [value] (write-frame! value))
+                terminator (invoke-op! runtime op-name (get args "argv")
+                                       (assoc envelope :emit! emit!))]
+            (write-frame! (stream-terminator request-id true terminator nil)))
+          (catch Exception e
+            (write-frame! (stream-terminator request-id false nil
+                                             (get (error-frame request-id e) "error")))))))))
+
+(defn- handle-single-invoke!
+  "Serve a single-result op: gate, dispatch under the effective deadline, and
+  write exactly one response frame."
+  [runtime request-id args entry envelope write-frame!]
+  (write-frame!
+   (try
+     (run-payload-hooks-if-mutating! runtime entry request-id args {})
+     (success request-id
+              (invoke-with-deadline runtime (:name entry) (get args "argv")
+                                    envelope (effective-deadline-ms entry envelope)))
+     (catch Exception e (error-frame request-id e)))))
+
+(defn- handle-invoke!
+  "Dispatch an invoke request. Unknown ops fail loudly before any hook or
+  dispatch (SPEC-004-D003.C4), carrying the registry's available names."
+  [runtime request-id args write-frame!]
+  (let [op-name (get args "name")
+        entry (try {:ok ((api 'resolve-op) runtime (symbol op-name))}
+                   (catch Exception e {:error (error-frame request-id e)}))]
+    (if-let [err (:error entry)]
+      (write-frame! err)
+      (let [entry (:ok entry)
+            envelope (invoke-envelope args)]
+        (if (:stream? entry)
+          (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
+          (handle-single-invoke! runtime request-id args entry envelope write-frame!))))))
+
+(defn handle-request!
+  "Handle one newline-delimited JSON protocol request, writing one or more
+  response frames through `write-frame!` (a fn of one JSON-safe frame)."
+  [runtime line write-frame!]
   (try
     (let [req (json/read-str line)
           request-id (get req "request_id")]
       (if-let [err (validate-request (:metadata runtime) req)]
-        [err false]
-        (try
-          (run-payload-hooks! runtime req)
-          [(success request-id (dispatch runtime (get req "operation") (get req "arguments")))
-           (= "stop" (get req "operation"))]
-          (catch clojure.lang.ExceptionInfo e
-            [(domain-error request-id e) false])
-          (catch Exception e
-            (if (uninitialized-db-error? e)
-              [(domain-error request-id (uninitialized-db-exception)) false]
-              [{"protocol_version" 1 "request_id" request-id "ok" false "result" nil
-                "error" {"type" "transport" "code" "transport/server-error" "message" (ex-message e) "details" {}}} false])))))
+        (write-frame! err)
+        (case (get req "operation")
+          "status" (write-frame! (success request-id (status-result runtime)))
+          "invoke" (handle-invoke! runtime request-id (get req "arguments") write-frame!))))
     (catch Exception _
-      [(protocol-error nil "protocol/malformed-json" "Request must be one JSON object followed by newline" {}) false])))
+      (write-frame! (protocol-error nil "protocol/malformed-json" "Request must be one JSON object followed by newline" {})))))
 
 (defn start!
   "Start the JSON socket server for `runtime-state` at `socket-path`."
-  [runtime-state socket-path stop-fn]
+  [runtime-state socket-path]
   (let [file (io/file socket-path)
         _ (.mkdirs (.getParentFile file))
         _ (.delete file)
@@ -294,15 +315,14 @@
                 (with-open [ch ^java.nio.channels.SocketChannel ch
                             rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
                             wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
-                  (let [line (.readLine rdr)
-                        [response stop?] (if line
-                                           (handle-request @runtime-state line)
-                                           [(protocol-error nil "protocol/malformed-request" "Empty request" {}) false])]
-                    (.write wrt (json/write-str response :key-fn db/json-key))
-                    (.newLine wrt)
-                    (.flush wrt)
-                    (when stop?
-                      (future (stop-fn)))))
+                  (let [write-frame! (fn [frame]
+                                       (.write wrt (json/write-str frame :key-fn db/json-key))
+                                       (.newLine wrt)
+                                       (.flush wrt))
+                        line (.readLine rdr)]
+                    (if line
+                      (handle-request! @runtime-state line write-frame!)
+                      (write-frame! (protocol-error nil "protocol/malformed-request" "Empty request" {})))))
                 (catch ClosedChannelException _)
                 (catch Exception _)))
             ;; each connection gets its own thread so a long-running trusted

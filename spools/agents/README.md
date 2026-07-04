@@ -1,12 +1,12 @@
 # Skein Agents Spool
 
-`skein.spools.agents` is the cross-harness subagent surface. It composes the [shuttle run engine](../shuttle/README.md) and owns the whole agent-facing vocabulary: the `strand op agent ...` verbs, the `agent-plan` weave pattern, delegation and recovery, and both the worker contract and the coordinator guidance.
+`skein.spools.agents` is the cross-harness subagent surface. It composes the [shuttle run engine](../shuttle/README.md) and owns the whole agent-facing vocabulary: the `strand agent ...` verbs, the `agent-plan` weave pattern, delegation and recovery, and both the worker contract and the coordinator guidance.
 
 ---
 
 ## 1. User guide (for humans)
 
-This is the human-facing part. If you are a delegated agent, read [§5 Worker contract](#5-worker-contract-and-coordinator-loop) and run `strand op agent about`.
+This is the human-facing part. If you are a delegated agent, read [§5 Worker contract](#5-worker-contract-and-coordinator-loop) and run `strand agent about`.
 
 ### What this gives you
 
@@ -32,7 +32,7 @@ The surface is deliberately built from words coding agents are already trained o
 
 ### How to prompt effectively
 
-- **Point your agent at the manual.** Tell it to run `strand op agent about` and coordinate through it, rather than describing the surface yourself. It is the in-band, always-current source of truth.
+- **Point your agent at the manual.** Tell it to run `strand agent about` and coordinate through it, rather than describing the surface yourself. It is the in-band, always-current source of truth.
 - **Put contracts in strand bodies, not chat.** A task's body *is* the contract the worker reads (`strand show <task-id>`): scope, owned files, validation commands, commit policy. Chat scrollback is invisible to a delegated run; the strand body is not.
 - **Ask for `agent status` when you want to see where things are.** It renders the whole delegation tree plus flat triage lists from data that already exists — no bespoke reporting needed.
 
@@ -40,7 +40,7 @@ The surface is deliberately built from words coding agents are already trained o
 
 Your harness's own subagent/scout tools are cheap and good — **keep using them for private, throwaway exploration inside a single session** ("grep the codebase and tell me where X lives"). Their results, though, bypass the graph: nothing is awaitable by anyone else, nothing persists, and you can't see them from `agent status`.
 
-Move work onto this surface whenever the result should be **durable, awaitable by others, cross-harness, or visible to you**. Concretely: anything another task depends on, anything a coordinator must fan in, anything you'll want to inspect later. Where you want this shared abstraction to be the default, it is legitimate to deliberately **downscale or strip a harness's native subagent tools** so agents reach for `strand op agent` instead — the goal is one observable mechanism, not two parallel invisible ones.
+Move work onto this surface whenever the result should be **durable, awaitable by others, cross-harness, or visible to you**. Concretely: anything another task depends on, anything a coordinator must fan in, anything you'll want to inspect later. Where you want this shared abstraction to be the default, it is legitimate to deliberately **downscale or strip a harness's native subagent tools** so agents reach for `strand agent` instead — the goal is one observable mechanism, not two parallel invisible ones.
 
 ---
 
@@ -75,18 +75,18 @@ Move work onto this surface whenever the result should be **durable, awaitable b
 
 `agents/install!` registers:
 
-- the **`agent` CLI operation** (`strand op agent ...`) — the full verb surface below;
+- the **`agent` CLI operation** (`strand agent ...`) — the full verb surface below;
 - the **`agent-plan` weave pattern** (`strand weave --pattern agent-plan`);
 - the **`agent-failures` named query** (`strand list --query agent-failures`) selecting active runs in phase `failed`/`exhausted`;
 - the **worker contract** into shuttle's preamble-extension seam, so every delegated run is launched with it.
 
-Loading shuttle without agents gives you the run engine but **no** `strand op agent` surface.
+Loading shuttle without agents gives you the run engine but **no** `strand agent` surface.
 
 ---
 
 ## 3. Op surface
 
-Every operational verb returns JSON; all verbs are flat under `strand op agent <verb>`. `strand op agent about` returns a structured JSON manual (concepts, verb summaries, the coordinator loop, the worker contract); the reference below is the expanded form.
+Every operational verb returns JSON; all verbs are flat under `strand agent <verb>`. `strand agent about` returns a structured JSON manual (concepts, verb summaries, the coordinator loop, the worker contract); the reference below is the expanded form.
 
 ### Concepts (read first)
 
@@ -166,7 +166,7 @@ Fan-out: delegate every **ready** task under the plan (all blockers closed) that
 ```
 agent retry <task-or-run-id> [--harness h] [--cwd dir] [--prompt <extra>]
 ```
-**The** recovery verb. Given a **task id**: finds its failed/exhausted run, marks that run `superseded` (closed with phase `superseded` — it stops blocking delegate-eligibility; its logs and notes remain), rebuilds the prompt from the task's **current** body, and spawns a fresh run. When the contract was the problem, fix the body **first** (`strand update <task-id> --attr-file body=<path>`). Given a **raw run id**: same supersede-and-respawn with the original prompt. A failed interactive run retries as a fresh session on the same backend. Fails loudly if the target has no failed/exhausted run to supersede.
+**The** recovery verb. Given a **task id**: finds its failed/exhausted run, marks that run `superseded` (closed with phase `superseded` — it stops blocking delegate-eligibility; its logs and notes remain), rebuilds the prompt from the task's **current** body, and spawns a fresh run. When the contract was the problem, fix the body **first** (`strand update <task-id> --attr body=:payload/<name> --payload <name>=<path>`). Given a **raw run id**: same supersede-and-respawn with the original prompt. A failed interactive run retries as a fresh session on the same backend. Fails loudly if the target has no failed/exhausted run to supersede.
 → `{"superseded":"<old-run-id>","task":"<task-id>"?,"run":{"id","phase","harness"}}`
 
 ```

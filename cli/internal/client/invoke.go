@@ -1,0 +1,187 @@
+package client
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"os/signal"
+	"time"
+)
+
+// InvokeThroughMill sends an invoke envelope through the local mill routing path
+// and relays the weaver's NDJSON response to stdout/stderr. The envelope rides
+// as the mill payload, which the mill forwards verbatim as the weaver `invoke`
+// operation arguments (SPEC-002-D004.C6). A single-result response prints as one
+// JSON line; a streaming response relays each emitted line as received and exits
+// by the terminator's success flag (SPEC-002-D004.C7).
+//
+// It returns the process exit code: 0 on a successful single/stream response, a
+// non-zero code on an error frame or terminator, and 130 on interrupt.
+func InvokeThroughMill(world MillWorldRequest, envelope map[string]any, stdout, stderr io.Writer) (int, error) {
+	meta, err := ReadMillMetadata()
+	if err != nil {
+		return 1, err
+	}
+	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+	req := MillRequest{ProtocolVersion: MillProtocolVersion, RequestID: requestID, MillID: meta.MillID, Operation: "invoke", World: world, Payload: envelope}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", meta.SocketPath)
+	if err != nil {
+		return 1, fmt.Errorf("mill socket unreachable; start one with: mill start: %w", err)
+	}
+	defer conn.Close()
+
+	// SIGINT during a (possibly streaming) response closes the connection so the
+	// relay read unblocks and exits non-zero cleanly (SPEC-002-D004.C7).
+	interrupted := make(chan struct{})
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	go func() {
+		select {
+		case <-sig:
+			close(interrupted)
+			_ = conn.Close()
+		case <-ctx.Done():
+		}
+	}()
+	defer signal.Stop(sig)
+
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return 1, fmt.Errorf("mill socket write failed: %w", err)
+	}
+	code, err := RelayResponse(bufio.NewReader(conn), stdout, stderr)
+	select {
+	case <-interrupted:
+		return 130, nil
+	default:
+		return code, err
+	}
+}
+
+// RelayResponse reads newline-delimited response frames and relays them,
+// returning the process exit code. The first frame self-describes: a `stream`
+// header switches to line-by-line relay until a `done` terminator; otherwise it
+// is a single `ok` response. Emitted stream lines are written verbatim (flushed
+// per line); errors surface on stderr with a non-zero exit.
+func RelayResponse(r *bufio.Reader, stdout, stderr io.Writer) (int, error) {
+	line, err := readFrameLine(r)
+	if err != nil {
+		return 1, err
+	}
+	frame, err := decodeFrame(line)
+	if err != nil {
+		return 1, err
+	}
+	if isStreamHeader(frame) {
+		return relayStream(r, stdout, stderr)
+	}
+	return relaySingle(frame, line, stdout, stderr)
+}
+
+func relaySingle(frame map[string]json.RawMessage, line []byte, stdout, stderr io.Writer) (int, error) {
+	ok, err := frameBool(frame, "ok")
+	if err != nil {
+		return 1, fmt.Errorf("malformed weaver response: %w", err)
+	}
+	if ok {
+		var resp struct {
+			Result any `json:"result"`
+		}
+		if err := json.Unmarshal(line, &resp); err != nil {
+			return 1, fmt.Errorf("malformed weaver response: %w", err)
+		}
+		b, err := json.Marshal(resp.Result)
+		if err != nil {
+			return 1, err
+		}
+		fmt.Fprintln(stdout, string(b))
+		return 0, nil
+	}
+	return surfaceError(frame["error"], stderr)
+}
+
+func relayStream(r *bufio.Reader, stdout, stderr io.Writer) (int, error) {
+	for {
+		line, err := readFrameLine(r)
+		if err != nil {
+			return 1, fmt.Errorf("weaver stream ended without terminator: %w", err)
+		}
+		frame, err := decodeFrame(line)
+		if err != nil {
+			return 1, err
+		}
+		if done, _ := frameBool(frame, "done"); done {
+			success, err := frameBool(frame, "success")
+			if err != nil {
+				return 1, fmt.Errorf("malformed weaver stream terminator: %w", err)
+			}
+			if success {
+				return 0, nil
+			}
+			return surfaceError(frame["error"], stderr)
+		}
+		// Emitted value: relay the frame verbatim, flushing per line. The line
+		// carries its own trailing newline; a final unterminated line gets one.
+		stdout.Write(line)
+		if len(line) == 0 || line[len(line)-1] != '\n' {
+			fmt.Fprintln(stdout)
+		}
+	}
+}
+
+// surfaceError renders a response error envelope to stderr and returns a
+// non-zero exit code, preserving the ResponseError formatting used elsewhere.
+func surfaceError(raw json.RawMessage, stderr io.Writer) (int, error) {
+	if len(raw) == 0 {
+		return 1, errors.New("weaver error")
+	}
+	var re ResponseError
+	if err := json.Unmarshal(raw, &re); err != nil {
+		fmt.Fprintln(stderr, "error:", string(raw))
+		return 1, nil
+	}
+	fmt.Fprintln(stderr, "error:", re.Error())
+	return 1, nil
+}
+
+func readFrameLine(r *bufio.Reader) ([]byte, error) {
+	line, err := r.ReadBytes('\n')
+	if len(line) == 0 && err != nil {
+		return nil, err
+	}
+	// A final frame may arrive without a trailing newline; tolerate that as long
+	// as we have content.
+	return line, nil
+}
+
+func decodeFrame(line []byte) (map[string]json.RawMessage, error) {
+	var frame map[string]json.RawMessage
+	if err := json.Unmarshal(line, &frame); err != nil {
+		return nil, fmt.Errorf("malformed weaver response frame: %w", err)
+	}
+	return frame, nil
+}
+
+func isStreamHeader(frame map[string]json.RawMessage) bool {
+	b, err := frameBool(frame, "stream")
+	return err == nil && b
+}
+
+func frameBool(frame map[string]json.RawMessage, key string) (bool, error) {
+	raw, ok := frame[key]
+	if !ok {
+		return false, fmt.Errorf("missing %q", key)
+	}
+	var v bool
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false, fmt.Errorf("%q is not a boolean", key)
+	}
+	return v, nil
+}

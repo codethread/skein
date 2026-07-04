@@ -1,7 +1,7 @@
 (ns skein.repl
   "Interactive helper API for live and connected Skein weaver workflows.
 
-  This namespace is preloaded by `strand weaver repl` and exposes the compact
+  This namespace is preloaded by `mill weaver repl` and exposes the compact
   trusted Clojure surface for strand, query, relation, and pattern operations.
   Inside the weaver JVM helpers dispatch through the active runtime; explicit
   client/test workflows may still call `connect!` to route to a selected world."
@@ -27,7 +27,7 @@
   active weaver selected by config dir."
   []
   (case @active-config-dir
-    ::no-connection (throw (ex-info "No Skein weaver world is connected. Use `strand weaver repl` for direct live evaluation, or call (connect! \"/path/to/config-dir\") before using explicit connected-client helpers."
+    ::no-connection (throw (ex-info "No Skein weaver world is connected. Use `mill weaver repl` for direct live evaluation, or call (connect! \"/path/to/config-dir\") before using explicit connected-client helpers."
                                    {:helper 'connect!}))
     @active-config-dir))
 
@@ -60,7 +60,7 @@
   selected world, a database file, or an unreachable weaver. Returns the
   normalized config directory path for the selected world."
   ([]
-   (throw (ex-info "connect! requires an explicit config-dir; use `strand weaver repl` from a repo world or call (connect! \"/path/to/config-dir\")"
+   (throw (ex-info "connect! requires an explicit config-dir; use `mill weaver repl` from a repo world or call (connect! \"/path/to/config-dir\")"
                    {:helper 'connect! :code :skein.repl/no-selected-world})))
   ([config-dir]
    (connect! config-dir nil))

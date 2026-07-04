@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -62,7 +63,14 @@ func main() {
 		}
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}})
-	weaver := &cobra.Command{Use: "weaver", Short: "Inspect supervised weavers"}
+	initCmd := &cobra.Command{Use: "init", Short: "Bootstrap missing selected config workspace files through the local mill", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		workspace, _ := cmd.Flags().GetString("workspace")
+		return runInit(workspace)
+	}}
+	initCmd.Flags().String("workspace", "", "explicit workspace selection (defaults to repo-local .skein)")
+	root.AddCommand(initCmd)
+
+	weaver := &cobra.Command{Use: "weaver", Short: "Manage supervised weavers"}
 	weaver.AddCommand(&cobra.Command{Use: "list", Short: "List known selected workspace weavers", RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := client.MillCall("weaver-list", client.MillWorldRequest{})
 		if err != nil {
@@ -70,6 +78,37 @@ func main() {
 		}
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}})
+	start := &cobra.Command{Use: "start", Short: "Start the selected workspace's weaver through the local mill", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		workspace, _ := cmd.Flags().GetString("workspace")
+		name, _ := cmd.Flags().GetString("name")
+		if cmd.Flags().Changed("name") && strings.TrimSpace(name) == "" {
+			return errors.New("--name requires a non-empty value")
+		}
+		return runWeaverLifecycle("weaver-start", workspace, name)
+	}}
+	start.Flags().String("workspace", "", "explicit workspace selection (defaults to repo-local .skein)")
+	start.Flags().String("name", "", "friendly name for this weaver (defaults to workspace basename)")
+	weaver.AddCommand(start)
+	status := &cobra.Command{Use: "status", Short: "Show selected workspace weaver status through the local mill", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		workspace, _ := cmd.Flags().GetString("workspace")
+		return runWeaverLifecycle("weaver-status", workspace, "")
+	}}
+	status.Flags().String("workspace", "", "explicit workspace selection (defaults to repo-local .skein)")
+	weaver.AddCommand(status)
+	stop := &cobra.Command{Use: "stop", Short: "Stop the selected workspace's weaver through the local mill", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		workspace, _ := cmd.Flags().GetString("workspace")
+		return runWeaverLifecycle("weaver-stop", workspace, "")
+	}}
+	stop.Flags().String("workspace", "", "explicit workspace selection (defaults to repo-local .skein)")
+	weaver.AddCommand(stop)
+	repl := &cobra.Command{Use: "repl", Short: "Attach directly to the selected workspace's live weaver nREPL", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		workspace, _ := cmd.Flags().GetString("workspace")
+		stdin, _ := cmd.Flags().GetBool("stdin")
+		return runWeaverRepl(workspace, stdin)
+	}}
+	repl.Flags().String("workspace", "", "explicit workspace selection (defaults to repo-local .skein)")
+	repl.Flags().Bool("stdin", false, "send stdin Clojure forms to the running weaver, print one result per top-level form, then exit")
+	weaver.AddCommand(repl)
 	root.AddCommand(weaver)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -142,7 +181,7 @@ func (s *server) handle(conn net.Conn) {
 	case "init":
 		world, err := config.BootstrapWorld(req.World.CWD, req.World.ConfigDir, req.World.Source)
 		if err != nil {
-			_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/init-failed", "strand init failed", err.Error()))
+			_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "domain", "mill/init-failed", "mill init failed", err.Error()))
 			return
 		}
 		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: map[string]any{"config_dir": world.ConfigDir, "config_file": world.ConfigFile}})
@@ -181,17 +220,11 @@ func (s *server) handle(conn net.Conn) {
 			return
 		}
 		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: result})
-	case "add", "update", "show", "supersede", "burn", "list", "ready", "list-query", "ready-query", "weave", "pattern-list", "pattern-explain", "query-list", "query-explain", "op", "subgraph":
-		result, err := s.forwardToWeaver(req.World, req.Operation, req.Payload)
-		if err != nil {
-			if re, ok := err.(*client.ResponseError); ok {
-				_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: false, Error: re})
-				return
-			}
-			_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "transport", "mill/weaver-forward-failed", "weaver forwarding failed", err.Error()))
-			return
-		}
-		_ = json.NewEncoder(conn).Encode(client.MillResponse{ProtocolVersion: client.MillProtocolVersion, RequestID: req.RequestID, OK: true, Result: result})
+	case "invoke":
+		// invoke relays the weaver's own single/stream frames verbatim; it does
+		// not wrap in a MillResponse, so it writes to conn itself and returns.
+		s.handleInvoke(conn, req)
+		return
 	default:
 		_ = json.NewEncoder(conn).Encode(errorResponse(req.RequestID, "protocol", "mill/unknown-operation", "unknown mill operation", req.Operation))
 	}

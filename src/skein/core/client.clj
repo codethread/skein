@@ -47,6 +47,7 @@
    :hooks 'skein.api.weaver.alpha/hooks
    :register-pattern! 'skein.api.weaver.alpha/register-pattern!
    :register-op! 'skein.api.weaver.alpha/register-op!
+   :replace-op! 'skein.api.weaver.alpha/replace-op!
    :ops 'skein.api.weaver.alpha/ops
    :resolve-op 'skein.api.weaver.alpha/resolve-op
    :op! 'skein.api.weaver.alpha/op!

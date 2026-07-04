@@ -1,51 +1,38 @@
 package client
 
 import (
-	"bufio"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 )
 
 const protocolVersion = 1
 
-type Config struct {
-	ConfigDir string
-	StateDir  string
-}
+// ProtocolVersion is the JSON socket protocol version the bin speaks; exported
+// for the dispatcher's --version and dry-run frame identity.
+const ProtocolVersion = protocolVersion
 
 type Metadata struct {
 	ProtocolVersion int    `json:"protocol_version"`
 	PID             int    `json:"pid"`
-	DatabaseKind  string `json:"database_kind"`
-	DatabaseLabel string `json:"database_label"`
+	DatabaseKind    string `json:"database_kind"`
+	DatabaseLabel   string `json:"database_label"`
 	// Pointer so a JSON null (required for sqlite-memory) is distinguishable
 	// from an accidental empty string.
-	DatabasePath    *string `json:"database_path"`
-	DaemonID        string `json:"weaver_id"`
-	ConfigDir       string `json:"config_dir"`
-	StateDir        string `json:"state_dir"`
-	DataDir         string `json:"data_dir"`
-	Name            string `json:"name"`
-	SocketPath      string `json:"socket_path"`
-	StartedAt       string `json:"started_at"`
-	NREPL           struct {
+	DatabasePath *string `json:"database_path"`
+	DaemonID     string  `json:"weaver_id"`
+	ConfigDir    string  `json:"config_dir"`
+	StateDir     string  `json:"state_dir"`
+	DataDir      string  `json:"data_dir"`
+	Name         string  `json:"name"`
+	SocketPath   string  `json:"socket_path"`
+	StartedAt    string  `json:"started_at"`
+	NREPL        struct {
 		Host string `json:"host"`
 		Port int    `json:"port"`
 	} `json:"nrepl"`
-}
-
-type SocketClient struct {
-	Config          Config
-	DialTimeout     time.Duration
-	RequestDeadline time.Duration
 }
 
 type ResponseError struct {
@@ -53,30 +40,6 @@ type ResponseError struct {
 	Code    string         `json:"code"`
 	Message string         `json:"message"`
 	Details map[string]any `json:"details"`
-}
-
-type response struct {
-	ProtocolVersion int            `json:"protocol_version"`
-	RequestID       string         `json:"request_id"`
-	OK              bool           `json:"ok"`
-	Result          any            `json:"result"`
-	Error           *ResponseError `json:"error"`
-}
-
-func New(cfg Config) *SocketClient {
-	return &SocketClient{Config: cfg, DialTimeout: time.Second, RequestDeadline: 10 * time.Second}
-}
-
-func (c *SocketClient) startCommand() string {
-	if c.Config.ConfigDir == "" {
-		return "strand weaver start"
-	}
-	return fmt.Sprintf("strand --workspace %s weaver start", c.Config.ConfigDir)
-}
-
-func (c *SocketClient) daemonStateError(format string, args ...any) error {
-	message := fmt.Sprintf(format, args...)
-	return fmt.Errorf("%s for selected workspace %s; start one with: %s", message, c.Config.ConfigDir, c.startCommand())
 }
 
 func (e *ResponseError) Error() string {
@@ -126,95 +89,6 @@ func validResponseError(e *ResponseError) bool {
 	}
 }
 
-func (c *SocketClient) Call(operation string, arguments map[string]any) (any, error) {
-	meta, metadataFile, err := c.metadata()
-	if err != nil {
-		return nil, err
-	}
-	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
-	req := map[string]any{"protocol_version": protocolVersion, "request_id": requestID, "weaver_id": meta.DaemonID, "operation": operation, "arguments": arguments, "options": map[string]any{}}
-	ctx, cancel := context.WithTimeout(context.Background(), c.DialTimeout)
-	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", meta.SocketPath)
-	if err != nil {
-		return nil, fmt.Errorf("weaver socket unreachable for state dir %s: %w", c.Config.StateDir, err)
-	}
-	defer conn.Close()
-	deadline := c.RequestDeadline
-	if operation == "op" {
-		// Registered weaver operations run arbitrary trusted code (e.g. a
-		// blocking await over agent runs); the transport must not cap them
-		// at the short protocol deadline used for core CRUD requests.
-		deadline = 30 * time.Minute
-	}
-	_ = conn.SetDeadline(time.Now().Add(deadline))
-	if err := json.NewEncoder(conn).Encode(req); err != nil {
-		return nil, fmt.Errorf("weaver socket write failed: %w", err)
-	}
-	var resp response
-	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("malformed weaver response: %w", err)
-	}
-	if resp.ProtocolVersion != protocolVersion || resp.RequestID != requestID {
-		return nil, errors.New("malformed weaver response: protocol version or request id mismatch")
-	}
-	if !resp.OK {
-		if resp.Error == nil || !validResponseError(resp.Error) || resp.Result != nil {
-			return nil, errors.New("malformed weaver response: error envelope does not match protocol")
-		}
-		return nil, resp.Error
-	}
-	if resp.Error != nil {
-		return nil, errors.New("malformed weaver response: success envelope includes error")
-	}
-	if err := validateLifecycleResult(operation, resp.Result, meta); err != nil {
-		return nil, err
-	}
-	if operation == "stop" {
-		if err := waitForCleanup(metadataFile, meta.SocketPath); err != nil {
-			return nil, err
-		}
-	}
-	return resp.Result, nil
-}
-
-func (c *SocketClient) metadata() (Metadata, string, error) {
-	if c.Config.StateDir == "" {
-		return Metadata{}, "", errors.New("state dir is required")
-	}
-	file := filepath.Join(c.Config.StateDir, "weaver.json")
-	b, err := os.ReadFile(file)
-	if os.IsNotExist(err) {
-		return Metadata{}, "", c.daemonStateError("no running weaver (state dir %s)", c.Config.StateDir)
-	}
-	if err != nil {
-		return Metadata{}, "", err
-	}
-	var m Metadata
-	if err := json.Unmarshal(b, &m); err != nil {
-		return Metadata{}, "", fmt.Errorf("%w: %v", c.daemonStateError("malformed weaver metadata"), err)
-	}
-	if m.ProtocolVersion != protocolVersion || m.PID == 0 || m.DaemonID == "" || m.ConfigDir == "" || m.StateDir == "" || m.DataDir == "" || strings.TrimSpace(m.Name) == "" || m.SocketPath == "" || m.StartedAt == "" || m.NREPL.Host == "" || m.NREPL.Port == 0 {
-		return Metadata{}, "", c.daemonStateError("malformed weaver metadata: missing required fields")
-	}
-	if err := ValidateStorageIdentity(m); err != nil {
-		return Metadata{}, "", c.daemonStateError("malformed weaver metadata: %v", err)
-	}
-	if c.Config.ConfigDir != "" && !samePath(m.ConfigDir, c.Config.ConfigDir) {
-		return Metadata{}, "", c.daemonStateError("weaver metadata config dir mismatch: %s", m.ConfigDir)
-	}
-	if !samePath(m.StateDir, c.Config.StateDir) {
-		return Metadata{}, "", c.daemonStateError("weaver metadata state dir mismatch: %s", m.StateDir)
-	}
-	if !samePath(m.SocketPath, filepath.Join(c.Config.StateDir, "weaver.sock")) {
-		return Metadata{}, "", c.daemonStateError("weaver metadata socket mismatch: %s", m.SocketPath)
-	}
-	if !pidAlive(m.PID) {
-		return Metadata{}, "", c.daemonStateError("stale weaver metadata: pid %d is not alive", m.PID)
-	}
-	return m, file, nil
-}
-
 // DatabasePathString returns the file-backed database path, or "" when the
 // metadata carries no path (sqlite-memory publishes an explicit null).
 func (m Metadata) DatabasePathString() string {
@@ -246,86 +120,6 @@ func ValidateStorageIdentity(m Metadata) error {
 	return nil
 }
 
-// sameStatusDatabasePath compares a status response database_path against
-// metadata: sqlite-memory publishes an explicit JSON null, never a fake path.
-func sameStatusDatabasePath(v any, meta Metadata) bool {
-	if meta.DatabasePath == nil {
-		return v == nil
-	}
-	return v == *meta.DatabasePath
-}
-
-func validateLifecycleResult(operation string, result any, meta Metadata) error {
-	switch operation {
-	case "status":
-		m, ok := result.(map[string]any)
-		if !ok || m["healthy"] != true || m["protocol_version"] != float64(protocolVersion) || !samePositivePID(m["pid"], meta.PID) || m["database_kind"] != meta.DatabaseKind || m["database_label"] != meta.DatabaseLabel || !sameStatusDatabasePath(m["database_path"], meta) || m["weaver_id"] != meta.DaemonID || m["socket_path"] != meta.SocketPath || m["config_dir"] != meta.ConfigDir || m["state_dir"] != meta.StateDir || m["data_dir"] != meta.DataDir || m["name"] != meta.Name || m["started_at"] != meta.StartedAt || !validNREPL(m["nrepl"]) {
-			return errors.New("malformed weaver response: invalid status result")
-		}
-	case "stop":
-		m, ok := result.(map[string]any)
-		if !ok || m["stopping"] != true || !samePositivePID(m["pid"], meta.PID) || m["weaver_id"] != meta.DaemonID {
-			return errors.New("malformed weaver response: invalid stop result")
-		}
-	}
-	return nil
-}
-
-func validNREPL(v any) bool {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return false
-	}
-	host, ok := m["host"].(string)
-	if !ok || host == "" {
-		return false
-	}
-	port, ok := m["port"].(float64)
-	return ok && port > 0
-}
-
-func samePositivePID(v any, expected int) bool {
-	switch n := v.(type) {
-	case float64:
-		return n > 0 && int(n) == expected
-	case int:
-		return n > 0 && n == expected
-	default:
-		return false
-	}
-}
-
-func waitForCleanup(metadataFile, socketPath string) error {
-	ednFile := filepath.Join(filepath.Dir(metadataFile), "weaver.edn")
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		metadataGone, err := missing(metadataFile)
-		if err != nil {
-			return err
-		}
-		socketGone, err := missing(socketPath)
-		if err != nil {
-			return err
-		}
-		ednGone, err := missing(ednFile)
-		if err != nil {
-			return err
-		}
-		if metadataGone && ednGone && socketGone {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return errors.New("weaver stop did not clean up runtime metadata/socket")
-}
-func missing(path string) (bool, error) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return true, nil
-	} else if err != nil {
-		return false, err
-	}
-	return false, nil
-}
 func pidAlive(pid int) bool {
 	p, err := os.FindProcess(pid)
 	if err != nil {

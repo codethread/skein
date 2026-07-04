@@ -113,6 +113,13 @@ Malformed `use!` options always throw. Unmet `:spools` requirements record and r
 
 Maven dependencies declared in an approved spool root's top-level `deps.edn :deps` are part of the spool sync contract described by SPEC-004. Version ranges, alternate approved-spool config files, source fetching beyond approved spool coordinates, and direct explicit-client `require` of newly synced weaver spools remain outside the REPL API contract.
 
+## SPEC-003.P5b Blessed op argv parser
+
+- **SPEC-003.C60:** `skein.api.cli.alpha` is the blessed declarative argv parser for weaver ops: a data-first arg-spec (named typed flags, repeatable flags, `key=value` map flags, positionals, per-arg docs, payload-parse declarations) parses envelope argv into a data map or throws a loud structured error naming the offending token and the op's spec. The same arg-spec powers `help <op>` rendering via a JSON-safe `explain` projection. Spool authors may layer clojure.spec/malli on the parsed map; the parser itself stays data-first.
+- **SPEC-003.C61:** Payload reference resolution is a parser contract: a **whole** argv value of `:stdin` or `:payload/<name>` resolves to the named envelope payload string; no substring interpolation. A reference without a matching payload fails loudly; an attached payload nothing references fails loudly. An arg may declare `:parse :json`/`:jsonl` to parse the resolved payload, failing loudly with context on malformed input. Ops registered without an arg-spec receive the raw envelope and own their argv/payload handling.
+- **SPEC-003.C62:** Op registration/override from trusted config and REPL uses `skein.api.weaver.alpha/register-op!` (loud on name collision) and `replace-op!` (explicit override); entries carry op metadata and registry-recorded provenance (SPEC-004.C63a–c).
+- **SPEC-003.C63:** The shipped `skein.spools.batteries` reference spool (classpath, `skein.spools.*` tier) registers the public strand command surface as parser-backed ops; its behavior contract lives at `spools/batteries.md`. Workspaces may mask or replace batteries; a workspace without it retains core `help` discovery and loud unknown-op errors.
+
 ## SPEC-003.P5a Userland ergonomics module
 
 `skein.userland.alpha` is a blessed but **userland-only** terse ergonomics layer

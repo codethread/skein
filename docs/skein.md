@@ -43,13 +43,13 @@ Different workspaces are different workspaces. Use `--workspace <dir>` when you 
 
 ## Workspaces and workspaces
 
-The ordinary workspace is repository-scoped. Without `--workspace`, `mill` resolves the canonical repository root and uses that repo's `.skein` directory as the selected workspace. Linked worktrees for the same repository share this default workspace. Outside supported Git layouts, no-flag commands fail loudly. `strand init` creates or completes `.skein` at the canonical Git root and fails loudly outside supported Git layouts:
+The ordinary workspace is repository-scoped. Without `--workspace`, `mill` resolves the canonical repository root and uses that repo's `.skein` directory as the selected workspace. Linked worktrees for the same repository share this default workspace. Outside supported Git layouts, no-flag commands fail loudly. `mill init` creates or completes `.skein` at the canonical Git root and fails loudly outside supported Git layouts:
 
 ```sh
-strand init
+mill init
 ```
 
-Mill resolves the Skein source checkout used to launch the weaver from `SKEIN_SOURCE`, the install-time source recorded by `make install`, or a canonical Skein checkout cwd. `strand init` does not persist a source path in `.skein/config.json`.
+Mill resolves the Skein source checkout used to launch the weaver from `SKEIN_SOURCE`, the install-time source recorded by `make install`, or a canonical Skein checkout cwd. `mill init` does not persist a source path in `.skein/config.json`.
 
 A workspace can also be selected explicitly with:
 
@@ -73,9 +73,9 @@ The important file is `config.json`:
 
 ## Agent guidance files
 
-From a Skein source checkout, `make install` installs the Go CLIs (`strand` and `mill`) and records the checkout as mill's default source for weaver launch and the thin nREPL attach client. After that, use the CLIs directly: `mill start`, `strand init`, and `strand weaver start`.
+From a Skein source checkout, `make install` installs the Go CLIs (`strand` and `mill`) and records the checkout as mill's default source for weaver launch and the thin nREPL attach client. After that, use the CLIs directly: `mill start`, `mill init`, and `mill weaver start`.
 
-`strand init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. It does not run `git init`, persist source, or initialize database storage; weaver startup prepares storage.
+`mill init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. It does not run `git init`, persist source, or initialize database storage; weaver startup prepares storage.
 
 User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`.
 
@@ -104,19 +104,19 @@ Start mill once, then start the selected workspace's weaver:
 
 ```sh
 mill start
-strand --workspace "$workspace" weaver start
+mill weaver start --workspace "$workspace"
 ```
 
 Stop it:
 
 ```sh
-strand --workspace "$workspace" weaver stop
+mill weaver stop --workspace "$workspace"
 ```
 
 Check it:
 
 ```sh
-strand --workspace "$workspace" weaver status
+mill weaver status --workspace "$workspace"
 ```
 
 The weaver exposes two local transports:
@@ -133,7 +133,7 @@ The `strand` CLI is intentionally small. It is for scripts, low-friction agent u
 Common commands:
 
 ```sh
-strand --workspace "$workspace" init
+mill init --workspace "$workspace"
 strand --workspace "$workspace" add "Write docs" --attr owner=agent --attr area=docs
 strand --workspace "$workspace" update <id> --state closed
 strand --workspace "$workspace" update <id> --edge depends-on:<other-id>
@@ -145,7 +145,7 @@ strand --workspace "$workspace" query list
 strand --workspace "$workspace" query explain <query-name>
 strand --workspace "$workspace" pattern list
 strand --workspace "$workspace" pattern explain <pattern-name>
-printf '{"title":"New work"}\n' | strand --workspace "$workspace" weave --pattern <pattern-name>
+printf '{"title":"New work"}\n' | strand --workspace "$workspace" --stdin weave --pattern <pattern-name> --input :stdin
 
 ```
 
@@ -275,7 +275,11 @@ For a simple persistent query, put it directly in `init.clj`:
          '[skein.api.weaver.alpha :as api])
 
 (def runtime (current/runtime))
+
 (runtime-alpha/sync! runtime)
+(runtime-alpha/use! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :call 'skein.spools.batteries/activate!})
 (api/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 
@@ -287,12 +291,12 @@ Defining a Clojure var that contains query data is not the same as registering a
 
 ## REPL
 
-The REPL is the trusted, high-power surface. `strand weaver repl` attaches directly to the selected running weaver nREPL, so forms evaluate in the weaver JVM with weaver process authority. Use it for richer inspection, custom query authoring, config reloads, and calling your own spool code. Prefer blessed helper/API paths for operations that should preserve validation, hooks, events, and normalized return shapes.
+The REPL is the trusted, high-power surface. `mill weaver repl` attaches directly to the selected running weaver nREPL, so forms evaluate in the weaver JVM with weaver process authority. Use it for richer inspection, custom query authoring, config reloads, and calling your own spool code. Prefer blessed helper/API paths for operations that should preserve validation, hooks, events, and normalized return shapes.
 
 Open a live weaver REPL:
 
 ```sh
-strand --workspace "$workspace" weaver repl
+mill weaver repl --workspace "$workspace"
 ```
 
 Useful forms:
@@ -308,7 +312,7 @@ Useful forms:
 Script the live weaver REPL with stdin:
 
 ```sh
-printf '(skein.api.current.alpha/runtime)\n' | strand --workspace "$workspace" weaver repl --stdin
+printf '(skein.api.current.alpha/runtime)\n' | mill weaver repl --stdin --workspace "$workspace"
 ```
 
 The REPL helper namespace includes common strand functions. Privileged runtime loader/config helpers are explicit built-in namespaces, not ordinary user spools; require them when needed:
@@ -321,7 +325,7 @@ The REPL helper namespace includes common strand functions. Privileged runtime l
 
 ## Startup config
 
-`strand init` bootstraps missing workspace files in the selected workspace without overwriting existing files. It does not initialize database storage; weaver startup prepares storage for the selected workspace.
+`mill init` bootstraps missing workspace files in the selected workspace without overwriting existing files. It does not initialize database storage; weaver startup prepares storage for the selected workspace.
 
 For the ordinary repo-local `.skein` workspace, it creates or ensures:
 
@@ -341,7 +345,11 @@ The generated `init.clj` is intentionally small:
          '[skein.api.runtime.alpha :as runtime-alpha])
 
 (def runtime (current/runtime))
+
 (runtime-alpha/sync! runtime)
+(runtime-alpha/use! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :call 'skein.spools.batteries/activate!})
 ```
 
 The weaver loads startup files in order: `init.clj`, then `init.local.clj`. Missing files are skipped; present failing files fail loudly with file context. Use startup-loaded code to register queries, weave patterns, load approved spools, register views, and install conventions for your workspace. Simple workspaces can put shared registrations directly in `init.clj` and personal overlays in gitignored `init.local.clj`; reusable or larger workspaces should keep `init.clj` minimal and install behavior from a local spool.
@@ -354,7 +362,11 @@ A direct `init.clj` query registration can look like this:
          '[skein.api.weaver.alpha :as api])
 
 (def runtime (current/runtime))
+
 (runtime-alpha/sync! runtime)
+(runtime-alpha/use! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :call 'skein.spools.batteries/activate!})
 (api/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 
@@ -424,7 +436,11 @@ Activate it from `init.clj`:
          '[skein.api.runtime.alpha :as runtime-alpha])
 
 (def runtime (current/runtime))
+
 (runtime-alpha/sync! runtime)
+(runtime-alpha/use! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :call 'skein.spools.batteries/activate!})
 (runtime-alpha/use! runtime :my/workflow
   {:ns 'my.workflow
    :spools #{'my/workflow}
@@ -437,7 +453,7 @@ Key points:
 - `runtime-alpha/sync!` makes approved roots available to the weaver.
 - `runtime-alpha/use!` activates one module and records whether it loaded, skipped, or failed.
 - `:call` must name a fully qualified zero-argument function.
-- Direct `require` from `strand weaver repl` evaluates in the weaver JVM and is useful for trusted experimentation. For repeatable module activation and reload introspection, use `runtime-alpha/use!` or `runtime-alpha/reload!` from startup config or the live REPL.
+- Direct `require` from `mill weaver repl` evaluates in the weaver JVM and is useful for trusted experimentation. For repeatable module activation and reload introspection, use `runtime-alpha/use!` or `runtime-alpha/reload!` from startup config or the live REPL.
 - Extension code runs with weaver authority. Only load trusted code.
 - There is no per-module isolation or unload guarantee. Restart the weaver for a clean runtime if needed.
 
@@ -527,11 +543,11 @@ Call a registered view from trusted Clojure, usually the live weaver REPL:
 (views/view! (current/runtime) 'owned-view {})
 ```
 
-For scripts, use `weaver repl --stdin`:
+For scripts, use `mill weaver repl --stdin`:
 
 ```sh
 printf "(do (require '[skein.api.current.alpha :as current] '[skein.api.views.alpha :as views]) (views/view! (current/runtime) 'owned-view {}))\n" \
-  | strand --workspace "$workspace" weaver repl --stdin
+  | mill weaver repl --stdin --workspace "$workspace"
 ```
 
 There is no public `strand view` CLI command; view registration and invocation are trusted config/REPL workflows. A view returns whatever serializable Clojure data your function returns. The `{:ids ... :strands ...}` shape above is a convention, not a required schema.
@@ -589,16 +605,16 @@ Install from a checkout, start mill, and create a repo-local workspace:
 ```sh
 make install
 mill start
-strand init
-strand weaver start
+mill init
+mill weaver start
 ```
 
 For experiments, use a disposable workspace:
 
 ```sh
 workspace=$(mktemp -d)
-strand --workspace "$workspace" init
-strand --workspace "$workspace" weaver start
+mill init --workspace "$workspace"
+mill weaver start --workspace "$workspace"
 ```
 
 In another terminal:
@@ -611,7 +627,7 @@ strand --workspace "$workspace" ready
 Stop when finished:
 
 ```sh
-strand --workspace "$workspace" weaver stop
+mill weaver stop --workspace "$workspace"
 ```
 
 ## Spec index
@@ -645,7 +661,7 @@ Covers:
 - `config.json` format;
 - JSON-only public output;
 - CLI failure behavior;
-- `strand init` bootstrap behavior;
+- `mill init` bootstrap behavior;
 - weaver lifecycle commands;
 - what the CLI intentionally does not support.
 
@@ -658,7 +674,7 @@ Spec: [`devflow/specs/repl-api.md`](../devflow/specs/repl-api.md)
 Covers:
 
 - live weaver REPL functions;
-- `strand weaver repl --stdin` behavior;
+- `mill weaver repl --stdin` behavior;
 - query registration and execution;
 - `skein.api.runtime.alpha` loader/config helpers;
 - graph, view, event, and explicit batch helper namespaces;

@@ -36,8 +36,8 @@ In the Git repo you want to work in, create a workspace and start its weaver:
 mkdir -p ~/learn-skein
 cd ~/learn-skein
 git init
-strand init          # create this repo's .skein config
-strand weaver start  # boot the weaver for this workspace
+mill init            # create this repo's .skein config
+mill weaver start    # boot the weaver for this workspace
 ```
 
 Add a few strands, including one that depends on another:
@@ -58,8 +58,8 @@ strand ready  # only strands with nothing blocking them
 Open a live REPL or stop the weaver when you're done:
 
 ```sh
-strand weaver repl  # live Clojure REPL (optional)
-strand weaver stop
+mill weaver repl    # live Clojure REPL (optional)
+mill weaver stop
 ```
 
 By default (no `--workspace`), `strand` finds the canonical Git repository root and uses that repo as its workspace, so linked worktrees of the same repository share one workspace. Outside a supported Git layout, no-flag commands fail loudly rather than guess — they won't silently create a workspace from your current directory or fall back to a global default. See [Getting started](./docs/getting-started.md) for the full walkthrough.
@@ -115,11 +115,11 @@ Two kinds of code can extend the weaver:
 
 Reference spools ship with Skein in [`spools/`](./spools/README.md), with sources under `spools/src` — a workflow engine, a devflow lifecycle, and an ephemeral-strand helper — each documented beside its code and driven end-to-end by its tests.
 
-Fresh `strand init` creates a repo's config files: `.skein/config.json`, `.skein/init.clj`, `.skein/spools.edn`, and `.skein/.gitignore`. Commit the shared files (`config.json`, `init.clj`, `spools.edn`) for behavior the whole repo gets; keep personal overlays in gitignored `config.local.json`, `init.local.clj`, and `spools.local.edn`.
+Fresh `mill init` creates a repo's config files: `.skein/config.json`, `.skein/init.clj`, `.skein/spools.edn`, and `.skein/.gitignore`. Commit the shared files (`config.json`, `init.clj`, `spools.edn`) for behavior the whole repo gets; keep personal overlays in gitignored `config.local.json`, `init.local.clj`, and `spools.local.edn`.
 
-`strand init` does not persist a source path. Mill resolves the Skein source for weaver/REPL launch from `SKEIN_SOURCE`, the install-time source, or a canonical Skein checkout as the working directory.
+`mill init` does not persist a source path. Mill resolves the Skein source for weaver/REPL launch from `SKEIN_SOURCE`, the install-time source, or a canonical Skein checkout as the working directory.
 
-Use `strand weaver repl` to attach directly to the running weaver's nREPL for trusted interactive work, capture the active runtime with `(skein.api.current.alpha/runtime)`, and pass it to helpers such as `(skein.api.runtime.alpha/reload! runtime)` to hot-reload `init.clj` followed by `init.local.clj`.
+Use `mill weaver repl` to attach directly to the running weaver's nREPL for trusted interactive work, capture the active runtime with `(skein.api.current.alpha/runtime)`, and pass it to helpers such as `(skein.api.runtime.alpha/reload! runtime)` to hot-reload `init.clj` followed by `init.local.clj`.
 
 ## Documentation
 

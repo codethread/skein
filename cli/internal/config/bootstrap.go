@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const DefaultInitCLJ = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime-alpha])\n\n(def runtime (current/runtime))\n\n(runtime-alpha/sync! runtime)\n"
+const DefaultInitCLJ = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime-alpha])\n\n(def runtime (current/runtime))\n\n(runtime-alpha/sync! runtime)\n(runtime-alpha/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/activate!})\n"
 const DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
 
 func BootstrapWorld(cwd, configDir, source string) (World, error) {
@@ -95,6 +95,45 @@ func GitRoot(cwd string) (string, error) {
 		return "", fmt.Errorf("unsupported Git layout for default Skein workspace: common Git dir must be a repository .git directory, got %s", commonDir)
 	}
 	return filepath.Dir(commonDir), nil
+}
+
+// DeriveGitContext resolves the worktree root and git common dir for the
+// dispatcher envelope from an effective cwd. Unlike GitRoot (which locates the
+// repo root that hosts .skein), this returns the actual worktree toplevel and
+// common dir so linked worktrees report their own root while still sharing a
+// workspace identity through the common dir (RFC-019.D2).
+func DeriveGitContext(cwd string) (worktreeRoot, gitCommonDir string, err error) {
+	if cwd == "" {
+		cwd, err = os.Getwd()
+		if err != nil {
+			return "", "", err
+		}
+	}
+	remediation := "requires cwd inside a supported non-bare Git worktree; run `git init`, pass --workspace, or pin --worktree-root/--git-common-dir"
+	top, err := gitRevParse(cwd, "--show-toplevel")
+	if err != nil {
+		return "", "", fmt.Errorf("git context derivation %s: %w", remediation, err)
+	}
+	common, err := gitRevParse(cwd, "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", "", fmt.Errorf("git context derivation %s: %w", remediation, err)
+	}
+	worktreeRoot = filepath.Clean(top)
+	gitCommonDir = filepath.Clean(common)
+	if !filepath.IsAbs(worktreeRoot) || !filepath.IsAbs(gitCommonDir) {
+		return "", "", fmt.Errorf("git returned non-absolute paths for worktree context: root=%s common=%s", worktreeRoot, gitCommonDir)
+	}
+	return worktreeRoot, gitCommonDir, nil
+}
+
+func gitRevParse(cwd string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"rev-parse"}, args...)...)
+	cmd.Dir = cwd
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func rejectLegacySpoolConfig(configDir string) error {

@@ -20,6 +20,12 @@
 (defn peer-test-op [{:op/keys [name argv]}]
   {:name name :argv argv :from :peer-test})
 
+(defn peer-stream-op
+  "A streaming op used to prove call! rejects peer stream responses."
+  [{emit! :op/emit!}]
+  (emit! {"line" 1})
+  {"done" true})
+
 (defn- current-pid []
   (.pid (java.lang.ProcessHandle/current)))
 
@@ -163,34 +169,28 @@
           (db-test/delete-sqlite-family! db-b)
           (delete-tree! root))))))
 
-(deftest call-peer-add-show-list-and-op-test
+(deftest call-peer-invoke-and-status-test
   (with-two-runtimes
     (fn [_rt-a rt-b]
       (api/register-op! rt-b 'echo "Echo peer test argv" 'skein.peers-test/peer-test-op)
       (let [beta (peers/peer "beta")
-            added (peers/call! beta :add {"title" "Created through peer"
-                                          "attributes" {"origin" "alpha"}})
-            shown (peers/call! beta "show" {"id" (get added "id")})
-            listed (peers/call! "beta" 'list {})
-            op-result (peers/call! beta "op" {"name" "echo" "args" ["x" "y"]})]
-        (is (= "Created through peer" (get added "title")))
-        (is (= shown added))
-        (is (= #{(get added "id")} (set (map #(get % "id") listed))))
-        (is (= (get added "id") (:id (api/show rt-b (get added "id")))))
-        (is (= {"name" "echo" "argv" ["x" "y"] "from" "peer-test"} op-result))))))
+            echoed (peers/call! beta "echo" {:argv ["x" "y"]})
+            via-symbol (peers/call! "beta" 'echo)
+            status (peers/call! beta "status")
+            listed (peers/call! beta "help")]
+        (is (= {"name" "echo" "argv" ["x" "y"] "from" "peer-test"} echoed))
+        (is (= {"name" "echo" "argv" [] "from" "peer-test"} via-symbol))
+        (is (= (:weaver-id beta) (get status "weaver_id")))
+        (is (true? (get status "healthy")))
+        (is (some #(= "echo" (get % "name")) (get listed "ops")))))))
 
-(deftest call-peer-rejects-invalid-op-before-connect-test
+(deftest call-peer-rejects-invalid-op-type-before-connect-test
   (let [peer-row {:name "offline"
                   :workspace "/tmp/offline"
                   :weaver-id "missing"
                   :protocol-version 1
                   :socket-path "/tmp/skein-peer-missing.sock"
                   :state-dir "/tmp"}]
-    (try
-      (peers/call! peer-row "not-allowed" {})
-      (is false "expected unknown operation to throw")
-      (catch clojure.lang.ExceptionInfo ex
-        (is (= :peer/operation-not-allowed (:code (ex-data ex))))))
     (try
       (peers/call! peer-row 42 {})
       (is false "expected invalid operation type to throw")
@@ -202,17 +202,28 @@
       (catch clojure.lang.ExceptionInfo ex
         (is (= :peer/stop (:operation (ex-data ex))))))))
 
-(deftest call-peer-domain-error-is-structured-test
+(deftest call-peer-unknown-op-domain-error-is-structured-test
   (with-two-runtimes
     (fn [_rt-a _rt-b]
       (try
-        (peers/call! "beta" "op" {"name" "missing-op" "args" []})
+        (peers/call! "beta" "missing-op")
         (is false "expected peer domain error")
         (catch clojure.lang.ExceptionInfo ex
           (is (= :peer/domain-error (:code (ex-data ex))))
           (is (= "beta" (get-in (ex-data ex) [:peer :name])))
-          (is (= "op" (:operation (ex-data ex))))
+          (is (= "missing-op" (:operation (ex-data ex))))
           (is (= "domain" (get-in (ex-data ex) [:error "type"]))))))))
+
+(deftest call-peer-stream-response-fails-loudly-test
+  (with-two-runtimes
+    (fn [_rt-a rt-b]
+      (api/register-op! rt-b 'streamer {:stream? true} 'skein.peers-test/peer-stream-op)
+      (try
+        (peers/call! "beta" "streamer")
+        (is false "expected stream response to fail loudly")
+        (catch clojure.lang.ExceptionInfo ex
+          (is (= :peer/stream-unsupported (:code (ex-data ex))))
+          (is (= "streamer" (:operation (ex-data ex)))))))))
 
 (deftest call-stopped-peer-fails-loudly-test
   (let [root (short-temp-root "sgstop")

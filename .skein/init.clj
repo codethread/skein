@@ -4,6 +4,9 @@
 (def runtime (current/runtime))
 
 (runtime-alpha/sync! runtime)
+(runtime-alpha/use! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :call 'skein.spools.batteries/activate!})
 (runtime-alpha/use! runtime :skein/spools-ephemeral
   {:ns 'skein.spools.ephemeral
    :call 'skein.spools.ephemeral/install!})

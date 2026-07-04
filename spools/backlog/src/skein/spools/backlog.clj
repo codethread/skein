@@ -370,12 +370,12 @@
                 status-attr "pending|claimed|done|abandoned"
                 file-attr backlog-file-name
                 :kind "feature"}
-   :commands [{:usage "strand op backlog add <title> [--body <text>] [--source <path-or-url>]"}
+   :commands [{:usage "strand backlog add <title> [--body <text>] [--source <path-or-url>]"}
               {:usage "strand weave --pattern backlog-batch < batch.json"}
-              {:usage "strand op backlog next"}
-              {:usage "strand op backlog claim <id> [--owner <name>] [--branch <branch>] [--worktree <path>]"}
-              {:usage "strand op backlog finish <id> [--outcome done|abandoned]"}
-              {:usage "strand op backlog sync"}]
+              {:usage "strand backlog next"}
+              {:usage "strand backlog claim <id> [--owner <name>] [--branch <branch>] [--worktree <path>]"}
+              {:usage "strand backlog finish <id> [--outcome done|abandoned]"}
+              {:usage "strand backlog sync"}]
    :patterns [{:name "backlog-batch"
                :input {:items [{:key "slug"
                                 :title "Feature title"
@@ -383,7 +383,7 @@
                                 :deps ["sibling-key-or-existing-strand-id"]}]}}]})
 
 (defn backlog-op
-  "Dispatch `strand op backlog ...` subcommands."
+  "Dispatch `strand backlog ...` subcommands."
   [ctx]
   (let [[subcommand & argv] (:op/argv ctx)]
     (case subcommand
@@ -411,7 +411,7 @@
                   (throw (ex-info "backlog sync expects no arguments" {:argv argv})))
                 (sync!))
       (throw (ex-info "backlog expects a subcommand"
-                      {:usage "strand op backlog <about|add|next|claim|finish|sync> ..."
+                      {:usage "strand backlog <about|add|next|claim|finish|sync> ..."
                        :subcommand subcommand})))))
 
 (defn install!

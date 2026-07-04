@@ -59,7 +59,7 @@
 
 (def about-doc
   "Structured manual returned by `agent about`."
-  {:manual "agent — spawn and coordinate coding-agent runs over the strand graph. Every operational verb returns JSON (`about` returns this manual). All verbs are flat under `strand op agent <verb>`."
+  {:manual "agent — spawn and coordinate coding-agent runs over the strand graph. Every operational verb returns JSON (`about` returns this manual). All verbs are flat under `strand agent <verb>`."
    :concepts {:read-first true
               :traps ["A RUN is a strand carrying shuttle/* attributes; a TASK is an ordinary work strand you delegate. Their ids look identical; each verb states which kind it takes."
                       "Run success never closes the task it served: YOU verify, then close the task to unblock dependents. Skip the close and the plan silently stalls."
@@ -135,7 +135,7 @@
            :retry {:group "delegation"
                    :usage "agent retry <task-or-run-id> [--harness h] [--cwd dir] [--prompt extra]"
                    :semantics ["The recovery verb. Given a task id, find its failed/exhausted run, close it with phase superseded, rebuild the prompt from the task's current body, and spawn fresh."
-                               "When the contract was wrong, edit the task body first with `strand update <task-id> --attr-file body=<path>` or `--attr-stdin body`."
+                               "When the contract was wrong, edit the task body first with `strand update <task-id> --attr body=:payload/<name> --payload <name>=<path>` or `--attr body=:stdin`."
                                "Given a raw run id, supersede and respawn from the original prompt while preserving served target, spawned-by provenance, depends-on edges, cwd, and max-attempts."
                                "A failed interactive run retries as a fresh session preserving mode, backend, and reap policy; there are deliberately no retry flags to change them — respawn with spawn/delegate if the backend itself was the problem."]
                    :fails ["target not found" "nothing failed/exhausted to supersede"]
@@ -599,7 +599,7 @@
        :blocked (mapv (fn [t] {:task (:id t) :blockers (blockers t)}) (filter #(seq (blockers %)) tasks))})))
 
 (defn agent-op
-  "Dispatch `strand op agent` verbs."
+  "Dispatch `strand agent` verbs."
   [{:keys [op/argv]}]
   (let [[sub & args] argv]
     (case sub
@@ -691,6 +691,10 @@
     (shuttle/set-preamble-extension! worker-contract)
     {:installed true
      :namespace 'skein.spools.agents
-     :op (api/register-op! runtime 'agent "Spawn and coordinate coding-agent runs; `strand op agent about` is the manual" 'skein.spools.agents/agent-op)
+     :op (api/register-op! runtime 'agent
+                           {:doc "Spawn and coordinate coding-agent runs; `strand agent about` is the manual"
+                            ;; await blocks for arbitrarily long coordination waits
+                            :deadline-class :unbounded}
+                           'skein.spools.agents/agent-op)
      :pattern (patterns/register-pattern! runtime 'agent-plan "Create a feature strand plus task/review children for agent work." 'skein.spools.agents/agent-plan ::agent-plan-input)
      :query (api/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "shuttle/run"] "true"] [:in [:attr "shuttle/phase"] ["failed" "exhausted"]]])}))

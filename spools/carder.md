@@ -34,7 +34,7 @@ strand-listing surface.
 ;; active strands with active failed/exhausted depends-on blockers
 (carder/blocked-by-failure)
 
-;; aggregate all sections for a trusted strand op wrapper
+;; aggregate all sections for a registered CLI op wrapper
 (carder/report {:days 7})
 ```
 

@@ -26,13 +26,13 @@ mill start
 From the repository or Skein workspace you want to work with, start its weaver:
 
 ```sh
-strand weaver start
+mill weaver start
 ```
 
 If you are using an explicit workspace, pass the same workspace you use for all other commands:
 
 ```sh
-strand --workspace "$workspace" weaver start
+mill weaver start --workspace "$workspace"
 ```
 
 ## Find the nREPL port
@@ -102,5 +102,5 @@ When evaluating forms from a file, the file's namespace still matters. For scrat
 Stop the weaver when you are finished:
 
 ```sh
-strand weaver stop
+mill weaver stop
 ```

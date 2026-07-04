@@ -6,6 +6,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [next.jdbc :as jdbc]
+            [skein.api.cli.alpha :as cli]
             [skein.core.db :as db]
             [skein.core.weaver.runtime :as runtime]
             [skein.core.query :as query])
@@ -1250,22 +1251,108 @@
     (throw (ex-info "Operation doc must be a non-blank string" {:doc doc})))
   doc)
 
+(def ^:private op-metadata-keys #{:doc :arg-spec :stream? :deadline-class :hook-class})
+(def ^:private op-deadline-classes #{:standard :unbounded})
+(def ^:private op-hook-classes #{:read :mutating})
+
+(defn- normalize-op-opts
+  "Coerce a register-op! metadata argument into an options map.
+
+  A string is the legacy positional doc; a map is the full metadata map; nil is
+  the no-metadata case."
+  [opts]
+  (cond
+    (nil? opts) {}
+    (string? opts) {:doc opts}
+    (map? opts) opts
+    :else (throw (ex-info "Operation metadata must be a doc string or options map" {:opts opts}))))
+
+(defn- validate-op-metadata! [opts]
+  ;; Provenance is registry-recorded from the handler namespace; a caller must
+  ;; never assert it. Reject it explicitly so the error is unambiguous even
+  ;; though it would also trip the unknown-key check below.
+  (when (contains? opts :provenance)
+    (throw (ex-info "Operation :provenance is registry-recorded and cannot be supplied by the caller"
+                    {:provenance (:provenance opts)})))
+  (when-let [unknown (seq (remove op-metadata-keys (keys opts)))]
+    (throw (ex-info "Operation metadata contains unknown keys" {:keys (vec unknown)})))
+  (when (and (contains? opts :stream?) (not (boolean? (:stream? opts))))
+    (throw (ex-info "Operation :stream? must be a boolean" {:stream? (:stream? opts)})))
+  (when (and (contains? opts :deadline-class) (not (op-deadline-classes (:deadline-class opts))))
+    (throw (ex-info "Operation :deadline-class must be :standard or :unbounded"
+                    {:deadline-class (:deadline-class opts)})))
+  (when (and (contains? opts :hook-class) (not (op-hook-classes (:hook-class opts))))
+    (throw (ex-info "Operation :hook-class must be :read or :mutating"
+                    {:hook-class (:hook-class opts)})))
+  opts)
+
+(defn- build-op-entry
+  "Build a validated op registry entry with metadata defaults and provenance.
+
+  Provenance is derived from the handler symbol's namespace. `:deadline-class`
+  defaults to `:unbounded` for stream ops and `:standard` otherwise;
+  `:hook-class` defaults to `:mutating`, preserving today's hook-gated behavior."
+  [op-name opts fn-sym]
+  (let [opts (validate-op-metadata! (normalize-op-opts opts))
+        validated-fn (validate-op-fn-symbol! fn-sym)
+        stream? (boolean (:stream? opts))]
+    (cond-> {:name (canonical-op-name op-name)
+             :fn validated-fn
+             :stream? stream?
+             :deadline-class (or (:deadline-class opts) (if stream? :unbounded :standard))
+             :hook-class (or (:hook-class opts) :mutating)
+             :provenance (symbol (namespace validated-fn))}
+      (:doc opts) (assoc :doc (validate-op-doc! (:doc opts)))
+      (some? (:arg-spec opts)) (assoc :arg-spec (:arg-spec opts)))))
+
 (defn register-op!
   "Register a trusted weaver-side CLI operation.
 
-  Registered operations are invoked by `strand op <name> [args...]`. The handler
-  symbol must resolve to a function that accepts one context map with `:op/name`,
-  `:op/argv`, `:op/runtime`, and `:op/runtime-metadata`, and returns
-  JSON-compatible data. Registry contents live only for the current weaver
-  lifetime and are normally installed from init.clj or a live REPL. Duplicate
-  names replace prior entries for reload workflows."
+  Registered operations are invoked at the CLI root as `strand <name> [args...]`. The handler
+  symbol must resolve to a function that accepts one context map (see `op!` for
+  the context keys) and returns JSON-compatible data. The third positional
+  argument is either a doc string or an op metadata map with keys `:doc`,
+  `:arg-spec` (opaque parser spec), `:stream?` (default false), `:deadline-class`
+  (`:standard`/`:unbounded`, defaulting to `:unbounded` for stream ops), and
+  `:hook-class` (`:read`/`:mutating`, default `:mutating`); unknown keys fail
+  loudly. Provenance (the registering namespace) is recorded from the handler
+  symbol and must never be caller-supplied.
+
+  Registering an already-registered name fails loudly, naming both the existing
+  entry's provenance and the attempted registrant; use `replace-op!` to override
+  deliberately. Registry contents live only for the current weaver lifetime and
+  are normally installed from init.clj or a live REPL; `reload!` clears the
+  registry before re-running init, so re-registration is collision-free."
   ([runtime op-name fn-sym]
    (register-op! runtime op-name nil fn-sym))
-  ([runtime op-name doc fn-sym]
-   (let [entry (cond-> {:name (canonical-op-name op-name)
-                        :fn (validate-op-fn-symbol! fn-sym)}
-                 doc (assoc :doc (validate-op-doc! doc)))]
-     (swap! (op-registry runtime) assoc (:name entry) entry)
+  ([runtime op-name opts fn-sym]
+   (let [entry (build-op-entry op-name opts fn-sym)]
+     (swap! (op-registry runtime)
+            (fn [registry]
+              (when-let [existing (get registry (:name entry))]
+                (throw (ex-info "Operation already registered"
+                                {:operation (:name entry)
+                                 :existing-provenance (:provenance existing)
+                                 :attempted-provenance (:provenance entry)})))
+              (assoc registry (:name entry) entry)))
+     entry)))
+
+(defn replace-op!
+  "Replace an already-registered op, failing loudly when the name is absent.
+
+  Same signature as `register-op!`. This is the deliberate override for a name
+  that already exists; unlike `register-op!` it requires the name to be present."
+  ([runtime op-name fn-sym]
+   (replace-op! runtime op-name nil fn-sym))
+  ([runtime op-name opts fn-sym]
+   (let [entry (build-op-entry op-name opts fn-sym)]
+     (swap! (op-registry runtime)
+            (fn [registry]
+              (when-not (contains? registry (:name entry))
+                (throw (ex-info "Operation not registered; cannot replace"
+                                {:operation (:name entry)
+                                 :available (sort (keys registry))})))
+              (assoc registry (:name entry) entry)))
      entry)))
 
 (defn ops
@@ -1283,30 +1370,98 @@
                                                 :available (sort (keys @(op-registry runtime)))})))))
 
 (defn op!
-  "Invoke a registered CLI operation with raw string argv from `strand op`."
-  [runtime op-name argv]
-  (let [{fn-sym :fn name :name} (resolve-op runtime op-name)]
-    (with-spool-classloader
-      runtime
-      #((requiring-resolve fn-sym) {:op/name name
-                                    :op/argv (vec argv)
-                                    :op/runtime runtime
-                                    :op/runtime-metadata (:metadata runtime)}))))
+  "Invoke a registered CLI operation with raw string argv from a root-level `strand <name>` invoke.
+
+  The handler receives a context map with `:op/name`, `:op/argv`, `:op/runtime`,
+  `:op/runtime-metadata`, and `:op/payloads` (defaulting to `{}`). The envelope
+  arity threads any present `:cwd`, `:worktree-root`, `:git-common-dir`, and
+  `:timeout` fields into `:op/cwd`, `:op/worktree-root`, `:op/git-common-dir`,
+  and `:op/timeout`, and an envelope `:emit!` fn (supplied by the streaming
+  socket transport for `:stream? true` ops) into `:op/emit!`. When the resolved
+  op declares an `:arg-spec`, `:op/argv` and
+  the attached payloads are parsed through `skein.api.cli.alpha/parse` and the
+  result is supplied as `:op/args`; a parse failure throws before the handler
+  runs. Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
+  carrying the raw `:op/payloads` map."
+  ([runtime op-name argv]
+   (op! runtime op-name argv {}))
+  ([runtime op-name argv envelope]
+   (let [{fn-sym :fn name :name arg-spec :arg-spec} (resolve-op runtime op-name)
+         argv (vec argv)
+         payloads (or (:payloads envelope) {})
+         ctx (cond-> {:op/name name
+                      :op/argv argv
+                      :op/runtime runtime
+                      :op/runtime-metadata (:metadata runtime)
+                      :op/payloads payloads}
+               (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope))
+               (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
+               (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope))
+               (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
+               (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope))
+               (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))]
+     (with-spool-classloader
+       runtime
+       #((requiring-resolve fn-sym) ctx)))))
+
+(def ^:private help-arg-spec
+  "Arg-spec for the built-in `help` op: an optional positional op name.
+
+  This makes `help` the first parser-consuming op, so `op!` parses its argv and
+  supplies the resolved positional as `:op/args`."
+  {:op "help"
+   :doc "List registered weaver ops, or show one op's full detail."
+   :positionals [{:name :op
+                  :type :string
+                  :required? false
+                  :doc "Optional op name; when given, return that op's full detail instead of the listing."}]})
+
+(defn- op-summary
+  "Project one op registry entry to its help-listing summary."
+  [entry]
+  (cond-> {:name (:name entry)
+           :provenance (:provenance entry)
+           :stream? (:stream? entry)
+           :deadline-class (:deadline-class entry)
+           :hook-class (:hook-class entry)}
+    (:doc entry) (assoc :doc (:doc entry))))
+
+(defn- op-detail
+  "Project one op registry entry to its full help detail.
+
+  Arg-spec ops carry the parser `explain` rendering; raw-envelope ops carry a
+  `:raw-envelope true` marker instead."
+  [entry]
+  (merge (op-summary entry)
+         (if-let [arg-spec (:arg-spec entry)]
+           {:arg-spec (cli/explain arg-spec)}
+           {:raw-envelope true})))
 
 (defn op-help-handler
-  "Return help for `strand op` and currently registered operations."
+  "Project the op registry as help.
+
+  With no positional op name, return every registered op's summary (name, doc,
+  provenance, stream?, deadline-class, hook-class) sorted by name. With one op
+  name, return that op's full detail including the parser `explain` of its
+  arg-spec (or a raw-envelope marker). Unknown names fail loudly through
+  `resolve-op`, which carries the available names."
   [ctx]
-  {:summary "strand op invokes trusted weaver-side operations by name."
-   :usage "strand op <name> [args...]"
-   :details ["The Go CLI stops parsing after the operation name and forwards the remaining arguments as strings."
-             "Register handlers from trusted init.clj, activated spools, or the live REPL with skein.api.weaver.alpha/register-op!."
-             "Handlers receive {:op/name <canonical-name> :op/argv [<strings>...] :op/runtime <runtime> :op/runtime-metadata <metadata>} and return JSON-compatible data."]
-   :registered (ops (:op/runtime ctx))})
+  (let [runtime (:op/runtime ctx)
+        op-name (:op (:op/args ctx))]
+    (if op-name
+      ;; The parsed positional is a raw string; resolve-op keys on simple
+      ;; symbols/keywords, and its loud not-found error carries available names.
+      (op-detail (resolve-op runtime (symbol op-name)))
+      {:ops (mapv op-summary (ops runtime))})))
 
 (defn register-built-in-ops!
   "Install Skein-provided CLI operations into the runtime op registry."
   [runtime]
-  (register-op! runtime 'help "Explain how strand op invokes custom weaver operations" 'skein.api.weaver.alpha/op-help-handler))
+  (register-op! runtime 'help
+                {:doc (:doc help-arg-spec)
+                 :hook-class :read
+                 :arg-spec help-arg-spec}
+                'skein.api.weaver.alpha/op-help-handler))
 
 (defn- canonical-pattern-name [pattern-name]
   (query/canonical-query-name pattern-name))

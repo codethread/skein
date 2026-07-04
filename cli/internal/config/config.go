@@ -67,7 +67,7 @@ func Load(configDir string) (Config, World, error) {
 	}
 	b, err := os.ReadFile(w.ConfigFile)
 	if os.IsNotExist(err) {
-		return Config{}, World{}, fmt.Errorf("client config %s is required; run strand init for the selected world", w.ConfigFile)
+		return Config{}, World{}, fmt.Errorf("client config %s is required; run mill init for the selected world", w.ConfigFile)
 	}
 	if err != nil {
 		return Config{}, World{}, err

@@ -8,7 +8,7 @@ copy them as starting points, or study them to author your own.
 
 Because they ship on the weaver classpath, no `spools.edn` approval is
 needed — `require` them from `init.clj`, an activated spool, or a live
-`strand weaver repl`:
+`mill weaver repl`:
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -23,6 +23,7 @@ to discover and invoke same-machine sibling weavers.
 
 | Spool | Contract doc | Purpose |
 |---|---|---|
+| `skein.spools.batteries` | [batteries.md](./batteries.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave` and the `query`/`pattern` registry-introspection reads, all parser-backed. |
 | `skein.spools.workflow` | [workflow.md](./workflow.md) | Workflow engine: plain-data definitions compiled to strand batches, with loops, gates, checkpoints, routing, and rebindable tool bindings. |
 | `skein.spools.ephemeral` | [ephemeral.md](./ephemeral.md) | Small helper for temporary, parent-owned strands marked and burned via a userland attribute. |
 | `skein.spools.guild` | [guild.md](./guild.md) | Versioned public weaver op API declarations, `guild.describe` introspection, and loud structured deprecation for local peer coordination. |
@@ -67,10 +68,10 @@ dependencies, and local development overrides, see [Writing shared spools](../do
 | Spool | Contract doc | Purpose |
 |---|---|---|
 | `skein.spools.shuttle` | [shuttle/README.md](./shuttle/README.md) | Agent shuttle **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, append-only run memory, and the preamble seam. Registers no ops. |
-| `skein.spools.agents` | [agents/README.md](./agents/README.md) | Cross-harness subagent surface over shuttle: the `strand op agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
+| `skein.spools.agents` | [agents/README.md](./agents/README.md) | Cross-harness subagent surface over shuttle: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
 | `skein.spools.treadle` | [shuttle/treadle.md](./shuttle/treadle.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning shuttle runs and delivering successful results through `workflow/complete!`. |
 | `skein.spools.chime` | [chime/README.md](./chime/README.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
-| `skein.spools.backlog` | [backlog.md](./backlog.md) | Repo-local `BACKLOG.md` feature queue backed by backlog item strands and `strand op backlog`. |
+| `skein.spools.backlog` | [backlog.md](./backlog.md) | Repo-local `BACKLOG.md` feature queue backed by backlog item strands and `strand backlog`. |
 
 ## Reference examples
 

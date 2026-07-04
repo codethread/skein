@@ -9,21 +9,21 @@ make install
 mill start
 ```
 
-`make install` builds `strand` and `mill` and records this checkout as mill's install-time source for weaver launch and the thin nREPL attach client. `strand init` creates only the selected workspace's alpha config marker; do not write source paths into `config.json`.
+`make install` builds `strand` and `mill` and records this checkout as mill's install-time source for weaver launch and the thin nREPL attach client. `mill init` creates only the selected workspace's alpha config marker; do not write source paths into `config.json`.
 
 Start the weaver in one terminal:
 
 ```sh
-strand weaver start
+mill weaver start
 ```
 
 Use it from another terminal:
 
 ```sh
-strand init
+mill init
 strand list
-strand weaver status
-strand weaver stop
+mill weaver status
+mill weaver stop
 ```
 
 ## Disposable workspaces for development
@@ -41,7 +41,7 @@ strand --workspace "$workspace" ready
 strand --workspace "$workspace" weaver stop
 ```
 
-`strand init` bootstraps missing `config.json`, `spools.edn`, `init.clj`, `spools/`, and `.gitignore` files/directories without overwriting existing user files. `config.json` contains only `{"configFormat":"alpha"}`.
+`mill init` bootstraps missing `config.json`, `spools.edn`, `init.clj`, `spools/`, and `.gitignore` files/directories without overwriting existing user files. `config.json` contains only `{"configFormat":"alpha"}`.
 
 ## REPL and runtime config
 

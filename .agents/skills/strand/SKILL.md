@@ -51,7 +51,9 @@ constraints, relevant files, and validation expectations.
 
 - Titles alone are acceptable for personal/ephemeral to-do tracking.
 - Any strand delegated to another agent must include a clear descriptive `body`.
-- Prefer `--attr-file body=<path>` or `--attr-stdin body` for multi-line bodies.
+- For multi-line bodies, attach the text as a payload and reference it:
+  `strand --payload body=<path> add "<title>" --attr body=:payload/body` (from a
+  file) or `printf '%s' "<text>" | strand --stdin add "<title>" --attr body=:stdin`.
 
 ## Standard loop
 
@@ -90,7 +92,7 @@ strand ready --query work
 ```
 
 For agent-driven delegation (spawning subagent runs, checking status, retrying
-failures), the in-band manual is `strand op agent about` — read it live rather
+failures), the in-band manual is `strand agent about` — read it live rather
 than hand-rolling the JSON shape here.
 
 Mark done:
@@ -99,32 +101,32 @@ Mark done:
 strand update <id> --state closed
 ```
 
-Use a config dir explicitly for disposable or non-default worlds:
+Select a workspace explicitly for disposable or non-default worlds:
 
 ```sh
-strand --config-dir <dir> ready
-strand --config-dir <dir> update <id> --state closed
+strand --workspace <dir> ready
+strand --workspace <dir> update <id> --state closed
 ```
 
 One-shot REPL helpers when CLI is awkward:
 
 ```sh
-printf '(ready)\n' | strand weaver repl --stdin
-printf '(strands)\n' | strand weaver repl --stdin
+printf '(ready)\n' | mill weaver repl --stdin
+printf '(strands)\n' | mill weaver repl --stdin
 ```
 
 Hot-reload selected config after config/library edits:
 
 ```sh
 printf "(do (require '[skein.api.runtime.alpha :as runtime]) (runtime/reload!))\n" \
-  | strand weaver repl --stdin
+  | mill weaver repl --stdin
 ```
 
 Register a temporary named query for this weaver lifetime:
 
 ```sh
 printf "(defquery! 'agent-owned '[:= [:attr :owner] \"agent\"])\n" \
-  | strand weaver repl --stdin
+  | mill weaver repl --stdin
 strand list --query agent-owned
 strand ready --query agent-owned
 ```
@@ -135,7 +137,7 @@ The full worker contract (read your strand and notes first, record progress,
 set `status=implemented` only when validation is green, never close your own
 strand, never mutate siblings/parents unless told, commit only if told) ships
 in-band and is injected into every delegated run's preamble automatically.
-Read it directly: `strand op agent about`.
+Read it directly: `strand agent about`.
 
 ## Validation and finish
 

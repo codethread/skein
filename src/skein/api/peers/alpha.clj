@@ -11,9 +11,6 @@
 
 (def ^:private protocol-version 1)
 
-(def ^:private allowed-operations
-  #{"add" "update" "supersede" "show" "burn" "list" "ready" "list-query" "ready-query" "weave" "pattern-list" "pattern-explain" "query-list" "query-explain" "op" "subgraph" "status" "stop"})
-
 (defn- state-root
   "Return Skein's mill state root for the current process environment."
   []
@@ -147,14 +144,6 @@
     (and (symbol? op) (nil? (namespace op))) (name op)
     :else (throw (ex-info "Peer operation must be a string, unqualified symbol, or unqualified keyword" {:operation op}))))
 
-(defn- ensure-allowed-operation! [op]
-  (when-not (allowed-operations op)
-    (throw (ex-info "Peer operation is not allowed over JSON socket"
-                    {:code :peer/operation-not-allowed
-                     :operation op
-                     :allowed (sort allowed-operations)})))
-  op)
-
 (defn- ensure-peer-protocol! [peer]
   (when-not (= protocol-version (:protocol-version peer))
     (throw (ex-info "Peer metadata protocol version mismatch"
@@ -210,7 +199,7 @@
        (map? (get error "details"))))
 
 (defn- validate-lifecycle-result! [peer op result]
-  (when (#{"status" "stop"} op)
+  (when (= "status" op)
     (when-not (and (map? result)
                    (= (:weaver-id peer) (get result "weaver_id")))
       (throw (socket-error peer op "Peer lifecycle response identity mismatch" {"type" "protocol"
@@ -218,6 +207,19 @@
                                                                                "message" "weaver id mismatch"
                                                                                "details" {}}))))
   result)
+
+(defn- reject-stream-response!
+  "A peer that answers with a stream header cannot be consumed by `call!`.
+
+  Fail loudly without draining the stream (SPEC-004-D003.C9): the roundtrip read
+  only the header line, and the connection is closed on return."
+  [peer op response]
+  (when (and (map? response) (true? (get response "stream")))
+    (throw (ex-info "Peer op streams; call! cannot consume a stream response"
+                    {:code :peer/stream-unsupported
+                     :peer (peer-identity peer)
+                     :operation op})))
+  response)
 
 (defn- verify-response! [peer op request-id response]
   (when-not (map? response)
@@ -255,32 +257,52 @@
     :else
     (throw (socket-error peer op "Peer response ok flag is not boolean" {}))))
 
+(defn- call-frame
+  "Build the request frame for a peer op name.
+
+  `status` maps to the minimal lifecycle operation; every other op name rides the
+  `invoke` envelope carrying `argv`/`payloads` (SPEC-004-D003.C9). Rejection is
+  receiving-side: there is no client-side operation allowlist."
+  [op {:keys [argv payloads]}]
+  (if (= "status" op)
+    ["status" {}]
+    ["invoke" {"name" op
+               "argv" (vec argv)
+               "payloads" (or payloads {})}]))
+
 (defn call!
-  "Invoke one allowlisted public JSON socket operation on a resolved peer.
+  "Invoke a named op on a resolved peer over the `invoke` envelope, or `status`.
 
   `peerish` may be a row from `peer`/`peers`, a friendly name, or an existing
-  workspace path resolvable by `peer`. Domain error envelopes become
-  `ExceptionInfo` with `:code :peer/domain-error` and the structured peer error.
-  Transport failures are loud and include peer identity. No retries or peer
-  lifecycle management are attempted."
-  [peerish op args]
-  (let [peer (ensure-peer-protocol! (resolved-peer peerish))
-        op (ensure-allowed-operation! (operation-name op))
-        request-id (str (UUID/randomUUID))
-        response (->> (request-envelope peer op args request-id)
-                      (socket-roundtrip! peer op)
-                      (verify-response! peer op request-id))]
-    (if (true? (get response "ok"))
-      (get response "result")
-      (let [error (get response "error")]
-        (if (= "domain" (get error "type"))
-          (throw (ex-info (get error "message" "Peer domain error")
-                          {:code :peer/domain-error
-                           :peer (peer-identity peer)
-                           :operation op
-                           :error error}))
-          (throw (ex-info (get error "message" "Peer socket error")
-                          {:code :peer/socket-error
-                           :peer (peer-identity peer)
-                           :operation op
-                           :error error})))))))
+  workspace path resolvable by `peer`. `op` is an op name (string or unqualified
+  symbol/keyword); pass `\"status\"` for the minimal lifecycle op. Optional `args`
+  is a map with `:argv` (vector of strings) and `:payloads` (name→value map) for
+  the invoke envelope. Domain error envelopes become `ExceptionInfo` with
+  `:code :peer/domain-error`; a peer that answers with a stream header fails
+  loudly with `:code :peer/stream-unsupported` (streams are out of scope for
+  `call!`). Transport failures are loud and include peer identity. No retries or
+  peer lifecycle management are attempted."
+  ([peerish op] (call! peerish op {}))
+  ([peerish op args]
+   (let [peer (ensure-peer-protocol! (resolved-peer peerish))
+         op (operation-name op)
+         [operation arguments] (call-frame op args)
+         request-id (str (UUID/randomUUID))
+         response (->> (request-envelope peer operation arguments request-id)
+                       (socket-roundtrip! peer op)
+                       (reject-stream-response! peer op)
+                       (verify-response! peer op request-id))]
+     (if (true? (get response "ok"))
+       (get response "result")
+       (let [error (get response "error")]
+         (if (= "domain" (get error "type"))
+           (throw (ex-info (get error "message" "Peer domain error")
+                           {:code :peer/domain-error
+                            :peer (peer-identity peer)
+                            :operation op
+                            :error error}))
+           (throw (ex-info (get error "message" "Peer socket error")
+                           {:code :peer/socket-error
+                            :peer (peer-identity peer)
+                            :operation op
+                            :error error}))))))))

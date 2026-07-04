@@ -1,0 +1,56 @@
+tasks:
+  - id: 1
+    description: Registry metadata, loud collision, replace-op!, envelope context
+    task_file: tasks/001-registry-metadata-replace-op.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Blessed parser skein.api.cli.alpha with payload refs
+    task_file: tasks/002-cli-alpha-parser.md
+    status: complete
+    blocked_by: []
+  - id: 3
+    description: Parser-op integration and core help registry projection
+    task_file: tasks/003-help-projection-parser-integration.md
+    status: complete
+    blocked_by: [1, 2]
+  - id: 4
+    description: Batteries spool core strand ops
+    task_file: tasks/004-batteries-core-ops.md
+    status: complete
+    blocked_by: [3]
+  - id: 5
+    description: Batteries weave, query, pattern ops and contract doc
+    task_file: tasks/005-batteries-weave-query-pattern-doc.md
+    status: complete
+    blocked_by: [4]
+  - id: 6
+    description: Socket invoke envelope, stream framing, signal shutdown
+    task_file: tasks/006-socket-invoke-stream-cutover.md
+    status: complete
+    blocked_by: [5]
+  - id: 7
+    description: Go strand dispatcher rewrite
+    task_file: tasks/007-strand-dispatcher-go.md
+    status: complete
+    blocked_by: [6]
+  - id: 8
+    description: Mill absorbs init and weaver lifecycle, stream relay
+    task_file: tasks/008-mill-absorb-lifecycle-streaming.md
+    status: complete
+    blocked_by: [7]
+  - id: 9
+    description: Repo spool and config cutover off the op prefix
+    task_file: tasks/009-repo-spool-cutover.md
+    status: complete
+    blocked_by: [8]
+  - id: 10
+    description: Smoke suite rewrite and docs cutover
+    task_file: tasks/010-smoke-docs-cutover.md
+    status: complete
+    blocked_by: [9]
+  - id: 11
+    description: "[HITL] External devflow.spool update and spools.edn repin"
+    task_file: tasks/011-devflow-spool-repin.md
+    status: complete
+    blocked_by: [10]

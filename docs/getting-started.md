@@ -17,14 +17,14 @@ On top of that model you get two ways to work:
 - A small, predictable **CLI** (`strand`) for everyday CRUD and safe, scriptable
   consumption of existing state. Those commands emit JSON.
 - A live **Lisp machine**: the long-lived weaver owns the store and runtime
-  state, and `strand weaver repl` attaches directly to that running weaver JVM
+  state, and `mill weaver repl` attaches directly to that running weaver JVM
   so you can query, mutate, and _extend_ Skein at runtime — registering queries,
   patterns, views, event handlers, and custom operations without restarting anything.
 
 The CLI stays thin on purpose; runtime customization belongs in trusted config
 and the REPL. See [PHILOSOPHY.md](../devflow/PHILOSOPHY.md) for the reasoning.
 
-Install the CLIs from the Skein checkout. `make install` records this checkout as mill's install-time source for future weaver launches and thin nREPL attach clients; it does not affect what `strand init` writes.
+Install the CLIs from the Skein checkout. `make install` records this checkout as mill's install-time source for future weaver launches and thin nREPL attach clients; it does not affect what `mill init` writes.
 
 ```sh
 make install
@@ -40,7 +40,7 @@ make install
 - [REPL workflow](#repl-workflow)
 - [IDE REPL setup](./ide-repl/)
 - [Startup config and runtime helpers](#startup-config-and-runtime-helpers)
-  - [Custom operations (`strand op`)](#custom-operations-strand-op)
+  - [Custom operations](#custom-operations)
 - [Example: a small userland kanban op](#example-a-small-userland-kanban-op)
 - [Stop the weaver](#stop-the-weaver)
 
@@ -55,7 +55,7 @@ Outside a supported Git layout, no-flag commands fail with remediation rather th
 Initialize a repo workspace from the Git repo you want to use Skein in:
 
 ```sh
-strand init
+mill init
 ```
 
 Mill resolves the Skein source checkout it uses to launch the weaver from, in order:
@@ -64,31 +64,31 @@ Mill resolves the Skein source checkout it uses to launch the weaver from, in or
 - the install-time source recorded by `make install`, or
 - a canonical Skein checkout as the current directory.
 
-`strand init` does not persist a source path in `.skein/config.json`.
+`mill init` does not persist a source path in `.skein/config.json`.
 
-`strand init` without `--workspace` creates or completes `.skein` at the Git
+`mill init` without `--workspace` creates or completes `.skein` at the Git
 root and fails loudly outside Git. To work in a separate, disposable workspace
 instead (recommended for tests and isolated agent work), create one and target it
 with `--workspace`:
 
 ```sh
 workspace=$(mktemp -d)
-strand --workspace "$workspace" init
+mill init --workspace "$workspace"
 ```
 
 `--workspace` is not sticky: pass the same path on **every** command that should
-target that workspace (for example `strand --workspace "$workspace" weaver start`). The
+target that workspace (for example `mill weaver start --workspace "$workspace"`). The
 basic repo workspace examples below omit the flag for readability, but examples that
 reload config or create demo data use an explicit disposable `$workspace` so you do
 not casually mutate or reload the default repo workspace.
 
 ## Start the weaver
 
-Start mill once in a durable terminal, then ask it to start the selected workspace's weaver. Weaver startup prepares storage; there is no separate post-start `strand init` or database init step.
+Start mill once in a durable terminal, then ask it to start the selected workspace's weaver. Weaver startup prepares storage; there is no separate post-start `mill init` or database init step.
 
 ```sh
 mill start
-strand weaver start
+mill weaver start
 ```
 
 ## Add and inspect strands
@@ -123,7 +123,7 @@ explicit deletion.
 Open a live weaver REPL:
 
 ```sh
-strand weaver repl
+mill weaver repl
 ```
 
 For editor-driven REPL work, see the [IDE REPL setup guide](./ide-repl/) for connecting VS Code/Calva to a running weaver nREPL.
@@ -231,7 +231,7 @@ strand ready --query mine
 
 ## Startup config and runtime helpers
 
-Fresh `strand init` creates missing workspace files without overwriting existing files. For repo workspaces, the usual layout is:
+Fresh `mill init` creates missing workspace files without overwriting existing files. For repo workspaces, the usual layout is:
 
 ```text
 .skein/
@@ -331,17 +331,20 @@ Lower-privilege CLI callers can discover, inspect, and invoke registered pattern
 ```sh
 strand pattern list
 strand pattern explain task
-printf '{"title":"Implement feature"}\n' | strand weave --pattern task
+printf '{"title":"Implement feature"}\n' | strand --stdin weave --pattern task --input :stdin
 ```
 
 Pattern discovery mirrors query discovery (`query list` / `query explain <name>`), while application follows the definition type: queries apply through `list --query` / `ready --query`, and patterns apply through `weave --pattern`.
 
-### Custom operations (`strand op`)
+### Custom operations
 
-`strand op` is the generic custom-operation portal. The built-in help operation explains the contract:
+Every weaver command is a registered op invoked directly at the `strand` root as
+`strand <op> [args]`; there is no `op` sub-prefix. The built-in `help` op lists
+registered ops and explains one op's arg-spec:
 
 ```sh
-strand op help
+strand help
+strand help <op>
 ```
 
 Register custom handlers from trusted Clojure with `skein.api.weaver.alpha/register-op!`. The Go CLI forwards everything after the operation name as string argv:
@@ -357,7 +360,7 @@ Register custom handlers from trusted Clojure with `skein.api.weaver.alpha/regis
 ```
 
 ```sh
-strand op echo --flag value
+strand echo --flag value
 ```
 
 ## Example: a small userland kanban op
@@ -432,14 +435,14 @@ intend to reload its shared `.skein` config:
 
 ```sh
 printf '(do (require '\''[skein.api.current.alpha :as current] '\''[skein.api.runtime.alpha :as runtime-alpha]) (runtime-alpha/reload! (current/runtime)))\n' \
-  | strand --workspace "$workspace" weaver repl --stdin
+  | mill weaver repl --stdin --workspace "$workspace"
 ```
 
 Create a few demo strands with one batch call. Batch entries use temporary
 `:ref` values so the result can report generated ids:
 
 ```sh
-cat <<'EOF' | strand --workspace "$workspace" weaver repl --stdin
+cat <<'EOF' | mill weaver repl --stdin --workspace "$workspace"
 (do
   (require '[skein.api.current.alpha :as current]
            '[skein.api.batch.alpha :as batch])
@@ -468,14 +471,14 @@ Invoke the custom operation in that disposable workspace. `--max` is optional an
 defaults to 5 rows:
 
 ```sh
-strand --workspace "$workspace" op kanban --max 15
+strand --workspace "$workspace" kanban --max 15
 ```
 
 `strand` keeps public command output JSON-only, so render the table field when
 you want terminal-friendly ASCII:
 
 ```sh
-strand --workspace "$workspace" op kanban --max 15 | jq -r .table
+strand --workspace "$workspace" kanban --max 15 | jq -r .table
 ```
 
 Produces something like:
@@ -526,7 +529,7 @@ Use the live stdin REPL for scripts. Include `--workspace` when scripting
 against a disposable or test workspace:
 
 ```sh
-printf '(skein.api.current.alpha/runtime)\n' | strand --workspace "$workspace" weaver repl --stdin
+printf '(skein.api.current.alpha/runtime)\n' | mill weaver repl --stdin --workspace "$workspace"
 ```
 
 ## Stop the weaver
@@ -534,5 +537,5 @@ printf '(skein.api.current.alpha/runtime)\n' | strand --workspace "$workspace" w
 Stop the weaver when finished:
 
 ```sh
-strand --workspace "$workspace" weaver stop
+mill weaver stop --workspace "$workspace"
 ```

@@ -64,7 +64,7 @@ vim.api.nvim_create_autocmd("FileType", {
 2. Start a weaver in the target Skein workspace:
 
    ```sh
-   strand weaver start
+   mill weaver start
    ```
 
 3. In Neovim, open a Clojure buffer and run:

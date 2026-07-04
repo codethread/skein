@@ -2,13 +2,13 @@
 
 ## 1. Overview
 
-`skein.spools.shuttle` is a trusted userland spool for spawning coding-agent runs from ordinary Skein strands. It is a pure run **engine**: it registers no CLI operations of its own. The agent-facing verb surface (`strand op agent ...`), delegation, and coordinator/worker guidance live in the [agents spool](../agents/README.md), which composes this engine.
+`skein.spools.shuttle` is a trusted userland spool for spawning coding-agent runs from ordinary Skein strands. It is a pure run **engine**: it registers no CLI operations of its own. The agent-facing verb surface (`strand agent ...`), delegation, and coordinator/worker guidance live in the [agents spool](../agents/README.md), which composes this engine.
 
 A run is a strand carrying `shuttle/*` attributes. Creating the run strand is the API: the installed shuttle event handler watches graph mutations, asks Skein readiness which pending run strands are unblocked, launches the selected harness, records output back onto the run strand, and closes successful runs so downstream `depends-on` work can proceed.
 
 Runs come in two execution modes. **Headless** runs (the default) exec the harness and capture its exit/stdout. **Interactive** runs launch the harness into a user-registered terminal multiplexer [backend](#4-backend-registry-interactive-sessions) (tmux by default) and are supervised through the graph: the run completes when the strand it serves closes (the claims model — the agent in the session marks the work done, the engine reaps the session), not when a process exits.
 
-Shuttle is intentionally not core scheduler infrastructure. It composes existing primitives: strand attributes, `depends-on` readiness, `parent-of` provenance, annotation edges, event handlers, runtime spool loading, and `strand op`.
+Shuttle is intentionally not core scheduler infrastructure. It composes existing primitives: strand attributes, `depends-on` readiness, `parent-of` provenance, annotation edges, event handlers, runtime spool loading, and the CLI op registry.
 
 ## 2. Loading
 
@@ -32,7 +32,7 @@ Shuttle is shipped as an approved-local-root spool example under `spools/shuttle
    :required? true})
 ```
 
-`install!` registers the default harnesses and backends, a graph-mutation event handler, and runs crash reconciliation with a first scan. Harnesses, backends, live in-flight process ownership, preamble extensions, and default review contract text are runtime-local weaver-lifetime state, isolated from other runtimes in the same JVM. It does **not** register any `strand op` verbs. Load the [agents spool](../agents/README.md) after shuttle for the `strand op agent` surface, and the companion [treadle adapter](./treadle.md) to fulfill workflow `:subagent` gates with shuttle runs.
+`install!` registers the default harnesses and backends, a graph-mutation event handler, and runs crash reconciliation with a first scan. Harnesses, backends, live in-flight process ownership, preamble extensions, and default review contract text are runtime-local weaver-lifetime state, isolated from other runtimes in the same JVM. It does **not** register any CLI operations. Load the [agents spool](../agents/README.md) after shuttle for the `strand agent` surface, and the companion [treadle adapter](./treadle.md) to fulfill workflow `:subagent` gates with shuttle runs.
 
 ## 3. Harness registry
 
@@ -140,7 +140,7 @@ Every spawned run (unless its harness sets `:preamble? false`) is launched with 
 
 - the run's `run-id`;
 - the fully pinned `strand` invocation (`env XDG_STATE_HOME=… strand --workspace …`) that must prefix every strand command, because harness shells re-source dotfiles and cannot be trusted to inherit ambient env;
-- spawn/await/note one-liners and the pointer to `strand op agent about`.
+- spawn/await/note one-liners and the pointer to `strand agent about`.
 
 Higher-level policy is layered on through a single seam so the engine stays free of workflow opinion:
 
@@ -188,7 +188,7 @@ Run parents are connected to children with `parent-of` edges. Notes use the unde
 
 ## 9. See also
 
-- [agents/README.md](../agents/README.md) — the `strand op agent` verb surface, delegation, and coordinator/worker guidance layered over this engine.
+- [agents/README.md](../agents/README.md) — the `strand agent` verb surface, delegation, and coordinator/worker guidance layered over this engine.
 - [treadle.md](./treadle.md) — shipped adapter that bridges workflow `:subagent` gates to shuttle runs.
 - `test/skein/shuttle_test.clj` — executable coverage for harnesses, readiness, failures, notes, and reconciliation.
 - [Runtime spool workspace helpers](../../devflow/specs/repl-api.md#spec-003p5-runtime-spool-workspace-helpers) — approved local-root loading contract.

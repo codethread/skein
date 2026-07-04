@@ -35,7 +35,7 @@ TEN-000 applies: no migration or compatibility shims are in scope.
 
 ### RFC-019.D1 Command split
 
-- `mill`: `init`, `weaver start|stop|status|repl [--stdin]`, plus existing `start`, `status`, `weaver list`. Mill grows `--workspace` selection and meets the same JSON output bar as strand. `weaver stop`/`status` are driven by mill supervision directly; the socket protocol's `status`/`stop` operations are removed from the public surface.
+- `mill`: `init`, `weaver start|stop|status|repl [--stdin]`, plus existing `start`, `status`, `weaver list`. Mill grows `--workspace` selection and meets the same JSON output bar as strand. `weaver stop`/`status` are driven by mill supervision directly; the socket protocol's `stop` operation is removed and `status` shrinks to a minimal health/identity check.
 - `strand`: `strand [dispatcher-flags] <op-name> [opaque argv...]`. Zero builtin subcommands. Dispatcher flag parsing stops at the first non-flag token; everything after the op name ships verbatim as argv.
 
 ### RFC-019.D2 Dispatcher flags

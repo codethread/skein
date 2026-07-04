@@ -9,7 +9,7 @@ Always study [TENETS](./TENETS.md) and [PHILOSOPHY](./PHILOSOPHY.md). No code, s
 Root specs are canonical for shipped behavior:
 
 - [Strand Model](./specs/strand-model.md) — strand records, state lifecycle, burn deletion, JSON attributes, relation semantics, and readiness rules.
-- [CLI Surface](./specs/cli.md) — scriptable command contract for agents, including the thin Go `strand` CLI, JSON socket boundary, and hook-rejected command behavior.
+- [CLI Surface](./specs/cli.md) — the op-only public CLI: the `strand` invoke-envelope dispatcher (zero builtin subcommands), the `mill` router/bootstrap/lifecycle surface, and NDJSON single/stream response relay; per-command behavior lives in `spools/batteries.md`.
 - [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL, runtime spool workspace helpers, lifecycle hook helpers, and the `skein.test.alpha` author-side weaver-world test helpers.
 - [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model, metadata, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
 
@@ -58,4 +58,5 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-07-02__docs-pass-review` — archived approved documentation review notes.
 - `26-07-02__weaver-guild` — shipped local weaver peering: portable config-declared weaver names, `skein.api.peers.alpha` discovery/`call!` client, and the `skein.spools.guild` op-declaration spool.
 - `26-07-03__spool-git-distribution` — shipped registry-free git spool distribution (RFC-017): sha-pinned `:git` coordinates in `spools.edn`, content-addressed fetch cache with verified tag labels, and explicit `use!` activation. Its original optional metadata-file gating was superseded by the Maven-only spool contract.
+- `26-07-04__op-only-cli` — shipped RFC-019: removed all builtin strand commands and the `op` prefix; `strand` became a pure invoke-envelope dispatcher with named payloads and stream relay, `mill` absorbed init/weaver lifecycle/repl, the shipped command surface moved to the `skein.spools.batteries` spool over the new blessed `skein.api.cli.alpha` parser, and the socket collapsed to `invoke` + minimal `status` with op-metadata deadlines and hook gating.
 - `26-07-04__spool-contract` — shipped the minimal spool contract: retired the `spool.edn` manifest (README Dependency information / Activation snippets replace it; RFC-018 rejected as mooted), strengthened required `use!` to throw on `:not-approved`/`:not-synced`/`:sync-failed`, and allowed uniform Maven-only spool `deps.edn :deps` resolved via sync-time `add-libs`.

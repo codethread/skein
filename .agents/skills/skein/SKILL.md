@@ -1,16 +1,16 @@
 ---
 name: skein
 description: >
-  Explains how to extend the .skein/ config as a user. Use when asked add patterns, workflows, `strand op` commands or general weaver commands
+  Explains how to extend the .skein/ config as a user. Use when asked add patterns, workflows, `strand` ops or general weaver commands
 ---
 
 Read `<source-dir>/docs/skein.md` where `source-dir` is the Skein source checkout for the selected world.
 
-Explore via `strand weaver repl` or `strand weaver repl --stdin`.
+Explore via `mill weaver repl` or `mill weaver repl --stdin`.
 
 ## Live REPL hygiene for shared weaver sessions
 
-`strand weaver repl` and `strand weaver repl --stdin` evaluate inside the live weaver JVM, usually in the shared `skein.repl` namespace. Agent exploratory requires and scratch defs mutate that namespace, so use names that are easy to identify and clean up.
+`mill weaver repl` and `mill weaver repl --stdin` evaluate inside the live weaver JVM, usually in the shared `skein.repl` namespace. Agent exploratory requires and scratch defs mutate that namespace, so use names that are easy to identify and clean up.
 
 Conventions:
 

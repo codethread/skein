@@ -51,6 +51,63 @@
 (defn test-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
 
+(defn context-echo-op
+  "Return the handler context so tests can inspect threaded envelope fields."
+  [ctx]
+  ctx)
+
+(defn envelope-echo-op
+  "Return only the JSON-safe envelope fields (the full context carries the
+  runtime, which cannot cross the JSON socket)."
+  [ctx]
+  {:cwd (:op/cwd ctx)
+   :worktree-root (:op/worktree-root ctx)
+   :timeout (:op/timeout ctx)
+   :payloads (:op/payloads ctx)})
+
+;; Stream/op transport fixtures. Namespace-level for the same by-symbol
+;; registration reason as the hooks/events above; the :each fixture resets
+;; `stream-gate` and `op-side-effects`.
+(def stream-gate (atom (promise)))
+(def op-side-effects (atom []))
+
+(defn gated-stream-op
+  "Emit line 0, block until the test releases the gate, then emit line 1.
+
+  Proves incremental flush: the test reads line 0 off the socket before it
+  delivers the gate, so line 0 cannot have been buffered until the op returned."
+  [{emit! :op/emit!}]
+  (emit! {"i" 0})
+  @@stream-gate
+  (emit! {"i" 1})
+  {"emitted" 2})
+
+(defn stream-error-op
+  "Emit one line, then throw so the socket writes an error terminator."
+  [{emit! :op/emit!}]
+  (emit! {"i" 0})
+  (throw (ex-info "stream blew up" {:code "stream/failed"})))
+
+(defn slow-op
+  "Sleep past any short deadline, recording that it ran to completion."
+  [_ctx]
+  (Thread/sleep 3000)
+  (swap! op-side-effects conj :slow-finished)
+  {:slow true})
+
+(defn side-effecting-op
+  "Record that the handler ran, so a hook rejection before dispatch is provable."
+  [{:op/keys [name]}]
+  (swap! op-side-effects conj name)
+  {:ran name})
+
+(defn throwing-op
+  "Throw rich, partly non-JSON ex-data to exercise json-safe error rendering."
+  [_ctx]
+  (throw (ex-info "op blew up" {:code "op/failed"
+                                :nested {:reason :policy/nope}
+                                :opaque (Object.)})))
+
 ;; Namespace-level on purpose: handlers/hooks/patterns are registered by
 ;; symbol and resolved to top-level vars, so their capture state cannot be
 ;; per-test locals. The runner never splits a namespace across threads, and
@@ -204,6 +261,8 @@
     (reset! hook-contexts [])
     (reset! expected-hook-loader nil)
     (reset! pattern-call-count 0)
+    (reset! stream-gate (promise))
+    (reset! op-side-effects [])
     (f)))
 
 (defn test-pattern [{:keys [input]}]
@@ -265,6 +324,29 @@
                                  "operation" operation
                                  "arguments" arguments
                                  "options" {}})))
+
+(defn invoke-request
+  "Send an `invoke` request carrying an op envelope, returning the parsed frame.
+
+  `extra` merges extra envelope fields (e.g. cwd/timeout) into the arguments."
+  ([rt name argv] (invoke-request rt name argv {} {}))
+  ([rt name argv payloads] (invoke-request rt name argv payloads {}))
+  ([rt name argv payloads extra]
+   (socket-request rt "invoke" (merge {"name" name
+                                       "argv" (vec argv)
+                                       "payloads" payloads}
+                                      extra))))
+
+(defn invoke-frame
+  "Build a raw invoke request frame for tests that drive the socket by hand
+  (e.g. streaming, which reads more than one response line)."
+  [rt name argv]
+  {"protocol_version" 1
+   "request_id" "test-request"
+   "weaver_id" (:nonce (:metadata rt))
+   "operation" "invoke"
+   "arguments" {"name" name "argv" (vec argv) "payloads" {}}
+   "options" {}})
 
 (deftest weaver-world-resolution
   (is (thrown-with-msg? clojure.lang.ExceptionInfo
@@ -1427,19 +1509,199 @@
 (deftest weaver-op-registry-and-built-in-help
   (with-runtime
     (fn [rt _]
-      (is (= {:name "custom" :doc "Echo argv" :fn 'skein.weaver-test/test-op}
+      (is (= {:name "custom"
+              :fn 'skein.weaver-test/test-op
+              :stream? false
+              :deadline-class :standard
+              :hook-class :mutating
+              :provenance 'skein.weaver-test
+              :doc "Echo argv"}
              (api/register-op! rt 'custom "Echo argv" 'skein.weaver-test/test-op)))
       (is (= {:operation "custom" :argv ["--flag" "value"]}
              (api/op! rt 'custom ["--flag" "value"])))
       (let [help (api/op! rt 'help [])]
-        (is (= "strand op <name> [args...]" (:usage help)))
-        (is (some #(= "help" (:name %)) (:registered help))))
+        (is (some #(= "help" (:name %)) (:ops help))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Operation not found"
                             (api/op! rt 'missing [])))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Operation function"
                             (api/register-op! rt 'bad 'unqualified))))))
+
+(deftest weaver-op-metadata-defaults-and-validation
+  (with-runtime
+    (fn [rt _]
+      (testing "no-metadata registration records defaults and provenance"
+        (is (= {:name "bare"
+                :fn 'skein.weaver-test/test-op
+                :stream? false
+                :deadline-class :standard
+                :hook-class :mutating
+                :provenance 'skein.weaver-test}
+               (api/register-op! rt 'bare 'skein.weaver-test/test-op))))
+      (testing "full metadata map is recorded; stream ops default to :unbounded"
+        (is (= {:name "streamer"
+                :fn 'skein.weaver-test/test-op
+                :stream? true
+                :deadline-class :unbounded
+                :hook-class :read
+                :provenance 'skein.weaver-test
+                :doc "Stream op"
+                :arg-spec {:opts [:limit]}}
+               (api/register-op! rt 'streamer
+                                 {:doc "Stream op"
+                                  :arg-spec {:opts [:limit]}
+                                  :stream? true
+                                  :hook-class :read}
+                                 'skein.weaver-test/test-op))))
+      (testing "explicit deadline-class overrides the stream default"
+        (is (= :standard
+               (:deadline-class (api/register-op! rt 'bounded-stream
+                                                  {:stream? true :deadline-class :standard}
+                                                  'skein.weaver-test/test-op)))))
+      (testing "unknown metadata keys fail loudly"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"unknown keys"
+                              (api/register-op! rt 'nope {:bogus true} 'skein.weaver-test/test-op))))
+      (testing "invalid metadata values fail loudly"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #":stream\? must be a boolean"
+                              (api/register-op! rt 'nope {:stream? "yes"} 'skein.weaver-test/test-op)))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #":deadline-class must be"
+                              (api/register-op! rt 'nope {:deadline-class :soon} 'skein.weaver-test/test-op)))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #":hook-class must be"
+                              (api/register-op! rt 'nope {:hook-class :both} 'skein.weaver-test/test-op)))))))
+
+(deftest weaver-op-registration-collision-and-replace
+  (with-runtime
+    (fn [rt _]
+      (api/register-op! rt 'custom 'skein.weaver-test/test-op)
+      (testing "re-registering a name fails loudly, naming both provenances"
+        (let [e (is (thrown? clojure.lang.ExceptionInfo
+                             (api/register-op! rt 'custom 'skein.peers-test/peer-test-op)))]
+          (is (= "custom" (:operation (ex-data e))))
+          (is (= 'skein.weaver-test (:existing-provenance (ex-data e))))
+          (is (= 'skein.peers-test (:attempted-provenance (ex-data e))))))
+      (testing "replace-op! requires an existing name"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"cannot replace"
+                              (api/replace-op! rt 'absent 'skein.weaver-test/test-op))))
+      (testing "replace-op! overrides an existing entry"
+        (is (= 'skein.peers-test
+               (:provenance (api/replace-op! rt 'custom 'skein.peers-test/peer-test-op))))
+        (is (= 'skein.peers-test
+               (:provenance (api/resolve-op rt 'custom))))))))
+
+(deftest weaver-op-caller-supplied-provenance-rejected
+  (with-runtime
+    (fn [rt _]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #":provenance is registry-recorded"
+                            (api/register-op! rt 'custom
+                                              {:provenance 'evil.spoofed}
+                                              'skein.weaver-test/test-op))))))
+
+(deftest weaver-op-envelope-threads-into-handler-context
+  (with-runtime
+    (fn [rt _]
+      (api/register-op! rt 'ctx 'skein.weaver-test/context-echo-op)
+      (testing "empty envelope threads only default payloads"
+        (let [ctx (api/op! rt 'ctx ["a"])]
+          (is (= {} (:op/payloads ctx)))
+          (is (not (contains? ctx :op/cwd)))
+          (is (not (contains? ctx :op/timeout)))))
+      (testing "full envelope threads all fields into handler context"
+        (let [ctx (api/op! rt 'ctx ["a"]
+                           {:payloads {"body" "hello"}
+                            :cwd "/tmp/work"
+                            :worktree-root "/tmp/wt"
+                            :git-common-dir "/tmp/wt/.git"
+                            :timeout 5000})]
+          (is (= {"body" "hello"} (:op/payloads ctx)))
+          (is (= "/tmp/work" (:op/cwd ctx)))
+          (is (= "/tmp/wt" (:op/worktree-root ctx)))
+          (is (= "/tmp/wt/.git" (:op/git-common-dir ctx)))
+          (is (= 5000 (:op/timeout ctx))))))))
+
+(deftest weaver-op-registry-reload-is-collision-free
+  (with-runtime
+    (fn [rt _]
+      (is (= ["help"] (mapv :name (api/ops rt))))
+      ;; reload clears the registry before re-running init, so the built-in
+      ;; help op re-registers without tripping the collision check.
+      (api/reload-config! rt)
+      (is (= ["help"] (mapv :name (api/ops rt)))))))
+
+(deftest weaver-op-parser-integration
+  (with-runtime
+    (fn [rt _]
+      (testing "arg-spec ops receive parsed :op/args before the handler"
+        (api/register-op! rt 'parsed
+                          {:arg-spec {:op "parsed"
+                                      :flags {:limit {:type :int}}
+                                      :positionals [{:name :name :required? true}]}}
+                          'skein.weaver-test/context-echo-op)
+        (let [ctx (api/op! rt 'parsed ["--limit" "5" "widget"])]
+          (is (= {:limit 5 :name "widget"} (:op/args ctx)))
+          (is (= ["--limit" "5" "widget"] (:op/argv ctx)))))
+      (testing "parse failures throw the parser's structured error and short-circuit"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Unknown flag"
+                                      (api/op! rt 'parsed ["--bogus" "x" "widget"])))]
+          (is (= :unknown-flag (:reason (ex-data e))))))
+      (testing "arg-spec ops resolve payload references into :op/args"
+        (api/register-op! rt 'payloaded
+                          {:arg-spec {:op "payloaded"
+                                      :positionals [{:name :body}]}}
+                          'skein.weaver-test/context-echo-op)
+        (let [ctx (api/op! rt 'payloaded [":stdin"] {:payloads {"stdin" "hello"}})]
+          (is (= {:body "hello"} (:op/args ctx)))
+          (is (= {"stdin" "hello"} (:op/payloads ctx)))))
+      (testing "raw-envelope ops receive no :op/args and keep the raw payloads map"
+        (api/register-op! rt 'raw 'skein.weaver-test/context-echo-op)
+        (let [ctx (api/op! rt 'raw ["a" "b"] {:payloads {"stdin" "hi"}})]
+          (is (not (contains? ctx :op/args)))
+          (is (= {"stdin" "hi"} (:op/payloads ctx)))
+          (is (= ["a" "b"] (:op/argv ctx))))))))
+
+(deftest weaver-op-help-projection
+  (with-runtime
+    (fn [rt _]
+      (api/register-op! rt 'custom
+                        {:doc "Echo argv"
+                         :arg-spec {:op "custom"
+                                    :flags {:limit {:type :int :doc "Max"}}
+                                    :positionals [{:name :name}]}}
+                        'skein.weaver-test/test-op)
+      (api/register-op! rt 'raw "Raw op" 'skein.weaver-test/context-echo-op)
+      (testing "no argv lists every op summary sorted by name"
+        (let [{:keys [ops]} (api/op! rt 'help [])]
+          (is (= ["custom" "help" "raw"] (mapv :name ops)))
+          (let [help-entry (first (filter #(= "help" (:name %)) ops))]
+            (is (= :read (:hook-class help-entry)))
+            (is (= 'skein.api.weaver.alpha (:provenance help-entry)))
+            (is (false? (:stream? help-entry)))
+            (is (= :standard (:deadline-class help-entry)))
+            (is (string? (:doc help-entry))))))
+      (testing "op name returns arg-spec detail via explain"
+        (let [detail (api/op! rt 'help ["custom"])]
+          (is (= "Echo argv" (:doc detail)))
+          (is (= "custom" (get-in detail [:arg-spec :op])))
+          (is (= [{:name "limit" :flag "--limit" :type "int" :required false
+                   :repeat false :parse nil :doc "Max"}]
+                 (get-in detail [:arg-spec :flags])))
+          (is (not (contains? detail :raw-envelope)))))
+      (testing "raw-envelope op detail carries a marker instead of an arg-spec"
+        (let [detail (api/op! rt 'help ["raw"])]
+          (is (true? (:raw-envelope detail)))
+          (is (not (contains? detail :arg-spec)))))
+      (testing "unknown op name fails loudly carrying available names"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Operation not found"
+                                      (api/op! rt 'help ["nope"])))]
+          (is (some #{"help"} (:available (ex-data e)))))))))
 
 (deftest weaver-pattern-registry-and-weave
   (with-runtime
@@ -1596,204 +1858,201 @@
                               #"Pattern not found"
                               (api/resolve-pattern rt 'dev-task)))))))
 
-(deftest json-socket-weave-and-pattern-list-and-explain
+(deftest json-socket-invoke-dispatch
   (with-runtime
     (fn [rt _]
-      (api/init rt)
-      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-      (let [listed (socket-request rt "pattern-list" {})]
-        (is (true? (get listed "ok")))
-        (is (= ["dev-task"] (mapv #(get % "name") (get listed "result")))))
-      (let [explained (socket-request rt "pattern-explain" {"pattern" "dev-task"})]
-        (is (true? (get explained "ok")))
-        (is (= "dev-task" (get-in explained ["result" "name"]))))
-      (let [woven (socket-request rt "weave" {"pattern" "dev-task" "input" {:title "From socket"}})]
-        (is (true? (get woven "ok")))
-        (is (= ["From socket" "Review: From socket"]
-               (mapv #(get % "title") (get-in woven ["result" "created"]))))))))
-
-(deftest json-socket-query-list-and-explain
-  (with-runtime
-    (fn [rt _]
-      (let [owner-query {:params [:owner]
-                         :where [:= [:attr :owner] [:param :owner]]}
-            blocked-query {:params [:relation :owner]
-                           :where [:edge/out [:param :relation]
-                                   [:and
-                                    [:= [:attr :owner] [:param :owner]]
-                                    [:= :state "active"]]]}]
-        (api/load-queries rt {:mine owner-query
-                              :blocked blocked-query})
-        (let [listed (socket-request rt "query-list" {})]
-          (is (true? (get listed "ok")))
-          (is (= [{"name" "blocked" "params" ["relation" "owner"] "referenced-params" ["relation" "owner"]}
-                  {"name" "mine" "params" ["owner"] "referenced-params" ["owner"]}]
-                 (get listed "result"))))
-        (let [explained (socket-request rt "query-explain" {"query" ":blocked"})]
-          (is (true? (get explained "ok")))
-          (is (= {"name" "blocked"
-                  "params" ["relation" "owner"]
-                  "referenced-params" ["relation" "owner"]
-                  "where" ["edge/out" ["param" "relation"]
-                           ["and"
-                            ["=" ["attr" "owner"] ["param" "owner"]]
-                            ["=" "state" "active"]]]
-                  "definition" {"params" ["relation" "owner"]
-                                "where" ["edge/out" ["param" "relation"]
-                                         ["and"
-                                          ["=" ["attr" "owner"] ["param" "owner"]]
-                                          ["=" "state" "active"]]]}
-                  "where-form" (pr-str (:where blocked-query))
-                  "definition-form" (pr-str blocked-query)
-                  "summary" "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments."}
-                 (get explained "result"))))
-        (let [missing (socket-request rt "query-explain" {"query" "missing"})]
+      (api/register-op! rt 'custom 'skein.weaver-test/test-op)
+      (testing "invoke dispatches to the op registry with argv and payloads"
+        (let [custom (invoke-request rt "custom" ["--flag" "value"])]
+          (is (true? (get custom "ok")))
+          (is (= {"operation" "custom" "argv" ["--flag" "value"]}
+                 (get custom "result")))))
+      (testing "the built-in help op is reachable through invoke"
+        (let [help (invoke-request rt "help" [])]
+          (is (true? (get help "ok")))
+          (is (some #(= "help" (get % "name")) (get-in help ["result" "ops"]))))
+        (let [detail (invoke-request rt "help" ["help"])]
+          (is (true? (get detail "ok")))
+          (is (= "help" (get-in detail ["result" "arg-spec" "op"])))
+          (is (nil? (get-in detail ["result" "raw-envelope"])))))
+      (testing "context envelope fields ride the invoke arguments"
+        (api/register-op! rt 'ctx 'skein.weaver-test/envelope-echo-op)
+        (let [echoed (invoke-request rt "ctx" ["a"] {"body" "hi"} {"cwd" "/tmp/work"
+                                                                   "worktree_root" "/tmp/wt"
+                                                                   "git_common_dir" "/tmp/wt/.git"
+                                                                   "timeout" 5000})]
+          (is (true? (get echoed "ok")))
+          (is (= "/tmp/work" (get-in echoed ["result" "cwd"])))
+          (is (= "/tmp/wt" (get-in echoed ["result" "worktree-root"])))
+          (is (= 5000 (get-in echoed ["result" "timeout"])))
+          (is (= {"body" "hi"} (get-in echoed ["result" "payloads"])))))
+      (testing "unknown ops fail loudly with the registry's available names"
+        (let [missing (invoke-request rt "nope" [])]
           (is (false? (get missing "ok")))
           (is (= "domain" (get-in missing ["error" "type"])))
-          (is (= "query/not-found" (get-in missing ["error" "code"])))
-          (is (= "missing" (get-in missing ["error" "details" "canonical-query"])))
-          (is (= ["blocked" "mine"] (get-in missing ["error" "details" "available"]))))
-        (doseq [[op args] [["query-list" {"extra" "nope"}]
-                           ["query-explain" {}]
-                           ["query-explain" {"query" 1}]
-                           ["query-explain" {"query" "mine" "extra" "nope"}]]]
-          (let [bad (socket-request rt op args)]
-            (is (false? (get bad "ok")) (str op " " args))
-            (is (= "protocol/malformed-request" (get-in bad ["error" "code"])))))
-        (let [blank (socket-request rt "query-explain" {"query" "  :  "})]
-          (is (false? (get blank "ok")))
-          (is (= "domain" (get-in blank ["error" "type"])))
-          (is (= "domain/error" (get-in blank ["error" "code"])))
-          (is (= "Query names must not be blank" (get-in blank ["error" "message"]))))))))
+          (is (= "nope" (get-in missing ["error" "details" "operation"])))
+          (is (some #{"help"} (get-in missing ["error" "details" "available"])))))
+      (testing "malformed invoke arguments are protocol errors"
+        (doseq [args [{"name" "custom" "argv" [1] "payloads" {}}
+                      {"name" "" "argv" [] "payloads" {}}
+                      {"name" "custom" "argv" [] "payloads" {"k" 1}}
+                      {"name" "custom" "argv" []}
+                      {"name" "custom" "argv" [] "payloads" {} "bogus" true}]]
+          (let [bad (socket-request rt "invoke" args)]
+            (is (false? (get bad "ok")) (pr-str args))
+            (is (= "protocol/malformed-request" (get-in bad ["error" "code"])) (pr-str args))))))))
 
-(deftest json-socket-op-dispatch
+(deftest json-socket-stream-invoke-framing
   (with-runtime
     (fn [rt _]
-      (api/register-op! rt 'custom 'skein.weaver-test/test-op)
-      (let [custom (socket-request rt "op" {"name" "custom" "args" ["--flag" "value"]})]
-        (is (true? (get custom "ok")))
-        (is (= {"operation" "custom" "argv" ["--flag" "value"]}
-               (get custom "result"))))
-      (let [help (socket-request rt "op" {"name" "help" "args" []})]
-        (is (true? (get help "ok")))
-        (is (= "strand op <name> [args...]" (get-in help ["result" "usage"]))))
-      (let [bad (socket-request rt "op" {"name" "custom" "args" [1]})]
-        (is (false? (get bad "ok")))
-        (is (= "protocol/malformed-request" (get-in bad ["error" "code"])))))))
+      (api/register-op! rt 'streamer {:stream? true} 'skein.weaver-test/gated-stream-op)
+      (let [m (:metadata rt)]
+        (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
+                         (.connect (UnixDomainSocketAddress/of (:socket-path m))))
+                    rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
+                    wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
+          (.write wrt (json/write-str (invoke-frame rt "streamer" [])))
+          (.newLine wrt)
+          (.flush wrt)
+          (let [header (json/read-str (.readLine rdr))]
+            (is (true? (get header "stream")))
+            (is (= "test-request" (get header "request_id"))))
+          ;; line 0 is readable before the gate is delivered → incremental flush
+          (is (= {"i" 0} (json/read-str (.readLine rdr))))
+          (deliver @stream-gate true)
+          (is (= {"i" 1} (json/read-str (.readLine rdr))))
+          (let [terminator (json/read-str (.readLine rdr))]
+            (is (true? (get terminator "done")))
+            (is (true? (get terminator "success")))
+            (is (= {"emitted" 2} (get terminator "result")))
+            (is (= "test-request" (get terminator "request_id")))))))))
 
-(deftest json-socket-payload-hooks-gate-selected-operations
+(deftest json-socket-stream-invoke-error-terminator
   (with-runtime
     (fn [rt _]
-      (api/init rt)
-      (reset! hook-contexts [])
-      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-      (api/register-op! rt 'custom 'skein.weaver-test/test-op)
-      (let [source (api/add rt {:title "Payload source"})
-            target (api/add rt {:title "Payload target"})
-            replacement (api/add rt {:title "Payload replacement"})]
-        (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (is (true? (get (socket-request rt "add" {"title" "Payload add" "state" "active" "attributes" {"owner" "agent"}}) "ok")))
-        (is (true? (get (socket-request rt "update" {"id" (:id source) "attributes" {"priority" "high"}}) "ok")))
-        (is (true? (get (socket-request rt "supersede" {"old_id" (:id target) "replacement_id" (:id replacement)}) "ok")))
-        (is (true? (get (socket-request rt "burn" {"id" (:id source)}) "ok")))
-        (is (true? (get (socket-request rt "weave" {"pattern" "dev-task" "input" {"title" "Payload weave"}}) "ok")))
-        (is (true? (get (socket-request rt "op" {"name" "custom" "args" ["--flag"]}) "ok")))
-        (is (= [:add :update :supersede :burn :weave :op]
-               (mapv :request/operation @hook-contexts)))
-        (let [add-context (first @hook-contexts)
-              update-context (second @hook-contexts)]
-          (is (= :payload/received (:hook/type add-context)))
-          (is (= :payload (:hook/key add-context)))
-          (is (= 'skein.weaver-test/capture-hook (:hook/fn add-context)))
-          (is (= :json-socket (:request/source add-context)))
-          (is (= "test-request" (:request/id add-context)))
-          (is (= {"title" "Payload add" "state" "active" "attributes" {"owner" "agent"}}
-                 (:request/args add-context)))
-          (is (= {} (:request/options add-context)))
-          (is (= {"priority" "high"} (get-in update-context [:request/args "attributes"]))))))))
+      (api/register-op! rt 'streamer-error {:stream? true} 'skein.weaver-test/stream-error-op)
+      (let [m (:metadata rt)]
+        (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
+                         (.connect (UnixDomainSocketAddress/of (:socket-path m))))
+                    rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
+                    wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
+          (.write wrt (json/write-str (invoke-frame rt "streamer-error" [])))
+          (.newLine wrt)
+          (.flush wrt)
+          (is (true? (get (json/read-str (.readLine rdr)) "stream")))
+          (is (= {"i" 0} (json/read-str (.readLine rdr))))
+          (let [terminator (json/read-str (.readLine rdr))]
+            (is (true? (get terminator "done")))
+            (is (false? (get terminator "success")))
+            (is (= "domain" (get-in terminator ["error" "type"])))
+            (is (= "stream/failed" (get-in terminator ["error" "code"])))))))))
 
-(deftest json-socket-payload-hooks-skip-exempt-operations-and-protocol-errors
+(deftest json-socket-stream-op-fixture-file-loads-and-runs
+  ;; Guards the shipped test/fixtures/stream-op-init.clj that tasks 8/10 load
+  ;; from a disposable workspace init.clj.
   (with-runtime
     (fn [rt _]
-      (api/init rt)
-      (reset! hook-contexts [])
-      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-      (api/register-query rt 'all [:= :state "active"])
-      (let [strand-id (get-in (socket-request rt "add" {"title" "Exempt target" "attributes" {}}) ["result" "id"])]
-        (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
-        (reset! hook-contexts [])
-        (doseq [[op args] [["status" {}]
-                           ["show" {"id" strand-id}]
-                           ["list" {}]
-                           ["ready" {}]
-                           ["list-query" {"query" "all" "params" {}}]
-                           ["ready-query" {"query" "all" "params" {}}]
-                           ["pattern-list" {}]
-                           ["pattern-explain" {"pattern" "dev-task"}]
-                           ["query-list" {}]
-                           ["query-explain" {"query" "all"}]]]
-          (is (true? (get (socket-request rt op args) "ok")) op))
-        (is (empty? @hook-contexts))
-        (let [bad (socket-request rt "op" {"name" "custom" "args" [1]})]
-          (is (= "protocol/malformed-request" (get-in bad ["error" "code"])))
-          (is (empty? @hook-contexts)))
-        (let [wrong-identity (socket-request-envelope rt {"protocol_version" 1
-                                                          "request_id" "wrong-identity"
-                                                          "weaver_id" "wrong"
-                                                          "operation" "add"
-                                                          "arguments" {"title" "No hook" "attributes" {}}
-                                                          "options" {}})]
-          (is (= "protocol/identity-mismatch" (get-in wrong-identity ["error" "code"])))
-          (is (empty? @hook-contexts)))
-        (let [disallowed (socket-request rt "queries" {})]
-          (is (= "protocol/operation-not-allowed" (get-in disallowed ["error" "code"])))
-          (is (empty? @hook-contexts)))))))
+      (load-file "test/fixtures/stream-op-init.clj")
+      (let [m (:metadata rt)]
+        (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
+                         (.connect (UnixDomainSocketAddress/of (:socket-path m))))
+                    rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
+                    wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
+          (.write wrt (json/write-str (invoke-frame rt "test-stream" ["--count" "2"])))
+          (.newLine wrt)
+          (.flush wrt)
+          (is (true? (get (json/read-str (.readLine rdr)) "stream")))
+          (is (= {"i" 0} (json/read-str (.readLine rdr))))
+          (is (= {"i" 1} (json/read-str (.readLine rdr))))
+          (let [terminator (json/read-str (.readLine rdr))]
+            (is (true? (get terminator "done")))
+            (is (true? (get terminator "success")))
+            (is (= {"emitted" 2} (get terminator "result")))))))))
 
-(deftest json-socket-payload-hook-rejection-is-domain-error-before-dispatch
+(deftest json-socket-invoke-honors-op-deadline
   (with-runtime
     (fn [rt _]
-      (api/init rt)
-      (reset! hook-contexts [])
+      (api/register-op! rt 'slow 'skein.weaver-test/slow-op)
+      (let [timed-out (invoke-request rt "slow" [] {} {"timeout" 100})]
+        (is (false? (get timed-out "ok")))
+        (is (= "domain" (get-in timed-out ["error" "type"])))
+        (is (= "operation/deadline-exceeded" (get-in timed-out ["error" "code"]))))
+      ;; The deadline cancels the future with interruption, so the handler's
+      ;; sleep is aborted and its side effect never records — no orphan work
+      ;; survives a reported timeout.
+      (Thread/sleep 3200)
+      (is (= [] @op-side-effects)))))
+
+(deftest json-socket-invoke-payload-hooks-gate-mutating-ops
+  (with-runtime
+    (fn [rt _]
+      (api/register-op! rt 'mutate 'skein.weaver-test/test-op)
+      (api/register-op! rt 'reader {:hook-class :read} 'skein.weaver-test/test-op)
+      (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
+      (is (true? (get (invoke-request rt "mutate" ["--flag" "value"] {"body" "hi"}) "ok")))
+      ;; a read-class op skips payload hooks, preserving the old read exemption
+      (is (true? (get (invoke-request rt "reader" ["x"]) "ok")))
+      (is (= 1 (count @hook-contexts)))
+      (let [ctx (first @hook-contexts)]
+        (is (= :payload/received (:hook/type ctx)))
+        (is (= :payload (:hook/key ctx)))
+        (is (= 'skein.weaver-test/capture-hook (:hook/fn ctx)))
+        (is (= :json-socket (:request/source ctx)))
+        (is (= :invoke (:request/operation ctx)))
+        (is (= "test-request" (:request/id ctx)))
+        (is (= "mutate" (:op/name ctx)))
+        (is (= {"name" "mutate" "argv" ["--flag" "value"] "payloads" {"body" "hi"}}
+               (:request/args ctx)))
+        (is (= {} (:request/options ctx)))))))
+
+(deftest json-socket-invoke-read-ops-skip-hooks-and-protocol-errors
+  (with-runtime
+    (fn [rt _]
+      (api/register-op! rt 'reader {:hook-class :read} 'skein.weaver-test/test-op)
+      (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
+      (is (true? (get (invoke-request rt "reader" []) "ok")))
+      (is (true? (get (socket-request rt "status" {}) "ok")))
+      (is (empty? @hook-contexts))
+      (let [bad (socket-request rt "invoke" {"name" "reader" "argv" [1] "payloads" {}})]
+        (is (= "protocol/malformed-request" (get-in bad ["error" "code"])))
+        (is (empty? @hook-contexts)))
+      (let [wrong-identity (socket-request-envelope rt {"protocol_version" 1
+                                                        "request_id" "wrong-identity"
+                                                        "weaver_id" "wrong"
+                                                        "operation" "invoke"
+                                                        "arguments" {"name" "reader" "argv" [] "payloads" {}}
+                                                        "options" {}})]
+        (is (= "protocol/identity-mismatch" (get-in wrong-identity ["error" "code"])))
+        (is (empty? @hook-contexts)))
+      (let [disallowed (socket-request rt "queries" {})]
+        (is (= "protocol/operation-not-allowed" (get-in disallowed ["error" "code"])))
+        (is (empty? @hook-contexts))))))
+
+(deftest json-socket-invoke-payload-hook-rejection-is-domain-error-before-dispatch
+  (with-runtime
+    (fn [rt _]
+      (api/register-op! rt 'mutate 'skein.weaver-test/side-effecting-op)
       (api/register-hook! rt :reject-payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
-      (let [response (socket-request rt "add" {"title" "Rejected payload" "attributes" {}})]
+      (let [response (invoke-request rt "mutate" ["arg"] {"body" "payload"})]
         (is (false? (get response "ok")))
         (is (= "domain" (get-in response ["error" "type"])))
         (is (= "hook/failed" (get-in response ["error" "code"])))
         (is (= "policy/rejected" (get-in response ["error" "details" "hook/cause-code"])))
-        (is (= "Rejected payload" (get-in response ["error" "details" "exception/data" "ctx" "request/args" "title"])))
-        (is (empty? (api/list rt)))))))
+        (is (= {"name" "mutate" "argv" ["arg"] "payloads" {"body" "payload"}}
+               (get-in response ["error" "details" "exception/data" "ctx" "request/args"])))
+        ;; the rejection precedes dispatch: the op handler never ran
+        (is (empty? @op-side-effects))))))
 
-(deftest json-socket-semantic-hooks-receive-socket-request-context
+(deftest json-socket-invoke-error-details-are-json-safe
   (with-runtime
     (fn [rt _]
-      (api/init rt)
-      (reset! hook-contexts [])
-      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-      (api/register-hook! rt :normalize #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {})
-      (api/register-hook! rt :add #{:strand/add-before-commit} 'skein.weaver-test/capture-hook {})
-      (api/register-hook! rt :batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
-      (is (true? (get (socket-request rt "add" {"title" "Socket add" "attributes" {"owner" "agent"}}) "ok")))
-      (is (true? (get (socket-request rt "weave" {"pattern" "dev-task" "input" {"title" "Socket weave"}}) "ok")))
-      (let [contexts @hook-contexts]
-        (is (= #{:json-socket} (set (map :request/source contexts))))
-        (is (= [:add :add :weave :weave :weave]
-               (mapv :request/operation contexts)))
-        (is (= [:normalize :add :normalize :normalize :batch]
-               (mapv :hook/key contexts)))))))
-
-(deftest json-socket-hook-failure-details-are-json-safe
-  (with-runtime
-    (fn [rt _]
-      (api/init rt)
-      (api/register-hook! rt :non-json #{:strand/add-before-commit} 'skein.weaver-test/non-json-rejecting-hook {})
-      (let [response (socket-request rt "add" {"title" "Non JSON" "attributes" {}})]
+      (api/register-op! rt 'boom 'skein.weaver-test/throwing-op)
+      (let [response (invoke-request rt "boom" [])]
         (is (false? (get response "ok")))
-        (is (= "hook/failed" (get-in response ["error" "code"])))
-        (is (= "strand/add-before-commit" (get-in response ["error" "details" "hook/type"])))
-        (is (= "policy/non-json" (get-in response ["error" "details" "hook/cause-code"])))
-        (is (= "strand/add-before-commit" (get-in response ["error" "details" "exception/data" "hook-stage"])))
-        (is (= "policy/non-json" (get-in response ["error" "details" "exception/data" "nested" "reason"])))
-        (is (string? (get-in response ["error" "details" "exception/data" "opaque"])))))))
+        (is (= "domain" (get-in response ["error" "type"])))
+        (is (= "op/failed" (get-in response ["error" "code"])))
+        (is (= "policy/nope" (get-in response ["error" "details" "nested" "reason"])))
+        (is (string? (get-in response ["error" "details" "opaque"])))))))
 
 (deftest weaver-query-registry-fails-clearly
   (with-runtime
@@ -1938,98 +2197,25 @@
         (is (= "127.0.0.1" (get-in status [:endpoint :host])))
         (is (.isLoopbackAddress (.getInetAddress (:server-socket (:server rt)))))))))
 
-(deftest json-socket-dispatches-success-domain-and-protocol-errors
+(deftest json-socket-removed-builtin-operations-are-not-available
   (with-runtime
     (fn [rt _]
-      (let [removed-init (socket-request rt "init" {})]
-        (is (false? (get removed-init "ok")))
-        (is (= "protocol/operation-not-allowed" (get-in removed-init ["error" "code"]))))
-      (let [added (socket-request rt "add" {"title" "Socket task" "state" "active" "attributes" {"owner" "go"}})]
-        (is (true? (get added "ok")))
-        (is (= "Socket task" (get-in added ["result" "title"])))
-        (is (= "active" (get-in added ["result" "state"])))
-        (is (not (contains? (get added "result") "active")))
-        (is (not (contains? (get added "result") "inactive_at")))
-        (is (= {"owner" "go"} (get-in added ["result" "attributes"]))))
-      (let [target (socket-request rt "add" {"title" "Target" "state" "closed" "attributes" {}})
-            source (socket-request rt "add" {"title" "Source" "state" "active" "attributes" {}})
-            updated (socket-request rt "update" {"id" (get-in source ["result" "id"])
-                                                  "title" nil
-                                                  "state" nil
-                                                  "attributes" nil
-                                                  "edges" [{"type" "depends-on"
-                                                            "to" (get-in target ["result" "id"])
-                                                            "attributes" {"reason" "socket"}}]})]
-        (is (true? (get updated "ok")))
-        (is (= [{:to_strand_id (get-in target ["result" "id"])
-                 :edge_type "depends-on"
-                 :attributes {:reason "socket"}}]
-               (mapv #(update % :attributes db/<-json)
-                     (db/execute! (:datasource rt)
-                                  ["SELECT to_strand_id, edge_type, attributes FROM strand_edges WHERE from_strand_id = ?"
-                                   (get-in source ["result" "id"])]))))
-        (let [subgraph (socket-request rt "subgraph" {"root_ids" [(get-in source ["result" "id"])]
-                                                       "type" "depends-on"})]
-          (is (true? (get subgraph "ok")))
-          (is (= [(get-in source ["result" "id"])] (get-in subgraph ["result" "root_ids"])))
-          (is (= #{(get-in source ["result" "id"]) (get-in target ["result" "id"])}
-                 (set (map #(get % "id") (get-in subgraph ["result" "strands"])))))
-          (is (= [{"from_strand_id" (get-in source ["result" "id"])
-                   "to_strand_id" (get-in target ["result" "id"])
-                   "edge_type" "depends-on"
-                   "attributes" {"reason" "socket"}}]
-                 (get-in subgraph ["result" "edges"])))))
-      (let [missing (socket-request rt "update" {"id" "missing" "title" nil "state" nil "attributes" nil "edges" []})]
-        (is (false? (get missing "ok")))
-        (is (= "domain" (get-in missing ["error" "type"]))))
-      (let [old (socket-request rt "add" {"title" "Old supersession" "attributes" {}})
-            replacement (socket-request rt "add" {"title" "Replacement" "attributes" {}})
-            superseded (socket-request rt "supersede" {"old_id" (get-in old ["result" "id"])
-                                                        "replacement_id" (get-in replacement ["result" "id"])})]
-        (is (true? (get superseded "ok")))
-        (is (= "replaced" (get-in superseded ["result" "old" "after" "state"])))
-        (is (= "supersedes" (get-in superseded ["result" "supersedes-edge" "edge_type"]))))
-      (let [bad-supersede (socket-request rt "supersede" {"old_id" "missing"})]
-        (is (false? (get bad-supersede "ok")))
-        (is (= "protocol/malformed-request" (get-in bad-supersede ["error" "code"]))))
-      (let [replaced-update (socket-request rt "update" {"id" (get-in (socket-request rt "add" {"title" "Cannot replace" "attributes" {}}) ["result" "id"])
-                                                 "state" "replaced"})]
-        (is (false? (get replaced-update "ok")))
-        (is (= "protocol/malformed-request" (get-in replaced-update ["error" "code"]))))
-      (let [old-lifecycle (socket-request rt "add" {"title" "Old lifecycle" "active" true "attributes" {}})]
-        (is (false? (get old-lifecycle "ok")))
-        (is (= "protocol/malformed-request" (get-in old-lifecycle ["error" "code"]))))
-      (let [rejected (socket-request rt "queries" {})]
-        (is (false? (get rejected "ok")))
-        (is (= "protocol/operation-not-allowed" (get-in rejected ["error" "code"])))))))
-
-(deftest json-socket-update-event-patch-preserves-submitted-keys
-  (with-runtime
-    (fn [rt _]
-      (api/init rt)
-      (reset! delivered-events [])
-      (api/register-event-handler! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event {})
-      (let [added (socket-request rt "add" {"title" "Socket patch" "state" "active" "attributes" {}})
-            updated (socket-request rt "update" {"id" (get-in added ["result" "id"])
-                                                  "state" "closed"})]
-        (is (true? (get updated "ok")))
-        (let [event (first (wait-for-events 1))]
-          (is (= :strand/updated (:event/type event)))
-          (is (= {:state "closed"} (:strand/patch event))))))))
-
-(deftest json-socket-store-is-ready-after-startup
-  (with-runtime
-    (fn [rt _]
-      (let [response (socket-request rt "list" {})]
-        (is (= true (get response "ok")))
-        (is (= [] (get response "result")))))))
+      ;; The old fixed command surface (add/update/... and the socket stop op)
+      ;; is gone; only invoke and status remain.
+      (doseq [op ["init" "add" "update" "supersede" "show" "burn" "list" "ready"
+                  "list-query" "ready-query" "weave" "subgraph"
+                  "pattern-list" "query-list" "op" "stop"]]
+        (let [rejected (socket-request rt op {})]
+          (is (false? (get rejected "ok")) op)
+          (is (= "protocol/operation-not-allowed" (get-in rejected ["error" "code"])) op)))
+      (is (true? (get (socket-request rt "status" {}) "ok"))))))
 
 (deftest json-socket-rejects-identity-mismatch
   (with-runtime
     (fn [rt _]
       (let [m (:metadata rt)
             req {"protocol_version" 1 "request_id" "bad-identity" "weaver_id" "wrong"
-                 "operation" "stop" "arguments" {} "options" {}}]
+                 "operation" "status" "arguments" {} "options" {}}]
         (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
                          (.connect (UnixDomainSocketAddress/of (:socket-path m))))
                     rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
@@ -2042,43 +2228,6 @@
             (is (= "protocol/identity-mismatch" (get-in response ["error" "code"]))))))
       (Thread/sleep 100)
       (is (.exists (metadata/socket-file (:metadata rt)))))))
-
-(deftest json-socket-rejects-malformed-stop-without-shutdown
-  (with-runtime
-    (fn [rt _]
-      (let [m (:metadata rt)
-            req {"protocol_version" 1 "request_id" "bad-stop" "weaver_id" (:nonce m)
-                 "operation" "stop" "arguments" {"force" true} "options" {}}]
-        (with-open [ch (doto (SocketChannel/open StandardProtocolFamily/UNIX)
-                         (.connect (UnixDomainSocketAddress/of (:socket-path m))))
-                    rdr (BufferedReader. (InputStreamReader. (Channels/newInputStream ch)))
-                    wrt (BufferedWriter. (OutputStreamWriter. (Channels/newOutputStream ch)))]
-          (.write wrt (json/write-str req))
-          (.newLine wrt)
-          (.flush wrt)
-          (let [response (json/read-str (.readLine rdr))]
-            (is (= false (get response "ok")))
-            (is (= "protocol/malformed-request" (get-in response ["error" "code"]))))))
-      (Thread/sleep 100)
-      (is (.exists (metadata/socket-file (:metadata rt)))))))
-
-(deftest json-socket-stop-cleans-runtime
-  (let [db-file (db-test/temp-db-file)
-        world (temp-world)
-        rt (runtime/start! db-file {:world world :publish? false})]
-    (try
-      (reset! hook-contexts [])
-      (api/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
-      (let [response (socket-request rt "stop" {})]
-        (is (true? (get response "ok")))
-        (is (= true (get-in response ["result" "stopping"])))
-        (is (empty? @hook-contexts)))
-      (Thread/sleep 250)
-      (is (false? (.exists (metadata/socket-file (:metadata rt)))))
-      (is (false? (.exists (metadata/json-metadata-file (:metadata rt)))))
-      (finally
-        (runtime/stop! rt)
-        (db-test/delete-sqlite-family! db-file)))))
 
 (deftest metadata-shape-detects-missing-and-stale-files
   (let [db-file (db-test/temp-db-file)

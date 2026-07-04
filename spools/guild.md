@@ -158,21 +158,20 @@ the existing JSON socket protocol:
 
 (def backend (peers/peer "backend"))
 
-(peers/call! backend "op"
-  {"name" "guild.describe"
-   "args" []})
+(peers/call! backend "guild.describe")
 ;; => {"guild" "backend", "active" [...], "deprecated" [...]}
 
-(peers/call! backend "op"
-  {"name" "gate.status.v1"
-   "args" [(json/write-str {:gate-name "api-ready"})]})
+(peers/call! backend "gate.status.v1"
+  {:argv [(json/write-str {:gate-name "api-ready"})]})
 ;; => {"gate" "api-ready", "satisfied" false}
 ```
 
 `skein.api.peers.alpha` is explicit-require userland API: `(peers/peers)`
 enumerates running sibling weavers from mill metadata, `(peers/peer
 name-or-workspace)` resolves exactly one running peer, and `(peers/call! peer op
-args)` invokes one allowlisted public JSON socket operation. It does not
+args)` invokes one named op on the peer over the invoke envelope (optional
+`:argv`/`:payloads` in `args`); unknown ops and the peer's payload hooks reject
+receiving-side, and stream-class ops fail loudly as unsupported. It does not
 auto-start peers or add retries; unavailable peers fail loudly.
 
 ## See also

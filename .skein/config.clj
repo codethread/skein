@@ -3,9 +3,9 @@
 
   Thin glue over the shipped spools: `skein.spools.devflow` owns the feature
   lifecycle, `skein.spools.workflow` is the engine, and `skein.spools.agents`
-  owns the `strand op agent` surface plus the `agent-plan` pattern (all
+  owns the `strand agent` surface plus the `agent-plan` pattern (all
   activated from init.clj). This config shrinks to genuine workspace tuning:
-  CLI-facing `strand op` wrappers over the devflow spool commands, a few named
+  CLI-facing root ops wrapping the devflow spool commands, a few named
   queries, the `delegate-pipeline` weave pattern, the `current-dags` graph
   projection, repo-local shuttle harness aliases, chime attention rules, and
   the default review contract."
@@ -246,7 +246,7 @@
 (defn current-dags-op
   "Return active parent-of work DAGs and their active depends-on edges.
 
-  Usage: `strand op current-dags`. This is an operation rather than only a named
+  Usage: `strand current-dags`. This is an operation rather than only a named
   query because the CLI query surface returns flat strand rows; this handler
   projects roots, hierarchy edges, dependency edges, and compact strand rows
   into one JSON-compatible structure for agents and humans."
@@ -320,11 +320,11 @@
 (defn devflow-start-op
   "Start the devflow lifecycle for a feature.
 
-  Usage: `strand op devflow-start <feature> [worktree-check]` where
+  Usage: `strand devflow-start <feature> [worktree-check]` where
   worktree-check is `required` (default) or `already-in-worktree-ok`.
   The feature name is the workflow run-id for all other devflow ops."
   [ctx]
-  (let [usage "strand op devflow-start <feature> [required|already-in-worktree-ok]"
+  (let [usage "strand devflow-start <feature> [required|already-in-worktree-ok]"
         [feature worktree-check] (require-argv-range! "devflow-start" (:op/argv ctx) 1 2 usage)
         _ (require-non-blank! :feature feature)
         _ (when (and worktree-check (not (contains? worktree-check-values worktree-check)))
@@ -338,9 +338,9 @@
 (defn devflow-next-op
   "Return the ready devflow step views for a feature.
 
-  Usage: `strand op devflow-next <feature>`."
+  Usage: `strand devflow-next <feature>`."
   [ctx]
-  (let [usage "strand op devflow-next <feature>"
+  (let [usage "strand devflow-next <feature>"
         [feature] (require-argv-range! "devflow-next" (:op/argv ctx) 1 1 usage)]
     {:operation "devflow-next"
      :feature feature
@@ -349,9 +349,9 @@
 (defn devflow-choices-op
   "Return choice explanations for the feature's current checkpoint.
 
-  Usage: `strand op devflow-choices <feature> [step=<id>]`."
+  Usage: `strand devflow-choices <feature> [step=<id>]`."
   [ctx]
-  (let [usage "strand op devflow-choices <feature> [step=<id>]"
+  (let [usage "strand devflow-choices <feature> [step=<id>]"
         [args step] (split-step-arg "devflow-choices" (:op/argv ctx) usage)
         [feature] (require-argv-range! "devflow-choices" args 1 1 usage)]
     {:operation "devflow-choices"
@@ -361,11 +361,11 @@
 (defn devflow-choose-op
   "Record a devflow checkpoint choice, optionally with JSON input.
 
-  Usage: `strand op devflow-choose <feature> <choice> [json-input] [step=<id>]`.
+  Usage: `strand devflow-choose <feature> <choice> [json-input] [step=<id>]`.
   `json-input` must be a JSON object; routed choices merge it into the next
   stage's params (an abort requires `{\"reason\":\"...\"}`)."
   [ctx]
-  (let [usage "strand op devflow-choose <feature> <choice> [json-input] [step=<id>]"
+  (let [usage "strand devflow-choose <feature> <choice> [json-input] [step=<id>]"
         [args step] (split-step-arg "devflow-choose" (:op/argv ctx) usage)
         [feature choice raw-input] (require-argv-range! "devflow-choose" args 2 3 usage)
         input (if raw-input (parse-json-object-arg "devflow-choose" raw-input) {})]
@@ -377,9 +377,9 @@
 (defn devflow-complete-op
   "Close the feature's current non-checkpoint devflow step.
 
-  Usage: `strand op devflow-complete <feature> [notes] [step=<id>]`."
+  Usage: `strand devflow-complete <feature> [notes] [step=<id>]`."
   [ctx]
-  (let [usage "strand op devflow-complete <feature> [notes] [step=<id>]"
+  (let [usage "strand devflow-complete <feature> [notes] [step=<id>]"
         [args step] (split-step-arg "devflow-complete" (:op/argv ctx) usage)
         [feature notes] (require-argv-range! "devflow-complete" args 1 2 usage)
         opts (cond-> {}
@@ -403,7 +403,7 @@
 (defn- parse-advance-argv
   "Parse devflow-advance positional args into a feature and workflow advance opts."
   [argv]
-  (let [usage "strand op devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]"
+  (let [usage "strand devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]"
         [args step] (split-step-arg "devflow-advance" argv usage)
         [feature & rest-args] (require-argv-range! "devflow-advance" args 1 4 usage)
         _ (require-non-blank! :feature feature)
@@ -434,7 +434,7 @@
 (defn devflow-advance-op
   "Advance the current devflow step or checkpoint for a feature.
 
-  Usage: `strand op devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]`.
+  Usage: `strand devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]`.
   With one bare optional arg, the arg is a choice when the selected ready step is
   a checkpoint and notes otherwise. JSON input must be an object starting with
   `{`; abort choices require a JSON object with a reason key."
@@ -447,10 +447,10 @@
 (defn devflow-describe-op
   "Return the devflow cycle or one registered stage description.
 
-  Usage: `strand op devflow-describe [stage-key]`, where stage-key is a stable
+  Usage: `strand devflow-describe [stage-key]`, where stage-key is a stable
   devflow registry key such as `proposal` or `spec-plan`."
   [ctx]
-  (let [usage "strand op devflow-describe [stage-key]"
+  (let [usage "strand devflow-describe [stage-key]"
         [stage] (require-argv-range! "devflow-describe" (:op/argv ctx) 0 1 usage)]
     {:operation "devflow-describe"
      :stage stage
@@ -459,9 +459,9 @@
 (defn devflow-history-op
   "Return ordered devflow run history for a feature.
 
-  Usage: `strand op devflow-history <feature>`."
+  Usage: `strand devflow-history <feature>`."
   [ctx]
-  (let [usage "strand op devflow-history <feature>"
+  (let [usage "strand devflow-history <feature>"
         [feature] (require-argv-range! "devflow-history" (:op/argv ctx) 1 1 usage)]
     {:operation "devflow-history"
      :feature feature
@@ -470,10 +470,10 @@
 (defn devflow-archive-op
   "Archive a finished devflow run into one closed digest strand.
 
-  Usage: `strand op devflow-archive <feature>`. Fails loudly while any devflow
+  Usage: `strand devflow-archive <feature>`. Fails loudly while any devflow
   stage root for the feature is still active."
   [ctx]
-  (let [usage "strand op devflow-archive <feature>"
+  (let [usage "strand devflow-archive <feature>"
         [feature] (require-argv-range! "devflow-archive" (:op/argv ctx) 1 1 usage)]
     {:operation "devflow-archive"
      :feature feature
@@ -482,10 +482,10 @@
 (defn devflow-status-op
   "Return the active devflow root, ready steps, and done state for a feature.
 
-  Usage: `strand op devflow-status <feature>`. Fails loudly for a feature that
+  Usage: `strand devflow-status <feature>`. Fails loudly for a feature that
   never started a devflow run."
   [ctx]
-  (let [usage "strand op devflow-status <feature>"
+  (let [usage "strand devflow-status <feature>"
         [feature] (require-argv-range! "devflow-status" (:op/argv ctx) 1 1 usage)]
     {:operation "devflow-status"
      :feature feature
@@ -496,9 +496,9 @@
 (defn workflow-runs-op
   "Return active workflow molecule roots, optionally filtered by family.
 
-  Usage: `strand op workflow-runs [family]`."
+  Usage: `strand workflow-runs [family]`."
   [ctx]
-  (let [usage "strand op workflow-runs [family]"
+  (let [usage "strand workflow-runs [family]"
         [family] (require-argv-range! "workflow-runs" (:op/argv ctx) 0 1 usage)]
     {:operation "workflow-runs"
      :family family
@@ -521,23 +521,23 @@
             {:namespace "skein.spools.backlog"
              :doc "spools/backlog.md"
              :purpose "BACKLOG.md feature queue backed by backlog item strands."}]
-   :ops [{:name "backlog" :usage "strand op backlog <about|add|next|claim|finish|sync> ..."}
-         {:name "devflow-start" :usage "strand op devflow-start <feature> [required|already-in-worktree-ok]"}
-         {:name "devflow-next" :usage "strand op devflow-next <feature>"}
-         {:name "devflow-choices" :usage "strand op devflow-choices <feature> [step=<id>]"}
-         {:name "devflow-choose" :usage "strand op devflow-choose <feature> <choice> [json-input] [step=<id>]"}
-         {:name "devflow-complete" :usage "strand op devflow-complete <feature> [notes] [step=<id>]"}
-         {:name "devflow-advance" :usage "strand op devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]"}
-         {:name "devflow-describe" :usage "strand op devflow-describe [stage-key]"}
-         {:name "devflow-history" :usage "strand op devflow-history <feature>"}
-         {:name "devflow-archive" :usage "strand op devflow-archive <feature>"}
-         {:name "devflow-status" :usage "strand op devflow-status <feature>"}
-         {:name "workflow-runs" :usage "strand op workflow-runs [family]"}
-         {:name "current-dags" :usage "strand op current-dags"}
-         {:name "carder-report" :usage "strand op carder-report [--days <n>] [--include-plumbing true|false]"}
-         {:name "agent" :usage "strand op agent about — the delegation manual (spawn/delegate/retry/status/ps/await/logs/kill/note/notes/council/review); shipped by skein.spools.agents"}
-         {:name "flow-await" :usage "strand op flow-await <workflow-run-id> [--timeout-secs <n>]"}
-         {:name "flow-status" :usage "strand op flow-status <workflow-run-id>"}]
+   :ops [{:name "backlog" :usage "strand backlog <about|add|next|claim|finish|sync> ..."}
+         {:name "devflow-start" :usage "strand devflow-start <feature> [required|already-in-worktree-ok]"}
+         {:name "devflow-next" :usage "strand devflow-next <feature>"}
+         {:name "devflow-choices" :usage "strand devflow-choices <feature> [step=<id>]"}
+         {:name "devflow-choose" :usage "strand devflow-choose <feature> <choice> [json-input] [step=<id>]"}
+         {:name "devflow-complete" :usage "strand devflow-complete <feature> [notes] [step=<id>]"}
+         {:name "devflow-advance" :usage "strand devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]"}
+         {:name "devflow-describe" :usage "strand devflow-describe [stage-key]"}
+         {:name "devflow-history" :usage "strand devflow-history <feature>"}
+         {:name "devflow-archive" :usage "strand devflow-archive <feature>"}
+         {:name "devflow-status" :usage "strand devflow-status <feature>"}
+         {:name "workflow-runs" :usage "strand workflow-runs [family]"}
+         {:name "current-dags" :usage "strand current-dags"}
+         {:name "carder-report" :usage "strand carder-report [--days <n>] [--include-plumbing true|false]"}
+         {:name "agent" :usage "strand agent about — the delegation manual (spawn/delegate/retry/status/ps/await/logs/kill/note/notes/council/review); shipped by skein.spools.agents"}
+         {:name "flow-await" :usage "strand flow-await <workflow-run-id> [--timeout-secs <n>]"}
+         {:name "flow-status" :usage "strand flow-status <workflow-run-id>"}]
    :patterns [{:name "agent-plan"
                :purpose "Create a feature strand plus task/review children for agent work; now shipped by skein.spools.agents, not this config."}
               {:name "delegate-pipeline"
@@ -629,7 +629,7 @@
 (defn carder-report-op
   "Return the carder graph hygiene report for active work.
 
-  Usage: `strand op carder-report [--days <n>] [--include-plumbing true|false]`.
+  Usage: `strand carder-report [--days <n>] [--include-plumbing true|false]`.
   This is a read-only wrapper around `skein.spools.carder/report` for checking
   stale active strands, orphaned strands, and work blocked by failed agent runs.
   Repo-local expected backlog queue roots are suppressed from the orphan list."
@@ -648,10 +648,10 @@
 (defn flow-await-op
   "Block until a workflow run is done or needs coordinator attention.
 
-  Usage: `strand op flow-await <workflow-run-id> [--timeout-secs <n>]`. Uses the
+  Usage: `strand flow-await <workflow-run-id> [--timeout-secs <n>]`. Uses the
   treadle stall predicate registered at spool install time."
   [ctx]
-  (let [usage "strand op flow-await <workflow-run-id> [--timeout-secs <n>]"
+  (let [usage "strand flow-await <workflow-run-id> [--timeout-secs <n>]"
         {:keys [positional flags]} (parse-op-argv "flow-await" (:op/argv ctx)
                                                   {"--timeout-secs" :single})
         [run-id] (require-argv-range! "flow-await" positional 1 1 usage)]
@@ -720,10 +720,10 @@
 (defn flow-status-op
   "Return workflow flow status by joining history, frontier, gates, runs, and stalls.
 
-  Usage: `strand op flow-status <workflow-run-id>`. The JSON payload is read-only
+  Usage: `strand flow-status <workflow-run-id>`. The JSON payload is read-only
   and suitable for renderers; no workflow, shuttle, or treadle state is mutated."
   [ctx]
-  (let [usage "strand op flow-status <workflow-run-id>"
+  (let [usage "strand flow-status <workflow-run-id>"
         [run-id] (require-argv-range! "flow-status" (:op/argv ctx) 1 1 usage)
         rt (current/runtime)
         history (workflow/run-history run-id)
@@ -1021,7 +1021,8 @@
          (api/register-op!
           runtime
           'flow-await
-          "Block until a workflow run needs coordinator attention"
+          {:doc "Block until a workflow run needs coordinator attention"
+           :deadline-class :unbounded}
           'config/flow-await-op)
          (api/register-op!
           runtime

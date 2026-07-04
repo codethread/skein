@@ -111,7 +111,7 @@ local function handle_weaver_list_result(result, on_success)
 
   local running = running_weavers(rows_or_err)
   if #running == 0 then
-    notify_error("no running Skein weavers found; start one with :!strand weaver start")
+    notify_error("no running Skein weavers found; start one with :!mill weaver start")
     return
   end
 

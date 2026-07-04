@@ -37,7 +37,7 @@ func resolveLaunchSource(cwd string) (string, error) {
 	if err == nil {
 		return config.ValidateSource("canonical Skein checkout cwd", root)
 	}
-	return "", fmt.Errorf("unable to resolve Skein source for weaver launch; set SKEIN_SOURCE to a Skein checkout, reinstall mill with a valid install-time source, or run strand weaver start from a canonical Skein checkout cwd containing deps.edn")
+	return "", fmt.Errorf("unable to resolve Skein source for weaver launch; set SKEIN_SOURCE to a Skein checkout, reinstall mill with a valid install-time source, or run mill weaver start from a canonical Skein checkout cwd containing deps.edn")
 }
 
 func weaverArgs(world config.World, name string) []string {
@@ -224,10 +224,27 @@ func (s *server) stopWeaver(req client.MillWorldRequest) (map[string]any, error)
 	if child == nil || child.cmd.Process == nil || !processAlive(child.cmd.Process.Pid) {
 		delete(s.children, world.ConfigDir)
 		if status, stale := readStatus(world); status != nil {
-			if !stale {
-				return nil, fmt.Errorf("selected workspace weaver is not supervised by this mill")
+			if stale {
+				// Loud staleness check (as the old socket stop had): drop the
+				// dead/mismatched runtime metadata and report stopped.
+				cleanupWorldArtifacts(world)
+				return baseStatus(world, "stopped"), nil
 			}
+			// A live weaver this mill does not supervise (e.g. started by a
+			// previous mill): the socket `stop` op no longer exists, so signal
+			// the pid and let the weaver's shutdown hook clean its own runtime
+			// metadata, then wait for that cleanup.
+			pid, ok := status["pid"].(int)
+			if !ok || pid <= 0 {
+				return nil, fmt.Errorf("selected workspace weaver metadata is missing a valid pid")
+			}
+			terminatePID(pid)
+			waitForPIDExit(pid, 5*time.Second)
 			cleanupWorldArtifacts(world)
+			st := baseStatus(world, "stopped")
+			st["pid"] = pid
+			millLogf("weaver stopped (unsupervised) config_dir=%s state_dir=%s pid=%d", world.ConfigDir, world.StateDir, pid)
+			return st, nil
 		}
 		return baseStatus(world, "stopped"), nil
 	}
@@ -425,6 +442,21 @@ func terminatePID(pid int) {
 		if p, err := os.FindProcess(pid); err == nil {
 			_ = p.Signal(syscall.SIGTERM)
 		}
+	}
+}
+
+// waitForPIDExit blocks until pid is no longer alive or timeout elapses,
+// escalating to SIGKILL on timeout so a stuck weaver cannot linger.
+func waitForPIDExit(pid int, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !processAlive(pid) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if pid > 0 {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
 }
 
