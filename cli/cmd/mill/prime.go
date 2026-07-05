@@ -44,6 +44,8 @@ func runPrime(topic, tmpl string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprint(os.Stdout, out)
+	if _, err := fmt.Fprint(os.Stdout, out); err != nil {
+		return fmt.Errorf("writing prime output: %w", err)
+	}
 	return nil
 }
