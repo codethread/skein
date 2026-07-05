@@ -7,8 +7,8 @@
 import { appendFileSync } from "node:fs";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, render, useApp, useInput, useStdin, type Key } from "ink";
-import { opts, type DetailRow } from "./data";
-import { DetailView, Failure, Header, TableRow, detailMaxScroll, useTerminalSize, type Cell, type ListProps } from "./ui";
+import { editorArgv, editorFileFor, opts, workspaceRoot, type DetailRow } from "./data";
+import { DetailView, Failure, Header, TableRow, detailMaxScroll, detailPage, listPage, useTerminalSize, type Cell, type ListProps } from "./ui";
 
 // ── reusable list+detail view state ──────────────────────────────────────────
 // One scrollable list with an optional attribute detail. Selection is anchored
@@ -34,14 +34,17 @@ export function followSelection<R>(s: ListState, rows: R[], keyOf: (r: R) => str
   return { ...s, selected, anchor: keyOf(rows[selected]!) };
 }
 
-// List-mode movement (↑↓/jk, g/G). Returns the next state, or null when the key
-// is not a movement command so callers can layer enter/refresh on top.
-export function reduceListKeys<R>(s: ListState, input: string, key: Key, rows: R[], keyOf: (r: R) => string): ListState | null {
+// List-mode movement (↑↓/jk, ⌃u/⌃d half-page, g/G). Returns the next state, or
+// null when the key is not a movement command so callers can layer enter/refresh
+// on top. `page` is the ⌃u/⌃d jump distance (half a viewport, see listPage).
+export function reduceListKeys<R>(s: ListState, input: string, key: Key, rows: R[], keyOf: (r: R) => string, page = 1): ListState | null {
   if (rows.length === 0) return null;
   const go = (raw: number): ListState => {
     const next = Math.max(0, Math.min(rows.length - 1, raw));
     return { ...s, selected: next, anchor: keyOf(rows[next]!) };
   };
+  if (key.ctrl && input === "u") return go(s.selected - page);
+  if (key.ctrl && input === "d") return go(s.selected + page);
   if (key.upArrow || input === "k") return go(s.selected - 1);
   if (key.downArrow || input === "j") return go(s.selected + 1);
   if (input === "g") return go(0);
@@ -49,10 +52,13 @@ export function reduceListKeys<R>(s: ListState, input: string, key: Key, rows: R
   return null;
 }
 
-// Detail-mode scroll (↑↓/jk, g/G) and back (esc/h/←). Returns the next scroll
-// offset, "back" to leave the detail, or null when the key is not handled. The
-// offset can be 0, so callers must test `!== null`.
-export function reduceScrollKeys(scroll: number, input: string, key: Key, maxScroll: number): number | "back" | null {
+// Detail-mode scroll (↑↓/jk, ⌃u/⌃d half-page, g/G) and back (esc/h/←). Returns
+// the next scroll offset, "back" to leave the detail, or null when the key is not
+// handled. The offset can be 0, so callers must test `!== null`. `page` is the
+// ⌃u/⌃d jump distance (half a viewport, see detailPage).
+export function reduceScrollKeys(scroll: number, input: string, key: Key, maxScroll: number, page = 1): number | "back" | null {
+  if (key.ctrl && input === "u") return Math.max(0, scroll - page);
+  if (key.ctrl && input === "d") return Math.min(maxScroll, scroll + page);
   if (key.upArrow || input === "k") return Math.max(0, scroll - 1);
   if (key.downArrow || input === "j") return Math.min(maxScroll, scroll + 1);
   if (input === "g") return 0;
@@ -98,6 +104,10 @@ export type Tab<V> = {
   onKey: (v: V, ctx: KeyCtx<V>) => V;
   // A detail is open: the shell blocks ⇥ and leaves the all/active axis inert.
   inDetail: (v: V) => boolean;
+  // The strand under the cursor in the tab's current view, or null when nothing is
+  // focused (empty list, or a view with no single strand like the graph pane). The
+  // shell opens it in $EDITOR on ⌃g.
+  editTarget: (v: V) => DetailRow | null;
   // The all/active axis applies in the tab's current view.
   allApplies: (v: V) => boolean;
   render: (v: V, ctx: RenderCtx) => React.ReactElement;
@@ -129,6 +139,7 @@ export function listDetailTab<R extends DetailRow>(cfg: {
     fetchKey: () => "",
     allApplies: () => true,
     inDetail: (v) => v.s.view === "detail",
+    editTarget: (v) => v.rows[v.s.selected] ?? null,
     refresh: async (_v, all) => {
       try {
         const rows = await cfg.fetch(all);
@@ -141,13 +152,13 @@ export function listDetailTab<R extends DetailRow>(cfg: {
     onKey: (v, ctx) => {
       const { input, key } = ctx;
       if (v.s.view === "detail") {
-        const r = reduceScrollKeys(v.s.detailScroll, input, key, detailMaxScroll(v.rows[v.s.selected], ctx.cols, ctx.termRows));
+        const r = reduceScrollKeys(v.s.detailScroll, input, key, detailMaxScroll(v.rows[v.s.selected], ctx.cols, ctx.termRows), detailPage(ctx.termRows));
         if (r === "back") return { ...v, s: { ...v.s, view: "list" } };
         if (r !== null) return { ...v, s: { ...v.s, detailScroll: r } };
         if (input === "r") ctx.refresh();
         return v;
       }
-      const moved = reduceListKeys(v.s, input, key, v.rows, keyOf);
+      const moved = reduceListKeys(v.s, input, key, v.rows, keyOf, listPage(ctx.termRows));
       if (moved) return { ...v, s: moved };
       if (key.return || key.rightArrow || input === "l")
         return v.rows[v.s.selected] ? { ...v, s: { ...v.s, view: "detail", detailScroll: 0 } } : v;
@@ -192,14 +203,18 @@ function App({
   tabs,
   fullscreen,
   preloadedFirst,
+  frame,
 }: {
   tabs: readonly Tab<unknown>[];
   fullscreen: boolean;
   preloadedFirst: unknown | undefined;
+  frame: { clear?: () => void };
 }) {
   const { exit } = useApp();
-  const { isRawModeSupported } = useStdin();
+  const { isRawModeSupported, setRawMode } = useStdin();
   const { cols, rows: termRows } = useTerminalSize();
+  // Bumped after an $EDITOR round-trip to force Ink to repaint the clobbered frame.
+  const [, setRedraw] = useState(0);
   const [active, setActive] = useState(0);
   const [envs, setEnvs] = useState<Env[]>(() =>
     tabs.map((t, i) => ({
@@ -251,6 +266,33 @@ function App({
     [exit, tabs],
   );
 
+  // Suspend the dashboard, hand the editor the controlling tty, then restore.
+  // spawnSync blocks the input loop so no poll runs meanwhile; on return we drop
+  // Ink's cached frame (frame.clear) and bump redraw so the alt screen repaints
+  // from scratch rather than diffing against a frame the editor overwrote.
+  const openInEditor = useCallback(
+    (row: DetailRow) => {
+      let file: string;
+      try {
+        file = editorFileFor(row);
+      } catch {
+        return;
+      }
+      setRawMode?.(false);
+      if (fullscreen) process.stdout.write("\x1b[?1049l");
+      try {
+        Bun.spawnSync([...editorArgv(), file], { cwd: workspaceRoot, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      } catch {
+        // editor missing or spawn failed: fall through to restore the dashboard.
+      }
+      if (fullscreen) process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
+      setRawMode?.(true);
+      frame.clear?.();
+      setRedraw((n) => n + 1);
+    },
+    [fullscreen, frame, setRawMode],
+  );
+
   // Re-poll on tab entry and whenever the active tab's fetch key changes (an
   // agents view toggle swaps datasets); the interval then refreshes only the
   // active tab. Toggling all/active refetches directly from its key handler, so
@@ -288,6 +330,11 @@ function App({
         const newAll = !envsRef.current[active].all;
         patchEnv(active, { all: newAll });
         void refresh(active, newAll);
+        return;
+      }
+      if (key.ctrl && input === "g") {
+        const target = t.editTarget(v);
+        if (target) openInEditor(target);
         return;
       }
       const ctx: KeyCtx<unknown> = {
@@ -342,7 +389,11 @@ export async function runApp(tabs: readonly Tab<unknown>[]) {
   // at row 0 rather than the shell's old cursor row and no scrollback shows
   // through. Leaving the alt screen on exit restores the shell buffer verbatim.
   if (fullscreen) process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
-  const app = render(<App tabs={tabs} fullscreen={fullscreen} preloadedFirst={preloadedFirst} />);
+  // Handed to App so an $EDITOR round-trip can drop Ink's cached frame and force a
+  // full repaint of the alt screen the editor clobbered.
+  const frame: { clear?: () => void } = {};
+  const app = render(<App tabs={tabs} fullscreen={fullscreen} preloadedFirst={preloadedFirst} frame={frame} />);
+  frame.clear = app.clear;
   await app.waitUntilExit();
   if (fullscreen) process.stdout.write("\x1b[?1049l");
 }

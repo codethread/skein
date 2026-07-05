@@ -131,6 +131,12 @@ export const listViewport = (termRows: number) => Math.max(3, termRows - CHROME.
 export const detailViewport = (termRows: number) => Math.max(3, termRows - CHROME.shell - CHROME.detail - CHROME.slack);
 export const graphViewport = (termRows: number) => Math.max(3, termRows - CHROME.shell - CHROME.graph - CHROME.slack);
 
+// The ⌃u/⌃d jump: half a viewport, vim's half-page scroll, floored to at least one
+// row so a tiny terminal still moves.
+export const listPage = (termRows: number) => Math.max(1, Math.floor(listViewport(termRows) / 2));
+export const detailPage = (termRows: number) => Math.max(1, Math.floor(detailViewport(termRows) / 2));
+export const graphPage = (termRows: number) => Math.max(1, Math.floor(graphViewport(termRows) / 2));
+
 // The visible slice centred on the selection, plus off-screen counts for the
 // scroll hint.
 export function windowRows<T>(rows: T[], selected: number, interactive: boolean, termRows: number) {
@@ -227,7 +233,7 @@ export function DetailView({
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>{clip(`↑↓/jk scroll · esc back · q quit${maxScroll > 0 ? ` · ${from}↑ ${maxScroll - from}↓` : ""}`, cols)}</Text>
+        <Text dimColor>{clip(`↑↓/jk scroll · ⌃d/⌃u page · ⌃g open · esc back · q quit${maxScroll > 0 ? ` · ${from}↑ ${maxScroll - from}↓` : ""}`, cols)}</Text>
       </Box>
     </Box>
   );

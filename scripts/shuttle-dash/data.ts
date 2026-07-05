@@ -5,10 +5,11 @@
 // no trusted REPL eval needed). The weaver transport is one JSON response per
 // request — there is no streaming — so tabs poll strandJson() themselves.
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stringify as stringifyYaml } from "yaml";
 
 // Fields every tab's detail view reads. Each tab's row type extends this so the
 // shared DetailView stays strand-generic; a new tab only adds its list columns.
@@ -112,6 +113,47 @@ export function detailRowFrom(rec: StrandRecord, extra: { branch: string; phase?
     updatedAt: rec.updated_at,
     attrs: rec.attributes,
   };
+}
+
+// $EDITOR (falling back to $VISUAL then vi), split into its command and any
+// leading args so callers can append the file. A shared editor entrypoint like
+// "code -w" is preserved as separate argv entries.
+export function editorArgv(): string[] {
+  const ed = (process.env.VISUAL || process.env.EDITOR || "vi").trim();
+  return ed.split(/\s+/).filter(Boolean);
+}
+
+// The file to open for a strand row: its `source` attribute when that resolves to
+// a real file under the repo (kanban cards stamp the RFC/spec path there),
+// otherwise a throwaway markdown rendering so any strand is inspectable in a full
+// editor. The convention is that `body` holds the meaty prose, so it becomes the
+// document's markdown body and every other attribute (plus identity/timestamps)
+// rides in YAML frontmatter. Temp renderings live in tmpdir and are left for the
+// OS to reap; real source files are never written.
+export function editorFileFor(row: DetailRow): string {
+  const source = str(row.attrs["source"]);
+  if (source) {
+    const p = resolve(workspaceRoot, source);
+    if (existsSync(p)) return p;
+  }
+  const { body, ...rest } = row.attrs;
+  const front: Record<string, unknown> = {
+    id: row.id,
+    ...(row.title !== undefined ? { title: row.title } : {}),
+    state: row.state,
+    ...(row.phase !== undefined ? { phase: row.phase } : {}),
+    branch: row.branch,
+    created: row.createdAt,
+    updated: row.updatedAt,
+    ...rest,
+  };
+  // A non-string body (rare) is pretty-printed rather than dropped; an absent body
+  // leaves the document body empty under the frontmatter.
+  const md = typeof body === "string" ? body : body === undefined ? "" : JSON.stringify(body, null, 2);
+  const content = `---\n${stringifyYaml(front)}---\n\n${md}\n`;
+  const file = join(tmpdir(), `shuttle-${row.id}.md`);
+  writeFileSync(file, content);
+  return file;
 }
 
 // Render Graphviz DOT to preformatted boxart via the graph-easy binary on PATH.

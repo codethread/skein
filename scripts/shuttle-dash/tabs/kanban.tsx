@@ -99,7 +99,7 @@ function KanbanList({ rows, selected, interactive, cols, termRows, all, loaded }
         return <TableRow key={r.id} cells={cells} width={cols} inverse={isSelected} />;
       })}
       {interactive && (
-        <ListFooter hint="↑↓/jk move · ⏎ attrs · a all/active · r refresh · ⇥ tab · q quit" cols={cols} start={start} below={below} total={rows.length} />
+        <ListFooter hint="↑↓/jk move · ⌃d/⌃u page · ⏎ attrs · ⌃g open · a all/active · r refresh · ⇥ tab · q quit" cols={cols} start={start} below={below} total={rows.length} />
       )}
     </Box>
   );

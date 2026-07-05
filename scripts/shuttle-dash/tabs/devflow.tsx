@@ -185,7 +185,7 @@ function DevflowList({ rows, selected, interactive, cols, termRows, all, loaded 
         return <TableRow key={r.id} cells={cells} width={cols} inverse={isSelected} />;
       })}
       {interactive && (
-        <ListFooter hint="↑↓/jk move · ⏎ attrs+frontier · a all/active · r refresh · ⇥ tab · q quit" cols={cols} start={start} below={below} total={rows.length} />
+        <ListFooter hint="↑↓/jk move · ⌃d/⌃u page · ⏎ attrs+frontier · ⌃g open · a all/active · r refresh · ⇥ tab · q quit" cols={cols} start={start} below={below} total={rows.length} />
       )}
     </Box>
   );

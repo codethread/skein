@@ -37,9 +37,12 @@ import {
   clip,
   DetailView,
   detailMaxScroll,
+  detailPage,
   Failure,
   fitCol,
+  graphPage,
   graphViewport,
+  listPage,
   ListFooter,
   oneLine,
   pad,
@@ -414,7 +417,7 @@ function graphLines(g: GraphState): string[] {
 
 // ── runs view ──────────────────────────────────────────────────────────────
 
-const RUNS_HINT = "[runs] ↑↓/jk move · ⏎ attrs · a all/active · r refresh · v plans · ⇥ tab · q quit";
+const RUNS_HINT = "[runs] ↑↓/jk move · ⌃d/⌃u page · ⏎ attrs · ⌃g open · a all/active · r refresh · v plans · ⇥ tab · q quit";
 
 function RunsTable({
   rows: runs,
@@ -490,7 +493,7 @@ function RunsTable({
 
 // ── plans view ─────────────────────────────────────────────────────────────
 
-const PLANS_HINT = "[plans] ↑↓/jk move · ⏎ detail · d graph · r refresh · v runs · ⇥ tab · q quit";
+const PLANS_HINT = "[plans] ↑↓/jk move · ⌃d/⌃u page · ⏎ detail · d graph · r refresh · v runs · ⇥ tab · q quit";
 
 function PlansTree({
   rows,
@@ -574,7 +577,7 @@ function GraphPane({ g, cols, termRows }: { g: GraphState; cols: number; termRow
       </Box>
       <Box marginTop={1}>
         <Text dimColor>
-          {clip(`[graph ${g.root}] ↑↓/jk scroll · <> pan · g/G ends · esc back · r refresh · ⇥ tab · q quit${scrollInfo}`, cols)}
+          {clip(`[graph ${g.root}] ↑↓/jk scroll · ⌃d/⌃u page · <> pan · g/G ends · esc back · r refresh · ⇥ tab · q quit${scrollInfo}`, cols)}
         </Text>
       </Box>
     </Box>
@@ -612,6 +615,11 @@ export const agentsTab = defineTab<AgentsView>({
   allApplies: (v) => v.mode === "runs",
   // The graph is a full-pane view, not a modal detail, so ⇥ stays live there.
   inDetail: (v) => (v.mode === "runs" ? v.runs.s.view === "detail" : v.mode === "plans" ? v.plans.detail !== null : false),
+  // ⌃g target: the runs row carries its own attributes; a plan row is a bare tree
+  // node, so only its fetched detail is openable. The graph pane has no single
+  // strand focus.
+  editTarget: (v) =>
+    v.mode === "runs" ? (v.runs.rows[v.runs.s.selected] ?? null) : v.mode === "plans" ? (v.plans.detail?.row ?? null) : null,
   // Fetch the mode's dataset, then fold it into the latest view — but only if the
   // mode is unchanged: a result for a view the user toggled away from mid-fetch
   // drops itself rather than overwriting the other view.
@@ -691,13 +699,13 @@ export const agentsTab = defineTab<AgentsView>({
     if (v.mode === "runs") {
       const rs = v.runs;
       if (rs.s.view === "detail") {
-        const r = reduceScrollKeys(rs.s.detailScroll, input, key, detailMaxScroll(rs.rows[rs.s.selected], ctx.cols, ctx.termRows));
+        const r = reduceScrollKeys(rs.s.detailScroll, input, key, detailMaxScroll(rs.rows[rs.s.selected], ctx.cols, ctx.termRows), detailPage(ctx.termRows));
         if (r === "back") return { ...v, runs: { ...rs, s: { ...rs.s, view: "list" } } };
         if (r !== null) return { ...v, runs: { ...rs, s: { ...rs.s, detailScroll: r } } };
         if (input === "r") ctx.refresh();
         return v;
       }
-      const moved = reduceListKeys(rs.s, input, key, rs.rows, (r) => r.id);
+      const moved = reduceListKeys(rs.s, input, key, rs.rows, (r) => r.id, listPage(ctx.termRows));
       if (moved) return { ...v, runs: { ...rs, s: moved } };
       if (key.return || key.rightArrow || input === "l")
         return rs.rows[rs.s.selected] ? { ...v, runs: { ...rs, s: { ...rs.s, view: "detail", detailScroll: 0 } } } : v;
@@ -716,6 +724,9 @@ export const agentsTab = defineTab<AgentsView>({
       const lines = graphLines(g);
       const maxY = Math.max(0, lines.length - graphViewport(ctx.termRows));
       const maxX = Math.max(0, Math.max(0, ...lines.map((l) => stringWidth(l))) - ctx.cols);
+      const gp = graphPage(ctx.termRows);
+      if (key.ctrl && input === "u") return { ...v, graph: { ...g, scrollY: Math.max(0, g.scrollY - gp) } };
+      if (key.ctrl && input === "d") return { ...v, graph: { ...g, scrollY: Math.min(maxY, g.scrollY + gp) } };
       if (key.upArrow || input === "k") return { ...v, graph: { ...g, scrollY: Math.max(0, g.scrollY - 1) } };
       if (key.downArrow || input === "j") return { ...v, graph: { ...g, scrollY: Math.min(maxY, g.scrollY + 1) } };
       if (input === "g") return { ...v, graph: { ...g, scrollY: 0 } };
@@ -728,7 +739,7 @@ export const agentsTab = defineTab<AgentsView>({
     const ps = v.plans;
     if (ps.detail) {
       const d = ps.detail;
-      const r = reduceScrollKeys(d.scroll, input, key, detailMaxScroll(d.row ?? undefined, ctx.cols, ctx.termRows));
+      const r = reduceScrollKeys(d.scroll, input, key, detailMaxScroll(d.row ?? undefined, ctx.cols, ctx.termRows), detailPage(ctx.termRows));
       if (r === "back") {
         closePlanDetail();
         return { ...v, plans: { ...ps, detail: null } };
@@ -740,7 +751,7 @@ export const agentsTab = defineTab<AgentsView>({
       }
       return v;
     }
-    const moved = reduceListKeys(ps.s, input, key, ps.rows, (r) => r.path);
+    const moved = reduceListKeys(ps.s, input, key, ps.rows, (r) => r.path, listPage(ctx.termRows));
     if (moved) return { ...v, plans: { ...ps, s: moved } };
     if (input === "d") {
       const r = ps.rows[ps.s.selected];
