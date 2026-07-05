@@ -839,6 +839,9 @@
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"nothing to supersede"
                                   (agents/agent-op {:op/argv ["retry" (:id fresh)]})))))))))
 
+(defn- status-tree-ids [status]
+  (mapv :id (tree-seq #(seq (:children %)) :children {:children (:tree status)})))
+
 (deftest status-triage-lists-ready-running-failed-and-verification
   (with-agents
     (fn [rt]
@@ -849,6 +852,28 @@
         (let [status (agents/agent-op {:op/argv ["status"]})]
           (is (some #{(:id implemented)} (:awaiting_verification status)))
           (is (some #(= (:id failed-run) (:run %)) (:failed status))))))))
+
+(deftest status-ignores-closed-tasks-in-triage-and-tree
+  (with-agents
+    (fn [rt]
+      (let [plan (api/add rt {:title "plan"})
+            blocker (api/add rt {:title "closed blocker" :state "closed"})
+            closed-implemented (api/add rt {:title "closed implemented"
+                                            :state "closed"
+                                            :attributes {:status "implemented" :body "body" :harness "sh"}})
+            closed-blocked (api/add rt {:title "closed blocked"
+                                        :state "closed"
+                                        :attributes {:body "body" :harness "sh"}
+                                        :edges [{:type "depends-on" :to (:id blocker)}]})]
+        (api/update rt (:id plan) {:edges [{:type "parent-of" :to (:id closed-implemented)}
+                                           {:type "parent-of" :to (:id closed-blocked)}]})
+        (let [status (agents/agent-op {:op/argv ["status" (:id plan)]})]
+          (is (not-any? #{(:id closed-implemented)} (:awaiting_verification status))
+              "closed implemented tasks are already verified")
+          (is (not-any? #{(:id closed-implemented) (:id closed-blocked)} (:ready status)))
+          (is (not-any? #(#{(:id closed-implemented) (:id closed-blocked)} (:task %)) (:blocked status)))
+          (is (not-any? #{(:id closed-implemented) (:id closed-blocked)} (status-tree-ids status))
+              "closed task descendants do not pollute the status tree"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Interactive delegation

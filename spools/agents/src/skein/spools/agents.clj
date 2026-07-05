@@ -147,9 +147,9 @@
            :status {:group "delegation"
                     :usage "agent status [root-id]"
                     :semantics ["Coordinator dashboard. root-id is a plan or task; no root means active delegation in the workspace."
-                                "Tree renders tasks, their runs, and nested sub-spawns via parent-of plus spawned-by."
-                                "ready lists tasks delegable right now, matching delegate --ready's successful selection."
-                                "awaiting_verification lists tasks where a worker set status=implemented; coordinator still verifies and closes the task."]
+                                "Tree renders active tasks (closed descendants are excluded), their runs, and nested sub-spawns via parent-of plus spawned-by."
+                                "ready lists active tasks delegable right now, matching delegate --ready's successful selection."
+                                "awaiting_verification lists active tasks where a worker set status=implemented; closed tasks are already verified."]
                     :returns {"tree" [{"id" "strand id" "title" "string" "kind" "task|run" "phase" "optional run phase" "status" "optional task status" "children" []}]
                               "ready" ["task ids"]
                               "running" ["run ids"]
@@ -1299,8 +1299,15 @@
        (filter #(and (= (:id task) (:from_strand_id %)) (not= "closed" (:state (api/show (rt) (:to_strand_id %))))))
        (mapv :to_strand_id)))
 
+(defn- status-visible-child?
+  [s]
+  (or (run? s)
+      (= "active" (:state s))))
+
 (defn- tree-node [s]
-  (let [kids (map api/show (repeat (rt)) (children-ids (:id s)))]
+  (let [kids (->> (children-ids (:id s))
+                  (map #(api/show (rt) %))
+                  (filter status-visible-child?))]
     (cond-> {:id (:id s) :title (:title s) :kind (if (run? s) "run" "task") :children (mapv tree-node kids)}
       (run? s) (assoc :phase (sattr s "phase"))
       (attr s :status) (assoc :status (attr s :status)))))
@@ -1310,11 +1317,10 @@
     (when (> (count positional) 1) (fail! "status takes at most one root-id" {:got positional}))
     (let [root (first positional)
           nodes (if root (cons (api/show (rt) root) (parent-descendants root)) (api/list (rt) [:= :state "active"] {}))
-          tasks (remove run? nodes)
+          tasks (filter #(and (not (run? %)) (= "active" (:state %))) nodes)
           runs (filter run? nodes)]
       {:tree (mapv tree-node (if root [(api/show (rt) root)] (filter #(and (not (run? %)) (seq (task-runs (:id %)))) tasks)))
        :ready (mapv :id (filter #(and (not= root (:id %))
-                                       (= "active" (:state %))
                                        (ready? (:id %))
                                        (not (hitl? %))
                                        (nil? (skip-reason %))

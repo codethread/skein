@@ -173,14 +173,14 @@ agent retry <task-or-run-id> [--fresh] [--harness h] [--cwd dir] [--prompt <extr
 ```
 agent status [root-id]
 ```
-The coordinator dashboard. `root-id` is a plan or task id; no root = every active delegation in the workspace. Delegation tree (tasks → their runs → nested sub-spawns via `spawned-by`) plus flat triage lists.
+The coordinator dashboard. `root-id` is a plan or task id; no root = every active delegation in the workspace. Delegation tree (active tasks → their runs → nested sub-spawns via `spawned-by`) plus flat triage lists.
 →
 ```
 {"tree":[{"id","title","kind":"task|run","phase"?,"status"?,"children":[...]}],
- "ready":["<task-id>"...],                  tasks delegable right now
+ "ready":["<task-id>"...],                  active tasks delegable right now
  "running":["<run-id>"...],
  "failed":[{"task"?,"run","error"}],        needs retry or kill
- "awaiting_verification":["<task-id>"...],  worker set status=implemented; verify + close these
+ "awaiting_verification":["<task-id>"...],  active tasks with status=implemented; verify + close these
  "blocked":[{"task","blockers":["<id>"...]}]}
 ```
 
