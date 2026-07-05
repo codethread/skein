@@ -31,6 +31,7 @@ to discover and invoke same-machine sibling weavers.
 | `skein.spools.selvage` | [selvage.md](./selvage.md) | Opt-in attribute vocabulary lint: data-first checks per attribute namespace, on-demand `check`/`check-all`, and post-hoc watch-mode violation recording. |
 | `skein.spools.carder` | [carder.md](./carder.md) | Read-only graph hygiene reports: stale active work, orphaned strands, and work blocked behind failed agent runs. |
 | `skein.spools.roster` | [roster.md](./roster.md) | Active-work registry: `roster/*` attribute vocabulary, explicit-runtime `track!`/`heartbeat!`/`finish!`/`roster`/`await-quiet!` helpers, a declared-subcommand `roster` op and named query, awaitable quiet/stale semantics, and automatic workflow/devflow root stamping. |
+| `skein.spools.loom` | [loom.md](./loom.md) | Read-only work-graph projections: active parent-of work DAGs with depends-on edges, per-branch progress views joined to a ready frontier, and workflow flow-status (history/frontier/gates/runs/stalls) with a Mermaid gate chain. Registers no ops. |
 
 ## External git-distributed spools
 

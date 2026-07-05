@@ -41,7 +41,7 @@ clients
 
 Different workspaces are different workspaces. Use `--workspace <dir>` when you want an isolated workspace for experiments, agent work, or tests.
 
-## Workspaces and workspaces
+## Workspace resolution
 
 The ordinary workspace is repository-scoped. Without `--workspace`, `mill` resolves the canonical repository root and uses that repo's `.skein` directory as the selected workspace. Linked worktrees for the same repository share this default workspace. Outside supported Git layouts, no-flag commands fail loudly. `mill init` creates or completes `.skein` at the canonical Git root and fails loudly outside supported Git layouts:
 

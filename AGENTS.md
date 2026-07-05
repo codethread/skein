@@ -26,6 +26,8 @@ Userland reference spools are indexed in [`spools/`](./spools/README.md), with c
 - [Bobbin Context Packs](./spools/bobbin.md)
 - [Selvage Attribute Lint](./spools/selvage.md)
 - [Carder Graph Hygiene](./spools/carder.md)
+- [Roster Active-Work Registry](./spools/roster.md)
+- [Loom Work-Graph Projections](./spools/loom.md) (classpath-shipped spool: read-only projections behind `current-dags`/`branches`/`flow-status`)
 - [Agent Shuttle](./spools/shuttle/README.md) (approved local-root spool; run engine only)
 - [Agents Spool](./spools/agents/README.md) (approved local-root spool; `strand agent` surface over shuttle)
 - [Treadle Gate Bridge](./spools/shuttle/treadle.md) (approved local-root spool)
@@ -118,7 +120,7 @@ The canonical repo `.skein` workspace is the **shared coordination world**: the 
 
 Always read `docs/skein.md` from the repository root before changing the `.skein` config itself.
 
-This repo's `.skein` world is thin glue over the reference spools. `.skein/init.clj` activates `skein.spools.batteries` (the shipped `strand <op>` command surface), `skein.spools.ephemeral`, and `skein.spools.workflow` from the weaver classpath, `skein.spools.devflow` from the approved `codethread/devflow` git coordinate (an RFC-017 git-distributed spool: `.skein/spools.edn` pins the `:git/sha`, a developer's gitignored `spools.local.edn` overrides it with a local root), plus `skein.spools.shuttle`, `skein.spools.agents`, and `skein.spools.treadle` from the approved `spools/shuttle` / `spools/agents` local roots, `skein.spools.chime` from the approved `spools/chime` local root, and `skein.spools.kanban` from the approved `spools/kanban` local root, and loads `.skein/reviewers.clj` — the declarative reviewer roster file (the source of truth for who reviews a change here). Together, the installed spools, `.skein/config.clj`, and `.skein/reviewers.clj` register:
+This repo's `.skein` world is thin glue over the reference spools. `.skein/init.clj` activates `skein.spools.batteries` (the shipped `strand <op>` command surface), `skein.spools.ephemeral`, `skein.spools.workflow`, `skein.spools.roster` (the active-work registry), and `skein.spools.loom` (the read-only work-graph projections behind `current-dags`/`branches`/`flow-status`) from the weaver classpath, `skein.spools.devflow` from the approved `codethread/devflow` git coordinate (an RFC-017 git-distributed spool: `.skein/spools.edn` pins the `:git/sha`, a developer's gitignored `spools.local.edn` overrides it with a local root), plus `skein.spools.shuttle`, `skein.spools.agents`, and `skein.spools.treadle` from the approved `spools/shuttle` / `spools/agents` local roots, `skein.spools.chime` from the approved `spools/chime` local root, and `skein.spools.kanban` from the approved `spools/kanban` local root, and loads `.skein/reviewers.clj` — the declarative reviewer roster file (the source of truth for who reviews a change here). Together, the installed spools, `.skein/config.clj`, and `.skein/reviewers.clj` register:
 
 - ops: `agent`, `kanban`, `branches`, `devflow-start`, `devflow-next`, `devflow-choices`, `devflow-choose`, `devflow-complete`, `devflow-advance`, `devflow-describe`, `devflow-history`, `devflow-archive`, `devflow-status`, `workflow-runs`, `current-dags`, `flow-await`, `flow-status`, `devflow-conventions`
 - queries: `work`, `kanban-cards`, `kanban-unstarted`, `feature-active`, `feature-work`, `feature-owner-work`, `feature-run`, `workflow-runs`, `devflow-runs`, `agent-failures`
@@ -176,7 +178,7 @@ Run **`strand kanban prime`** before working the board — it is the live, spool
 
 Every piece of work happening on a branch has exactly one **active work root strand** stamped with `branch` (plus `owner`, and `worktree` when one exists), with all execution strands hanging beneath it via `parent-of`. `kanban claim` stamps card roots; for non-card work (ad hoc `agent-plan` roots, coordination strands), stamp the root yourself: `strand update <root-id> --attr branch=<branch> --attr owner=<name>`. Children do not need their own `branch` attr — they are reachable from the root.
 
-`strand branches` answers "what is going on inside each feature branch": it groups active branch-stamped roots by branch and joins each root to its active descendants and ready frontier. `strand branches <branch>` scopes to one branch and fails loudly if nothing is stamped with it. This is the interim convention from RFC-014 (`REC1`); the durable roster spool (`RFC-014.O3`) is a separate card on the board.
+`strand branches` answers "what is going on inside each feature branch": it groups active branch-stamped roots by branch and joins each root to its active descendants and ready frontier. `strand branches <branch>` scopes to one branch and fails loudly if nothing is stamped with it. This is the interim branch-visibility convention from RFC-014 (`REC1`); the durable roster spool (`RFC-014.O3`) has since shipped as `skein.spools.roster` (activated in `.skein/init.clj`, contract in [`spools/roster.md`](./spools/roster.md)), giving the `roster/*` active-work vocabulary and `strand roster` surface alongside this projection.
 
 ### Custom workflows
 

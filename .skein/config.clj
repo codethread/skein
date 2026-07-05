@@ -2,15 +2,18 @@
   "Repo-local Skein runtime configuration for skein-src.
 
   Thin glue over the shipped spools: `skein.spools.devflow` owns the feature
-  lifecycle, `skein.spools.workflow` is the engine, and `skein.spools.agents`
-  owns the `strand agent` surface plus the `agent-plan` pattern (all
-  activated from init.clj). This config shrinks to genuine workspace tuning:
-  CLI-facing root ops wrapping the devflow spool commands, a few named
-  queries, the `delegate-pipeline` weave pattern, the `current-dags` graph
-  projection, repo-local shuttle harness aliases, chime attention rules, and
-  the default review contract."
+  lifecycle, `skein.spools.workflow` is the engine, `skein.spools.agents` owns
+  the `strand agent` surface plus the `agent-plan` pattern, and
+  `skein.spools.loom` owns the read-only work-graph projections (all activated
+  from init.clj). This config holds only repo policy and wiring: CLI-facing
+  root ops wrapping the devflow and loom projections, a few named queries, the
+  `delegate-pipeline` weave pattern, repo-local shuttle harness aliases, this
+  repo's chime attention rules, and the default review contract. The generic
+  graph-projection logic behind `current-dags`, `branches`, and `flow-status`
+  lives in `skein.spools.loom`; the ops here supply repo policy — which
+  attribute names a branch, which query feeds the ready frontier — and register
+  the ops."
   (:require [clojure.data.json :as json]
-            [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.patterns.alpha :as patterns]
@@ -18,6 +21,7 @@
             [skein.spools.carder :as carder]
             [skein.spools.chime :as chime]
             [skein.spools.devflow :as devflow]
+            [skein.spools.loom :as loom]
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.api.current.alpha :as current]
@@ -187,87 +191,19 @@
     [:not [:in [:attr "workflow/role"] ["molecule" "digest" "procedure"]]]]])
 
 ;; ---------------------------------------------------------------------------
-;; current-dags: generic active work-DAG projection
+;; current-dags: active work-DAG projection (loom)
 ;; ---------------------------------------------------------------------------
-
-(defn- active-strands-by-id
-  "Return active strands keyed by id."
-  [rt]
-  (into {}
-        (map (juxt :id identity))
-        (api/list rt [:= :state "active"] {})))
-
-(defn- internal-active-edges
-  "Return edges whose endpoints are both active strands."
-  [active-ids edges]
-  (->> edges
-       (filter #(and (contains? active-ids (:from_strand_id %))
-                     (contains? active-ids (:to_strand_id %))))
-       (sort-by (juxt :from_strand_id :to_strand_id :edge_type))
-       vec))
-
-(defn- parent-root-ids
-  "Return active root ids for parent-child work DAGs."
-  [active-ids parent-edges]
-  (let [parents (set (map :from_strand_id parent-edges))
-        children (set (map :to_strand_id parent-edges))]
-    (->> (set/difference parents children)
-         (filter active-ids)
-         sort
-         vec)))
-
-(defn- summarize-strand
-  "Return the compact strand shape used by repo-local operations."
-  [strand]
-  (select-keys strand [:id :title :state :attributes]))
-
-(defn- descendants-by-root
-  "Return the active parent-of subgraph below one root id."
-  [rt active-ids root-id]
-  (let [{:keys [strands edges]} (api/subgraph rt [root-id] {:type "parent-of"})
-        active-strand-ids (set (keep (fn [{:keys [id state]}]
-                                       (when (= "active" state) id))
-                                     strands))
-        included-ids (conj active-strand-ids root-id)]
-    {:root-id root-id
-     :strand-ids (->> included-ids (filter active-ids) sort vec)
-     :parent-of (internal-active-edges active-ids edges)}))
-
-(defn- dependency-edges-for
-  "Return active depends-on edges internal to the included strand ids.
-
-  Subgraph expansion walks outward to external blockers, so edges are filtered
-  against the DAG-local id set to keep the projection self-contained: every
-  returned edge endpoint appears in the DAG's own strand list."
-  [rt strand-ids]
-  (let [{:keys [edges]} (api/subgraph rt strand-ids {:type "depends-on"})]
-    (internal-active-edges (set strand-ids) edges)))
 
 (defn current-dags-op
   "Return active parent-of work DAGs and their active depends-on edges.
 
   This is an operation rather than only a named query because the CLI query
-  surface returns flat strand rows; this handler projects roots, hierarchy
-  edges, dependency edges, and compact strand rows into one JSON-compatible
-  structure for agents and humans."
+  surface returns flat strand rows; `skein.spools.loom/work-dags` projects
+  roots, hierarchy edges, dependency edges, and compact strand rows into one
+  JSON-compatible structure for agents and humans."
   [_ctx]
-  (let [rt (current/runtime)
-        active-by-id (active-strands-by-id rt)
-        active-ids (set (keys active-by-id))
-        all-active-ids (sort active-ids)
-        parent-edges (->> (:edges (api/subgraph rt all-active-ids {:type "parent-of"}))
-                          (internal-active-edges active-ids))
-        roots (parent-root-ids active-ids parent-edges)
-        dags (mapv (fn [root-id]
-                     (let [{:keys [strand-ids parent-of]} (descendants-by-root rt active-ids root-id)]
-                       {:root (summarize-strand (active-by-id root-id))
-                        :strands (mapv (comp summarize-strand active-by-id) strand-ids)
-                        :parent_of_edges parent-of
-                        :depends_on_edges (dependency-edges-for rt strand-ids)}))
-                   roots)]
-    {:operation "current-dags"
-     :roots roots
-     :dags dags}))
+  (merge {:operation "current-dags"}
+         (loom/work-dags (current/runtime))))
 
 ;; ---------------------------------------------------------------------------
 ;; devflow ops: thin CLI wrappers over skein.spools.devflow
@@ -489,7 +425,7 @@
         [feature] (require-argv-range! "devflow-status" (:op/argv ctx) 1 1 usage)]
     {:operation "devflow-status"
      :feature feature
-     :roots (mapv summarize-strand (devflow/feature-roots feature))
+     :roots (mapv loom/summarize (devflow/feature-roots feature))
      :done (workflow/done? feature)
      :ready (devflow/next-steps feature)}))
 
@@ -499,7 +435,7 @@
   (let [{:keys [family]} (:op/args ctx)]
     {:operation "workflow-runs"
      :family family
-     :runs (mapv summarize-strand
+     :runs (mapv loom/summarize
                  (if family (workflow/active-runs family) (workflow/active-runs)))}))
 
 (defn devflow-conventions-op
@@ -606,148 +542,38 @@
     (workflow/await! workflow-run-id (cond-> {}
                                        timeout-secs (assoc :timeout-secs timeout-secs)))))
 
-(defn- compact-run
-  "Return a compact shuttle/treadle state projection for a run strand."
-  [run]
-  (when run
-    (cond-> {:id (:id run)
-             :title (:title run)
-             :state (:state run)
-             :shuttle/phase (config-attr run :shuttle/phase)}
-      (config-attr run :shuttle/harness) (assoc :shuttle/harness (config-attr run :shuttle/harness))
-      (config-attr run :shuttle/error) (assoc :shuttle/error (config-attr run :shuttle/error))
-      (config-attr run :shuttle/result) (assoc :shuttle/result (config-attr run :shuttle/result))
-      (config-attr run :treadle/delivered) (assoc :treadle/delivered (config-attr run :treadle/delivered))
-      (config-attr run :treadle/delivery-blocked) (assoc :treadle/delivery-blocked (config-attr run :treadle/delivery-blocked)))))
-
-(defn- compact-gate
-  "Return a compact workflow gate projection joined to its treadle run."
-  [rt failed-run-ids stalled-gate-ids gate]
-  (let [run-id (config-attr gate :treadle/run)
-        run (when run-id (api/show rt run-id))
-        run-failed? (contains? failed-run-ids run-id)
-        spawn-stalled? (contains? stalled-gate-ids (:id gate))]
-    (cond-> {:id (:id gate)
-             :title (:title gate)
-             :state (:state gate)
-             :gate (config-attr gate :workflow/gate)
-             :treadle/run run-id
-             :run (compact-run run)
-             :stalled? (boolean (or spawn-stalled? run-failed?))}
-      (config-attr gate :treadle/error) (assoc :treadle/error (config-attr gate :treadle/error))
-      spawn-stalled? (assoc :stall/reason "spawn-error")
-      run-failed? (assoc :stall/reason "agent-failure"))))
-
-(defn- run-subagent-gates
-  "Return all subagent gate strands reachable from run-history roots."
-  [rt history]
-  (->> history
-       (mapcat (fn [{:keys [root]}]
-                 (:strands (api/subgraph rt [(:id root)] {:type "parent-of"}))))
-       (filter #(= "subagent" (config-attr % :workflow/gate)))
-       (sort-by :created_at)
-       vec))
-
-(defn- flow-status-mermaid
-  "Return a dev-only Mermaid chain showing ready, stalled, and closed gates."
-  [gates ready-ids]
-  (let [marker (fn [{:keys [id state stalled?]}]
-                 (cond
-                   stalled? "stalled"
-                   (contains? ready-ids id) "ready"
-                   (= "closed" state) "closed"
-                   :else state))
-        nodes (map-indexed (fn [idx gate]
-                             (str "  G" idx "[\"" (:title gate) " (" (marker gate) ")\"]"))
-                           gates)
-        links (map (fn [idx] (str "  G" idx " --> G" (inc idx)))
-                   (range (dec (count gates))))]
-    (str/join "\n" (concat ["flowchart LR"] nodes links))))
-
 (defn flow-status-op
   "Return workflow flow status by joining history, frontier, gates, runs, and stalls.
 
   The JSON payload is read-only and suitable for renderers; no workflow,
-  shuttle, or treadle state is mutated."
+  shuttle, or treadle state is mutated. The join and Mermaid gate chain live in
+  `skein.spools.loom/flow-status`; this op only names the run and stamps the
+  operation."
   [ctx]
-  (let [{run-id :workflow-run-id} (:op/args ctx)
-        rt (current/runtime)
-        history (workflow/run-history run-id)
-        frontier (workflow/next-steps run-id)
-        done (workflow/done? run-id)
-        run-gates (run-subagent-gates rt history)
-        ;; scope failure summaries to this run's gates and their delegated
-        ;; runs: global stalled/failed records from other workflows must not
-        ;; surface in an unrelated run's payload
-        run-gate-ids (set (map :id run-gates))
-        run-delegated-ids (set (keep #(config-attr % :treadle/run) run-gates))
-        stalled-gates (filterv #(contains? run-gate-ids (:id %))
-                               (api/list rt [:and [:= :state "active"]
-                                             [:= [:attr "workflow/gate"] "subagent"]
-                                             [:exists [:attr "treadle/error"]]] {}))
-        agent-failures (filterv #(contains? run-delegated-ids (:id %))
-                                (api/list rt [:in [:attr "shuttle/phase"] ["failed" "exhausted"]] {}))
-        stalled-gate-ids (set (map :id stalled-gates))
-        failed-run-ids (set (map :id agent-failures))
-        gates (mapv (partial compact-gate rt failed-run-ids stalled-gate-ids) run-gates)
-        ready-ids (set (map :id frontier))]
-    {:operation "flow-status"
-     :run-id run-id
-     :history history
-     :frontier frontier
-     :gates gates
-     :stalled-gates (mapv summarize-strand stalled-gates)
-     :agent-failures (mapv summarize-strand agent-failures)
-     :done done
-     :dev/mermaid (flow-status-mermaid gates ready-ids)}))
+  (let [{run-id :workflow-run-id} (:op/args ctx)]
+    (merge {:operation "flow-status"}
+           (loom/flow-status (current/runtime) run-id))))
 
 ;; ---------------------------------------------------------------------------
-;; branches: branch-visibility projection over work-root strands
+;; branches: branch-visibility projection over work-root strands (loom)
 ;; ---------------------------------------------------------------------------
-
-(defn- branch-root-view
-  "Return one branch work root with its active descendants and ready frontier."
-  [rt active-ids ready-ids root]
-  (let [{:keys [strands]} (api/subgraph rt [(:id root)] {:type "parent-of"})
-        descendants (->> strands
-                         (filter #(and (contains? active-ids (:id %))
-                                       (not= (:id root) (:id %))))
-                         (sort-by :id)
-                         (mapv summarize-strand))]
-    {:root (summarize-strand root)
-     :active_descendants descendants
-     :ready (filterv #(contains? ready-ids (:id %))
-                     (into [(summarize-strand root)] descendants))}))
 
 (defn branches-op
   "Group active branch-stamped work roots into a per-branch progress view.
 
   The repo convention stamps `branch` (plus `owner`/`worktree`) on exactly one
   active work root per branch — `kanban claim` does this for cards — and hangs
-  all execution strands beneath that root with parent-of edges. This op answers
-  \"what is going on inside each feature branch\" by joining those roots to their
-  active descendants and the ready frontier (`work` query, so workflow plumbing
-  and shuttle run records stay hidden)."
+  all execution strands beneath that root with parent-of edges. This op supplies
+  the repo policy — the `branch` attribute names the branch and the `work` query
+  feeds the ready frontier (so workflow plumbing and shuttle run records stay
+  hidden) — and delegates the projection to `skein.spools.loom/branch-views`.
+  A scoping `branch` argument that matches no stamped root fails loudly."
   [ctx]
   (let [{:keys [branch]} (:op/args ctx)
-        rt (current/runtime)
-        active-by-id (active-strands-by-id rt)
-        active-ids (set (keys active-by-id))
-        parent-edges (->> (:edges (api/subgraph rt (sort active-ids) {:type "parent-of"}))
-                          (internal-active-edges active-ids))
-        child-ids (set (map :to_strand_id parent-edges))
-        roots (->> (vals active-by-id)
-                   (filter #(config-attr % :branch))
-                   (remove #(contains? child-ids (:id %)))
-                   (filter #(or (nil? branch) (= branch (config-attr % :branch)))))
-        ready-ids (set (map :id (api/ready rt work-query {})))
-        branches (->> roots
-                      (group-by #(config-attr % :branch))
-                      (sort-by key)
-                      (mapv (fn [[branch-name branch-roots]]
-                              {:branch branch-name
-                               :roots (mapv (partial branch-root-view rt active-ids ready-ids)
-                                            (sort-by :id branch-roots))})))]
+        branches (loom/branch-views (current/runtime)
+                                    {:branch-attr :branch
+                                     :ready-query work-query
+                                     :branch branch})]
     (when (and branch (empty? branches))
       (throw (ex-info "no active work root is stamped with this branch"
                       {:branch branch})))

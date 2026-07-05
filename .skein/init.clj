@@ -16,6 +16,11 @@
 (runtime-alpha/use! runtime :skein/spools-roster
   {:ns 'skein.spools.roster
    :call 'skein.spools.roster/install!})
+;; loom is a read-only work-graph projection library (registers no ops);
+;; config.clj's current-dags/branches/flow-status ops are thin wrappers over it.
+(runtime-alpha/use! runtime :skein/spools-loom
+  {:ns 'skein.spools.loom
+   :call 'skein.spools.loom/install!})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
 ;; spools.local.edn checkout), never on an incidental classpath copy.
@@ -72,7 +77,7 @@
 (runtime-alpha/use! runtime :config
   {:file "config.clj"
    :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
-           :skein/spools-shuttle :skein/spools-agents :skein/spools-chime]
+           :skein/spools-loom :skein/spools-shuttle :skein/spools-agents :skein/spools-chime]
    :call 'config/install!})
 ;; Treadle installs last: its install! runs an initial gate scan, so every
 ;; harness alias config.clj registers (e.g. pi-main) must already exist or a
