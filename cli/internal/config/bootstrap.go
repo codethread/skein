@@ -155,7 +155,7 @@ func GitRoot(cwd string) (string, error) {
 	}
 	commonDir := filepath.Clean(strings.TrimSpace(string(out)))
 	if !filepath.IsAbs(commonDir) {
-		return "", fmt.Errorf("Git returned non-absolute common dir for default Skein workspace: %s", commonDir)
+		return "", fmt.Errorf("git returned non-absolute common dir for default Skein workspace: %s", commonDir)
 	}
 	if filepath.Base(commonDir) != ".git" {
 		return "", fmt.Errorf("unsupported Git layout for default Skein workspace: common Git dir must be a repository .git directory, got %s", commonDir)

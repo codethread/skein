@@ -20,7 +20,7 @@ import (
 // frames directly through the proxy.
 func (s *server) handleInvoke(conn net.Conn, req client.MillRequest) {
 	w := bufio.NewWriter(conn)
-	defer w.Flush()
+	defer func() { _ = w.Flush() }()
 
 	world, err := resolveLifecycleWorld(req.World)
 	if err != nil {
@@ -58,7 +58,7 @@ func relayInvoke(socketPath, weaverID string, envelope map[string]any, timeoutMs
 	if err != nil {
 		return false, fmt.Errorf("weaver socket unreachable: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
 	reqFrame := map[string]any{"protocol_version": client.ProtocolVersion, "request_id": requestID, "weaver_id": weaverID, "operation": "invoke", "arguments": envelope, "options": map[string]any{}}

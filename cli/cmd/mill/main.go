@@ -36,7 +36,7 @@ type weaverChild struct {
 var millLogOut io.Writer = os.Stdout
 
 func millLogf(format string, args ...any) {
-	fmt.Fprintf(millLogOut, format+"\n", args...)
+	_, _ = fmt.Fprintf(millLogOut, format+"\n", args...)
 }
 
 var launchWeaver = func(source string, args []string, out, errOut io.Writer) (*exec.Cmd, error) {
@@ -146,9 +146,9 @@ func start() error {
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
-	defer os.Remove(socketPath)
-	defer os.Remove(metadataPath)
+	defer func() { _ = listener.Close() }()
+	defer func() { _ = os.Remove(socketPath) }()
+	defer func() { _ = os.Remove(metadataPath) }()
 
 	meta := client.MillMetadata{ProtocolVersion: client.MillProtocolVersion, PID: os.Getpid(), MillID: fmt.Sprintf("mill-%d-%d", os.Getpid(), time.Now().UnixNano()), StateRoot: root, SocketPath: socketPath, StartedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	b, err := json.MarshalIndent(meta, "", "  ")
@@ -162,7 +162,7 @@ func start() error {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() { <-sig; listener.Close() }()
+	go func() { <-sig; _ = listener.Close() }()
 	s := server{meta: meta, children: map[string]*weaverChild{}}
 	defer s.stopAll()
 	for {
@@ -178,7 +178,7 @@ func start() error {
 }
 
 func (s *server) handle(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	var req client.MillRequest
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		_ = json.NewEncoder(conn).Encode(errorResponse("", "protocol", "mill/protocol", "malformed mill request", err.Error()))

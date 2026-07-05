@@ -101,7 +101,7 @@ func runInvoke(t *testing.T, cfg string, envelope map[string]any) []map[string]a
 		s.handleInvoke(srvConn, req)
 		_ = srvConn.Close()
 	}()
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 	_ = clientConn.SetDeadline(time.Now().Add(5 * time.Second))
 	var frames []map[string]any
 	r := bufio.NewReader(clientConn)
@@ -171,7 +171,7 @@ func serveFakeWeaverStream(t *testing.T, world config.World, handler func(map[st
 				return
 			}
 			go func(c net.Conn) {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				_ = c.SetDeadline(time.Now().Add(time.Second))
 				var req map[string]any
 				if err := json.NewDecoder(bufio.NewReader(c)).Decode(&req); err != nil {

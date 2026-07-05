@@ -71,7 +71,7 @@ func MillCallPayload(operation string, world MillWorldRequest, payload map[strin
 	if err != nil {
 		return nil, fmt.Errorf("mill socket unreachable; start one with: mill start: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	deadline := 5 * time.Second
 	switch operation {
 	case "weaver-start":

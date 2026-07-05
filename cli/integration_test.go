@@ -362,7 +362,7 @@ func shortTempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
 }
 
@@ -413,7 +413,7 @@ func appendFixtureLoad(t *testing.T, initPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString("\n(load-file \"" + fixture + "\")\n"); err != nil {
 		t.Fatal(err)
 	}

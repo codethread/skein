@@ -44,6 +44,6 @@ func runPrime(topic, tmpl string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(os.Stdout, out)
+	_, _ = fmt.Fprint(os.Stdout, out)
 	return nil
 }

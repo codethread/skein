@@ -36,7 +36,7 @@ func InvokeThroughMill(world MillWorldRequest, envelope map[string]any, stdout, 
 	if err != nil {
 		return 1, fmt.Errorf("mill socket unreachable; start one with: mill start: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// SIGINT during a (possibly streaming) response closes the connection so the
 	// relay read unblocks and exits non-zero cleanly (SPEC-002-D004.C7).
@@ -101,7 +101,9 @@ func relaySingle(frame map[string]json.RawMessage, line []byte, stdout, stderr i
 		if err != nil {
 			return 1, err
 		}
-		fmt.Fprintln(stdout, string(b))
+		if _, err := fmt.Fprintln(stdout, string(b)); err != nil {
+			return 1, fmt.Errorf("writing weaver response: %w", err)
+		}
 		return 0, nil
 	}
 	return surfaceError(frame["error"], stderr)
@@ -129,9 +131,13 @@ func relayStream(r *bufio.Reader, stdout, stderr io.Writer) (int, error) {
 		}
 		// Emitted value: relay the frame verbatim, flushing per line. The line
 		// carries its own trailing newline; a final unterminated line gets one.
-		stdout.Write(line)
+		if _, err := stdout.Write(line); err != nil {
+			return 1, fmt.Errorf("writing weaver stream frame: %w", err)
+		}
 		if len(line) == 0 || line[len(line)-1] != '\n' {
-			fmt.Fprintln(stdout)
+			if _, err := fmt.Fprintln(stdout); err != nil {
+				return 1, fmt.Errorf("writing weaver stream frame: %w", err)
+			}
 		}
 	}
 }
@@ -144,10 +150,10 @@ func surfaceError(raw json.RawMessage, stderr io.Writer) (int, error) {
 	}
 	var re ResponseError
 	if err := json.Unmarshal(raw, &re); err != nil {
-		fmt.Fprintln(stderr, "error:", string(raw))
+		_, _ = fmt.Fprintln(stderr, "error:", string(raw))
 		return 1, nil
 	}
-	fmt.Fprintln(stderr, "error:", re.Error())
+	_, _ = fmt.Fprintln(stderr, "error:", re.Error())
 	return 1, nil
 }
 

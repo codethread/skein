@@ -101,8 +101,8 @@ func TestRelayStreamErrorTerminatorNonZero(t *testing.T) {
 // frames one at a time from a live socket rather than buffering the whole stream.
 func TestRelayStreamOverSocketFlushesIncrementally(t *testing.T) {
 	server, cliConn := net.Pipe()
-	defer server.Close()
-	defer cliConn.Close()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = cliConn.Close() }()
 
 	go func() {
 		w := bufio.NewWriter(server)
@@ -112,11 +112,11 @@ func TestRelayStreamOverSocketFlushesIncrementally(t *testing.T) {
 			`{"protocol_version":1,"request_id":"r1","done":true,"success":true,"result":null}`,
 		}
 		for _, l := range lines {
-			w.WriteString(l)
-			w.WriteString("\n")
-			w.Flush()
+			_, _ = w.WriteString(l)
+			_, _ = w.WriteString("\n")
+			_ = w.Flush()
 		}
-		server.Close()
+		_ = server.Close()
 	}()
 
 	var out, er bytes.Buffer

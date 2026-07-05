@@ -57,7 +57,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return printJSON(stdout, stderr, map[string]any{"bin_version": Version, "protocol_version": client.ProtocolVersion})
 	}
 	if p.help || !p.haveOp {
-		fmt.Fprint(stdout, helpText)
+		if _, err := fmt.Fprint(stdout, helpText); err != nil {
+			return fail(stderr, err)
+		}
 		return 0
 	}
 
@@ -88,7 +90,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	world := client.MillWorldRequest{CWD: effectiveCwd, ConfigDir: p.workspace}
 	code, err := sendInvoke(world, envelope, stdout, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "error:", err)
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		if code == 0 {
 			code = 1
 		}
@@ -278,12 +280,14 @@ func printJSON(stdout, stderr io.Writer, v any) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintln(stdout, string(b))
+	if _, err := fmt.Fprintln(stdout, string(b)); err != nil {
+		return fail(stderr, err)
+	}
 	return 0
 }
 
 func fail(stderr io.Writer, err error) int {
-	fmt.Fprintln(stderr, "error:", err)
+	_, _ = fmt.Fprintln(stderr, "error:", err)
 	return 1
 }
 
