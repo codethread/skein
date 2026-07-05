@@ -4,6 +4,7 @@
             [nrepl.server :as nrepl]
             [skein.core.weaver.config :as config]
             [skein.core.weaver.metadata :as metadata]
+            [skein.core.weaver.scheduler :as scheduler]
             [skein.core.weaver.socket :as socket]
             [skein.core.db :as db])
   (:import [java.lang ProcessHandle]
@@ -57,25 +58,35 @@
                     (while @(:running? event-system)
                       (when-let [event (.poll ^ArrayBlockingQueue (:queue event-system) 100 TimeUnit/MILLISECONDS)]
                         (when @(:running? event-system)
-                          ;; :fn stays un-destructured: a local named `fn` would
-                          ;; shadow the fn macro in the handler thunks below.
-                          (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
-                                  :when (contains? types (:event/type event))]
+                          (if (= :scheduler/fire (:event/type event))
+                            ;; Clock-triggered wakes share this serialized lane
+                            ;; rather than a second worker. run-fire! records its
+                            ;; own completion/failure history and never throws
+                            ;; into the worker; the guard is defence in depth.
                             (try
                               (with-runtime-binding
                                 runtime
-                                #(with-spool-classloader runtime (fn [] (fn-value event))))
-                              (catch Throwable t
-                                (let [failure {:handler/key key
-                                               :handler/fn (:fn handler)
-                                               :event/id (:event/id event)
-                                               :event/type (:event/type event)
-                                               :exception/message (ex-message t)
-                                               :failed/at (str (Instant/now))}]
-                                  (swap! (:recent-failures event-system)
-                                         #(->> (conj % failure)
-                                               (take-last recent-event-failure-limit)
-                                               vec)))))))))
+                                #(with-spool-classloader runtime (fn [] (scheduler/run-fire! runtime event))))
+                              (catch Throwable _ nil))
+                            ;; :fn stays un-destructured: a local named `fn` would
+                            ;; shadow the fn macro in the handler thunks below.
+                            (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
+                                    :when (contains? types (:event/type event))]
+                              (try
+                                (with-runtime-binding
+                                  runtime
+                                  #(with-spool-classloader runtime (fn [] (fn-value event))))
+                                (catch Throwable t
+                                  (let [failure {:handler/key key
+                                                 :handler/fn (:fn handler)
+                                                 :event/id (:event/id event)
+                                                 :event/type (:event/type event)
+                                                 :exception/message (ex-message t)
+                                                 :failed/at (str (Instant/now))}]
+                                    (swap! (:recent-failures event-system)
+                                           #(->> (conj % failure)
+                                                 (take-last recent-event-failure-limit)
+                                                 vec))))))))))
                     (catch InterruptedException _ nil)))
                 "skein-event-worker")]
     (.setDaemon worker true)
@@ -303,6 +314,10 @@
              (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
            (with-runtime-binding runtime #((requiring-resolve 'skein.api.weaver.alpha/register-built-in-ops!) runtime))
            (load-startup-files! runtime world)
+           ;; Arm the scheduler only after startup files finish loading, so
+           ;; handlers supplied by approved spools/config resolve before any
+           ;; durable pending wake is re-armed (DELTA-...-runtime-001.CC5).
+           (scheduler/rearm! runtime)
            (let [published-runtime (assoc runtime :metadata-file (metadata/publish! meta))]
              (reset! runtime-state published-runtime)
              (swap! nrepl-port-runtimes assoc port published-runtime)

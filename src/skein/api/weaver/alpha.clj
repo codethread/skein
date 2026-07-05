@@ -9,6 +9,7 @@
             [skein.api.cli.alpha :as cli]
             [skein.core.db :as db]
             [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.scheduler :as scheduler]
             [skein.core.query :as query])
   (:import [java.time Instant]
            [java.util UUID]
@@ -581,6 +582,10 @@
     (let [world {:config-dir (config-dir runtime)}
           files (runtime/load-startup-files! runtime world)]
       (runtime/resume-event-system! runtime)
+      ;; Re-arm after config reload so handlers newly supplied by reloaded
+      ;; spools/config resolve; rearm! also discards fire envelopes the reload
+      ;; flushed from the event queue (DELTA-weaver-scheduler-runtime-001.CC5).
+      (scheduler/rearm! runtime)
       {:status :loaded
        :files files
        :returns (mapv :return files)})
@@ -592,6 +597,7 @@
       ;; until a manual atom reset" cliff. Leave whatever loaded so the world
       ;; stays operable, resume dispatch, and rethrow the failure loudly.
       (runtime/resume-event-system! runtime)
+      (scheduler/rearm! runtime)
       (throw t))))
 
 (def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
@@ -1903,3 +1909,76 @@
   (when-not (.offer (:queue (event-system runtime)) event)
     (throw (ex-info "Event queue is full" {:event/type (:event/type event) :event/id (:event/id event)})))
   {:enqueued true :event/id (:event/id event) :event/type (:event/type event)})
+
+;; Scheduler wakes: durable weaver-owned coordination state (RFC-009), not
+;; strands. `skein.core.db` owns storage validation and persistence;
+;; `skein.core.weaver.scheduler` owns timer arming and dispatch. This tier adds
+;; the one check storage cannot make on its own (handler resolvability in the
+;; runtime's spool classloader, matching hook/event-handler registration) and
+;; re-arms the runtime timer after every mutation so an earlier wake-at than the
+;; currently armed timer, or a cancelled row, is picked up immediately rather
+;; than waiting for the previously armed tick.
+
+(defn- normalize-wake
+  "Decode a scheduler wake/history row's JSON payload and handler symbol."
+  [row]
+  (some-> row
+          (clojure.core/update :payload db/<-json)
+          (clojure.core/update :handler symbol)))
+
+(defn- resolve-scheduler-handler-fn! [runtime handler]
+  (when-not (and (symbol? handler) (namespace handler))
+    (throw (ex-info "Scheduler handler must be a fully qualified symbol" {:handler handler})))
+  (let [resolved (try
+                   (with-spool-classloader runtime #(requiring-resolve handler))
+                   (catch Throwable t
+                     (throw (ex-info "Scheduler handler could not be resolved" {:handler handler} t))))
+        value (if (var? resolved) @resolved resolved)]
+    (when-not (ifn? value)
+      (throw (ex-info "Scheduler handler symbol must resolve to a callable value"
+                      {:handler handler :resolved-class (str (class value))})))
+    value))
+
+(defn schedule-wake!
+  "Persist or replace a durable scheduler wake and arm it for dispatch.
+
+  wake is a map of :key (non-blank string), :wake-at (java.time.Instant),
+  :handler (fully qualified symbol resolvable in runtime's spool classloader),
+  and optional :payload (nil or a JSON-object-encodable map). Malformed shapes
+  and unresolvable handlers fail loudly before anything is persisted."
+  [runtime wake]
+  (when-not (map? wake)
+    (throw (ex-info "Scheduler wake must be a map" {:wake wake})))
+  (resolve-scheduler-handler-fn! runtime (:handler wake))
+  (let [created (normalize-wake (db/schedule-wake! (ds runtime) wake))]
+    (scheduler/arm! runtime)
+    created))
+
+(defn cancel-wake!
+  "Cancel a pending scheduler wake by key and return its cancellation history row.
+
+  Missing keys fail loudly."
+  [runtime key]
+  (let [cancelled (normalize-wake (db/cancel-wake! (ds runtime) key))]
+    (scheduler/arm! runtime)
+    cancelled))
+
+(defn pending-wakes
+  "Return all pending scheduler wakes, ordered by wake-at ascending."
+  [runtime]
+  (mapv normalize-wake (db/pending-wakes (ds runtime))))
+
+(defn recent-fires
+  "Return recently completed scheduler wakes, newest first, bounded to the last 100."
+  [runtime]
+  (mapv normalize-wake (db/recent-fires (ds runtime))))
+
+(defn recent-cancellations
+  "Return recently cancelled scheduler wakes, newest first, bounded to the last 100."
+  [runtime]
+  (mapv normalize-wake (db/recent-cancellations (ds runtime))))
+
+(defn recent-failures
+  "Return recently failed scheduler wakes, newest first, bounded to the last 100."
+  [runtime]
+  (mapv normalize-wake (db/recent-failures (ds runtime))))

@@ -3,9 +3,12 @@
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.string]
+            [skein.api.scheduler.alpha :as scheduler]
+            [skein.api.weaver.alpha :as weaver-api]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as runtime]
-            [skein.repl :as repl]))
+            [skein.repl :as repl])
+  (:import [java.time Instant]))
 
 (def cli-smoke-db "smoke-cli.sqlite")
 (def repl-smoke-db "smoke-repl.sqlite")
@@ -486,6 +489,49 @@
       (clean-runtime-artifacts! db-file)
       (delete-built-cli!))))
 
+;; --- Scheduler ---------------------------------------------------------------
+;; The scheduler is REPL/API-only (no CLI surface), so it is exercised in the
+;; in-process REPL smoke world against a real disposable weaver: a due handler
+;; mutates the graph on the shared async lane and the result reads back through
+;; data-first introspection.
+
+(def scheduler-fired (atom (promise)))
+
+(defn smoke-scheduler-handler
+  "Smoke wake handler: mutate the graph, then signal the fire promise."
+  [{:keys [runtime payload]}]
+  (weaver-api/add runtime {:title (:title payload) :attributes {:origin "smoke-scheduler"}})
+  (deliver @scheduler-fired true))
+
+(defn smoke-scheduler! [runtime]
+  (reset! scheduler-fired (promise))
+  ;; A far-future wake is pending and cancellable without ever firing.
+  (scheduler/schedule! runtime {:key "smoke-cancel"
+                                :wake-at (.plusSeconds (Instant/now) 100000)
+                                :handler 'skein.smoke/smoke-scheduler-handler})
+  (assert (some #(= "smoke-cancel" (:key %)) (scheduler/pending runtime))
+          "scheduler pending lists a far-future wake")
+  (scheduler/cancel! runtime "smoke-cancel")
+  (assert (empty? (scheduler/pending runtime)) "scheduler cancel! removes the pending wake")
+  ;; A near-future wake fires through the shared lane and mutates the graph.
+  (scheduler/schedule! runtime {:key "smoke-fire"
+                                :wake-at (.plusMillis (Instant/now) 100)
+                                :handler 'skein.smoke/smoke-scheduler-handler
+                                :payload {:title "Smoke scheduled strand"}})
+  (assert (deref @scheduler-fired 5000 false) "scheduler near-future wake fires its handler")
+  ;; Completion is recorded after the handler returns; wait for the pending row
+  ;; to clear so introspection is stable.
+  (loop [attempts 50]
+    (when (seq (scheduler/pending runtime))
+      (when (zero? attempts)
+        (throw (ex-info "scheduled wake did not complete" {})))
+      (Thread/sleep 100)
+      (recur (dec attempts))))
+  (assert (some #(= "Smoke scheduled strand" (:title %)) (weaver-api/list runtime))
+          "scheduled handler mutated the strand graph")
+  (assert (some #(= "smoke-fire" (:key %)) (scheduler/recent-fires runtime))
+          "completed wake is visible in scheduler introspection"))
+
 (defn smoke-repl! [db-file]
   (clean-runtime-artifacts! db-file)
   (try
@@ -522,6 +568,7 @@
               (assert= #{dependent}
                        (set (map :from (:rewired-dependencies result)))
                        "skein.repl supersede! rewires direct dependents"))))
+        (smoke-scheduler! runtime)
         (finally
           (runtime/stop! runtime))))
     (finally

@@ -6,7 +6,8 @@
   as non-blank ids, relation names, lifecycle states, and JSON-object-encodable
   attributes."
   (:require [clojure.spec.alpha :as s]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.time Instant]))
 
 (defn- non-blank-string? [x]
   (and (string? x) (not (str/blank? x))))
@@ -38,6 +39,14 @@
 (defn- relation-name? [x]
   (and (string? x) (boolean (re-matches relation-name-pattern x))))
 
+(defn- instant? [x]
+  (instance? Instant x))
+
+(defn- fully-qualified-symbol? [x]
+  (and (symbol? x)
+       (not (str/blank? (namespace x)))
+       (not (str/blank? (name x)))))
+
 (s/def ::id non-blank-string?)
 (s/def ::generated-id generated-id?)
 (s/def ::from ::id)
@@ -64,3 +73,18 @@
   (s/and (s/keys :req-un [::title] :opt-un [::attributes ::state])
          #(or (not (contains? % :state)) (s/valid? ::generic-state (:state %)))))
 (s/def ::edge-input (s/keys :req-un [::from ::to ::type] :opt-un [::attributes]))
+
+;; Weaver-owned scheduler wake boundary shape (RFC-009): the single durable-write
+;; contract shared by db persistence and the API tiers above it, so prose specs,
+;; DB validation, and callers cannot drift apart. Component keys live under a
+;; dedicated qualified namespace so `:req-un`/`:opt-un` bind them to the
+;; unqualified wake keys without polluting this namespace with a bare `::key`.
+(s/def :skein.scheduler-wake/key non-blank-string?)
+(s/def :skein.scheduler-wake/wake-at instant?)
+(s/def :skein.scheduler-wake/handler fully-qualified-symbol?)
+(s/def :skein.scheduler-wake/payload json-object-encodable-attributes?)
+(s/def ::scheduler-wake
+  (s/keys :req-un [:skein.scheduler-wake/key
+                   :skein.scheduler-wake/wake-at
+                   :skein.scheduler-wake/handler]
+          :opt-un [:skein.scheduler-wake/payload]))

@@ -1,7 +1,9 @@
 (ns skein.core.db
-  "SQLite persistence for strands, edges, relation metadata, and graph queries."
+  "SQLite persistence for strands, edges, relation metadata, graph queries, and
+  weaver-owned scheduler wakes."
   (:import [java.security SecureRandom]
            [java.sql DriverManager]
+           [java.time Instant]
            [java.util UUID])
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
@@ -139,7 +141,32 @@
    ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]
    ["CREATE TABLE IF NOT EXISTS acyclic_relations (
        relation TEXT PRIMARY KEY
-     )"]])
+     )"]
+   ["CREATE TABLE IF NOT EXISTS scheduler_wakes (
+       key TEXT PRIMARY KEY,
+       wake_at INTEGER NOT NULL,
+       handler TEXT NOT NULL,
+       payload TEXT NOT NULL DEFAULT '{}',
+       attempts INTEGER NOT NULL DEFAULT 0,
+       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+       CHECK (json_valid(payload))
+     )"]
+   ["CREATE INDEX IF NOT EXISTS idx_scheduler_wakes_wake_at ON scheduler_wakes(wake_at)"]
+   ["CREATE TABLE IF NOT EXISTS scheduler_history (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       key TEXT NOT NULL,
+       wake_at INTEGER NOT NULL,
+       handler TEXT NOT NULL,
+       payload TEXT NOT NULL DEFAULT '{}',
+       status TEXT NOT NULL,
+       attempts INTEGER NOT NULL DEFAULT 0,
+       error TEXT,
+       recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+       CHECK (status IN ('completed', 'cancelled', 'failed')),
+       CHECK (json_valid(payload))
+     )"]
+   ["CREATE INDEX IF NOT EXISTS idx_scheduler_history_status ON scheduler_history(status, id)"]])
 
 (def ^:private required-strand-columns #{"id" "title" "state" "attributes" "created_at" "updated_at"})
 (def ^:private required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
@@ -1005,4 +1032,173 @@
                    AND " query-sql "
                  ORDER BY t.id")]
                            query-params))))))
+
+;; Scheduler wakes are weaver runtime coordination state (RFC-009.Q1.OUT), not
+;; strands: dedicated tables, no edges, and no participation in the strand
+;; query/traversal/burn surface above.
+
+(def ^:private scheduler-wake-keys #{:key :wake-at :handler :payload})
+(def ^:private scheduler-history-limit 100)
+
+(defn- require-scheduler-key! [key]
+  (when-not (and (string? key) (not (str/blank? key)))
+    (throw (ex-info "Scheduler key must be a non-blank string" {:key key})))
+  key)
+
+(defn- require-wake-instant! [wake-at]
+  (when-not (instance? Instant wake-at)
+    (throw (ex-info "Scheduler wake-at must be a java.time.Instant" {:wake-at wake-at})))
+  wake-at)
+
+(def ^:private scheduler-wake-columns "key, wake_at, handler, payload, attempts, created_at, updated_at")
+(def ^:private scheduler-history-columns "id, key, wake_at, handler, payload, status, attempts, error, recorded_at")
+
+(defn schedule-wake!
+  "Persist or replace a durable scheduler wake and return its row.
+
+  wake is a map of :key (non-blank string), :wake-at (java.time.Instant),
+  :handler (fully qualified symbol), and optional :payload (nil or a JSON
+  object-encodable map). Replacing an existing key resets its attempt count.
+  The whole wake map is validated through the shared `::specs/scheduler-wake`
+  boundary contract, so DB persistence, the API tiers, and the prose spec share
+  one source of truth. Malformed keys, instants, handlers, unsupported payloads,
+  or unknown keys throw; wakes are never strands and never appear in strand
+  list/ready/query/traversal/burn paths."
+  [ds {:keys [key wake-at handler payload] :as wake}]
+  (when-not (map? wake)
+    (throw (ex-info "Scheduler wake must be a map" {:wake wake})))
+  (require-no-unknown-keys! wake scheduler-wake-keys :scheduler-wake)
+  (require-valid! ::specs/scheduler-wake wake "Scheduler wake is invalid")
+  (execute-one! ds
+                [(str "INSERT INTO scheduler_wakes (key, wake_at, handler, payload)
+                       VALUES (?, ?, ?, json(?))
+                       ON CONFLICT(key) DO UPDATE SET
+                         wake_at = excluded.wake_at,
+                         handler = excluded.handler,
+                         payload = excluded.payload,
+                         attempts = 0,
+                         updated_at = datetime('now')
+                       RETURNING " scheduler-wake-columns)
+                 key (.toEpochMilli ^Instant wake-at) (str handler) (->json payload)]))
+
+(defn get-pending-wake
+  "Return the pending wake row for key, or nil when it does not exist."
+  [ds key]
+  (execute-one! ds
+                [(str "SELECT " scheduler-wake-columns " FROM scheduler_wakes WHERE key = ?")
+                 key]))
+
+(defn- require-pending-wake [ds key]
+  (or (get-pending-wake ds key)
+      (throw (ex-info "Scheduler wake not found" {:key key}))))
+
+(defn pending-wakes
+  "Return all pending wakes ordered by wake-at ascending with a stable key tie-break."
+  [ds]
+  (execute! ds
+            [(str "SELECT " scheduler-wake-columns " FROM scheduler_wakes ORDER BY wake_at ASC, key ASC")]))
+
+(defn due-wakes
+  "Return pending wakes with wake-at at or before now, earliest first with a stable key tie-break.
+
+  now is an explicit java.time.Instant so callers control the clock."
+  [ds now]
+  (require-wake-instant! now)
+  (execute! ds
+            [(str "SELECT " scheduler-wake-columns " FROM scheduler_wakes WHERE wake_at <= ? ORDER BY wake_at ASC, key ASC")
+             (.toEpochMilli ^Instant now)]))
+
+(defn mark-wake-attempt!
+  "Atomically increment a pending wake's attempt count, returning the updated row.
+
+  The claim is generation-specific: the single conditional UPDATE matches both
+  `key` and the caller-selected `wake-at-millis` (the wake generation), so a key
+  that is no longer pending, or that was rescheduled to a different wake-at in a
+  concurrent race, yields nil rather than incrementing the replacement row.
+  Callers treat nil as an ordinary lost race, never an error."
+  [ds key wake-at-millis]
+  (require-scheduler-key! key)
+  (when-not (integer? wake-at-millis)
+    (throw (ex-info "Scheduler wake-at generation must be epoch millis" {:key key :wake-at wake-at-millis})))
+  (execute-one! ds
+                [(str "UPDATE scheduler_wakes
+                       SET attempts = attempts + 1,
+                           updated_at = datetime('now')
+                       WHERE key = ? AND wake_at = ?
+                       RETURNING " scheduler-wake-columns)
+                 key wake-at-millis]))
+
+(defn- prune-history! [ds status]
+  (execute! ds
+            ["DELETE FROM scheduler_history
+              WHERE status = ?
+                AND id NOT IN (
+                  SELECT id FROM scheduler_history
+                  WHERE status = ?
+                  ORDER BY id DESC
+                  LIMIT ?
+                )"
+             status status scheduler-history-limit]))
+
+(defn- retire-wake! [ds key status error]
+  (require-scheduler-key! key)
+  (jdbc/with-transaction [tx ds]
+    (let [row (require-pending-wake tx key)]
+      (execute! tx ["DELETE FROM scheduler_wakes WHERE key = ?" key])
+      (let [history-row (execute-one! tx
+                                       [(str "INSERT INTO scheduler_history
+                                                (key, wake_at, handler, payload, status, attempts, error)
+                                              VALUES (?, ?, ?, ?, ?, ?, ?)
+                                              RETURNING " scheduler-history-columns)
+                                        (:key row) (:wake_at row) (:handler row) (:payload row)
+                                        status (:attempts row) error])]
+        (prune-history! tx status)
+        history-row))))
+
+(defn cancel-wake!
+  "Cancel a pending wake by key, recording cancellation history, and return the history row.
+
+  Missing keys throw."
+  [ds key]
+  (retire-wake! ds key "cancelled" nil))
+
+(defn complete-wake!
+  "Record a pending wake as fired-and-completed, removing it from pending, and return the history row.
+
+  Missing keys throw."
+  [ds key]
+  (retire-wake! ds key "completed" nil))
+
+(defn fail-wake!
+  "Record a pending wake as failed with error text, removing it from pending, and return the history row.
+
+  Missing keys throw."
+  [ds key error]
+  (when-not (and (string? error) (not (str/blank? error)))
+    (throw (ex-info "Scheduler failure error must be a non-blank string" {:key key :error error})))
+  (retire-wake! ds key "failed" error))
+
+(defn- recent-history [ds status]
+  (execute! ds
+            [(str "SELECT " scheduler-history-columns "
+                   FROM scheduler_history
+                   WHERE status = ?
+                   ORDER BY id DESC
+                   LIMIT ?")
+             status scheduler-history-limit]))
+
+(defn recent-fires
+  "Return the most recent completed wakes, newest first, bounded to the last 100."
+  [ds]
+  (recent-history ds "completed"))
+
+(defn recent-cancellations
+  "Return the most recent cancelled wakes, newest first, bounded to the last 100."
+  [ds]
+  (recent-history ds "cancelled"))
+
+(defn recent-failures
+  "Return the most recent failed wakes, newest first, bounded to the last 100."
+  [ds]
+  (recent-history ds "failed"))
 

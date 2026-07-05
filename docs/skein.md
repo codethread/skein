@@ -612,6 +612,35 @@ Event dispatch is asynchronous after successful mutations. Handler exceptions do
 
 Event handler state is weaver-lifetime runtime state. Register handlers from `init.clj` or an installed spool if they should exist after startup or reload.
 
+## Scheduler (no-poller wakeups)
+
+The default answer for time-based work is still pull: stamp a `wake-at` attribute on a strand and let a view or query surface it to whatever already polls the graph. That keeps timing in ordinary, inspectable strand data. Reach for the scheduler only for the **no-poller** case — when something must proactively happen at instant `T` and there is no client polling to trigger it.
+
+`skein.api.scheduler.alpha` is a blessed explicit-runtime namespace for that case. A wake is keyed by a stable caller key, an absolute `java.time.Instant`, a fully qualified handler symbol, and an optional JSON-encodable payload; the weaver persists it in dedicated weaver-owned tables (never as a strand), re-arms pending wakes across startup and trusted reload, and dispatches due handlers through the same serialized async lane as post-commit events. Delivery is at-least-once, so handlers must be idempotent. There is no mutating `strand schedule` CLI: scheduling is a trusted REPL/config/API surface only.
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.scheduler.alpha :as scheduler])
+
+(defn remind! [{:keys [runtime key payload]}]
+  ;; Handler receives one context map and runs on the shared mutation lane.
+  ;; It may call trusted Skein APIs; its return value is ignored.
+  nil)
+
+(let [rt (current/runtime)]
+  (scheduler/schedule! rt {:key "nightly-sweep"
+                           :wake-at (.plusSeconds (java.time.Instant/now) 3600)
+                           :handler 'my.workflow/remind!
+                           :payload {:scope "temporary"}})
+  (scheduler/pending rt)          ; => data-first pending wakes, earliest first
+  (first (scheduler/pending rt))  ; => the earliest pending wake, or nil
+  (scheduler/recent-fires rt)
+  (scheduler/recent-failures rt)
+  (scheduler/cancel! rt "nightly-sweep"))
+```
+
+Core stays minimal: no cron, recurrence, retry/backoff, jitter, or DST policy. A handler that wants to run again schedules its own next wake. See the Weaver Runtime spec (`SPEC-004.P10d`) and REPL API spec (`SPEC-003.P4a`) for the full contract.
+
 ## Fail loudly
 
 Skein intentionally fails loudly instead of guessing. Expect errors for malformed config, unsupported fields, missing weavers, stale metadata, invalid edge targets, cycles, unknown queries, missing spools, and bad runtime code.

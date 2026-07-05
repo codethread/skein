@@ -53,6 +53,12 @@ the wrong world or throws.
    singleton for its own operation. `skein.userland.alpha` is userland-only,
    forever, and holds a process-local runtime binding that is meaningless — and
    actively wrong — inside a reusable spool.
+6. **Default to pull-based timing.** When your spool needs time-based work, prefer
+   a `wake-at` strand attribute surfaced by a view or query to whatever already
+   polls the graph; reach for `skein.api.scheduler.alpha` only for the no-poller
+   case where something must proactively fire at instant `T` with nothing polling
+   to trigger it. Scheduler delivery is at-least-once, so any handler you register
+   must be idempotent.
 
 ## The discovery surface your spool ships
 

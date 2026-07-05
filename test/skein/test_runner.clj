@@ -10,7 +10,7 @@
 
 (def parallel-namespaces
   "Test namespaces that are safe to run concurrently, one namespace per worker."
-  ['skein.core.db-test 'skein.plugin-test 'skein.relations-test
+  ['skein.core.db-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test
    'skein.spools.bobbin-test 'skein.spools.carder-test 'skein.spools.selvage-test 'skein.guild-test
    'skein.agents-test 'skein.treadle-test 'skein.test.alpha-test 'skein.api.cli.alpha-test
    'skein.spools.batteries-test 'skein.roster-test])
@@ -33,6 +33,15 @@
    'skein.peers-test
    ;; Event bus order assertions observe process-global delivery under load.
    'skein.weaver-test
+   ;; Scheduler dispatch rides the shared event worker and arms real executor
+   ;; timers; reuses weaver-test helpers, so it runs beside it serially.
+   'skein.scheduler-runtime-test
+   ;; Blessed scheduler API tests also arm real executor timers via a real
+   ;; runtime for classloader-accurate handler resolution; same reasoning.
+   'skein.api.scheduler.alpha-test
+   ;; End-to-end scheduler coverage drives real weaver stop/start cycles and
+   ;; dispatches graph mutations on the shared lane; same real-timer reasoning.
+   'skein.scheduler-e2e-test
    ;; notifier binding and process-output assertions mutate runtime-owned chime state but are flaky under parent parallel load.
    'skein.chime-test])
 
