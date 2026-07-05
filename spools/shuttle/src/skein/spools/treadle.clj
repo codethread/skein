@@ -251,7 +251,7 @@
     (api/register-event-handler! runtime :treadle/engine event-types
                                  'skein.spools.treadle/on-event
                                  {:spool "treadle"})
-    (workflow/register-stall-predicate! :treadle gate-stalled?)
+    (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates: an active subagent gate whose
     ;; spawn errored, or whose current delegated run is dead in a terminal phase.
     ;; The `delegates` edge (added beside every `treadle/run` stamp) lets the query

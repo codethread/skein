@@ -28,11 +28,11 @@
                          {:params {:feature (workflow/param :required true)
                                    :owner (workflow/param :default "agent")
                                    :include-review (workflow/param :default true)}}
-                         (workflow/step :design (with-feature "Design ")
+                         (workflow/step :design (with-feature "Design ") :self
                                         :attributes {:owner (fn [{:keys [owner]}] owner)})
-                         (workflow/step :implement (with-feature "Implement ")
+                         (workflow/step :implement (with-feature "Implement ") :self
                                         :depends-on [:design])
-                         (workflow/step :review (with-feature "Review ")
+                         (workflow/step :review (with-feature "Review ") :self
                                         :depends-on [:implement]
                                         :condition :include-review))
             result (workflow/pour! definition {:feature "workflow spool"})
@@ -51,16 +51,16 @@
                    "Review"
                    {:params {:artifact (workflow/param :required true)}}
                    (workflow/step :inspect
-                                  (fn [{:keys [artifact]}] (str "Inspect " artifact)))
+                                  (fn [{:keys [artifact]}] (str "Inspect " artifact)) :self)
                    (workflow/step :write-review
-                                  (fn [{:keys [artifact]}] (str "Write review for " artifact))
+                                  (fn [{:keys [artifact]}] (str "Write review for " artifact)) :self
                                   :depends-on [:inspect])))
         definition (workflow/workflow
                      "Procedure demo"
-                     (workflow/step :write-artifact "Write artifact")
+                     (workflow/step :write-artifact "Write artifact" :self)
                      (workflow/call :review-artifact review {:artifact "proposal.md"}
                                     :depends-on [:write-artifact])
-                     (workflow/step :continue "Continue"
+                     (workflow/step :continue "Continue" :self
                                     :depends-on [:review-artifact]))
         payload (workflow/compile definition)
         strands-by-ref (into {} (map (juxt :ref identity)) (:strands payload))
@@ -77,13 +77,13 @@
 (defn- toastie-quality-workflow [_]
   (workflow/workflow
     "Toastie quality check"
-    (workflow/step :inspect "Check toastie melt and crunch")))
+    (workflow/step :inspect "Check toastie melt and crunch" :self)))
 
 (defn- toastie-serve-workflow [{:keys [filling]}]
   (workflow/workflow
     (str "Serve " filling " toastie")
     {:params {:filling (workflow/param :required true)}}
-    (workflow/step :plate (fn [{:keys [filling]}] (str "Plate " filling " toastie")))))
+    (workflow/step :plate (fn [{:keys [filling]}] (str "Plate " filling " toastie")) :self)))
 
 (deftest workflow-spool-runtime-drives-toastie-demo
   (with-runtime
@@ -91,7 +91,7 @@
       (let [toastie (workflow/workflow
                       (fn [{:keys [filling]}] (str "Make " filling " toastie"))
                       {:params {:filling (workflow/param :required true)}}
-                      (workflow/step :butter-bread "Butter bread")
+                      (workflow/step :butter-bread "Butter bread" :self)
                       (workflow/call :quality toastie-quality-workflow {}
                                      :depends-on [:butter-bread])
                       (workflow/checkpoint :choose-finish "Choose toastie finish"
@@ -192,9 +192,9 @@
   (workflow/workflow
     (fn [{:keys [feature]}] (str "Fix CI for " feature))
     {:params {:feature (workflow/param :required true)}}
-    (workflow/step :diagnose "Diagnose CI failure"
+    (workflow/step :diagnose "Diagnose CI failure" :self
                    :attributes (bind-attrs bindings :pr.ci.fix))
-    (workflow/step :push-fix "Push CI fix" :depends-on [:diagnose])
+    (workflow/step :push-fix "Push CI fix" :self :depends-on [:diagnose])
     (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:push-fix])))
 
 (defn- pr-review-round-workflow [{:keys [bindings] :as _opts}]
@@ -221,7 +221,7 @@
   (workflow/workflow
     (fn [{:keys [feature]}] (str "Address review feedback for " feature))
     {:params {:feature (workflow/param :required true)}}
-    (workflow/step :address-comments "Address review comments"
+    (workflow/step :address-comments "Address review comments" :self
                    :attributes (bind-attrs bindings :pr.review.address))
     (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:address-comments])))
 
@@ -229,15 +229,15 @@
   (workflow/workflow
     (fn [{:keys [feature]}] (str "Merge " feature))
     {:params {:feature (workflow/param :required true)}}
-    (workflow/step :merge (fn [{:keys [feature]}] (str "Merge " feature))
+    (workflow/step :merge (fn [{:keys [feature]}] (str "Merge " feature)) :self
                    :attributes (bind-attrs bindings :pr.merge))))
 
 (defn- pr-dev-workflow [{:keys [bindings] :as _opts}]
   (workflow/workflow
     (fn [{:keys [feature]}] (str "Pull request: " feature))
     {:params {:feature (workflow/param :required true)}}
-    (workflow/step :dev (fn [{:keys [feature]}] (str "Implement " feature)))
-    (workflow/step :open "Open the change for review" :depends-on [:dev]
+    (workflow/step :dev (fn [{:keys [feature]}] (str "Implement " feature)) :self)
+    (workflow/step :open "Open the change for review" :self :depends-on [:dev]
                    :attributes (bind-attrs bindings :pr.open))
     (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:open])))
 
@@ -345,8 +345,8 @@
       (let [blocker (repl/strand! "External blocker")
             definition (workflow/workflow
                         "Blocked run"
-                        (workflow/step :a "Do A")
-                        (workflow/step :b "Do B" :depends-on [:a]))
+                        (workflow/step :a "Do A" :self)
+                        (workflow/step :b "Do B" :self :depends-on [:a]))
             result (workflow/pour! definition {} {:run-id "blocked-run"})
             b-id (get-in result [:refs :b])]
         (repl/update! b-id {:edges [{:type "depends-on" :to (:id blocker)}]})
@@ -368,8 +368,8 @@
     (fn [rt _]
       (let [definition (workflow/workflow
                         "Linear run"
-                        (workflow/step :a "Do A")
-                        (workflow/step :b "Do B" :depends-on [:a]))]
+                        (workflow/step :a "Do A" :self)
+                        (workflow/step :b "Do B" :self :depends-on [:a]))]
         (workflow/start! "linear-run" definition {})
         (is (= [{:title "Do B" :kind "step"}]
                (mapv #(select-keys % [:title :kind]) (:ready (workflow/complete! "linear-run")))))
@@ -382,8 +382,8 @@
     (fn [rt _]
       (let [definition (workflow/workflow
                         "Parallel entry"
-                        (workflow/step :a "Do A")
-                        (workflow/step :b "Do B"))
+                        (workflow/step :a "Do A" :self)
+                        (workflow/step :b "Do B" :self))
             started (:ready (workflow/start! "parallel-run" definition {}))
             a-id (:id (first (filter #(= "Do A" (:title %)) started)))
             b-id (:id (first (filter #(= "Do B" (:title %)) started)))]
@@ -401,7 +401,7 @@
 (deftest workflow-complete-records-notes-and-attributes
   (with-runtime
     (fn [rt _]
-      (let [definition (workflow/workflow "Notes run" (workflow/step :a "Do A"))
+      (let [definition (workflow/workflow "Notes run" (workflow/step :a "Do A" :self))
             [step] (:ready (workflow/start! "notes-run" definition {}))]
         (workflow/complete! "notes-run" {:notes "done via automation" :attributes {"outcome" "ok"}})
         (let [strand (repl/strand (:id step))]
@@ -412,7 +412,7 @@
 (deftest workflow-complete-fails-loudly-on-invalid-step-and-mutates-nothing
   (with-runtime
     (fn [rt _]
-      (let [definition (workflow/workflow "Bad step run" (workflow/step :a "Do A"))]
+      (let [definition (workflow/workflow "Bad step run" (workflow/step :a "Do A" :self))]
         (workflow/start! "bad-step-run" definition {})
         (let [a-id (:id (workflow/next-step "bad-step-run"))]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Requested workflow step is not ready"
@@ -424,9 +424,9 @@
     (fn [rt _]
       (let [definition (workflow/workflow
                         "Gated run"
-                        (workflow/step :push "Push branch")
+                        (workflow/step :push "Push branch" :self)
                         (workflow/gate :ci "Wait for CI to go green" :ci :depends-on [:push])
-                        (workflow/step :deploy "Deploy" :depends-on [:ci]))]
+                        (workflow/step :deploy "Deploy" :self :depends-on [:ci]))]
         (workflow/start! "gated-run" definition {})
         ;; the non-gate :push step closes without :by, reaching the gate
         (let [gate (first (:ready (workflow/complete! "gated-run")))
@@ -459,12 +459,24 @@
 (deftest workflow-non-gate-step-closes-without-by
   (with-runtime
     (fn [rt _]
-      (let [definition (workflow/workflow "Plain run" (workflow/step :a "Do A"))
+      (let [definition (workflow/workflow "Plain run" (workflow/step :a "Do A" :self))
             [step] (:ready (workflow/start! "plain-gate-run" definition {}))]
         (is (= {:ready [] :done true} (workflow/complete! "plain-gate-run")))
         (let [closed (repl/strand (:id step))]
           (is (= "closed" (:state closed)))
           (is (nil? (get-in closed [:attributes :workflow/outcome-by]))))))))
+
+(deftest workflow-non-gate-step-records-by-when-supplied
+  ;; :by is recorded on any step completion when supplied (provenance parity),
+  ;; even though only gates require it
+  (with-runtime
+    (fn [rt _]
+      (let [definition (workflow/workflow "Plain run with by" (workflow/step :a "Do A" :self))
+            [step] (:ready (workflow/start! "plain-by-run" definition {}))]
+        (is (= {:ready [] :done true} (workflow/complete! "plain-by-run" {:by "agent-driver"})))
+        (let [closed (repl/strand (:id step))]
+          (is (= "closed" (:state closed)))
+          (is (= "agent-driver" (get-in closed [:attributes :workflow/outcome-by]))))))))
 
 (defn- empty-continuation-workflow [_]
   (workflow/workflow "Empty continuation"))
@@ -486,7 +498,7 @@
 (defn- routed-continuation-workflow [_]
   (workflow/workflow
     "Continuation"
-    (workflow/step :follow-up "Do follow up work")))
+    (workflow/step :follow-up "Do follow up work" :self)))
 
 (deftest workflow-routed-choice-swaps-to-single-active-continuation-root
   (with-runtime
@@ -528,8 +540,8 @@
   (workflow/workflow
     "Loopy"
     {:params {:revision (workflow/param :default (boolean revision))}}
-    (workflow/step :orient "Orient" :condition [:!= :revision true])
-    (workflow/step :work "Do work" :depends-on [:orient])
+    (workflow/step :orient "Orient" :self :condition [:!= :revision true])
+    (workflow/step :work "Do work" :self :depends-on [:orient])
     (workflow/checkpoint :signoff "Sign off"
                          :depends-on [:work]
                          :kind :agent
@@ -707,7 +719,7 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow option keys"
                           (workflow/param :requird true)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow option keys"
-                          (workflow/step :a "A" :depend-on [:b])))
+                          (workflow/step :a "A" :self :depend-on [:b])))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow option keys"
                           (workflow/gate :a "A" :ci :dependson [:b])))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow option keys"
@@ -715,21 +727,57 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow option keys"
                           (workflow/call :a 'x {} :dependson [:b])))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow option keys"
-                          (workflow/workflow "W" {:param {:x true}} (workflow/step :a "A"))))
+                          (workflow/workflow "W" {:param {:x true}} (workflow/step :a "A" :self))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow option keys"
                           (workflow/checkpoint :a "A"
                                                :choices [{:key :ok :labl "Bad"}]))))
   (testing "ex-data carries the offending and allowed keys"
     (try
-      (workflow/step :a "A" :depend-on [:b])
+      (workflow/step :a "A" :self :depend-on [:b])
       (is false "expected step to throw")
       (catch clojure.lang.ExceptionInfo e
         (is (= [:depend-on] (:unknown (ex-data e))))
         (is (contains? (:allowed (ex-data e)) :depends-on))))))
 
+(deftest workflow-step-requires-self-waiter
+  (testing "only :self is accepted; any other waiter fails loudly, directing to gate"
+    (is (= {:id :a :title "A"} (workflow/step :a "A" :self)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Step waiter must be :self.*use gate"
+                          (workflow/step :a "A" :ci)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Step waiter must be :self.*use gate"
+                          (workflow/step :a "A" :subagent)))
+    (try
+      (workflow/step :a "A" :ci)
+      (is false "expected step to throw on a non-:self waiter")
+      (catch clojure.lang.ExceptionInfo e
+        (is (= :ci (:waiter (ex-data e))))))))
+
+(deftest workflow-gate-rejects-self-waiter
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Gate waiter must be.*other than :self"
+                        (workflow/gate :handoff "Hand off" :self)))
+  (try
+    (workflow/gate :handoff "Hand off" :self)
+    (is false "expected gate to reject :self")
+    (catch clojure.lang.ExceptionInfo e
+      (is (= :self (:waiter (ex-data e)))))))
+
+(deftest workflow-gate-rejects-malformed-waiters
+  (doseq [bad [42 nil "" "  " [:ci]]]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Gate waiter must be a keyword, symbol, or non-blank string"
+                          (workflow/gate :handoff "Hand off" bad))
+        (pr-str bad))))
+
+(deftest workflow-self-step-carries-no-gate-attribute
+  ;; :self steps compile identically to the old bare steps: zero graph churn
+  (let [definition (workflow/workflow "Self step" (workflow/step :a "Do A" :self))
+        payload (workflow/compile definition)
+        strand (first (filter #(= :a (:ref %)) (:strands payload)))]
+    (is (= "step" (get-in strand [:attributes "workflow/role"])))
+    (is (not (contains? (:attributes strand) "workflow/gate")))))
+
 (defn- cyclic-procedure-workflow [_params]
   (workflow/workflow "Cyclic procedure"
-                     (workflow/step :work "Do work")
+                     (workflow/step :work "Do work" :self)
                      ;; recursive edge by symbol while the entry call passes the
                      ;; fn value: both must canonicalize to one identity
                      (workflow/call :again 'skein.spools.workflow-test/cyclic-procedure-workflow {}
@@ -788,9 +836,9 @@
 (deftest workflow-compile-splices-condition-excluded-step-deps
   (let [definition (workflow/workflow
                      "Splice"
-                     (workflow/step :design "Design")
-                     (workflow/step :review "Review" :depends-on [:design] :condition :include-review)
-                     (workflow/step :implement "Implement" :depends-on [:review]))
+                     (workflow/step :design "Design" :self)
+                     (workflow/step :review "Review" :self :depends-on [:design] :condition :include-review)
+                     (workflow/step :implement "Implement" :self :depends-on [:review]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -801,10 +849,10 @@
 (deftest workflow-compile-splices-transitively-through-two-excluded-steps
   (let [definition (workflow/workflow
                      "Transitive splice"
-                     (workflow/step :base "Base")
-                     (workflow/step :mid1 "Mid 1" :depends-on [:base] :condition :skip)
-                     (workflow/step :mid2 "Mid 2" :depends-on [:mid1] :condition :skip)
-                     (workflow/step :consumer "Consumer" :depends-on [:mid2]))
+                     (workflow/step :base "Base" :self)
+                     (workflow/step :mid1 "Mid 1" :self :depends-on [:base] :condition :skip)
+                     (workflow/step :mid2 "Mid 2" :self :depends-on [:mid1] :condition :skip)
+                     (workflow/step :consumer "Consumer" :self :depends-on [:mid2]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -816,8 +864,8 @@
 (deftest workflow-compile-fails-loudly-on-unknown-depends-on-ref
   (let [definition (workflow/workflow
                      "Typo"
-                     (workflow/step :design "Design")
-                     (workflow/step :implement "Implement" :depends-on [:desgin]))]
+                     (workflow/step :design "Design" :self)
+                     (workflow/step :implement "Implement" :self :depends-on [:desgin]))]
     (try
       (workflow/compile definition)
       (is false "expected compile to throw")
@@ -828,9 +876,9 @@
 (deftest workflow-compile-attributes-unknown-ref-to-the-excluded-step-that-names-it
   (let [definition (workflow/workflow
                      "Typo in excluded step"
-                     (workflow/step :design "Design")
-                     (workflow/step :review "Review" :depends-on [:desgin] :condition :include-review)
-                     (workflow/step :implement "Implement" :depends-on [:review]))]
+                     (workflow/step :design "Design" :self)
+                     (workflow/step :review "Review" :self :depends-on [:desgin] :condition :include-review)
+                     (workflow/step :implement "Implement" :self :depends-on [:review]))]
     (try
       (workflow/compile definition)
       (is false "expected compile to throw")
@@ -841,7 +889,7 @@
 (deftest workflow-compile-fails-loudly-on-root-ref-collision
   (let [definition (workflow/workflow
                      "Root collision"
-                     (workflow/step :molecule "Steal the root ref"))]
+                     (workflow/step :molecule "Steal the root ref" :self))]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"collides with the root ref"
                           (workflow/compile definition)))))
 
@@ -852,7 +900,7 @@
                                :envs (workflow/param :default [:dev :prod])}}
                      (workflow/step :deploy
                                     (fn [{:keys [feature item i]}]
-                                      (str "Deploy " feature " to " (name item) " #" i))
+                                      (str "Deploy " feature " to " (name item) " #" i)) :self
                                     :loop {:each :envs}))
         titles (into {} (map (juxt :ref :title)) (:strands (workflow/compile definition {:feature "checkout"})))]
     (is (= "Deploy checkout to dev #0" (get titles :deploy-1)))
@@ -862,11 +910,11 @@
   (let [from-keyword (workflow/workflow
                        "Each keyword"
                        {:params {:regions (workflow/param :default ["us" "eu"])}}
-                       (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item)) :loop {:each :regions}))
+                       (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item)) :self :loop {:each :regions}))
         from-fn (workflow/workflow
                   "Each fn"
                   {:params {:regions (workflow/param :default ["us" "eu"])}}
-                  (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item))
+                  (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item)) :self
                                  :loop {:each (fn [{:keys [regions]}] (reverse regions))}))]
     (is (= #{:molecule :ship-1 :ship-2} (set (map :ref (:strands (workflow/compile from-keyword))))))
     (is (= ["Ship us" "Ship eu"]
@@ -878,19 +926,19 @@
   (let [definition (workflow/workflow
                      "Bad each"
                      {:params {:n (workflow/param :default 5)}}
-                     (workflow/step :s "S" :loop {:each :n}))]
+                     (workflow/step :s "S" :self :loop {:each :n}))]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #":each must resolve to a sequential"
                           (workflow/compile definition)))))
 
 (deftest workflow-loop-suffix-rules
-  (let [count-def (workflow/workflow "Count" (workflow/step :ping "Ping" :loop {:count 3}))
+  (let [count-def (workflow/workflow "Count" (workflow/step :ping "Ping" :self :loop {:count 3}))
         map-def (workflow/workflow
                   "Map ids"
                   {:params {:tasks (workflow/param :default [{:id "alpha"} {:id "beta"}])}}
-                  (workflow/step :run (fn [{:keys [item]}] (str "Run " (:id item))) :loop {:each :tasks}))
+                  (workflow/step :run (fn [{:keys [item]}] (str "Run " (:id item))) :self :loop {:each :tasks}))
         position-def (workflow/workflow
                        "Positions"
-                       (workflow/step :s (fn [{:keys [item]}] (str "S " item)) :loop {:each ["x" "y"]}))]
+                       (workflow/step :s (fn [{:keys [item]}] (str "S " item)) :self :loop {:each ["x" "y"]}))]
     (is (= [:molecule :ping-1 :ping-2 :ping-3] (map :ref (:strands (workflow/compile count-def)))))
     (is (= [:molecule :run-alpha :run-beta] (map :ref (:strands (workflow/compile map-def)))))
     (is (= [:molecule :s-1 :s-2] (map :ref (:strands (workflow/compile position-def)))))))
@@ -899,8 +947,8 @@
   (let [definition (workflow/workflow
                      "Fan in"
                      {:params {:shards (workflow/param :default ["a" "b" "c"])}}
-                     (workflow/step :migrate (fn [{:keys [item]}] (str "Migrate " item)) :loop {:each :shards})
-                     (workflow/step :verify "Verify migrations" :depends-on [:migrate]))
+                     (workflow/step :migrate (fn [{:keys [item]}] (str "Migrate " item)) :self :loop {:each :shards})
+                     (workflow/step :verify "Verify migrations" :self :depends-on [:migrate]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -915,8 +963,8 @@
   (let [definition (workflow/workflow
                      "Loop plus typo"
                      {:params {:shards (workflow/param :default ["a" "b"])}}
-                     (workflow/step :migrate "Migrate" :loop {:each :shards})
-                     (workflow/step :verify "Verify" :depends-on [:migrate :migrat]))]
+                     (workflow/step :migrate "Migrate" :self :loop {:each :shards})
+                     (workflow/step :verify "Verify" :self :depends-on [:migrate :migrat]))]
     (try
       (workflow/compile definition)
       (is false "expected compile to throw")
@@ -930,17 +978,17 @@
   (let [dup-base (workflow/workflow
                    "Dup base"
                    {:params {:xs (workflow/param :default ["a" "b"])}}
-                   (workflow/step :run "Run once" :loop {:each :xs})
-                   (workflow/step :run "Run again" :loop {:count 3}))
+                   (workflow/step :run "Run once" :self :loop {:each :xs})
+                   (workflow/step :run "Run again" :self :loop {:count 3}))
         base-vs-plain (workflow/workflow
                         "Base vs plain"
                         {:params {:xs (workflow/param :default ["a" "b"])}}
-                        (workflow/step :run "Loop" :loop {:each :xs})
-                        (workflow/step :run "Plain"))
+                        (workflow/step :run "Loop" :self :loop {:each :xs})
+                        (workflow/step :run "Plain" :self))
         base-vs-root (workflow/workflow
                        "Base vs root"
                        {:params {:xs (workflow/param :default ["a" "b"])}}
-                       (workflow/step :molecule "Steal root" :loop {:each :xs}))]
+                       (workflow/step :molecule "Steal root" :self :loop {:each :xs}))]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"step ids must be unique"
                           (workflow/compile dup-base)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"step ids must be unique"
@@ -952,11 +1000,11 @@
   (let [definition (workflow/workflow
                      "Chain"
                      {:params {:tasks (workflow/param :default [{:id "a"} {:id "b"} {:id "c"}])}}
-                     (workflow/step :prep "Prep")
-                     (workflow/step :task (fn [{:keys [item]}] (str "Task " (:id item)))
+                     (workflow/step :prep "Prep" :self)
+                     (workflow/step :task (fn [{:keys [item]}] (str "Task " (:id item))) :self
                                     :depends-on [:prep]
                                     :loop {:each :tasks :chain true})
-                     (workflow/step :accept "Accept" :depends-on [:task]))
+                     (workflow/step :accept "Accept" :self :depends-on [:task]))
         edges (set (map (juxt :from :to :type) (:edges (workflow/compile definition))))
         described (into {} (map (juxt :id identity)) (:steps (workflow/describe definition)))]
     (is (contains? edges [:task-a :prep "depends-on"]))
@@ -967,7 +1015,7 @@
 (deftest workflow-loop-chain-count-uses-previous-count-expansion
   (let [definition (workflow/workflow
                      "Count chain"
-                     (workflow/step :round "Round" :loop {:count 3 :chain true}))
+                     (workflow/step :round "Round" :self :loop {:count 3 :chain true}))
         edges (set (map (juxt :from :to :type) (:edges (workflow/compile definition))))]
     (is (contains? edges [:round-2 :round-1 "depends-on"]))
     (is (contains? edges [:round-3 :round-2 "depends-on"]))))
@@ -980,8 +1028,8 @@
                      "Loop conditions"
                      {:params {:shards (workflow/param :default ["a" "b"])
                                :do-migrate (workflow/param :default false)}}
-                     (workflow/step :migrate "Migrate" :loop {:each :shards} :condition :do-migrate)
-                     (workflow/step :verify "Verify" :depends-on [:migrate]))
+                     (workflow/step :migrate "Migrate" :self :loop {:each :shards} :condition :do-migrate)
+                     (workflow/step :verify "Verify" :self :depends-on [:migrate]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -1002,7 +1050,7 @@
   (with-runtime
     (fn [rt _]
       (let [definition (workflow/workflow "Runid demo"
-                                          (workflow/step :a "Do A")
+                                          (workflow/step :a "Do A" :self)
                                           (workflow/gate :handoff "Hand off" :subagent)
                                           (workflow/checkpoint :decide "Decide" :kind :agent :choices [:ok]))
             started (workflow/start! "runid-run" definition {})]
@@ -1082,16 +1130,16 @@
 (defn- join-inner-workflow [_]
   (workflow/workflow
     "Inner"
-    (workflow/step :do-inner "Do inner work")))
+    (workflow/step :do-inner "Do inner work" :self)))
 
 (deftest workflow-procedure-join-auto-closes-and-never-surfaces-as-ready
   (with-runtime
     (fn [rt _]
       (let [definition (workflow/workflow
                         "Join demo"
-                        (workflow/step :prep "Prep")
+                        (workflow/step :prep "Prep" :self)
                         (workflow/call :inner join-inner-workflow {} :depends-on [:prep])
-                        (workflow/step :after "After" :depends-on [:inner]))]
+                        (workflow/step :after "After" :self :depends-on [:inner]))]
         (workflow/start! "join-run" definition {})
         (is (= "Prep" (:title (workflow/next-step "join-run"))))
         ;; completing prep reveals the inner step, not the join
@@ -1116,7 +1164,7 @@
     (fn [rt _]
       (let [definition (workflow/workflow
                         "Advance demo"
-                        (workflow/step :work "Do work")
+                        (workflow/step :work "Do work" :self)
                         (workflow/checkpoint :sign "Sign off"
                                              :depends-on [:work]
                                              :kind :agent
@@ -1144,10 +1192,10 @@
                          :choices [{:key :advance :label "Advance" :next target}])))
 
 (defn- registry-second-stage [_]
-  (workflow/workflow "Registry second" (workflow/step :do-second "Do second")))
+  (workflow/workflow "Registry second" (workflow/step :do-second "Do second" :self)))
 
 (defn- registry-alt-second-stage [_]
-  (workflow/workflow "Registry alt" (workflow/step :do-alt "Do alt")))
+  (workflow/workflow "Registry alt" (workflow/step :do-alt "Do alt" :self)))
 
 (deftest workflow-named-next-resolves-and-fails-loudly-on-unknown-name
   (with-runtime
@@ -1183,7 +1231,7 @@
   (workflow/workflow
     "Revise stage"
     {:params {:revision (workflow/param :default (boolean revision))}}
-    (workflow/step :orient "Orient" :condition [:!= :revision true])
+    (workflow/step :orient "Orient" :self :condition [:!= :revision true])
     (workflow/checkpoint :signoff "Sign off"
                          :depends-on [:orient]
                          :kind :agent
@@ -1191,7 +1239,7 @@
                                    {:key :approved :label "Approve" :next :wt-downstream}])))
 
 (defn- downstream-stage-workflow [_]
-  (workflow/workflow "Downstream stage" (workflow/step :do-downstream "Do downstream")))
+  (workflow/workflow "Downstream stage" (workflow/step :do-downstream "Do downstream" :self)))
 
 (deftest workflow-revise-repours-definition-skipping-condition-gated-steps
   (with-runtime
@@ -1242,16 +1290,16 @@
 (defn- introspect-stage-b-workflow [_]
   (workflow/workflow
     "Introspect stage B"
-    (workflow/step :finish "Finish B")))
+    (workflow/step :finish "Finish B" :self)))
 
 (defn- introspect-stage-a-workflow [{:keys [revision]}]
   (workflow/workflow
     "Introspect stage A"
     {:params {:feature (workflow/param :required true)
               :revision (workflow/param :default (boolean revision))}}
-    (workflow/step :draft (fn [{:keys [feature]}] (str "Draft " feature))
+    (workflow/step :draft (fn [{:keys [feature]}] (str "Draft " feature)) :self
                    :condition [:!= :revision true])
-    (workflow/step :refine "Refine draft" :depends-on [:draft])
+    (workflow/step :refine "Refine draft" :self :depends-on [:draft])
     (workflow/checkpoint :signoff "Sign off"
                          :depends-on [:refine]
                          :kind :agent
@@ -1366,7 +1414,7 @@
         (is (empty? molecules))
         (is (= 1 (count digests)))))))
 
-(deftest await-returns-on-checkpoint-gate-stall-and-timeout
+(deftest await-returns-checkpoint-for-a-ready-checkpoint
   (with-runtime
     (fn [rt _]
       (workflow/start! "await-checkpoint"
@@ -1374,19 +1422,57 @@
                          (workflow/checkpoint :decide "Decide" :kind :human
                                               :choices [:go]))
                        {})
-      (is (= :checkpoint (:reason (workflow/await! "await-checkpoint" {:timeout-secs 1}))))
-      (workflow/register-stall-predicate! :test-stall (fn [step]
-                                                        (when (= "stalled" (:id step))
-                                                          {:why "test"})))
-      (let [definition (workflow/workflow "Await gate"
-                         (workflow/gate :delegate "Delegate" :subagent))]
-        (workflow/start! "await-gate" definition {})
-        (let [gate-id (:id (first (workflow/next-steps "await-gate")))]
-          (workflow/register-stall-predicate! :test-stall
-                                             (fn [step]
-                                               (when (= gate-id (:id step))
-                                                 {:why "test"})))
-          (let [result (workflow/await! "await-gate" {:timeout-secs 1
-                                                       :stall-predicate :test-stall})]
+      (is (= :checkpoint (:reason (workflow/await! "await-checkpoint" {:timeout-secs 1})))))))
+
+(deftest await-returns-step-for-a-ready-self-step
+  ;; a bare :self step used to bury itself under :waiting; it must now surface
+  ;; immediately as :step so the driving agent never sits idle on its own work
+  (with-runtime
+    (fn [rt _]
+      (workflow/start! "await-self-step"
+                       (workflow/workflow "Await step" (workflow/step :do-it "Do it" :self))
+                       {})
+      (is (= :step (:reason (workflow/await! "await-self-step" {:timeout-secs 1})))))))
+
+(deftest await-returns-gate-for-a-waiter-with-no-registered-executor
+  (with-runtime
+    (fn [rt _]
+      (workflow/start! "await-unowned-gate"
+                       (workflow/workflow "Await gate"
+                         (workflow/gate :delegate "Delegate" :await-test-unowned))
+                       {})
+      (is (= :gate (:reason (workflow/await! "await-unowned-gate" {:timeout-secs 1})))))))
+
+(deftest await-stays-silent-on-a-healthy-executor-owned-gate-then-reports-stalled
+  (with-runtime
+    (fn [rt _]
+      (let [definition (workflow/workflow "Await executor gate"
+                         (workflow/gate :delegate "Delegate" :await-test-executor))]
+        (workflow/start! "await-executor-gate" definition {})
+        (let [gate-id (:id (first (workflow/next-steps "await-executor-gate")))]
+          (is (= :await-test-executor
+                 (workflow/register-executor! :await-test-executor (constantly nil))))
+          ;; a healthy executor-owned gate stays silent: the run just times out
+          (is (= :timeout (:reason (workflow/await! "await-executor-gate" {:timeout-secs 1}))))
+          (workflow/register-executor! :await-test-executor
+                                       (fn [step]
+                                         (when (= gate-id (:id step))
+                                           {:why "test"})))
+          (let [result (workflow/await! "await-executor-gate" {:timeout-secs 1})]
             (is (= :stalled (:reason result)))
             (is (= {:why "test"} (get-in result [:detail :stall])))))))))
+
+(deftest register-executor-rejects-invalid-waiters
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Executor waiter must be.*other than :self"
+                        (workflow/register-executor! :self (constantly nil))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Executor waiter must be.*keyword, symbol, or non-blank string"
+                        (workflow/register-executor! 42 (constantly nil))))
+  (try
+    (workflow/register-executor! :self (constantly nil))
+    (is false "expected executor registration to reject :self")
+    (catch clojure.lang.ExceptionInfo e
+      (is (= :self (:waiter (ex-data e)))))))
+
+(deftest registered-executors-reflects-registrations
+  (workflow/register-executor! :registry-test-executor (constantly nil))
+  (is (contains? (workflow/registered-executors) :registry-test-executor)))

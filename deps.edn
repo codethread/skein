@@ -14,7 +14,7 @@
          ;; while the weaver consumes the spools.edn coordinate.
          :extra-deps {io.github.codethread/devflow.spool
                       {:git/url "https://github.com/codethread/devflow.spool.git"
-                       :git/sha "6c0f8c7e20a7f6de4cf81c98f4d7a33388663592"}}
+                       :git/sha "3bcc78bbe25ac70825f55af0563781de8d332645"}}
          :jvm-opts ["--enable-native-access=ALL-UNNAMED"]
          :main-opts ["-m" "skein.test-runner"]}
   :repl {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]}

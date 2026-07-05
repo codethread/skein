@@ -598,10 +598,12 @@
 (defn flow-await-op
   "Block until a workflow run is done or needs coordinator attention.
 
-  Uses the treadle stall predicate registered at spool install time."
+  Usage: `strand flow-await <workflow-run-id> [--timeout-secs <n>]`. Workflow
+  executor registrations decide which ready gates can stay waiting silently and
+  which stalled gates need coordinator attention."
   [ctx]
   (let [{:keys [workflow-run-id timeout-secs]} (:op/args ctx)]
-    (workflow/await! workflow-run-id (cond-> {:stall-predicate :treadle}
+    (workflow/await! workflow-run-id (cond-> {}
                                        timeout-secs (assoc :timeout-secs timeout-secs)))))
 
 (defn- compact-run

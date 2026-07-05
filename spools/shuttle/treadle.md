@@ -70,13 +70,13 @@ Treadle links each gate to its delegated run with a `delegates` annotation edge 
 (def build-widget
   (workflow/workflow
     "Build widget"
-    (workflow/step :design "Design widget")
+    (workflow/step :design "Design widget" :self)
     (workflow/gate :implement "Implement widget" :subagent
                    :depends-on [:design]
                    :attributes {"shuttle/harness" "pi"
                                 "shuttle/prompt" "Implement the widget per specs/widget.md"
                                 "shuttle/cwd" "/path/to/worktree"})
-    (workflow/step :review "Review implementation"
+    (workflow/step :review "Review implementation" :self
                    :depends-on [:implement])))
 
 (workflow/start! "widget-1" build-widget {})
@@ -100,7 +100,7 @@ Crash-window caveat: spawn idempotency re-adopts only live prior runs. A run tha
 
 ## Coordination attention
 
-`treadle/install!` registers workflow stall predicate `:treadle`. It reports a ready subagent gate as stalled when the gate has `treadle/error` or its stamped `treadle/run` is in shuttle phase `failed`/`exhausted`/`superseded`; no wall-clock hang policy is applied. `superseded` is included so a gate whose run was retired by `agent retry` stays discoverable rather than silently pending until a coordinator clears the stamp.
+`treadle/install!` calls `(workflow/register-executor! :subagent gate-stalled?)`, registering treadle as the executor for every gate whose `waiter` is `subagent`. Because an executor is registered, `await!` stays silent (`:waiting`) on a healthy subagent gate instead of surfacing it immediately as `:gate`; `gate-stalled?` reports a ready subagent gate as stalled (`:reason :stalled`) when the gate has `treadle/error` or its stamped `treadle/run` is in shuttle phase `failed`/`exhausted`/`superseded`, else it reports nothing. No wall-clock hang policy is applied. `superseded` is included so a gate whose run was retired by `agent retry` stays discoverable rather than silently pending until a coordinator clears the stamp.
 
 The spool also registers `stalled-gates` and `blocked-deliveries` named queries for coordinator inspection. `stalled-gates` is the SQL-side mirror of the stall predicate: it returns active subagent gates that either carry `treadle/error` or have a `delegates`-linked run in a terminal phase (`failed`/`exhausted`/`superseded`). A named query cannot join a gate's `treadle/run` id back to the run row, so it matches through the `delegates` edge instead. To keep that edge-scoped view in lockstep with the current-stamp `:treadle` predicate, stamping a fresh run marks the run it replaces `treadle/superseded-by`, and the query excludes superseded runs. So after a clear-and-respawn the gate stops surfacing as soon as a healthy replacement is in flight — exactly when `gate-stalled?` (which reads the single current `treadle/run`) also returns nil. Its membership rule is therefore "the current delegated run is dead", the same condition the predicate applies. `blocked-deliveries` returns finished runs parked on `treadle/delivery-blocked`.
 

@@ -39,6 +39,9 @@
 ;; keyword naming a resolved param, or a fn of the resolved params map.
 (s/def ::each #(or (sequential? %) (keyword? %) (fn? %)))
 (s/def ::depends-on (s/coll-of ::id-ref :kind vector?))
+(s/def ::self-waiter #{:self})
+(s/def ::external-waiter #(and (or (keyword? %) (symbol? %) (non-blank-string? %))
+                               (not= :self %)))
 (s/def ::condition #(or (keyword? %)
                         (and (vector? %) (#{:= :!=} (first %)) (= 3 (count %)))))
 (s/def ::loop (s/keys :opt-un [::count ::each ::chain]))
@@ -52,7 +55,7 @@
 (s/def ::workflow (s/keys :req-un [::name ::steps]
                          :opt-un [::params ::attributes ::state ::phase]))
 
-(declare stall-predicate-registry)
+(declare executor-registry)
 
 (defn- fail! [message data]
   (throw (ex-info message data)))
@@ -111,7 +114,7 @@
                                       "A workflow requires a non-blank :name and vector :steps."
                                       '(workflow (fn [{:keys [feature]}] (str "Ship " feature))
                                          {:params {:feature (param :required true)}}
-                                         (step :design (fn [{:keys [feature]}] (str "Design " feature)))
+                                         (step :design (fn [{:keys [feature]}] (str "Design " feature)) :self)
                                          (checkpoint :signoff "Approve design" :choices [:approved :revise])))
                 :fields {:params "Workflow-level map of keyword param names to param definitions. Param definitions support boolean :required and optional :default."}
                 :runtime {:start! "(start! run-id workflow params opts) accepts a workflow map, constructor var, or registered workflow keyword. Var/keyword starts derive :definition; absent :context defaults from JSON-safe params after keyword values are stringified."
@@ -124,12 +127,13 @@
                 :checkpoint (explain :checkpoint)
                 :call (explain :call)}
      :step {:topic :step
-            :summary "A step is one unit of work. Do the work, then complete it."
+            :summary "A step is one unit of work owned by the driving agent itself. Do the work, then complete it."
             :contract (spec-entry ::step
-                                  "A step requires :id and :title; optional fields include :depends-on, :attributes, :condition, :loop, :description, and :state."
-                                  '(step :implement (fn [{:keys [feature]}] (str "Implement " feature)) :depends-on [:design] :attributes {"skills" "clojure"}))
+                                  "A step definition contains :id and :title plus optional fields; the step builder separately validates its required waiter against ::self-waiter, which only accepts :self. A non-:self waiter fails loudly, directing to gate."
+                                  '(step :implement (fn [{:keys [feature]}] (str "Implement " feature)) :self :depends-on [:design] :attributes {"skills" "clojure"}))
             :fields {:id "Stable local ref, keyword/symbol/string."
                      :title "Human-readable instruction."
+                     :waiter "Must be :self — the driving agent does the work itself. Any other value fails loudly and directs to gate. :self carries no workflow/gate attribute, so compiled output is identical to a bare step."
                      :depends-on "Vector of local refs this step waits for."
                      :attributes "Plain metadata stored on the materialized strand."
                      :condition "Keyword param truthiness, or [:= :param value] / [:!= :param value]."
@@ -137,11 +141,11 @@
      :gate {:topic :gate
             :summary "A gate is a step whose completion belongs to an external actor. Wait for the waiter; don't do the work yourself."
             :contract (spec-entry ::step
-                                  "A gate returns step data with a workflow/gate actor hint. It takes the same optional fields as a step."
+                                  "A gate returns step data with a workflow/gate actor hint. Its required waiter is separately validated against ::external-waiter: a keyword, symbol, or non-blank string, never :self. It takes the same optional fields as a step."
                                   '(gate :ci-green "Wait for CI to pass" :ci :depends-on [:push]))
-            :fields {:waiter "Freeform actor hint (keyword/symbol/string) stored as workflow/gate, e.g. :ci, :human, :subagent."
+            :fields {:waiter "Freeform actor hint (keyword/symbol/string) stored as workflow/gate, e.g. :ci, :human, :subagent; never :self. register-executor! keys a stall predicate by this same name."
                      :others "Same optional fields as step: :depends-on, :attributes, :condition, :loop, :description, :state."
-                     :workflow/gate "Marks the step an external wait point, surfaced by step-view as :gate; complete! requires :by to close it."}}
+                     :workflow/gate "Marks the step an external wait point, surfaced by step-view as :gate; complete! requires :by to close it. A waiter with no registered executor always needs attention; a registered executor's stall predicate decides."}}
      :call {:topic :call
             :summary "A call is a procedure-style inline reuse of another workflow, without a choice branch."
             :contract (spec-entry ::call
@@ -521,14 +525,25 @@
   (reject-unknown-keys! opts param-opt-keys :param)
   opts)
 
-(defn step
-  "Return a workflow step definition.
-
-  The result is plain data and may be passed to `workflow` or transformed by
-  user code before compilation."
-  [id title & {:as opts}]
-  (reject-unknown-keys! opts step-opt-keys :step)
+(defn- step*
+  [id title opts]
   (merge {:id id :title title} opts))
+
+(defn step
+  "Return a workflow step definition — a unit of work the driving agent does
+  itself.
+
+  `waiter` must be `:self`; there is never a named step owner. Any other value
+  fails loudly, directing the caller to `gate` instead. A `:self` step carries
+  no `workflow/gate` attribute, so its compiled output is identical to a bare
+  step. The result is plain data and may be passed to `workflow` or
+  transformed by user code before compilation."
+  [id title waiter & {:as opts}]
+  (reject-unknown-keys! opts step-opt-keys :step)
+  (when-not (s/valid? ::self-waiter waiter)
+    (fail! "Step waiter must be :self; use gate for a step an external actor owns"
+           {:id id :waiter waiter :explain (s/explain-data ::self-waiter waiter)}))
+  (step* id title opts))
 
 (defn gate
   "Return a workflow gate step definition — a step whose completion belongs to
@@ -539,10 +554,15 @@
   as `:ci`, `:human`, or `:subagent`. `step-view` surfaces it as `:gate`, and
   `complete!` refuses to close it without a `:by` recording who closed it. The
   driving agent should treat a ready gate as a poll/hand-off point, not work to
-  do. Accepts the same opts as `step`."
+  do. `register-executor!` keys a stall predicate by this same waiter name, so
+  `await!` can stay silent on a healthy executor-owned gate. Accepts the same
+  opts as `step`."
   [id title waiter & {:as opts}]
   (reject-unknown-keys! opts step-opt-keys :gate)
-  (-> (apply step id title (apply concat (seq opts)))
+  (when-not (s/valid? ::external-waiter waiter)
+    (fail! "Gate waiter must be a keyword, symbol, or non-blank string other than :self"
+           {:id id :waiter waiter :explain (s/explain-data ::external-waiter waiter)}))
+  (-> (step* id title opts)
       (update :attributes merge {"workflow/gate" (name waiter)})))
 
 (defn- choice-key [choice]
@@ -657,7 +677,7 @@
   (let [kind (or (:kind opts) :human)
         choices (some-> (:choices opts) reject-unknown-choice-keys! reject-next-and-revise! require-unique-choice-keys!)
         details (choice-details-attr choices)]
-    (-> (apply step id title (apply concat (seq (dissoc opts :kind :choices))))
+    (-> (step* id title (dissoc opts :kind :choices))
         (update :attributes merge
                 {"workflow/role" "checkpoint"
                  "workflow/checkpoint" (name id)
@@ -1232,55 +1252,53 @@
          (burn-with-rt! rt (:id root)))
        digest))))
 
+(defn- executor-for
+  "Return the registered stall predicate for a ready gate's `waiter` name, or nil."
+  [waiter]
+  (get @executor-registry waiter))
+
 (defn- attention
-  "Return the current attention state for workflow run-id."
-  [rt run-id stall-predicate]
+  "Return the current attention state for workflow run-id.
+
+  `:done` when finished; `:checkpoint` when a checkpoint is ready; `:step`
+  when a ready `:self` step needs the driving agent (kills the footgun of a
+  ready step burying itself under `:waiting`); `:gate` when a ready gate's
+  waiter has no registered executor; `:stalled` when a registered executor's
+  stall predicate reports detail for one of its gates; else `:waiting`, which
+  now means the whole ready frontier is executor-owned and healthy."
+  [rt run-id]
   (let [ready (next-steps-with-rt rt run-id {})
-        done (done-with-rt? rt run-id)]
+        done (done-with-rt? rt run-id)
+        checkpoint (first (filter #(= "checkpoint" (:kind %)) ready))
+        self-step (first (filter #(and (not= "checkpoint" (:kind %)) (not (:gate %))) ready))
+        unowned-gate (first (filter #(and (:gate %) (not (executor-for (:gate %)))) ready))
+        stalled (some (fn [step]
+                        (when-let [pred (and (:gate step) (executor-for (:gate step)))]
+                          (when-let [detail (pred step)]
+                            {:gate step :stall detail})))
+                      ready)]
     (cond
       done {:reason :done :ready ready :done true}
-      (seq (filter #(= "checkpoint" (:kind %)) ready))
-      {:reason :checkpoint :ready ready :done false
-       :detail (first (filter #(= "checkpoint" (:kind %)) ready))}
-      (some (fn [step]
-              (when (:gate step)
-                (or (when (not= "subagent" (:gate step)) {:gate step})
-                    (when-let [detail (stall-predicate step)] {:gate step :stall detail}))))
-            ready)
-      {:reason (if-let [stalled (some (fn [step]
-                                        (when (and (:gate step) (= "subagent" (:gate step)))
-                                          (when-let [detail (stall-predicate step)]
-                                            {:gate step :stall detail})))
-                                      ready)]
-                 :stalled
-                 :gate)
-       :ready ready
-       :done false
-       :detail (or (some (fn [step]
-                           (when (and (:gate step) (= "subagent" (:gate step)))
-                             (when-let [detail (stall-predicate step)]
-                               {:gate step :stall detail})))
-                         ready)
-                   (first (filter :gate ready)))}
+      checkpoint {:reason :checkpoint :ready ready :done false :detail checkpoint}
+      self-step {:reason :step :ready ready :done false :detail self-step}
+      unowned-gate {:reason :gate :ready ready :done false :detail unowned-gate}
+      stalled {:reason :stalled :ready ready :done false :detail stalled}
       :else {:reason :waiting :ready ready :done false})))
 
 (defn await!
-  "Block until workflow run-id is done, at a checkpoint, at an unattended gate,
-  stalled according to a registered predicate, or timed out.
+  "Block until workflow run-id is done, at a checkpoint, at a ready `:self`
+  step, at a gate whose waiter has no registered executor, at an
+  executor-owned gate whose stall predicate reports detail, or timed out.
 
-  opts: `:timeout-secs` (default 1800) and `:stall-predicate` (default
-  `:default`). Polls every 250ms, matching the shuttle await surface."
+  opts: `:timeout-secs` (default 1800). Polls every 250ms, matching the
+  shuttle await surface."
   ([run-id]
    (await! run-id {}))
-  ([run-id {:keys [timeout-secs stall-predicate]
-            :or {timeout-secs 1800 stall-predicate :default}}]
+  ([run-id {:keys [timeout-secs] :or {timeout-secs 1800}}]
    (let [rt (current/runtime)
-         pred (or (get @stall-predicate-registry stall-predicate)
-                  (fail! "Unknown workflow stall predicate" {:stall-predicate stall-predicate
-                                                              :available (sort (keys @stall-predicate-registry))}))
          deadline (+ (System/currentTimeMillis) (* 1000 (long timeout-secs)))]
      (loop []
-       (let [state (attention rt run-id pred)]
+       (let [state (attention rt run-id)]
          (cond
            (not= :waiting (:reason state)) state
            (>= (System/currentTimeMillis) deadline) (assoc state :reason :timeout)
@@ -1454,9 +1472,9 @@
   opts may include `:step` (materialized strand id) to select among multiple
   ready steps; without it, exactly one step must be ready. opts may also
   include `:notes` (string, stored as \"workflow/notes\") and `:attributes`
-  (map merged onto the closed step). Closing a gate step (one built with
-  `gate`) additionally requires a non-blank `:by`, recorded as
-  \"workflow/outcome-by\" to persist who closed it.
+  (map merged onto the closed step). A non-blank `:by` is recorded as
+  \"workflow/outcome-by\" on any step it is supplied for, but is only required
+  when closing a gate step (one built with `gate`).
 
   When the closed step is the last active inner step beneath a `procedure`
   join, the join closes in the same transaction (see `cascade-join-ids`). All
@@ -1470,12 +1488,13 @@
                     (fail! "No ready workflow step" {:run-id run-id}))]
        (when (= "checkpoint" (attr step :workflow/role))
          (fail! "Cannot complete a checkpoint; use choose!" {:run-id run-id :step (step-view step)}))
-       (let [gate (attr step :workflow/gate)]
-         (when (and gate (not (non-blank-string? (:by opts))))
+       (let [gate (attr step :workflow/gate)
+             by (:by opts)]
+         (when (and gate (not (non-blank-string? by)))
            (fail! "Gate steps require a non-blank :by to record who closed them"
-                  {:run-id run-id :step (step-view step) :gate gate :by (:by opts)}))
+                  {:run-id run-id :step (step-view step) :gate gate :by by}))
          (let [attrs (cond-> (or (close-attributes! opts) {})
-                       gate (assoc "workflow/outcome-by" (:by opts)))
+                       (non-blank-string? by) (assoc "workflow/outcome-by" by))
                root (current-root-with-rt rt run-id)
                join-ids (cascade-join-ids rt (:id root) #{(:id step)})]
            (batch/apply! rt (close-batch (:id step) (not-empty attrs) join-ids))
@@ -1524,11 +1543,13 @@
   (atom {}))
 
 (defonce ^{:private true
-           :doc "Weaver-lifetime map of named stall predicates. Predicates receive
-  a ready gate step view and return truthy detail when coordinator attention is
-  needed. The default predicate never reports a stall."}
-  stall-predicate-registry
-  (atom {:default (constantly nil)}))
+           :doc "Weaver-lifetime map of gate waiter name (string) -> executor stall
+  predicate. A predicate receives a ready gate step view and returns truthy
+  detail when its executor believes coordinator attention is needed. A waiter
+  with no registered executor always surfaces immediately as :gate; a
+  registered executor's gate stays silent until its predicate fires."}
+  executor-registry
+  (atom {}))
 
 (defn register-workflow!
   "Register a workflow constructor under a stable keyword `name`.
@@ -1548,19 +1569,27 @@
   (swap! workflow-name-registry assoc name constructor-sym)
   name)
 
-(defn register-stall-predicate!
-  "Register a named workflow-await stall predicate.
+(defn register-executor!
+  "Register a stall predicate for gate waiter `waiter` (a keyword/symbol/string
+  matching a `gate` waiter hint, e.g. `:subagent`).
 
-  Predicates receive a ready gate step view and return nil/false when the gate is
-  still being fulfilled, or truthy detail when coordinator attention is needed.
-  Registration is weaver-lifetime runtime state, mirroring `register-workflow!`."
-  [name pred]
-  (when-not (keyword? name)
-    (fail! "Stall predicate name must be a keyword" {:name name}))
+  The predicate receives a ready gate step view and returns nil/false while the
+  executor is still fulfilling the gate, or truthy detail when coordinator
+  attention is needed. Registration is weaver-lifetime runtime state, mirroring
+  `register-workflow!`. Returns the registered waiter as a keyword."
+  [waiter pred]
+  (when-not (s/valid? ::external-waiter waiter)
+    (fail! "Executor waiter must be a keyword, symbol, or non-blank string other than :self"
+           {:waiter waiter :explain (s/explain-data ::external-waiter waiter)}))
   (when-not (ifn? pred)
-    (fail! "Stall predicate must be invokable" {:name name}))
-  (swap! stall-predicate-registry assoc name pred)
-  name)
+    (fail! "Executor predicate must be invokable" {:waiter waiter}))
+  (swap! executor-registry assoc (name waiter) pred)
+  (keyword (name waiter)))
+
+(defn registered-executors
+  "Return the current registry map of gate waiter name (keyword) -> stall predicate."
+  []
+  (into {} (map (fn [[k v]] [(keyword k) v])) @executor-registry))
 
 (defn workflow-definition
   "Return the constructor symbol registered under keyword `name`, failing loudly

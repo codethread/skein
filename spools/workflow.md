@@ -49,8 +49,8 @@ schema. There is no proto/template storage layer — a workflow definition
 | Builder | Returns |
 |---|---|
 | `(param & opts)` | A param definition map. Supports `:required true` and `:default v`. |
-| `(step id title & opts)` | A step definition map. `:depends-on`, `:attributes`, `:condition`, `:loop`, `:description`, `:state`. |
-| `(gate id title waiter & opts)` | A step marked `workflow/gate <waiter>` as an external wait point. Same opts as `step`. See "Gates" below. |
+| `(step id title waiter & opts)` | A step definition map. `waiter` must be `:self` — a step is always driven-agent-owned; any other value fails loudly, directing the caller to `gate`. Opts: `:depends-on`, `:attributes`, `:condition`, `:loop`, `:description`, `:state`. |
+| `(gate id title waiter & opts)` | A step marked `workflow/gate <waiter>` as an external wait point. `waiter` is a freeform actor hint (`:ci`, `:human`, `:subagent`, …), not `:self`. Same opts as `step`. See "Gates" below. |
 | `(checkpoint id title & opts)` | A step definition with checkpoint metadata. `:kind` (`:human` or `:agent`, default `:human`), `:choices`. |
 | `(call id procedure params & opts)` | An inline procedure-reuse step. `:depends-on`, `:title`, `:attributes`. |
 | `(workflow name & body)` | A workflow definition: `{:name .. :steps [..]}` plus optional leading opts map (`:params`, `:attributes`, `:state`, `:phase`). |
@@ -119,6 +119,17 @@ Conditions on loop steps are evaluated against the workflow params only (not
 loop copies are spliced like any other step, so base-id dependents reattach
 through condition splicing.
 
+### The `:self` doctrine
+
+Every step declares who owns getting it done, and the runtime tolerates
+exactly two answers: `:self` (the driving agent, via `step`) or a named
+external `waiter` (via `gate`). `step` **requires** its third positional
+argument to be the literal `:self` and fails loudly on anything else,
+directing the caller to `gate` instead — there is never a step with a
+named-but-unenforced owner. A `:self` step carries no `workflow/gate`
+attribute, so its compiled strand is identical to a bare step; `:self` exists
+to make ownership explicit at the call site, not to add runtime state.
+
 ### Gates — external wait points
 
 The runtime is pull-based and *every* strand is already a durable wait
@@ -133,8 +144,10 @@ for `<waiter>`", so a driving agent can tell work-steps from wait-steps.
 
 - `(gate id title waiter & opts)` returns an ordinary step (role stays
   `"step"`, so done-semantics are untouched) stamped with `workflow/gate
-  <waiter>`. `waiter` is a freeform actor hint — `:ci`, `:human`,
-  `:subagent`, … — stored as a string; it carries no engine semantics.
+  <waiter>`. `waiter` is a freeform actor hint — keyword, symbol, or non-blank
+  string such as `:ci`, `:human`, `:subagent`, … — stored as a string; it
+  carries no engine semantics. `:self` is rejected because inline-driver work
+  belongs in `step`.
 - `step-view` surfaces it as `:gate "<waiter>"`, so the driving agent should
   treat a ready gate as **poll/hand off, don't do**.
 - The external actor closes the gate via `complete!` with a `:by`:
@@ -142,9 +155,15 @@ for `<waiter>`", so a driving agent can tell work-steps from wait-steps.
   to close a gate without `:by`** (fails loudly) and records `:by` as
   `workflow/outcome-by` on the closed step. Raw `repl/update!` remains the
   trusted escape hatch (TEN-002) for closing any strand directly.
+- `register-executor!` (§4 "Awaiting attention") keys a stall predicate by a
+  gate's `waiter` name, so an adapter that fulfills a whole waiter class of
+  gates can make `await!` stay silent while it is healthy. A gate whose
+  waiter has no registered executor always surfaces immediately — there is no
+  silent default.
 - A shipped local-root adapter, `skein.spools.treadle`, fulfills ready
-  `:subagent` gates by spawning shuttle runs and closing the gate with the
-  run's result. See `shuttle/treadle.md`.
+  `:subagent` gates by spawning shuttle runs, registers the `:subagent`
+  executor, and closes each gate with the run's result. See
+  `shuttle/treadle.md`.
 
 **Dynamic fan-out needs no primitive.** The run subgraph is recomputed live
 from the graph on every poll, so userland may add strands to a running
@@ -231,15 +250,44 @@ start! ──▶ next-steps / next-step ──▶ complete! / choose! ──▶ 
 `await!` blocks in-process until a run is done or needs its coordinator:
 
 ```clojure
-(workflow/await! "feat-x" {:timeout-secs 1800 :stall-predicate :treadle})
+(workflow/await! "feat-x" {:timeout-secs 1800})
 ```
 
-It returns `{:reason :done|:checkpoint|:gate|:stalled|:timeout :ready [...]
-:done boolean :detail ...}`. Checkpoints of any kind wake the caller, as does
-a ready gate that nothing is fulfilling. Subagent stall detection is pluggable
-through `register-stall-predicate!` so this namespace stays free of any
-executor's vocabulary: the shipped default never stalls, and adapters such as
-the treadle register their own predicate at install time.
+It returns `{:reason :done|:checkpoint|:step|:gate|:stalled|:timeout :ready
+[...] :done boolean :detail ...}`. `opts` takes only `:timeout-secs` (default
+1800) — there is no predicate to name, because `await!` resolves attention
+purely from the ready frontier and the executor registry:
+
+- `:done` — the run is finished.
+- `:checkpoint` — a checkpoint is ready (any kind wakes the caller).
+- `:step` — a ready `:self` step needs the driving agent. This exists so a
+  ready step can never bury itself under `:waiting`.
+- `:gate` — a ready gate's `waiter` has no registered executor, so someone
+  must attend to it directly.
+- `:stalled` — a ready gate's `waiter` **does** have a registered executor,
+  and its predicate reported detail (the executor believes it needs
+  coordinator attention).
+- `:waiting` — the whole ready frontier is executor-owned gates whose
+  predicates report no detail; nothing to do but keep polling.
+
+Executor registration is keyed by gate `waiter` name via `register-executor!`
+(a keyword/symbol/non-blank-string matching the `gate` waiter hint, e.g.
+`:subagent`, never `:self`), mirroring `register-workflow!` as weaver-lifetime
+runtime state. Invalid waiter values and non-invokable predicates fail at
+registration time:
+
+```clojure
+(workflow/register-executor! :subagent gate-stalled?)   ; pred: ready gate view -> truthy detail | nil
+(workflow/registered-executors)                          ; => {:subagent gate-stalled? ...}
+```
+
+This keeps the workflow namespace free of any executor's vocabulary: a
+waiter with no registered executor always surfaces as `:gate` immediately,
+and adapters such as the treadle register their own predicate for their own
+waiter name at install time (see `shuttle/treadle.md`). There is no more
+named "stall predicate" independent of a waiter, and no shipped default
+predicate — `register-stall-predicate!` and the old `:stall-predicate` await
+option are gone.
 
 ### Procedure join auto-close
 
@@ -413,9 +461,9 @@ at the first genuinely-repeatable step.
     "Proposal"
     {:params {:feature (workflow/param :required true)
               :revision (workflow/param :default (boolean revision))}}
-    (workflow/step :inspect-context "Orient"
+    (workflow/step :inspect-context "Orient" :self
                    :condition [:!= :revision true])   ; skip on revise rounds
-    (workflow/step :write-proposal "Write proposal"
+    (workflow/step :write-proposal "Write proposal" :self
                    :depends-on [:inspect-context])
     (workflow/checkpoint :signoff "Sign off"
                          :depends-on [:write-proposal]
@@ -589,9 +637,11 @@ field into a plain `"description"` attribute.
               :revision (workflow/param :default (boolean revision))}}
     (workflow/step :design
                    (fn [{:keys [feature]}] (str "Design " feature))
+                   :self
                    :condition [:!= :revision true])       ; skip on revise rounds
     (workflow/step :implement
                    (fn [{:keys [feature]}] (str "Implement " feature))
+                   :self
                    :depends-on [:design])
     (workflow/checkpoint :signoff
                          "Approve implementation?"
