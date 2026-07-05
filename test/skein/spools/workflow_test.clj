@@ -1462,6 +1462,18 @@
             (is (= :stalled (:reason result)))
             (is (= {:why "test"} (get-in result [:detail :stall])))))))))
 
+(deftest await-explicit-runtime-arity-matches-ambient-result-for-a-completed-run
+  (with-runtime
+    (fn [rt _]
+      (workflow/start! "await-explicit-runtime"
+                       (workflow/workflow "Await explicit runtime" (workflow/step :do-it "Do it" :self))
+                       {})
+      (workflow/complete! "await-explicit-runtime")
+      (let [ambient (workflow/await! "await-explicit-runtime" {:timeout-secs 1})
+            explicit (workflow/await! rt "await-explicit-runtime" {:timeout-secs 1})]
+        (is (= :done (:reason explicit)))
+        (is (= ambient explicit))))))
+
 (deftest register-executor-rejects-invalid-waiters
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Executor waiter must be.*other than :self"
                         (workflow/register-executor! :self (constantly nil))))

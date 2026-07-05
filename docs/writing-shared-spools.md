@@ -102,7 +102,11 @@ the wrong world or throws.
    full merged strand, so a delta write loses no result fidelity. For reads, use
    the shared tolerant reader `skein.spools.util/attr-get` (keyword key, bare
    string fallback) and `attr-key->str` for wire-key coercion rather than
-   re-deriving a per-file attribute accessor.
+   re-deriving a per-file attribute accessor. This delta write rides SQLite's
+   `json_patch`, whose merge semantics treat an explicit `nil` value as a
+   deletion instruction, not a stored `null` — `json_patch` drops that key from
+   the map entirely. Omit a key you don't want to touch; only set it to `nil`
+   when you deliberately mean "remove this attribute".
 
 ## The discovery surface your spool ships
 
