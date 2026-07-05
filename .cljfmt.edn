@@ -1,5 +1,4 @@
-{:remove-consecutive-blank-lines? false
- :remove-multiple-non-indenting-spaces? false
- :split-keypairs-over-multiple-lines? false
- :sort-ns-references? false
- :indents {#re ".*" [[:inner 0]]}}
+;; cljfmt runs with its defaults, which track the community style guide
+;; (semantic indentation, single blank lines, preserved ns ordering).
+;; Add :extra-indents here only for project macros the defaults misindent.
+{}
