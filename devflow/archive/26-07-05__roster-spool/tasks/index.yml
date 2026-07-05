@@ -1,0 +1,26 @@
+tasks:
+  - id: 1
+    description: Roster model and explicit-runtime helpers (PH1)
+    task_file: tasks/001-model-helpers.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: CLI op, named query, install! (PH2)
+    task_file: tasks/002-cli-query-install.md
+    status: complete
+    blocked_by: [1]
+  - id: 3
+    description: await-quiet! semantics and CLI (PH3)
+    task_file: tasks/003-await-quiet.md
+    status: complete
+    blocked_by: [2]
+  - id: 4
+    description: Workflow/devflow auto-stamping integration (PH4)
+    task_file: tasks/004-integration.md
+    status: complete
+    blocked_by: [3]
+  - id: 5
+    description: Docs, spool contract, final validation (PH5)
+    task_file: tasks/005-docs-validation.md
+    status: complete
+    blocked_by: [4]

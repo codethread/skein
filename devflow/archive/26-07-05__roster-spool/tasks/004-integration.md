@@ -1,0 +1,3 @@
+# Task 004: Workflow/devflow auto-stamping integration (PH4)
+
+Per PLAN PH4/A5: event-handler integration auto-stamping ONLY active non-plumbing workflow/devflow roots carrying a feature slug (workflow/run-id, devflow/feature, feature, roster/feature) AND an owner (owner, roster/owner, actor attr); heartbeat refresh on graph mutations touching the root or parent-of descendants; roots missing identity fields are explicit-track negative cases. Register handlers from install!; runtime-owned state only. Integration tests per V5 (positive auto-stamp, mutation-driven refresh, negative missing-identity). Cross-spool judgment expected — keep coupling one-directional (roster reads workflow/devflow attrs; never requires their namespaces).

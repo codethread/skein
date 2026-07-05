@@ -1,0 +1,3 @@
+# Task 003: await-quiet! semantics and CLI (PH3)
+
+Per PLAN PH3/A6 and SPEC P5: polling `await-quiet!` with timeout and stale short-circuit (`:stale` result before quiet when selected entries exceed threshold); CLI subcommand returns JSON-safe result maps and takes explicit deadline flags; per SPEC-RosterSpool-001.C10 the `await-quiet` subcommand registers under the UNBOUNDED op deadline class (long-poll semantics; see how flow-await declares its deadline class) — assert the registered deadline class in the op tests. Await tests per V4: short stale/timeout windows, deterministic heartbeats, no long sleeps (see coding guidance: deterministic readiness over fixed sleeps).

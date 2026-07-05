@@ -1,0 +1,3 @@
+# Task 002: CLI op, named query, install! (PH2)
+
+Per PLAN PH2/A4: add `install!` registering the named `roster` query and the declared-subcommand `roster` op (`about`, `prime`, `track`, `heartbeat`, `finish`, `list`, `await-quiet` — await-quiet handler may stub until task 003 but must parse). No hand-written usage strings; handlers consume `:op/args`; authored about/prime payloads follow docs/skein.md discovery tiers (kanban spool is the reference implementation). Op tests per V3 in test/skein/roster_test.clj (or a sibling ns): registered-op resolution, subcommand list, parser errors, JSON-safe results. Same file scope as 001 — extend, don't restructure.

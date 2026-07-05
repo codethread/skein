@@ -13,7 +13,7 @@
   ['skein.core.db-test 'skein.plugin-test 'skein.relations-test
    'skein.spools.bobbin-test 'skein.spools.carder-test 'skein.spools.selvage-test 'skein.guild-test
    'skein.agents-test 'skein.treadle-test 'skein.test.alpha-test 'skein.api.cli.alpha-test
-   'skein.spools.batteries-test])
+   'skein.spools.batteries-test 'skein.roster-test])
 
 (def serial-namespaces
   "JVM-global namespaces the parent still runs serially outside add-libs shards."
