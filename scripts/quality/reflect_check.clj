@@ -15,10 +15,15 @@
 
 (defn- namespaces-under [root subdir]
   (let [dir (io/file root subdir)]
-    (when (.exists dir)
-      (->> (file-seq dir)
-           (filter #(and (.isFile %) (str/ends-with? (.getName %) ".clj")))
-           (map #(clj-file->ns root %))))))
+    ;; A missing configured root must fail the gate, not silently shrink the
+    ;; compiled namespace set to a subset that still exits 0.
+    (when-not (.isDirectory dir)
+      (binding [*out* *err*]
+        (println "reflect-check: configured source root does not exist:" (str dir)))
+      (System/exit 1))
+    (->> (file-seq dir)
+         (filter #(and (.isFile %) (str/ends-with? (.getName %) ".clj")))
+         (map #(clj-file->ns root %)))))
 
 (defn -main [& _]
   (let [roots {"src" "skein"

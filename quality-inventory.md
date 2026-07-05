@@ -1,6 +1,6 @@
 # Quality gates inventory
 
-Generated on 2026-07-05 from the `quality-gates` worktree. Commands were run after scaffolding only; no Clojure or Go source files were modified.
+Baseline generated on 2026-07-05 from the `quality-gates` worktree before any fixes landed; per-tool sections are updated as fix waves drive gates to zero.
 
 ## Summary
 
