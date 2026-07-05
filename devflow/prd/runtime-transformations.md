@@ -5,7 +5,7 @@
 
 Skein treats persisted strands and edges as durable facts, and treats richer behavior as runtime transformation over those facts.
 
-SQLite remains the long-term persistence layer for the strand graph. The weaver is the live application core. Trusted Clojure config, runtime libraries, and REPL workflows define runtime behavior. The selected config-dir is the user-owned runtime library workspace: `init.clj` boots trusted code, `libs.edn` approves local roots, and helper namespaces expose blessed workflows.
+SQLite remains the long-term persistence layer for the strand graph. The weaver is the live application core. Trusted Clojure config, activated spools, and REPL workflows define runtime behavior. The selected workspace is the user-owned runtime spool workspace: `init.clj` boots trusted code, `spools.edn` approves local roots and sha-pinned git coordinates, and helper namespaces expose blessed workflows.
 
 ## Goals
 

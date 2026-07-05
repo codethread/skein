@@ -16,7 +16,7 @@ Entrypoints:
 
 ```text
 strand [dispatcher-flags] <op-name> [args...]
-strand --help | --version
+strand --help | -h | --version
 strand --dry-run [dispatcher-flags] <op-name> [args...]
 
 mill start
@@ -30,7 +30,7 @@ mill skein prime
 mill strand prime
 ```
 
-Dispatcher flags: `--workspace <dir>`, `--cwd <dir>`, `--worktree-root <dir>`, `--git-common-dir <dir>`, `--stdin`, `--payload name=path` (repeatable), `--timeout <dur>`, `--dry-run`, `--version`, `--help`.
+Dispatcher flags: `--workspace <dir>`, `--cwd <dir>`, `--worktree-root <dir>`, `--git-common-dir <dir>`, `--stdin`, `--payload name=path` (repeatable), `--timeout <dur>`, `--dry-run`, `--version`, `--help` (`-h` is an equivalent top-level alias).
 
 ## SPEC-002.P3 Dispatcher contracts
 
@@ -44,7 +44,7 @@ Dispatcher flags: `--workspace <dir>`, `--cwd <dir>`, `--worktree-root <dir>`, `
 - **SPEC-002.C31:** Selection/context precedence: `--workspace` wins outright; otherwise explicit `--worktree-root`/`--git-common-dir` win over derivation; derivation runs from the effective cwd (`--cwd` when given, else process cwd) and fills only unset fields. Failed git derivation with nothing pinned fails loudly with remediation.
 - **SPEC-002.C32:** Named payloads: `--stdin` reads stdin verbatim to EOF into payload slot `stdin` (opt-in only; the bin never auto-consumes a pipe); `--payload name=path` reads the named file client-side into a named slot. Duplicate slot names fail loudly before transport. The weaver never reads client-named paths.
 - **SPEC-002.C33:** `--timeout <dur>` parses Go-duration style and rides in the envelope as milliseconds so the weaver can cancel or refuse; the op's registered deadline class supplies the default for single-result responses (SPEC-004.C26b). Stream-class responses are never server-deadline-bounded; cancellation is client interrupt, which closes the connection and aborts the emitting handler.
-- **SPEC-002.C34:** Bin-only flags work without any mill or weaver: `--version` reports bin and protocol version; `--help` (and bare `strand`) prints static usage covering dispatcher flags, the envelope contract, the live `strand help` pointer, and `mill start` remediation; `--dry-run` prints the assembled request frame with placeholder identity fields instead of sending.
+- **SPEC-002.C34:** Bin-only flags work without any mill or weaver: `--version` reports bin and protocol version; `--help` / `-h` (and bare `strand`) prints static usage covering dispatcher flags, the envelope contract, the live `strand help` pointer, and `mill start` remediation; `--dry-run` prints the assembled request frame with placeholder identity fields instead of sending.
 - **SPEC-002.C35:** The socket request frame retains protocol version, request id, and weaver id (SPEC-004.C23); the invoke envelope rides as the operation arguments: `{name, argv, payloads, cwd, worktree_root, git_common_dir, workspace, timeout?, client{pid, version}}`. Automatic fields (frame identity, client pid/version) are not flag-settable.
 - **SPEC-002.C36:** Response relay is frame-driven: a single-result response prints the result as one JSON line; a stream response (header frame, emitted NDJSON lines, terminator frame) relays each emitted line as received with per-line flush and exits by the terminator's success flag. Errors surface on stderr with non-zero exit. Interrupt during a stream exits non-zero cleanly.
 - **SPEC-002.C37:** Payload references (`:stdin` / `:payload/<name>` as whole argv values) are resolved weaver-side by the blessed parser (`skein.api.cli.alpha`, SPEC-003), never by the bin.

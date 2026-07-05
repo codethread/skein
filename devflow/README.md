@@ -1,6 +1,6 @@
 # Devflow
 
-Active feature work lives under `devflow/feat/`. Root specs in `devflow/specs/` become canonical only when feature work ships.
+Active feature work is tracked on the kanban board and as devflow workflow runs in the repo `.skein` coordination world. Root specs in `devflow/specs/` become canonical only when feature work ships.
 
 Always study [TENETS](./TENETS.md) and [PHILOSOPHY](./PHILOSOPHY.md). No code, spec or idea can violate these unless explicitly stated and cited in an agreed RFC first.
 
@@ -31,6 +31,7 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-25__runtime-plugin-system` — shipped an earlier trusted local plugin/library MVP. Its public `load-plugin!` and plugin metadata surface has been superseded by the runtime spool workspace model in the canonical root specs.
 - `26-06-26__runtime-library-workspace` — shipped config-dir Clojure library workspaces with `libs.edn`, approved local roots, daemon-side `atom.libs.alpha/sync!` and `use!`, module-use introspection, and replacement of the plugin-directory public extension API.
 - `26-06-26__runtime-transformation-primitives` — shipped built-in `atom.graph.alpha` / `atom.views.alpha` helpers for set-oriented graph/query composition and daemon-memory read-only views.
+- `26-06-26__remove-legacy-clojure-cli` — shipped removal of the legacy `skein.cli` Clojure CLI entrypoint, its tests, and stale spec references, leaving the Go `strand` binary as the sole scripted CLI.
 - `26-06-26__skein-rename` — shipped Skein/strand/weaver rename, strand model lifecycle/retention, `strand` CLI, and `skein.*` namespaces.
 - `26-06-24__stripped-task-api` — shipped smaller CLI/REPL surface with first-class task lifecycle fields.
 - `26-06-27__patterned-weave` — shipped named weaver-side patterns for owner-controlled strand DAG creation from JSON CLI input.
@@ -57,6 +58,7 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-07-02__delegation-composition` — shipped shared delegation policy, review recipe, attribute-driven delegation defaults, and delegated pipeline pattern.
 - `26-07-02__docs-pass-review` — archived approved documentation review notes.
 - `26-07-02__weaver-guild` — shipped local weaver peering: portable config-declared weaver names, `skein.api.peers.alpha` discovery/`call!` client, and the `skein.spools.guild` op-declaration spool.
+- `26-07-03__agents-spool` — shipped the `skein.spools.agents` spool owning the full `strand agent` delegation surface (delegate/retry/status/plan) over the pure shuttle engine, with repo `.skein/config.clj` shrunk to genuine workspace tuning.
 - `26-07-03__spool-git-distribution` — shipped registry-free git spool distribution (RFC-017): sha-pinned `:git` coordinates in `spools.edn`, content-addressed fetch cache with verified tag labels, and explicit `use!` activation. Its original optional metadata-file gating was superseded by the Maven-only spool contract.
 - `26-07-04__op-only-cli` — shipped RFC-019: removed all builtin strand commands and the `op` prefix; `strand` became a pure invoke-envelope dispatcher with named payloads and stream relay, `mill` absorbed init/weaver lifecycle/repl, the shipped command surface moved to the `skein.spools.batteries` spool over the new blessed `skein.api.cli.alpha` parser, and the socket collapsed to `invoke` + minimal `status` with op-metadata deadlines and hook gating.
 - `26-07-04__spool-contract` — shipped the minimal spool contract: retired the `spool.edn` manifest (README Dependency information / Activation snippets replace it; RFC-018 rejected as mooted), strengthened required `use!` to throw on `:not-approved`/`:not-synced`/`:sync-failed`, and allowed uniform Maven-only spool `deps.edn :deps` resolved via sync-time `add-libs`.
@@ -64,3 +66,5 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-07-05__op-help-convention` — shipped the op help invocation convention: `<op> help|-h|--help` alias for subcommand-declaring ops resolved before hook gating, reserved help tokens, byte-faithful CLI JSON (stdout + stderr details), and the kanban op migrated to declared `:subcommands`.
 - `26-07-05__argspec-subcommands` — shipped declarative `:subcommands` in the blessed arg-spec DSL: parser-owned routing with loud missing/unknown errors, registration-time structural validation, `strand help <op>` subcommand rendering, and batteries `query`/`pattern` migrated off the fake subcommand positional.
 - `26-07-05__agent-panels` — shipped shuttle session continuation (`:resume` harness splice over captured session ids, `retry --fresh`, persistence-friendly harness defaults that never require persistence) and the panel primitive (seats × blackboard × turn wiring × synthesis compiled from spec'd data; turn-as-run barriers), with `review!`/`council!` as presets — cross-vendor councils, per-seat continuity, poll-loop prompts deleted.
+- `26-07-05__roster-spool` — shipped the `skein.spools.roster` reference spool: canonical `roster/*` active-work vocabulary, register/heartbeat/finish/list/await helpers, a `strand roster` surface, and loud stale-entry surfacing that never auto-burns entries.
+- `26-07-05__weaver-scheduler` — shipped the weaver-owned scheduler primitive: durable `wake-at` records in dedicated SQLite tables, startup/reload re-arming, fully-qualified-symbol handler resolution, at-least-once serialized async dispatch, and data-first introspection.

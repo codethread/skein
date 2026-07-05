@@ -1,10 +1,10 @@
 # Weaver Scheduler Primitive
 
 **Document ID:** `RFC-009`
-**Status:** Open
+**Status:** Implemented
 **Date:** 2026-06-29
 **Related specs:** [Weaver Runtime](../specs/daemon-runtime.md), [Strand Model](../specs/strand-model.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md)
-**Related code:** `src/skein/weaver/runtime.clj`, `src/skein/weaver/api.clj`, `src/skein/events/alpha.clj`, `src/skein/views/alpha.clj`, `src/skein/db.clj`
+**Related code:** `src/skein/core/weaver/runtime.clj`, `src/skein/api/weaver/alpha.clj`, `src/skein/api/events/alpha.clj`, `src/skein/api/views/alpha.clj`, `src/skein/core/db.clj`
 **Related tenets:** TEN-000 (alpha), TEN-002 (trusted agents), TEN-003 (FAIL LOUDLY), TEN-004 (Less is More), TEN-006 (CLI is a thin JSON control surface)
 
 ## RFC-009.P1 Problem
@@ -100,4 +100,5 @@ Future implementation slices and unresolved design decisions are tracked on the 
 
 ## RFC-009.P9 Outcome
 
-- **RFC-009.OUT1:** Open for review. Pending implementation work has been moved to the kanban board (`strand kanban board`).
+- **RFC-009.OUT1:** Accepted. Pending implementation work was tracked on the kanban board (`strand kanban board`).
+- **RFC-009.OUT2:** Implemented. The minimal RFC-009.O4 primitive shipped as the blessed trusted-Clojure `skein.api.scheduler.alpha` surface (`src/skein/api/scheduler/alpha.clj`) over weaver-owned durable wake storage in `src/skein/core/weaver/scheduler.clj`, specified by the `SPEC-004.P10d Weaver scheduler` section of `devflow/specs/daemon-runtime.md`, and archived at `devflow/archive/26-07-05__weaver-scheduler/`.

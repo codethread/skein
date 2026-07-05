@@ -12,7 +12,7 @@ The stripped task API should not keep one-off query helpers such as `by-attr`. T
 ## RFC-002.P2 Goals
 
 - **RFC-002.G1:** Replace narrow query commands with one query language usable by both `list` and `ready`.
-- **RFC-002.G2:** Let callers filter first-class task fields such as `status`, `created_at`, `updated_at`, and `final_at`.
+- **RFC-002.G2:** Let callers filter first-class task fields such as `state`, `created_at`, and `updated_at`.
 - **RFC-002.G3:** Let callers filter userland `attributes` without adding dedicated commands like `by-attr`.
 - **RFC-002.G4:** Keep the default `list` and `ready` commands useful with no query expression.
 
@@ -35,9 +35,9 @@ Choose **RFC-002.O2**: remove `by-attr` from the stripped public API and design 
 Examples are intentionally illustrative only:
 
 ```text
-todo list --where 'status = todo and attr.priority = high'
-todo ready --where 'attr.owner = agent'
-todo list --where 'final_at >= 2026-06-24'
+strand list --where 'state = active and attr.priority = high'
+strand ready --where 'attr.owner = agent'
+strand list --where 'updated_at >= 2026-06-24'
 ```
 
 ## RFC-002.P6 Consequences
@@ -54,8 +54,8 @@ Accepted. The first pass query DSL is an EDN vector language accepted by `list` 
 {owned-open
  {:params [:owner]
   :where [:and
-          [:= :status "todo"]
+          [:= :state "active"]
           [:= [:attr :owner] [:param :owner]]]}}
 ```
 
-Supported fields are first-class task fields `:id`, `:title`, `:status`, `:created_at`, `:updated_at`, `:final_at`, plus JSON attributes via `[:attr :key]` or nested `[:attr :path :key]`. Supported operators are `:=`, `:!=`, `:<`, `:<=`, `:>`, `:>=`, `:in`, `:exists`, `:missing`, `:and`, `:or`, and `:not`. Runtime values are referenced with `[:param :name]`.
+Supported fields are first-class strand fields `:id`, `:title`, `:state`, `:created_at`, `:updated_at`, plus JSON attributes via `[:attr :key]` or nested `[:attr :path :key]`. Supported operators are `:=`, `:!=`, `:<`, `:<=`, `:>`, `:>=`, `:in`, `:exists`, `:missing`, `:and`, `:or`, and `:not`. Runtime values are referenced with `[:param :name]`.

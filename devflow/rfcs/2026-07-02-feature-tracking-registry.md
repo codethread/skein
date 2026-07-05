@@ -1,9 +1,9 @@
 # Feature Tracking Registry
 
 **Document ID:** `RFC-014`
-**Status:** Open
+**Status:** Implemented
 **Date:** 2026-07-02
-**Related:** [RFC-011](./2026-07-02-coordination-attention-surface.md) (attention surface for workflow runs), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), weaver-guild feature (`devflow/feat/weaver-guild/proposal.md` on branch `weaver-guild`; cross-weaver tie-in), [strand skill](../../.agents/skills/strand/SKILL.md)
+**Related:** [RFC-011](../archive/26-07-02__attention-surface/rfcs/2026-07-02-coordination-attention-surface.md) (attention surface for workflow runs), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), [weaver-guild proposal](../archive/26-07-02__weaver-guild/proposal.md) (cross-weaver tie-in), [discovery tiers](../../docs/skein.md#discovery-tiers-help-about-prime)
 
 ## RFC-014.P1 Problem
 
@@ -142,4 +142,4 @@ Future implementation slices and unresolved design decisions are tracked on the 
 
 ## RFC-014.P8 Outcome
 
-Pending decision on O3. The O1 interim convention shipped 2026-07-04: work roots are stamped with `branch`/`owner`/`worktree` (mandatory at `kanban claim`) and the repo-local `strand branches` op projects per-branch progress (see AGENTS.md "Branch work visibility"). Remaining O3 roster work stays on the kanban board (`strand kanban board`).
+Both recommendations shipped. The O1/REC1 interim convention shipped 2026-07-04: work roots are stamped with `branch`/`owner`/`worktree` (mandatory at `kanban claim`) and the repo-local `strand branches` op projects per-branch progress (see AGENTS.md "Branch work visibility"). The durable O3 answer shipped 2026-07-05 as the `skein.spools.roster` reference spool (`spools/src/skein/spools/roster.clj`, contract in `spools/roster.md`, archived at `devflow/archive/26-07-05__roster-spool/`): a canonical `roster/*` active-work vocabulary, register/heartbeat/finish/list/await helpers, a public `strand roster` surface, and loud stale-entry surfacing that never auto-burns entries.
