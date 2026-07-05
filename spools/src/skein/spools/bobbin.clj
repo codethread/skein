@@ -9,19 +9,14 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.util :refer [fail!]]))
+            [skein.spools.util :refer [fail! attr-get attr-key->str]]))
 
 (def ^:private section-order [:strand :blockers :dependents :parents :children :notes :workflow])
 (def ^:private selectable-sections (set section-order))
 (def ^:private related-sections (disj selectable-sections :strand :workflow))
 
 (defn- attr [strand k]
-  (let [attrs (:attributes strand)
-        s (if (keyword? k) (subs (str k) 1) (str k))]
-    (cond
-      (contains? attrs k) (get attrs k)
-      (contains? attrs s) (get attrs s)
-      :else nil)))
+  (attr-get strand k))
 
 (defn- summarize [strand]
   (select-keys strand [:id :title :state :attributes :created_at :updated_at]))
@@ -100,7 +95,7 @@
 
 (defn- workflow-attrs [strand]
   (into {}
-        (filter (fn [[k _]] (str/starts-with? (if (keyword? k) (subs (str k) 1) (str k)) "workflow/")))
+        (filter (fn [[k _]] (str/starts-with? (attr-key->str k) "workflow/")))
         (:attributes strand)))
 
 (defn- workflow-section [rt strand]

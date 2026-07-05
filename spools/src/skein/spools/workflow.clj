@@ -12,7 +12,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.util :refer [fail! require-valid!]]))
+            [skein.spools.util :refer [fail! require-valid! attr-get attr-key->str]]))
 
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
@@ -894,14 +894,10 @@
 
 (defn- attr
   "Read attribute `k` (a keyword such as `:workflow/role`) from `strand`'s
-  attribute map, tolerating either keyword- or string-keyed maps. Strand
-  attributes arrive keyword-keyed in-memory but string-keyed after a JSON
-  round-trip through the weaver; this is the one place that reconciles both."
+  attribute map, tolerating either keyword- or string-keyed maps, via the shared
+  spool-tier tolerant reader (`skein.spools.util/attr-get`)."
   [strand k]
-  (let [attrs (:attributes strand)]
-    (if (contains? attrs k)
-      (get attrs k)
-      (get attrs (subs (str k) 1)))))
+  (attr-get strand k))
 
 (defn molecule-id
   "Return the materialized root molecule id from a `pour!` or `wisp!` result."
@@ -1342,7 +1338,7 @@
      (run-result rt run-id))))
 
 (defn- string-keyed [m]
-  (into {} (map (fn [[k v]] [(if (keyword? k) (name k) k) v])) m))
+  (into {} (map (fn [[k v]] [(attr-key->str k) v])) m))
 
 (defn- detail-view
   "Return a checkpoint choice's stored detail map with string keys. The nested
@@ -1350,7 +1346,7 @@
   round-trip keywordizes nested map keys on read (`skein.core.db/<-json`)."
   [detail]
   (reduce-kv (fn [acc k v]
-               (let [k (if (keyword? k) (name k) k)]
+               (let [k (attr-key->str k)]
                  (assoc acc k (if (= k "input") (mapv string-keyed v) v))))
              {}
              detail))
@@ -1372,7 +1368,7 @@
            details (attr step :workflow/choice-details)]
        (when-not (= "checkpoint" (attr step :workflow/role))
          (fail! "Current workflow step is not a checkpoint" {:run-id run-id :step (step-view step)}))
-       (into {} (map (fn [[k v]] [(if (keyword? k) (name k) k) (detail-view v)])) details)))))
+       (into {} (map (fn [[k v]] [(attr-key->str k) (detail-view v)])) details)))))
 
 (defn choice-detail
   "Return one choice explanation for run-id's current workflow checkpoint.

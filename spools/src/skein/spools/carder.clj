@@ -11,7 +11,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.util :refer [fail!]])
+            [skein.spools.util :refer [fail! attr-get]])
   (:import [java.time Duration Instant LocalDateTime ZoneOffset]))
 
 (def default-days
@@ -43,10 +43,7 @@
     days))
 
 (defn- attr [strand k]
-  (let [attrs (:attributes strand)]
-    (if (contains? attrs k)
-      (get attrs k)
-      (get attrs (subs (str k) 1)))))
+  (attr-get strand k))
 
 (defn- workflow-attr? [[k _]]
   (= "workflow" (namespace k)))

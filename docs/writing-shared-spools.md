@@ -92,6 +92,17 @@ the wrong world or throws.
    case where something must proactively fire at instant `T` with nothing polling
    to trigger it. Scheduler delivery is at-least-once, so any handler you register
    must be idempotent.
+7. **Write attribute deltas, not read-merged maps.** To change a strand's
+   attributes, pass `api/update` **only the keys you are changing** —
+   `{:attributes {:kanban/status "claimed"}}` — and let `db/update-strand!`'s
+   `json_patch` merge fold them into the stored map. Never read the strand, merge
+   your changes into its full `:attributes`, and write the whole map back: two
+   concurrent updates each start from a possibly-stale read and the later write
+   silently drops the earlier one (a lost-update race). `api/update` returns the
+   full merged strand, so a delta write loses no result fidelity. For reads, use
+   the shared tolerant reader `skein.spools.util/attr-get` (keyword key, bare
+   string fallback) and `attr-key->str` for wire-key coercion rather than
+   re-deriving a per-file attribute accessor.
 
 ## The discovery surface your spool ships
 

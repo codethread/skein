@@ -9,7 +9,7 @@
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as api]
             [skein.spools.shuttle :as shuttle]
-            [skein.spools.util :refer [fail!]]))
+            [skein.spools.util :refer [fail! attr-get]]))
 
 (defn- rt
   []
@@ -21,7 +21,7 @@
 
 (defn- attr
   [s k]
-  (get-in s [:attributes k]))
+  (attr-get s k))
 
 (defn- workspace-root-dir
   []
@@ -34,7 +34,7 @@
 
 (defn- sattr
   [s k]
-  (get-in s [:attributes (keyword "shuttle" k)]))
+  (attr-get s (keyword "shuttle" k)))
 
 (defn- parse-int!
   [flag value]

@@ -20,7 +20,8 @@
             [skein.api.current.alpha :as current]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.format :as fmt]))
+            [skein.spools.format :as fmt]
+            [skein.spools.util :refer [attr-get]]))
 
 (def ^:private card-attr :kanban/card)
 (def ^:private status-attr :kanban/status)
@@ -55,12 +56,10 @@
                       {:flag flag :provided (sort (keys flags))}))))
 
 (defn- attr-value
-  "Return a strand attribute by keyword or string key."
+  "Return a strand attribute by keyword or string key, via the shared spool-tier
+  tolerant reader (`skein.spools.util/attr-get`)."
   [strand k]
-  (let [attrs (:attributes strand)
-        kw (keyword k)]
-    (or (get attrs kw)
-        (get attrs (subs (str kw) 1)))))
+  (attr-get strand k))
 
 (defn- card-type
   "Return a card's kanban type, defaulting to feature."
@@ -228,20 +227,20 @@
                     {:id (:id strand) :status (attr-value strand status-attr)})))
   strand)
 
-(defn- merge-attrs
-  "Merge keyword-keyed attrs into strand attributes for api/update.
-
-  Stored attributes come back keyword-keyed; merging string keys here would
-  create duplicate logical keys with undefined precedence on write."
-  [strand attrs]
-  (merge (:attributes strand) attrs))
-
 (defn- update-card!
-  "Merge attrs (and optional state) onto a kanban card strand."
+  "Write only the changed `attrs` (and optional `state`) onto a kanban card.
+
+  `attrs` is a delta: just the keyword-keyed attributes this op changes, handed
+  straight to `api/update` so `db/update-strand!`'s `json_patch` merge folds them
+  into the stored map. Writing a delta rather than a read-merged full map removes
+  a lost-update race — two concurrent `update-card!` calls (e.g. `set-priority!`
+  and `claim!`) each patch only their own keys instead of overwriting the whole
+  attribute map from a possibly-stale read. `api/update` returns the full merged
+  strand, so callers still see every attribute in the result."
   [strand attrs state]
   (api/update (current/runtime)
               (:id strand)
-              (cond-> {:attributes (merge-attrs strand attrs)}
+              (cond-> {:attributes attrs}
                 state (assoc :state state))))
 
 (defn promote!

@@ -40,7 +40,7 @@
             [skein.api.weaver.alpha :as api]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
-            [skein.spools.util :refer [fail!]])
+            [skein.spools.util :refer [fail! attr-get]])
   (:import [java.lang ProcessBuilder$Redirect ProcessHandle]
            [java.nio.file Files]
            [java.nio.file.attribute PosixFilePermissions]
@@ -173,12 +173,12 @@
 (defn- sattr
   "Read the `shuttle/<k>` attribute from a normalized strand."
   [strand k]
-  (get-in strand [:attributes (keyword "shuttle" k)]))
+  (attr-get strand (keyword "shuttle" k)))
 
 (defn- attr
-  "Read a normalized strand attribute by exact keyword."
+  "Read a normalized strand attribute, tolerating keyword- or string-keyed maps."
   [strand k]
-  (get-in strand [:attributes k]))
+  (attr-get strand k))
 
 (defn- now [] (str (Instant/now)))
 

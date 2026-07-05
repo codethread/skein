@@ -52,3 +52,26 @@
   not a tolerant reader."
   [k]
   (if (keyword? k) (subs (str k) 1) (str k)))
+
+(defn attr-get
+  "Read attribute `k` from a normalized strand, tolerating keyword- or
+  string-keyed attribute maps.
+
+  Strand attributes arrive keyword-keyed on the native path but string-keyed
+  after a JSON round-trip through the weaver, so a reader that checks only one
+  keying silently returns nil for the other. `attr-get` coerces `k` to a keyword,
+  prefers the keyword entry, and falls back to the bare-string wire key
+  (`attr-key->str`) only when the keyword key is absent.
+
+  The chosen tolerant semantics are deliberate: presence is tested with
+  `contains?`, not truthiness, so a key stored with an explicit `false`/`nil`
+  value reads back as that value instead of falling through to the string key.
+  Neither the keying a strand happens to carry nor a falsey value may change what
+  an attribute means. This is the canonical spool read companion to
+  `attr-key->str`; spools require it rather than re-deriving a per-file reader."
+  [strand k]
+  (let [attrs (:attributes strand)
+        kw (keyword k)]
+    (if (contains? attrs kw)
+      (get attrs kw)
+      (get attrs (attr-key->str kw)))))

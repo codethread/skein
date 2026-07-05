@@ -29,7 +29,7 @@
             [skein.api.events.alpha :as events]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
-            [skein.spools.util :refer [fail! reject-unknown-keys! attr-key->str]])
+            [skein.spools.util :refer [fail! reject-unknown-keys! attr-key->str attr-get]])
   (:import [java.time Duration Instant]))
 
 (def default-stale-after-ms
@@ -53,12 +53,10 @@
   v)
 
 (defn- attr-value
-  "Return a strand attribute by keyword or string key."
+  "Return a strand attribute by keyword or string key, via the shared spool-tier
+  tolerant reader (`skein.spools.util/attr-get`)."
   [strand k]
-  (let [attrs (:attributes strand)
-        kw (keyword k)]
-    (or (get attrs kw)
-        (get attrs (subs (str kw) 1)))))
+  (attr-get strand k))
 
 (defn- now-str
   "Stringify the recorded instant for `track!`/`heartbeat!`/`finish!`. A `:now`

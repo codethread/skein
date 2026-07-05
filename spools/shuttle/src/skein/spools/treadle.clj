@@ -9,7 +9,7 @@
   (:require [clojure.string :as str]
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
-            [skein.spools.util :refer [fail!]]
+            [skein.spools.util :refer [fail! attr-get]]
             [skein.api.weaver.alpha :as api]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]))
@@ -50,11 +50,10 @@
 (defn- scan-monitor [] (:scan-monitor (state)))
 
 (defn- attr
-  "Read attribute `k` tolerating keyword- or string-keyed maps (mirrors
-  skein.spools.workflow's tolerant reader for JSON round-tripped strands)."
+  "Read attribute `k` tolerating keyword- or string-keyed maps, via the shared
+  spool-tier tolerant reader (`skein.spools.util/attr-get`)."
   [strand k]
-  (let [attrs (:attributes strand)]
-    (or (get attrs k) (get attrs (subs (str k) 1)))))
+  (attr-get strand k))
 
 (defn- non-blank [s]
   (when (and (string? s) (not (str/blank? s))) s))
