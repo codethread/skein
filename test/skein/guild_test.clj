@@ -25,7 +25,7 @@
     (fn [rt _]
       (guild/install!)
       (guild/defop! 'gate.close.v1 {:doc "Close a peer gate" :spec ::close-input}
-                    'skein.guild-test/close-handler)
+        'skein.guild-test/close-handler)
       (is (= {:op "gate.close.v1" :input {:task "T-1"}}
              (api/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])))
       (guild/defop! 'ping.v1 {:doc "Ping"} 'skein.guild-test/close-handler)
@@ -37,7 +37,7 @@
     (fn [rt _]
       (guild/install!)
       (guild/defop! 'gate.close.v1 {:doc "Close a peer gate" :spec ::close-input}
-                    'skein.guild-test/close-handler)
+        'skein.guild-test/close-handler)
       (try
         (api/op! rt 'gate.close.v1 [(json-arg {:wrong "x"})])
         (is false "expected spec validation failure")
@@ -52,9 +52,9 @@
       (guild/install! "fallback-guild")
       (is (= "fallback-guild" (:guild (guild/describe-op {:op/runtime rt}))))
       (guild/defop! 'gate.close.v1 {:doc "Close v1" :spec ::close-input}
-                    'skein.guild-test/close-handler)
+        'skein.guild-test/close-handler)
       (guild/defop! 'gate.close.v2 {:doc "Close v2" :spec ::close-input}
-                    'skein.guild-test/close-handler)
+        'skein.guild-test/close-handler)
       (guild/deprecate! 'gate.close.v1 {:replacement "gate.close.v2" :since "2026-07-02"})
       (let [description (api/op! rt 'guild.describe [])]
         (is (string? (:guild description)))
@@ -73,7 +73,7 @@
     (fn [rt _]
       (guild/install!)
       (guild/defop! 'gate.close.v1 {:doc "Close v1"}
-                    'skein.guild-test/close-handler)
+        'skein.guild-test/close-handler)
       (guild/deprecate! 'gate.close.v1 {:replacement "gate.close.v2"})
       (try
         (api/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])
@@ -91,11 +91,11 @@
       (testing "unknown defop opts"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown guild option keys"
                               (guild/defop! 'gate.close.v1 {:doc "x" :extra true}
-                                            'skein.guild-test/close-handler))))
+                                'skein.guild-test/close-handler))))
       (testing "namespaced registry names are rejected by the public registry"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"simple symbols or keywords"
                               (guild/defop! 'gate/close.v1 {:doc "x"}
-                                            'skein.guild-test/close-handler))))
+                                'skein.guild-test/close-handler))))
       (testing "unqualified handlers fail before registration"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified"
                               (guild/defop! 'bad.handler.v1 {:doc "x"} 'close-handler))))

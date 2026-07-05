@@ -150,24 +150,24 @@
   (when-not (map? (:spools config))
     (throw (ex-info (str name " requires :spools map") (assoc source :spools (:spools config)))))
   {:spools (into {}
-               (map (fn [[lib entry]]
-                      (validate-approved-spool-entry! source lib entry)
-                      (if (contains? entry :local/root)
-                        [lib {:kind :local
-                              :local/root (:local/root entry)
-                              :root (canonical-root runtime (:local/root entry))
-                              :source source}]
-                        (let [cache-root (io/file (cache-base) "skein" "spools" (:git/sha entry))
-                              root (cond-> cache-root
-                                     (:deps/root entry) (io/file (:deps/root entry)))]
-                          [lib (cond-> {:kind :git
-                                        :git/url (:git/url entry)
-                                        :git/sha (:git/sha entry)
-                                        :root (.getPath root)
-                                        :source source}
-                                 (contains? entry :git/tag) (assoc :git/tag (:git/tag entry))
-                                 (contains? entry :deps/root) (assoc :deps/root (:deps/root entry)))]))))
-               (:spools config))})
+                 (map (fn [[lib entry]]
+                        (validate-approved-spool-entry! source lib entry)
+                        (if (contains? entry :local/root)
+                          [lib {:kind :local
+                                :local/root (:local/root entry)
+                                :root (canonical-root runtime (:local/root entry))
+                                :source source}]
+                          (let [cache-root (io/file (cache-base) "skein" "spools" (:git/sha entry))
+                                root (cond-> cache-root
+                                       (:deps/root entry) (io/file (:deps/root entry)))]
+                            [lib (cond-> {:kind :git
+                                          :git/url (:git/url entry)
+                                          :git/sha (:git/sha entry)
+                                          :root (.getPath root)
+                                          :source source}
+                                   (contains? entry :git/tag) (assoc :git/tag (:git/tag entry))
+                                   (contains? entry :deps/root) (assoc :deps/root (:deps/root entry)))]))))
+                 (:spools config))})
 
 (defn- approved-spools-file [runtime name kind]
   (let [file (spools-file runtime name)
@@ -956,11 +956,11 @@
                                   true (dissoc :edges)
                                   (some? (:attributes strand))
                                   (assoc :attributes (run-transform-hooks runtime
-                                                                           :attributes/normalize
-                                                                           (merge req-ctx
-                                                                                  {:hook/value (:attributes strand)
-                                                                                   :mutation/operation :strand/add
-                                                                                   :strand/patch strand}))))
+                                                                          :attributes/normalize
+                                                                          (merge req-ctx
+                                                                                 {:hook/value (:attributes strand)
+                                                                                  :mutation/operation :strand/add
+                                                                                  :strand/patch strand}))))
                          created (normalize (db/add-strand! tx strand))]
                      (apply-edges! tx (:id created) edges)
                      (run-validation-hooks! runtime
@@ -1034,24 +1034,24 @@
   ([runtime payload]
    (apply-batch runtime payload (request-context :apply-batch)))
   ([runtime payload req-ctx]
-  (let [submitted-payload payload
-        normalized-payload (normalize-batch-strand-attributes runtime req-ctx (db/normalize-batch-payload! payload))
-        result (jdbc/with-transaction [tx (ds runtime)]
-                 (let [result (normalize (db/apply-batch-in-transaction! tx normalized-payload))]
-                   (run-validation-hooks! runtime
-                                          :batch/apply-before-commit
-                                          (batch-apply-context req-ctx submitted-payload result))
-                   result))
-        batch-id (str (UUID/randomUUID))]
-    (enqueue-event! runtime (assoc (event-base :batch/applied)
-                                   :batch/id batch-id
-                                   :batch/refs (:refs result)
-                                   :batch/created (:created result)
-                                   :batch/updated (:updated result)
-                                   :batch/burned (:burned result)
-                                   :batch/edges (:edges result)))
-    (enqueue-batch-fanout! runtime batch-id normalized-payload result)
-    result)))
+   (let [submitted-payload payload
+         normalized-payload (normalize-batch-strand-attributes runtime req-ctx (db/normalize-batch-payload! payload))
+         result (jdbc/with-transaction [tx (ds runtime)]
+                  (let [result (normalize (db/apply-batch-in-transaction! tx normalized-payload))]
+                    (run-validation-hooks! runtime
+                                           :batch/apply-before-commit
+                                           (batch-apply-context req-ctx submitted-payload result))
+                    result))
+         batch-id (str (UUID/randomUUID))]
+     (enqueue-event! runtime (assoc (event-base :batch/applied)
+                                    :batch/id batch-id
+                                    :batch/refs (:refs result)
+                                    :batch/created (:created result)
+                                    :batch/updated (:updated result)
+                                    :batch/burned (:burned result)
+                                    :batch/edges (:edges result)))
+     (enqueue-batch-fanout! runtime batch-id normalized-payload result)
+     result)))
 
 (defn- apply-edges! [tx id edges]
   (doseq [{:keys [to type attributes]} edges]
@@ -1071,13 +1071,13 @@
   ([runtime id patch]
    (update runtime id patch (request-context :update)))
   ([runtime id patch req-ctx]
-  (reject-unknown-update-keys! patch)
-  (let [{:keys [title state edges]} patch
-        result (jdbc/with-transaction [tx (ds runtime)]
-                 (let [before (or (some-> (db/get-strand tx id) normalize)
-                                  (throw (ex-info "Strand not found" {:strand-id id})))
-                       patch (if (some? (:attributes patch))
-                               (assoc patch :attributes (run-transform-hooks runtime
+   (reject-unknown-update-keys! patch)
+   (let [{:keys [title state edges]} patch
+         result (jdbc/with-transaction [tx (ds runtime)]
+                  (let [before (or (some-> (db/get-strand tx id) normalize)
+                                   (throw (ex-info "Strand not found" {:strand-id id})))
+                        patch (if (some? (:attributes patch))
+                                (assoc patch :attributes (run-transform-hooks runtime
                                                                               :attributes/normalize
                                                                               (merge req-ctx
                                                                                      {:hook/value (:attributes patch)
@@ -1085,29 +1085,29 @@
                                                                                       :strand/id id
                                                                                       :strand/before before
                                                                                       :strand/patch patch})))
-                               patch)
-                       attributes (:attributes patch)]
-                   (apply-edges! tx id edges)
-                   (let [after (normalize (db/update-strand! tx id (cond-> {}
-                                                                     (contains? patch :title) (assoc :title title)
-                                                                     (contains? patch :state) (assoc :state state)
-                                                                     (contains? patch :attributes) (assoc :attributes attributes))))]
-                     (run-validation-hooks! runtime
-                                            :strand/update-before-commit
-                                            (merge req-ctx
-                                                   {:mutation/operation :strand/update
-                                                    :strand/id id
-                                                    :strand/patch patch
-                                                    :strand/before before
-                                                    :strand/after after
-                                                    :strand/edge-ops (vec edges)}))
-                     {:before before :after after :patch patch})))]
-    (enqueue-event! runtime (assoc (event-base :strand/updated)
-                                   :strand/id id
-                                   :strand/patch (:patch result)
-                                   :strand/before (:before result)
-                                   :strand/after (:after result)))
-    (:after result))))
+                                patch)
+                        attributes (:attributes patch)]
+                    (apply-edges! tx id edges)
+                    (let [after (normalize (db/update-strand! tx id (cond-> {}
+                                                                      (contains? patch :title) (assoc :title title)
+                                                                      (contains? patch :state) (assoc :state state)
+                                                                      (contains? patch :attributes) (assoc :attributes attributes))))]
+                      (run-validation-hooks! runtime
+                                             :strand/update-before-commit
+                                             (merge req-ctx
+                                                    {:mutation/operation :strand/update
+                                                     :strand/id id
+                                                     :strand/patch patch
+                                                     :strand/before before
+                                                     :strand/after after
+                                                     :strand/edge-ops (vec edges)}))
+                      {:before before :after after :patch patch})))]
+     (enqueue-event! runtime (assoc (event-base :strand/updated)
+                                    :strand/id id
+                                    :strand/patch (:patch result)
+                                    :strand/before (:before result)
+                                    :strand/after (:after result)))
+     (:after result))))
 
 (defn- supersede-context [old-id replacement-id result]
   {:strand/id old-id
@@ -1123,17 +1123,17 @@
   ([runtime old-id replacement-id]
    (supersede runtime old-id replacement-id (request-context :supersede)))
   ([runtime old-id replacement-id req-ctx]
-  (let [result (jdbc/with-transaction [tx (ds runtime)]
-                 (let [result (normalize (db/supersede-strand-in-transaction! tx old-id replacement-id))]
-                   (run-validation-hooks! runtime
-                                          :strand/supersede-before-commit
-                                          (merge req-ctx
-                                                 {:mutation/operation :strand/supersede}
-                                                 (supersede-context old-id replacement-id result)))
-                   result))]
-    (enqueue-event! runtime (merge (event-base :strand/superseded)
-                                   (supersede-context old-id replacement-id result)))
-    result)))
+   (let [result (jdbc/with-transaction [tx (ds runtime)]
+                  (let [result (normalize (db/supersede-strand-in-transaction! tx old-id replacement-id))]
+                    (run-validation-hooks! runtime
+                                           :strand/supersede-before-commit
+                                           (merge req-ctx
+                                                  {:mutation/operation :strand/supersede}
+                                                  (supersede-context old-id replacement-id result)))
+                    result))]
+     (enqueue-event! runtime (merge (event-base :strand/superseded)
+                                    (supersede-context old-id replacement-id result)))
+     result)))
 
 (defn declare-acyclic-relation!
   "Declare an edge relation as acyclic for future graph writes."
@@ -1155,22 +1155,22 @@
   ([runtime ids]
    (burn-by-ids runtime ids (request-context :burn)))
   ([runtime ids req-ctx]
-  (let [requested-ids (vec ids)
-        {:keys [before result]} (jdbc/with-transaction [tx (ds runtime)]
-                                  (let [before (normalize (db/strands-by-ids tx requested-ids))]
-                                    (run-validation-hooks! runtime
-                                                           :strand/burn-before-commit
-                                                           (merge req-ctx
-                                                                  {:mutation/operation :strand/burn
-                                                                   :strand/requested-ids requested-ids
-                                                                   :strand/before before}))
-                                    {:before before
-                                     :result (db/burn-by-ids! tx requested-ids)}))]
-    (enqueue-event! runtime (assoc (event-base :strand/burned)
-                                   :strand/requested-ids requested-ids
-                                   :strand/burned-ids (:burned result)
-                                   :strand/before before))
-    result)))
+   (let [requested-ids (vec ids)
+         {:keys [before result]} (jdbc/with-transaction [tx (ds runtime)]
+                                   (let [before (normalize (db/strands-by-ids tx requested-ids))]
+                                     (run-validation-hooks! runtime
+                                                            :strand/burn-before-commit
+                                                            (merge req-ctx
+                                                                   {:mutation/operation :strand/burn
+                                                                    :strand/requested-ids requested-ids
+                                                                    :strand/before before}))
+                                     {:before before
+                                      :result (db/burn-by-ids! tx requested-ids)}))]
+     (enqueue-event! runtime (assoc (event-base :strand/burned)
+                                    :strand/requested-ids requested-ids
+                                    :strand/burned-ids (:burned result)
+                                    :strand/before before))
+     result)))
 
 (defn burn-by-id
   "Delete one strand by id and return burn metadata."
@@ -1284,8 +1284,8 @@
   (let [canonical-name (canonical-view-name view-name)]
     (or (get @(view-registry runtime) canonical-name)
         (throw (ex-info "View not found" {:view view-name
-                                           :canonical-view canonical-name
-                                           :available (sort (keys @(view-registry runtime)))})))))
+                                          :canonical-view canonical-name
+                                          :available (sort (keys @(view-registry runtime)))})))))
 
 (defn view!
   "Invoke a registered view function with params."
@@ -1427,8 +1427,8 @@
   (let [canonical-name (canonical-op-name op-name)]
     (or (get @(op-registry runtime) canonical-name)
         (throw (ex-info "Operation not found" {:operation op-name
-                                                :canonical-operation canonical-name
-                                                :available (sort (keys @(op-registry runtime)))})))))
+                                               :canonical-operation canonical-name
+                                               :available (sort (keys @(op-registry runtime)))})))))
 
 (def ^:private help-alias-tokens
   "Dispatch-level help alias argv tokens; the parser's reserved set is the
@@ -1592,8 +1592,8 @@
   (let [canonical-name (canonical-pattern-name pattern-name)]
     (or (get @(pattern-registry runtime) canonical-name)
         (throw (ex-info "Pattern not found" {:pattern pattern-name
-                                              :canonical-pattern canonical-name
-                                              :available (sort (keys @(pattern-registry runtime)))})))))
+                                             :canonical-pattern canonical-name
+                                             :available (sort (keys @(pattern-registry runtime)))})))))
 
 (defn- spec-form [spec-name]
   (let [form (s/form spec-name)]
@@ -1714,39 +1714,39 @@
   ([runtime pattern-name input]
    (weave! runtime pattern-name input (request-context :weave)))
   ([runtime pattern-name input req-ctx]
-  (let [{fn-sym :fn input-spec :input-spec} (resolve-pattern runtime pattern-name)
-        canonical-name (canonical-pattern-name pattern-name)]
-    (spec-form input-spec)
-    (when-not (s/valid? input-spec input)
-      (let [explain (s/explain-data input-spec input)
-            contract (pattern-input-contract input-spec)]
-        (throw (ex-info (pattern-validation-message pattern-name contract explain)
-                        {:code "pattern/input-invalid"
-                         :pattern canonical-name
-                         :input-spec (str input-spec)
-                         :contract contract
-                         :problems (mapv #(problem-message contract %) (::s/problems explain))
-                         :explain explain}))))
-    (let [batch (with-spool-classloader
-                  runtime
-                  #((requiring-resolve fn-sym) {:input input}))
-          normalized-batch (normalize-weave-strand-attributes runtime req-ctx canonical-name input batch)
-          normalized-payload (weave-payload normalized-batch)
-          result (jdbc/with-transaction [tx (ds runtime)]
-                   (let [result (normalize (db/add-strand-batch-in-transaction! tx normalized-batch))]
-                     (run-validation-hooks! runtime
-                                            :batch/apply-before-commit
-                                            (weave-batch-context req-ctx canonical-name input normalized-payload result))
-                     result))]
+   (let [{fn-sym :fn input-spec :input-spec} (resolve-pattern runtime pattern-name)
+         canonical-name (canonical-pattern-name pattern-name)]
+     (spec-form input-spec)
+     (when-not (s/valid? input-spec input)
+       (let [explain (s/explain-data input-spec input)
+             contract (pattern-input-contract input-spec)]
+         (throw (ex-info (pattern-validation-message pattern-name contract explain)
+                         {:code "pattern/input-invalid"
+                          :pattern canonical-name
+                          :input-spec (str input-spec)
+                          :contract contract
+                          :problems (mapv #(problem-message contract %) (::s/problems explain))
+                          :explain explain}))))
+     (let [batch (with-spool-classloader
+                   runtime
+                   #((requiring-resolve fn-sym) {:input input}))
+           normalized-batch (normalize-weave-strand-attributes runtime req-ctx canonical-name input batch)
+           normalized-payload (weave-payload normalized-batch)
+           result (jdbc/with-transaction [tx (ds runtime)]
+                    (let [result (normalize (db/add-strand-batch-in-transaction! tx normalized-batch))]
+                      (run-validation-hooks! runtime
+                                             :batch/apply-before-commit
+                                             (weave-batch-context req-ctx canonical-name input normalized-payload result))
+                      result))]
       ;; a weave is a create-only batch apply; without this event, event-driven
       ;; spools (shuttle, treadle) never see pattern-created strands until an
       ;; unrelated mutation happens to trigger their next scan
-      (enqueue-event! runtime (assoc (event-base :batch/applied)
-                                     :batch/id (str (UUID/randomUUID))
-                                     :pattern/name canonical-name
-                                     :batch/refs (:refs result)
-                                     :batch/created (:created result)))
-      (select-keys result [:created :refs])))))
+       (enqueue-event! runtime (assoc (event-base :batch/applied)
+                                      :batch/id (str (UUID/randomUUID))
+                                      :pattern/name canonical-name
+                                      :batch/refs (:refs result)
+                                      :batch/created (:created result)))
+       (select-keys result [:created :refs])))))
 
 (declare data-first-value?)
 

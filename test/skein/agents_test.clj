@@ -19,11 +19,11 @@
   layout, so an unnested config-dir would report the wrong workspace root."
   [f]
   (test-support/with-runtime
-   {:nest-skein? true :prefix "skein-agents-config"}
-   (fn [rt _config-dir]
-     (shuttle/install!)
-     (agents/install!)
-     (f rt))))
+    {:nest-skein? true :prefix "skein-agents-config"}
+    (fn [rt _config-dir]
+      (shuttle/install!)
+      (agents/install!)
+      (f rt))))
 
 (deftest agents-install-registers-op-pattern-query
   (with-agents
@@ -103,7 +103,7 @@
       (let [target (api/add rt {:title "Review target" :attributes {:body "Inspect me"}})
             review (agents/review! (:id target) {:reviewers [{:harness :sh :focus "correctness"}
                                                              {:harness :sh :focus "tests"}]
-                                                :contract "Review contract"})]
+                                                 :contract "Review contract"})]
         (is (= (:id target) (:target review)))
         (is (= 2 (count (:reviewers review))))
         (is (nil? (:synthesizer review)))
@@ -738,7 +738,6 @@
           (shuttle/spawn-run! {:harness :sh :prompt "echo later" :parent (:id active) :depends-on [(:id gate)]})
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ACTIVE run"
                                 (agents/agent-op {:op/argv ["delegate" (:id active)]}))))))))
-
 
 (deftest agent-op-fail-loudly-matrix
   (with-agents

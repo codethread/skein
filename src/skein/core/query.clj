@@ -217,8 +217,8 @@
         normalized-registry (update-keys registry registry-query-name)]
     (or (get normalized-registry canonical-name)
         (fail! "Query not found" {:query query-name
-                                   :canonical-query canonical-name
-                                   :available (sort (keys normalized-registry))}))))
+                                  :canonical-query canonical-name
+                                  :available (sort (keys normalized-registry))}))))
 
 (defn- declared-param-names [query-def]
   (let [declared (:params query-def)]

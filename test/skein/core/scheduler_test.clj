@@ -30,9 +30,9 @@
   (with-db
     (fn [ds]
       (let [created (db/schedule-wake! ds {:key "release-cooldown"
-                                            :wake-at (instant 1000)
-                                            :handler 'my.workflow/on-cooldown
-                                            :payload {:strand "abc12"}})]
+                                           :wake-at (instant 1000)
+                                           :handler 'my.workflow/on-cooldown
+                                           :payload {:strand "abc12"}})]
         (is (= "release-cooldown" (:key created)))
         (is (= 1000000 (:wake_at created)))
         (is (= "my.workflow/on-cooldown" (:handler created)))

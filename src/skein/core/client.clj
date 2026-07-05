@@ -89,16 +89,16 @@
          meta (metadata/read-metadata world)]
      (when (metadata/stale-or-missing? meta)
        (fail "Weaver metadata is missing or stale" {:type :skein.core.client/missing-or-stale-metadata
-                                                     :config-dir (:config-dir world)
-                                                     :metadata meta}))
+                                                    :config-dir (:config-dir world)
+                                                    :metadata meta}))
      (when-not (= (:config-dir world) (:config-dir meta))
        (fail "Weaver metadata config dir does not match requested world" {:type :skein.core.client/metadata-config-mismatch
-                                                                           :expected (:config-dir world)
-                                                                           :actual (:config-dir meta)
-                                                                           :metadata meta}))
+                                                                          :expected (:config-dir world)
+                                                                          :actual (:config-dir meta)
+                                                                          :metadata meta}))
      (when-not (loopback-host? (get-in meta [:endpoint :host]))
        (fail "Weaver metadata endpoint is not loopback" {:type :skein.core.client/non-local-endpoint
-                                                          :endpoint (:endpoint meta)}))
+                                                         :endpoint (:endpoint meta)}))
      meta)))
 
 (def ^:private hooked-operation-request-contexts
@@ -120,7 +120,7 @@
   [op args port]
   (let [api-symbol (or (api-symbols op)
                        (fail "Unknown weaver API operation" {:type :skein.core.client/unknown-operation
-                                                              :operation op}))
+                                                             :operation op}))
         call-args (cond-> (vec args)
                     (contains? hooked-operation-request-contexts op)
                     (conj (hooked-operation-request-contexts op)))]
@@ -149,7 +149,7 @@
       (nrepl/connect :host host :port port :timeout timeout-ms)
       (catch Exception e
         (throw (ex-info "Unable to connect to weaver nREPL endpoint" {:type :skein.core.client/connection-failed
-                                                                       :endpoint (:endpoint metadata)}
+                                                                      :endpoint (:endpoint metadata)}
                         e))))))
 
 (defn- eval-form
@@ -170,27 +170,27 @@
     (when (contains? statuses "eval-error")
       (let [err (some :err responses)]
         (fail "Weaver API call failed" (assoc context :type :skein.core.client/weaver-error
-                                             :err err
-                                             :responses responses))))
+                                              :err err
+                                              :responses responses))))
     (when (contains? statuses "error")
       (fail "Weaver nREPL returned an error" (assoc context :type :skein.core.client/nrepl-error
-                                                   :responses responses)))
+                                                    :responses responses)))
     (if-let [value (some :value responses)]
       (let [result (edn/read-string value)]
         (if (and (map? result) (contains? result :ok))
           (if (:ok result)
             (:value result)
             (fail "Weaver API call failed" (assoc context
-                                             :type :skein.core.client/weaver-error
-                                             :weaver-class (:class result)
-                                             :weaver-message (:message result)
-                                             :weaver-data (:data result))))
+                                                  :type :skein.core.client/weaver-error
+                                                  :weaver-class (:class result)
+                                                  :weaver-message (:message result)
+                                                  :weaver-data (:data result))))
           result))
       (if (empty? responses)
         (fail "Weaver nREPL request timed out" (assoc context :type :skein.core.client/timeout
-                                                   :responses responses))
+                                                      :responses responses))
         (fail "Weaver nREPL returned no value" (assoc context :type :skein.core.client/no-value
-                                                     :responses responses))))))
+                                                      :responses responses))))))
 
 (defn- verify-identity!
   "Verify that conn serves the expected weaver runtime metadata."
@@ -198,8 +198,8 @@
   (let [actual (eval-form conn (identity-form (get-in expected [:endpoint :port])) timeout-ms {:operation :identity})]
     (when-not (= (:config-dir expected) (:config-dir actual))
       (fail "Connected weaver serves a different config dir" {:type :skein.core.client/config-mismatch
-                                                               :expected (:config-dir expected)
-                                                               :actual (:config-dir actual)}))
+                                                              :expected (:config-dir expected)
+                                                              :actual (:config-dir actual)}))
     (when-not (= (:nonce expected) (:nonce actual))
       (fail "Connected weaver identity does not match runtime metadata" {:type :skein.core.client/identity-mismatch
                                                                          :expected (:nonce expected)

@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 )
 
-const MillMetadataFileName = "mill.json"
-const MillSocketFileName = "mill.sock"
+const (
+	MillMetadataFileName = "mill.json"
+	MillSocketFileName   = "mill.sock"
+)
 
 // StateRoot returns Skein's XDG state root. When XDG_STATE_HOME is unset,
 // it uses the XDG fallback under the current user's home directory.

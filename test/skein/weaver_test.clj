@@ -198,9 +198,9 @@
 
 (defn non-json-rejecting-hook [_ctx]
   (throw (ex-info "non-json rejected" {:code "policy/non-json"
-                                        :hook-stage :strand/add-before-commit
-                                        :nested {:reason :policy/non-json}
-                                        :opaque (Object.)})))
+                                       :hook-stage :strand/add-before-commit
+                                       :nested {:reason :policy/non-json}
+                                       :opaque (Object.)})))
 
 (defn parse-story-points-hook [ctx]
   (swap! hook-contexts conj ctx)
@@ -934,8 +934,8 @@
           (deliver @handler-release true)
           (is (wait-until #(= 1 (count @delivered-events))))
           (is (wait-until #(some (fn [failure]
-                                    (= :fails (:handler/key failure)))
-                                  (api/recent-event-failures rt))))
+                                   (= :fails (:handler/key failure)))
+                                 (api/recent-event-failures rt))))
           (finally
             (deliver @handler-release true)))))))
 
@@ -963,7 +963,7 @@
                                     @delivered-events))))
         (api/enqueue-event! rt (test-event :x "after-reload"))
         (is (wait-until #(some (fn [event] (= "after-reload" (:event/id event)))
-                              @delivered-events)))))))
+                               @delivered-events)))))))
 
 (deftest weaver-apply-batch-emits-batch-event-before-compatibility-fanout
   (with-runtime
@@ -1551,9 +1551,9 @@
         (.addURL ^clojure.lang.DynamicClassLoader (:spool-classloader rt)
                  (.toURL (.toURI (io/file root "src"))))
         (load-file (str (io/file root "src" (str (-> (str ns-sym)
-                                                       (.replace \- \_)
-                                                       (.replace \. java.io.File/separatorChar))
-                                                    ".clj"))))
+                                                     (.replace \- \_)
+                                                     (.replace \. java.io.File/separatorChar))
+                                                 ".clj"))))
         (api/register-view! rt 'synced-lib (symbol (str ns-sym) "render"))
         (is (= {:lib-view {:from :synced}}
                (api/view! rt 'synced-lib {:from :synced}))))

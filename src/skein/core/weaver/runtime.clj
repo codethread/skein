@@ -267,7 +267,7 @@
          socket-file (metadata/socket-file world)]
      (when-not (metadata/stale-or-missing? existing)
        (throw (ex-info "Weaver metadata already exists for weaver world" {:config-dir (:config-dir world)
-                                                                           :metadata existing})))
+                                                                          :metadata existing})))
      (when (and (nil? existing) (.exists socket-file))
        (throw (ex-info "Weaver socket exists without metadata; cannot prove weaver world is stale" {:config-dir (:config-dir world)
                                                                                                     :socket-path (.getPath socket-file)})))
@@ -300,7 +300,7 @@
                          :module-use-state (atom {})
                          :spool-state (atom {})
                          :spool-classloader (clojure.lang.DynamicClassLoader.
-                                               (.getContextClassLoader (Thread/currentThread)))
+                                             (.getContextClassLoader (Thread/currentThread)))
                          :server server
                          :metadata meta}
            runtime-base (start-event-system! runtime-base)
@@ -379,9 +379,9 @@
            :data-dir (require-main-dir! opts :data-dir "--data-dir")
            :name (:name opts)}
       "--workspace" (let [[_ dir & more] remaining]
-                       (when-not dir
-                         (throw (ex-info "--workspace requires a directory" {:args args})))
-                       (recur more (assoc opts :config-dir dir)))
+                      (when-not dir
+                        (throw (ex-info "--workspace requires a directory" {:args args})))
+                      (recur more (assoc opts :config-dir dir)))
       "--state-dir" (let [[_ dir & more] remaining]
                       (when-not dir
                         (throw (ex-info "--state-dir requires a directory" {:args args})))
@@ -391,9 +391,9 @@
                        (throw (ex-info "--data-dir requires a directory" {:args args})))
                      (recur more (assoc opts :data-dir dir)))
       "--name" (let [[_ name & more] remaining]
-                  (when (str/blank? name)
-                    (throw (ex-info "--name requires a non-blank value" {:args args})))
-                  (recur more (assoc opts :name name)))
+                 (when (str/blank? name)
+                   (throw (ex-info "--name requires a non-blank value" {:args args})))
+                 (recur more (assoc opts :name name)))
       (throw (ex-info "Usage: skein.core.weaver.runtime --workspace <dir> --state-dir <dir> --data-dir <dir> [--name <name>]" {:args args})))))
 
 (defn- install-signal-shutdown!

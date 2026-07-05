@@ -8,9 +8,11 @@ import (
 	"strings"
 )
 
-const ConfigFileName = "config.json"
-const LocalConfigFileName = "config.local.json"
-const DefaultDBFileName = "skein.sqlite"
+const (
+	ConfigFileName      = "config.json"
+	LocalConfigFileName = "config.local.json"
+	DefaultDBFileName   = "skein.sqlite"
+)
 
 var allowedKeys = map[string]bool{"configFormat": true, "name": true}
 

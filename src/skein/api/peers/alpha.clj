@@ -203,9 +203,9 @@
     (when-not (and (map? result)
                    (= (:weaver-id peer) (get result "weaver_id")))
       (throw (socket-error peer op "Peer lifecycle response identity mismatch" {"type" "protocol"
-                                                                               "code" "protocol/identity-mismatch"
-                                                                               "message" "weaver id mismatch"
-                                                                               "details" {}}))))
+                                                                                "code" "protocol/identity-mismatch"
+                                                                                "message" "weaver id mismatch"
+                                                                                "details" {}}))))
   result)
 
 (defn- reject-stream-response!

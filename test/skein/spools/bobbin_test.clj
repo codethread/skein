@@ -23,8 +23,8 @@
             dependent (repl/strand! "Review")
             child (repl/strand! "Subtask")
             note (repl/strand! "Note" {:shuttle/note "remember this"
-                                        :shuttle/note-by "agent"
-                                        :shuttle/at "2026-07-02T00:00:00Z"})]
+                                       :shuttle/note-by "agent"
+                                       :shuttle/at "2026-07-02T00:00:00Z"})]
         (repl/update! (:id root) {:edges [{:type "parent-of" :to (:id target)}]})
         (repl/update! (:id target) {:edges [{:type "depends-on" :to (:id blocker)}
                                             {:type "parent-of" :to (:id child)}
@@ -93,7 +93,7 @@
       (let [root (repl/strand! "Run" {"workflow/run-id" "run-1"
                                       "workflow/role" "molecule"})
             target (repl/strand! "Step" {"workflow/run-id" "run-1"
-                                          "workflow/role" "step"})]
+                                         "workflow/role" "step"})]
         (repl/update! (:id root) {:edges [{:type "parent-of" :to (:id target)}]})
         (let [workflow (:workflow (bobbin/pack (:id target)))]
           (is (= "run-1" (:run-id workflow)))

@@ -97,7 +97,7 @@
    "socket_path" (:socket-path metadata)
    "started_at" (:started-at metadata)
    "nrepl" {"host" (get-in metadata [:endpoint :host])
-             "port" (get-in metadata [:endpoint :port])}})
+            "port" (get-in metadata [:endpoint :port])}})
 
 (defn- write-atomic!
   "Write pretty-printed EDN `data` to `file` via an atomic rename."

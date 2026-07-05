@@ -126,7 +126,7 @@
                (set (mapv :id (db/all-strands ds [:edge/out "depends-on" [:exists :id]])))))
         (is (= #{active-blocker closed-blocker}
                (set (mapv :id (db/all-strands ds [:edge/in [:param :relation] [:= [:attr :owner] "agent"]]
-                                               {:relation "depends-on"})))))
+                                              {:relation "depends-on"})))))
         (is (= #{active-blocker ready} (set (mapv :id (db/ready-strands ds)))))
         (is (= (set (mapv :id (db/ready-strands ds)))
                (set (mapv :id (db/all-strands ds [:and

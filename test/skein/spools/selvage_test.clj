@@ -39,7 +39,7 @@
         (let [clean (repl/strand! "Clean" {:shuttle/phase "running"
                                            :shuttle/max-attempts "3"})
               bad (repl/strand! "Bad" {:shuttle/phase "bogus"
-                                        :shuttle/max-attempts "three"})]
+                                       :shuttle/max-attempts "three"})]
           (is (= [] (selvage/check (:id clean))))
           (is (= [{:strand-id (:id bad)
                    :vocab vocab

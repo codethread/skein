@@ -24,17 +24,17 @@
                            (fn [{:keys [feature]}]
                              (str prefix feature)))
             definition (workflow/workflow
-                         (with-feature "Ship ")
-                         {:params {:feature (workflow/param :required true)
-                                   :owner (workflow/param :default "agent")
-                                   :include-review (workflow/param :default true)}}
-                         (workflow/step :design (with-feature "Design ") :self
-                                        :attributes {:owner (fn [{:keys [owner]}] owner)})
-                         (workflow/step :implement (with-feature "Implement ") :self
-                                        :depends-on [:design])
-                         (workflow/step :review (with-feature "Review ") :self
-                                        :depends-on [:implement]
-                                        :condition :include-review))
+                        (with-feature "Ship ")
+                        {:params {:feature (workflow/param :required true)
+                                  :owner (workflow/param :default "agent")
+                                  :include-review (workflow/param :default true)}}
+                        (workflow/step :design (with-feature "Design ") :self
+                                       :attributes {:owner (fn [{:keys [owner]}] owner)})
+                        (workflow/step :implement (with-feature "Implement ") :self
+                                       :depends-on [:design])
+                        (workflow/step :review (with-feature "Review ") :self
+                                       :depends-on [:implement]
+                                       :condition :include-review))
             result (workflow/pour! definition {:feature "workflow spool"})
             root-id (workflow/molecule-id result)
             root (repl/strand root-id)
@@ -48,20 +48,20 @@
 (deftest workflow-spool-inlines-procedure-calls
   (let [review (fn [_]
                  (workflow/workflow
-                   "Review"
-                   {:params {:artifact (workflow/param :required true)}}
-                   (workflow/step :inspect
-                                  (fn [{:keys [artifact]}] (str "Inspect " artifact)) :self)
-                   (workflow/step :write-review
-                                  (fn [{:keys [artifact]}] (str "Write review for " artifact)) :self
-                                  :depends-on [:inspect])))
+                  "Review"
+                  {:params {:artifact (workflow/param :required true)}}
+                  (workflow/step :inspect
+                                 (fn [{:keys [artifact]}] (str "Inspect " artifact)) :self)
+                  (workflow/step :write-review
+                                 (fn [{:keys [artifact]}] (str "Write review for " artifact)) :self
+                                 :depends-on [:inspect])))
         definition (workflow/workflow
-                     "Procedure demo"
-                     (workflow/step :write-artifact "Write artifact" :self)
-                     (workflow/call :review-artifact review {:artifact "proposal.md"}
-                                    :depends-on [:write-artifact])
-                     (workflow/step :continue "Continue" :self
-                                    :depends-on [:review-artifact]))
+                    "Procedure demo"
+                    (workflow/step :write-artifact "Write artifact" :self)
+                    (workflow/call :review-artifact review {:artifact "proposal.md"}
+                                   :depends-on [:write-artifact])
+                    (workflow/step :continue "Continue" :self
+                                   :depends-on [:review-artifact]))
         payload (workflow/compile definition)
         strands-by-ref (into {} (map (juxt :ref identity)) (:strands payload))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -76,34 +76,34 @@
 
 (defn- toastie-quality-workflow [_]
   (workflow/workflow
-    "Toastie quality check"
-    (workflow/step :inspect "Check toastie melt and crunch" :self)))
+   "Toastie quality check"
+   (workflow/step :inspect "Check toastie melt and crunch" :self)))
 
 (defn- toastie-serve-workflow [{:keys [filling]}]
   (workflow/workflow
-    (str "Serve " filling " toastie")
-    {:params {:filling (workflow/param :required true)}}
-    (workflow/step :plate (fn [{:keys [filling]}] (str "Plate " filling " toastie")) :self)))
+   (str "Serve " filling " toastie")
+   {:params {:filling (workflow/param :required true)}}
+   (workflow/step :plate (fn [{:keys [filling]}] (str "Plate " filling " toastie")) :self)))
 
 (deftest workflow-spool-runtime-drives-toastie-demo
   (with-runtime
     (fn [rt _]
       (let [toastie (workflow/workflow
-                      (fn [{:keys [filling]}] (str "Make " filling " toastie"))
-                      {:params {:filling (workflow/param :required true)}}
-                      (workflow/step :butter-bread "Butter bread" :self)
-                      (workflow/call :quality toastie-quality-workflow {}
-                                     :depends-on [:butter-bread])
-                      (workflow/checkpoint :choose-finish "Choose toastie finish"
-                                           :depends-on [:quality]
-                                           :kind :agent
-                                           :choices [{:key :serve
-                                                      :label "Serve"
-                                                      :description "Plate the toastie and serve it hot."
-                                                      :next 'skein.spools.workflow-test/toastie-serve-workflow}
-                                                     {:key :remake
-                                                      :label "Remake"
-                                                      :description "Start over with fresh bread."}]))]
+                     (fn [{:keys [filling]}] (str "Make " filling " toastie"))
+                     {:params {:filling (workflow/param :required true)}}
+                     (workflow/step :butter-bread "Butter bread" :self)
+                     (workflow/call :quality toastie-quality-workflow {}
+                                    :depends-on [:butter-bread])
+                     (workflow/checkpoint :choose-finish "Choose toastie finish"
+                                          :depends-on [:quality]
+                                          :kind :agent
+                                          :choices [{:key :serve
+                                                     :label "Serve"
+                                                     :description "Plate the toastie and serve it hot."
+                                                     :next 'skein.spools.workflow-test/toastie-serve-workflow}
+                                                    {:key :remake
+                                                     :label "Remake"
+                                                     :description "Start over with fresh bread."}]))]
         (is (= [{:title "Butter bread" :kind "step"}]
                (mapv #(select-keys % [:title :kind])
                      (:ready (workflow/start! "toastie-demo" toastie {:filling "cheese"})))))
@@ -172,74 +172,74 @@
 
 (defn- pr-ci-round-workflow [{:keys [bindings] :as _opts}]
   (workflow/workflow
-    (fn [{:keys [feature]}] (str "CI round for " feature))
-    {:params {:feature (workflow/param :required true)}}
-    (workflow/gate :ci-wait (fn [{:keys [feature]}] (str "Wait for CI on " feature)) :ci
-                   :attributes (bind-attrs bindings :pr.ci.wait))
-    (workflow/checkpoint :ci-verdict "Judge CI result"
-                         :depends-on [:ci-wait]
-                         :kind :agent
-                         :choices [{:key :green
-                                    :label "CI green"
-                                    :description "All checks passed; hand off to review."
-                                    :next 'skein.spools.workflow-test/pr-review-round-workflow}
-                                   {:key :red
-                                    :label "CI red"
-                                    :description "Checks failed; run the fix-CI loop."
-                                    :next 'skein.spools.workflow-test/pr-fix-ci-workflow}])))
+   (fn [{:keys [feature]}] (str "CI round for " feature))
+   {:params {:feature (workflow/param :required true)}}
+   (workflow/gate :ci-wait (fn [{:keys [feature]}] (str "Wait for CI on " feature)) :ci
+                  :attributes (bind-attrs bindings :pr.ci.wait))
+   (workflow/checkpoint :ci-verdict "Judge CI result"
+                        :depends-on [:ci-wait]
+                        :kind :agent
+                        :choices [{:key :green
+                                   :label "CI green"
+                                   :description "All checks passed; hand off to review."
+                                   :next 'skein.spools.workflow-test/pr-review-round-workflow}
+                                  {:key :red
+                                   :label "CI red"
+                                   :description "Checks failed; run the fix-CI loop."
+                                   :next 'skein.spools.workflow-test/pr-fix-ci-workflow}])))
 
 (defn- pr-fix-ci-workflow [{:keys [bindings] :as _opts}]
   (workflow/workflow
-    (fn [{:keys [feature]}] (str "Fix CI for " feature))
-    {:params {:feature (workflow/param :required true)}}
-    (workflow/step :diagnose "Diagnose CI failure" :self
-                   :attributes (bind-attrs bindings :pr.ci.fix))
-    (workflow/step :push-fix "Push CI fix" :self :depends-on [:diagnose])
-    (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:push-fix])))
+   (fn [{:keys [feature]}] (str "Fix CI for " feature))
+   {:params {:feature (workflow/param :required true)}}
+   (workflow/step :diagnose "Diagnose CI failure" :self
+                  :attributes (bind-attrs bindings :pr.ci.fix))
+   (workflow/step :push-fix "Push CI fix" :self :depends-on [:diagnose])
+   (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:push-fix])))
 
 (defn- pr-review-round-workflow [{:keys [bindings] :as _opts}]
   (workflow/workflow
-    (fn [{:keys [feature]}] (str "Review round for " feature))
-    {:params {:feature (workflow/param :required true)}}
-    (workflow/gate :review-wait
-                   (fn [{:keys [feature]}] (str "Wait for reviewer feedback on " feature))
-                   :human
-                   :attributes (bind-attrs bindings :pr.review.wait))
-    (workflow/checkpoint :review-verdict "Judge review outcome"
-                         :depends-on [:review-wait]
-                         :kind :agent
-                         :choices [{:key :approved
-                                    :label "Approved"
-                                    :description "All green and approved; merge."
-                                    :next 'skein.spools.workflow-test/pr-merge-workflow}
-                                   {:key :changes-requested
-                                    :label "Changes requested"
-                                    :description "Address comments, push, and re-run CI."
-                                    :next 'skein.spools.workflow-test/pr-fix-and-push-workflow}])))
+   (fn [{:keys [feature]}] (str "Review round for " feature))
+   {:params {:feature (workflow/param :required true)}}
+   (workflow/gate :review-wait
+                  (fn [{:keys [feature]}] (str "Wait for reviewer feedback on " feature))
+                  :human
+                  :attributes (bind-attrs bindings :pr.review.wait))
+   (workflow/checkpoint :review-verdict "Judge review outcome"
+                        :depends-on [:review-wait]
+                        :kind :agent
+                        :choices [{:key :approved
+                                   :label "Approved"
+                                   :description "All green and approved; merge."
+                                   :next 'skein.spools.workflow-test/pr-merge-workflow}
+                                  {:key :changes-requested
+                                   :label "Changes requested"
+                                   :description "Address comments, push, and re-run CI."
+                                   :next 'skein.spools.workflow-test/pr-fix-and-push-workflow}])))
 
 (defn- pr-fix-and-push-workflow [{:keys [bindings] :as _opts}]
   (workflow/workflow
-    (fn [{:keys [feature]}] (str "Address review feedback for " feature))
-    {:params {:feature (workflow/param :required true)}}
-    (workflow/step :address-comments "Address review comments" :self
-                   :attributes (bind-attrs bindings :pr.review.address))
-    (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:address-comments])))
+   (fn [{:keys [feature]}] (str "Address review feedback for " feature))
+   {:params {:feature (workflow/param :required true)}}
+   (workflow/step :address-comments "Address review comments" :self
+                  :attributes (bind-attrs bindings :pr.review.address))
+   (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:address-comments])))
 
 (defn- pr-merge-workflow [{:keys [bindings] :as _opts}]
   (workflow/workflow
-    (fn [{:keys [feature]}] (str "Merge " feature))
-    {:params {:feature (workflow/param :required true)}}
-    (workflow/step :merge (fn [{:keys [feature]}] (str "Merge " feature)) :self
-                   :attributes (bind-attrs bindings :pr.merge))))
+   (fn [{:keys [feature]}] (str "Merge " feature))
+   {:params {:feature (workflow/param :required true)}}
+   (workflow/step :merge (fn [{:keys [feature]}] (str "Merge " feature)) :self
+                  :attributes (bind-attrs bindings :pr.merge))))
 
 (defn- pr-dev-workflow [{:keys [bindings] :as _opts}]
   (workflow/workflow
-    (fn [{:keys [feature]}] (str "Pull request: " feature))
-    {:params {:feature (workflow/param :required true)}}
-    (workflow/step :dev (fn [{:keys [feature]}] (str "Implement " feature)) :self)
-    (workflow/step :open "Open the change for review" :self :depends-on [:dev]
-                   :attributes (bind-attrs bindings :pr.open))
-    (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:open])))
+   (fn [{:keys [feature]}] (str "Pull request: " feature))
+   {:params {:feature (workflow/param :required true)}}
+   (workflow/step :dev (fn [{:keys [feature]}] (str "Implement " feature)) :self)
+   (workflow/step :open "Open the change for review" :self :depends-on [:dev]
+                  :attributes (bind-attrs bindings :pr.open))
+   (workflow/call :ci-round pr-ci-round-workflow {} :depends-on [:open])))
 
 (deftest workflow-models-pull-request-flow-without-conditional-edges
   (with-runtime
@@ -497,8 +497,8 @@
 
 (defn- routed-continuation-workflow [_]
   (workflow/workflow
-    "Continuation"
-    (workflow/step :follow-up "Do follow up work" :self)))
+   "Continuation"
+   (workflow/step :follow-up "Do follow up work" :self)))
 
 (deftest workflow-routed-choice-swaps-to-single-active-continuation-root
   (with-runtime
@@ -538,17 +538,17 @@
 
 (defn- loopy-workflow [{:keys [revision]}]
   (workflow/workflow
-    "Loopy"
-    {:params {:revision (workflow/param :default (boolean revision))}}
-    (workflow/step :orient "Orient" :self :condition [:!= :revision true])
-    (workflow/step :work "Do work" :self :depends-on [:orient])
-    (workflow/checkpoint :signoff "Sign off"
-                         :depends-on [:work]
-                         :kind :agent
-                         :choices [{:key :approved :label "Approve"}
-                                   {:key :revise
-                                    :label "Revise"
-                                    :next 'skein.spools.workflow-test/loopy-revision-workflow}])))
+   "Loopy"
+   {:params {:revision (workflow/param :default (boolean revision))}}
+   (workflow/step :orient "Orient" :self :condition [:!= :revision true])
+   (workflow/step :work "Do work" :self :depends-on [:orient])
+   (workflow/checkpoint :signoff "Sign off"
+                        :depends-on [:work]
+                        :kind :agent
+                        :choices [{:key :approved :label "Approve"}
+                                  {:key :revise
+                                   :label "Revise"
+                                   :next 'skein.spools.workflow-test/loopy-revision-workflow}])))
 
 (defn- loopy-revision-workflow [opts]
   (loopy-workflow (assoc opts :revision true)))
@@ -829,16 +829,16 @@
                         (workflow/compile {:name "Bad params" :steps []} {"x" true})))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"step ids must be unique"
                         (workflow/compile {:name "Duplicate" :steps [{:id :a :title "A"}
-                                                                      {:id :a :title "Again"}]})))
+                                                                     {:id :a :title "Again"}]})))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Invalid workflow definition"
                         (workflow/compile {:name "Bad condition" :steps [{:id :a :title "A" :condition '(bad)}]}))))
 
 (deftest workflow-compile-splices-condition-excluded-step-deps
   (let [definition (workflow/workflow
-                     "Splice"
-                     (workflow/step :design "Design" :self)
-                     (workflow/step :review "Review" :self :depends-on [:design] :condition :include-review)
-                     (workflow/step :implement "Implement" :self :depends-on [:review]))
+                    "Splice"
+                    (workflow/step :design "Design" :self)
+                    (workflow/step :review "Review" :self :depends-on [:design] :condition :include-review)
+                    (workflow/step :implement "Implement" :self :depends-on [:review]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -848,11 +848,11 @@
 
 (deftest workflow-compile-splices-transitively-through-two-excluded-steps
   (let [definition (workflow/workflow
-                     "Transitive splice"
-                     (workflow/step :base "Base" :self)
-                     (workflow/step :mid1 "Mid 1" :self :depends-on [:base] :condition :skip)
-                     (workflow/step :mid2 "Mid 2" :self :depends-on [:mid1] :condition :skip)
-                     (workflow/step :consumer "Consumer" :self :depends-on [:mid2]))
+                    "Transitive splice"
+                    (workflow/step :base "Base" :self)
+                    (workflow/step :mid1 "Mid 1" :self :depends-on [:base] :condition :skip)
+                    (workflow/step :mid2 "Mid 2" :self :depends-on [:mid1] :condition :skip)
+                    (workflow/step :consumer "Consumer" :self :depends-on [:mid2]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -863,9 +863,9 @@
 
 (deftest workflow-compile-fails-loudly-on-unknown-depends-on-ref
   (let [definition (workflow/workflow
-                     "Typo"
-                     (workflow/step :design "Design" :self)
-                     (workflow/step :implement "Implement" :self :depends-on [:desgin]))]
+                    "Typo"
+                    (workflow/step :design "Design" :self)
+                    (workflow/step :implement "Implement" :self :depends-on [:desgin]))]
     (try
       (workflow/compile definition)
       (is false "expected compile to throw")
@@ -875,10 +875,10 @@
 
 (deftest workflow-compile-attributes-unknown-ref-to-the-excluded-step-that-names-it
   (let [definition (workflow/workflow
-                     "Typo in excluded step"
-                     (workflow/step :design "Design" :self)
-                     (workflow/step :review "Review" :self :depends-on [:desgin] :condition :include-review)
-                     (workflow/step :implement "Implement" :self :depends-on [:review]))]
+                    "Typo in excluded step"
+                    (workflow/step :design "Design" :self)
+                    (workflow/step :review "Review" :self :depends-on [:desgin] :condition :include-review)
+                    (workflow/step :implement "Implement" :self :depends-on [:review]))]
     (try
       (workflow/compile definition)
       (is false "expected compile to throw")
@@ -888,34 +888,34 @@
 
 (deftest workflow-compile-fails-loudly-on-root-ref-collision
   (let [definition (workflow/workflow
-                     "Root collision"
-                     (workflow/step :molecule "Steal the root ref" :self))]
+                    "Root collision"
+                    (workflow/step :molecule "Steal the root ref" :self))]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"collides with the root ref"
                           (workflow/compile definition)))))
 
 (deftest workflow-loop-steps-render-item-index-and-params
   (let [definition (workflow/workflow
-                     "Loop render"
-                     {:params {:feature (workflow/param :required true)
-                               :envs (workflow/param :default [:dev :prod])}}
-                     (workflow/step :deploy
-                                    (fn [{:keys [feature item i]}]
-                                      (str "Deploy " feature " to " (name item) " #" i)) :self
-                                    :loop {:each :envs}))
+                    "Loop render"
+                    {:params {:feature (workflow/param :required true)
+                              :envs (workflow/param :default [:dev :prod])}}
+                    (workflow/step :deploy
+                                   (fn [{:keys [feature item i]}]
+                                     (str "Deploy " feature " to " (name item) " #" i)) :self
+                                   :loop {:each :envs}))
         titles (into {} (map (juxt :ref :title)) (:strands (workflow/compile definition {:feature "checkout"})))]
     (is (= "Deploy checkout to dev #0" (get titles :deploy-1)))
     (is (= "Deploy checkout to prod #1" (get titles :deploy-2)))))
 
 (deftest workflow-loop-each-accepts-param-keyword-and-fn-of-params
   (let [from-keyword (workflow/workflow
-                       "Each keyword"
-                       {:params {:regions (workflow/param :default ["us" "eu"])}}
-                       (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item)) :self :loop {:each :regions}))
+                      "Each keyword"
+                      {:params {:regions (workflow/param :default ["us" "eu"])}}
+                      (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item)) :self :loop {:each :regions}))
         from-fn (workflow/workflow
-                  "Each fn"
-                  {:params {:regions (workflow/param :default ["us" "eu"])}}
-                  (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item)) :self
-                                 :loop {:each (fn [{:keys [regions]}] (reverse regions))}))]
+                 "Each fn"
+                 {:params {:regions (workflow/param :default ["us" "eu"])}}
+                 (workflow/step :ship (fn [{:keys [item]}] (str "Ship " item)) :self
+                                :loop {:each (fn [{:keys [regions]}] (reverse regions))}))]
     (is (= #{:molecule :ship-1 :ship-2} (set (map :ref (:strands (workflow/compile from-keyword))))))
     (is (= ["Ship us" "Ship eu"]
            (mapv :title (rest (:strands (workflow/compile from-keyword))))))
@@ -924,31 +924,31 @@
 
 (deftest workflow-loop-each-fails-loudly-on-non-sequential-param
   (let [definition (workflow/workflow
-                     "Bad each"
-                     {:params {:n (workflow/param :default 5)}}
-                     (workflow/step :s "S" :self :loop {:each :n}))]
+                    "Bad each"
+                    {:params {:n (workflow/param :default 5)}}
+                    (workflow/step :s "S" :self :loop {:each :n}))]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #":each must resolve to a sequential"
                           (workflow/compile definition)))))
 
 (deftest workflow-loop-suffix-rules
   (let [count-def (workflow/workflow "Count" (workflow/step :ping "Ping" :self :loop {:count 3}))
         map-def (workflow/workflow
-                  "Map ids"
-                  {:params {:tasks (workflow/param :default [{:id "alpha"} {:id "beta"}])}}
-                  (workflow/step :run (fn [{:keys [item]}] (str "Run " (:id item))) :self :loop {:each :tasks}))
+                 "Map ids"
+                 {:params {:tasks (workflow/param :default [{:id "alpha"} {:id "beta"}])}}
+                 (workflow/step :run (fn [{:keys [item]}] (str "Run " (:id item))) :self :loop {:each :tasks}))
         position-def (workflow/workflow
-                       "Positions"
-                       (workflow/step :s (fn [{:keys [item]}] (str "S " item)) :self :loop {:each ["x" "y"]}))]
+                      "Positions"
+                      (workflow/step :s (fn [{:keys [item]}] (str "S " item)) :self :loop {:each ["x" "y"]}))]
     (is (= [:molecule :ping-1 :ping-2 :ping-3] (map :ref (:strands (workflow/compile count-def)))))
     (is (= [:molecule :run-alpha :run-beta] (map :ref (:strands (workflow/compile map-def)))))
     (is (= [:molecule :s-1 :s-2] (map :ref (:strands (workflow/compile position-def)))))))
 
 (deftest workflow-loop-fans-in-base-id-dependents
   (let [definition (workflow/workflow
-                     "Fan in"
-                     {:params {:shards (workflow/param :default ["a" "b" "c"])}}
-                     (workflow/step :migrate (fn [{:keys [item]}] (str "Migrate " item)) :self :loop {:each :shards})
-                     (workflow/step :verify "Verify migrations" :self :depends-on [:migrate]))
+                    "Fan in"
+                    {:params {:shards (workflow/param :default ["a" "b" "c"])}}
+                    (workflow/step :migrate (fn [{:keys [item]}] (str "Migrate " item)) :self :loop {:each :shards})
+                    (workflow/step :verify "Verify migrations" :self :depends-on [:migrate]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -961,10 +961,10 @@
 
 (deftest workflow-loop-does-not-mask-unknown-depends-on-refs
   (let [definition (workflow/workflow
-                     "Loop plus typo"
-                     {:params {:shards (workflow/param :default ["a" "b"])}}
-                     (workflow/step :migrate "Migrate" :self :loop {:each :shards})
-                     (workflow/step :verify "Verify" :self :depends-on [:migrate :migrat]))]
+                    "Loop plus typo"
+                    {:params {:shards (workflow/param :default ["a" "b"])}}
+                    (workflow/step :migrate "Migrate" :self :loop {:each :shards})
+                    (workflow/step :verify "Verify" :self :depends-on [:migrate :migrat]))]
     (try
       (workflow/compile definition)
       (is false "expected compile to throw")
@@ -976,19 +976,19 @@
   ;; Fan-in keys deps on the pre-expansion base id, so a base-id collision must
   ;; be rejected before it can silently misroute a dependency.
   (let [dup-base (workflow/workflow
-                   "Dup base"
-                   {:params {:xs (workflow/param :default ["a" "b"])}}
-                   (workflow/step :run "Run once" :self :loop {:each :xs})
-                   (workflow/step :run "Run again" :self :loop {:count 3}))
+                  "Dup base"
+                  {:params {:xs (workflow/param :default ["a" "b"])}}
+                  (workflow/step :run "Run once" :self :loop {:each :xs})
+                  (workflow/step :run "Run again" :self :loop {:count 3}))
         base-vs-plain (workflow/workflow
-                        "Base vs plain"
-                        {:params {:xs (workflow/param :default ["a" "b"])}}
-                        (workflow/step :run "Loop" :self :loop {:each :xs})
-                        (workflow/step :run "Plain" :self))
-        base-vs-root (workflow/workflow
-                       "Base vs root"
+                       "Base vs plain"
                        {:params {:xs (workflow/param :default ["a" "b"])}}
-                       (workflow/step :molecule "Steal root" :self :loop {:each :xs}))]
+                       (workflow/step :run "Loop" :self :loop {:each :xs})
+                       (workflow/step :run "Plain" :self))
+        base-vs-root (workflow/workflow
+                      "Base vs root"
+                      {:params {:xs (workflow/param :default ["a" "b"])}}
+                      (workflow/step :molecule "Steal root" :self :loop {:each :xs}))]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"step ids must be unique"
                           (workflow/compile dup-base)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"step ids must be unique"
@@ -998,13 +998,13 @@
 
 (deftest workflow-loop-chain-depends-through-expansions-and-keeps-base-fan-in
   (let [definition (workflow/workflow
-                     "Chain"
-                     {:params {:tasks (workflow/param :default [{:id "a"} {:id "b"} {:id "c"}])}}
-                     (workflow/step :prep "Prep" :self)
-                     (workflow/step :task (fn [{:keys [item]}] (str "Task " (:id item))) :self
-                                    :depends-on [:prep]
-                                    :loop {:each :tasks :chain true})
-                     (workflow/step :accept "Accept" :self :depends-on [:task]))
+                    "Chain"
+                    {:params {:tasks (workflow/param :default [{:id "a"} {:id "b"} {:id "c"}])}}
+                    (workflow/step :prep "Prep" :self)
+                    (workflow/step :task (fn [{:keys [item]}] (str "Task " (:id item))) :self
+                                   :depends-on [:prep]
+                                   :loop {:each :tasks :chain true})
+                    (workflow/step :accept "Accept" :self :depends-on [:task]))
         edges (set (map (juxt :from :to :type) (:edges (workflow/compile definition))))
         described (into {} (map (juxt :id identity)) (:steps (workflow/describe definition)))]
     (is (contains? edges [:task-a :prep "depends-on"]))
@@ -1014,8 +1014,8 @@
 
 (deftest workflow-loop-chain-count-uses-previous-count-expansion
   (let [definition (workflow/workflow
-                     "Count chain"
-                     (workflow/step :round "Round" :self :loop {:count 3 :chain true}))
+                    "Count chain"
+                    (workflow/step :round "Round" :self :loop {:count 3 :chain true}))
         edges (set (map (juxt :from :to :type) (:edges (workflow/compile definition))))]
     (is (contains? edges [:round-2 :round-1 "depends-on"]))
     (is (contains? edges [:round-3 :round-2 "depends-on"]))))
@@ -1025,11 +1025,11 @@
   ;; expanded copy; excluding all copies leaves a base-id dependent to splice
   ;; through the fanned-in (now excluded) ids onto their own deps.
   (let [definition (workflow/workflow
-                     "Loop conditions"
-                     {:params {:shards (workflow/param :default ["a" "b"])
-                               :do-migrate (workflow/param :default false)}}
-                     (workflow/step :migrate "Migrate" :self :loop {:each :shards} :condition :do-migrate)
-                     (workflow/step :verify "Verify" :self :depends-on [:migrate]))
+                    "Loop conditions"
+                    {:params {:shards (workflow/param :default ["a" "b"])
+                              :do-migrate (workflow/param :default false)}}
+                    (workflow/step :migrate "Migrate" :self :loop {:each :shards} :condition :do-migrate)
+                    (workflow/step :verify "Verify" :self :depends-on [:migrate]))
         payload (workflow/compile definition)
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
@@ -1069,13 +1069,13 @@
 
 (defn- input-checkpoint-workflow [_]
   (workflow/workflow
-    "Input gate"
-    (workflow/checkpoint :gate "Decide"
-                         :kind :agent
-                         :choices [{:key :abort
-                                    :label "Abort"
-                                    :input [{:key :reason :required true :description "Why abort"}
-                                            {:key :note :required false}]}])))
+   "Input gate"
+   (workflow/checkpoint :gate "Decide"
+                        :kind :agent
+                        :choices [{:key :abort
+                                   :label "Abort"
+                                   :input [{:key :reason :required true :description "Why abort"}
+                                           {:key :note :required false}]}])))
 
 (deftest workflow-choice-input-surfaced-and-enforced
   (with-runtime
@@ -1129,8 +1129,8 @@
 
 (defn- join-inner-workflow [_]
   (workflow/workflow
-    "Inner"
-    (workflow/step :do-inner "Do inner work" :self)))
+   "Inner"
+   (workflow/step :do-inner "Do inner work" :self)))
 
 (deftest workflow-procedure-join-auto-closes-and-never-surfaces-as-ready
   (with-runtime
@@ -1186,10 +1186,10 @@
 
 (defn- registry-router-stage [{:keys [target]}]
   (workflow/workflow
-    "Registry router"
-    (workflow/checkpoint :go "Go"
-                         :kind :agent
-                         :choices [{:key :advance :label "Advance" :next target}])))
+   "Registry router"
+   (workflow/checkpoint :go "Go"
+                        :kind :agent
+                        :choices [{:key :advance :label "Advance" :next target}])))
 
 (defn- registry-second-stage [_]
   (workflow/workflow "Registry second" (workflow/step :do-second "Do second" :self)))
@@ -1229,14 +1229,14 @@
 
 (defn- revise-stage-workflow [{:keys [revision]}]
   (workflow/workflow
-    "Revise stage"
-    {:params {:revision (workflow/param :default (boolean revision))}}
-    (workflow/step :orient "Orient" :self :condition [:!= :revision true])
-    (workflow/checkpoint :signoff "Sign off"
-                         :depends-on [:orient]
-                         :kind :agent
-                         :choices [{:key :revise :label "Revise" :revise {:params {:revision true}}}
-                                   {:key :approved :label "Approve" :next :wt-downstream}])))
+   "Revise stage"
+   {:params {:revision (workflow/param :default (boolean revision))}}
+   (workflow/step :orient "Orient" :self :condition [:!= :revision true])
+   (workflow/checkpoint :signoff "Sign off"
+                        :depends-on [:orient]
+                        :kind :agent
+                        :choices [{:key :revise :label "Revise" :revise {:params {:revision true}}}
+                                  {:key :approved :label "Approve" :next :wt-downstream}])))
 
 (defn- downstream-stage-workflow [_]
   (workflow/workflow "Downstream stage" (workflow/step :do-downstream "Do downstream" :self)))
@@ -1289,29 +1289,29 @@
 
 (defn- introspect-stage-b-workflow [_]
   (workflow/workflow
-    "Introspect stage B"
-    (workflow/step :finish "Finish B" :self)))
+   "Introspect stage B"
+   (workflow/step :finish "Finish B" :self)))
 
 (defn- introspect-stage-a-workflow [{:keys [revision]}]
   (workflow/workflow
-    "Introspect stage A"
-    {:params {:feature (workflow/param :required true)
-              :revision (workflow/param :default (boolean revision))}}
-    (workflow/step :draft (fn [{:keys [feature]}] (str "Draft " feature)) :self
-                   :condition [:!= :revision true])
-    (workflow/step :refine "Refine draft" :self :depends-on [:draft])
-    (workflow/checkpoint :signoff "Sign off"
-                         :depends-on [:refine]
-                         :kind :agent
-                         :choices [{:key :approve
-                                    :label "Approve"
-                                    :description "Ship it."
-                                    :next 'skein.spools.workflow-test/introspect-stage-b-workflow}
-                                   {:key :revise
-                                    :label "Revise"
-                                    :description "Send it back."
-                                    :revise {:params {:revision true}}
-                                    :input [{:key :reason :required true :description "Why revise"}]}])))
+   "Introspect stage A"
+   {:params {:feature (workflow/param :required true)
+             :revision (workflow/param :default (boolean revision))}}
+   (workflow/step :draft (fn [{:keys [feature]}] (str "Draft " feature)) :self
+                  :condition [:!= :revision true])
+   (workflow/step :refine "Refine draft" :self :depends-on [:draft])
+   (workflow/checkpoint :signoff "Sign off"
+                        :depends-on [:refine]
+                        :kind :agent
+                        :choices [{:key :approve
+                                   :label "Approve"
+                                   :description "Ship it."
+                                   :next 'skein.spools.workflow-test/introspect-stage-b-workflow}
+                                  {:key :revise
+                                   :label "Revise"
+                                   :description "Send it back."
+                                   :revise {:params {:revision true}}
+                                   :input [{:key :reason :required true :description "Why revise"}]}])))
 
 (deftest workflow-describe-projects-choices-input-and-condition-filtering
   ;; describe is a compile-time projection: no strands are written, so it needs no
@@ -1419,8 +1419,8 @@
     (fn [rt _]
       (workflow/start! "await-checkpoint"
                        (workflow/workflow "Await checkpoint"
-                         (workflow/checkpoint :decide "Decide" :kind :human
-                                              :choices [:go]))
+                                          (workflow/checkpoint :decide "Decide" :kind :human
+                                                               :choices [:go]))
                        {})
       (is (= :checkpoint (:reason (workflow/await! "await-checkpoint" {:timeout-secs 1})))))))
 
@@ -1439,7 +1439,7 @@
     (fn [rt _]
       (workflow/start! "await-unowned-gate"
                        (workflow/workflow "Await gate"
-                         (workflow/gate :delegate "Delegate" :await-test-unowned))
+                                          (workflow/gate :delegate "Delegate" :await-test-unowned))
                        {})
       (is (= :gate (:reason (workflow/await! "await-unowned-gate" {:timeout-secs 1})))))))
 
@@ -1447,7 +1447,7 @@
   (with-runtime
     (fn [rt _]
       (let [definition (workflow/workflow "Await executor gate"
-                         (workflow/gate :delegate "Delegate" :await-test-executor))]
+                                          (workflow/gate :delegate "Delegate" :await-test-executor))]
         (workflow/start! "await-executor-gate" definition {})
         (let [gate-id (:id (first (workflow/next-steps "await-executor-gate")))]
           (is (= :await-test-executor

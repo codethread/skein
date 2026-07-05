@@ -18,7 +18,7 @@ func TestLoadRequiresConfigFile(t *testing.T) {
 
 func TestLoadMalformedJSON(t *testing.T) {
 	d := t.TempDir()
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "malformed client config") {
@@ -28,7 +28,7 @@ func TestLoadMalformedJSON(t *testing.T) {
 
 func TestLoadRequiresConfigFormat(t *testing.T) {
 	d := t.TempDir()
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "configFormat is required") {
@@ -38,28 +38,28 @@ func TestLoadRequiresConfigFormat(t *testing.T) {
 
 func TestLoadRejectsUnsupportedKeysAndValues(t *testing.T) {
 	d := t.TempDir()
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","where":"x"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","where":"x"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "unsupported client config key: where") {
 		t.Fatalf("expected unsupported key error, got %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","source":"/tmp/source"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","source":"/tmp/source"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "unsupported client config key: source") {
 		t.Fatalf("expected unsupported source key error, got %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"old"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"old"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "unsupported client config configFormat") {
 		t.Fatalf("expected configFormat value error, got %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":123}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":123}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "client config configFormat must be a string") {
@@ -69,7 +69,7 @@ func TestLoadRejectsUnsupportedKeysAndValues(t *testing.T) {
 
 func TestLoadAcceptsValidAlphaConfig(t *testing.T) {
 	d := t.TempDir()
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, world, err := Load(d)
@@ -90,7 +90,7 @@ func TestLoadAcceptsValidAlphaConfig(t *testing.T) {
 
 func TestLoadAcceptsConfigName(t *testing.T) {
 	d := t.TempDir()
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","name":"shop-fe"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","name":"shop-fe"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, _, err := Load(d)
@@ -104,10 +104,10 @@ func TestLoadAcceptsConfigName(t *testing.T) {
 
 func TestLoadAppliesLocalNameOverlay(t *testing.T) {
 	d := t.TempDir()
-	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","name":"shared"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha","name":"shared"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(d, LocalConfigFileName), []byte(`{"name":"local"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, LocalConfigFileName), []byte(`{"name":"local"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, _, err := Load(d)
@@ -130,7 +130,7 @@ func TestLoadRejectsInvalidConfigNames(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := t.TempDir()
-			if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(tc.json), 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(tc.json), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), "client config name must be a non-blank string") {
@@ -155,10 +155,10 @@ func TestLoadRejectsInvalidLocalOverlay(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := t.TempDir()
-			if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(d, ConfigFileName), []byte(`{"configFormat":"alpha"}`), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(d, LocalConfigFileName), []byte(tc.json), 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(d, LocalConfigFileName), []byte(tc.json), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			if _, _, err := Load(d); err == nil || !strings.Contains(err.Error(), tc.want) {

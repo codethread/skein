@@ -15,8 +15,6 @@
             [skein.api.runtime.alpha :as runtime]
             [skein.spools.util :refer [fail!]]))
 
-
-
 (defn- state [rt]
   (runtime/spool-state rt ::state
                        #(hash-map :guild-ops (atom {})
@@ -100,7 +98,7 @@
   "Dispatch a guild-declared operation after parsing and validating input."
   [{:op/keys [name args] :as ctx}]
   (let [{:keys [handler spec]} (or (get @(guild-ops (:op/runtime ctx)) name)
-                                  (fail! "Guild op is not registered" {:op name}))
+                                   (fail! "Guild op is not registered" {:op name}))
         input (validate-input! name spec (parse-input (:input args)))]
     ((requiring-resolve handler) (assoc ctx :guild/input input))))
 
@@ -108,7 +106,7 @@
   "Fail loudly for a deprecated guild operation."
   [{:op/keys [name] :as ctx}]
   (let [{:keys [replacement since]} (or (get @(deprecated-ops (:op/runtime ctx)) name)
-                                       (fail! "Guild op is not deprecated" {:op name}))]
+                                        (fail! "Guild op is not deprecated" {:op name}))]
     (fail! "Guild op is deprecated"
            (cond-> {:code :op/deprecated
                     :op name
@@ -199,9 +197,9 @@
    (reset! (deprecated-ops (current/runtime)) {})
    (reset! (fallback-guild-name (current/runtime)) guild-name)
    (register-or-replace-op! (current/runtime)
-                             'guild.describe
-                             "Describe this weaver's guild operation API"
-                             'skein.spools.guild/describe-op
-                             (op-arg-spec 'guild.describe
-                                          "Describe this weaver's guild operation API"
-                                          false))))
+                            'guild.describe
+                            "Describe this weaver's guild operation API"
+                            'skein.spools.guild/describe-op
+                            (op-arg-spec 'guild.describe
+                                         "Describe this weaver's guild operation API"
+                                         false))))

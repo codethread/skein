@@ -97,7 +97,7 @@
                    :subagent
                    :loop {:each :tasks :chain true}
                    :attributes {"shuttle/harness" (fn [{:keys [item harness]}]
-                                                      (or (task-value item :harness) harness))
+                                                    (or (task-value item :harness) harness))
                                 "shuttle/prompt" (fn [{:keys [run-id item]}]
                                                    (pipeline-task-prompt run-id item))
                                 "shuttle/cwd" (fn [{:keys [item cwd]}]
@@ -673,8 +673,8 @@
          :body (str "Kanban card " (:id strand)
                     " is blocked by failed/exhausted work:\n"
                     (str/join "\n" (map #(str "- " (:id %) " " (:title %)
-                                               " (" (config-attr % :shuttle/phase) ")")
-                                         blockers)))}))))
+                                              " (" (config-attr % :shuttle/phase) ")")
+                                        blockers)))}))))
 
 (def ^:private parked-run-threshold-ms
   "How long a ready, unclaimed pending run may sit before it counts as silently
@@ -890,102 +890,102 @@
   []
   (let [runtime (current/runtime)]
     {:installed true
-   :namespace 'config
-   :harnesses (register-harness-aliases!)
+     :namespace 'config
+     :harnesses (register-harness-aliases!)
    ;; agent review consumes the one authoritative policy text by default; the
    ;; text itself now ships from skein.spools.agents, set-default-review-contract!
    ;; still lives on the shuttle engine
-   :review-contract (shuttle/set-default-review-contract! agents/review-contract)
-   :chime-rules (register-chime-rules!)
-   :patterns [(patterns/register-pattern!
-               runtime
-               'delegate-pipeline
-               "Create a sequential chain-loop workflow of subagent gates. Input: {run_id,tasks:[{id,title,body?,harness?,cwd?,max-attempts?}],harness?,cwd?,accept?}."
-               'config/delegate-pipeline
-               ::delegate-pipeline-input)]
-   :queries (register-query-map! runtime)
-   :ops [(api/register-op!
-          runtime
-          'current-dags
-          (op-metadata current-dags-arg-spec)
-          'config/current-dags-op)
-         (api/register-op!
-          runtime
-          'branches
-          (op-metadata branches-arg-spec)
-          'config/branches-op)
-         (api/register-op!
-          runtime
-          'carder-report
-          (op-metadata carder-report-arg-spec)
-          'config/carder-report-op)
-         (api/register-op!
-          runtime
-          'devflow-start
-          "Start the devflow lifecycle for a feature"
-          'config/devflow-start-op)
-         (api/register-op!
-          runtime
-          'devflow-next
-          "Show ready devflow steps for a feature"
-          'config/devflow-next-op)
-         (api/register-op!
-          runtime
-          'devflow-choices
-          "Explain the current devflow checkpoint choices for a feature"
-          'config/devflow-choices-op)
-         (api/register-op!
-          runtime
-          'devflow-choose
-          "Record a devflow checkpoint choice for a feature"
-          'config/devflow-choose-op)
-         (api/register-op!
-          runtime
-          'devflow-complete
-          "Close the current devflow step for a feature"
-          'config/devflow-complete-op)
-         (api/register-op!
-          runtime
-          'devflow-advance
-          "Advance the current devflow step or checkpoint for a feature"
-          'config/devflow-advance-op)
-         (api/register-op!
-          runtime
-          'devflow-describe
-          "Describe the devflow cycle or one stage"
-          'config/devflow-describe-op)
-         (api/register-op!
-          runtime
-          'devflow-history
-          "Show ordered devflow run history for a feature"
-          'config/devflow-history-op)
-         (api/register-op!
-          runtime
-          'devflow-archive
-          "Archive a finished devflow run into one digest strand"
-          'config/devflow-archive-op)
-         (api/register-op!
-          runtime
-          'devflow-status
-          "Show devflow root, ready steps, and done state for a feature"
-          'config/devflow-status-op)
-         (api/register-op!
-          runtime
-          'workflow-runs
-          (op-metadata workflow-runs-arg-spec)
-          'config/workflow-runs-op)
-         (api/register-op!
-          runtime
-          'devflow-conventions
-          (op-metadata devflow-conventions-arg-spec)
-          'config/devflow-conventions-op)
-         (api/register-op!
-          runtime
-          'flow-await
-          (assoc (op-metadata flow-await-arg-spec) :deadline-class :unbounded)
-          'config/flow-await-op)
-         (api/register-op!
-          runtime
-          'flow-status
-          (op-metadata flow-status-arg-spec)
-          'config/flow-status-op)]}))
+     :review-contract (shuttle/set-default-review-contract! agents/review-contract)
+     :chime-rules (register-chime-rules!)
+     :patterns [(patterns/register-pattern!
+                 runtime
+                 'delegate-pipeline
+                 "Create a sequential chain-loop workflow of subagent gates. Input: {run_id,tasks:[{id,title,body?,harness?,cwd?,max-attempts?}],harness?,cwd?,accept?}."
+                 'config/delegate-pipeline
+                 ::delegate-pipeline-input)]
+     :queries (register-query-map! runtime)
+     :ops [(api/register-op!
+            runtime
+            'current-dags
+            (op-metadata current-dags-arg-spec)
+            'config/current-dags-op)
+           (api/register-op!
+            runtime
+            'branches
+            (op-metadata branches-arg-spec)
+            'config/branches-op)
+           (api/register-op!
+            runtime
+            'carder-report
+            (op-metadata carder-report-arg-spec)
+            'config/carder-report-op)
+           (api/register-op!
+            runtime
+            'devflow-start
+            "Start the devflow lifecycle for a feature"
+            'config/devflow-start-op)
+           (api/register-op!
+            runtime
+            'devflow-next
+            "Show ready devflow steps for a feature"
+            'config/devflow-next-op)
+           (api/register-op!
+            runtime
+            'devflow-choices
+            "Explain the current devflow checkpoint choices for a feature"
+            'config/devflow-choices-op)
+           (api/register-op!
+            runtime
+            'devflow-choose
+            "Record a devflow checkpoint choice for a feature"
+            'config/devflow-choose-op)
+           (api/register-op!
+            runtime
+            'devflow-complete
+            "Close the current devflow step for a feature"
+            'config/devflow-complete-op)
+           (api/register-op!
+            runtime
+            'devflow-advance
+            "Advance the current devflow step or checkpoint for a feature"
+            'config/devflow-advance-op)
+           (api/register-op!
+            runtime
+            'devflow-describe
+            "Describe the devflow cycle or one stage"
+            'config/devflow-describe-op)
+           (api/register-op!
+            runtime
+            'devflow-history
+            "Show ordered devflow run history for a feature"
+            'config/devflow-history-op)
+           (api/register-op!
+            runtime
+            'devflow-archive
+            "Archive a finished devflow run into one digest strand"
+            'config/devflow-archive-op)
+           (api/register-op!
+            runtime
+            'devflow-status
+            "Show devflow root, ready steps, and done state for a feature"
+            'config/devflow-status-op)
+           (api/register-op!
+            runtime
+            'workflow-runs
+            (op-metadata workflow-runs-arg-spec)
+            'config/workflow-runs-op)
+           (api/register-op!
+            runtime
+            'devflow-conventions
+            (op-metadata devflow-conventions-arg-spec)
+            'config/devflow-conventions-op)
+           (api/register-op!
+            runtime
+            'flow-await
+            (assoc (op-metadata flow-await-arg-spec) :deadline-class :unbounded)
+            'config/flow-await-op)
+           (api/register-op!
+            runtime
+            'flow-status
+            (op-metadata flow-status-arg-spec)
+            'config/flow-status-op)]}))

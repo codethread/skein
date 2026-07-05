@@ -198,7 +198,6 @@
     (bootstrap-acyclic-relation! ds relation))
   ds)
 
-
 (declare get-strand update-strand! add-edge! strands-by-ids require-updated-strand require-existing-strand-ids!)
 
 (def ^:private batch-strand-keys #{:title :state :attributes :ref :edges})
@@ -256,7 +255,6 @@
                        VALUES (?, ?, ?, json(?))
                        RETURNING " strand-columns)
                  id title state (->json attributes)]))
-
 
 (defn- unique-strand-id-error? [^Exception e]
   (str/includes? (.getMessage e) "UNIQUE constraint failed: strands.id"))
@@ -469,14 +467,14 @@
 
 (defn- set-strand-state-internal! [ds strand-id state]
   (require-updated-strand
-    strand-id
-    (execute-one! ds
-                  [(str "UPDATE strands
+   strand-id
+   (execute-one! ds
+                 [(str "UPDATE strands
                          SET state = ?,
                              updated_at = datetime('now')
                          WHERE id = ?
                          RETURNING " strand-columns)
-                   state strand-id])))
+                  state strand-id])))
 
 (defn ^:no-doc supersede-strand-in-transaction!
   [tx old-id replacement-id]
@@ -500,7 +498,7 @@
                                           WHERE to_strand_id = ?
                                             AND edge_type = 'depends-on'
                                           ORDER BY from_strand_id"
-                                       old-id])
+                                         old-id])
           rewired (mapv (fn [edge]
                           (let [dependent (:from_strand_id edge)
                                 existing-edge (edge-row tx dependent replacement-id "depends-on")
@@ -556,19 +554,18 @@
     (require-generic-state! state :state))
   (require-updated-strand strand-id (get-strand ds strand-id))
   (require-updated-strand
-    strand-id
-    (execute-one! ds
-                  [(str "UPDATE strands
+   strand-id
+   (execute-one! ds
+                 [(str "UPDATE strands
                          SET title = COALESCE(?, title),
                              state = COALESCE(?, state),
                              attributes = CASE WHEN ? IS NULL THEN attributes ELSE json_patch(attributes, json(?)) END,
                              updated_at = datetime('now')
                          WHERE id = ?
                          RETURNING " strand-columns)
-                   title (when (contains? patch :state) state)
-                   (when attributes (->json attributes)) (when attributes (->json attributes))
-                   strand-id])))
-
+                  title (when (contains? patch :state) state)
+                  (when attributes (->json attributes)) (when attributes (->json attributes))
+                  strand-id])))
 
 (defn query-strands
   "Return strand rows matching query-def and optional query params."
@@ -607,7 +604,7 @@
   (let [ids (ordered-distinct ids)]
     (when (seq ids)
       (let [found (set (map :id (execute! ds (into [(str "SELECT id FROM strands WHERE id IN (" (placeholders ids) ")")]
-                                                ids))))
+                                                   ids))))
             missing (vec (remove found ids))]
         (when (seq missing)
           (throw (ex-info "Strand ids not found" {:context context :missing missing})))))
@@ -902,7 +899,7 @@
                                          AND e.from_strand_id IN (SELECT id FROM nodes)
                                          AND e.to_strand_id IN (SELECT id FROM nodes)
                                        ORDER BY e.from_strand_id, e.to_strand_id, e.edge_type")]
-                                         (concat root-ids [type type])))]
+                                        (concat root-ids [type type])))]
            {:root-ids root-ids
             :strands rows
             :edges edges}))))))
@@ -983,7 +980,7 @@
                      AND e.edge_type = 'depends-on'
                      AND dep.state = 'active'
                  )
-               ORDER BY t.id")])) )
+               ORDER BY t.id")])))
   ([ds query-def]
    (ready-strands ds query-def {}))
   ([ds query-def params]
@@ -1111,12 +1108,12 @@
     (let [row (require-pending-wake tx key)]
       (execute! tx ["DELETE FROM scheduler_wakes WHERE key = ?" key])
       (let [history-row (execute-one! tx
-                                       [(str "INSERT INTO scheduler_history
+                                      [(str "INSERT INTO scheduler_history
                                                 (key, wake_at, handler, payload, status, attempts, error)
                                               VALUES (?, ?, ?, ?, ?, ?, ?)
                                               RETURNING " scheduler-history-columns)
-                                        (:key row) (:wake_at row) (:handler row) (:payload row)
-                                        status (:attempts row) error])]
+                                       (:key row) (:wake_at row) (:handler row) (:payload row)
+                                       status (:attempts row) error])]
         (prune-history! tx status)
         history-row))))
 

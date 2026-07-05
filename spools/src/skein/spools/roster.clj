@@ -395,9 +395,9 @@
       :poll-ms poll-ms
       :check #(roster runtime scope)
       :pred->result (fn [entries]
-                       (cond
-                         (some :stale? entries) {:reason :stale :entries entries}
-                         (empty? entries) {:reason :quiet :entries entries}))
+                      (cond
+                        (some :stale? entries) {:reason :stale :entries entries}
+                        (empty? entries) {:reason :quiet :entries entries}))
       :on-timeout (fn [entries] {:reason :timeout :entries entries})})))
 
 ;; ---------------------------------------------------------------------------

@@ -365,20 +365,20 @@
    :doc "Introspect registered named queries: list all or explain one."
    :subcommands {"list" {:doc "List registered named query metadata."}
                  "explain" {:doc "Explain one registered named query."
-                             :positionals [{:name :name
-                                            :type :string
-                                            :required? true
-                                            :doc "Query name."}]}}})
+                            :positionals [{:name :name
+                                           :type :string
+                                           :required? true
+                                           :doc "Query name."}]}}})
 
 (def ^:private pattern-arg-spec
   {:op "pattern"
    :doc "Introspect registered weave patterns: list all or explain one."
    :subcommands {"list" {:doc "List registered weave pattern metadata."}
                  "explain" {:doc "Explain one registered weave pattern."
-                             :positionals [{:name :name
-                                            :type :string
-                                            :required? true
-                                            :doc "Pattern name."}]}}})
+                            :positionals [{:name :name
+                                           :type :string
+                                           :required? true
+                                           :doc "Pattern name."}]}}})
 
 (def ^:private op-registrations
   "Each shipped op: [op-name arg-spec hook-class handler-symbol]."

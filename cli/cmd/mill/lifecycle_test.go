@@ -125,7 +125,7 @@ func TestWeaverListIncludesSupervisedAndMetadataDiscovered(t *testing.T) {
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
 	writeWeaverMetadata(t, worldA, cmd.Process.Pid, "weaver-a")
 	writeWeaverMetadata(t, worldB, os.Getpid(), "weaver-b")
-	s := server{children: map[string]*weaverChild{worldA.ConfigDir: &weaverChild{cmd: cmd, world: worldA, done: make(chan error, 1)}}}
+	s := server{children: map[string]*weaverChild{worldA.ConfigDir: {cmd: cmd, world: worldA, done: make(chan error, 1)}}}
 	rows, err := s.weaverList()
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +404,6 @@ func TestStopCleansStaleMetadata(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(world.StateDir, "weaver.json")); !os.IsNotExist(err) {
 		t.Fatalf("stale stop should remove weaver.json, stat err=%v", err)
 	}
-
 }
 
 func TestStopSignalsNonSupervisedWeaverByPID(t *testing.T) {

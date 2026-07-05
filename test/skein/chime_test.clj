@@ -16,10 +16,10 @@
 
 (defn- with-chime [f]
   (test-support/with-runtime
-   {:prefix "skein-chime-config"}
-   (fn [rt config-dir]
-     (chime/install!)
-     (f rt config-dir))))
+    {:prefix "skein-chime-config"}
+    (fn [rt config-dir]
+      (chime/install!)
+      (f rt config-dir))))
 
 (defn- write-notifier! [dir out-file]
   (let [script (io/file dir "notify.sh")]

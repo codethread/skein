@@ -216,16 +216,16 @@
   {:op :thing
    :doc "Manage things"
    :subcommands {"add" {:doc "Add a thing"
-                         :flags {:force {:type :boolean :doc "Skip checks"}
-                                 :data {:type :string :parse :json :doc "JSON data"}}
-                         :positionals [{:name :title :type :string :required? true :doc "Title"}]}
+                        :flags {:force {:type :boolean :doc "Skip checks"}
+                                :data {:type :string :parse :json :doc "JSON data"}}
+                        :positionals [{:name :title :type :string :required? true :doc "Title"}]}
                  "list" {:doc "List things"
-                          :flags {:limit {:type :int :doc "Maximum count"}}
-                          :positionals []}
+                         :flags {:limit {:type :int :doc "Maximum count"}}
+                         :positionals []}
                  "tag" {:doc "Tag things"
-                         :flags {:attr {:type :map :doc "Metadata"}}
-                         :positionals [{:name :id :type :string :required? true}
-                                       {:name :labels :type :string :variadic? true}]}}})
+                        :flags {:attr {:type :map :doc "Metadata"}}
+                        :positionals [{:name :id :type :string :required? true}
+                                      {:name :labels :type :string :variadic? true}]}}})
 
 (deftest subcommand-routes-and-merges-matched-name
   (is (= {:subcommand "add" :force true :title "hello"}

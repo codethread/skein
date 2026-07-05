@@ -163,13 +163,13 @@
         (write-spools! config-dir (pr-str {:spools {'demo/shared {:local/root "spools/shared"}}}))
         (write-local-spools! config-dir (pr-str {:spools {'demo/local {:local/root "spools/local"}}}))
         (is (= {:spools {'demo/shared {:kind :local
-                                     :local/root "spools/shared"
-                                     :root (.getCanonicalPath shared-root)
-                                     :source (shared-source config-dir)}
-                       'demo/local {:kind :local
-                                    :local/root "spools/local"
-                                    :root (.getCanonicalPath local-root)
-                                    :source (local-source config-dir)}}}
+                                       :local/root "spools/shared"
+                                       :root (.getCanonicalPath shared-root)
+                                       :source (shared-source config-dir)}
+                         'demo/local {:kind :local
+                                      :local/root "spools/local"
+                                      :root (.getCanonicalPath local-root)
+                                      :source (local-source config-dir)}}}
                (runtime-alpha/approved rt)))))))
 
 (deftest approved-local-spools-override-shared-by-coordinate
@@ -203,16 +203,16 @@
         (.mkdirs relative-root)
         (.mkdirs absolute-root)
         (write-spools! config-dir
-                     (pr-str {:spools {'demo/relative {:local/root "spools/demo"}
-                                     'demo/absolute {:local/root (.getAbsolutePath absolute-root)}}}))
+                       (pr-str {:spools {'demo/relative {:local/root "spools/demo"}
+                                         'demo/absolute {:local/root (.getAbsolutePath absolute-root)}}}))
         (is (= {:spools {'demo/absolute {:kind :local
-                                       :local/root (.getAbsolutePath absolute-root)
-                                       :root (.getCanonicalPath absolute-root)
-                                       :source (shared-source config-dir)}
-                       'demo/relative {:kind :local
-                                       :local/root "spools/demo"
-                                       :root (.getCanonicalPath relative-root)
-                                       :source (shared-source config-dir)}}}
+                                         :local/root (.getAbsolutePath absolute-root)
+                                         :root (.getCanonicalPath absolute-root)
+                                         :source (shared-source config-dir)}
+                         'demo/relative {:kind :local
+                                         :local/root "spools/demo"
+                                         :root (.getCanonicalPath relative-root)
+                                         :source (shared-source config-dir)}}}
                (runtime-alpha/approved rt)))))))
 
 (deftest approved-expands-home-relative-roots
@@ -222,9 +222,9 @@
             home-root (io/file home "dev" "projects" "my-lib")]
         (write-spools! config-dir (pr-str {:spools {'demo/home {:local/root "~/dev/projects/my-lib"}}}))
         (is (= {:spools {'demo/home {:kind :local
-                                   :local/root "~/dev/projects/my-lib"
-                                   :root (.getCanonicalPath home-root)
-                                   :source (shared-source config-dir)}}}
+                                     :local/root "~/dev/projects/my-lib"
+                                     :root (.getCanonicalPath home-root)
+                                     :source (shared-source config-dir)}}}
                (runtime-alpha/approved rt)))))))
 
 (deftest approved-canonicalizes-symlink-roots
@@ -237,9 +237,9 @@
                                                 (make-array java.nio.file.attribute.FileAttribute 0))
         (write-spools! config-dir (pr-str {:spools {'demo/link {:local/root "spools/link"}}}))
         (is (= {:spools {'demo/link {:kind :local
-                                   :local/root "spools/link"
-                                   :root (.getCanonicalPath target)
-                                   :source (shared-source config-dir)}}}
+                                     :local/root "spools/link"
+                                     :root (.getCanonicalPath target)
+                                     :source (shared-source config-dir)}}}
                (runtime-alpha/approved rt)))))))
 
 (deftest approved-does-not-reject-missing-local-roots
@@ -248,9 +248,9 @@
       (let [missing (io/file config-dir "spools" "missing")]
         (write-spools! config-dir (pr-str {:spools {'demo/missing {:local/root "spools/missing"}}}))
         (is (= {:spools {'demo/missing {:kind :local
-                                      :local/root "spools/missing"
-                                      :root (.getCanonicalPath missing)
-                                      :source (shared-source config-dir)}}}
+                                        :local/root "spools/missing"
+                                        :root (.getCanonicalPath missing)
+                                        :source (shared-source config-dir)}}}
                (runtime-alpha/approved rt)))))))
 
 (deftest approved-normalizes-git-spools-with-cache-base-and-deps-root
@@ -262,16 +262,16 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {'demo/git {:git/url "file:///tmp/repo"
-                                                                 :git/sha sha
-                                                                 :git/tag "v1"
-                                                                 :deps/root "nested/spool"}}}))
+                                                                   :git/sha sha
+                                                                   :git/tag "v1"
+                                                                   :deps/root "nested/spool"}}}))
             (is (= {:spools {'demo/git {:kind :git
-                                      :git/url "file:///tmp/repo"
-                                      :git/sha sha
-                                      :git/tag "v1"
-                                      :deps/root "nested/spool"
-                                      :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
-                                      :source (shared-source config-dir)}}}
+                                        :git/url "file:///tmp/repo"
+                                        :git/sha sha
+                                        :git/tag "v1"
+                                        :deps/root "nested/spool"
+                                        :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
+                                        :source (shared-source config-dir)}}}
                    (runtime-alpha/approved rt)))))))))
 
 (deftest approved-rejects-malformed-git-spools
@@ -398,25 +398,25 @@
             root (write-local-lib! config-dir "demo" ns-sym)]
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/demo"}}}))
         (is (= {:spools {lib {:lib lib
-                            :kind :local
-                            :local/root "spools/demo"
-                            :root (.getCanonicalPath root)
-                            :source (shared-source config-dir)
-                            :status :loaded}}}
+                              :kind :local
+                              :local/root "spools/demo"
+                              :root (.getCanonicalPath root)
+                              :source (shared-source config-dir)
+                              :status :loaded}}}
                (runtime-alpha/sync! rt)))
         (is (= {:spools {lib {:lib lib
-                            :kind :local
-                            :local/root "spools/demo"
-                            :root (.getCanonicalPath root)
-                            :source (shared-source config-dir)
-                            :status :loaded}}}
+                              :kind :local
+                              :local/root "spools/demo"
+                              :root (.getCanonicalPath root)
+                              :source (shared-source config-dir)
+                              :status :loaded}}}
                (runtime-alpha/syncs rt)))
         (is (= {:spools {lib {:lib lib
-                            :kind :local
-                            :local/root "spools/demo"
-                            :root (.getCanonicalPath root)
-                            :source (shared-source config-dir)
-                            :status :already-available}}}
+                              :kind :local
+                              :local/root "spools/demo"
+                              :root (.getCanonicalPath root)
+                              :source (shared-source config-dir)
+                              :status :already-available}}}
                (runtime-alpha/sync! rt)))))))
 
 ;; Regression guard: a present legacy spool.edn, even with retired manifest
@@ -458,7 +458,7 @@
                               "(defn install! [] (spit " (pr-str (str called-file)) " (pr-str :called)) :installed)
 "))
         (write-spools! config-dir (pr-str {:spools {base-lib {:local/root "spools/base"}
-                                                   child-lib {:local/root "spools/child"}}}))
+                                                    child-lib {:local/root "spools/child"}}}))
         (runtime-alpha/sync! rt)
         (is (= :loaded (:status (runtime-alpha/use! rt :base {:ns base-ns :spools [base-lib]}))))
         (let [result (runtime-alpha/use! rt :child {:ns child-ns
@@ -478,7 +478,7 @@
             failed-lib (symbol (str "demo/required-failed-" suffix))]
         (write-local-lib! config-dir "required-gate" ns-sym)
         (write-spools! config-dir (pr-str {:spools {approved-lib {:local/root "spools/required-gate"}
-                                                   failed-lib {:local/root "spools/missing"}}}))
+                                                    failed-lib {:local/root "spools/missing"}}}))
         (doseq [[label key opts expected]
                 [["not approved"
                   :required/not-approved
@@ -553,12 +553,12 @@
       (let [missing (io/file config-dir "spools" "missing")]
         (write-spools! config-dir (pr-str {:spools {'demo/missing {:local/root "spools/missing"}}}))
         (is (= {:spools {'demo/missing {:lib 'demo/missing
-                                      :kind :local
-                                      :local/root "spools/missing"
-                                      :root (.getCanonicalPath missing)
-                                      :source (shared-source config-dir)
-                                      :status :failed
-                                      :reason :missing-root}}}
+                                        :kind :local
+                                        :local/root "spools/missing"
+                                        :root (.getCanonicalPath missing)
+                                        :source (shared-source config-dir)
+                                        :status :failed
+                                        :reason :missing-root}}}
                (runtime-alpha/sync! rt)))
         (write-spools! config-dir "{:spools")
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed or unreadable" (runtime-alpha/sync! rt)))
@@ -590,21 +590,21 @@
         (.mkdirs (.getParentFile not-dir))
         (spit not-dir "not a directory")
         (write-spools! config-dir (pr-str {:spools {'demo/missing {:local/root "spools/missing"}
-                                                'demo/not-dir {:local/root "spools/not-dir"}}}))
+                                                    'demo/not-dir {:local/root "spools/not-dir"}}}))
         (is (= {:spools {'demo/missing {:lib 'demo/missing
-                                      :kind :local
-                                      :local/root "spools/missing"
-                                      :root (.getCanonicalPath (io/file config-dir "spools" "missing"))
-                                      :source (shared-source config-dir)
-                                      :status :failed
-                                      :reason :missing-root}
-                       'demo/not-dir {:lib 'demo/not-dir
-                                      :kind :local
-                                      :local/root "spools/not-dir"
-                                      :root (.getCanonicalPath not-dir)
-                                      :source (shared-source config-dir)
-                                      :status :failed
-                                      :reason :unreadable-root}}}
+                                        :kind :local
+                                        :local/root "spools/missing"
+                                        :root (.getCanonicalPath (io/file config-dir "spools" "missing"))
+                                        :source (shared-source config-dir)
+                                        :status :failed
+                                        :reason :missing-root}
+                         'demo/not-dir {:lib 'demo/not-dir
+                                        :kind :local
+                                        :local/root "spools/not-dir"
+                                        :root (.getCanonicalPath not-dir)
+                                        :source (shared-source config-dir)
+                                        :status :failed
+                                        :reason :unreadable-root}}}
                (runtime-alpha/sync! rt)))))))
 
 (deftest sync-git-missing-root-outcome-is-kind-shaped
@@ -616,9 +616,9 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {'demo/git {:git/url "file:///tmp/repo"
-                                                                 :git/sha sha
-                                                                 :git/tag "v1"
-                                                                 :deps/root "spool"}}}))
+                                                                   :git/sha sha
+                                                                   :git/tag "v1"
+                                                                   :deps/root "spool"}}}))
             (let [result (get-in (runtime-alpha/sync! rt) [:spools 'demo/git])]
               (is (= {:lib 'demo/git
                       :kind :git
@@ -979,11 +979,11 @@
             cache-dir
             (fn []
               (write-spools! config-dir (pr-str {:spools {'demo/matching {:git/url (file-url matching-repo)
-                                                                        :git/sha matching-sha
-                                                                        :git/tag "v1"}
+                                                                          :git/sha matching-sha
+                                                                          :git/tag "v1"}
                                                           'demo/mismatching {:git/url (file-url mismatching-repo)
-                                                                           :git/sha new-sha
-                                                                           :git/tag "v1"}}}))
+                                                                             :git/sha new-sha
+                                                                             :git/tag "v1"}}}))
               (let [results (:spools (runtime-alpha/sync! rt))]
                 (is (= :loaded (get-in results ['demo/matching :status])))
                 (is (= :fetched (get-in results ['demo/matching :fetch])))
@@ -1014,8 +1014,8 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {'demo/mono {:git/url (file-url repo)
-                                                                 :git/sha sha
-                                                                 :deps/root "nested/spool"}}}))
+                                                                    :git/sha sha
+                                                                    :deps/root "nested/spool"}}}))
             (let [result (get-in (runtime-alpha/sync! rt) [:spools 'demo/mono])]
               (is (= :loaded (:status result)))
               (is (= :fetched (:fetch result)))
@@ -1033,8 +1033,8 @@
           cache-dir
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url (file-url repo)
-                                                          :git/sha sha
-                                                          :deps/root "missing/spool"}}}))
+                                                             :git/sha sha
+                                                             :deps/root "missing/spool"}}}))
             (let [result (get-in (runtime-alpha/sync! rt) [:spools lib])]
               (is (= :failed (:status result)))
               (is (= :missing-root (:reason result)))
@@ -1140,7 +1140,7 @@
             root (write-local-lib! config-dir "second" second-ns)]
         (write-local-lib! config-dir "first" first-ns)
         (write-spools! config-dir (pr-str {:spools {first-lib {:local/root "spools/first"}
-                                               second-lib {:local/root "spools/second"}}}))
+                                                    second-lib {:local/root "spools/second"}}}))
         (runtime-alpha/sync! rt)
         (let [result (runtime-alpha/use! rt :demo/second {:ns second-ns :spools #{first-lib second-lib}})]
           (is (= :loaded (:status result)))
@@ -1174,7 +1174,7 @@
         (write-module-file! config-dir file-rel
                             (str "(ns " ns-sym ")\n(defn install! [] {:installed true})\n"))
         (let [result (runtime-alpha/use! rt :demo/file {:file file-rel
-                                            :call (symbol (str ns-sym "/install!"))})]
+                                                        :call (symbol (str ns-sym "/install!"))})]
           (is (= :loaded (:status result)))
           (is (= (.getCanonicalPath (io/file config-dir file-rel)) (get-in result [:loaded :file])))
           (is (= {:fn (symbol (str ns-sym "/install!"))
@@ -1206,7 +1206,7 @@
             failed-lib (symbol (str "demo/failed-lib-" suffix))]
         (write-local-lib! config-dir "gated" ns-sym)
         (write-spools! config-dir (pr-str {:spools {approved-spool {:local/root "spools/gated"}
-                                               failed-lib {:local/root "spools/missing"}}}))
+                                                    failed-lib {:local/root "spools/missing"}}}))
         (is (= {:status :skipped
                 :reason :not-approved
                 :lib 'demo/not-approved}
@@ -1248,7 +1248,7 @@
         (write-module-file! config-dir "modules/call_fail.clj"
                             (str "(ns " ns-sym ")\n(defn install! [] (throw (ex-info \"call boom\" {})))\n"))
         (let [result (runtime-alpha/use! rt :call-fail {:file "modules/call_fail.clj"
-                                            :call (symbol (str ns-sym "/install!"))})]
+                                                        :call (symbol (str ns-sym "/install!"))})]
           (is (= :failed (:status result))))))))
 
 (deftest use-fails-loudly-on-malformed-options
@@ -1290,14 +1290,14 @@
                                  "(spit " (pr-str (str side-effect-file)) " :loaded)\n"
                                  "(defn install! [] (spit " (pr-str (str side-effect-file)) " :called))\n"))
         (is (= :not-approved (:reason (runtime-alpha/use! rt :gate/not-approved
-                                                 {:file "modules/gated_effect.clj"
-                                                  :spools ['demo/not-approved]
-                                                  :call 'demo.gated-effect/install!}))))
+                                                          {:file "modules/gated_effect.clj"
+                                                           :spools ['demo/not-approved]
+                                                           :call 'demo.gated-effect/install!}))))
         (is (false? (.exists side-effect-file)))
         (is (= :missing-after (:reason (runtime-alpha/use! rt :gate/missing-after
-                                                {:file "modules/gated_effect.clj"
-                                                 :after [:missing]
-                                                 :call 'demo.gated-effect/install!}))))
+                                                           {:file "modules/gated_effect.clj"
+                                                            :after [:missing]
+                                                            :call 'demo.gated-effect/install!}))))
         (is (false? (.exists side-effect-file)))))))
 
 ;; Dogfoods skein.test.alpha for author-visible connected-client behavior

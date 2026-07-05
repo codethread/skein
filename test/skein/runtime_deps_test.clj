@@ -12,9 +12,9 @@
 
 (defn- temp-dir [prefix]
   (.toFile (java.nio.file.Files/createTempDirectory
-             (.toPath (io/file "/tmp"))
-             prefix
-             (make-array java.nio.file.attribute.FileAttribute 0))))
+            (.toPath (io/file "/tmp"))
+            prefix
+            (make-array java.nio.file.attribute.FileAttribute 0))))
 
 (defn- keep-add-libs-root! [_file]
   ;; tools.deps keeps add-libs local roots in JVM-global basis state. Retaining
@@ -103,11 +103,11 @@
                  (daemon-value rt `(do (require 'skein.api.current.alpha
                                                 'skein.api.runtime.alpha)
                                        (:status (skein.api.runtime.alpha/use!
-                                                (skein.api.current.alpha/runtime)
-                                                :maven-spike
-                                                {:spools ['~lib]
-                                                 :ns '~ns
-                                                 :call '~marker}))))))
+                                                 (skein.api.current.alpha/runtime)
+                                                 :maven-spike
+                                                 {:spools ['~lib]
+                                                  :ns '~ns
+                                                  :call '~marker}))))))
           (is (= ":loaded"
                  (daemon-value rt `(do (require 'skein.api.current.alpha
                                                 'skein.api.runtime.alpha)
@@ -118,11 +118,11 @@
                  (daemon-value rt `(do (require 'skein.api.current.alpha
                                                 'skein.api.runtime.alpha)
                                        (:status (skein.api.runtime.alpha/use!
-                                                (skein.api.current.alpha/runtime)
-                                                :maven-spike
-                                                {:spools ['~lib]
-                                                 :ns '~ns
-                                                 :call '~marker}))))))
+                                                 (skein.api.current.alpha/runtime)
+                                                 :maven-spike
+                                                 {:spools ['~lib]
+                                                  :ns '~ns
+                                                  :call '~marker}))))))
           (is (= "\"daemon-maven-added\""
                  (daemon-value rt `(do (require 'skein.api.current.alpha
                                                 'skein.api.runtime.alpha)

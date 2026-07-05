@@ -14,11 +14,9 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
-
 (defn reset-open-state! []
   (reset! (var-get (ns-resolve 'skein.repl 'active-config-dir))
           (var-get (ns-resolve 'skein.repl 'no-connection))))
-
 
 (s/def ::title string?)
 (s/def ::simple-pattern-input (s/keys :req-un [::title]))
@@ -52,8 +50,8 @@
 (deftest connect-without-arg-fails-loudly-without-selected-world
   (let [calls (atom [])]
     (with-redefs [skein.core.client/status-world (fn [config-dir]
-                                             (swap! calls conj config-dir)
-                                             {:ok true})]
+                                                   (swap! calls conj config-dir)
+                                                   {:ok true})]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"connect! requires an explicit config-dir"
                             (repl/connect!)))
@@ -252,11 +250,11 @@
             misc (:id (repl/strand! "Misc" {:owner "human"}))]
         (repl/update! docs {:edges [{:type "depends-on" :to design}]})
         (is (= {"agent-ready" {:params [:owner]
-                                :where [:= [:attr :owner] [:param :owner]]}}
+                               :where [:= [:attr :owner] [:param :owner]]}}
                (repl/defquery! 'agent-ready {:params [:owner]
                                              :where [:= [:attr :owner] [:param :owner]]})))
         (is (= {"agent-ready" {:params [:owner]
-                                :where [:= [:attr :owner] [:param :owner]]}}
+                               :where [:= [:attr :owner] [:param :owner]]}}
                (repl/queries)))
         (is (= {:name "agent-ready"
                 :params [:owner]
@@ -275,7 +273,7 @@
             (is (str/includes? (ex-message e) "Query not found"))
             (is (= ["agent-ready"] (:available (ex-data e))))))
         (is (= {"agent-ready" {:params [:owner]
-                                :where [:= [:attr :owner] [:param :owner]]}}
+                               :where [:= [:attr :owner] [:param :owner]]}}
                (repl/queries)))
         (is (= #{design docs}
                (set (map :id (repl/strands 'agent-ready {:owner "agent"})))))

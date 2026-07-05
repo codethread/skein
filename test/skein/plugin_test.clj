@@ -10,13 +10,12 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
-
 (defn with-runtime [f]
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
     (let [rt (runtime/start! db-file {:world (test-world config-dir)
-                                    :publish? false})]
+                                      :publish? false})]
       (try
         (f rt)
         (finally

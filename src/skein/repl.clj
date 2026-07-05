@@ -29,7 +29,7 @@
   []
   (case @active-config-dir
     ::no-connection (throw (ex-info "No Skein weaver world is connected. Use `mill weaver repl` for direct live evaluation, or call (connect! \"/path/to/config-dir\") before using explicit connected-client helpers."
-                                   {:helper 'connect!}))
+                                    {:helper 'connect!}))
     @active-config-dir))
 
 (defn connected-opts
@@ -328,7 +328,6 @@
 
 (defn- eval-remote! [session message]
   (last (keep :value (eval-remote-responses! session message))))
-
 
 (defn eval-source-forms!
   "Read and evaluate all top-level forms from `source` in the current JVM.

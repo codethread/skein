@@ -240,7 +240,7 @@
                      :tasks [{:id "a" :title "Do A" :harness "pi-main" :max-attempts 4}]})
         (let [strands (api/list rt)
               task (first (filter #(= "a" (or (get-in % [:attributes :delegate-pipeline/task])
-                                               (get-in % [:attributes "delegate-pipeline/task"])))
+                                              (get-in % [:attributes "delegate-pipeline/task"])))
                                   strands))]
           (is (some? task))
           (is (= 4 (or (get-in task [:attributes :shuttle/max-attempts])
@@ -365,11 +365,11 @@
   (with-config-runtime
     (fn [rt]
       (let [definition (workflow/workflow
-                         "Flow status test"
-                         (workflow/gate :a "Delegate A" :subagent)
-                         (workflow/gate :b "Delegate B" :subagent :depends-on [:a])
-                         (workflow/checkpoint :accept "Accept" :depends-on [:b]
-                                              :choices [:accepted]))]
+                        "Flow status test"
+                        (workflow/gate :a "Delegate A" :subagent)
+                        (workflow/gate :b "Delegate B" :subagent :depends-on [:a])
+                        (workflow/checkpoint :accept "Accept" :depends-on [:b]
+                                             :choices [:accepted]))]
         (workflow/start! "flow-status-test" definition {})
         (let [gate-a (:id (first (workflow/next-steps "flow-status-test")))
               run-a (api/add rt {:title "Run A"

@@ -174,12 +174,12 @@
   [runtime entry request-id args options]
   (when (= :mutating (:hook-class entry))
     ((api 'run-payload-received-hooks!) runtime
-     {:request/source :json-socket
-      :request/operation :invoke
-      :request/id request-id
-      :request/args args
-      :request/options options
-      :op/name (:name entry)})))
+                                        {:request/source :json-socket
+                                         :request/operation :invoke
+                                         :request/id request-id
+                                         :request/args args
+                                         :request/options options
+                                         :op/name (:name entry)})))
 
 (defn- effective-deadline-ms
   "Effective deadline for a single-result invoke (SPEC-004-D003.C5).

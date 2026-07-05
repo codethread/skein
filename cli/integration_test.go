@@ -199,7 +199,7 @@ func TestRepoLocalDiscoveryAndInitLocalOverlay(t *testing.T) {
 		t.Fatalf("git init repo: %v", err)
 	}
 	subdir := filepath.Join(repo, "work", "nested")
-	if err := os.MkdirAll(subdir, 0755); err != nil {
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	h := newHarness(t)
@@ -287,7 +287,7 @@ func TestLinkedGitWorktreesShareDefaultWorldAndExplicitConfigDirIsolated(t *test
 	runGit(t, repo, "init")
 	runGit(t, repo, "config", "user.email", "test@example.invalid")
 	runGit(t, repo, "config", "user.name", "Test User")
-	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("test\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("test\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runGit(t, repo, "add", "README.md")
@@ -438,7 +438,7 @@ func (h harness) addJSON(t *testing.T, workspace, cwd, title, attr string) strin
 
 func writeClientConfig(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"configFormat":"alpha"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

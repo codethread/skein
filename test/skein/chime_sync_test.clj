@@ -38,9 +38,9 @@
           (let [synced ((requiring-resolve 'skein.api.runtime.alpha/sync!) rt)
                 used ((requiring-resolve 'skein.api.runtime.alpha/use!)
                       rt :chime {:ns 'skein.spools.chime
-                              :spools ['skein.spools/chime]
-                              :call 'skein.spools.chime/install!
-                              :required? true})]
+                                 :spools ['skein.spools/chime]
+                                 :call 'skein.spools.chime/install!
+                                 :required? true})]
             (is (contains? #{:loaded :already-available}
                            (get-in synced [:spools 'skein.spools/chime :status])))
             (is (= :loaded (:status used)))

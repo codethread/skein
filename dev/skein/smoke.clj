@@ -19,7 +19,7 @@
 (def smoke-run-root
   (doto (java.io.File. "/tmp" (str "sk" (.pid (java.lang.ProcessHandle/current))))
     (.mkdirs)))
-(def smoke-xdg-state-home (str (.resolve (.toPath smoke-run-root) "xdg-state")) )
+(def smoke-xdg-state-home (str (.resolve (.toPath smoke-run-root) "xdg-state")))
 
 (defn titles [rows]
   (mapv :title rows))
@@ -90,8 +90,8 @@
   (let [builder (doto (ProcessBuilder. command)
                   (.redirectErrorStream true))
         _ (doto (.environment builder)
-             (.put "XDG_STATE_HOME" smoke-xdg-state-home)
-             (.put "SKEIN_SOURCE" checkout-root))
+            (.put "XDG_STATE_HOME" smoke-xdg-state-home)
+            (.put "SKEIN_SOURCE" checkout-root))
         _ (when cwd (.directory builder cwd))
         process (.start builder)
         output (slurp (.getInputStream process))
@@ -110,8 +110,8 @@
   (let [builder (doto (ProcessBuilder. [mill-bin "start"])
                   (.redirectErrorStream true))
         _ (doto (.environment builder)
-             (.put "XDG_STATE_HOME" smoke-xdg-state-home)
-             (.put "SKEIN_SOURCE" checkout-root))
+            (.put "XDG_STATE_HOME" smoke-xdg-state-home)
+            (.put "SKEIN_SOURCE" checkout-root))
         process (.start builder)
         metadata (java.io.File. smoke-run-root "xdg-state/skein/mill.json")]
     (loop [attempts 100]
@@ -471,7 +471,6 @@
   (smoke-bootstrap-dirty-config! db-file)
   (smoke-dispatcher-surface! db-file)
   (smoke-startup-transformations! db-file))
-
 
 (defn smoke-cli! [db-file]
   (clean-runtime-artifacts! db-file)

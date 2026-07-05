@@ -9,8 +9,10 @@ import (
 	"strings"
 )
 
-const DefaultInitCLJ = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime-alpha])\n\n(def runtime (current/runtime))\n\n(runtime-alpha/sync! runtime)\n(runtime-alpha/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/activate!})\n"
-const DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
+const (
+	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime-alpha])\n\n(def runtime (current/runtime))\n\n(runtime-alpha/sync! runtime)\n(runtime-alpha/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/activate!})\n"
+	DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
+)
 
 func BootstrapWorld(cwd, configDir, source string) (World, error) {
 	world, err := BootstrapTargetWorld(cwd, configDir)
@@ -57,8 +59,10 @@ func BootstrapWorld(cwd, configDir, source string) (World, error) {
 // agentGuidanceMarker guards idempotent injection: the section is appended only
 // when the marker is absent, so repeated `mill init` runs never duplicate it.
 // agentGuidanceEndMarker bounds the block so tooling can locate and replace it.
-const agentGuidanceMarker = "<!-- mill:skein-prime -->"
-const agentGuidanceEndMarker = "<!-- /mill:skein-prime -->"
+const (
+	agentGuidanceMarker    = "<!-- mill:skein-prime -->"
+	agentGuidanceEndMarker = "<!-- /mill:skein-prime -->"
+)
 
 const agentGuidanceSection = agentGuidanceMarker + `
 ## Skein / strand

@@ -13,7 +13,6 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
-
 (defn delete-tree! [file]
   (doseq [f (reverse (file-seq file))]
     (.delete f)))

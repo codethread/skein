@@ -24,10 +24,10 @@
   per-call binding, so they need the ambient singleton to actually exist."
   [f]
   (test-support/with-runtime
-   {:publish? true :prefix "skein-shuttle-config"}
-   (fn [rt _config-dir]
-     (shuttle/install!)
-     (f rt))))
+    {:publish? true :prefix "skein-shuttle-config"}
+    (fn [rt _config-dir]
+      (shuttle/install!)
+      (f rt))))
 
 (defn- await-attr-matching
   "Poll until attribute `k` satisfies `pred` or timeout; return the strand."
@@ -858,9 +858,9 @@
           (let [synced ((requiring-resolve 'skein.api.runtime.alpha/sync!) rt)
                 used ((requiring-resolve 'skein.api.runtime.alpha/use!)
                       rt :shuttle {:ns 'skein.spools.shuttle
-                                :spools ['skein.spools/shuttle]
-                                :call 'skein.spools.shuttle/install!
-                                :required? true})]
+                                   :spools ['skein.spools/shuttle]
+                                   :call 'skein.spools.shuttle/install!
+                                   :required? true})]
             (is (contains? #{:loaded :already-available}
                            (get-in synced [:spools 'skein.spools/shuttle :status])))
             (is (= :loaded (:status used)))

@@ -15,7 +15,6 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
-
 (defn reset-repl-state! []
   (reset! (var-get (ns-resolve 'skein.repl 'active-config-dir))
           (var-get (ns-resolve 'skein.repl 'no-connection))))

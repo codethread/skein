@@ -56,7 +56,7 @@
 (s/def ::workflow-item (s/or :step ::step :call ::call))
 (s/def ::steps (s/coll-of ::workflow-item :kind vector?))
 (s/def ::workflow (s/keys :req-un [::name ::steps]
-                         :opt-un [::params ::attributes ::state ::phase]))
+                          :opt-un [::params ::attributes ::state ::phase]))
 
 (declare executor-registry)
 
@@ -108,9 +108,9 @@
                 :contract (spec-entry ::workflow
                                       "A workflow requires a non-blank :name and vector :steps."
                                       '(workflow (fn [{:keys [feature]}] (str "Ship " feature))
-                                         {:params {:feature (param :required true)}}
-                                         (step :design (fn [{:keys [feature]}] (str "Design " feature)) :self)
-                                         (checkpoint :signoff "Approve design" :choices [:approved :revise])))
+                                                 {:params {:feature (param :required true)}}
+                                                 (step :design (fn [{:keys [feature]}] (str "Design " feature)) :self)
+                                                 (checkpoint :signoff "Approve design" :choices [:approved :revise])))
                 :fields {:params "Workflow-level map of keyword param names to param definitions. Param definitions support boolean :required and optional :default."}
                 :runtime {:start! "(start! run-id workflow params opts) accepts a workflow map, constructor var, or registered workflow keyword. Var/keyword starts derive :definition; absent :context defaults from JSON-safe params after keyword values are stringified."
                           :next-steps "(next-steps run-id selector) filters ready views by keys such as :kind, :gate, :checkpoint, or :checkpoint-kind."
@@ -691,7 +691,7 @@
   separate TOML/JSON formula language."
   [name & body]
   (let [[opts steps] (if (and (map? (first body))
-                             (not (contains? (first body) :id)))
+                              (not (contains? (first body) :id)))
                        [(first body) (rest body)]
                        [{} body])]
     (reject-unknown-keys! opts workflow-opt-keys :workflow)
@@ -1025,7 +1025,7 @@
   (if-let [wanted (:step opts)]
     (or (ready-step-by-id rt run-id wanted)
         (fail! "Requested workflow step is not ready" {:run-id run-id :step wanted
-                                                        :ready (mapv :id (raw-next-steps rt run-id))}))
+                                                       :ready (mapv :id (raw-next-steps rt run-id))}))
     (raw-next-step rt run-id)))
 
 (defn step-view
@@ -1114,8 +1114,8 @@
   "True when run-id has ever had a root molecule strand, active or closed."
   [rt run-id]
   (boolean (seq (api/list rt [:and
-                                             [:= [:attr "workflow/run-id"] run-id]
-                                             [:= [:attr "workflow/role"] "molecule"]] {}))))
+                              [:= [:attr "workflow/run-id"] run-id]
+                              [:= [:attr "workflow/role"] "molecule"]] {}))))
 
 (defn- done-with-rt?
   [rt run-id]
@@ -1138,8 +1138,8 @@
   by creation. Empty when the run never existed."
   [rt run-id]
   (->> (api/list rt [:and
-                                    [:= [:attr "workflow/run-id"] run-id]
-                                    [:= [:attr "workflow/role"] "molecule"]] {})
+                     [:= [:attr "workflow/run-id"] run-id]
+                     [:= [:attr "workflow/role"] "molecule"]] {})
        (sort-by :created_at)
        vec))
 
