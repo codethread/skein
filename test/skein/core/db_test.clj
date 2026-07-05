@@ -281,6 +281,12 @@
         (is (= [{:to_strand_id (get refs "design") :edge_type "depends-on"}]
                (db/execute! ds ["SELECT to_strand_id, edge_type FROM strand_edges WHERE from_strand_id = ?" (get refs "docs")])))))))
 
+(deftest batch-creation-accepts-explicit-nil-edges
+  (with-db
+    (fn [ds]
+      (let [result (db/add-strand-batch! ds [{:title "Standalone" :edges nil}])]
+        (is (= 1 (count (:created result))))))))
+
 (deftest supersession-transaction-replaces-and-rewires
   (with-db
     (fn [ds]

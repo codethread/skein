@@ -5,8 +5,10 @@
   an `ex-info` with a contextual data map (TEN-003), reject unknown option keys,
   validate a boundary shape against a `clojure.spec` and attach its explain data,
   and coerce an attribute key to its string wire form. Those were copy-pasted -
-  and had begun to drift - across the shipped spools. They live here so spools
-  share one source instead of re-deriving them per file."
+  and had begun to drift - across most shipped spools, and now share this one
+  source instead of re-deriving them per file. `skein.spools.workflow` is a
+  deliberate exception: it keeps its own branded `reject-unknown-keys!` rather
+  than adopting this one."
   (:require [clojure.spec.alpha :as s]))
 
 (defn fail!
@@ -39,7 +41,7 @@
   context, not just the raw value."
   [spec value message]
   (when-not (s/valid? spec value)
-    (fail! message {:explain (s/explain-data spec value)}))
+    (fail! message {:value value :explain (s/explain-data spec value)}))
   value)
 
 (defn attr-key->str

@@ -87,7 +87,7 @@
   (s/keys :req-un [::type :skein.batch-edge/to]
           :opt-un [::attributes]))
 (s/def :skein.batch-strand/ref symbol?)
-(s/def :skein.batch-strand/edges (s/coll-of map? :kind vector?))
+(s/def :skein.batch-strand/edges (s/nilable (s/coll-of ::batch-edge :kind vector?)))
 (s/def ::batch-strand
   (s/keys :req-un [::title]
           :opt-un [:skein.batch-strand/ref :skein.batch-strand/edges ::attributes]))

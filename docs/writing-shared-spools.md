@@ -47,7 +47,9 @@ the wrong world or throws.
    resolves. This keeps registration serialisable and runtime-portable.
 4. **Fail loudly (TEN-003).** On unexpected input or missing state, throw with
    data. Do not paper over it with a "sensible default" or a fallback to the
-   published runtime.
+   published runtime. Reach for `skein.spools.util` (`fail!`,
+   `reject-unknown-keys!`, `require-valid!`, `attr-key->str`) instead of
+   re-deriving these seams per spool.
 5. **Never depend on the ergonomics layer.** A shared spool must **not** require
    `skein.userland.alpha`, must not call `bind!`, and must not read the published
    singleton for its own operation. `skein.userland.alpha` is userland-only,
