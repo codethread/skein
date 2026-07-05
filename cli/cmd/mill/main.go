@@ -110,6 +110,19 @@ func main() {
 	repl.Flags().Bool("stdin", false, "send stdin Clojure forms to the running weaver, print one result per top-level form, then exit")
 	weaver.AddCommand(repl)
 	root.AddCommand(weaver)
+
+	skein := &cobra.Command{Use: "skein", Short: "Skein orientation for agents"}
+	skein.AddCommand(&cobra.Command{Use: "prime", Short: "Print Skein orientation: resolved source path and the docs/spools to read", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		return runPrime("skein", primeSkein)
+	}})
+	root.AddCommand(skein)
+
+	strandCmd := &cobra.Command{Use: "strand", Short: "Strand workflow guidance for agents"}
+	strandCmd.AddCommand(&cobra.Command{Use: "prime", Short: "Print the strand planning/tracking workflow", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		return runPrime("strand", primeStrand)
+	}})
+	root.AddCommand(strandCmd)
+
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

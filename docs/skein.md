@@ -77,7 +77,7 @@ From a Skein source checkout, `make install` installs the Go CLIs (`strand` and 
 
 `mill init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. It does not run `git init`, persist source, or initialize database storage; weaver startup prepares storage.
 
-User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`.
+User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`. Two harness-agnostic orientation commands surface this to agents at runtime, with no running weaver required: `mill skein prime` resolves the Skein source and prints the paths to the docs, the spool index, and the repo coordination guidance, plus how to extend `.skein` config; `mill strand prime` prints the strand planning/tracking workflow. In a repo-world bootstrap, `mill init` also seeds a `## Skein / strand` section in the repository-root `AGENTS.md`/`CLAUDE.md` that points new agents at these two commands.
 
 When working in this repository, also read the "Repo coordination workspace (.skein)" section of the root [`AGENTS.md`](../AGENTS.md).
 This repo-local guidance documents the installed runtime surface loaded from
@@ -334,6 +334,8 @@ For the ordinary repo-local `.skein` workspace, it creates or ensures:
 - `.skein/spools.edn` only if absent, with `{:spools {}}`;
 - `.skein/init.clj` only if absent, with the default below;
 - `.skein/.gitignore` only if absent, ignoring local config overlays such as `config.local.json`, `init.local.clj`, and `spools.local.edn`.
+
+It also seeds a `## Skein / strand` orientation section, bounded by `<!-- mill:skein-prime -->` and `<!-- /mill:skein-prime -->` markers, into the repository-root `AGENTS.md`/`CLAUDE.md` (appending to whichever exist, creating `AGENTS.md` when neither does), pointing new agents at `mill skein prime` and `mill strand prime`. Injection is idempotent and append-only; it never rewrites existing prose. Explicit `--workspace` bootstrap does not touch repo guidance files.
 
 Explicit `--workspace` standalone workspaces bootstrap the selected workspace directory directly. Existing `config.json`, `spools.edn`, `init.clj`, and `.gitignore` are preserved.
 

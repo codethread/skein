@@ -46,7 +46,69 @@ func BootstrapWorld(cwd, configDir, source string) (World, error) {
 	if _, _, err := Load(world.ConfigDir); err != nil {
 		return World{}, err
 	}
+	if configDir == "" {
+		if err := ensureAgentGuidance(filepath.Dir(world.ConfigDir)); err != nil {
+			return World{}, err
+		}
+	}
 	return world, nil
+}
+
+// agentGuidanceMarker guards idempotent injection: the section is appended only
+// when the marker is absent, so repeated `mill init` runs never duplicate it.
+// agentGuidanceEndMarker bounds the block so tooling can locate and replace it.
+const agentGuidanceMarker = "<!-- mill:skein-prime -->"
+const agentGuidanceEndMarker = "<!-- /mill:skein-prime -->"
+
+const agentGuidanceSection = agentGuidanceMarker + `
+## Skein / strand
+
+This repo uses Skein strands to track work. Orientation ships in the ` + "`mill`" + ` CLI:
+
+- ` + "`mill skein prime`" + ` — where the Skein source and docs live, and how to extend this repo's ` + "`.skein/`" + ` config.
+- ` + "`mill strand prime`" + ` — the strand planning/tracking workflow; run it before multi-step work.
+` + agentGuidanceEndMarker + `
+`
+
+// ensureAgentGuidance appends the Skein/strand pointer section to the repo-root
+// agent guidance file so a fresh agent is routed at the `mill *prime` commands.
+// It is idempotent (marker-guarded), appends to whichever of AGENTS.md/CLAUDE.md
+// exist, and creates AGENTS.md when neither does. CLAUDE.md commonly symlinks to
+// AGENTS.md; sequential marker checks make the shared target safe.
+func ensureAgentGuidance(repoRoot string) error {
+	wrote := false
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+		path := filepath.Join(repoRoot, name)
+		existing, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		wrote = true
+		if strings.Contains(string(existing), agentGuidanceMarker) {
+			continue
+		}
+		if err := appendAgentGuidance(path, existing); err != nil {
+			return err
+		}
+	}
+	if !wrote {
+		doc := "# Agents\n\n" + agentGuidanceSection
+		return os.WriteFile(filepath.Join(repoRoot, "AGENTS.md"), []byte(doc), 0o644)
+	}
+	return nil
+}
+
+func appendAgentGuidance(path string, existing []byte) error {
+	out := existing
+	if len(out) > 0 && !strings.HasSuffix(string(out), "\n") {
+		out = append(out, '\n')
+	}
+	out = append(out, '\n')
+	out = append(out, []byte(agentGuidanceSection)...)
+	return os.WriteFile(path, out, 0o644)
 }
 
 func BootstrapTargetWorld(cwd, configDir string) (World, error) {
