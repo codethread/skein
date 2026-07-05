@@ -8,6 +8,7 @@
             [clojure.java.shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [next.jdbc :as jdbc]
             [skein.core.db-test :as db-test]
             [skein.spools.shuttle :as shuttle]
             [skein.api.weaver.alpha :as api]
@@ -517,6 +518,201 @@
         @killer
         (is (false? timed-out))
         (is (= "failed" (:phase (first runs))))))))
+
+;; ---------------------------------------------------------------------------
+;; Session continuation (:resume)
+;;
+;; The session-echo harness is a fake claude-json harness: its result reflects
+;; the argv tail (so a resumed run's spliced flags are observable in
+;; shuttle/result) and it fabricates a fixed session id the engine captures as
+;; shuttle/session-id. The prompt stays quote-free so the emitted line is valid
+;; JSON.
+
+(def ^:private session-echo
+  {:argv ["sh" "-c"
+          "printf '{\"result\":\"args:'; for a in \"$@\"; do printf ' %s' \"$a\"; done; printf '\",\"session_id\":\"sess-abc\"}'"
+          "session-echo"]
+   :parse :claude-json
+   :preamble? false
+   :resume ["--resume" :shuttle/session-id]})
+
+(defn- edge-targets
+  "Return the `edge-type` edge targets from `from-id`. The resumes edge is an
+  annotation edge (like notes), so subgraph — which only follows the declared
+  acyclic relation — cannot see it; read strand_edges directly."
+  [rt from-id edge-type]
+  (mapv #(first (vals %))
+        (jdbc/execute! (:datasource rt)
+                       ["SELECT to_strand_id FROM strand_edges WHERE from_strand_id = ? AND edge_type = ?"
+                        from-id edge-type])))
+
+(defn- captured-predecessor
+  "Spawn a session-echo run and return it once done, its shuttle/session-id
+  captured (sess-abc)."
+  [rt]
+  (let [pred (shuttle/spawn-run! {:harness :session-echo :prompt "start"})
+        done (await-phase rt (:id pred) #{"done"} 10000)]
+    (is (= "sess-abc" (get-in done [:attributes :shuttle/session-id])))
+    done))
+
+(deftest defharness-validates-resume-splice
+  (with-shuttle
+    (fn [_rt]
+      (testing "a well-formed splice registers"
+        (is (some? (shuttle/defharness! :session-echo session-echo))))
+      (testing "unknown placeholder keywords fail loudly"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not an available input"
+                              (shuttle/defharness! :bad-resume
+                                {:argv ["x"] :resume ["--resume" :shuttle/nope]}))))
+      (testing "an empty or non-vector splice fails loudly"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":resume must be a non-empty vector"
+                              (shuttle/defharness! :bad-resume {:argv ["x"] :resume []})))))))
+
+(deftest resume-continues-a-captured-session
+  (with-shuttle
+    (fn [rt]
+      (shuttle/defharness! :session-echo session-echo)
+      (let [pred (captured-predecessor rt)
+            resumer (shuttle/spawn-run! {:harness :session-echo :prompt "continue"
+                                         :resume (:id pred)})]
+        (testing "provenance: shuttle/resumes attr and a resumes annotation edge"
+          (is (= (:id pred) (get-in (api/show rt (:id resumer)) [:attributes :shuttle/resumes])))
+          (is (= [(:id pred)] (edge-targets rt (:id resumer) "resumes"))))
+        (let [done (await-phase rt (:id resumer) #{"done"} 10000)]
+          (testing "the resolved :resume splice rides ahead of the prompt"
+            (is (str/includes? (get-in done [:attributes :shuttle/result]) "--resume sess-abc")))
+          (is (= (:id pred) (:resumes (shuttle/run-summary done)))))))))
+
+(deftest resume-with-no-opt-is-behavior-identical
+  (with-shuttle
+    (fn [rt]
+      (shuttle/defharness! :session-echo session-echo)
+      (let [plain (await-phase rt (:id (shuttle/spawn-run! {:harness :session-echo :prompt "solo"}))
+                               #{"done"} 10000)]
+        (is (nil? (get-in plain [:attributes :shuttle/resumes])))
+        (is (not (str/includes? (get-in plain [:attributes :shuttle/result]) "--resume")))
+        (is (empty? (edge-targets rt (:id plain) "resumes")))))))
+
+(deftest resume-failure-matrix
+  (with-shuttle
+    (fn [rt]
+      (shuttle/defharness! :session-echo session-echo)
+      (shuttle/defbackend! :fake-mux fake-mux)
+      (testing "a harness without a :resume splice is rejected"
+        (let [pred (api/add rt {:title "sh-pred" :state "closed"
+                                :attributes {"shuttle/run" "true" "shuttle/harness" "sh"
+                                             "shuttle/session-id" "sess-x" "shuttle/phase" "done"}})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"declares a :resume splice"
+                                (shuttle/spawn-run! {:harness :sh :prompt "x" :resume (:id pred)})))))
+      (testing "a predecessor with no captured session-id is rejected"
+        (let [pred (api/add rt {:title "no-session" :state "closed"
+                                :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
+                                             "shuttle/phase" "done"}})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no captured shuttle/session-id"
+                                (shuttle/spawn-run! {:harness :session-echo :prompt "x" :resume (:id pred)})))))
+      (testing "a harness name mismatch is rejected with both names"
+        (let [pred (captured-predecessor rt)]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exact same harness"
+                                (shuttle/spawn-run! {:harness :sh :prompt "x" :resume (:id pred)})))
+          (try
+            (shuttle/spawn-run! {:harness :sh :prompt "x" :resume (:id pred)})
+            (is false "expected a mismatch failure")
+            (catch clojure.lang.ExceptionInfo e
+              (is (= "sh" (:harness (ex-data e))))
+              (is (= "session-echo" (:predecessor-harness (ex-data e))))))))
+      (testing "only one active continuation may exist per session"
+        (let [pred (captured-predecessor rt)
+              blocker (api/add rt {:title "gate"})]
+          (shuttle/spawn-run! {:harness :session-echo :prompt "first"
+                               :resume (:id pred) :depends-on [(:id blocker)]})
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"already continues this session"
+                                (shuttle/spawn-run! {:harness :session-echo :prompt "second"
+                                                     :resume (:id pred)})))))
+      (testing "interactive runs cannot resume"
+        (let [pred (captured-predecessor rt)]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cannot :resume"
+                                (shuttle/spawn-run! {:harness :session-echo :prompt "x"
+                                                     :mode :interactive :backend :fake-mux
+                                                     :resume (:id pred)}))))))))
+
+(deftest resume-launch-failure-is-classed-for-recovery
+  (with-shuttle
+    (fn [rt]
+      (shuttle/defharness! :session-echo session-echo)
+      ;; a predecessor that lost its session between spawn and launch: handmade
+      ;; so the resumer reaches launch, where resume resolution fails loud and
+      ;; classed so recovery can branch to --fresh instead of retrying cold.
+      (let [pred (api/add rt {:title "lost-session" :state "closed"
+                              :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
+                                           "shuttle/phase" "done"}})
+            resumer (api/add rt {:title "resumer"
+                                 :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
+                                              "shuttle/prompt" "continue" "shuttle/phase" "pending"
+                                              "shuttle/resumes" (:id pred)}})
+            failed (await-phase rt (:id resumer) #{"failed"} 10000)]
+        (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
+        (is (str/includes? (get-in failed [:attributes :shuttle/error]) "missing a required attribute"))))))
+
+(deftest shipped-defaults-declare-capture-and-resume
+  ;; PLAN-Pnl-001.A2/PH2: the shipped :claude/:pi defs are persistence-friendly
+  ;; out of the box — they capture shuttle/session-id and declare a resume splice.
+  (with-shuttle
+    (fn [_rt]
+      (let [claude (shuttle/resolve-harness :claude)
+            pi (shuttle/resolve-harness :pi)]
+        (testing "claude captures via :claude-json and resumes by session id"
+          (is (= :claude-json (:parse claude)))
+          (is (= ["--resume" :shuttle/session-id] (:resume claude))))
+        (testing "pi runs JSON events, captures via :pi-json, resumes a specific session"
+          (is (= ["pi" "-p" "--mode" "json"] (:argv pi)))
+          (is (= :pi-json (:parse pi)))
+          (is (= ["--session" :shuttle/session-id] (:resume pi))))))))
+
+(deftest resume-launch-enforces-invariants-on-handmade-runs
+  ;; PLAN-Pnl-001.A1 / PH1 review [P1]: creating a pending run strand directly is
+  ;; a supported API, so the resume invariants must also hold at the launch seam,
+  ;; not only in spawn-run!/validate-resume!. Each handmade run below reaches
+  ;; launch and must fail loudly, resume-classed for --fresh recovery.
+  (with-shuttle
+    (fn [rt]
+      (shuttle/defharness! :session-echo session-echo)
+      (shuttle/defbackend! :fake-mux fake-mux)
+      (testing "a handmade interactive run carrying shuttle/resumes is rejected"
+        (let [pred (captured-predecessor rt)
+              run (api/add rt {:title "handmade-interactive-resume"
+                               :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
+                                            "shuttle/prompt" "continue" "shuttle/phase" "pending"
+                                            "shuttle/mode" "interactive" "shuttle/backend" "fake-mux"
+                                            "shuttle/resumes" (:id pred)}})
+              failed (await-phase rt (:id run) #{"failed"} 10000)]
+          (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
+          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "cannot resume"))))
+      (testing "a handmade cross-harness resumer is rejected at launch"
+        (let [pred (captured-predecessor rt)
+              run (api/add rt {:title "handmade-cross-harness"
+                               :attributes {"shuttle/run" "true" "shuttle/harness" "sh"
+                                            "shuttle/prompt" "echo x" "shuttle/phase" "pending"
+                                            "shuttle/resumes" (:id pred)}})
+              failed (await-phase rt (:id run) #{"failed"} 10000)]
+          (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
+          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "exact same harness"))))
+      (testing "a second handmade continuation of a live session is rejected at launch"
+        (let [pred (captured-predecessor rt)
+              blocker (api/add rt {:title "gate"})]
+          ;; the first continuation stays active-but-blocked, so it holds the
+          ;; session while the second reaches launch and must fail loudly
+          (api/add rt {:title "held-continuation"
+                       :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
+                                    "shuttle/prompt" "first" "shuttle/phase" "pending"
+                                    "shuttle/resumes" (:id pred)}
+                       :edges [{:type "depends-on" :to (:id blocker)}]})
+          (let [run (api/add rt {:title "second-continuation"
+                                 :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
+                                              "shuttle/prompt" "second" "shuttle/phase" "pending"
+                                              "shuttle/resumes" (:id pred)}})
+                failed (await-phase rt (:id run) #{"failed"} 10000)]
+            (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
+            (is (str/includes? (get-in failed [:attributes :shuttle/error]) "already continues"))))))))
 
 (deftest spool-loads-through-approved-spool-workspace-flow
   (let [db-file (db-test/temp-db-file)

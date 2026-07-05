@@ -42,6 +42,15 @@
    :after [:skein/spools-shuttle]
    :call 'skein.spools.agents/install!
    :required? true})
+;; The declarative reviewer roster lives in its own file so the "who reviews
+;; a change here" policy stays a small git-reviewable data document. Roster
+;; harness aliases resolve at review time, not registration time, so loading
+;; before config.clj registers the aliases is safe.
+(runtime-alpha/use! runtime :reviewers
+  {:file "reviewers.clj"
+   :after [:skein/spools-agents]
+   :call 'reviewers/install!
+   :required? true})
 ;; Chime is a vocabulary-agnostic notification engine: it installs bare here,
 ;; config.clj registers this repo's attention rules (HITL checkpoints, agent
 ;; failures, treadle errors), and each developer binds how they are notified

@@ -52,7 +52,7 @@
   "Copy the repo-local config files into a temporary config dir."
   [target]
   (.mkdirs (io/file target))
-  (doseq [name ["init.clj" "config.clj" "spools.edn"]]
+  (doseq [name ["init.clj" "config.clj" "reviewers.clj" "spools.edn"]]
     (io/copy (io/file ".skein" name) (io/file target name)))
   ;; The shipped spools.edn approves local roots relative to the config dir,
   ;; which does not resolve from a copy. Rewrite it to the repo's canonical
@@ -127,7 +127,11 @@
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :treadle-error]
-         (mapv :name ((requiring-resolve 'skein.spools.chime/rules))))))
+         (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
+  ;; the declarative reviewer roster registers from .skein/reviewers.clj
+  (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))]
+    (is (= [:change-review] (mapv :name rosters)))
+    (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
 
 (deftest current-dags-op-builds-self-contained-plan-task-projection
   (with-config-runtime
@@ -307,6 +311,31 @@
              (set (map :title (api/list rt (var-get (requiring-resolve 'config/work-query)) {})))))
       (is (= #{"Step" "Checkpoint" "Plain task"}
              (set (map :title (api/ready rt (var-get (requiring-resolve 'config/work-query)) {}))))))))
+
+(deftest reviewers-file-registers-declarative-roster
+  ;; exercises the same load path init.clj's :file+:call reviewers module runs
+  (with-config-runtime
+    (fn [_rt]
+      (load-file ".skein/reviewers.clj")
+      ((requiring-resolve 'reviewers/install!))
+      (let [[roster :as rosters] ((requiring-resolve 'skein.spools.agents/rosters))]
+        (is (= [:change-review] (mapv :name rosters)))
+        (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:reviewers roster)))]
+          (is (some? sleeps) "owner-required test-sleeps reviewer is declared")
+          (is (str/includes? (:contract sleeps) "time itself is a genuine component")))
+        (is (= :review-gpt (get-in roster [:synthesizer :harness]))
+            "sign-off synthesis stays on the cross-vendor GPT seat")))))
+
+(deftest codex-harness-persists-sessions-and-declares-resume
+  ;; PLAN-Pnl-001.A2/PH2: the repo :codex harness drops --ephemeral (sessions
+  ;; persist) and declares the verified `codex exec resume <session-id>` splice.
+  (with-config-runtime
+    (fn [_rt]
+      (let [codex ((requiring-resolve 'skein.spools.shuttle/resolve-harness) :codex)]
+        (is (not (some #{"--ephemeral"} (:argv codex)))
+            "sessions persist so codex exec resume can continue them")
+        (is (= ["resume" :shuttle/session-id] (:resume codex))
+            "codex declares its verified resume subcommand splice")))))
 
 (deftest devflow-ops-fail-loudly-on-bad-input
   (with-config-runtime

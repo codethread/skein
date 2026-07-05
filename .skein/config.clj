@@ -945,18 +945,24 @@
       :extra-args ["--agent" "main"]
       :doc "pi main agent with scout subagents; preferred delegation harness."})
    ;; codex exec prints only the final message on stdout (activity log goes to
-   ;; stderr), so :raw parses cleanly; --ephemeral skips session files the
-   ;; disposable run never resumes. The bypass flag mirrors the shipped claude
+   ;; stderr), so :raw parses cleanly. Sessions persist to disk so `codex exec
+   ;; resume <session-id>` can continue them; :resume splices that subcommand
+   ;; ahead of the prompt (the global flags before it propagate into resume).
+   ;; :raw does not capture a session id, so resume stays declared-but-inert
+   ;; until a codex-json parse lands — persistence is never required
+   ;; (PLAN-Pnl-001.R1/NG4), and a resume attempt fails loudly on the missing
+   ;; id rather than starting cold. The bypass flag mirrors the shipped claude
    ;; harness: runs must reach the weaver socket outside any codex sandbox —
    ;; redefine with --sandbox workspace-write to tighten. Env inheritance must
    ;; be explicit: codex's default shell_environment_policy strips the PATH
    ;; entries that carry the strand/mill CLIs, leaving workers unable to reach
    ;; the coordination surface.
    (shuttle/defharness! :codex
-     {:argv ["codex" "exec" "--skip-git-repo-check" "--ephemeral" "--color" "never"
+     {:argv ["codex" "exec" "--skip-git-repo-check" "--color" "never"
              "--dangerously-bypass-approvals-and-sandbox"
              "-c" "shell_environment_policy.inherit=all"]
       :parse :raw
+      :resume ["resume" :shuttle/session-id]
       :doc "Codex CLI (gpt-5.5) headless; final message on stdout."})
    ;; claude tiers mirror how we use agents: haiku explores, sonnet does
    ;; tests/grunt work, opus builds features and sits on councils

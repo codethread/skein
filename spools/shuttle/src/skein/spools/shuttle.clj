@@ -13,6 +13,15 @@
   `shuttle/max-attempts`. Run memory is append-only note strands linked by
   `notes` annotation edges plus `shuttle/note-for` attributes.
 
+  A run may continue a predecessor's harness session: `spawn-run!` accepts
+  `:resume <predecessor-run-id>`, and a harness def declares a `:resume` argv
+  splice (keyword placeholders resolve from the predecessor's captured
+  attributes) that the engine splices in before the prompt. Continuation is
+  recorded on the graph (`shuttle/resumes` plus a `resumes` annotation edge);
+  a lost session fails loudly, classed `shuttle/error-class \"resume\"`, so
+  recovery deliberately branches to a fresh spawn rather than silently starting
+  cold.
+
   Interactive runs are the second execution mode: instead of exec-and-wait, the
   engine launches the harness into a user-registered multiplexer backend
   (tmux by default) and supervises it through the graph — the run completes
@@ -26,6 +35,7 @@
   `skein.spools.agents`, register CLI operations over this engine."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.weaver.alpha :as api]
             [skein.api.current.alpha :as current]
@@ -90,9 +100,40 @@
     (and (string? name) (not (str/blank? name))) (keyword name)
     :else (fail! "Harness name must be a keyword, symbol, or non-blank string" {:name name})))
 
-(def ^:private harness-def-keys #{:argv :parse :prompt-via :preamble? :env :cwd :doc :capture})
+(def ^:private harness-def-keys #{:argv :parse :prompt-via :preamble? :env :cwd :doc :capture :resume})
 (def ^:private alias-def-keys #{:alias-of :extra-args :prompt-prefix :doc})
 (def ^:private parse-strategies #{:raw :claude-json :pi-json})
+
+;; A harness :resume splice is literal argv strings interleaved with placeholder
+;; keywords, each resolving from the predecessor run's captured attribute of the
+;; same name at launch. The placeholder set is closed so a typo diagnoses loudly
+;; instead of resolving to nil.
+(def ^:private resume-placeholder-inputs #{:shuttle/session-id})
+
+(s/def :skein.spools.shuttle.harness/resume-token
+  (s/or :literal string? :placeholder resume-placeholder-inputs))
+(s/def :skein.spools.shuttle.harness/resume
+  (s/coll-of :skein.spools.shuttle.harness/resume-token :kind vector? :min-count 1))
+
+(defn- validate-resume-argv!
+  "Validate a harness :resume splice: a non-empty vector of literal strings and
+  placeholder keywords drawn from the closed `resume-placeholder-inputs` set.
+  The closed-placeholder check runs before spec conform so an unknown
+  placeholder diagnoses as such rather than as an opaque spec failure."
+  [owner argv]
+  (when-not (and (vector? argv) (seq argv)
+                 (every? #(or (string? %) (keyword? %)) argv))
+    (fail! "Harness :resume must be a non-empty vector of strings and keywords"
+           {:harness owner :resume argv}))
+  (doseq [token argv :when (keyword? token)]
+    (when-not (resume-placeholder-inputs token)
+      (fail! "Harness :resume placeholder is not an available input"
+             {:harness owner :token token :allowed resume-placeholder-inputs})))
+  (when-not (s/valid? :skein.spools.shuttle.harness/resume argv)
+    (fail! "Harness :resume does not conform to spec"
+           {:harness owner :spec :skein.spools.shuttle.harness/resume
+            :explain (s/explain-str :skein.spools.shuttle.harness/resume argv)}))
+  argv)
 
 ;; Spliced-op plumbing shared by the backend registry and harness :capture:
 ;; argv tokens are literal strings, bare keywords naming engine inputs, or
@@ -144,7 +185,11 @@
   prompt is appended per `:prompt-via`, default `:arg`), optional `:parse`
   strategy (:raw, :claude-json, :pi-json — default :raw), `:prompt-via`
   (:arg or :stdin), `:preamble?` (default true; when false the shuttle run
-  preamble is not injected), `:env` map, `:cwd`, `:doc`, and `:capture` — a
+  preamble is not injected), `:env` map, `:cwd`, `:doc`, `:resume` — an argv
+  splice of literal strings and placeholder keywords (from the closed
+  `resume-placeholder-inputs` set) that continues a predecessor's session, each
+  placeholder resolving from that predecessor run's captured attributes at
+  launch — and `:capture` — a
   spliced argv (interactive runs only) that prints this harness's best
   transcript text to stdout, overriding the backend's scrollback capture.
   Harness capture is the seam for harness-aware transcripts (session logs,
@@ -163,6 +208,8 @@
         (fail! "Unknown harness :parse strategy" {:harness key :parse parse :supported parse-strategies})))
     (when (contains? def :capture)
       (validate-op-argv! key :capture (:capture def)))
+    (when (contains? def :resume)
+      (validate-resume-argv! key (:resume def)))
     (swap! (harness-registry) assoc key def)
     {:harness key :def def}))
 
@@ -221,10 +268,12 @@
   (let [defaults
         {:claude {:argv ["claude" "-p" "--output-format" "json" "--dangerously-skip-permissions"]
                   :parse :claude-json
-                  :doc "Claude Code headless. Skips permission prompts so the run can drive the strand CLI; redefine with your own argv to tighten."}
-         :pi {:argv ["pi" "-p"]
-              :parse :raw
-              :doc "pi headless; stdout carries only the final assistant message, so :raw parses cleanly. Redefine with --mode json and :parse :pi-json to also capture shuttle/session-id."}
+                  :resume ["--resume" :shuttle/session-id]
+                  :doc "Claude Code headless. Skips permission prompts so the run can drive the strand CLI; redefine with your own argv to tighten. :claude-json captures shuttle/session-id and :resume continues that session with `--resume <session-id>`."}
+         :pi {:argv ["pi" "-p" "--mode" "json"]
+              :parse :pi-json
+              :resume ["--session" :shuttle/session-id]
+              :doc "pi headless in JSON event mode: :pi-json captures shuttle/session-id and :resume continues that specific session with `--session <session-id>` (an existing session, not the create-if-missing --session-id)."}
          :sh {:argv ["sh" "-c"]
               :parse :raw
               :preamble? false
@@ -384,7 +433,7 @@
   #{"shuttle/run" "shuttle/harness" "shuttle/prompt" "shuttle/phase"
     "shuttle/cwd" "shuttle/spawned-by" "shuttle/max-attempts" "shuttle/mode"
     "shuttle/backend" "shuttle/completion" "shuttle/for" "shuttle/reap"
-    "shuttle/session"})
+    "shuttle/session" "shuttle/session-id" "shuttle/resumes" "shuttle/error-class"})
 
 (defn- interactive? [run]
   (= "interactive" (sattr run "mode")))
@@ -528,11 +577,16 @@
 (defn- update-run! [id attributes patch]
   (api/update (rt) id (merge patch {:attributes attributes})))
 
-(defn- mark-failed! [id error]
-  (update-run! id {"shuttle/phase" "failed"
-                   "shuttle/error" error
-                   "shuttle/finished-at" (now)}
-               {}))
+(defn- mark-failed!
+  "Mark a run failed with `error`. `extra` merges additional terminal attributes
+  (e.g. `shuttle/error-class`) so recovery can branch on the failure kind."
+  ([id error] (mark-failed! id error nil))
+  ([id error extra]
+   (update-run! id (merge {"shuttle/phase" "failed"
+                           "shuttle/error" error
+                           "shuttle/finished-at" (now)}
+                          extra)
+                {})))
 
 (defn- suggested-session
   "Deterministic session name suggested to backends. Workspace-namespaced:
@@ -587,8 +641,71 @@
       (interactive? run) (str (interactive-preamble run) prompt)
       :else (str (preamble (:id run) "") prompt))))
 
-(defn- build-argv [harness prompt]
-  (let [argv (into (:argv harness) (:extra-args harness))]
+(defn- resume-args
+  "Resolve a resuming run's harness `:resume` splice against its predecessor's
+  captured attributes, or nil when the run does not resume. Failures are
+  resume-classed via `:error-class \"resume\"` in the ex-data so the launch path
+  can stamp `shuttle/error-class` and recovery can branch to a fresh spawn
+  rather than silently retrying against a lost session."
+  [harness run]
+  (when-let [predecessor-id (sattr run "resumes")]
+    (let [splice (or (:resume harness)
+                     (fail! "Resuming run's harness declares no :resume splice"
+                            {:run (:id run) :harness (:name harness) :error-class "resume"}))
+          predecessor (or (api/show (rt) predecessor-id)
+                          (fail! "Resume predecessor not found"
+                                 {:run (:id run) :predecessor predecessor-id :error-class "resume"}))]
+      (mapv (fn [token]
+              (if (string? token)
+                token
+                (let [value (get-in predecessor [:attributes token])]
+                  (when (nil? value)
+                    (fail! "Resume predecessor is missing a required attribute"
+                           {:run (:id run) :predecessor predecessor-id
+                            :token token :error-class "resume"}))
+                  (str value))))
+            splice))))
+
+(defn- validate-resume-at-launch!
+  "Re-enforce the A1 resume invariants at the launch seam. Creating a pending
+  run strand directly (via `api/add`, not `spawn-run!`) is a supported API, so a
+  handmade `shuttle/resumes` run must not bypass the checks that otherwise live
+  only in `validate-resume!`: interactive runs cannot resume (the live session is
+  their continuity), a resuming run must share the predecessor's exact
+  harness/alias name, and only one active continuation may exist per session.
+  Splice and captured-session-id presence are rechecked in `resume-args`.
+  Failures are resume-classed so recovery deliberately branches to a fresh spawn
+  rather than retrying against a lost or wrong session."
+  [run]
+  (when-let [predecessor-id (sattr run "resumes")]
+    (when (interactive? run)
+      (fail! "Interactive runs cannot resume; the live session is its own continuity"
+             {:run (:id run) :resumes predecessor-id :error-class "resume"}))
+    (let [harness-name (sattr run "harness")
+          predecessor (or (api/show (rt) predecessor-id)
+                          (fail! "Resume predecessor not found"
+                                 {:run (:id run) :predecessor predecessor-id :error-class "resume"}))
+          predecessor-harness (sattr predecessor "harness")]
+      (when-not (= harness-name predecessor-harness)
+        (fail! "Resume requires the exact same harness as the predecessor"
+               {:run (:id run) :harness harness-name
+                :predecessor-harness predecessor-harness :error-class "resume"}))
+      (when-let [live (seq (->> (api/list (rt)
+                                          [:and [:= :state "active"] run-query
+                                           [:= [:attr "shuttle/resumes"] predecessor-id]]
+                                          {})
+                                (map :id)
+                                (remove #(= (:id run) %))))]
+        (fail! "Another active run already continues this session"
+               {:run (:id run) :predecessor predecessor-id :active (vec live)
+                :error-class "resume"})))))
+
+(defn- build-argv
+  "Assemble the launch argv: base argv, alias extra-args, the resolved `:resume`
+  splice (before the prompt so the session flag precedes the turn text), then
+  the prompt unless it rides on stdin."
+  [harness resume prompt]
+  (let [argv (into (into (:argv harness) (:extra-args harness)) resume)]
     (if (= :stdin (:prompt-via harness))
       argv
       (conj argv prompt))))
@@ -809,6 +926,7 @@
   the probe/cleanup anchor) before the session exists, then start, then store
   the returned handle."
   [id run]
+  (validate-resume-at-launch! run)
   (let [harness (resolve-harness (sattr run "harness"))
         backend-name (harness-key (sattr run "backend"))
         backend (resolve-backend backend-name)]
@@ -816,7 +934,7 @@
       (fail! "Interactive runs require an :arg prompt harness; stdin belongs to the session"
              {:run id :harness (:name harness)}))
     (let [prompt (effective-prompt harness run)
-          argv (build-argv harness prompt)
+          argv (build-argv harness nil prompt)
           cwd (or (sattr run "cwd") (:cwd harness) (workspace-dir))
           session (suggested-session id)
           attempt (inc (or (sattr run "attempt") 0))
@@ -856,9 +974,11 @@
 (defn- launch-headless! [id run]
   (let [process-ref (atom nil)]
     (try
+      (validate-resume-at-launch! run)
       (let [harness (resolve-harness (sattr run "harness"))
+            resume (resume-args harness run)
             prompt (effective-prompt harness run)
-            argv (build-argv harness prompt)
+            argv (build-argv harness resume prompt)
             dir (log-dir)
             out-file (io/file dir (str id ".out"))
             err-file (io/file dir (str id ".err"))
@@ -887,7 +1007,9 @@
         (some-> ^Process @process-ref (.destroy))
         (swap! (in-flight) dissoc id)
         (try
-          (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " "))))
+          (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " ")))
+                        (when (= "resume" (:error-class (ex-data t)))
+                          {"shuttle/error-class" "resume"}))
           (catch Throwable _
             nil))))))
 
@@ -900,7 +1022,9 @@
           (catch Throwable t
             (swap! (in-flight) dissoc id)
             (try
-              (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " "))))
+              (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " ")))
+                            (when (= "resume" (:error-class (ex-data t)))
+                              {"shuttle/error-class" "resume"}))
               (catch Throwable _
                 nil))))
         (launch-headless! id run)))))
@@ -1025,6 +1149,40 @@
 (defn- truncate [s n]
   (if (> (count s) n) (str (subs s 0 (- n 1)) "…") s))
 
+(defn- validate-resume!
+  "Validate a `:resume <predecessor-id>` spawn against its predecessor, failing
+  loudly (TEN-003) so a lost or mismatched session never resumes silently:
+  interactive runs cannot resume (the live session is their continuity), the
+  predecessor must exist and share the exact harness/alias name (aliases swap
+  model/provider, so a base-root match is too weak — the error carries both
+  names), it must carry a captured `shuttle/session-id`, the spawning harness
+  must declare a `:resume` splice, and only one active continuation may exist
+  per predecessor session. `harness-name` is the resolved spawn name string;
+  `harness-def` its flattened def."
+  [harness-name harness-def mode predecessor-id]
+  (when mode
+    (fail! "Interactive runs cannot :resume; the live session is its own continuity"
+           {:resume predecessor-id :mode mode}))
+  (let [predecessor (or (api/show (rt) predecessor-id)
+                        (fail! "Resume predecessor not found" {:resume predecessor-id}))
+        predecessor-harness (sattr predecessor "harness")]
+    (when-not (= harness-name predecessor-harness)
+      (fail! "Resume requires the exact same harness as the predecessor"
+             {:resume predecessor-id :harness harness-name
+              :predecessor-harness predecessor-harness}))
+    (when-not (sattr predecessor "session-id")
+      (fail! "Resume predecessor has no captured shuttle/session-id"
+             {:resume predecessor-id :harness harness-name}))
+    (when-not (:resume harness-def)
+      (fail! "Resume requires a harness that declares a :resume splice"
+             {:resume predecessor-id :harness harness-name}))
+    (when-let [live (seq (mapv :id (api/list (rt)
+                                             [:and [:= :state "active"] run-query
+                                              [:= [:attr "shuttle/resumes"] predecessor-id]]
+                                             {})))]
+      (fail! "Another active run already continues this session"
+             {:resume predecessor-id :active live}))))
+
 (defn spawn-run!
   "Create one agent-run strand; the engine spawns it when it becomes ready.
 
@@ -1035,22 +1193,29 @@
   optionally `:reap` (`auto` tears the session down on completion, `manual`
   leaves it to the human; default auto). An interactive run with a `:parent`
   completes when that strand closes (claim); without one it completes when
-  its own run strand is closed (manual-close). Asynchronous: returns the
-  created run strand immediately."
+  its own run strand is closed (manual-close).
+
+  `:resume <predecessor-run-id>` continues the predecessor's harness session:
+  the run is stamped `shuttle/resumes` with a `resumes` annotation edge, and at
+  launch the harness `:resume` splice resolves from the predecessor's captured
+  attributes ahead of the prompt (see `validate-resume!` for the loud rules).
+  Asynchronous: returns the created run strand immediately."
   [{:keys [harness prompt title depends-on parent spawned-by cwd max-attempts attrs
-           mode backend reap]}]
+           mode backend reap resume]}]
   (when (str/blank? prompt)
     (fail! "Run :prompt must be non-blank" {}))
-  (resolve-harness (or harness (fail! "Run :harness is required" {})))
-  (when (and mode (not (contains? #{:interactive "interactive"} mode)))
-    (fail! "Run :mode must be :interactive when provided" {:mode mode}))
-  (when (and (not mode) (or backend reap))
-    (fail! "Run :backend and :reap apply only to interactive runs"
-           {:backend backend :reap reap}))
-  (when mode
-    (resolve-backend (or backend (fail! "Interactive runs require :backend" {})))
-    (when (and reap (not (contains? #{:auto :manual "auto" "manual"} reap)))
-      (fail! "Run :reap must be auto or manual" {:reap reap})))
+  (let [resolved (resolve-harness (or harness (fail! "Run :harness is required" {})))]
+    (when (and mode (not (contains? #{:interactive "interactive"} mode)))
+      (fail! "Run :mode must be :interactive when provided" {:mode mode}))
+    (when (and (not mode) (or backend reap))
+      (fail! "Run :backend and :reap apply only to interactive runs"
+             {:backend backend :reap reap}))
+    (when mode
+      (resolve-backend (or backend (fail! "Interactive runs require :backend" {})))
+      (when (and reap (not (contains? #{:auto :manual "auto" "manual"} reap)))
+        (fail! "Run :reap must be auto or manual" {:reap reap})))
+    (when resume
+      (validate-resume! (name (harness-key harness)) resolved mode resume)))
   (let [parent-ids (distinct (remove nil? [parent spawned-by]))
         reserved (merge {"shuttle/run" "true"
                          "shuttle/harness" (name (harness-key harness))
@@ -1059,6 +1224,7 @@
                         (when cwd {"shuttle/cwd" cwd})
                         (when spawned-by {"shuttle/spawned-by" spawned-by})
                         (when max-attempts {"shuttle/max-attempts" max-attempts})
+                        (when resume {"shuttle/resumes" resume})
                         (when mode
                           (merge {"shuttle/mode" "interactive"
                                   "shuttle/backend" (name (harness-key backend))
@@ -1076,7 +1242,8 @@
         (fail! "Run parent strand not found" {:id parent-id})))
     (let [run (api/add (rt) {:title (or title (truncate prompt 72))
                              :attributes (merge attrs reserved)
-                             :edges (mapv (fn [dep] {:type "depends-on" :to dep}) (distinct (or depends-on [])))})]
+                             :edges (cond-> (mapv (fn [dep] {:type "depends-on" :to dep}) (distinct (or depends-on [])))
+                                      resume (conj {:type "resumes" :to resume}))})]
       (doseq [parent-id parent-ids]
         (api/update (rt) parent-id {:edges [{:type "parent-of" :to (:id run)}]}))
       run)))
@@ -1128,6 +1295,8 @@
                (sattr run "error") (assoc :error (sattr run "error"))
                (sattr run "session-id") (assoc :session-id (sattr run "session-id"))
                (sattr run "spawned-by") (assoc :spawned-by (sattr run "spawned-by"))
+               (sattr run "resumes") (assoc :resumes (sattr run "resumes"))
+               (sattr run "error-class") (assoc :error-class (sattr run "error-class"))
                (sattr run "attempt") (assoc :attempt (sattr run "attempt")))]
     (if (interactive? run)
       (let [attach (attach-hint run)]

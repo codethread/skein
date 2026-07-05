@@ -1,6 +1,7 @@
 (ns skein.agents-test
   "Tests for the agents coordination spool layered over shuttle."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as api]
@@ -152,26 +153,471 @@
         (finally
           (shuttle/set-default-review-contract! nil))))))
 
-(deftest council-wires-members-and-synthesizer
+(deftest defroster-validates-and-lists-rosters
+  (with-agents
+    (fn [_]
+      (testing "registration returns a summary and rosters lists full data"
+        (is (= {:roster :repo :reviewers 2}
+               (agents/defroster! "repo"
+                 {:reviewers [{:name "tests" :harness :sh :contract "Judge the tests." :scope "test files"}
+                              {:name "docs" :harness "sh" :contract "Judge the docs."}]
+                  :synthesizer {:harness :sh}})))
+        (let [[roster] (agents/rosters)]
+          (is (= :repo (:name roster)))
+          (is (= ["tests" "docs"] (mapv :name (:reviewers roster))))
+          (is (= {:harness :sh} (:synthesizer roster)))))
+      (testing "re-registration replaces the roster"
+        (agents/defroster! :repo {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
+        (is (= ["solo"] (mapv :name (:reviewers (first (agents/rosters)))))))
+      (testing "the roster shape is spec-defined and registered data conforms"
+        (is (s/valid? :skein.spools.agents/roster
+                      {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})))
+      (testing "structurally malformed roster data fails loudly via the spec"
+        (doseq [bad [[:not-a-map]
+                     {:reviewers []}
+                     {:reviewers [{:harness :sh :contract "c"}]}
+                     {:reviewers [{:name "r" :contract "c"}]}
+                     {:reviewers [{:name "r" :harness :sh}]}
+                     {:reviewers [{:name "r" :harness :sh :contract "c" :scope "  "}]}
+                     {:reviewers [{:name "r" :harness :sh :contract "c"}] :synthesizer :sh}
+                     {:reviewers [{:name "r" :harness :sh :contract "c"}] :synthesizer {}}]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
+                                (agents/defroster! :bad bad)))))
+      (testing "checks the spec cannot express stay loud"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "c" :contarct "typo"}]})))
+        ;; a typo REPLACING a required key must diagnose as the unknown key,
+        ;; not as the missing-key spec explain it also causes
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contarct "c"}]})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "c"}] :extra true})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "c"}]
+                                                       :synthesizer {:harness :sh :model "x"}})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be unique"
+                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "a"}
+                                                                   {:name "r" :harness :sh :contract "b"}]})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"keyword or non-blank string"
+                              (agents/defroster! "  " {:reviewers [{:name "r" :harness :sh :contract "c"}]})))))))
+
+(deftest roster-review-fans-out-declared-reviewers
   (with-agents
     (fn [rt]
-      (let [{:keys [council members synthesizer]}
-            (agents/council! "test topic" {:harness :sh :members 2 :rounds 1})]
-        (is (= 2 (count members)))
-        (testing "council strand is the shared parent of members and synthesizer"
-          (let [edges (:edges (api/subgraph rt [council]))]
-            (is (= (set (conj members synthesizer))
-                   (set (map :to_strand_id edges))))))
-        (testing "synthesizer waits for every member"
-          (shuttle/await-runs members {:timeout-secs 10})
-          (Thread/sleep 200)
-          (is (= "pending"
-                 (get-in (api/show rt synthesizer) [:attributes :shuttle/phase])))
-          (doseq [member members]
-            (api/update rt member {:state "closed"}))
-          (is (contains? #{"done" "failed"}
-                         (get-in (await-phase rt synthesizer #{"done" "failed"})
-                                 [:attributes :shuttle/phase]))))))))
+      (agents/defroster! :repo
+        {:reviewers [{:name "test-sleeps" :harness :sh
+                      :contract "Flag sleeps and arbitrary timeouts in tests."
+                      :scope "test files"}
+                     {:name "docs" :harness :sh :contract "Judge documentation drift."}]
+         :synthesizer {:harness :sh}})
+      (let [target (api/add rt {:title "Roster target" :attributes {:body "Inspect me"}})
+            review (agents/review! (:id target) {:roster :repo :cwd "/tmp/claude/roster-cwd"})
+            runs (mapv #(api/show rt %) (:reviewers review))
+            synth (api/show rt (:synthesizer review))]
+        (testing "one run per roster entry, each with its own contract and scope"
+          (is (= 2 (count runs)))
+          (is (= ["test-sleeps" "docs"]
+                 (mapv #(get-in % [:attributes :shuttle/review-focus]) runs)))
+          (let [[sleeps docs] (mapv #(get-in % [:attributes :shuttle/prompt]) runs)]
+            (is (str/includes? sleeps "Flag sleeps and arbitrary timeouts in tests."))
+            (is (str/includes? sleeps "Scope: confine this review to test files"))
+            (is (str/includes? sleeps (shuttle/default-review-contract-text))
+                "entry contracts layer onto the workspace base contract")
+            (is (str/includes? docs "Judge documentation drift."))
+            (is (not (str/includes? docs "Scope:")))))
+        (testing "roster name is stamped on every spawned run"
+          (is (every? #(= "repo" (get-in % [:attributes :shuttle/review-roster]))
+                      (conj runs synth))))
+        (testing "roster reviews synthesize by default with the declared harness and base contract"
+          (is (= "sh" (get-in synth [:attributes :shuttle/harness])))
+          (is (str/includes? (get-in synth [:attributes :shuttle/prompt])
+                             (shuttle/default-review-contract-text)))
+          (is (not (str/includes? (get-in synth [:attributes :shuttle/prompt])
+                                  "Flag sleeps and arbitrary timeouts")))
+          (is (= (set (:reviewers review))
+                 (->> (:edges (api/subgraph rt [(:id synth)] {:type "depends-on"}))
+                      (filter #(= (:id synth) (:from_strand_id %)))
+                      (map :to_strand_id)
+                      set))))
+        (testing "without a declared synthesizer the first reviewer's harness is used"
+          (agents/defroster! :undeclared
+            {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
+          (let [review* (agents/review! (:id target) {:roster :undeclared})
+                synth* (api/show rt (:synthesizer review*))]
+            (is (= "sh" (get-in synth* [:attributes :shuttle/harness])))))))))
+
+(deftest roster-review-specs-are-the-single-prompt-source
+  (with-agents
+    (fn [rt]
+      (agents/defroster! :composed
+        {:reviewers [{:name "a" :harness :sh :contract "Contract A." :scope "src"}
+                     {:name "b" :harness :sh :contract "Contract B."}]
+         :synthesizer {:harness :sh}})
+      (let [target (api/add rt {:title "Spec target"})
+            review (agents/review! (:id target) {:roster :composed})
+            specs (agents/roster-review-specs :composed {:target (:id target)
+                                                         :review-id (:review-pass review)})
+            runs (mapv #(api/show rt %) (:reviewers review))
+            synth (api/show rt (:synthesizer review))]
+        (testing "specs are gate-ready plain data"
+          (is (= ["a" "b"] (mapv :name (:reviewers specs))))
+          (is (every? #(and (string? (:prompt %)) (map? (:attrs %))) (:reviewers specs)))
+          (is (string? (get-in specs [:synthesizer :prompt]))
+              "synthesis prompt is buildable before any run exists"))
+        (testing "review! spawns exactly the spec prompts and attrs"
+          (is (= (mapv :prompt (:reviewers specs))
+                 (mapv #(get-in % [:attributes :shuttle/prompt]) runs)))
+          (is (= (get-in specs [:synthesizer :prompt])
+                 (get-in synth [:attributes :shuttle/prompt])))
+          (doseq [[spec run] (map vector (:reviewers specs) runs)
+                  [k v] (:attrs spec)]
+            (is (= v (get-in run [:attributes (keyword k)])))))
+        (testing "the pass tag threads notes together and separates rounds"
+          (is (str/includes? (get-in (first (:reviewers specs)) [:prompt])
+                             (str "[" (:review-pass review) "]")))
+          (is (str/includes? (get-in specs [:synthesizer :prompt])
+                             (str "tagged [" (:review-pass review) "]")))
+          (is (not= (:review-pass (agents/roster-review-specs :composed {:target (:id target)}))
+                    (:review-pass (agents/roster-review-specs :composed {:target (:id target)})))
+              "each pass mints a distinct tag"))
+        (testing "the seam output conforms to its public spec"
+          (is (s/valid? :skein.spools.agents/review-specs specs)
+              (s/explain-str :skein.spools.agents/review-specs specs)))
+        (testing "an inline roster value works anywhere a name does"
+          (let [inline {:reviewers [{:name "adhoc" :harness :sh :contract "One-off pass."}]}
+                inline-specs (agents/roster-review-specs inline {:target (:id target)})
+                inline-review (agents/review! (:id target) {:roster inline})
+                run (api/show rt (first (:reviewers inline-review)))]
+            (is (= :inline (:roster inline-specs)))
+            (is (s/valid? :skein.spools.agents/review-specs inline-specs))
+            (is (= "inline" (get-in run [:attributes :shuttle/review-roster])))
+            (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "One-off pass."))
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
+                                  (agents/roster-review-specs {:reviewers []} {:target (:id target)})))))
+        (testing "specs fail loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank :target"
+                                (agents/roster-review-specs :composed {})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #":review-id must be a non-blank"
+                                (agents/roster-review-specs :composed {:target (:id target) :review-id " "})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Roster not found"
+                                (agents/roster-review-specs :missing {:target (:id target)}))))))))
+
+(deftest roster-review-fails-loudly
+  (with-agents
+    (fn [rt]
+      (agents/defroster! :repo {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
+      (let [target (api/add rt {:title "Roster failure target"})]
+        (testing "unknown roster"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Roster not found"
+                                (agents/review! (:id target) {:roster :nope}))))
+        (testing "roster is the one authoritative source of reviewer settings"
+          (doseq [conflicting [{:members 3} {:harnesses ["sh"]} {:contract "c"} {:reviewers [{:harness :sh}]}]]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"from the roster"
+                                  (agents/review! (:id target) (merge {:roster :repo} conflicting))))))
+        (testing "CLI flag conflicts surface through the op"
+          (doseq [flag-pair [["--members" "3"] ["--harness" "sh"] ["--contract" "c"]]]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"from the roster"
+                                  (agents/agent-op {:op/argv (into ["review" (:id target) "--roster" "repo"] flag-pair)})))))
+        (testing "rosters verb lists and rejects arguments"
+          (is (= [:repo] (mapv :name (agents/agent-op {:op/argv ["rosters"]}))))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"takes no arguments"
+                                (agents/agent-op {:op/argv ["rosters" "extra"]}))))))))
+
+(deftest blackboard-fragments-emit-both-forms
+  (testing "seat identity locates the seat in the panel grid"
+    (is (= "You are seat 2 of 3, turn 1 of 4.\n"
+           (#'agents/seat-identity-fragment {:seat 2 :seats 3 :turn 1 :turns 4})))
+    (is (= "Continuing as seat 2 of 3, now on turn 2 of 4.\n"
+           (#'agents/seat-identity-fragment {:form :continuation :seat 2 :seats 3 :turn 2 :turns 4}))))
+  (testing "independence directive is full-only; resuming an independent seat is a contradiction"
+    (is (str/includes? (#'agents/independence-fragment {}) "Work independently"))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no continuation form"
+                          (#'agents/independence-fragment {:form :continuation}))))
+  (testing "deliberation continuation names the concrete previous turn and demands an integer turn"
+    (is (str/includes? (#'agents/deliberation-fragment {}) "previous turn"))
+    (is (= "Read peers' turn 2 posts on the board, then rebut or refine.\n"
+           (#'agents/deliberation-fragment {:form :continuation :turn 3})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer :turn"
+                          (#'agents/deliberation-fragment {:form :continuation})))))
+
+(deftest blackboard-board-fragments-back-the-review-prompt
+  (with-agents
+    (fn [_]
+      (testing "read-the-board renders both views and a terse continuation pointer"
+        (is (str/ends-with? (#'agents/read-the-board-fragment {:view :strand :board-id "s1"})
+                            "` and inspect the relevant repository state.\n"))
+        (is (str/includes? (#'agents/read-the-board-fragment {:view :notes :board-id "s1"})
+                           "agent notes s1"))
+        (is (str/includes? (#'agents/read-the-board-fragment {:view :strand :form :continuation :board-id "s1"})
+                           "The board is strand s1")))
+      (testing "post-with-tag prefixes the tag and omits it when nil"
+        (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"})
+                           "\"[pass-7] <findings>\""))
+        (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag nil})
+                           "\"<findings>\"")))
+      (testing "review-prompt is assembled from the shared fragments byte-for-byte"
+        (let [prompt (#'agents/review-prompt {:target-id "s1" :contract "C" :note-tag "p1"})]
+          (is (str/includes? prompt (#'agents/read-the-board-fragment {:view :strand :board-id "s1"})))
+          (is (str/includes? prompt (#'agents/post-with-tag-fragment {:board-id "s1" :tag "p1"}))))))))
+
+;; ---------------------------------------------------------------------------
+;; Panel primitive (PLAN-Pnl-001.PH4)
+;;
+;; session-fix is a fake claude-json harness that ignores its args and emits a
+;; fixed session id, so a panel prompt's embedded quotes never corrupt the
+;; captured JSON — panel resume wiring only needs the predecessor to capture a
+;; session, not to echo the prompt. session-fix-no-resume captures a session
+;; but declares no :resume splice, so resuming it must fail at spawn.
+
+(def ^:private session-fix
+  {:argv ["sh" "-c" "printf '{\"result\":\"ok\",\"session_id\":\"sess-abc\"}'" "session-fix"]
+   :parse :claude-json
+   :preamble? false
+   :resume ["--resume" :shuttle/session-id]})
+
+(def ^:private session-fix-no-resume (dissoc session-fix :resume))
+
+(deftest panel-specs-compiles-conformant-run-specs
+  (with-agents
+    (fn [rt]
+      (let [target (api/add rt {:title "Panel target" :attributes {:body "Inspect me"}})
+            panel {:seats [{:name "correctness" :harness :sh :brief "Judge correctness." :scope "src"}
+                           {:name "tests" :harness "sh" :brief "Judge the tests."}]
+                   :synthesis {:harness :sh :brief "Weigh both."}}
+            specs (agents/panel-specs panel {:target (:id target)})
+            row1 (first (:turns specs))]
+        (testing "output conforms to its public spec"
+          (is (s/valid? :skein.spools.agents/panel-specs specs)
+              (s/explain-str :skein.spools.agents/panel-specs specs)))
+        (testing "a single default round is one turn row of independent seats"
+          (is (= 1 (count (:turns specs))))
+          (is (= ["correctness" "tests"] (mapv :name row1)))
+          (is (every? #(str/includes? (:prompt %) "Work independently") row1))
+          (is (every? #(str/includes? (:prompt %) "You are seat") row1))
+          (is (every? #(nil? (:resume-ref %)) row1))
+          (is (str/includes? (:prompt (first row1)) "Scope: confine your work to src")))
+        (testing "keyword and string harnesses both compile"
+          (is (= [:sh "sh"] (mapv :harness row1))))
+        (testing "every run spec stamps panel + review attrs"
+          (doseq [spec row1]
+            (is (= (:id target) (get (:attrs spec) "shuttle/review-target")))
+            (is (= (:review-pass specs) (get (:attrs spec) "shuttle/review-pass")))
+            (is (= "1" (get (:attrs spec) "shuttle/panel-turn")))
+            (is (= (:name spec) (get (:attrs spec) "shuttle/panel-seat")))))
+        (testing "blackboard directive names the target strand"
+          (is (= {:kind :target :id (:id target)} (:blackboard specs))))
+        (testing "synthesis compiles when declared"
+          (is (str/includes? (get-in specs [:synthesizer :prompt]) "Weigh both."))
+          (is (str/includes? (get-in specs [:synthesizer :prompt]) "Synthesize the panel deliberation")))
+        (testing "no synthesis yields no synthesizer and still conforms"
+          (let [bare (agents/panel-specs (dissoc panel :synthesis) {:target (:id target)})]
+            (is (nil? (:synthesizer bare)))
+            (is (s/valid? :skein.spools.agents/panel-specs bare))))
+        (testing ":review-id overrides the minted pass tag"
+          (is (= "pass-x" (:review-pass (agents/panel-specs panel {:target (:id target) :review-id "pass-x"})))))))))
+
+(deftest panel-specs-multi-round-wires-barriers-and-prompt-forms
+  (with-agents
+    (fn [_]
+      (let [panel {:seats [{:name "alpha" :harness :sh :brief "Debate hard." :continuity :resume}
+                           {:name "beta" :harness :sh :brief "Debate harder." :continuity :resume}]
+                   :turns {:rounds 3}
+                   :blackboard :fresh}
+            specs (agents/panel-specs panel {})]
+        (testing "one turn row per round, conforming to the spec"
+          (is (= 3 (count (:turns specs))))
+          (is (s/valid? :skein.spools.agents/panel-specs specs)
+              (s/explain-str :skein.spools.agents/panel-specs specs)))
+        (testing "a fresh blackboard defers the id to the spawner via a placeholder"
+          (is (= {:kind :fresh} (:blackboard specs)))
+          (is (str/includes? (:prompt (first (first (:turns specs)))) "«panel-board»")))
+        (testing "turn 1 opens on the full prompt with no resume threading"
+          (let [row1 (first (:turns specs))]
+            (is (every? #(nil? (:resume-ref %)) row1))
+            (is (every? #(nil? (:resume-prompt %)) row1))
+            (is (every? #(str/includes? (:prompt %) "You are seat") row1))
+            (is (not (str/includes? (:prompt (first row1)) "Work independently")))))
+        (testing "turn 2 threads each seat onto its own previous-row index with a continuation prompt"
+          (let [row2 (second (:turns specs))]
+            (is (= [0 1] (mapv :resume-ref row2)))
+            (is (every? #(str/includes? (:resume-prompt %) "Continuing as seat") row2))
+            (is (str/includes? (:resume-prompt (first row2)) "Read peers' turn 1"))))
+        (testing "turn 3 continuation references the prior turn"
+          (is (str/includes? (:resume-prompt (first (nth (:turns specs) 2))) "Read peers' turn 2")))))))
+
+(deftest panel-spawns-fresh-board-with-barriers-and-resume-threads
+  (with-agents
+    (fn [rt]
+      (shuttle/defharness! :session-fix session-fix)
+      (let [panel {:seats [{:name "alpha" :harness :session-fix :brief "Deliberate." :continuity :resume}
+                           {:name "beta" :harness :session-fix :brief "Deliberate too." :continuity :resume}]
+                   :turns {:rounds 2}
+                   :blackboard :fresh
+                   :synthesis {:harness :session-fix}}
+            result (agents/panel! panel {})
+            board (api/show rt (:blackboard result))
+            [row1 row2] (:turns result)
+            deps-of (fn [id]
+                      (->> (:edges (api/subgraph rt [id] {:type "depends-on"}))
+                           (filter #(= id (:from_strand_id %)))
+                           (map :to_strand_id) set))]
+        (testing "a fresh blackboard strand is minted"
+          (is (= "panel" (get-in board [:attributes :shuttle/role]))))
+        (testing "each turn row has one run per seat"
+          (is (= 2 (count row1)))
+          (is (= 2 (count row2))))
+        (testing "turn 2 barriers on every turn-1 run"
+          (doseq [run-id row2]
+            (is (= (set row1) (deps-of run-id)))))
+        (testing "turn 2 threads each seat onto its own predecessor via shuttle/resumes"
+          (is (= (first row1) (get-in (api/show rt (first row2)) [:attributes :shuttle/resumes])))
+          (is (= (second row1) (get-in (api/show rt (second row2)) [:attributes :shuttle/resumes]))))
+        (testing "spawned prompts select the form and resolve the board placeholder"
+          (let [p1 (get-in (api/show rt (first row1)) [:attributes :shuttle/prompt])
+                p2 (get-in (api/show rt (first row2)) [:attributes :shuttle/prompt])]
+            (is (str/includes? p1 "You are seat"))
+            (is (str/includes? p2 "Continuing as seat"))
+            (is (not (str/includes? p2 "«panel-board»")))
+            (is (str/includes? p2 (:blackboard result)))
+            (is (= (:blackboard result)
+                   (get-in (api/show rt (first row1)) [:attributes :shuttle/review-target])))))
+        (testing "a resuming turn stashes its full-brief prompt for retry --fresh"
+          (let [f2 (get-in (api/show rt (first row2)) [:attributes :shuttle/fresh-prompt])]
+            (is (str/includes? f2 "You are seat")
+                "the full form, not the continuation, is durable for a cold restart")
+            (is (not (str/includes? f2 "«panel-board»")))))
+        (testing "the synthesizer depends on the final turn row"
+          (is (= (set row2) (deps-of (:synthesizer result)))))))))
+
+(deftest panel-fails-loudly
+  (with-agents
+    (fn [rt]
+      (shuttle/defharness! :session-fix-no-resume session-fix-no-resume)
+      (let [target (api/add rt {:title "panel fail target"})]
+        (testing "malformed and structurally invalid panels fail via the spec"
+          (doseq [bad [[:not-a-map]
+                       {:seats []}
+                       {:seats [{:name "a" :harness :sh}]}
+                       {:seats [{:harness :sh :brief "b"}]}]]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
+                                  (agents/panel-specs bad {:target (:id target)})))))
+        (testing "unknown keys diagnose before the spec"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/panel-specs {:seats [{:name "a" :harness :sh :brief "b" :nope 1}]} {:target (:id target)})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/panel-specs {:seats [{:name "a" :harness :sh :brief "b"}] :bogus 1} {:target (:id target)}))))
+        (testing "seat names must be unique"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be unique"
+                                (agents/panel-specs {:seats [{:name "x" :harness :sh :brief "a"}
+                                                             {:name "x" :harness :sh :brief "b"}]}
+                                                    {:target (:id target)}))))
+        (testing "a :target blackboard requires a non-blank target"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank :target"
+                                (agents/panel-specs {:seats [{:name "a" :harness :sh :brief "b"}]} {}))))
+        (testing "a :target blackboard is single-round only (seats read the subject, not peer posts)"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"single round only"
+                                (agents/panel-specs {:seats [{:name "a" :harness :sh :brief "b"}]
+                                                     :turns {:rounds 2}
+                                                     :blackboard :target}
+                                                    {:target (:id target)}))))
+        (testing ":review-id must be non-blank when present"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
+                                (agents/panel-specs {:seats [{:name "a" :harness :sh :brief "b"}]}
+                                                    {:target (:id target) :review-id "  "}))))
+        (testing "continuity :resume on a harness without a :resume splice fails at spawn"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"declares a :resume splice"
+                                (agents/panel! {:seats [{:name "a" :harness :session-fix-no-resume
+                                                         :brief "b" :continuity :resume}]
+                                                :turns {:rounds 2}
+                                                :blackboard :fresh}
+                                               {}))))))))
+
+(deftest panel-specs-blackboard-directive-is-tightly-specd
+  ;; the compiled seam is a consumer contract, so a malformed blackboard
+  ;; directive must fail the spec rather than only being documented away
+  (testing ":target carries an :id; :fresh omits it"
+    (is (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :target :id "s1"}))
+    (is (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :fresh})))
+  (testing "kind/id disagreement is rejected"
+    (is (not (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :target})))
+    (is (not (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :fresh :id "s1"})))))
+
+(deftest roster->panel-produces-independent-target-panel
+  (with-agents
+    (fn [rt]
+      (let [roster {:reviewers [{:name "tests" :harness :sh :contract "Judge the tests." :scope "test files"}
+                                {:name "docs" :harness "sh" :contract "Judge the docs."}]
+                    :synthesizer {:harness :sh}}
+            panel (agents/roster->panel roster)
+            target (api/add rt {:title "roster-panel target"})]
+        (testing "each reviewer becomes an independent seat carrying its contract as brief"
+          (is (= [{:name "tests" :harness :sh :brief "Judge the tests." :continuity :fresh :scope "test files"}
+                  {:name "docs" :harness "sh" :brief "Judge the docs." :continuity :fresh}]
+                 (:seats panel)))
+          (is (= {:rounds 1} (:turns panel)))
+          (is (= :target (:blackboard panel)))
+          (is (= {:harness :sh} (:synthesis panel))))
+        (testing "the converted panel compiles to the single-round independent shape"
+          (let [specs (agents/panel-specs panel {:target (:id target)})]
+            (is (= 1 (count (:turns specs))))
+            (is (every? #(str/includes? (:prompt %) "Work independently") (first (:turns specs))))
+            (is (s/valid? :skein.spools.agents/panel-specs specs))))
+        (testing "a synthesizer-less roster falls back to the first reviewer's harness"
+          (is (= {:harness :sh}
+                 (:synthesis (agents/roster->panel {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})))))
+        (testing "a malformed roster fails identically to defroster! input"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
+                                (agents/roster->panel {:reviewers []}))))))))
+
+(deftest council-turn-rows-per-seat-harnesses-and-loud-harness
+  (with-agents
+    (fn [rt]
+      (let [deps-of (fn [id]
+                      (->> (:edges (api/subgraph rt [id] {:type "depends-on"}))
+                           (filter #(= id (:from_strand_id %)))
+                           (map :to_strand_id) set))]
+        (testing "scalar members expand to identical seats across turn-as-run rows"
+          (let [{:keys [council turns synthesizer]}
+                (agents/council! "test topic" {:harness :sh :members 2 :rounds 2})
+                board (api/show rt council)
+                [row1 row2] turns]
+            (is (= "panel" (get-in board [:attributes :shuttle/role]))
+                "council re-ships as a fresh-blackboard panel")
+            (is (= [2 2] [(count row1) (count row2)]))
+            (testing "the council strand parents every run"
+              (is (= (set (concat row1 row2 [synthesizer]))
+                     (set (map :to_strand_id (:edges (api/subgraph rt [council])))))))
+            (testing "the poll-loop choreography is gone; the topic remains"
+              (doseq [run-id (concat row1 row2 [synthesizer])]
+                (let [p (get-in (api/show rt run-id) [:attributes :shuttle/prompt])]
+                  (is (not (str/includes? p "poll")))
+                  (is (not (str/includes? p "sleep")))
+                  (is (str/includes? p "test topic")))))
+            (testing "turn 2 barriers on every turn-1 run and the synthesizer waits on the final row"
+              (doseq [run-id row2] (is (= (set row1) (deps-of run-id))))
+              (is (= (set row2) (deps-of synthesizer))))))
+        (testing "per-seat harnesses and perspectives ride onto seats"
+          (let [{:keys [turns]} (agents/council! "seated topic"
+                                                 {:rounds 1
+                                                  :seats [{:name "skeptic" :harness :sh :brief "Argue against."}
+                                                          {:name "advocate" :harness :sh :brief "Argue for."}]})
+                row1 (first turns)
+                prompts (mapv #(get-in (api/show rt %) [:attributes :shuttle/prompt]) row1)]
+            (is (= 2 (count row1)))
+            (is (some #(str/includes? % "Your assigned perspective: Argue against.") prompts))
+            (is (some #(str/includes? % "Your assigned perspective: Argue for.") prompts))
+            (is (every? #(= "sh" (get-in (api/show rt %) [:attributes :shuttle/harness])) row1))))
+        (testing "council fails loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
+                                (agents/council! "  " {:harness :sh})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+                                (agents/council! "t" {:harness :sh :rounds 0})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires a harness"
+                                (agents/council! "t" {:members 2}))
+              "the silent :claude default is gone: no harness resolves loudly")
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not both"
+                                (agents/council! "t" {:harness :sh :members 2
+                                                      :seats [{:name "a" :harness :sh}]}))))))))
 
 (deftest delegate-fails-loudly-for-contract-violations
   (with-agents
@@ -288,6 +734,87 @@
           (is (= "/tmp/retry-cwd" (get-in new-run [:attributes :shuttle/cwd])))
           (is (= 5 (get-in new-run [:attributes :shuttle/max-attempts])))
           (is (some #(= (:id blocker) (:to_strand_id %)) dep-edges)))))))
+
+(deftest retry-continuity-preserves-severs-and-guards-resume
+  ;; resuming runs are hand-built so the matrix is deterministic and sleep-free:
+  ;; a closed predecessor with a captured session, plus a failed turn carrying
+  ;; both prompt forms, exercises every A3 branch without launching a real turn.
+  (with-agents
+    (fn [rt]
+      (shuttle/defharness! :session-fix session-fix)
+      (let [make-pred (fn [] (:id (api/add rt {:title "predecessor turn"
+                                               :state "closed"
+                                               :attributes {"shuttle/run" "true"
+                                                            "shuttle/harness" "session-fix"
+                                                            "shuttle/session-id" "sess-abc"
+                                                            "shuttle/phase" "done"}})))
+            make-failed (fn [pred extra]
+                          (:id (api/add rt {:title "resuming turn"
+                                            :attributes (merge {"shuttle/run" "true"
+                                                                "shuttle/harness" "session-fix"
+                                                                "shuttle/prompt" "CONTINUATION prompt"
+                                                                "shuttle/fresh-prompt" "FULLBRIEF prompt"
+                                                                "shuttle/resumes" pred
+                                                                "shuttle/phase" "failed"}
+                                                               extra)})))]
+        (testing "a plain retry re-resumes the same predecessor on the continuation prompt"
+          (let [pred (make-pred)
+                failed (make-failed pred {})
+                retried (agents/agent-op {:op/argv ["retry" failed]})
+                new-run (api/show rt (get-in retried [:run :id]))]
+            (is (= failed (:superseded retried)))
+            (is (= pred (get-in new-run [:attributes :shuttle/resumes])))
+            (is (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "CONTINUATION prompt"))
+            (is (= "FULLBRIEF prompt" (get-in new-run [:attributes :shuttle/fresh-prompt]))
+                "the full-brief form carries forward for a later --fresh")))
+        (testing "--fresh severs the linkage and cold-starts on the full-brief prompt"
+          (let [pred (make-pred)
+                failed (make-failed pred {})
+                retried (agents/agent-op {:op/argv ["retry" failed "--fresh"]})
+                new-run (api/show rt (get-in retried [:run :id]))]
+            (is (nil? (get-in new-run [:attributes :shuttle/resumes])))
+            (is (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "FULLBRIEF prompt"))
+            (is (not (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "CONTINUATION prompt")))))
+        (testing "a resume-classed failure refuses a plain retry and names --fresh"
+          (let [pred (make-pred)
+                failed (make-failed pred {"shuttle/error-class" "resume"})]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fresh"
+                                  (agents/agent-op {:op/argv ["retry" failed]})))
+            (testing "--fresh recovers it"
+              (let [retried (agents/agent-op {:op/argv ["retry" failed "--fresh"]})
+                    new-run (api/show rt (get-in retried [:run :id]))]
+                (is (nil? (get-in new-run [:attributes :shuttle/resumes])))
+                (is (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "FULLBRIEF prompt"))))))))))
+
+(deftest retry-preserves-panel-review-structural-attrs
+  ;; a failed panel/review run is hand-built so the assertion is deterministic
+  ;; and sleep-free: the retried run must keep the structural attrs that make
+  ;; the deliberation queryable from run attrs, not just the prompt.
+  (with-agents
+    (fn [rt]
+      (let [failed (:id (api/add rt {:title "panel seat turn"
+                                     :attributes {"shuttle/run" "true"
+                                                  "shuttle/harness" "sh"
+                                                  "shuttle/prompt" "seat brief"
+                                                  "shuttle/phase" "failed"
+                                                  "shuttle/review-target" "tgt-1"
+                                                  "shuttle/review-pass" "panel-abc123"
+                                                  "shuttle/review-roster" "repo"
+                                                  "shuttle/review-focus" "skeptic"
+                                                  "shuttle/panel-seat" "skeptic"
+                                                  "shuttle/panel-turn" "2"
+                                                  ;; a lifecycle attr the engine re-derives; it must NOT ride along
+                                                  "shuttle/result" "stale old result"}}))
+            retried (agents/agent-op {:op/argv ["retry" failed]})
+            attrs (:attributes (api/show rt (get-in retried [:run :id])))]
+        (is (= "tgt-1" (:shuttle/review-target attrs)))
+        (is (= "panel-abc123" (:shuttle/review-pass attrs)))
+        (is (= "repo" (:shuttle/review-roster attrs)))
+        (is (= "skeptic" (:shuttle/review-focus attrs)))
+        (is (= "skeptic" (:shuttle/panel-seat attrs)))
+        (is (= "2" (:shuttle/panel-turn attrs)))
+        (is (not= "stale old result" (:shuttle/result attrs))
+            "engine lifecycle attrs are re-stamped, not carried from the superseded run")))))
 
 (deftest await-under-and-retry-workflow
   (with-agents

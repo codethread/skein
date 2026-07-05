@@ -1,0 +1,21 @@
+# agent-panels AFK task queue — sequential subagent gates via treadle.
+# Bodies live in the sibling task files and are the worker contracts verbatim.
+# Harness routing: build = opus (implementation), review-gpt = GPT-5.4 (reviews
+# as we go), grunt = sonnet (mechanical validation). cwd for every task is the
+# review-fanout worktree. Reviews write [agent-panels/...]-tagged notes on
+# d5af5; the next build task actions P1/P2 from the LATEST note per tag.
+tasks:
+  - {id: "01-ph1-shuttle-resume",   harness: build,      status: pending, blocked_by: []}
+  - {id: "02-ph1-review",           harness: review-gpt, status: pending, blocked_by: ["01-ph1-shuttle-resume"]}
+  - {id: "03-ph2-harness-defaults", harness: build,      status: pending, blocked_by: ["02-ph1-review"]}
+  - {id: "04-ph2-review",           harness: review-gpt, status: pending, blocked_by: ["03-ph2-harness-defaults"]}
+  - {id: "05-ph3-protocol-library", harness: build,      status: pending, blocked_by: ["04-ph2-review"]}
+  - {id: "06-ph4-panel-compiler",   harness: build,      status: pending, blocked_by: ["05-ph3-protocol-library"]}
+  - {id: "07-ph34-review",          harness: review-gpt, status: pending, blocked_by: ["06-ph4-panel-compiler"]}
+  - {id: "08-ph5-presets",          harness: build,      status: pending, blocked_by: ["07-ph34-review"]}
+  - {id: "09-ph5-review",           harness: review-gpt, status: pending, blocked_by: ["08-ph5-presets"]}
+  - {id: "10-ph6-docs-and-fixes",   harness: build,      status: pending, blocked_by: ["09-ph5-review"]}
+  - {id: "11-ph7-audit",            harness: build,      status: pending, blocked_by: ["10-ph6-docs-and-fixes"]}
+  - {id: "12-ph7-validation",       harness: grunt,      status: pending, blocked_by: ["11-ph7-audit"]}
+  - {id: "13-final-review",         harness: review-gpt, status: pending, blocked_by: ["12-ph7-validation"]}
+  - {id: "14-final-fixes",          harness: build,      status: pending, blocked_by: ["13-final-review"]}

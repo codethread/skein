@@ -40,7 +40,7 @@ Harnesses are data-first launcher definitions registered in trusted Clojure:
 
 | Fn | Behavior |
 |---|---|
-| `(defharness! name def)` | Register a concrete harness. `def` requires `:argv` and may include `:parse`, `:prompt-via`, `:preamble?`, `:env`, `:cwd`, `:doc`, and `:capture` (interactive transcript capture — see [§4.1](#41-transcript-capture)). |
+| `(defharness! name def)` | Register a concrete harness. `def` requires `:argv` and may include `:parse`, `:prompt-via`, `:preamble?`, `:env`, `:cwd`, `:doc`, `:resume` (session continuation splice — see [§3.1](#31-session-continuation-resume)), and `:capture` (interactive transcript capture — see [§4.1](#41-transcript-capture)). |
 | `(defalias! name def)` | Register an alias over a harness or another alias. Alias defs require `:alias-of` and may add `:extra-args`, `:prompt-prefix`, and `:doc`. |
 | `(resolve-harness name)` | Return the effective harness after flattening aliases; alias cycles fail loudly. |
 | `(harnesses)` | Return registered harness and alias metadata ordered by name. |
@@ -49,6 +49,22 @@ Harnesses are data-first launcher definitions registered in trusted Clojure:
 Default parse strategies are `:raw`, `:claude-json`, and `:pi-json`. The `sh` harness is intended for tests and plumbing.
 
 Because a harness is plain data, swapping the underlying provider for a whole workspace is a single `defharness!`/`defalias!` line — this is the seam the agents spool builds its cross-harness subagent surface on.
+
+### 3.1 Session continuation (`:resume`)
+
+A harness may declare a `:resume` splice: a non-empty vector of literal argv strings interleaved with placeholder keywords drawn from a closed input set (currently `:shuttle/session-id`). A typo'd placeholder fails loudly at `defharness!` time rather than resolving to `nil`. Spawning a run with `:resume <predecessor-run-id>` continues that predecessor's harness session — the engine stamps `shuttle/resumes <predecessor-id>` on the new run plus a `resumes` annotation edge, and at launch resolves each placeholder from the predecessor's captured attributes and splices the result into the argv **before** the prompt (so the session flag precedes the turn text). The shipped `:claude` and `:pi` defs declare a resume splice and capture `shuttle/session-id` by default (via `:claude-json` / `:pi-json`); a harness with no `:resume` splice stays first-class and simply cannot be resumed.
+
+Resume fails loudly (TEN-003), never silently, and every resume-classed failure stamps `shuttle/error-class "resume"` so recovery can branch deliberately:
+
+- **no splice** — the spawning harness declares no `:resume`;
+- **missing session** — the predecessor never captured a `shuttle/session-id`;
+- **harness mismatch** — resume requires the *exact same* harness/alias name as the predecessor (aliases swap model/provider/agent via `:extra-args`, so a base-root match is too weak; the error carries both names);
+- **concurrent continuation** — at most one active run may carry `shuttle/resumes <p>` at a time (one live continuation per session);
+- **interactive** — interactive runs reject `:resume`; the live session is their own continuity.
+
+These invariants are enforced both at `spawn-run!` time and again at the launch seam, because a run strand can be hand-built directly via `api/add` — a handmade `shuttle/resumes` run never bypasses them.
+
+**Persistence is host-local and never required.** Harness session stores are host-local, non-skein-owned state: Skein records only the `shuttle/session-id` it parsed and never manages the store. Nothing consumes a session unless a caller passes `:resume` — a run without it behaves byte-identically to a no-resume engine. A lost or unresumable session fails loudly rather than auto-falling back to a cold start; the recovery path is the named `--fresh` escape (see [agents `retry`](../agents/README.md#3-op-surface)), which severs the linkage and respawns on the full-brief prompt.
 
 ## 4. Backend registry (interactive sessions)
 
@@ -99,7 +115,7 @@ Capture runs at two points: best-effort before teardown (never a completion bloc
 
 | Fn | Behavior |
 |---|---|
-| `(spawn-run! opts)` | Create one run strand. Required: `:harness`, `:prompt`. Optional: `:title`, `:depends-on`, `:parent`, `:spawned-by`, `:cwd`, `:max-attempts`, `:attrs`; interactive runs add `:mode :interactive` with required `:backend` and optional `:reap`. `:parent` and `:spawned-by` each add a `parent-of` edge to the run. Returns immediately. |
+| `(spawn-run! opts)` | Create one run strand. Required: `:harness`, `:prompt`. Optional: `:title`, `:depends-on`, `:parent`, `:spawned-by`, `:cwd`, `:max-attempts`, `:attrs`, `:resume <predecessor-run-id>` (continue that run's session — see [§3.1](#31-session-continuation-resume)); interactive runs add `:mode :interactive` with required `:backend` and optional `:reap`. `:parent` and `:spawned-by` each add a `parent-of` edge to the run. Returns immediately. |
 | `(scan!)` | Spawn every ready pending run not already claimed in this weaver lifetime. Usually called by events and install/reconcile. |
 | `(supervise!)` | Advance every interactive run in phase `running`: reap completed ones, fail dead sessions. Called by events, `runs`, `await-runs`, and reconcile — the weaver deliberately has no timers, so there is no background poller. |
 | `(runs opts)` | Return summaries of shuttle runs; `{:active true}` filters active runs, `{:for <strand-id>}` filters by delegated target. Summaries carry `:for` (the delegated target: `treadle/gate` when present, else a non-`spawned-by` `parent-of` source) with spawning provenance separately visible as `:spawned-by`. Interactive summaries add `:mode`, `:backend`, `:completion`, `:session`, and the rendered `:attach` hint. Listing doubles as a liveness checkpoint. |
@@ -165,6 +181,8 @@ Interactive runs get their own preamble variant carrying the completion contract
 | `shuttle/result` | Final captured agent result on success. |
 | `shuttle/error` | Failure detail when phase is `failed` or `exhausted`. |
 | `shuttle/session-id` | Harness session id when parsed from harness output. |
+| `shuttle/resumes` | Predecessor run id whose harness session this run continues (also carried as a `resumes` annotation edge). |
+| `shuttle/error-class` | `resume` on a failure that resolving/continuing a session caused, so recovery can branch to a fresh spawn instead of retrying against a lost session. |
 | `shuttle/log` | Path to captured stdout log under the weaver state dir. |
 | `shuttle/pid` | Live process pid recorded after launch. |
 | `shuttle/pid-started-at` | OS process start instant used to avoid signalling recycled pids. |

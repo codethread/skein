@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.patterns.alpha :as patterns]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as api]
             [skein.spools.shuttle :as shuttle]))
 
@@ -65,6 +66,7 @@
                       "Run success never closes the task it served: YOU verify, then close the task to unblock dependents. Skip the close and the plan silently stalls."
                       "A task's FILE SCOPE is the set of files its body names as owned; every scope rule (disjoint siblings, one mutator per scope) refers to that owned set."
                       "An INTERACTIVE run is a live multiplexer session (mode=interactive): it completes when the strand it serves closes, not when a process exits. ps shows its attach command; a session that dies early fails the run loudly."]
+              :composition "council is a preset over an internal PANEL primitive — seats × a shared blackboard × turn-as-run rows × synthesis (skein.spools.agents/panel!). review shares the same blackboard protocol and is expressible as a single-round panel (skein.spools.agents/roster->panel), but fans out through roster-review-specs so its established prompts and attrs stay frozen. There is deliberately no panel verb: compose panels from trusted Clojure or reach for them through these presets."
               :scheduler "depends-on readiness is the only scheduler: a pending run starts the moment its blockers close."
               :run-result "A successful run closes itself with the worker's final message in shuttle/result. A failed run stays active, loud, and visible until retry or kill."
               :phase-enum ["pending" "running" "done" "failed" "exhausted" "superseded"]
@@ -133,12 +135,14 @@
                             :fails ["positional task supplied with --ready" "selected ready tasks missing harness"]
                             :returns {"plan" "plan id" "delegated" [{"task" "task id" "run" {"id" "run id" "phase" "pending" "harness" "string"}}] "skipped" [{"task" "task id" "reason" "hitl|has-active-run|failed-needs-retry|already-succeeded"}]}}
            :retry {:group "delegation"
-                   :usage "agent retry <task-or-run-id> [--harness h] [--cwd dir] [--prompt extra]"
+                   :usage "agent retry <task-or-run-id> [--fresh] [--harness h] [--cwd dir] [--prompt extra]"
                    :semantics ["The recovery verb. Given a task id, find its failed/exhausted run, close it with phase superseded, rebuild the prompt from the task's current body, and spawn fresh."
                                "When the contract was wrong, edit the task body first with `strand update <task-id> --attr body=:payload/<name> --payload <name>=<path>` or `--attr body=:stdin`."
                                "Given a raw run id, supersede and respawn from the original prompt while preserving served target, spawned-by provenance, depends-on edges, cwd, and max-attempts."
+                               "A resumed run (one continuing a predecessor's session) re-resumes that same session by default. --fresh severs the linkage and respawns cold on the run's full-brief prompt, since a fresh process can never take the short continuation form."
+                               "A plain retry of a run whose failure is resume-classed (the session was lost) fails loudly instructing --fresh, never looping against a dead session."
                                "A failed interactive run retries as a fresh session preserving mode, backend, and reap policy; there are deliberately no retry flags to change them — respawn with spawn/delegate if the backend itself was the problem."]
-                   :fails ["target not found" "nothing failed/exhausted to supersede"]
+                   :fails ["target not found" "nothing failed/exhausted to supersede" "resume-classed failure retried without --fresh"]
                    :returns {"superseded" "old run id" "task" "optional task id" "run" {"id" "new run id" "phase" "pending" "harness" "string"}}}
            :status {:group "delegation"
                     :usage "agent status [root-id]"
@@ -163,17 +167,27 @@
                    :semantics ["Read a strand's notes in order; optionally filter one council round."]
                    :returns [{"id" "note id" "note" "text" "at" "timestamp" "by" "optional run id" "round" "optional integer"}]}
            :review {:group "memory-review"
-                    :usage "agent review <target-id> [--members n] [--harness a,b] [--cwd dir] [--contract text] [--spawned-by run] [--synthesize]"
+                    :usage "agent review <target-id> [--roster name | --members n --harness a,b --contract text] [--cwd dir] [--spawned-by run] [--synthesize]"
                     :semantics ["Spawn independent read-only reviewers of the target strand and its subtree; reviewing a plan root reviews the whole feature."
                                 "Each reviewer reads strand contracts plus repository state at --cwd. Pass the worktree where the diff lives."
-                                "Findings are appended as notes on the target. --synthesize adds a run depending on all reviewers; await it for the verdict."]
-                    :fails ["target not found" "no reviewers" "reviewer missing harness"]
+                                "Findings are appended as notes on the target. --synthesize adds a run depending on all reviewers; await it for the verdict."
+                                "--roster fans out a named declarative roster (see rosters): one run per entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so --members/--harness/--contract are rejected with it."]
+                    :fails ["target not found" "no reviewers" "reviewer missing harness" "unknown roster" "--roster with --members/--harness/--contract"]
                     :returns {"target" "target id" "reviewers" ["run ids"] "synthesizer" "optional run id"}}
+           :rosters {:group "memory-review"
+                     :usage "agent rosters"
+                     :semantics ["List named reviewer rosters registered by trusted config (defroster!)."
+                                 "Each roster entry declares name, harness, a precise single-concern contract, and optional scope; review --roster <name> fans it out over a target."
+                                 "Workflow composition: skein.spools.agents/roster-review-specs (trusted Clojure) returns the same fan-out as gate-ready specs, sharing one prompt source with the verb."]
+                     :returns [{"name" "roster name" "reviewers" [{"name" "string" "harness" "string" "contract" "string" "scope" "optional string"}] "synthesizer" "optional harness override map"}]}
            :council {:group "memory-review"
-                     :usage "agent council --topic ... [--members n] [--rounds n] [--harness name] [--spawned-by run]"
-                     :semantics ["Create a shared council strand, spawn members that deliberate through notes, then spawn a synthesizer depending on members."]
-                     :fails ["blank topic" "non-positive members or rounds"]
-                     :returns {"council" "strand id" "members" ["run ids"] "synthesizer" "run id"}}}
+                     :usage "agent council --topic ... [--members n] [--rounds n] [--harness name] [--synthesizer name] [--cwd dir] [--spawned-by run]"
+                     :semantics ["Convene a fresh-blackboard panel: seats deliberate over a shared council strand across --rounds turn-as-run barrier rows, then a synthesizer weighs the whole deliberation."
+                                 "--members spawns N identical seats on --harness. Harness has no default: a council with no resolvable harness fails loudly, mirroring delegate."
+                                 "The synthesizer runs --synthesizer or the first seat's harness."
+                                 "The CLI is scalar-only. Per-seat harness/brief (the :seats vector) is trusted-Clojure / inline-panel territory (skein.spools.agents/council! or panel!), keeping rich structured data out of shell argv."]
+                     :fails ["blank topic" "non-positive members or rounds" "no resolvable harness" ":members combined with :seats"]
+                     :returns {"council" "shared council strand id" "turns" [["run ids per round"]] "synthesizer" "run id"}}}
    :plan-creation {:usage "strand weave --pattern agent-plan"
                    :semantics ["Create a feature/plan strand plus task/review children."
                                "Task bodies are full worker contracts: scope, owned files, validation commands, and commit policy."
@@ -358,133 +372,789 @@
         (let [p (or (sattr run "log") (fail! "Run has no shuttle/log" {:id run-id}))]
           {:id run-id :out {:path p :text (rf p)} :err {:path (str/replace p #"\.out$" ".err") :text (rf (str/replace p #"\.out$" ".err"))}})))))
 
-(defn- review-prompt [{:keys [target-id focus contract]}]
-  (let [cmd (shuttle/pinned-strand-command)]
-    (str contract "\n\n"
-         "Review target strand " target-id " and its subtree.\n"
-         (when (not (str/blank? focus))
-           (str "Focus: " focus "\n"))
-         "Read the target with `" cmd " show " target-id "` and inspect the relevant repository state.\n"
-         "When finished, append findings with: " cmd " agent note " target-id
-         " \"<findings>\" --by <your run-id>\n"
-         "Findings are notes-only; do not write verdict attributes.")))
+;; ---------------------------------------------------------------------------
+;; Reviewer rosters: named, declarative reviewer fan-out registered by trusted
+;; config (the git-reviewable rules file is the source of truth; this registry
+;; is its weaver-lifetime, in-band mirror).
 
-(defn- review-synthesis-prompt [{:keys [target-id review-runs contract]}]
+(defn- rosters-atom []
+  (:rosters (runtime/spool-state (rt) ::state #(hash-map :rosters (atom {})))))
+
+(defn- harness-ref?
+  "True for a keyword or non-blank string naming a harness/alias. Existence is
+  checked at review time against the shuttle registry, not at registration,
+  so roster files may load before config registers aliases."
+  [v]
+  (or (keyword? v) (non-blank? v)))
+
+;; The roster shape is spec-defined: the spec is the source of truth for
+;; structure, and validation consults it. Manual checks below cover only what
+;; s/keys cannot express: closed key sets (s/keys maps are open) and
+;; cross-entry name uniqueness.
+(s/def :skein.spools.agents.roster/name non-blank?)
+(s/def :skein.spools.agents.roster/harness harness-ref?)
+(s/def :skein.spools.agents.roster/contract non-blank?)
+(s/def :skein.spools.agents.roster/scope non-blank?)
+(s/def :skein.spools.agents.roster/reviewer
+  (s/keys :req-un [:skein.spools.agents.roster/name
+                   :skein.spools.agents.roster/harness
+                   :skein.spools.agents.roster/contract]
+          :opt-un [:skein.spools.agents.roster/scope]))
+(s/def :skein.spools.agents.roster/reviewers
+  (s/coll-of :skein.spools.agents.roster/reviewer :kind vector? :min-count 1))
+(s/def :skein.spools.agents.roster/synthesizer
+  (s/keys :req-un [:skein.spools.agents.roster/harness]))
+(s/def :skein.spools.agents/roster
+  (s/keys :req-un [:skein.spools.agents.roster/reviewers]
+          :opt-un [:skein.spools.agents.roster/synthesizer]))
+
+;; roster-review-specs output: the public seam shape workflow authors consume.
+(s/def :skein.spools.agents.review-specs/prompt non-blank?)
+(s/def :skein.spools.agents.review-specs/attrs (s/map-of string? string?))
+(s/def :skein.spools.agents.review-specs/reviewer
+  (s/keys :req-un [:skein.spools.agents.roster/name
+                   :skein.spools.agents.roster/harness
+                   :skein.spools.agents.review-specs/prompt
+                   :skein.spools.agents.review-specs/attrs]))
+(s/def :skein.spools.agents.review-specs/reviewers
+  (s/coll-of :skein.spools.agents.review-specs/reviewer :kind vector? :min-count 1))
+(s/def :skein.spools.agents.review-specs/synthesizer :skein.spools.agents.review-specs/reviewer)
+(s/def :skein.spools.agents.review-specs/roster keyword?)
+(s/def :skein.spools.agents.review-specs/target non-blank?)
+(s/def :skein.spools.agents.review-specs/review-pass non-blank?)
+(s/def :skein.spools.agents/review-specs
+  (s/keys :req-un [:skein.spools.agents.review-specs/roster
+                   :skein.spools.agents.review-specs/target
+                   :skein.spools.agents.review-specs/review-pass
+                   :skein.spools.agents.review-specs/reviewers
+                   :skein.spools.agents.review-specs/synthesizer]))
+
+(def ^:private reviewer-entry-keys #{:name :harness :contract :scope})
+(def ^:private roster-keys #{:reviewers :synthesizer})
+(def ^:private synthesizer-keys #{:harness})
+
+(defn- validate-roster!
+  "Validate roster data: closed key sets first — a typo'd key diagnoses far
+  better as \"unknown keys [:contarct]\" than as the missing-`:contract` spec
+  explain it also causes — then the :skein.spools.agents/roster spec for
+  structure, then reviewer-name uniqueness. Key checks are guarded on map
+  shape so non-map garbage still falls through to the spec failure. Returns
+  the roster."
+  [roster-id roster]
+  (when (map? roster)
+    (when-let [unknown (seq (remove roster-keys (keys roster)))]
+      (fail! "Roster has unknown keys"
+             {:roster roster-id :unknown (vec unknown) :allowed (sort roster-keys)}))
+    (when (sequential? (:reviewers roster))
+      (doseq [entry (:reviewers roster)
+              :when (map? entry)]
+        (when-let [unknown (seq (remove reviewer-entry-keys (keys entry)))]
+          (fail! "Roster reviewer entry has unknown keys"
+                 {:roster roster-id :entry entry :unknown (vec unknown) :allowed (sort reviewer-entry-keys)}))))
+    (let [synthesizer (:synthesizer roster)]
+      (when (map? synthesizer)
+        (when-let [unknown (seq (remove synthesizer-keys (keys synthesizer)))]
+          (fail! "Roster :synthesizer has unknown keys"
+                 {:roster roster-id :unknown (vec unknown) :allowed (sort synthesizer-keys)})))))
+  (when-not (s/valid? :skein.spools.agents/roster roster)
+    (fail! "Roster does not conform to spec"
+           {:roster roster-id
+            :spec :skein.spools.agents/roster
+            :explain (s/explain-str :skein.spools.agents/roster roster)}))
+  (let [names (mapv :name (:reviewers roster))]
+    (when-not (apply distinct? names)
+      (fail! "Roster reviewer :name values must be unique" {:roster roster-id :names names})))
+  roster)
+
+(defn- roster-key [roster-name]
+  (cond
+    (keyword? roster-name) roster-name
+    (non-blank? roster-name) (keyword roster-name)
+    :else (fail! "Roster name must be a keyword or non-blank string" {:roster roster-name})))
+
+(defn defroster!
+  "Register or replace a named reviewer roster (weaver-lifetime state, so
+  trusted startup config re-registers it like harness aliases and queries).
+
+  Roster data is plain and spec-defined — see `:skein.spools.agents/roster`:
+  `{:reviewers [{:name :harness :contract :scope?} ...] :synthesizer
+  {:harness ...}?}`. Each reviewer is one independent read-only review run
+  with its own precise contract; `:scope` is prompt-level confinement text.
+  `:synthesizer` overrides the harness of the synthesis run (default: first
+  reviewer's harness). Malformed data fails loudly with spec explain data."
+  [roster-name roster]
+  (let [roster-id (roster-key roster-name)]
+    (validate-roster! roster-id roster)
+    (swap! (rosters-atom) assoc roster-id roster)
+    {:roster roster-id :reviewers (count (:reviewers roster))}))
+
+(defn rosters
+  "List registered reviewer rosters as full plain data."
+  []
+  (mapv (fn [[key roster]] (assoc roster :name key))
+        (sort-by key @(rosters-atom))))
+
+(defn- resolve-roster! [roster-name]
+  (let [key (roster-key roster-name)]
+    (or (get @(rosters-atom) key)
+        (fail! "Roster not found" {:roster key :available (sort (keys @(rosters-atom)))}))))
+
+;; ---------------------------------------------------------------------------
+;; Blackboard prompt protocol (PLAN-Pnl-001.A6)
+;;
+;; One namespace-internal set of prompt fragments shared by the review/roster
+;; presets and (later) the panel compiler. Each fragment emits one instruction
+;; block from plain data; a caller assembles the blocks it needs. Every
+;; fragment supports two prompt FORMS: `:full` spells the whole brief for a
+;; fresh process, while `:continuation` restates only the coordinates a resumed
+;; session cannot infer (turn/round + where the board is) — the session already
+;; carries the brief, so a continuation never re-hands context it holds. A
+;; fragment whose text does not vary by form ignores `:form`; one that has no
+;; valid continuation fails loudly rather than emitting a silent default.
+
+(defn- seat-identity-fragment
+  "Identity line locating a seat in the panel grid: seat k of N on turn r of R.
+  `:continuation` restates the same coordinates for a resumed seat that already
+  knows it is a panellist."
+  [{:keys [form seat seats turn turns] :or {form :full}}]
+  (case form
+    :full (str "You are seat " seat " of " seats ", turn " turn " of " turns ".\n")
+    :continuation (str "Continuing as seat " seat " of " seats
+                       ", now on turn " turn " of " turns ".\n")))
+
+(defn- read-the-board-fragment
+  "Instruction for reading the shared blackboard. `:view :strand` reads the
+  strand plus repository state (a reviewer inspecting a target); `:view :notes`
+  reads the accumulated peer posts (a deliberating seat). `:continuation` is a
+  terse pointer for a session that already knows the protocol."
+  [{:keys [form view board-id] :or {form :full view :strand}}]
+  (let [cmd (shuttle/pinned-strand-command)]
+    (case view
+      :strand (case form
+                :full (str "Read the target with `" cmd " show " board-id
+                           "` and inspect the relevant repository state.\n")
+                :continuation (str "The board is strand " board-id
+                                   "; re-read it with `" cmd " show " board-id "`.\n"))
+      :notes (case form
+               :full (str "Read the board with `" cmd " agent notes " board-id
+                          "` to see what peers have posted.\n")
+               :continuation (str "The board is strand " board-id
+                                  "; read new posts with `" cmd " agent notes " board-id "`.\n")))))
+
+(defn- post-with-tag-fragment
+  "Instruction for appending a tagged contribution to the board strand. The tag
+  keeps one pass/round separable on a strand that accumulates notes across
+  rounds; a nil tag omits the prefix. `:lead`/`:label`/`:placeholder` frame the
+  post for the caller (reviewers post `When finished, append findings with`;
+  deliberating seats post their turn's position). The posting command is the
+  same whether the process is fresh or resumed, so this fragment ignores
+  `:form`."
+  [{:keys [board-id tag lead label placeholder]
+    :or {lead "When finished" label "append findings with" placeholder "<findings>"}}]
+  (let [cmd (shuttle/pinned-strand-command)
+        tag-prefix (if tag (str "[" tag "] ") "")]
+    (str lead ", " label ": " cmd " agent note " board-id
+         " \"" tag-prefix placeholder "\" --by <your run-id>\n")))
+
+(defn- independence-fragment
+  "Review-style directive: reach an independent judgment without coordinating
+  with peers. Independent seats are single-turn (round one only) and never
+  resume, so a continuation form is a contradiction and fails loudly."
+  [{:keys [form] :or {form :full}}]
+  (case form
+    :full "Work independently: reach your own judgment from the target and repository state alone; do not read or coordinate with other seats.\n"
+    :continuation (fail! "independence directive has no continuation form: independent seats never resume"
+                         {:form form})))
+
+(defn- deliberation-fragment
+  "Multi-round directive: read peers' posts from the previous turn, then rebut
+  or refine. `:continuation` names the concrete previous turn, so it requires an
+  integer `:turn` and fails loudly without one rather than emitting a blank
+  round reference."
+  [{:keys [form turn] :or {form :full}}]
+  (case form
+    :full "Read every peer's post from the previous turn on the board, then rebut or refine your position in light of them.\n"
+    :continuation (do (when-not (integer? turn)
+                        (fail! "deliberation continuation requires an integer :turn" {:turn turn}))
+                      (str "Read peers' turn " (dec turn)
+                           " posts on the board, then rebut or refine.\n"))))
+
+;; `review-prompt` reproduces the read-the-board and post-with-tag fragments
+;; byte-for-byte (the frozen roster tests are the compatibility proof); the
+;; review-specific framing (target subtree, focus, scope, notes-only discipline)
+;; stays inline because it is not part of the shared blackboard vocabulary.
+(defn- review-prompt [{:keys [target-id focus contract scope note-tag]}]
+  (str contract "\n\n"
+       "Review target strand " target-id " and its subtree.\n"
+       (when (not (str/blank? focus))
+         (str "Focus: " focus "\n"))
+       (when (not (str/blank? scope))
+         (str "Scope: confine this review to " scope "\n"))
+       (read-the-board-fragment {:view :strand :board-id target-id})
+       (post-with-tag-fragment {:board-id target-id :tag note-tag})
+       "Findings are notes-only; do not write verdict attributes."))
+
+(defn- review-synthesis-prompt [{:keys [target-id review-runs contract note-tag]}]
   (let [cmd (shuttle/pinned-strand-command)]
     (str contract "\n\n"
          "Synthesize independent review findings for target strand " target-id ".\n"
-         "Review run ids: " (str/join ", " review-runs) "\n"
+         ;; a target accumulates notes across rounds; the pass tag is the
+         ;; discriminator that exists before any run does, so workflow-composed
+         ;; synthesis can isolate its own round too
+         (when note-tag
+           (str "This review pass is tagged [" note-tag "]: reviewers prefixed their notes with it;"
+                " synthesize those notes and ignore other rounds.\n"))
+         (when (seq review-runs)
+           (str "Review run ids: " (str/join ", " review-runs) "\n"))
          "Read target notes with `" cmd " agent notes " target-id "`, append one synthesis note with `"
          cmd " agent note " target-id " \"<synthesis>\" --by <your run-id>`, then finish with the synthesis.")))
 
+(defn roster-review-specs
+  "Return a roster's review fan-out as plain, fully-built run specs
+  (shape: `:skein.spools.agents/review-specs`).
+
+  This is the one prompt-building source for roster reviews. `review!` spawns
+  shuttle runs from these specs, and workflow authors map them onto
+  `:subagent` gates without re-implementing the contract layering: `:harness`
+  and `:prompt` become the gate's `shuttle/harness`/`shuttle/prompt`,
+  `:attrs` merge into the gate's attributes, and the synthesizer gate
+  depends on every reviewer gate. Specs are pure data built from the
+  roster and the workspace base review contract; `:target` is the strand id
+  under review (existence is checked where runs are spawned, not here).
+  Unknown rosters and a blank target fail loudly.
+
+  `roster` is a registered roster name **or an inline roster value** — a map
+  conforming to `:skein.spools.agents/roster`, validated identically to
+  `defroster!` input. Inline values are how parameterised compositions work:
+  rosters are plain data, so pour-time code may filter, augment, or construct
+  one and hand it straight to this seam (specs/attrs label it `:inline`;
+  register under a name when attribution matters).
+
+  Every call mints a `:review-pass` tag (override with a non-blank
+  `:review-id`): reviewers prefix their notes with it and the synthesizer
+  filters on it, so one pass's findings stay separable on a target that
+  accumulates notes across rounds — run ids cannot serve here because
+  workflow-composed synthesis is defined before any run exists."
+  [roster {:keys [target review-id]}]
+  (when-not (non-blank? target)
+    (fail! "roster-review-specs requires a non-blank :target" {:roster roster :target target}))
+  (when (and (some? review-id) (not (non-blank? review-id)))
+    (fail! "roster-review-specs :review-id must be a non-blank string when present"
+           {:roster roster :review-id review-id}))
+  (let [[roster-id roster-def] (if (map? roster)
+                                 [:inline (validate-roster! :inline roster)]
+                                 (let [id (roster-key roster)]
+                                   [id (resolve-roster! id)]))
+        base (shuttle/default-review-contract-text)
+        pass-id (or review-id
+                    (str (name roster-id) "-" (subs (str (java.util.UUID/randomUUID)) 0 8)))
+        shared-attrs {"shuttle/review-target" target
+                      "shuttle/review-roster" (name roster-id)
+                      "shuttle/review-pass" pass-id}]
+    {:roster roster-id
+     :target target
+     :review-pass pass-id
+     :reviewers (mapv (fn [{entry-name :name :keys [harness contract scope]}]
+                        {:name entry-name
+                         :harness harness
+                         :prompt (review-prompt {:target-id target
+                                                 :focus entry-name
+                                                 :contract (str base "\n\n[reviewer: " entry-name "]\n" contract)
+                                                 :scope scope
+                                                 :note-tag pass-id})
+                         :attrs (assoc shared-attrs "shuttle/review-focus" entry-name)})
+                      (:reviewers roster-def))
+     ;; the synthesizer weighs findings roster-independently, so it receives
+     ;; the base contract, never a per-reviewer one
+     :synthesizer {:name "synthesis"
+                   :harness (or (get-in roster-def [:synthesizer :harness])
+                                (:harness (first (:reviewers roster-def))))
+                   :prompt (review-synthesis-prompt {:target-id target :contract base :note-tag pass-id})
+                   :attrs (assoc shared-attrs "shuttle/review-synthesis" "true")}}))
+
+;; ---------------------------------------------------------------------------
+;; Panel primitive (PLAN-Pnl-001.A4/A5)
+;;
+;; A panel is plain, spec'd data — seats deliberating over a blackboard across
+;; turns, compiled to run specs by `panel-specs` and spawned by `panel!`. There
+;; is no panel registry (A5): panels are inline values or preset-derived. The
+;; compiler embeds the board id in every prompt; for a `:fresh` blackboard the
+;; board strand does not exist until `panel!` mints it, so the specs carry a
+;; placeholder token that the spawner substitutes for the minted id.
+
+(def ^:private board-placeholder
+  "Sentinel the compiler embeds where a `:fresh` blackboard's id will land; the
+  spawner replaces it with the minted board strand id in every prompt and attr."
+  "«panel-board»")
+
+;; The panel shape is spec-defined; validation consults the spec. Manual checks
+;; cover only what s/keys cannot: closed key sets and seat-name uniqueness.
+(s/def :skein.spools.agents.panel.seat/name non-blank?)
+(s/def :skein.spools.agents.panel.seat/harness harness-ref?)
+(s/def :skein.spools.agents.panel.seat/brief non-blank?)
+(s/def :skein.spools.agents.panel.seat/scope non-blank?)
+(s/def :skein.spools.agents.panel.seat/continuity #{:fresh :resume})
+(s/def :skein.spools.agents.panel/seat
+  (s/keys :req-un [:skein.spools.agents.panel.seat/name
+                   :skein.spools.agents.panel.seat/harness
+                   :skein.spools.agents.panel.seat/brief]
+          :opt-un [:skein.spools.agents.panel.seat/scope
+                   :skein.spools.agents.panel.seat/continuity]))
+(s/def :skein.spools.agents.panel/seats
+  (s/coll-of :skein.spools.agents.panel/seat :kind vector? :min-count 1))
+(s/def :skein.spools.agents.panel.turns/rounds pos-int?)
+(s/def :skein.spools.agents.panel/turns
+  (s/keys :req-un [:skein.spools.agents.panel.turns/rounds]))
+(s/def :skein.spools.agents.panel/blackboard #{:target :fresh})
+(s/def :skein.spools.agents.panel.synthesis/harness harness-ref?)
+(s/def :skein.spools.agents.panel.synthesis/brief non-blank?)
+(s/def :skein.spools.agents.panel/synthesis
+  (s/or :none #{:none}
+        :spec (s/keys :req-un [:skein.spools.agents.panel.synthesis/harness]
+                      :opt-un [:skein.spools.agents.panel.synthesis/brief])))
+(s/def :skein.spools.agents/panel
+  (s/keys :req-un [:skein.spools.agents.panel/seats]
+          :opt-un [:skein.spools.agents.panel/turns
+                   :skein.spools.agents.panel/blackboard
+                   :skein.spools.agents.panel/synthesis]))
+
+;; panel-specs output: the compiled run-spec shape spawners and gate authors
+;; consume. Turns are ordered rows (turn 1 first); a run spec carries both
+;; prompt forms plus, for a resuming turn, the seat index it continues.
+(s/def :skein.spools.agents.panel-specs/name non-blank?)
+(s/def :skein.spools.agents.panel-specs/harness harness-ref?)
+(s/def :skein.spools.agents.panel-specs/prompt non-blank?)
+(s/def :skein.spools.agents.panel-specs/resume-prompt non-blank?)
+(s/def :skein.spools.agents.panel-specs/attrs (s/map-of string? string?))
+(s/def :skein.spools.agents.panel-specs/resume-ref nat-int?)
+(s/def :skein.spools.agents.panel-specs/run
+  (s/keys :req-un [:skein.spools.agents.panel-specs/name
+                   :skein.spools.agents.panel-specs/harness
+                   :skein.spools.agents.panel-specs/prompt
+                   :skein.spools.agents.panel-specs/attrs]
+          :opt-un [:skein.spools.agents.panel-specs/resume-prompt
+                   :skein.spools.agents.panel-specs/resume-ref]))
+(s/def :skein.spools.agents.panel-specs/turn
+  (s/coll-of :skein.spools.agents.panel-specs/run :kind vector? :min-count 1))
+(s/def :skein.spools.agents.panel-specs/turns
+  (s/coll-of :skein.spools.agents.panel-specs/turn :kind vector? :min-count 1))
+(s/def :skein.spools.agents.panel-specs.blackboard/kind #{:target :fresh})
+(s/def :skein.spools.agents.panel-specs.blackboard/id non-blank?)
+;; `:id` is not blanket-optional: a `:target` directive must carry the board
+;; strand id it deliberates over, and a `:fresh` directive must omit it (the id
+;; does not exist until the spawner mints the board), so consumers of this seam
+;; can trust the directive shape rather than re-checking kind/id agreement.
+(s/def :skein.spools.agents.panel-specs/blackboard
+  (s/or :target (s/and #(= :target (:kind %))
+                       (s/keys :req-un [:skein.spools.agents.panel-specs.blackboard/kind
+                                        :skein.spools.agents.panel-specs.blackboard/id]))
+        :fresh (s/and #(= :fresh (:kind %))
+                      #(not (contains? % :id))
+                      (s/keys :req-un [:skein.spools.agents.panel-specs.blackboard/kind]))))
+(s/def :skein.spools.agents.panel-specs/review-pass non-blank?)
+(s/def :skein.spools.agents.panel-specs/synthesizer :skein.spools.agents.panel-specs/run)
+(s/def :skein.spools.agents/panel-specs
+  (s/keys :req-un [:skein.spools.agents.panel-specs/blackboard
+                   :skein.spools.agents.panel-specs/review-pass
+                   :skein.spools.agents.panel-specs/turns]
+          :opt-un [:skein.spools.agents.panel-specs/synthesizer]))
+
+(def ^:private panel-keys #{:seats :turns :blackboard :synthesis})
+(def ^:private panel-seat-keys #{:name :harness :brief :scope :continuity})
+(def ^:private panel-turns-keys #{:rounds})
+(def ^:private panel-synthesis-keys #{:harness :brief})
+
+(defn- validate-panel!
+  "Validate panel data: closed key sets first — so a typo'd key diagnoses as
+  \"unknown keys\" rather than as the missing-key spec explain it also causes —
+  then the :skein.spools.agents/panel spec for structure, then seat-name
+  uniqueness. Key checks are guarded on map shape so non-map garbage falls
+  through to the spec failure. Returns the panel."
+  [panel-id panel]
+  (when (map? panel)
+    (when-let [unknown (seq (remove panel-keys (keys panel)))]
+      (fail! "Panel has unknown keys"
+             {:panel panel-id :unknown (vec unknown) :allowed (sort panel-keys)}))
+    (when (sequential? (:seats panel))
+      (doseq [seat (:seats panel)
+              :when (map? seat)]
+        (when-let [unknown (seq (remove panel-seat-keys (keys seat)))]
+          (fail! "Panel seat has unknown keys"
+                 {:panel panel-id :seat seat :unknown (vec unknown) :allowed (sort panel-seat-keys)}))))
+    (when (map? (:turns panel))
+      (when-let [unknown (seq (remove panel-turns-keys (keys (:turns panel))))]
+        (fail! "Panel :turns has unknown keys"
+               {:panel panel-id :unknown (vec unknown) :allowed (sort panel-turns-keys)})))
+    (when (map? (:synthesis panel))
+      (when-let [unknown (seq (remove panel-synthesis-keys (keys (:synthesis panel))))]
+        (fail! "Panel :synthesis has unknown keys"
+               {:panel panel-id :unknown (vec unknown) :allowed (sort panel-synthesis-keys)}))))
+  (when-not (s/valid? :skein.spools.agents/panel panel)
+    (fail! "Panel does not conform to spec"
+           {:panel panel-id
+            :spec :skein.spools.agents/panel
+            :explain (s/explain-str :skein.spools.agents/panel panel)}))
+  (let [names (mapv :name (:seats panel))]
+    (when-not (apply distinct? names)
+      (fail! "Panel seat :name values must be unique" {:panel panel-id :names names})))
+  panel)
+
+;; The seat prompt reuses the shared blackboard fragments (A6). The directive is
+;; derived from the turn grid: a single-round panel is independent (review
+;; shape); a multi-round panel opens on turn 1 and deliberates thereafter,
+;; reading peers' previous turn. The board is read as a subject strand for a
+;; `:target` blackboard and as accumulated peer posts for a `:fresh` one.
+(defn- panel-seat-prompt
+  [{:keys [form seat seats turn turns brief scope board-id view directive note-tag]
+    :or {form :full}}]
+  (let [post (post-with-tag-fragment {:board-id board-id :tag note-tag
+                                      :lead "When you have a position for this turn"
+                                      :label "post it with" :placeholder "<your position>"})
+        read-board? (or (= view :strand) (= directive :deliberate))]
+    (case form
+      :full (str brief "\n\n"
+                 (seat-identity-fragment {:form :full :seat seat :seats seats :turn turn :turns turns})
+                 (when (non-blank? scope) (str "Scope: confine your work to " scope "\n"))
+                 (case directive
+                   :independent (independence-fragment {})
+                   :deliberate (deliberation-fragment {})
+                   :open "")
+                 (when read-board? (read-the-board-fragment {:form :full :view view :board-id board-id}))
+                 post)
+      :continuation (str (seat-identity-fragment {:form :continuation :seat seat :seats seats :turn turn :turns turns})
+                         (deliberation-fragment {:form :continuation :turn turn})
+                         (read-the-board-fragment {:form :continuation :view view :board-id board-id})
+                         post))))
+
+(defn- panel-synthesis-prompt
+  [{:keys [board-id brief note-tag]}]
+  (let [cmd (shuttle/pinned-strand-command)]
+    (str (when (non-blank? brief) (str brief "\n\n"))
+         "Synthesize the panel deliberation on strand " board-id ".\n"
+         (when note-tag
+           (str "This panel pass is tagged [" note-tag "]: seats prefixed their posts with it;"
+                " synthesize those posts and ignore other passes.\n"))
+         "Read the board with `" cmd " agent notes " board-id "`, append one synthesis note with `"
+         cmd " agent note " board-id " \"<synthesis>\" --by <your run-id>`, then finish with the synthesis.")))
+
+(defn panel-specs
+  "Compile an **inline panel value** into plain, fully-built run specs
+  (shape: `:skein.spools.agents/panel-specs`). This is the one prompt-building
+  source for panels; `panel!` spawns runs from these specs.
+
+  `panel` is a map conforming to `:skein.spools.agents/panel`, validated
+  identically to `panel!` input (closed keys and uniqueness before spec
+  conform). Defaults are applied here: `:turns {:rounds 1}`, `:blackboard
+  :target`, per-seat `:continuity :fresh`.
+
+  Options: `:target` is the blackboard strand id for a `:target` panel (a
+  blank target fails loudly); a `:fresh` panel ignores it and embeds a board
+  placeholder the spawner resolves after minting. `:review-id` overrides the
+  minted `:review-pass` tag (a blank override fails loudly).
+
+  Output `:turns` is a vector of turn rows (turn 1 first); each run spec is
+  `{:name :harness :prompt :resume-prompt? :attrs :resume-ref?}` where
+  `:resume-ref` is the seat index in the previous row this turn continues (only
+  present for a `:continuity :resume` turn r>1). Every run spec stamps
+  `shuttle/panel-seat`, `shuttle/panel-turn`, `shuttle/review-target`, and
+  `shuttle/review-pass`. `:synthesizer` is present unless `:synthesis` is
+  absent or `:none`."
+  [panel {:keys [target review-id]}]
+  (when (and (some? review-id) (not (non-blank? review-id)))
+    (fail! "panel-specs :review-id must be a non-blank string when present"
+           {:review-id review-id}))
+  (validate-panel! :inline panel)
+  (let [seats (:seats panel)
+        seat-count (count seats)
+        rounds (get-in panel [:turns :rounds] 1)
+        blackboard (get panel :blackboard :target)
+        synthesis (:synthesis panel)
+        view (case blackboard :target :strand :fresh :notes)
+        ;; a :target board is read as the subject strand (`show`), never as
+        ;; accumulated peer posts, so a deliberation turn on it could never tell
+        ;; a seat how to read peers — reject the combination loudly rather than
+        ;; emit a prompt that references peer turns it cannot fetch. Multi-round
+        ;; deliberation belongs on a :fresh board (peers post and read notes).
+        _ (when (and (= :target blackboard) (> rounds 1))
+            (fail! "panel :blackboard :target supports a single round only: seats read a target via `show`, not peer posts via `notes`; use :blackboard :fresh for multi-round deliberation"
+                   {:blackboard blackboard :rounds rounds}))
+        board-ref (case blackboard
+                    :target (if (non-blank? target)
+                              target
+                              (fail! "panel-specs :blackboard :target requires a non-blank :target"
+                                     {:target target}))
+                    :fresh board-placeholder)
+        pass-id (or review-id (str "panel-" (subs (str (java.util.UUID/randomUUID)) 0 8)))
+        row-specs (fn [turn]
+                    (mapv (fn [idx {seat-name :name :keys [harness brief scope continuity]
+                                    :or {continuity :fresh}}]
+                            (let [directive (cond (= 1 rounds) :independent
+                                                  (= 1 turn) :open
+                                                  :else :deliberate)
+                                  attrs {"shuttle/review-target" board-ref
+                                         "shuttle/review-pass" pass-id
+                                         "shuttle/panel-seat" seat-name
+                                         "shuttle/panel-turn" (str turn)}]
+                              (cond-> {:name seat-name
+                                       :harness harness
+                                       :prompt (panel-seat-prompt {:form :full :seat (inc idx) :seats seat-count
+                                                                   :turn turn :turns rounds :brief brief :scope scope
+                                                                   :board-id board-ref :view view
+                                                                   :directive directive :note-tag pass-id})
+                                       :attrs attrs}
+                                ;; turn>1 is always a deliberation turn, so it
+                                ;; carries a valid continuation form; the resume
+                                ;; ref is only threaded for a :resume seat
+                                (> turn 1) (assoc :resume-prompt
+                                                  (panel-seat-prompt {:form :continuation :seat (inc idx) :seats seat-count
+                                                                      :turn turn :turns rounds :board-id board-ref
+                                                                      :view view :note-tag pass-id}))
+                                (and (> turn 1) (= continuity :resume)) (assoc :resume-ref idx))))
+                          (range) seats))
+        turns (mapv row-specs (range 1 (inc rounds)))]
+    (cond-> {:blackboard (case blackboard
+                           :target {:kind :target :id target}
+                           :fresh {:kind :fresh})
+             :review-pass pass-id
+             :turns turns}
+      (and synthesis (not= :none synthesis))
+      (assoc :synthesizer
+             {:name "synthesis"
+              :harness (:harness synthesis)
+              :prompt (panel-synthesis-prompt {:board-id board-ref :brief (:brief synthesis) :note-tag pass-id})
+              :attrs {"shuttle/review-target" board-ref
+                      "shuttle/review-pass" pass-id
+                      "shuttle/review-synthesis" "true"}}))))
+
+(defn panel!
+  "Spawn a panel from an inline panel value.
+
+  Compiles `panel` with `panel-specs`, then resolves the blackboard: a
+  `:target` panel deliberates over the supplied `:target` strand; a `:fresh`
+  panel mints a new shared board strand (role `panel`) and substitutes it for
+  the compiler's board placeholder in every prompt and attr. Each turn row is
+  spawned as one run per seat, wiring a `depends-on` barrier on every run of
+  the previous row. A `:continuity :resume` seat additionally threads its turn
+  r>1 run onto its previous turn's run via spawn `:resume` — because a session
+  cannot be resumed before it exists, a row containing a resuming seat is
+  spawned only after `panel!` awaits the previous row to completion (so
+  `:fresh`-continuity rounds spawn upfront behind barriers, while `:resume`
+  rounds block prior rounds). The synthesizer, when the panel declares one,
+  depends on the final turn row.
+
+  Options: `:target` (required for a `:target` blackboard), `:review-id`,
+  `:spawned-by`, `:cwd`. Returns `{:panel :blackboard :turns [[run-ids...]...]
+  :synthesizer? :review-pass}`."
+  [panel {:keys [target review-id spawned-by cwd]}]
+  (let [specs (panel-specs panel {:target target :review-id review-id})
+        board-id (case (get-in specs [:blackboard :kind])
+                   :target (get-in specs [:blackboard :id])
+                   :fresh (:id (api/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
+                                              :attributes (cond-> {"shuttle/role" "panel"
+                                                                   "shuttle/review-pass" (:review-pass specs)}
+                                                            spawned-by (assoc "shuttle/spawned-by" spawned-by))})))
+        resolve-board (fn [s] (str/replace (str s) board-placeholder board-id))
+        spawn-run (fn [spec resume-run extra]
+                    (let [;; a resuming turn launches on the short continuation
+                          ;; prompt; stamp its full-brief form as
+                          ;; shuttle/fresh-prompt so `retry --fresh` has a
+                          ;; durable cold-start prompt (a fresh process must
+                          ;; never be handed the continuation, PLAN-Pnl-001.A6)
+                          attrs (cond-> (into {} (map (fn [[k v]] [k (resolve-board v)])) (:attrs spec))
+                                  resume-run (assoc "shuttle/fresh-prompt" (resolve-board (:prompt spec))))]
+                      (shuttle/spawn-run!
+                       (cond-> (merge {:harness (:harness spec)
+                                       :prompt (resolve-board (if resume-run (:resume-prompt spec) (:prompt spec)))
+                                       :parent board-id
+                                       :attrs attrs}
+                                      extra)
+                         spawned-by (assoc :spawned-by spawned-by)
+                         cwd (assoc :cwd cwd)
+                         resume-run (assoc :resume (:id resume-run))))))
+        turn-runs (loop [idx 0 prev nil acc []]
+                    (if (< idx (count (:turns specs)))
+                      (let [row (nth (:turns specs) idx)]
+                        ;; a resuming row needs its predecessors' sessions
+                        ;; captured, so barrier-await the previous row first
+                        (when (and (pos? idx) (some :resume-ref row))
+                          (shuttle/await-runs (mapv :id prev) {}))
+                        (let [runs (mapv (fn [spec]
+                                           (let [resume-run (when-let [ri (:resume-ref spec)] (nth prev ri))]
+                                             (spawn-run spec resume-run
+                                                        {:title (truncate (str "Panel " (:name spec)
+                                                                               " turn " (inc idx)) 72)
+                                                         :depends-on (mapv :id prev)})))
+                                         row)]
+                          (recur (inc idx) runs (conj acc runs))))
+                      acc))
+        synth (when-let [sspec (:synthesizer specs)]
+                (spawn-run sspec nil {:title (truncate (str "Panel synthesis: " board-id) 72)
+                                      :depends-on (mapv :id (last turn-runs))}))]
+    (cond-> {:panel panel
+             :blackboard board-id
+             :turns (mapv (fn [runs] (mapv :id runs)) turn-runs)
+             :review-pass (:review-pass specs)}
+      synth (assoc :synthesizer (:id synth)))))
+
+(defn roster->panel
+  "Convert a roster value into an equivalent single-round, target-blackboard
+  panel: each reviewer becomes an independent seat whose contract is the seat
+  brief, and the roster synthesizer (or the first reviewer's harness) becomes
+  the panel synthesis. Pure — the roster is validated identically to
+  `defroster!` input. A rounds=1 panel compiles to the independent review
+  shape, so this is how `review!` is expressible over the panel primitive."
+  [roster]
+  (validate-roster! :inline roster)
+  (let [reviewers (:reviewers roster)]
+    {:seats (mapv (fn [{seat-name :name :keys [harness contract scope]}]
+                    (cond-> {:name seat-name :harness harness :brief contract :continuity :fresh}
+                      (non-blank? scope) (assoc :scope scope)))
+                  reviewers)
+     :turns {:rounds 1}
+     :blackboard :target
+     :synthesis {:harness (or (get-in roster [:synthesizer :harness])
+                              (:harness (first reviewers)))}}))
+
 (defn review!
-  "Spawn independent read-only reviewers for a target strand."
-  [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd]
-              :or {members 2}}]
+  "Spawn independent read-only reviewers for a target strand.
+
+  `:roster` names a `defroster!` roster (or is an inline
+  `:skein.spools.agents/roster` value) and is the one authoritative source of
+  reviewer count, harnesses, and contracts for that review: combining it with
+  `:reviewers`, `:members`, `:harnesses`, or `:contract` fails loudly. A
+  roster review always synthesizes, from the same `roster-review-specs` data
+  a workflow composition would consume."
+  [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd roster]
+              :or {members 2}
+              :as opts}]
   (when-not (api/show (rt) target-id)
     (fail! "Review target strand not found" {:id target-id}))
-  (let [contract (or contract (shuttle/default-review-contract-text))
-        reviewers (or reviewers
-                      (let [hs (or (seq harnesses) [:claude])]
-                        (mapv (fn [idx]
-                                {:harness (nth hs (mod idx (count hs)))
-                                 :focus (str "review pass " (inc idx))})
-                              (range members))))]
-    (when-not (and (vector? reviewers) (seq reviewers))
-      (fail! "Review requires at least one reviewer" {:reviewers reviewers}))
-    (let [review-runs (mapv (fn [{:keys [harness focus]}]
-                              (shuttle/spawn-run!
-                               {:harness (or harness (fail! "Review reviewer requires :harness" {:reviewer {:focus focus}}))
-                                :title (truncate (str "Review " target-id (when focus (str ": " focus))) 72)
-                                :prompt (review-prompt {:target-id target-id :focus focus :contract contract})
-                                :parent target-id
-                                :spawned-by spawned-by
-                                :cwd cwd
-                                :attrs {"shuttle/review-target" target-id
-                                        "shuttle/review-focus" (or focus "")}}))
-                            reviewers)
-          synthesis (when synthesize?
+  (when roster
+    (when-let [conflicts (seq (filter #(contains? opts %) [:reviewers :members :harnesses :contract]))]
+      (fail! "Roster review takes reviewer count, harnesses, and contracts from the roster"
+             {:roster roster :conflicts (vec conflicts)
+              :cli-flags (vec (keep {:members "--members" :harnesses "--harness" :contract "--contract"}
+                                    conflicts))})))
+  (let [roster-specs (when roster (roster-review-specs roster {:target target-id}))
+        contract (or contract (shuttle/default-review-contract-text))
+        reviewer-specs
+        (or (:reviewers roster-specs)
+            (let [reviewers (or reviewers
+                                (let [hs (or (seq harnesses) [:claude])]
+                                  (mapv (fn [idx]
+                                          {:harness (nth hs (mod idx (count hs)))
+                                           :focus (str "review pass " (inc idx))})
+                                        (range members))))]
+              (when-not (and (vector? reviewers) (seq reviewers))
+                (fail! "Review requires at least one reviewer" {:reviewers reviewers}))
+              (mapv (fn [{:keys [harness focus] :as reviewer}]
+                      {:name focus
+                       :harness (or harness (fail! "Review reviewer requires :harness" {:reviewer {:focus focus}}))
+                       :prompt (review-prompt {:target-id target-id :focus focus
+                                               :contract (or (:contract reviewer) contract)
+                                               :scope (:scope reviewer)})
+                       :attrs {"shuttle/review-target" target-id
+                               "shuttle/review-focus" (or focus "")}})
+                    reviewers)))
+        synthesize? (or synthesize? (some? roster-specs))
+        spawn-spec! (fn [spec extra]
                       (shuttle/spawn-run!
-                       {:harness (:harness (first reviewers))
-                        :title (truncate (str "Review synthesis: " target-id) 72)
-                        :prompt (review-synthesis-prompt {:target-id target-id
-                                                          :review-runs (mapv :id review-runs)
-                                                          :contract contract})
-                        :parent target-id
-                        :spawned-by spawned-by
-                        :cwd cwd
-                        :depends-on (mapv :id review-runs)
-                        :attrs {"shuttle/review-target" target-id
-                                "shuttle/review-synthesis" "true"}}))]
-      (cond-> {:target target-id :reviewers (mapv :id review-runs)}
-        synthesis (assoc :synthesizer (:id synthesis))))))
+                       (merge {:harness (:harness spec)
+                               :prompt (:prompt spec)
+                               :parent target-id
+                               :spawned-by spawned-by
+                               :cwd cwd
+                               :attrs (:attrs spec)}
+                              extra)))
+        review-runs (mapv (fn [{spec-name :name :as spec}]
+                            (spawn-spec! spec {:title (truncate (str "Review " target-id
+                                                                     (when spec-name (str ": " spec-name)))
+                                                                72)}))
+                          reviewer-specs)
+        synthesis (when synthesize?
+                    (spawn-spec! (or (:synthesizer roster-specs)
+                                     {:harness (:harness (first reviewer-specs))
+                                      :prompt (review-synthesis-prompt {:target-id target-id
+                                                                        :review-runs (mapv :id review-runs)
+                                                                        :contract contract})
+                                      :attrs {"shuttle/review-target" target-id
+                                              "shuttle/review-synthesis" "true"}})
+                                 {:title (truncate (str "Review synthesis: " target-id) 72)
+                                  :depends-on (mapv :id review-runs)}))]
+    (cond-> {:target target-id :reviewers (mapv :id review-runs)}
+      roster-specs (assoc :review-pass (:review-pass roster-specs))
+      synthesis (assoc :synthesizer (:id synthesis)))))
 
-(defn- council-member-prompt [{:keys [council-id topic member member-count rounds]}]
-  (let [cmd (shuttle/pinned-strand-command)
-        notes-cmd (str cmd " agent notes " council-id)]
-    (str "You are council member " member " of " member-count
-         " deliberating this topic over " rounds " rounds:\n"
-         topic "\n\n"
-         "Shared memory is the council strand " council-id ". Protocol for each round r (1.." rounds "):\n"
-         "1. Do your own genuine exploration/thinking for round r (use your tools; investigate, do not just opine).\n"
-         "2. Post your position: " cmd " agent note " council-id
-         " \"<your round-r analysis>\" --by <your run-id> --round r\n"
-         "3. Wait for peers: poll `" notes-cmd " --round r` (sleep a few seconds between polls, up to ~2 minutes)"
-         " until it lists " member-count " notes, then read them all with `" notes-cmd "`.\n"
-         "4. Let their arguments genuinely update your round r+1 thinking; agree, rebut, or refine.\n\n"
-         "After the final round, end with your definitive position as your last message —"
-         " it is captured automatically as your result.")))
-
-(defn- council-synthesis-prompt [{:keys [council-id topic member-count rounds]}]
-  (let [cmd (shuttle/pinned-strand-command)]
-    (str "You are the synthesizer for a " member-count "-member, " rounds "-round council on:\n"
-         topic "\n\n"
-         "Read the full deliberation: " cmd " agent notes " council-id "\n"
-         "Weigh the arguments, note consensus and unresolved disagreements, and produce one decisive synthesis.\n"
-         "Record it on the council strand: " cmd " update " council-id
-         " --attr shuttle/result=\"<one-paragraph verdict>\"\n"
-         "Then end with the full synthesis as your last message.")))
+(defn- council-seat-brief
+  "A council seat's subject brief: the shared topic plus an optional per-seat
+  perspective. `panel-seat-prompt` frames it with seat identity, the
+  deliberation directive, and the blackboard protocol, so the poll-loop
+  choreography councils used to spell out is gone — the panel compiler owns it."
+  [topic perspective]
+  (str "Deliberate on this topic with the other council members, working toward a considered position:\n"
+       topic
+       (when (non-blank? perspective)
+         (str "\n\nYour assigned perspective: " perspective))))
 
 (defn council!
-  "Convene a multi-agent council over a shared memory strand."
-  [topic {:keys [harness members rounds spawned-by]
-          :or {harness :claude members 2 rounds 2}}]
+  "Convene a multi-agent council as a `:fresh`-blackboard panel (A7): its rounds
+  are turn-as-run barrier rows and seats deliberate by posting to and reading a
+  shared council strand across turns, then a synthesizer weighs the whole
+  deliberation.
+
+  Scalar convenience: `:members n` mints N identical seats, each running the
+  council-wide `:harness`. Rich control: `:seats [{:name :harness? :brief?}]`
+  gives per-seat harness and perspective; `:members` and `:seats` are mutually
+  exclusive. Harness has no default (mirroring `delegate`) — a seat with neither
+  its own `:harness` nor a council-wide `:harness` fails loudly. The synthesizer
+  runs `:synthesizer` (a harness) or the first seat's harness. `:rounds` (default
+  2) is the turn count; `:spawned-by` and `:cwd` ride onto every run.
+
+  Returns `{:council <shared strand id> :turns [[run-ids]...] :synthesizer
+  <run id>}`."
+  [topic {:keys [harness members rounds seats synthesizer spawned-by cwd]
+          :or {members 2 rounds 2}
+          :as opts}]
   (when (str/blank? topic)
     (fail! "Council topic must be non-blank" {}))
-  (when-not (and (pos-int? members) (pos-int? rounds))
-    (fail! "Council :members and :rounds must be positive integers" {:members members :rounds rounds}))
-  (let [council (api/add (rt) {:title (truncate (str "Council: " topic) 72)
-                               :attributes (cond-> {"shuttle/role" "council"
-                                                    "shuttle/topic" topic
-                                                    "shuttle/members" members
-                                                    "shuttle/rounds" rounds}
-                                             spawned-by (assoc "shuttle/spawned-by" spawned-by))})
-        council-id (:id council)
-        member-runs (mapv (fn [member]
-                            (shuttle/spawn-run!
-                             {:harness harness
-                              :title (truncate (str "Council member " member ": " topic) 72)
-                              :prompt (council-member-prompt {:council-id council-id
-                                                              :topic topic
-                                                              :member member
-                                                              :member-count members
-                                                              :rounds rounds})
-                              :parent council-id
-                              :attrs {"shuttle/council" council-id}}))
-                          (range 1 (inc members)))
-        synthesizer (shuttle/spawn-run!
-                     {:harness harness
-                      :title (truncate (str "Council synthesis: " topic) 72)
-                      :prompt (council-synthesis-prompt {:council-id council-id
-                                                         :topic topic
-                                                         :member-count members
-                                                         :rounds rounds})
-                      :parent council-id
-                      :depends-on (mapv :id member-runs)
-                      :attrs {"shuttle/council" council-id}})]
-    {:council council-id
-     :members (mapv :id member-runs)
-     :synthesizer (:id synthesizer)}))
+  (when (and (contains? opts :seats) (contains? opts :members))
+    (fail! "Council takes :members (scalar) or :seats (per-seat), not both"
+           {:members members :seats seats}))
+  (when-not (pos-int? rounds)
+    (fail! "Council :rounds must be a positive integer" {:rounds rounds}))
+  (let [resolve-harness (fn [seat-harness]
+                          (or seat-harness harness
+                              (fail! "Council seat requires a harness: pass a council-wide :harness or a per-seat :harness"
+                                     {:topic topic})))
+        panel-seats
+        (if (contains? opts :seats)
+          (do (when-not (and (vector? seats) (seq seats))
+                (fail! "Council :seats must be a non-empty vector" {:seats seats}))
+              (mapv (fn [{seat-name :name seat-harness :harness :keys [brief]}]
+                      {:name (if (non-blank? seat-name)
+                               seat-name
+                               (fail! "Council seat requires a non-blank :name" {:seat {:brief brief}}))
+                       :harness (resolve-harness seat-harness)
+                       :brief (council-seat-brief topic brief)})
+                    seats))
+          (do (when-not (pos-int? members)
+                (fail! "Council :members must be a positive integer" {:members members}))
+              (mapv (fn [n]
+                      {:name (str "member-" n)
+                       :harness (resolve-harness nil)
+                       :brief (council-seat-brief topic nil)})
+                    (range 1 (inc members)))))
+        panel {:seats panel-seats
+               :turns {:rounds rounds}
+               :blackboard :fresh
+               :synthesis {:harness (or synthesizer (:harness (first panel-seats)))
+                           :brief (str "Synthesize the council deliberation on:\n" topic)}}
+        result (panel! panel (cond-> {}
+                               spawned-by (assoc :spawned-by spawned-by)
+                               cwd (assoc :cwd cwd)))]
+    (cond-> {:council (:blackboard result)
+             :turns (:turns result)}
+      (:synthesizer result) (assoc :synthesizer (:synthesizer result)))))
 
 (defn- op-note [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--by" :single "--round" :single})]
@@ -510,11 +1180,13 @@
 (defn- op-review [argv]
   (let [{:keys [positional flags]}
         (parse-argv argv {"--members" :single "--harness" :single "--synthesize" :bool
-                          "--contract" :single "--spawned-by" :single "--cwd" :single})]
+                          "--contract" :single "--spawned-by" :single "--cwd" :single
+                          "--roster" :single})]
     (when-not (= 1 (count positional))
       (fail! "review requires <target-id>" {:got positional}))
     (review! (first positional)
              (cond-> {}
+               (get flags "--roster") (assoc :roster (get flags "--roster"))
                (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
                (get flags "--harness") (assoc :harnesses (split-csv (get flags "--harness")))
                (get flags "--contract") (assoc :contract (get flags "--contract"))
@@ -522,10 +1194,18 @@
                (get flags "--cwd") (assoc :cwd (get flags "--cwd"))
                (get flags "--synthesize") (assoc :synthesize? true)))))
 
+(defn- op-rosters [argv]
+  (when (seq argv)
+    (fail! "rosters takes no arguments" {:got argv}))
+  (rosters))
+
+;; The council CLI is scalar-only (TEN-006): rich per-seat data (the :seats
+;; vector) belongs in trusted Clojure / inline panels, not shell argv.
 (defn- op-council [argv]
   (let [{:keys [positional flags]}
         (parse-argv argv {"--topic" :single "--members" :single "--rounds" :single
-                          "--harness" :single "--spawned-by" :single})]
+                          "--harness" :single "--synthesizer" :single
+                          "--spawned-by" :single "--cwd" :single})]
     (when (seq positional)
       (fail! "council takes only flags" {:unexpected positional}))
     (council! (or (get flags "--topic") (fail! "council requires --topic" {}))
@@ -533,39 +1213,86 @@
                 (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
                 (get flags "--rounds") (assoc :rounds (parse-int! "--rounds" (get flags "--rounds")))
                 (get flags "--harness") (assoc :harness (get flags "--harness"))
-                (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))))))
+                (get flags "--synthesizer") (assoc :synthesizer (get flags "--synthesizer"))
+                (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
+                (get flags "--cwd") (assoc :cwd (get flags "--cwd"))))))
+
+;; Structural run attrs the agents spool stamps at spawn (panel/review shape).
+;; A raw-run retry carries these onto the respawn so the deliberation stays
+;; queryable from run attrs after recovery — council seats have no other
+;; recovery path. Engine control and lifecycle attrs (harness, prompt, cwd,
+;; session-id, log, result, error, …) are re-derived or re-stamped by
+;; spawn-run!, so only these spool-owned structural attrs are carried.
+(def ^:private preserved-run-attr-names
+  ["review-target" "review-pass" "review-roster" "review-focus"
+   "review-synthesis" "panel-seat" "panel-turn"])
 
 (defn- op-retry [argv]
-  (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--cwd" :single "--prompt" :single}) [id] positional]
+  (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--cwd" :single "--prompt" :single "--fresh" :bool})
+        [id] positional
+        fresh? (boolean (get flags "--fresh"))]
     (when-not (= 1 (count positional)) (fail! "retry requires <task-or-run-id>" {:got positional}))
     (let [strand (or (api/show (rt) id) (fail! "retry target not found" {:id id}))
           run (if (run? strand) strand (first (filter #(failed-phases (sattr % "phase")) (task-runs id))))
           task-id (when-not (run? strand) id)]
       (when-not (and run (failed-phases (sattr run "phase"))) (fail! "nothing to supersede" {:id id}))
-      (api/update (rt) (:id run) {:state "closed" :attributes {"shuttle/phase" "superseded"}})
-      (let [summary (shuttle/run-summary run)
-            task (when task-id (api/show (rt) task-id))
-            served-target (or task-id (:for summary))
-            deps (->> (:edges (api/subgraph (rt) [(:id run)] {:type "depends-on"}))
-                      (filter #(= (:id run) (:from_strand_id %)))
-                      (mapv :to_strand_id))
-            interactive? (= "interactive" (sattr run "mode"))
-            new-run (shuttle/spawn-run! (cond-> {:harness (or (get flags "--harness") (sattr run "harness"))
-                                                 :prompt (if task (prompt-for-task task (get flags "--prompt") interactive?) (str (sattr run "prompt") (when-let [e (get flags "--prompt")] (str "\n\n" e))))
-                                                 :title (str "Retry: " (:title (or task run)))
-                                                 :parent served-target
-                                                 :depends-on deps
-                                                 :cwd (or (get flags "--cwd")
-                                                          (sattr run "cwd")
-                                                          (workspace-root-dir))}
-                                          ;; a retried interactive task gets a fresh session on the same backend
-                                          interactive? (assoc :mode :interactive
-                                                              :backend (sattr run "backend")
-                                                              :reap (sattr run "reap"))
-                                          (sattr run "spawned-by") (assoc :spawned-by (sattr run "spawned-by"))
-                                          (sattr run "max-attempts") (assoc :max-attempts (sattr run "max-attempts"))))]
-        (cond-> {:superseded (:id run) :run (select-keys (shuttle/run-summary new-run) [:id :phase :harness])}
-          task-id (assoc :task task-id))))))
+      (let [resumes (sattr run "resumes")
+            ;; A3 continuity: a plain retry re-resumes the predecessor session;
+            ;; --fresh severs it. A resume-classed failure (A1) means the session
+            ;; itself was lost, so re-resuming would only loop against it — refuse
+            ;; the plain retry and name the --fresh escape rather than silently
+            ;; cold-starting a continuation the caller did not ask for.
+            _ (when (and resumes (not fresh?) (= "resume" (sattr run "error-class")))
+                (fail! "run failed resuming its session; retry --fresh to respawn cold on the full-brief prompt"
+                       {:run (:id run) :resumes resumes}))
+            preserve-resume? (and resumes (not fresh?))
+            fresh-prompt (sattr run "fresh-prompt")
+            ;; carry the spool-owned structural attrs plus, when the retry keeps
+            ;; resuming, the full-brief form so a later --fresh of the re-resumed
+            ;; run can still cold-start correctly
+            carried-attrs (cond-> (into {}
+                                        (keep (fn [n] (when-let [v (sattr run n)] [(str "shuttle/" n) v])))
+                                        preserved-run-attr-names)
+                            (and preserve-resume? fresh-prompt) (assoc "shuttle/fresh-prompt" fresh-prompt))
+            extra (get flags "--prompt")
+            append-extra (fn [p] (str p (when extra (str "\n\n" extra))))]
+        (api/update (rt) (:id run) {:state "closed" :attributes {"shuttle/phase" "superseded"}})
+        (let [summary (shuttle/run-summary run)
+              task (when task-id (api/show (rt) task-id))
+              served-target (or task-id (:for summary))
+              deps (->> (:edges (api/subgraph (rt) [(:id run)] {:type "depends-on"}))
+                        (filter #(= (:id run) (:from_strand_id %)))
+                        (mapv :to_strand_id))
+              interactive? (= "interactive" (sattr run "mode"))
+              prompt (cond
+                       task (prompt-for-task task extra interactive?)
+                       ;; --fresh severs resume, so the process starts cold and
+                       ;; must get the full-brief form the resuming run stashed;
+                       ;; the short continuation assumes a session this spawn
+                       ;; will not have (A6)
+                       (and fresh? resumes) (append-extra
+                                             (or fresh-prompt
+                                                 (fail! "retry --fresh cannot reconstruct the full-brief prompt for this resuming run"
+                                                        {:run (:id run)})))
+                       :else (append-extra (sattr run "prompt")))
+              new-run (shuttle/spawn-run! (cond-> {:harness (or (get flags "--harness") (sattr run "harness"))
+                                                   :prompt prompt
+                                                   :title (str "Retry: " (:title (or task run)))
+                                                   :parent served-target
+                                                   :depends-on deps
+                                                   :cwd (or (get flags "--cwd")
+                                                            (sattr run "cwd")
+                                                            (workspace-root-dir))}
+                                            ;; a retried interactive task gets a fresh session on the same backend
+                                            interactive? (assoc :mode :interactive
+                                                                :backend (sattr run "backend")
+                                                                :reap (sattr run "reap"))
+                                            (sattr run "spawned-by") (assoc :spawned-by (sattr run "spawned-by"))
+                                            (sattr run "max-attempts") (assoc :max-attempts (sattr run "max-attempts"))
+                                            preserve-resume? (assoc :resume resumes)
+                                            (seq carried-attrs) (assoc :attrs carried-attrs)))]
+          (cond-> {:superseded (:id run) :run (select-keys (shuttle/run-summary new-run) [:id :phase :harness])}
+            task-id (assoc :task task-id)))))))
 
 (defn- blockers [task]
   (->> (:edges (api/subgraph (rt) [(:id task)] {:type "depends-on"}))
@@ -621,10 +1348,11 @@
       "notes" (op-notes args)
       "council" (op-council args)
       "review" (op-review args)
+      "rosters" (op-rosters args)
       "delegate" (op-delegate args)
       "retry" (op-retry args)
       "status" (op-status args)
-      (fail! "Unknown agent subcommand" {:subcommand sub :available ["about" "spawn" "ps" "await" "logs" "kill" "harnesses" "backends" "note" "notes" "council" "review" "delegate" "retry" "status"]}))))
+      (fail! "Unknown agent subcommand" {:subcommand sub :available ["about" "spawn" "ps" "await" "logs" "kill" "harnesses" "backends" "note" "notes" "council" "review" "rosters" "delegate" "retry" "status"]}))))
 
 ;; agent-plan pattern
 (s/def ::non-blank-string non-blank?)
