@@ -11,7 +11,8 @@
             [skein.api.batch.alpha :as batch]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as api]
+            [skein.spools.util :refer [fail! require-valid!]]))
 
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
@@ -57,9 +58,6 @@
 
 (declare executor-registry)
 
-(defn- fail! [message data]
-  (throw (ex-info message data)))
-
 (defn- reject-unknown-keys!
   "Fail loudly (TEN-003) when `m` carries keys outside `allowed`, so a builder
   never silently ignores a mistyped option key (`:require`, `:depend-on`, …).
@@ -77,11 +75,6 @@
 (def ^:private workflow-opt-keys #{:params :attributes :state :phase})
 (def ^:private choice-opt-keys #{:key :label :description :next :input :revise})
 (def ^:private choice-input-opt-keys #{:key :required :description})
-
-(defn- require-valid! [spec value message]
-  (when-not (s/valid? spec value)
-    (fail! message {:explain (s/explain-data spec value)}))
-  value)
 
 (defn- require-valid-workflow! [workflow]
   (require-valid! ::workflow workflow "Invalid workflow definition"))

@@ -8,14 +8,12 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as api]
+            [skein.spools.util :refer [fail!]]))
 
 (def ^:private section-order [:strand :blockers :dependents :parents :children :notes :workflow])
 (def ^:private selectable-sections (set section-order))
 (def ^:private related-sections (disj selectable-sections :strand :workflow))
-
-(defn- fail! [message data]
-  (throw (ex-info message data)))
 
 (defn- attr [strand k]
   (let [attrs (:attributes strand)
@@ -32,9 +30,7 @@
   (try
     (first (graph/strands-by-ids rt [strand-id]))
     (catch clojure.lang.ExceptionInfo e
-      (throw (ex-info "Bobbin target strand was not found"
-                      {:strand-id strand-id}
-                      e)))))
+      (fail! "Bobbin target strand was not found" {:strand-id strand-id} e))))
 
 (defn- validate-include! [include]
   (let [include (or include selectable-sections)]

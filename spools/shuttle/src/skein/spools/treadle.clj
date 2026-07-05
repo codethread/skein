@@ -9,6 +9,7 @@
   (:require [clojure.string :as str]
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
+            [skein.spools.util :refer [fail!]]
             [skein.api.weaver.alpha :as api]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]))
@@ -24,9 +25,6 @@
   reaches phases through `delegates` edges, so `stamp-run-on-gate!` also repoints
   superseded runs out of the query (see there) so the two agree on membership."
   ["failed" "exhausted" "superseded"])
-
-(defn- fail! [message data]
-  (throw (ex-info message data)))
 
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous treadle scans."

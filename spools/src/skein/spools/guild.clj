@@ -12,7 +12,8 @@
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as weaver]
-            [skein.api.runtime.alpha :as runtime]))
+            [skein.api.runtime.alpha :as runtime]
+            [skein.spools.util :refer [fail!]]))
 
 
 
@@ -28,9 +29,6 @@
 
 (def ^:private defop-opt-keys #{:doc :spec})
 (def ^:private deprecate-opt-keys #{:replacement :since})
-
-(defn- fail! [message data]
-  (throw (ex-info message data)))
 
 (defn- reject-unknown-keys! [opts allowed context]
   (when-let [unknown (seq (remove allowed (keys opts)))]

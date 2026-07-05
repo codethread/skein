@@ -34,7 +34,8 @@
   ergonomics layer is for workspace-local config, tests, and glue only."
   (:require [skein.api.current.alpha :as current]
             [skein.api.batch.alpha :as batch]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as api]
+            [skein.core.terse :as terse]))
 
 (def ^:dynamic ^:private *scope*
   "Innermost `with-runtime` runtime, or nil. Beats the `bind!` default."
@@ -106,15 +107,6 @@
   []
   (api/init (resolve-runtime)))
 
-(def ^:private strand-core-keys #{:title :state :attributes :edges})
-
-(defn- reject-core-attribute-keys! [attributes]
-  (when (map? attributes)
-    (when-let [core-keys (seq (filter strand-core-keys (keys attributes)))]
-      (throw (ex-info "Two-argument strand! treats the second argument as attributes; pass lifecycle fields as the third argument"
-                      {:keys (vec core-keys)}))))
-  attributes)
-
 (defn strand!
   "Create a strand in the resolved runtime and return the created row.
 
@@ -124,7 +116,7 @@
   ([title]
    (strand! title {} {}))
   ([title attributes]
-   (strand! title (reject-core-attribute-keys! attributes) {}))
+   (strand! title (terse/reject-core-attribute-keys! attributes) {}))
   ([title attributes lifecycle]
    (api/add (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
 
@@ -187,9 +179,6 @@
   [query-name]
   (api/query-explain (resolve-runtime) query-name))
 
-(defn- named-query? [query-or-def]
-  (or (symbol? query-or-def) (keyword? query-or-def)))
-
 (defn query
   "Return strands matching an ad hoc query definition or named query.
 
@@ -199,7 +188,7 @@
    (query query-or-def {}))
   ([query-or-def params]
    (let [runtime (resolve-runtime)]
-     (if (named-query? query-or-def)
+     (if (terse/named-query? query-or-def)
        (api/list-query runtime query-or-def params)
        (api/list runtime query-or-def params)))))
 
@@ -226,7 +215,7 @@
    (ready query-or-def {}))
   ([query-or-def params]
    (let [runtime (resolve-runtime)]
-     (if (named-query? query-or-def)
+     (if (terse/named-query? query-or-def)
        (api/ready-query runtime query-or-def params)
        (api/ready runtime query-or-def params)))))
 

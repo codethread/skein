@@ -10,7 +10,8 @@
             [next.jdbc.result-set :as rs]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api])
+            [skein.api.weaver.alpha :as api]
+            [skein.spools.util :refer [fail!]])
   (:import [java.time Duration Instant LocalDateTime ZoneOffset]))
 
 (def default-days
@@ -19,9 +20,6 @@
 
 (def ^:private excluded-workflow-roles #{"molecule" "procedure" "digest"})
 (def ^:private failed-shuttle-phases #{"failed" "exhausted"})
-
-(defn- fail! [message data]
-  (throw (ex-info message data)))
 
 (defn- require-map! [opts context]
   (when-not (map? opts)

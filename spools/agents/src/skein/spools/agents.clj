@@ -8,15 +8,12 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.shuttle :as shuttle]))
+            [skein.spools.shuttle :as shuttle]
+            [skein.spools.util :refer [fail!]]))
 
 (defn- rt
   []
   (current/runtime))
-
-(defn- fail!
-  [m d]
-  (throw (ex-info m d)))
 
 (defn- non-blank?
   [v]

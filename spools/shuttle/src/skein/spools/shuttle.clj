@@ -39,7 +39,8 @@
             [clojure.string :as str]
             [skein.api.weaver.alpha :as api]
             [skein.api.current.alpha :as current]
-            [skein.api.runtime.alpha :as runtime])
+            [skein.api.runtime.alpha :as runtime]
+            [skein.spools.util :refer [fail!]])
   (:import [java.lang ProcessBuilder$Redirect ProcessHandle]
            [java.nio.file Files]
            [java.nio.file.attribute PosixFilePermissions]
@@ -49,9 +50,6 @@
 
 
 (def ^:private default-max-attempts 3)
-
-(defn- fail! [message data]
-  (throw (ex-info message data)))
 
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous shuttle worker threads."

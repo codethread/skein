@@ -1969,16 +1969,16 @@
   (mapv normalize-wake (db/pending-wakes (ds runtime))))
 
 (defn recent-fires
-  "Return recently completed scheduler wakes, newest first, bounded to the last 100."
+  "Return recently completed scheduler wakes, newest first, capped by the DB's retained scheduler-history limit."
   [runtime]
   (mapv normalize-wake (db/recent-fires (ds runtime))))
 
 (defn recent-cancellations
-  "Return recently cancelled scheduler wakes, newest first, bounded to the last 100."
+  "Return recently cancelled scheduler wakes, newest first, capped by the DB's retained scheduler-history limit."
   [runtime]
   (mapv normalize-wake (db/recent-cancellations (ds runtime))))
 
 (defn recent-failures
-  "Return recently failed scheduler wakes, newest first, bounded to the last 100."
+  "Return recently failed scheduler wakes, newest first, capped by the DB's retained scheduler-history limit."
   [runtime]
   (mapv normalize-wake (db/recent-failures (ds runtime))))

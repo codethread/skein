@@ -9,7 +9,8 @@
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as api]
+            [skein.spools.util :refer [fail!]]))
 
 (defonce ^:private vocab-state (atom {}))
 (defonce ^:private violation-state (atom []))
@@ -18,9 +19,6 @@
 (def ^:private allowed-check-keys #{:attr :enum :kind :required-with :doc})
 (def ^:private allowed-kinds #{:string :number :boolean :map :int-string})
 (def ^:private event-key :skein.spools.selvage/watch)
-
-(defn- fail! [message data]
-  (throw (ex-info message data)))
 
 (defn- check-name! [name]
   (when-not (or (keyword? name) (symbol? name) (string? name))

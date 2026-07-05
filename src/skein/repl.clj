@@ -11,6 +11,7 @@
             [nrepl.core :as nrepl]
             [skein.core.client :as client]
             [skein.api.weaver.alpha :as api]
+            [skein.core.terse :as terse]
             [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.query :as query]))
@@ -119,16 +120,6 @@
   []
   (daemon :init))
 
-(def ^:private strand-core-keys #{:title :state :attributes :edges})
-
-(defn- reject-core-attribute-keys! [attributes]
-  (when (map? attributes)
-    (let [core-keys (seq (filter strand-core-keys (keys attributes)))]
-      (when core-keys
-        (throw (ex-info "Two-argument strand! treats the second argument as attributes; pass lifecycle fields as the third argument"
-                        {:keys (vec core-keys)})))))
-  attributes)
-
 (defn strand!
   "Create a strand in the active weaver world.
 
@@ -139,7 +130,7 @@
   ([title]
    (strand! title {} {}))
   ([title attributes]
-   (strand! title (reject-core-attribute-keys! attributes) {}))
+   (strand! title (terse/reject-core-attribute-keys! attributes) {}))
   ([title attributes lifecycle]
    (daemon :add (merge {:title title :attributes attributes} lifecycle))))
 
@@ -237,11 +228,8 @@
   [query-name]
   (daemon :query-explain query-name))
 
-(defn- named-query? [query-or-def]
-  (or (symbol? query-or-def) (keyword? query-or-def)))
-
 (defn- run-query [query-or-def params ad-hoc named]
-  (if (named-query? query-or-def)
+  (if (terse/named-query? query-or-def)
     (daemon named query-or-def params)
     (daemon ad-hoc query-or-def params)))
 

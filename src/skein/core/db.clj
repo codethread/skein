@@ -204,22 +204,8 @@
 (def ^:private batch-strand-keys #{:title :state :attributes :ref :edges})
 (def ^:private batch-edge-keys #{:type :to :attributes})
 
-(defn- json-compatible? [value]
-  (cond
-    (nil? value) true
-    (string? value) true
-    (number? value) true
-    (true? value) true
-    (false? value) true
-    (map? value) (and (every? #(or (keyword? %) (string? %)) (keys value))
-                      (every? json-compatible? (vals value)))
-    (vector? value) (every? json-compatible? value)
-    (sequential? value) (every? json-compatible? value)
-    :else false))
-
 (defn- require-json-object-encodable! [attributes context]
-  (when-not (or (nil? attributes)
-                (and (map? attributes) (json-compatible? attributes)))
+  (when-not (s/valid? ::specs/attributes attributes)
     (throw (ex-info "Attributes must be nil or an EDN map that encodes to a JSON object"
                     {:context context :attributes attributes})))
   attributes)
@@ -233,34 +219,20 @@
   (when-not (map? edge)
     (throw (ex-info "Batch edge must be a map" {:edge edge})))
   (require-no-unknown-keys! edge batch-edge-keys :edge)
-  (when-not (s/valid? ::specs/edge-type (:type edge))
-    (throw (ex-info "Batch edge :type must be a valid relation name"
-                    {:edge edge})))
-  (when-not (or (symbol? (:to edge)) (string? (:to edge)))
-    (throw (ex-info "Batch edge :to must be a symbol batch ref or string durable id" {:edge edge})))
-  (require-json-object-encodable! (:attributes edge) :edge)
+  (require-valid! ::specs/batch-edge edge "Batch edge is invalid")
   edge)
 
 (defn- validate-batch-strand! [strand]
   (when-not (map? strand)
     (throw (ex-info "Batch strand must be a map" {:strand strand})))
   (require-no-unknown-keys! strand batch-strand-keys :strand)
-  (when-not (and (string? (:title strand)) (not (str/blank? (:title strand))))
-    (throw (ex-info "Batch strand :title must be a non-blank string" {:strand strand})))
-  (when (and (contains? strand :ref) (not (symbol? (:ref strand))))
-    (throw (ex-info "Batch strand :ref must be a symbol" {:strand strand})))
-  (require-json-object-encodable! (:attributes strand) :strand)
-  (when-not (or (nil? (:edges strand)) (vector? (:edges strand)))
-    (throw (ex-info "Batch strand :edges must be a vector" {:strand strand})))
+  (require-valid! ::specs/batch-strand strand "Batch strand is invalid")
   (doseq [edge (:edges strand)]
     (validate-batch-edge! edge))
   strand)
 
 (defn- validate-batch! [strands]
-  (when-not (vector? strands)
-    (throw (ex-info "Batch input must be a vector of strand maps" {:value strands})))
-  (when (empty? strands)
-    (throw (ex-info "Batch input must contain at least one strand" {})))
+  (require-valid! ::specs/batch-input strands "Batch input is invalid")
   (doseq [strand strands]
     (validate-batch-strand! strand))
   (let [refs (keep :ref strands)
@@ -1038,17 +1010,10 @@
 ;; query/traversal/burn surface above.
 
 (def ^:private scheduler-wake-keys #{:key :wake-at :handler :payload})
-(def ^:private scheduler-history-limit 100)
 
-(defn- require-scheduler-key! [key]
-  (when-not (and (string? key) (not (str/blank? key)))
-    (throw (ex-info "Scheduler key must be a non-blank string" {:key key})))
-  key)
-
-(defn- require-wake-instant! [wake-at]
-  (when-not (instance? Instant wake-at)
-    (throw (ex-info "Scheduler wake-at must be a java.time.Instant" {:wake-at wake-at})))
-  wake-at)
+(def ^:private scheduler-history-limit
+  "Newest-wins cap on retained scheduler history rows per status (SQL prune)."
+  100)
 
 (def ^:private scheduler-wake-columns "key, wake_at, handler, payload, attempts, created_at, updated_at")
 (def ^:private scheduler-history-columns "id, key, wake_at, handler, payload, status, attempts, error, recorded_at")
@@ -1103,7 +1068,7 @@
 
   now is an explicit java.time.Instant so callers control the clock."
   [ds now]
-  (require-wake-instant! now)
+  (require-valid! :skein.scheduler-wake/wake-at now "Scheduler wake-at must be a java.time.Instant")
   (execute! ds
             [(str "SELECT " scheduler-wake-columns " FROM scheduler_wakes WHERE wake_at <= ? ORDER BY wake_at ASC, key ASC")
              (.toEpochMilli ^Instant now)]))
@@ -1117,7 +1082,7 @@
   concurrent race, yields nil rather than incrementing the replacement row.
   Callers treat nil as an ordinary lost race, never an error."
   [ds key wake-at-millis]
-  (require-scheduler-key! key)
+  (require-valid! :skein.scheduler-wake/key key "Scheduler key must be a non-blank string")
   (when-not (integer? wake-at-millis)
     (throw (ex-info "Scheduler wake-at generation must be epoch millis" {:key key :wake-at wake-at-millis})))
   (execute-one! ds
@@ -1141,7 +1106,7 @@
              status status scheduler-history-limit]))
 
 (defn- retire-wake! [ds key status error]
-  (require-scheduler-key! key)
+  (require-valid! :skein.scheduler-wake/key key "Scheduler key must be a non-blank string")
   (jdbc/with-transaction [tx ds]
     (let [row (require-pending-wake tx key)]
       (execute! tx ["DELETE FROM scheduler_wakes WHERE key = ?" key])
@@ -1188,17 +1153,17 @@
              status scheduler-history-limit]))
 
 (defn recent-fires
-  "Return the most recent completed wakes, newest first, bounded to the last 100."
+  "Return the most recent completed wakes, newest first, capped by `scheduler-history-limit`."
   [ds]
   (recent-history ds "completed"))
 
 (defn recent-cancellations
-  "Return the most recent cancelled wakes, newest first, bounded to the last 100."
+  "Return the most recent cancelled wakes, newest first, capped by `scheduler-history-limit`."
   [ds]
   (recent-history ds "cancelled"))
 
 (defn recent-failures
-  "Return the most recent failed wakes, newest first, bounded to the last 100."
+  "Return the most recent failed wakes, newest first, capped by `scheduler-history-limit`."
   [ds]
   (recent-history ds "failed"))
 

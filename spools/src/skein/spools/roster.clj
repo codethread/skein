@@ -28,16 +28,13 @@
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.format :as fmt])
+            [skein.spools.format :as fmt]
+            [skein.spools.util :refer [fail! reject-unknown-keys! attr-key->str]])
   (:import [java.time Duration Instant]))
 
 (def default-stale-after-ms
   "Default staleness threshold for `roster`/`await-quiet!`: fifteen minutes."
   (* 15 60 1000))
-
-(defn- fail!
-  [message data]
-  (throw (ex-info message data)))
 
 (defn- non-blank-string?
   [v]
@@ -54,12 +51,6 @@
   (when (some? v)
     (require-non-blank! k v))
   v)
-
-(defn- reject-unknown-keys!
-  [context allowed m]
-  (when-let [unknown (seq (remove allowed (keys m)))]
-    (fail! (str context " received unknown keys") {:unknown (vec unknown) :allowed (vec (sort allowed))}))
-  m)
 
 (defn- attr-value
   "Return a strand attribute by keyword or string key."
@@ -475,10 +466,6 @@
   rather than a descendant that happens to carry feature/owner attributes."
   [runtime id]
   (= [id] (api/ancestor-root-ids runtime [id])))
-
-(defn- attr-key->str
-  [k]
-  (if (keyword? k) (subs (str k) 1) (str k)))
 
 (defn- changed-attr-keys
   "String-named attribute keys whose value differs between `before` and `after`."

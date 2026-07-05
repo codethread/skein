@@ -74,6 +74,25 @@
          #(or (not (contains? % :state)) (s/valid? ::generic-state (:state %)))))
 (s/def ::edge-input (s/keys :req-un [::from ::to ::type] :opt-un [::attributes]))
 
+;; Batch-creation boundary shapes (skein.core.db/add-strand-batch!): the single
+;; contract for one graph-authoring batch, so the DB validators route shape
+;; checks through `require-valid!` instead of hand-rolling per-field predicates
+;; (and re-deriving the JSON-encodability rule) beside the spec seam. A batch
+;; edge target is either a symbolic batch ref (resolved batch-locally) or a
+;; durable id string. Component keys live under dedicated qualified namespaces so
+;; `:req-un`/`:opt-un` bind the unqualified batch keys without colliding with the
+;; strand-level `::to`.
+(s/def :skein.batch-edge/to (s/or :ref symbol? :id string?))
+(s/def ::batch-edge
+  (s/keys :req-un [::type :skein.batch-edge/to]
+          :opt-un [::attributes]))
+(s/def :skein.batch-strand/ref symbol?)
+(s/def :skein.batch-strand/edges (s/coll-of map? :kind vector?))
+(s/def ::batch-strand
+  (s/keys :req-un [::title]
+          :opt-un [:skein.batch-strand/ref :skein.batch-strand/edges ::attributes]))
+(s/def ::batch-input (s/coll-of ::batch-strand :kind vector? :min-count 1))
+
 ;; Weaver-owned scheduler wake boundary shape (RFC-009): the single durable-write
 ;; contract shared by db persistence and the API tiers above it, so prose specs,
 ;; DB validation, and callers cannot drift apart. Component keys live under a

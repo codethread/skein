@@ -7,7 +7,8 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as api]
-            [skein.api.runtime.alpha :as runtime])
+            [skein.api.runtime.alpha :as runtime]
+            [skein.spools.util :refer [fail!]])
   (:import [java.io OutputStreamWriter]
            [java.time Instant]))
 
@@ -36,9 +37,6 @@
 
 (defn- rt []
   (or *runtime* (current/runtime)))
-
-(defn- fail! [message data]
-  (throw (ex-info message data)))
 
 (defn- now [] (str (Instant/now)))
 
