@@ -1,6 +1,7 @@
 (ns skein.runtime-deps-test
   "Tests for runtime dependency loading against a live weaver."
   (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [nrepl.core :as nrepl]
             [skein.core.weaver.config :as daemon-config]
@@ -71,7 +72,7 @@
 
 (deftest daemon-runtime-can-hot-add-config-dir-local-root
   (let [config-dir (temp-dir "skein-runtime-deps-config")
-        suffix (str "s" (.replace (str (java.util.UUID/randomUUID)) "-" ""))]
+        suffix (str "s" (str/replace (str (java.util.UUID/randomUUID)) "-" ""))]
     (try
       (let [world (test-world (.getCanonicalPath config-dir))
             rt (runtime/start! nil {:world world})
@@ -94,7 +95,7 @@
 
 (deftest approved-spool-sync-loads-maven-deps-before-activation
   (let [config-dir (temp-dir "skein-runtime-maven-spool-config")
-        suffix (str "s" (.replace (str (java.util.UUID/randomUUID)) "-" ""))]
+        suffix (str "s" (str/replace (str (java.util.UUID/randomUUID)) "-" ""))]
     (try
       (let [world (test-world (.getCanonicalPath config-dir))
             rt (runtime/start! nil {:world world})

@@ -37,7 +37,7 @@
         (is (= 1000000 (:wake_at created)))
         (is (= "my.workflow/on-cooldown" (:handler created)))
         (is (= {:strand "abc12"} (db/<-json (:payload created))))
-        (is (= 0 (:attempts created))))
+        (is (zero? (:attempts created))))
       (db/mark-wake-attempt! ds "release-cooldown" 1000000)
       (is (= 1 (:attempts (db/get-pending-wake ds "release-cooldown"))))
       (let [replaced (db/schedule-wake! ds {:key "release-cooldown"
@@ -45,7 +45,7 @@
                                             :handler 'my.workflow/on-cooldown-v2})]
         (is (= 2000000 (:wake_at replaced)))
         (is (= "my.workflow/on-cooldown-v2" (:handler replaced)))
-        (is (= 0 (:attempts replaced)) "replacing a schedule resets attempts")
+        (is (zero? (:attempts replaced)) "replacing a schedule resets attempts")
         (is (= {} (db/<-json (:payload replaced))))))))
 
 (defn- reject-explain
@@ -125,7 +125,7 @@
       (db/schedule-wake! ds {:key "g" :wake-at (instant 200) :handler 'a/b})
       ;; A mark carrying the stale generation matches nothing and increments nothing.
       (is (nil? (db/mark-wake-attempt! ds "g" 100000)))
-      (is (= 0 (:attempts (db/get-pending-wake ds "g"))) "stale-generation claim leaves attempts untouched")
+      (is (zero? (:attempts (db/get-pending-wake ds "g"))) "stale-generation claim leaves attempts untouched")
       ;; The current generation is claimable and observes attempt 1.
       (is (= 1 (:attempts (db/mark-wake-attempt! ds "g" 200000))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"epoch millis"

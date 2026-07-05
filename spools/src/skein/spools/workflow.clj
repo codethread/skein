@@ -194,7 +194,6 @@
   (cond
     (fn? value) (value params)
     (map? value) (into {} (map (fn [[k v]] [k (render v params)])) value)
-    (vector? value) (mapv #(render % params) value)
     (sequential? value) (mapv #(render % params) value)
     :else value))
 
@@ -405,15 +404,15 @@
   neither an included nor an excluded step never existed in the definition
   and fails loudly."
   [included-ids excluded-deps seen owner-id ref]
-  (cond
-    (contains? included-ids ref) #{ref}
-    (contains? excluded-deps ref)
+  (condp contains? ref
+    included-ids #{ref}
+    excluded-deps
     (if (contains? seen ref)
       #{}
       (into #{}
             (mapcat #(resolve-dep-refs included-ids excluded-deps (conj seen ref) ref %))
             (get excluded-deps ref)))
-    :else (fail! "Workflow step depends on an unknown ref" {:step owner-id :missing ref})))
+    (fail! "Workflow step depends on an unknown ref" {:step owner-id :missing ref})))
 
 (defn- splice-depends-on [included excluded]
   (let [included-ids (set (map #(normalize-ref (:id %) [:steps :id]) included))
@@ -568,16 +567,14 @@
 (defn- choice-name [choice]
   (let [k (choice-key choice)]
     (cond
-      (keyword? k) (name k)
-      (symbol? k) (name k)
+      (or (keyword? k) (symbol? k)) (name k)
       (non-blank-string? k) k
       :else (fail! "Workflow checkpoint choices require a non-blank key" {:choice choice}))))
 
 (defn- input-key-name [decl]
   (let [k (:key decl)]
     (cond
-      (keyword? k) (name k)
-      (symbol? k) (name k)
+      (or (keyword? k) (symbol? k)) (name k)
       (non-blank-string? k) k
       :else (fail! "Workflow choice :input entries require a non-blank :key" {:input decl}))))
 
@@ -816,7 +813,6 @@
                            {:path path :value value :type (some-> value type str)})
     (or (string? value) (boolean? value)) value
     (map? value) (into {} (map (fn [[k v]] [k (json-safe-context-value v (conj path k))])) value)
-    (vector? value) (mapv (fn [[idx v]] (json-safe-context-value v (conj path idx))) (map-indexed vector value))
     (sequential? value) (mapv (fn [[idx v]] (json-safe-context-value v (conj path idx))) (map-indexed vector value))
     :else (fail! "Workflow params cannot be defaulted into workflow/context; pass :context explicitly"
                  {:path path :value value :type (some-> value type str)})))

@@ -24,9 +24,9 @@
 (defn- generate-id
   "Return a random short strand id candidate."
   []
-  (apply str
-         (repeatedly id-length
-                     #(nth id-alphabet (.nextInt secure-random (count id-alphabet))))))
+  (str/join
+   (repeatedly id-length
+               #(nth id-alphabet (.nextInt secure-random (count id-alphabet))))))
 
 (defn datasource
   "Create a SQLite datasource for db-file, creating parent directories first.
@@ -210,9 +210,8 @@
   attributes)
 
 (defn- require-no-unknown-keys! [m allowed context]
-  (let [unknown (seq (remove allowed (keys m)))]
-    (when unknown
-      (throw (ex-info "Unknown keys in batch input" {:context context :keys (vec unknown)})))))
+  (when-let [unknown (seq (remove allowed (keys m)))]
+    (throw (ex-info "Unknown keys in batch input" {:context context :keys (vec unknown)}))))
 
 (defn- validate-batch-edge! [edge]
   (when-not (map? edge)
@@ -269,9 +268,8 @@
                     {:context context :fields (vec fields)}))))
 
 (defn- reject-unknown-strand-keys! [m allowed context]
-  (let [unknown (seq (remove allowed (keys m)))]
-    (when unknown
-      (throw (ex-info "Unknown core strand fields" {:context context :fields (vec unknown)})))))
+  (when-let [unknown (seq (remove allowed (keys m)))]
+    (throw (ex-info "Unknown core strand fields" {:context context :fields (vec unknown)}))))
 
 (defn add-strand!
   "Create a strand row and return it.

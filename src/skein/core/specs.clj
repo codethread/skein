@@ -14,14 +14,9 @@
 
 (defn- json-compatible? [value]
   (cond
-    (nil? value) true
-    (string? value) true
-    (number? value) true
-    (true? value) true
-    (false? value) true
+    (or (nil? value) (string? value) (number? value) (boolean? value)) true
     (map? value) (and (every? #(or (keyword? %) (string? %)) (keys value))
                       (every? json-compatible? (vals value)))
-    (vector? value) (every? json-compatible? value)
     (sequential? value) (every? json-compatible? value)
     :else false))
 

@@ -333,7 +333,7 @@
   (with-config-runtime
     (fn [_rt]
       (let [codex ((requiring-resolve 'skein.spools.shuttle/resolve-harness) :codex)]
-        (is (not (some #{"--ephemeral"} (:argv codex)))
+        (is (not-any? #{"--ephemeral"} (:argv codex))
             "sessions persist so codex exec resume can continue them")
         (is (= ["resume" :shuttle/session-id] (:resume codex))
             "codex declares its verified resume subcommand splice")))))

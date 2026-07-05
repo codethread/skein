@@ -484,7 +484,7 @@
     (into #{}
           (comp (remove #(= (get ba %) (get aa %)))
                 (map attr-key->str))
-          (into #{} (concat (keys ba) (keys aa))))))
+          (set (concat (keys ba) (keys aa))))))
 
 (defn- roster-self-write?
   "True when an event reflects roster's own bookkeeping write, so the handler

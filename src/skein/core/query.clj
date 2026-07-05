@@ -39,7 +39,7 @@
 (defn- attr-path [segments]
   (when-not (seq segments)
     (fail! "Attribute path must contain at least one segment" {:path segments}))
-  (str "$" (apply str (map quote-json-path-segment segments))))
+  (str "$" (str/join (map quote-json-path-segment segments))))
 
 (defn- compile-field [field]
   (cond
@@ -177,8 +177,8 @@
   blank, or non-symbol/non-keyword names."
   [query-name]
   (let [canonical-name (cond
-                         (and (symbol? query-name) (nil? (namespace query-name))) (name query-name)
-                         (and (keyword? query-name) (nil? (namespace query-name))) (name query-name)
+                         (and (or (symbol? query-name) (keyword? query-name))
+                              (nil? (namespace query-name))) (name query-name)
                          :else (fail! "Query names must be simple symbols or keywords" {:query query-name}))]
     (when (str/blank? canonical-name)
       (fail! "Query names must not be blank" {:query query-name}))

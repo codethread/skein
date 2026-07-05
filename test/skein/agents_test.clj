@@ -1,7 +1,7 @@
 (ns skein.agents-test
   "Tests for the agents coordination spool layered over shuttle."
   (:require [clojure.java.io :as io]
-            [clojure.java.shell :as shell]
+            [clojure.java.shell :as sh]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -256,7 +256,7 @@
                   [k v] (:attrs spec)]
             (is (= v (get-in run [:attributes (keyword k)])))))
         (testing "the pass tag threads notes together and separates rounds"
-          (is (str/includes? (get-in (first (:reviewers specs)) [:prompt])
+          (is (str/includes? (get (first (:reviewers specs)) :prompt)
                              (str "[" (:review-pass review) "]")))
           (is (str/includes? (get-in specs [:synthesizer :prompt])
                              (str "tagged [" (:review-pass review) "]")))
@@ -428,7 +428,7 @@
                       (.toPath (io/file "/tmp")) "skein-agents-git"
                       (make-array java.nio.file.attribute.FileAttribute 0)))
         path (.getCanonicalPath dir)
-        git (fn [& args] (apply shell/sh "git" "-C" path args))]
+        git (fn [& args] (apply sh/sh "git" "-C" path args))]
     (try
       (git "init" "-q")
       (git "config" "user.email" "t@example.com")
@@ -446,7 +446,7 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Could not expand commit range"
                               (#'agents/git-changed-files path "no-such-ref..HEAD"))))
       (finally
-        (shell/sh "rm" "-rf" path)))))
+        (sh/sh "rm" "-rf" path)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Panel primitive (PLAN-Pnl-001.PH4)
@@ -518,7 +518,7 @@
               (s/explain-str :skein.spools.agents/panel-specs specs)))
         (testing "a fresh blackboard defers the id to the spawner via a placeholder"
           (is (= {:kind :fresh} (:blackboard specs)))
-          (is (str/includes? (:prompt (first (first (:turns specs)))) "«panel-board»")))
+          (is (str/includes? (:prompt (ffirst (:turns specs))) "«panel-board»")))
         (testing "turn 1 opens on the full prompt with no resume threading"
           (let [row1 (first (:turns specs))]
             (is (every? #(nil? (:resume-ref %)) row1))
@@ -753,8 +753,8 @@
                               (agents/agent-op {:op/argv ["delegate" (:id closed)]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ready tasks missing harness"
                               (agents/agent-op {:op/argv ["delegate" "--ready" (:id plan)]})))
-        (is (not (some #{(:id missing-harness)}
-                       (:ready (agents/agent-op {:op/argv ["status" (:id plan)]}))))
+        (is (not-any? #{(:id missing-harness)}
+                      (:ready (agents/agent-op {:op/argv ["status" (:id plan)]})))
             "status :ready lists tasks delegable right now, matching delegate --ready selection")
         (is (empty? (shuttle/runs {:for (:id missing-harness)})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"mutually exclusive"

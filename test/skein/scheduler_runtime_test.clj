@@ -97,7 +97,7 @@
             (.put queue {:event/type :test/filler})
             (let [result (scheduler/dispatch-due! rt)]
               (is (:transient? result) "queue-full is reported as transient")
-              (is (= 0 (:dispatched result)))
+              (is (zero? (:dispatched result)))
               (is (empty? @(:in-flight st)) "the in-flight claim is released on saturation")
               (is (some? (db/get-pending-wake ds "due")) "the durable wake stays pending")
               (is (= 1 (count (scheduler/dispatch-failures rt))) "a dispatch failure is recorded"))
@@ -160,7 +160,7 @@
               (let [result (scheduler/dispatch-due! rt)]
                 (is (= 1 (:dispatched result)) "the stale envelope still enqueues")
                 (is (= 200000 (:wake_at (db/get-pending-wake ds "resched"))) "gen B owns the row now")
-                (is (= 0 (:attempts (db/get-pending-wake ds "resched")))
+                (is (zero? (:attempts (db/get-pending-wake ds "resched")))
                     "the stale claim never increments the rescheduled generation")))
             ;; The stale envelope carried gen A's wake-at; run-fire! drops it (covered
             ;; by run-fire-skips-cancelled-and-rescheduled-wakes). Now deliver gen B.

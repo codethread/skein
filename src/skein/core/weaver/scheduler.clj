@@ -85,6 +85,9 @@
   "Cancel the timer and shut the executor down, joining its thread."
   [state]
   (reset! (:closed? state) true)
+  ;; :lock is a dedicated per-state (Object.) monitor (see state ctor); the rule only
+  ;; recognises bare-symbol locks and can't see the stable Object behind the map get.
+  #_{:splint/disable [lint/locking-object]}
   (locking (:lock state)
     (when-let [^ScheduledFuture fut @(:timer state)]
       (.cancel fut false)
@@ -202,6 +205,8 @@
   arming against dispatch/reload."
   [runtime delay-ms]
   (let [st (state runtime)]
+    ;; :lock is the dedicated per-state (Object.) monitor; false positive, see close-state!.
+    #_{:splint/disable [lint/locking-object]}
     (locking (:lock st)
       (when-not @(:closed? st)
         (when-let [^ScheduledFuture fut @(:timer st)]
@@ -221,6 +226,8 @@
   [runtime]
   (let [ds (:datasource runtime)
         st (state runtime)]
+    ;; :lock is the dedicated per-state (Object.) monitor; false positive, see close-state!.
+    #_{:splint/disable [lint/locking-object]}
     (locking (:lock st)
       (when-not @(:closed? st)
         (when-let [^ScheduledFuture fut @(:timer st)]
@@ -265,6 +272,8 @@
   reset and rebuilt from pending rows to preserve at-least-once delivery."
   [runtime]
   (let [st (state runtime)]
+    ;; :lock is the dedicated per-state (Object.) monitor; false positive, see close-state!.
+    #_{:splint/disable [lint/locking-object]}
     (locking (:lock st)
       (reset! (:in-flight st) #{})))
   (arm! runtime))
@@ -284,6 +293,9 @@
         key (:scheduler/key envelope)]
     (try
       (let [row (db/get-pending-wake ds key)]
+        ;; The two nil branches are distinct race outcomes (vanished vs. superseded
+        ;; wake) whose separate rationale comments are the point; keep them apart.
+        #_{:splint/disable [lint/identical-branches]}
         (cond
           ;; Cancelled or completed out from under us since dispatch.
           (nil? row) nil

@@ -104,7 +104,7 @@
   (and (non-blank-string? deps-root)
        (not (.isAbsolute (io/file deps-root)))
        (not (str/starts-with? deps-root "~"))
-       (not (some #{".."} (deps-root-segments deps-root)))))
+       (not-any? #{".."} (deps-root-segments deps-root))))
 
 (defn- validate-approved-spool-entry! [source lib entry]
   (when-not (symbol? lib)
@@ -514,10 +514,7 @@
       (not (.exists root-file))
       (sync-failed lib entry :missing-root (cond-> {} fetch (assoc :fetch fetch)))
 
-      (not (.isDirectory root-file))
-      (sync-failed lib entry :unreadable-root (cond-> {} fetch (assoc :fetch fetch)))
-
-      (not (.canRead root-file))
+      (or (not (.isDirectory root-file)) (not (.canRead root-file)))
       (sync-failed lib entry :unreadable-root (cond-> {} fetch (assoc :fetch fetch)))
 
       :else
@@ -1059,9 +1056,8 @@
 (def ^:private update-patch-keys #{:title :state :attributes :edges})
 
 (defn- reject-unknown-update-keys! [patch]
-  (let [unknown (seq (remove update-patch-keys (keys patch)))]
-    (when unknown
-      (throw (ex-info "Unknown strand update fields" {:fields (vec unknown)})))))
+  (when-let [unknown (seq (remove update-patch-keys (keys patch)))]
+    (throw (ex-info "Unknown strand update fields" {:fields (vec unknown)}))))
 
 (defn update
   "Update a strand and/or add edges atomically, then enqueue an update event."
@@ -1839,8 +1835,8 @@
 
 (defn- data-first-value? [value]
   (cond
-    (nil? value) true
-    (or (string? value)
+    (or (nil? value)
+        (string? value)
         (number? value)
         (keyword? value)
         (symbol? value)
@@ -1849,8 +1845,7 @@
         (uuid? value)) true
     (map? value) (and (every? data-first-value? (keys value))
                       (every? data-first-value? (vals value)))
-    (vector? value) (every? data-first-value? value)
-    (set? value) (every? data-first-value? value)
+    (or (vector? value) (set? value)) (every? data-first-value? value)
     :else false))
 
 (defn- validate-event-handler-metadata! [metadata]

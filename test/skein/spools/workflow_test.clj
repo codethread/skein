@@ -1034,7 +1034,7 @@
         refs (set (map :ref (:strands payload)))
         edges (set (map (juxt :from :to :type) (:edges payload)))]
     (is (= #{:molecule :verify} refs))
-    (is (not (some (fn [[_ to _]] (= :migrate to)) edges)))))
+    (is (not-any? (fn [[_ to _]] (= :migrate to)) edges))))
 
 (deftest workflow-human-checkpoint-auto-stamps-hitl
   ;; :kind :human is the canonical HITL signal; the builder stamps it (and it is
@@ -1148,7 +1148,7 @@
         ;; transaction: the join never appears as ready work and :after is next
         (let [after-inner (:ready (workflow/complete! "join-run"))]
           (is (= ["After"] (mapv :title after-inner)))
-          (is (not (some #(= "procedure" (:kind %)) after-inner))))
+          (is (not-any? #(= "procedure" (:kind %)) after-inner)))
         ;; the join strand is closed with engine provenance, though it was never
         ;; returned as a ready step nor manually completed
         (let [join (first (repl/query [:and
@@ -1256,7 +1256,7 @@
       (is (= [{:title "Sign off" :kind "checkpoint"}]
              (mapv #(select-keys % [:title :kind]) (:ready (workflow/choose! "revise-run" :revise)))))
       (let [revised-root (workflow/current-root "revise-run")]
-        (is (= true (get-in revised-root [:attributes :workflow/context :revision])))
+        (is (true? (get-in revised-root [:attributes :workflow/context :revision])))
         ;; the override key is recorded stage-local so it can be shed on exit
         (is (= ["revision"] (get-in revised-root [:attributes :workflow/stage-params]))))
       ;; approving routes forward: the stage-local :revision must not leak into

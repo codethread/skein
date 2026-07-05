@@ -18,7 +18,7 @@
         (set-updated-at! rt (:id old) "2026-01-01 00:00:00")
         (is (= [(:id old)] (mapv :id (carder/stale {:days 1}))))
         (is (pos-int? (:days-stale (first (carder/stale {:days 1})))))
-        (is (not (some #{(:id fresh)} (map :id (carder/stale {:days 1})))))
+        (is (not-any? #{(:id fresh)} (map :id (carder/stale {:days 1}))))
         (doseq [bad [0 -1 1.5 "14" nil]]
           (testing (pr-str bad)
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #":days must be a positive integer"

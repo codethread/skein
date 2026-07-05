@@ -248,7 +248,7 @@
       (do
         (write-frame! (stream-header request-id))
         (try
-          (let [emit! (fn [value] (write-frame! value))
+          (let [emit! write-frame!
                 terminator (invoke-op! runtime op-name (get args "argv")
                                        (assoc envelope :emit! emit!))]
             (write-frame! (stream-terminator request-id true terminator nil)))

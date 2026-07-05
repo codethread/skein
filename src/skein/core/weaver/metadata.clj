@@ -3,7 +3,7 @@
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.pprint :as pprint]
+            [clojure.pprint :as pp]
             [clojure.string :as str])
   (:import [java.lang ProcessHandle]
            [java.nio.file Files StandardCopyOption]
@@ -104,7 +104,7 @@
   [^java.io.File file data]
   (.mkdirs (.getParentFile file))
   (let [tmp (io/file (.getParentFile file) (str (.getName file) "." (new-nonce) ".tmp"))]
-    (spit tmp (with-out-str (pprint/pprint data)))
+    (spit tmp (with-out-str (pp/pprint data)))
     (Files/move (.toPath tmp)
                 (.toPath file)
                 (into-array StandardCopyOption [StandardCopyOption/ATOMIC_MOVE

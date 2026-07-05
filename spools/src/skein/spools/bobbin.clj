@@ -128,7 +128,7 @@
          section (fn [k f] (when (contains? include k)
                              (when-some [v (f)] [k v])))]
      (into {:bobbin/version 1
-            :include (vec (filter include section-order))}
+            :include (filterv include section-order)}
            (keep identity)
            [(section :strand #(summarize target))
             (section :blockers #(blockers-section rt strand-id))

@@ -128,7 +128,7 @@
               failed (await-phase rt (:id run) #{"failed"})]
           (is (= "active" (:state failed)) "stays active so it is loud and retryable")
           (is (= "failed" (get-in failed [:attributes :shuttle/phase])))
-          (is (= 0 (get-in failed [:attributes :shuttle/exit-code])))
+          (is (zero? (get-in failed [:attributes :shuttle/exit-code])))
           (is (str/includes? (get-in failed [:attributes :shuttle/error]) "empty result"))
           (testing "the failed phase is exactly what agent retry supersedes"
             (is (contains? #{"failed" "exhausted"}

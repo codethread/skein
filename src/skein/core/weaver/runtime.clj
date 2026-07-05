@@ -362,7 +362,7 @@
   (close-storage! runtime)
   (when-let [port (get-in runtime [:metadata :endpoint :port])]
     (swap! nrepl-port-runtimes dissoc port))
-  (swap! current-runtime (fn [published] (if (= published runtime) nil published)))
+  (swap! current-runtime (fn [published] (when-not (= published runtime) published)))
   (when-let [state-dir (get-in runtime [:metadata :state-dir])]
     (metadata/delete! {:state-dir state-dir}))
   {:stopped true})

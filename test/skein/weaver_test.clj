@@ -291,8 +291,8 @@
 (defn write-view-lib! [workspace lib ns-sym]
   (let [root (io/file workspace "spools" (name lib))
         ns-path (-> (str ns-sym)
-                    (.replace \- \_)
-                    (.replace \. java.io.File/separatorChar))
+                    (str/replace \- \_)
+                    (str/replace \. java.io.File/separatorChar))
         src-file (io/file root "src" (str ns-path ".clj"))]
     (.mkdirs (.getParentFile src-file))
     (spit src-file (str "(ns " ns-sym ")\n"
@@ -507,7 +507,7 @@
        keys
        (filter #(.isAlive ^Thread %))
        (map #(.getName ^Thread %))
-       (filter #(.startsWith ^String % prefix))
+       (filter #(str/starts-with? % prefix))
        sort
        vec))
 
@@ -1546,15 +1546,15 @@
              (api/views rt)))
       (is (= {:view :replacement :params {}}
              (api/view! rt 'daily {})))
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             lib (symbol (str "view-" suffix))
             ns-sym (symbol (str "demo.view-" suffix))
             root (write-view-lib! (get-in rt [:metadata :config-dir]) lib ns-sym)]
         (.addURL ^clojure.lang.DynamicClassLoader (:spool-classloader rt)
                  (.toURL (.toURI (io/file root "src"))))
         (load-file (str (io/file root "src" (str (-> (str ns-sym)
-                                                     (.replace \- \_)
-                                                     (.replace \. java.io.File/separatorChar))
+                                                     (str/replace \- \_)
+                                                     (str/replace \. java.io.File/separatorChar))
                                                  ".clj"))))
         (api/register-view! rt 'synced-lib (symbol (str ns-sym) "render"))
         (is (= {:lib-view {:from :synced}}
@@ -2003,7 +2003,7 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern input failed spec validation"
                             (api/weave! rt :counting {:title "Nope"})))
-      (is (= 0 @pattern-call-count))
+      (is (zero? @pattern-call-count))
       (is (empty? @hook-contexts))
       (is (empty? (api/list rt)))
       (api/register-pattern! rt 'bad-edge 'skein.weaver-test/bad-edge-pattern ::pattern-input)
@@ -2393,7 +2393,7 @@
         (is (= (:socket-path status) (get json-disk "socket_path")))
         (is (= "127.0.0.1" (get-in json-disk ["nrepl" "host"])))
         (is (false? (metadata/stale-or-missing? status)))
-        (is (false? (metadata/stale-or-missing? (assoc status :pid (long (:pid status))))))
+        (is (false? (metadata/stale-or-missing? (update status :pid long))))
         (is (= "127.0.0.1" (get-in status [:endpoint :host])))
         (is (.isLoopbackAddress (.getInetAddress (:server-socket (:server rt)))))))))
 
@@ -2424,7 +2424,7 @@
           (.newLine wrt)
           (.flush wrt)
           (let [response (json/read-str (.readLine rdr))]
-            (is (= false (get response "ok")))
+            (is (false? (get response "ok")))
             (is (= "protocol/identity-mismatch" (get-in response ["error" "code"]))))))
       (Thread/sleep 100)
       (is (.exists (metadata/socket-file (:metadata rt)))))))

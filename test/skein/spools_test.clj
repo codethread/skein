@@ -66,8 +66,8 @@
 (defn- write-local-lib! [config-dir lib-name ns-sym]
   (let [root (io/file config-dir "spools" lib-name)
         ns-path (-> (str ns-sym)
-                    (.replace \- \_)
-                    (.replace \. java.io.File/separatorChar))
+                    (str/replace \- \_)
+                    (str/replace \. java.io.File/separatorChar))
         src-file (io/file root "src" (str ns-path ".clj"))]
     (.mkdirs (.getParentFile src-file))
     (spit src-file (str "(ns " ns-sym ")\n(defn marker [] :synced-lib-loaded)\n(defn event-handler [_] :handled)\n"))
@@ -84,8 +84,8 @@
 
 (defn- write-spool-ns! [root ns-sym content]
   (let [ns-path (-> (str ns-sym)
-                    (.replace \- \_)
-                    (.replace \. java.io.File/separatorChar))
+                    (str/replace \- \_)
+                    (str/replace \. java.io.File/separatorChar))
         src-file (io/file root "src" (str ns-path ".clj"))]
     (.mkdirs (.getParentFile src-file))
     (spit src-file content)
@@ -105,8 +105,8 @@
 
 (defn- write-git-lib! [root ns-sym]
   (let [ns-path (-> (str ns-sym)
-                    (.replace \- \_)
-                    (.replace \. java.io.File/separatorChar))
+                    (str/replace \- \_)
+                    (str/replace \. java.io.File/separatorChar))
         src-file (io/file root "src" (str ns-path ".clj"))]
     (.mkdirs (.getParentFile src-file))
     (spit src-file (str "(ns " ns-sym ")\n(defn marker [] :git-spool-loaded)\n"))
@@ -334,7 +334,7 @@
 (deftest connected-client-can-register-weaver-only-spool-handler
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.event_handler_" suffix))
             lib (symbol (str "demo/event-handler-lib-" suffix))]
         (write-local-lib! config-dir "event-handler" ns-sym)
@@ -391,7 +391,7 @@
 (deftest sync-loads-approved-local-root-and-exposes-state
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.synced-" suffix))
             lib (symbol (str "demo/lib-" suffix))
             root (write-local-lib! config-dir "demo" ns-sym)]
@@ -424,7 +424,7 @@
 (deftest sync-ignores-spool-manifest-files
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.ignored_manifest_" suffix))
             lib (symbol (str "demo/ignored-manifest-" suffix))
             root (write-local-lib! config-dir "ignored-manifest" ns-sym)]
@@ -442,7 +442,7 @@
 (deftest use-is-driven-by-consumer-spools-after-load-and-call-options
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             base-ns (symbol (str "demo.base_" suffix))
             child-ns (symbol (str "demo.child_" suffix))
             base-lib (symbol (str "demo/base-" suffix))
@@ -471,7 +471,7 @@
 (deftest use-required-spool-gates-throw-for-surviving-skip-reasons
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.required_gate_" suffix))
             approved-lib (symbol (str "demo/required-gate-" suffix))
             failed-lib (symbol (str "demo/required-failed-" suffix))]
@@ -520,12 +520,12 @@
 ;; for later syncs in this JVM.
 (deftest daemon-init-runs-with-spool-classloader-after-sync
   (let [root (temp-config-dir)
-        suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+        suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
         ns-sym (symbol (str "demo.init-synced-" suffix))
         lib (symbol (str "demo/init-lib-" suffix))
         ns-path (-> (str ns-sym)
-                    (.replace \- \_)
-                    (.replace \. java.io.File/separatorChar))
+                    (str/replace \- \_)
+                    (str/replace \. java.io.File/separatorChar))
         result-file (io/file root "init-result.edn")]
     (try
       (t/with-weaver-world [ctx {:root (.getPath root)
@@ -639,7 +639,7 @@
     (fn [rt config-dir]
       (let [repo (io/file config-dir "repo")
             cache-dir (io/file config-dir "cache")
-            ns-sym (symbol (str "demo.git_fetch_" (.replace (str (java.util.UUID/randomUUID)) "-" "")))
+            ns-sym (symbol (str "demo.git_fetch_" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))
             sha (init-git-repo! repo ns-sym)
             url (file-url repo)
             lib 'demo/git-fetch]
@@ -660,7 +660,7 @@
     (fn [rt config-dir]
       (let [repo (io/file config-dir "repo")
             cache-dir (io/file config-dir "cache")
-            ns-sym (symbol (str "demo.git_refetch_" (.replace (str (java.util.UUID/randomUUID)) "-" "")))
+            ns-sym (symbol (str "demo.git_refetch_" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))
             _ (init-git-repo! repo ns-sym)
             _ (spit (io/file repo "after-initial-cache.txt") "fresh")
             _ (run-git! repo "add" ".")
@@ -698,7 +698,7 @@
       (let [repo (io/file config-dir "repo")
             cache-dir (io/file config-dir "cache")
             sha (init-git-repo! repo 'demo.unreachable_sha)
-            unknown (apply str (repeat 40 \a))]
+            unknown (str/join (repeat 40 \a))]
         (is (not= sha unknown))
         (with-cache-base
           cache-dir
@@ -716,7 +716,7 @@
   (with-runtime
     (fn [rt config-dir]
       (let [cache-dir (io/file config-dir "cache")
-            ns-sym (symbol (str "demo.git_publish_race_" (.replace (str (java.util.UUID/randomUUID)) "-" "")))
+            ns-sym (symbol (str "demo.git_publish_race_" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))
             sha "0123456789abcdef0123456789abcdef01234567"
             url "file:///tmp/race-winner-supplies-cache"
             lib 'demo/git-publish-race]
@@ -748,7 +748,7 @@
 (deftest sync-rejects-deps-edn-paths-escaping-the-spool-root
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.escape_" suffix))
             lib (symbol (str "demo/escape-" suffix))
             root (write-local-lib! config-dir (str "escape-" suffix) ns-sym)
@@ -764,7 +764,7 @@
 (deftest sync-accepts-deps-edn-path-naming-the-spool-root-itself
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.rootpath_" suffix))
             lib (symbol (str "demo/rootpath-" suffix))
             root (write-local-lib! config-dir (str "rootpath-" suffix) ns-sym)]
@@ -776,7 +776,7 @@
 (deftest sync-approved-local-spool-loads-maven-deps-from-shared-config
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.shared_local_deps_" suffix))
             lib (symbol (str "demo/shared-local-deps-" suffix))
             root (write-local-lib! config-dir (str "shared-local-deps-" suffix) ns-sym)]
@@ -790,7 +790,7 @@
 (deftest sync-reports-loaded-when-existing-spool-adds-new-maven-deps
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.added_maven_dep_" suffix))
             lib (symbol (str "demo/added-maven-dep-" suffix))
             root (write-local-lib! config-dir (str "added-maven-dep-" suffix) ns-sym)
@@ -814,7 +814,7 @@
 (deftest sync-approved-local-overlay-rejects-source-bearing-deps
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.local_deps_" suffix))
             lib (symbol (str "demo/local-deps-" suffix))
             root (write-local-lib! config-dir (str "local-deps-" suffix) ns-sym)]
@@ -827,7 +827,7 @@
           (is (= :runtime-add-failed (:reason result)))
           (is (re-find #"source-bearing coordinates" (:message result)))
           (is (= {:keys [:local/root] :lib 'demo/source}
-                 (select-keys (get-in result [:data]) [:keys :lib]))))))))
+                 (select-keys (get result :data) [:keys :lib]))))))))
 
 (deftest sync-approved-spool-rejects-mutable-versions-and-repo-redirection
   (with-runtime
@@ -839,7 +839,7 @@
                ["repos" {:paths ["src"] :mvn/repos {"central" {:url "file:/tmp/nope"}} :deps {}} #"top-level :mvn/repos"]
                ["local repo" {:paths ["src"] :mvn/local-repo "/tmp/nope" :deps {}} #"top-level :mvn/local-repo"]]]
         (testing label
-          (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+          (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
                 ns-sym (symbol (str "demo.bad_deps_" suffix))
                 lib (symbol (str "demo/bad-deps-" suffix))
                 root (write-local-lib! config-dir (str "bad-deps-" suffix) ns-sym)]
@@ -853,7 +853,7 @@
 (deftest sync-approved-spool-allows-maven-refinement-keys-and-ignores-aliases
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.maven_refinement_" suffix))
             lib (symbol (str "demo/maven-refinement-" suffix))
             root (write-local-lib! config-dir (str "maven-refinement-" suffix) ns-sym)
@@ -883,9 +883,9 @@
     (fn [rt config-dir]
       (let [repo (io/file config-dir "repo")
             cache-dir (io/file config-dir "cache")
-            ns-sym (symbol (str "demo.git_deps_" (.replace (str (java.util.UUID/randomUUID)) "-" "")))
+            ns-sym (symbol (str "demo.git_deps_" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))
             _ (init-git-repo! repo ns-sym)
-            _ (spit (io/file repo "deps.edn") (pr-str {:paths ["src"] :deps {'demo/source {:git/url "file:///tmp/repo" :git/sha (apply str (repeat 40 \a))}}}))
+            _ (spit (io/file repo "deps.edn") (pr-str {:paths ["src"] :deps {'demo/source {:git/url "file:///tmp/repo" :git/sha (str/join (repeat 40 \a))}}}))
             _ (run-git! repo "add" ".")
             _ (run-git! repo "commit" "-m" "deps")
             sha (str/trim (run-git! repo "rev-parse" "HEAD"))
@@ -928,7 +928,7 @@
     (fn [rt config-dir]
       (let [repo (io/file config-dir "repo")
             cache-dir (io/file config-dir "cache")
-            ns-sym (symbol (str "demo.git_ignored_manifest_" (.replace (str (java.util.UUID/randomUUID)) "-" "")))
+            ns-sym (symbol (str "demo.git_ignored_manifest_" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))
             _ (init-git-repo! repo ns-sym)
             _ (write-spool-manifest! repo [])
             _ (run-git! repo "add" ".")
@@ -950,7 +950,7 @@
       (let [repo (io/file config-dir "repo")
             cache-dir (io/file config-dir "cache")
             sha (init-git-repo! repo 'demo.unknown_sha)
-            unknown (apply str (repeat 40 \a))]
+            unknown (str/join (repeat 40 \a))]
         (is (not= sha unknown))
         (with-cache-base
           cache-dir
@@ -998,7 +998,7 @@
       (let [repo (io/file config-dir "mono")
             spool-root (io/file repo "nested" "spool")
             cache-dir (io/file config-dir "cache")
-            ns-sym (symbol (str "demo.git_mono_" (.replace (str (java.util.UUID/randomUUID)) "-" "")))
+            ns-sym (symbol (str "demo.git_mono_" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))
             sha (do
                   (.mkdirs repo)
                   (run-git! repo "init")
@@ -1025,7 +1025,7 @@
     (fn [rt config-dir]
       (let [repo (io/file config-dir "missing-root-repo")
             cache-dir (io/file config-dir "cache")
-            ns-sym (symbol (str "demo.git_missing_root_" (.replace (str (java.util.UUID/randomUUID)) "-" "")))
+            ns-sym (symbol (str "demo.git_missing_root_" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))
             sha (init-git-repo! repo ns-sym)
             lib 'demo/git-missing-root]
         (with-cache-base
@@ -1114,7 +1114,7 @@
 (deftest use-loads-namespace-from-synced-root-and-records-state
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.use-ns-" suffix))
             lib (symbol (str "demo/use-ns-lib-" suffix))
             root (write-local-lib! config-dir "use-ns" ns-sym)
@@ -1131,7 +1131,7 @@
 (deftest use-searches-multiple-synced-roots-for-namespace-source
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             first-ns (symbol (str "demo.first" suffix))
             second-ns (symbol (str "demo.second-lib-" suffix))
             first-lib (symbol (str "demo/first-lib-" suffix))
@@ -1149,7 +1149,7 @@
 (deftest use-reports-missing-synced-namespace-source
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             existing-ns (symbol (str "demo.existing" suffix))
             missing-ns (symbol (str "demo.missing-lib-" suffix))
             lib (symbol (str "demo/missing-ns-lib-" suffix))
@@ -1167,7 +1167,7 @@
 (deftest use-loads-selected-config-relative-file-and-records-call-return
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.filemod" suffix))
             file-rel "modules/file_mod.clj"]
         (write-module-file! config-dir file-rel
@@ -1183,7 +1183,7 @@
 (deftest use-lib-gates-observe-local-overrides
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.override_gated_" suffix))
             lib (symbol (str "demo/override-gated-" suffix))
             root (write-local-lib! config-dir "override-gated-local" ns-sym)]
@@ -1199,7 +1199,7 @@
 (deftest use-skips-on-lib-gates-before-loading
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.gated" suffix))
             approved-spool (symbol (str "demo/gated-lib-" suffix))
             failed-lib (symbol (str "demo/failed-lib-" suffix))]
@@ -1228,7 +1228,7 @@
 (deftest use-skips-on-missing-after
   (with-runtime
     (fn [rt config-dir]
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.after" suffix))]
         (write-module-file! config-dir "modules/after.clj" (str "(ns " ns-sym ")\n"))
         (is (= :loaded (:status (runtime-alpha/use! rt :base {:file "modules/after.clj"}))))
@@ -1242,7 +1242,7 @@
       (is (thrown? Exception
                    (runtime-alpha/use! rt :required-bad {:file "modules/bad.clj" :required? true})))
       (is (= :failed (:status (runtime-alpha/use rt :required-bad))))
-      (let [suffix (.replace (str (java.util.UUID/randomUUID)) "-" "")
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.callfail" suffix))]
         (write-module-file! config-dir "modules/call_fail.clj"
                             (str "(ns " ns-sym ")\n(defn install! [] (throw (ex-info \"call boom\" {})))\n"))

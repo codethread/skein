@@ -303,7 +303,7 @@
           bad-name (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:positionals [{:name "id"}]}}}))]
       (is (= :invalid-subcommand-positional (:reason bad-entry)))
       (is (= :positionals (:field bad-entry)))
-      (is (= 0 (:index bad-entry)))
+      (is (zero? (:index bad-entry)))
       (is (= "id" (:value bad-entry)))
       (is (= :invalid-subcommand-positional (:reason bad-name)))
       (is (= {:name "id"} (:value bad-name)))))

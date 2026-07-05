@@ -88,7 +88,7 @@
       (finally (.shutdown pool) (.awaitTermination pool 1 TimeUnit/MINUTES)))))
 
 (defn- print-result! [{:keys [group ns summary elapsed-ms output]}]
-  (print output) (when-not (.endsWith output "\n") (println))
+  (print output) (when-not (str/ends-with? output "\n") (println))
   (println "Namespace summary:" ns (assoc summary :group group :elapsed-ms elapsed-ms)))
 
 (defn- java-command [shard-id summary-file]
@@ -173,7 +173,7 @@
 
 (defn- print-shard! [{:keys [shard output summary elapsed-ms error]}]
   (println "\n=== add-libs shard" shard "output ===")
-  (print (or output "")) (when-not (.endsWith (or output "") "\n") (println))
+  (print (or output "")) (when-not (str/ends-with? (or output "") "\n") (println))
   (println "=== add-libs shard" shard "summary ==="
            (cond-> (assoc (or summary {}) :shard shard :elapsed-ms elapsed-ms)
              error (assoc :error error))))

@@ -154,7 +154,7 @@
         value (attr-value attributes (:attr check))]
     (case (check-type check)
       :enum (when (and (present? attributes (:attr check))
-                       (not (some #(= value %) (:enum check))))
+                       (not-any? #(= value %) (:enum check)))
               (violation (:id strand) vocab-name check value
                          (str "Attribute " (:attr check) " must be one of " (pr-str (:enum check)))))
       :kind (when (and (present? attributes (:attr check))

@@ -140,8 +140,7 @@
 (defn- operation-name [op]
   (cond
     (string? op) op
-    (and (keyword? op) (nil? (namespace op))) (name op)
-    (and (symbol? op) (nil? (namespace op))) (name op)
+    (and (or (keyword? op) (symbol? op)) (nil? (namespace op))) (name op)
     :else (throw (ex-info "Peer operation must be a string, unqualified symbol, or unqualified keyword" {:operation op}))))
 
 (defn- ensure-peer-protocol! [peer]

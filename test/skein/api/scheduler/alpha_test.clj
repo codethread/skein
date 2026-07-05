@@ -54,7 +54,7 @@
         (is (= "far-future" (:key created)))
         (is (= `deliver-fire-handler (:handler created)) "handler round-trips as a symbol")
         (is (= {:n 7} (:payload created)) "payload round-trips decoded")
-        (is (= 0 (:attempts created)))
+        (is (zero? (:attempts created)))
         (is (= [created] (scheduler/pending rt)))
         (is (= created (first (scheduler/pending rt))) "the earliest pending wake is the first ordered row")))))
 
@@ -68,7 +68,7 @@
                                                 :wake-at (.plusSeconds far-future 1)
                                                 :handler `throwing-handler})]
           (is (= `throwing-handler (:handler replaced)))
-          (is (= 0 (:attempts replaced)))
+          (is (zero? (:attempts replaced)))
           (is (= 1 (count (scheduler/pending rt))) "replacing a key does not duplicate rows"))))))
 
 (deftest schedule-rejects-malformed-wake-without-persisting

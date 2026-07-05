@@ -6,11 +6,11 @@ Baseline generated on 2026-07-05 from the `quality-gates` worktree before any fi
 
 | Tool | Invocation | Result | Count |
 |---|---|---:|---:|
-| cljfmt 0.13.1 | `clojure -M:format` | fails | 66 incorrectly formatted files |
-| gofumpt v0.8.0 | `cd cli && go run mvdan.cc/gofumpt@v0.8.0 -l .` | fails | 6 files |
-| clj-kondo 2025.06.05 | `clojure -M:lint/clj-kondo` | fails | 18 errors, 105 warnings |
-| golangci-lint v2.1.6 | `make lint-go` | fails | 31 issues |
-| splint 1.21.0 | `clojure -M:lint/splint` | fails | 646 warnings |
+| cljfmt 0.13.1 | `clojure -M:format` | clean (blocking) | 0 |
+| gofumpt v0.8.0 | `cd cli && go run mvdan.cc/gofumpt@v0.8.0 -l .` | clean (blocking) | 0 |
+| clj-kondo 2025.06.05 | `clojure -M:lint/clj-kondo` | clean (blocking) | 0 |
+| golangci-lint v2.1.6 | `make lint-go` | clean (blocking) | 0 |
+| splint 1.21.0 | `clojure -M:lint/splint` | clean (blocking; prefer-method-values and catch-throwable disabled with rationale in .splint.edn) | 0 |
 | reflection gate | `clojure -M:reflect-check` | blocking, clean | 0 reflection warnings |
 | antq 2.11.1276 | `clojure -M:deps/antq` | report-only | 35 outdated entries |
 | govulncheck v1.1.4 | `cd cli && go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...` | clean | 0 vulnerabilities |
@@ -20,12 +20,12 @@ Baseline generated on 2026-07-05 from the `quality-gates` worktree before any fi
 
 ### Formatting
 
-- `cljfmt`: 66 files would be changed. This includes the explicitly requested roots `src`, `spools/src`, `test`, `dev`, `scripts`, and only practical top-level repo config files under `.skein` (`init.clj`, `config.clj`, `reviewers.clj`), not nested `.skein/spools` material.
-- `gofumpt`: 6 Go files in `cli/` would be changed: `cmd/mill/lifecycle_test.go`, `integration_test.go`, `internal/config/bootstrap.go`, `internal/config/config.go`, `internal/config/config_test.go`, and `internal/config/runtime.go`.
+- `cljfmt` (baseline; now clean): 66 files would be changed. This includes the explicitly requested roots `src`, `spools/src`, `test`, `dev`, `scripts`, and only practical top-level repo config files under `.skein` (`init.clj`, `config.clj`, `reviewers.clj`), not nested `.skein/spools` material.
+- `gofumpt` (baseline; now clean): 6 Go files in `cli/` would be changed: `cmd/mill/lifecycle_test.go`, `integration_test.go`, `internal/config/bootstrap.go`, `internal/config/config.go`, `internal/config/config_test.go`, and `internal/config/runtime.go`.
 
 ### clj-kondo
 
-Totals: 18 errors, 105 warnings.
+Baseline totals (now 0; fixed in the iocp4 wave): 18 errors, 105 warnings.
 
 Top categories:
 
@@ -38,14 +38,14 @@ Top categories:
 
 ### golangci-lint
 
-Totals: 31 issues.
+Baseline totals (now 0; fixed in the iocp4 wave): 31 issues.
 
 - `errcheck`: 30 unchecked return values, mostly deferred `Close`/`Flush`/`Remove` and output writes.
 - `staticcheck`: 1 `ST1005` capitalized error string in `internal/config/bootstrap.go`.
 
 ### splint
 
-Totals: 646 warnings.
+Baseline totals (now 0; fixed or adjudicated in the wouf1 wave — see .splint.edn rationales): 646 warnings.
 
 Top categories:
 

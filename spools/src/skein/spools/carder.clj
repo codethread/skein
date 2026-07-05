@@ -6,7 +6,8 @@
   shipped public graph helpers expose relation-scoped traversal rather than a
   workspace-wide edge listing. It never mutates strands, edges, runtime config,
   or registered operations."
-  (:require [next.jdbc :as jdbc]
+  (:require [clojure.string :as str]
+            [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
@@ -76,7 +77,7 @@
 
 (defn- parse-db-time ^LocalDateTime [^String s]
   (try
-    (LocalDateTime/parse (.replace s " " "T"))
+    (LocalDateTime/parse (str/replace s " " "T"))
     (catch Exception e
       (fail! "Could not parse strand updated_at timestamp" {:updated_at s :cause (ex-message e)}))))
 

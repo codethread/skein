@@ -51,7 +51,7 @@
     `(let [~@(mapcat (fn [[started _]] [started `(start-runtime)]) starts)
            ~@(mapcat (fn [[started sym]] [sym `(:rt ~started)]) starts)]
        (try
-         ~@body
+         (do ~@body)
          (finally
            ~@(map (fn [[started _]] `(stop-runtime ~started)) starts))))))
 
