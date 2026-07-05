@@ -13,6 +13,9 @@
 (runtime-alpha/use! runtime :skein/spools-workflow
   {:ns 'skein.spools.workflow
    :call 'skein.spools.workflow/install!})
+(runtime-alpha/use! runtime :skein/spools-roster
+  {:ns 'skein.spools.roster
+   :call 'skein.spools.roster/install!})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
 ;; spools.local.edn checkout), never on an incidental classpath copy.
