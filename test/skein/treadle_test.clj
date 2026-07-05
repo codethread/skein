@@ -25,13 +25,9 @@
 (defn- await-eventually
   ([pred] (await-eventually pred (test-support/await-budget-ms)))
   ([pred timeout-ms]
-   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-     (loop []
-       (let [v (pred)]
-         (cond
-           v v
-           (> (System/currentTimeMillis) deadline) (throw (ex-info "Timed out" {}))
-           :else (do (Thread/sleep 50) (recur))))))))
+   (test-support/poll-until pred
+                            {:timeout-ms timeout-ms
+                             :on-timeout #(throw (ex-info "Timed out" {}))})))
 
 (defn- attr [strand k]
   (get-in strand [:attributes k]))

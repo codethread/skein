@@ -153,14 +153,9 @@
                 (recur))))))
 
 (defn wait-until [pred]
-  (let [deadline (+ (System/currentTimeMillis) (test-support/await-budget-ms 1000))]
-    (loop []
-      (cond
-        (pred) true
-        (> (System/currentTimeMillis) deadline) false
-        :else (do
-                (Thread/sleep 50)
-                (recur))))))
+  (test-support/poll-until #(when (pred) true)
+                           {:timeout-ms (test-support/await-budget-ms 1000)
+                            :on-timeout (constantly false)}))
 
 (defn test-event [type id]
   {:event/type type

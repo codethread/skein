@@ -9,40 +9,17 @@
             [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as api]
             [skein.core.db-test :as db-test]
-            [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.runtime :as runtime]
             [skein.repl :as repl]
             [skein.spools.chime :as chime]
             [skein.spools.test-support :as test-support]))
 
-(defn- temp-config-dir []
-  (doto (.toFile (java.nio.file.Files/createTempDirectory
-                  (.toPath (io/file "/tmp"))
-                  "skein-chime-config"
-                  (make-array java.nio.file.attribute.FileAttribute 0)))
-    (.mkdirs)))
-
-(defn- test-world [config-dir]
-  (daemon-config/world config-dir
-                       (str config-dir "/state")
-                       (str config-dir "/data")))
-
 (defn- with-chime [f]
-  (let [db-file (db-test/temp-db-file)
-        config-dir (temp-config-dir)]
-    (try
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
-                                        :publish? false})]
-        (try
-          (runtime/with-runtime-binding
-            rt
-            (fn []
-              (chime/install!)
-              (f rt config-dir)))
-          (finally
-            (runtime/stop! rt))))
-      (finally
-        (db-test/delete-sqlite-family! db-file)))))
+  (test-support/with-runtime
+   {:prefix "skein-chime-config"}
+   (fn [rt config-dir]
+     (chime/install!)
+     (f rt config-dir))))
 
 (defn- write-notifier! [dir out-file]
   (let [script (io/file dir "notify.sh")]
@@ -88,12 +65,12 @@
 (deftest chime-rules-are-owned-by-runtime
   (let [db-a (db-test/temp-db-file)
         db-b (db-test/temp-db-file)
-        config-a (temp-config-dir)
-        config-b (temp-config-dir)]
+        config-a (test-support/temp-config-dir {:prefix "skein-chime-config"})
+        config-b (test-support/temp-config-dir {:prefix "skein-chime-config"})]
     (try
-      (let [rt-a (runtime/start! db-a {:world (test-world (.getCanonicalPath config-a))
+      (let [rt-a (runtime/start! db-a {:world (test-support/test-world (.getCanonicalPath config-a))
                                        :publish? false})
-            rt-b (runtime/start! db-b {:world (test-world (.getCanonicalPath config-b))
+            rt-b (runtime/start! db-b {:world (test-support/test-world (.getCanonicalPath config-b))
                                        :publish? false})]
         (try
           (runtime/with-runtime-binding rt-a

@@ -6,51 +6,25 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as api]
-            [skein.core.db-test :as db-test]
-            [skein.core.weaver.config :as daemon-config]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.shuttle-test :refer [await-phase]]
             [skein.spools.agents :as agents]
             [skein.spools.shuttle :as shuttle]
             [skein.spools.test-support :as test-support]))
 
-(defn- temp-config-dir []
-  (let [root (.toFile (java.nio.file.Files/createTempDirectory
-                       (.toPath (io/file "/tmp"))
-                       "skein-agents-config"
-                       (make-array java.nio.file.attribute.FileAttribute 0)))
-        config-dir (io/file root ".skein")]
-    (.mkdirs config-dir)
-    config-dir))
+(defn- with-agents
+  "Run f with a fresh weaver runtime that has shuttle and agents installed.
 
-(defn- test-world [config-dir]
-  (daemon-config/world config-dir (str config-dir "/state") (str config-dir "/data")))
-
-(defn- with-agents [f]
-  (let [db-file (db-test/temp-db-file)
-        config-dir (temp-config-dir)]
-    (try
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
-                                        :publish? false})]
-        (try
-          (runtime/with-runtime-binding
-            rt
-            (fn []
-              (shuttle/install!)
-              (agents/install!)
-              (f rt)))
-          (finally (runtime/stop! rt))))
-      (finally
-        (db-test/delete-sqlite-family! db-file)))))
-
-(defn- await-phase [rt id phases]
-  (let [deadline (+ (System/currentTimeMillis) (test-support/await-budget-ms))]
-    (loop []
-      (let [s (api/show rt id)
-            phase (get-in s [:attributes :shuttle/phase])]
-        (cond
-          (contains? phases phase) s
-          (> (System/currentTimeMillis) deadline) (throw (ex-info "timeout" {:id id :strand s}))
-          :else (do (Thread/sleep 50) (recur)))))))
+  Nests config-dir under a `.skein` child of the temp root
+  (`test-support`'s `:nest-skein? true` opt): agents/shuttle derive the
+  worktree root from config-dir's parent, matching the real repo-root/.skein
+  layout, so an unnested config-dir would report the wrong workspace root."
+  [f]
+  (test-support/with-runtime
+   {:nest-skein? true :prefix "skein-agents-config"}
+   (fn [rt _config-dir]
+     (shuttle/install!)
+     (agents/install!)
+     (f rt))))
 
 (deftest agents-install-registers-op-pattern-query
   (with-agents

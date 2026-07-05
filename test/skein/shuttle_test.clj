@@ -12,66 +12,46 @@
             [skein.core.db-test :as db-test]
             [skein.spools.shuttle :as shuttle]
             [skein.api.weaver.alpha :as api]
-            [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.runtime :as runtime]
             [skein.spools.test-support :as test-support]))
 
-(defn- temp-config-dir []
-  (doto (.toFile (java.nio.file.Files/createTempDirectory
-                  (.toPath (io/file "/tmp"))
-                  "skein-shuttle-config"
-                  (make-array java.nio.file.attribute.FileAttribute 0)))
-    (.mkdirs)))
-
-(defn- test-world [config-dir]
-  (daemon-config/world config-dir
-                       (str config-dir "/state")
-                       (str config-dir "/data")))
-
 (defn- with-shuttle
-  "Run f with a fresh weaver runtime that has the shuttle installed."
-  [f]
-  (let [db-file (db-test/temp-db-file)
-        config-dir (temp-config-dir)]
-    (try
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
-        (try
-          (shuttle/install!)
-          (f rt)
-          (finally
-            (runtime/stop! rt))))
-      (finally
-        (db-test/delete-sqlite-family! db-file)))))
+  "Run f with a fresh weaver runtime that has the shuttle installed.
 
-(defn- await-phase
-  "Poll until the strand's shuttle/phase is in `phases` or timeout; return it."
+  Publishes the runtime as the process ambient runtime (`test-support`'s
+  `:publish? true` opt): shuttle's async reap/monitor threads and its own
+  `rt` fallback resolve the runtime via `current/runtime` rather than a
+  per-call binding, so they need the ambient singleton to actually exist."
+  [f]
+  (test-support/with-runtime
+   {:publish? true :prefix "skein-shuttle-config"}
+   (fn [rt _config-dir]
+     (shuttle/install!)
+     (f rt))))
+
+(defn await-phase
+  "Poll until the strand's shuttle/phase is in `phases` or timeout; return it.
+
+  Public so `agents-test` can reuse this wrapper instead of a copy."
   ([rt id phases] (await-phase rt id phases (test-support/await-budget-ms)))
   ([rt id phases timeout-ms]
-   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-     (loop []
-       (let [strand (api/show rt id)
-             phase (get-in strand [:attributes :shuttle/phase])]
-         (cond
-           (contains? phases phase) strand
-           (> (System/currentTimeMillis) deadline)
-           (throw (ex-info "Timed out waiting for run phase"
-                           {:id id :want phases :strand strand}))
-           :else (do (Thread/sleep 50) (recur))))))))
+   (test-support/poll-until
+    #(let [strand (api/show rt id)]
+       (when (contains? phases (get-in strand [:attributes :shuttle/phase])) strand))
+    {:timeout-ms timeout-ms
+     :on-timeout #(throw (ex-info "Timed out waiting for run phase"
+                                  {:id id :want phases :strand (api/show rt id)}))})))
 
 (defn- await-attr-matching
   "Poll until attribute `k` satisfies `pred` or timeout; return the strand."
   ([rt id k pred] (await-attr-matching rt id k pred (test-support/await-budget-ms)))
   ([rt id k pred timeout-ms]
-   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-     (loop []
-       (let [strand (api/show rt id)
-             value (get-in strand [:attributes k])]
-         (cond
-           (pred value) strand
-           (> (System/currentTimeMillis) deadline)
-           (throw (ex-info "Timed out waiting for matching attribute"
-                           {:id id :attr k :value value :strand strand}))
-           :else (do (Thread/sleep 50) (recur))))))))
+   (test-support/poll-until
+    #(let [strand (api/show rt id)]
+       (when (pred (get-in strand [:attributes k])) strand))
+    {:timeout-ms timeout-ms
+     :on-timeout #(throw (ex-info "Timed out waiting for matching attribute"
+                                  {:id id :attr k :strand (api/show rt id)}))})))
 
 (deftest harness-registry-validates-and-resolves-aliases
   (with-shuttle
@@ -434,12 +414,9 @@
 (defn- await-process-death
   ([pid] (await-process-death pid (test-support/await-budget-ms 5000)))
   ([pid timeout-ms]
-   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-     (loop []
-       (cond
-         (not (process-alive? pid)) true
-         (> (System/currentTimeMillis) deadline) false
-         :else (do (Thread/sleep 50) (recur)))))))
+   (boolean (test-support/poll-until #(not (process-alive? pid))
+                                     {:timeout-ms timeout-ms
+                                      :on-timeout (constantly false)}))))
 
 (defn- await-attr
   "Poll until the strand carries attribute `k` or timeout; return the strand.
@@ -447,14 +424,12 @@
   the backend starts, so the handle lands strictly after running."
   ([rt id k] (await-attr rt id k (test-support/await-budget-ms)))
   ([rt id k timeout-ms]
-   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-     (loop []
-       (let [strand (api/show rt id)]
-         (cond
-           (some? (get-in strand [:attributes k])) strand
-           (> (System/currentTimeMillis) deadline)
-           (throw (ex-info "Timed out waiting for attribute" {:id id :attr k :strand strand}))
-           :else (do (Thread/sleep 50) (recur))))))))
+   (test-support/poll-until
+    #(let [strand (api/show rt id)]
+       (when (some? (get-in strand [:attributes k])) strand))
+    {:timeout-ms timeout-ms
+     :on-timeout #(throw (ex-info "Timed out waiting for attribute"
+                                  {:id id :attr k :strand (api/show rt id)}))})))
 
 (defn- forget-in-flight!
   "Simulate a weaver crash: drop this runtime's in-flight ownership so
@@ -886,12 +861,12 @@
 
 (deftest spool-loads-through-approved-spool-workspace-flow
   (let [db-file (db-test/temp-db-file)
-        config-dir (temp-config-dir)
+        config-dir (test-support/temp-config-dir {:prefix "skein-shuttle-config"})
         repo-root (.getCanonicalPath (io/file "spools/shuttle"))]
     (try
       (spit (io/file config-dir "spools.edn")
             (pr-str {:spools {'skein.spools/shuttle {:local/root repo-root}}}))
-      (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))})]
+      (let [rt (runtime/start! db-file {:world (test-support/test-world (.getCanonicalPath config-dir))})]
         (try
           (let [synced ((requiring-resolve 'skein.api.runtime.alpha/sync!) rt)
                 used ((requiring-resolve 'skein.api.runtime.alpha/use!)

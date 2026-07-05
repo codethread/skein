@@ -4,7 +4,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as api]
             [skein.spools.roster :as roster]
-            [skein.spools.test-support :refer [with-runtime]])
+            [skein.spools.test-support :as test-support :refer [with-runtime]])
   (:import [java.time Duration Instant]))
 
 (defn- attr
@@ -382,16 +382,15 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- wait-until
-  "Poll `thunk` every 10ms until it returns truthy or `timeout-ms` elapses,
-  returning the last observed value. Integration events are delivered on the
-  async weaver event worker, so tests must wait rather than read synchronously."
-  [timeout-ms thunk]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-    (loop []
-      (let [v (thunk)]
-        (if (or v (>= (System/currentTimeMillis) deadline))
-          v
-          (do (Thread/sleep 10) (recur)))))))
+  "Poll `thunk` every 10ms until it returns truthy or the await budget
+  elapses, returning the last observed value. Integration events are
+  delivered on the async weaver event worker, so tests must wait rather than
+  read synchronously."
+  [thunk]
+  (test-support/poll-until thunk
+                           {:timeout-ms (test-support/await-budget-ms 5000)
+                            :interval-ms 10
+                            :on-timeout (constantly nil)}))
 
 (defn- stamped? [rt id]
   (= "true" (attr (api/show rt id) :roster/entry)))
@@ -411,7 +410,7 @@
       (testing "a devflow feature root is restamped into a roster entry in place"
         (let [root (api/add rt {:title "Roster spool feature"
                                 :attributes {:devflow/feature "roster-spool" :owner "agent-a"}})]
-          (is (wait-until 5000 #(stamped? rt (:id root)))
+          (is (wait-until #(stamped? rt (:id root)))
               "root should auto-stamp asynchronously")
           (let [entry (api/show rt (:id root))]
             (is (= (:id root) (:id entry)) "restamps in place, not a new strand")
@@ -424,7 +423,7 @@
       (testing "a workflow root's run-id supplies the feature slug"
         (let [root (api/add rt {:title "Workflow root"
                                 :attributes {:workflow/run-id "wf-7" :owner "agent-b"}})]
-          (is (wait-until 5000 #(stamped? rt (:id root))))
+          (is (wait-until #(stamped? rt (:id root))))
           (let [entry (api/show rt (:id root))]
             (is (= "wf-7" (attr entry :roster/feature)))
             (is (= "workflow" (attr entry :roster/engine)))))))))
@@ -440,7 +439,7 @@
       (let [root (api/add rt {:title "Feature root on a branch"
                               :attributes {:workflow/run-id "roster-spool" :owner "agent-a"
                                            :branch "roster-spool" :worktree "/tmp/wt"}})]
-        (is (wait-until 5000 #(stamped? rt (:id root))))
+        (is (wait-until #(stamped? rt (:id root))))
         (let [entry (api/show rt (:id root))]
           (is (= "roster-spool" (attr entry :roster/branch)))
           (is (= "/tmp/wt" (attr entry :roster/worktree))))
@@ -454,7 +453,7 @@
       (roster/watch! rt)
       (let [root (api/add rt {:title "Tracked root"
                               :attributes {:feature "roster-spool" :owner "agent-a"}})]
-        (is (wait-until 5000 #(stamped? rt (:id root))))
+        (is (wait-until #(stamped? rt (:id root))))
         (testing "a mutation on a parent-of descendant refreshes the root's heartbeat"
           (let [child (api/add rt {:title "child task"})
                 _ (api/update rt (:id root) {:edges [{:type "parent-of" :to (:id child)}]})
@@ -464,7 +463,7 @@
             ;; ensure the wall clock advances so a fresh heartbeat is strictly later
             (Thread/sleep 5)
             (api/update rt (:id child) {:title "child task (started)"})
-            (is (wait-until 5000 later?)
+            (is (wait-until later?)
                 "updating a descendant must advance the root's roster/heartbeat-at")))))))
 
 (deftest does-not-auto-stamp-roots-missing-identity-or-marked-plumbing
@@ -483,7 +482,7 @@
             ;; event worker has stamped it, every earlier event has been handled.
             barrier (api/add rt {:title "Barrier root"
                                  :attributes {:feature "roster-spool" :owner "agent-a"}})]
-        (is (wait-until 5000 #(stamped? rt (:id barrier)))
+        (is (wait-until #(stamped? rt (:id barrier)))
             "barrier root must auto-stamp")
         (testing "negative roots are left untouched by the handler"
           (is (not (stamped? rt (:id no-owner))))
