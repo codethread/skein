@@ -60,6 +60,13 @@
   "Argument types understood by this parser."
   #{:string :int :boolean :map})
 
+(def reserved-subcommand-names
+  "Subcommand names reserved for dispatch-level help aliases.
+
+  The single source of truth: registration/parse/explain validation here and
+  the weaver's dispatch-time help alias must agree on this set."
+  #{"help" "-h" "--help"})
+
 (defn- coerce
   "Coerce a raw token to the flag/positional type, failing loudly on mismatch."
   [op arg type token]
@@ -201,6 +208,10 @@
           (fail! :invalid-subcommand-name
                  "Subcommand names must be non-blank strings"
                  {:op op :subcommand subcommand :field :subcommands :value subcommand}))
+        (when (contains? reserved-subcommand-names subcommand)
+          (fail! :reserved-subcommand-name
+                 (str "Subcommand name " (pr-str subcommand) " is reserved for help aliases")
+                 {:op op :subcommand subcommand :field :subcommands :name subcommand}))
         (when-not (map? nested)
           (fail! :invalid-subcommand-spec
                  "Nested subcommand specs must be maps"

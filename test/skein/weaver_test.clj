@@ -1582,6 +1582,16 @@
           (is (= "run" (:subcommand (ex-data e))))
           (is (= :subcommands (:field (ex-data e))))
           (is (= 42 (:value (ex-data e))))))
+      (testing "reserved help token subcommand names fail loudly"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"arg-spec subcommands are invalid"
+                                      (api/register-op! rt 'bad-help-subcommand
+                                                        {:arg-spec {:op "bad-help-subcommand"
+                                                                    :subcommands {"help" {:doc "Reserved"}}}}
+                                                        'skein.weaver-test/test-op)))]
+          (is (= "bad-help-subcommand" (:operation (ex-data e))))
+          (is (= :reserved-subcommand-name (:reason (ex-data e))))
+          (is (= "help" (:name (ex-data e))))))
       (testing "replace-op! also validates subcommand arg-specs before replacing"
         (api/register-op! rt 'replaceable 'skein.weaver-test/test-op)
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
@@ -1709,6 +1719,10 @@
         (let [ctx (api/op! rt 'subbed ["add" "--force" "Widget"])]
           (is (= {:subcommand "add" :force true :title "Widget"} (:op/args ctx)))
           (is (= ["add" "--force" "Widget"] (:op/argv ctx)))))
+      (testing "help aliases return detail and skip the handler for subcommand ops"
+        (let [expected (api/op! rt 'help ["subbed"])]
+          (doseq [token ["help" "-h" "--help"]]
+            (is (= expected (api/op! rt 'subbed [token]))))))
       (testing "unknown subcommands fail during parse before the handler runs"
         (api/register-op! rt 'subbed-side-effect
                           {:arg-spec {:op "subbed-side-effect"
@@ -1721,8 +1735,27 @@
           (is (= :unknown-subcommand (:reason (ex-data e))))
           (is (= ["ok"] (:available-subcommands (ex-data e))))
           (is (empty? @op-side-effects))))
-      (testing "raw-envelope ops receive no :op/args and keep the raw payloads map"
+      (testing "help aliases do not mask malformed subcommand invocations"
+        (doseq [[argv envelope] [[["help" "extra"] {}]
+                                 [["help"] {:payloads {"stdin" "attached"}}]]]
+          (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                        #"Unknown subcommand|Attached payloads"
+                                        (api/op! rt 'subbed-side-effect argv envelope)))]
+            (is (#{:unknown-subcommand :unused-payloads} (:reason (ex-data e)))))))
+      (testing "flat and raw-envelope ops do not trigger help aliases"
+        (api/register-op! rt 'flat-no-positionals
+                          {:arg-spec {:op "flat-no-positionals"
+                                      :flags {:verbose {:type :boolean}}}}
+                          'skein.weaver-test/context-echo-op)
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Unexpected extra arguments"
+                                      (api/op! rt 'flat-no-positionals ["help"])))]
+          (is (= :trailing-tokens (:reason (ex-data e)))))
         (api/register-op! rt 'raw 'skein.weaver-test/context-echo-op)
+        (let [ctx (api/op! rt 'raw ["help"])]
+          (is (not (contains? ctx :op/args)))
+          (is (= ["help"] (:op/argv ctx)))))
+      (testing "raw-envelope ops receive no :op/args and keep the raw payloads map"
         (let [ctx (api/op! rt 'raw ["a" "b"] {:payloads {"stdin" "hi"}})]
           (is (not (contains? ctx :op/args)))
           (is (= {"stdin" "hi"} (:op/payloads ctx)))
@@ -2086,7 +2119,24 @@
         (is (= "mutate" (:op/name ctx)))
         (is (= {"name" "mutate" "argv" ["--flag" "value"] "payloads" {"body" "hi"}}
                (:request/args ctx)))
-        (is (= {} (:request/options ctx)))))))
+        (is (= {} (:request/options ctx))))
+      (testing "subcommand help aliases resolve before mutating hook gating"
+        (api/register-op! rt 'subbed-mutate
+                          {:arg-spec {:op "subbed-mutate"
+                                      :subcommands {"run" {:doc "Run"}}}}
+                          'skein.weaver-test/side-effecting-op)
+        (reset! hook-contexts [])
+        (reset! op-side-effects [])
+        (let [help-detail (invoke-request rt "help" ["subbed-mutate"])
+              alias (invoke-request rt "subbed-mutate" ["--help"])]
+          (is (true? (get alias "ok")))
+          (is (= (get help-detail "result") (get alias "result")))
+          (is (empty? @hook-contexts))
+          (is (empty? @op-side-effects)))
+        (let [real-call (invoke-request rt "subbed-mutate" ["run"])]
+          (is (true? (get real-call "ok")))
+          (is (= 1 (count @hook-contexts)))
+          (is (= ["subbed-mutate"] @op-side-effects)))))))
 
 (deftest json-socket-invoke-read-ops-skip-hooks-and-protocol-errors
   (with-runtime

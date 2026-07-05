@@ -29,7 +29,7 @@
     (sequential? result) (mapv normalize result)
     :else result))
 
-(declare enqueue-event! register-built-in-ops! runtime? apply-edges!)
+(declare enqueue-event! register-built-in-ops! runtime? apply-edges! op-detail)
 
 (defn- ds [runtime]
   (:datasource runtime))
@@ -1380,6 +1380,26 @@
                                                 :canonical-operation canonical-name
                                                 :available (sort (keys @(op-registry runtime)))})))))
 
+(def ^:private help-alias-tokens
+  "Dispatch-level help alias argv tokens; the parser's reserved set is the
+  single source of truth so validation and dispatch cannot drift."
+  cli/reserved-subcommand-names)
+
+(defn help-alias-result
+  "Return an op detail projection when argv/envelope form a help alias.
+
+  The alias applies only to ops whose arg-spec declares `:subcommands`, argv is
+  exactly one reserved help token, and the envelope carries no payloads. Returns
+  nil when the invocation must flow through normal parsing and handler dispatch."
+  [entry argv envelope]
+  (let [argv (vec argv)
+        payloads (or (:payloads envelope) {})]
+    (when (and (contains? (:arg-spec entry) :subcommands)
+               (= 1 (count argv))
+               (contains? help-alias-tokens (first argv))
+               (empty? payloads))
+      (op-detail entry))))
+
 (defn op!
   "Invoke a registered CLI operation with raw string argv from a root-level `strand <name>` invoke.
 
@@ -1392,28 +1412,32 @@
   op declares an `:arg-spec`, `:op/argv` and
   the attached payloads are parsed through `skein.api.cli.alpha/parse` and the
   result is supplied as `:op/args`; a parse failure throws before the handler
-  runs. Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
+  runs. For subcommand ops, sole-token `help`, `-h`, or `--help` invocations
+  with no payloads return the op's help detail instead of running the handler.
+  Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map."
   ([runtime op-name argv]
    (op! runtime op-name argv {}))
   ([runtime op-name argv envelope]
-   (let [{fn-sym :fn name :name arg-spec :arg-spec} (resolve-op runtime op-name)
+   (let [{fn-sym :fn name :name arg-spec :arg-spec :as entry} (resolve-op runtime op-name)
          argv (vec argv)
-         payloads (or (:payloads envelope) {})
-         ctx (cond-> {:op/name name
-                      :op/argv argv
-                      :op/runtime runtime
-                      :op/runtime-metadata (:metadata runtime)
-                      :op/payloads payloads}
-               (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope))
-               (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
-               (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope))
-               (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
-               (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope))
-               (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))]
-     (with-spool-classloader
-       runtime
-       #((requiring-resolve fn-sym) ctx)))))
+         payloads (or (:payloads envelope) {})]
+     (if-let [alias (help-alias-result entry argv envelope)]
+       alias
+       (let [ctx (cond-> {:op/name name
+                          :op/argv argv
+                          :op/runtime runtime
+                          :op/runtime-metadata (:metadata runtime)
+                          :op/payloads payloads}
+                   (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope))
+                   (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
+                   (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope))
+                   (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
+                   (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope))
+                   (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))]
+         (with-spool-classloader
+           runtime
+           #((requiring-resolve fn-sym) ctx)))))))
 
 (def ^:private help-arg-spec
   "Arg-spec for the built-in `help` op: an optional positional op name.

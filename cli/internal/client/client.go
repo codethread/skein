@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -67,7 +68,7 @@ func (e *ResponseError) Error() string {
 	// ex-data details are the machine-readable half of a fail-loudly error;
 	// agents scripting the CLI need them, so append them as compact JSON
 	if len(e.Details) > 0 {
-		if encoded, err := json.Marshal(e.Details); err == nil {
+		if encoded, err := encodeJSONNoEscape(e.Details); err == nil {
 			message = fmt.Sprintf("%s details=%s", message, encoded)
 		}
 	}
@@ -75,6 +76,16 @@ func (e *ResponseError) Error() string {
 		return fmt.Sprintf("weaver %s error (%s): %s", e.Type, e.Code, message)
 	}
 	return fmt.Sprintf("weaver %s error: %s", e.Type, message)
+}
+
+func encodeJSONNoEscape(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
 func validResponseError(e *ResponseError) bool {

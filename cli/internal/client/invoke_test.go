@@ -33,6 +33,19 @@ func TestRelaySingleSuccessPrintsResult(t *testing.T) {
 	}
 }
 
+func TestRelaySingleSuccessDoesNotHTMLEscapeResult(t *testing.T) {
+	out, er, code := relay(t, `{"protocol_version":1,"request_id":"r1","ok":true,"result":{"usage":"strand kanban <id>"},"error":null}`+"\n")
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, er)
+	}
+	if strings.TrimSpace(out) != `{"usage":"strand kanban <id>"}` {
+		t.Fatalf("stdout JSON should preserve angle brackets, got %q", out)
+	}
+	if strings.Contains(out, `\\u003c`) || strings.Contains(out, `\\u003e`) {
+		t.Fatalf("stdout JSON must not HTML-escape angle brackets, got %q", out)
+	}
+}
+
 func TestRelaySingleErrorGoesToStderrNonZero(t *testing.T) {
 	frame := `{"protocol_version":1,"request_id":"r1","ok":false,"result":null,"error":{"type":"domain","code":"op/not-found","message":"Operation not found","details":{"available":["add","list"]}}}` + "\n"
 	out, er, code := relay(t, frame)

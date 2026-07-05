@@ -47,7 +47,7 @@ A **handover** note is the stop/interruption contract: what is done, what is nex
 
 ## CLI op
 
-Install registers one operation:
+Install registers one declared-subcommand operation. `strand help kanban` shows the machine-readable verb/flag surface, and `strand kanban help`, `strand kanban -h`, and `strand kanban --help` return that same detail projection. Bare `strand kanban` and unknown verbs fail loudly with the available subcommand names.
 
 ```sh
 strand kanban prime

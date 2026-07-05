@@ -1,8 +1,24 @@
 package client
 
 import (
+	"strings"
 	"testing"
 )
+
+func TestResponseErrorDetailsDoNotHTMLEscape(t *testing.T) {
+	err := (&ResponseError{
+		Type:    "domain",
+		Code:    "op/usage",
+		Message: "invalid invocation",
+		Details: map[string]any{"usage": "strand kanban <usage>"},
+	}).Error()
+	if !strings.Contains(err, `details={"usage":"strand kanban <usage>"}`) {
+		t.Fatalf("details JSON should preserve angle brackets, got %q", err)
+	}
+	if strings.Contains(err, `\\u003c`) || strings.Contains(err, `\\u003e`) {
+		t.Fatalf("details JSON must not HTML-escape angle brackets, got %q", err)
+	}
+}
 
 func TestValidateStorageIdentity(t *testing.T) {
 	path := func(s string) *string { return &s }

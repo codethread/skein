@@ -97,7 +97,7 @@ func relaySingle(frame map[string]json.RawMessage, line []byte, stdout, stderr i
 		if err := json.Unmarshal(line, &resp); err != nil {
 			return 1, fmt.Errorf("malformed weaver response: %w", err)
 		}
-		b, err := json.Marshal(resp.Result)
+		b, err := encodeJSONNoEscape(resp.Result)
 		if err != nil {
 			return 1, err
 		}

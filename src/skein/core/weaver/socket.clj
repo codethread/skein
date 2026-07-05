@@ -279,9 +279,11 @@
       (write-frame! err)
       (let [entry (:ok entry)
             envelope (invoke-envelope args)]
-        (if (:stream? entry)
-          (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
-          (handle-single-invoke! runtime request-id args entry envelope write-frame!))))))
+        (if-let [alias ((api 'help-alias-result) entry (get args "argv") envelope)]
+          (write-frame! (success request-id alias))
+          (if (:stream? entry)
+            (handle-stream-invoke! runtime request-id args entry envelope write-frame!)
+            (handle-single-invoke! runtime request-id args entry envelope write-frame!)))))))
 
 (defn handle-request!
   "Handle one newline-delimited JSON protocol request, writing one or more

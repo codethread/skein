@@ -62,6 +62,29 @@
               (is (= "closed" (get-in finished [:card :state])))
               (is (= "done" (get-in finished [:card :attributes :kanban/status]))))))))))
 
+(deftest kanban-declared-subcommands-help-and-parser-errors
+  (with-runtime
+    (fn [rt config-dir]
+      (install-kanban! rt config-dir)
+      (testing "help projections list the declared verb surface"
+        (let [detail (api/op! rt 'help ["kanban"])
+              alias (op! rt "help")
+              verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
+          (is (= detail alias))
+          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "promote"] verbs))
+          (is (some #(= "about" (:name %)) (get-in alias [:arg-spec :subcommands])))))
+      (testing "missing and unknown verbs fail during parser routing with available names"
+        (let [missing (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing subcommand"
+                                            (op! rt)))
+              unknown (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown subcommand"
+                                            (op! rt "bogus")))]
+          (is (= :missing-subcommand (:reason (ex-data missing))))
+          (is (= :unknown-subcommand (:reason (ex-data unknown))))
+          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "promote"]
+                 (:available-subcommands (ex-data missing))))
+          (is (= (:available-subcommands (ex-data missing))
+                 (:available-subcommands (ex-data unknown)))))))))
+
 (deftest kanban-prime-supersets-about-with-working-discipline
   (with-runtime
     (fn [rt config-dir]
@@ -182,11 +205,12 @@
             (let [claimed (first (:claimed (op! rt "board")))]
               (is (= card-id (:id claimed)))
               (is (true? (get-in claimed [:latest-handover :handover])))))
-          (testing "notes reject non-card targets and blank text"
+          (testing "notes reject non-card targets and missing text"
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a kanban card"
                                   (op! rt "note" (:id task) "text")))
-            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
-                                  (op! rt "note" card-id)))))))))
+            (let [missing-text (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required argument text"
+                                                     (op! rt "note" card-id)))]
+              (is (= :missing-required (:reason (ex-data missing-text)))))))))))
 
 (deftest kanban-board-groups-lanes
   (with-runtime

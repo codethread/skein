@@ -42,28 +42,6 @@
                     {:argument arg :value v})))
   v)
 
-(defn- parse-op-argv
-  "Parse op argv into positional args, single-value flags, and boolean flags."
-  [op argv flag-spec]
-  (loop [remaining argv
-         positional []
-         flags {}]
-    (if-let [arg (first remaining)]
-      (if (str/starts-with? arg "--")
-        (let [kind (or (get flag-spec arg)
-                       (throw (ex-info (str op " unknown flag")
-                                       {:flag arg :allowed (sort (keys flag-spec))})))]
-          (case kind
-            :flag (recur (rest remaining) positional (assoc flags arg true))
-            :single (let [value (or (second remaining)
-                                    (throw (ex-info (str op " flag requires a value")
-                                                    {:flag arg})))]
-                      (recur (drop 2 remaining) positional (assoc flags arg value)))
-            (throw (ex-info (str op " unsupported flag kind")
-                            {:flag arg :kind kind}))))
-        (recur (rest remaining) (conj positional arg) flags))
-      {:positional positional :flags flags})))
-
 (defn- require-flag!
   "Return the value of flag, failing loudly when it is absent."
   [op flags flag]
@@ -709,47 +687,72 @@
                |update <root-id> --attr branch=<branch> --attr owner=<name>`. Children are
                |reachable from the root and need no `branch` attr of their own.")))
 
+(def ^:private kanban-arg-spec
+  "Declared command surface for the `kanban` op."
+  {:op "kanban"
+   :doc "Manage the user-facing kanban work board. Run `strand kanban about` for the convention manual."
+   :subcommands
+   {"about" {:doc "Return the kanban convention and installed helper surface."}
+    "prime" {:doc "Return full agent priming for working the kanban board."}
+    "add" {:doc "Create a feature or epic card."
+           :flags {:body {:doc "Longer card context."}
+                   :source {:doc "Path or URL for design context."}
+                   :status {:doc "Initial lane: pending or refinement."}
+                   :type {:doc "Card type: feature or epic."}
+                   :epic {:doc "Existing epic card id to parent this feature under."}}
+           :positionals [{:name :title
+                          :required? true
+                          :variadic? true
+                          :doc "Card title words."}]}
+    "board" {:doc "Return the grouped board snapshot."}
+    "card" {:doc "Return one card's resume view."
+            :positionals [{:name :id :required? true :doc "Kanban card id."}]}
+    "next" {:doc "Return the oldest active pending feature card."}
+    "promote" {:doc "Move a refinement card into the pending lane."
+               :positionals [{:name :id :required? true :doc "Kanban card id."}]}
+    "claim" {:doc "Claim a pending feature card."
+             :flags {:owner {:doc "Claimant name (required by handler)."}
+                     :branch {:doc "Work branch (required by handler)."}
+                     :worktree {:doc "Optional worktree path."}}
+             :positionals [{:name :id :required? true :doc "Kanban card id."}]}
+    "note" {:doc "Append a note or handover as a closed child strand."
+            :flags {:author {:doc "Note author."}
+                    :handover {:type :boolean :doc "Mark this note as a handover."}}
+            :positionals [{:name :id :required? true :doc "Kanban card id."}
+                          {:name :text
+                           :required? true
+                           :variadic? true
+                           :doc "Note text words."}]}
+    "finish" {:doc "Close a kanban card with an explicit outcome status."
+              :flags {:outcome {:doc "Closed outcome status; defaults to done."}}
+              :positionals [{:name :id :required? true :doc "Kanban card id."}]}}})
+
+(defn- legacy-flags
+  "Return parsed keyword flags in the string-keyed shape expected by handlers."
+  [args]
+  (into {}
+        (keep (fn [[k v]]
+                (when (and (not= k :subcommand)
+                           (some? v)
+                           (not (contains? #{:id :title :text} k)))
+                  [(str "--" (name k)) v])))
+        args))
+
 (defn kanban-op
-  "Dispatch `strand kanban ...` subcommands."
-  [ctx]
-  (let [[subcommand & argv] (:op/argv ctx)
-        one-id! (fn [op {:keys [positional]}]
-                  (when-not (= 1 (count positional))
-                    (throw (ex-info (str op " expects one id") {:argv argv})))
-                  (first positional))]
-    (case subcommand
+  "Dispatch parsed `strand kanban ...` subcommands."
+  [{:op/keys [args]}]
+  (let [flags (legacy-flags args)]
+    (case (:subcommand args)
       "about" (about)
       "prime" (prime)
-      "add" (let [{:keys [positional flags]}
-                  (parse-op-argv "kanban add" argv {"--body" :single
-                                                    "--source" :single
-                                                    "--status" :single
-                                                    "--type" :single
-                                                    "--epic" :single})]
-              (add! (str/join " " positional) flags))
-      "board" (do
-                (when (seq argv)
-                  (throw (ex-info "kanban board expects no arguments" {:argv argv})))
-                (board))
-      "card" (card-view (one-id! "kanban card" (parse-op-argv "kanban card" argv {})))
+      "add" (add! (str/join " " (:title args)) flags)
+      "board" (board)
+      "card" (card-view (:id args))
       "next" {:operation "kanban next" :next (next-card)}
-      "promote" (promote! (one-id! "kanban promote" (parse-op-argv "kanban promote" argv {})))
-      "claim" (let [{:keys [flags] :as parsed}
-                    (parse-op-argv "kanban claim" argv {"--owner" :single
-                                                        "--branch" :single
-                                                        "--worktree" :single})]
-                (claim! (one-id! "kanban claim" parsed) flags))
-      "note" (let [{:keys [positional flags]}
-                   (parse-op-argv "kanban note" argv {"--author" :single
-                                                      "--handover" :flag})
-                   [id & text] positional]
-               (note! id (str/join " " text) flags))
-      "finish" (let [{:keys [flags] :as parsed}
-                     (parse-op-argv "kanban finish" argv {"--outcome" :single})]
-                 (finish! (one-id! "kanban finish" parsed) flags))
-      (throw (ex-info "kanban expects a subcommand"
-                      {:usage "strand kanban <prime|about|add|board|card|next|promote|claim|note|finish> ..."
-                       :subcommand subcommand})))))
+      "promote" (promote! (:id args))
+      "claim" (claim! (:id args) flags)
+      "note" (note! (:id args) (str/join " " (:text args)) flags)
+      "finish" (finish! (:id args) flags))))
 
 (defn install!
   "Install the kanban op, batch pattern, and board queries into the active weaver."
@@ -758,7 +761,9 @@
     {:installed true
      :namespace 'skein.spools.kanban
      :ops [(api/register-op! rt 'kanban
-                             "Manage the user-facing kanban work board"
+                             {:doc "Manage the user-facing kanban work board. Run `strand kanban about` for the convention manual."
+                              :arg-spec kanban-arg-spec
+                              :hook-class :mutating}
                              'skein.spools.kanban/kanban-op)]
      :pattern (patterns/register-pattern! rt 'kanban-batch
                                           "Create pending feature cards with bodies and depends-on edges."
