@@ -199,9 +199,11 @@ agent notes <strand-id> [--round n]
 
 ```
 agent review <target-id> [--roster name | --members n --harness a,b --contract text]
-                         [--cwd dir] [--synthesize] [--spawned-by <run-id>]
+                         [--cwd dir] [--commit-range range] [--changed-files a,b]
+                         [--synthesize] [--spawned-by <run-id>]
 ```
 Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature. Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target. `--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract. `--synthesize` adds a synthesizer run that depends on all reviewers; its `result` is the verdict (await it), with raw findings in the target's notes.
+`--commit-range <range>` (e.g. `main..HEAD`) names the **diff surface**: its changed files are expanded via `git -C <cwd> diff --name-only <range>` and injected into every reviewer prompt as the authoritative diff surface, so reviewers stop re-deriving the diff. `--changed-files a,b` overrides the file list explicitly (csv). A `--commit-range` with no `--cwd` to expand it, or one git cannot expand at `--cwd`, fails loudly — a range is never injected without its resolved file list. The synthesizer never receives the change context — it weighs notes, not the diff.
 `--roster <name>` fans out a **named declarative roster** instead (see [Reviewer rosters](#reviewer-rosters) below): one run per declared entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so combining `--roster` with `--members`, `--harness`, or `--contract` fails loudly; unknown roster names fail loudly with the available names.
 → `{"target","reviewers":["<run-id>"...],"synthesizer":"<run-id>"?}`
 
@@ -219,13 +221,15 @@ A roster turns "who reviews a change in this workspace" into declarative, git-re
 (require '[skein.spools.agents :as agents])
 
 (agents/defroster! :change-review
-  {:reviewers [{:name "test-sleeps" :harness :grunt
+  {:reviewers [{:name "test-sleeps" :harness :explore
                 :contract "Hunt for sleeps and arbitrary timeouts in tests..."
                 :scope "test files and test helpers in the change"}
-               {:name "docs-drift" :harness :explore
-                :contract "Check documentation coherence..."}]
+               {:name "docs-drift" :harness :grunt
+                :contract "Check documentation and metadata coherence only..."}]
    :synthesizer {:harness :review-gpt}})
 ```
+
+Route reviewers by **waste-type, not call count**: `grunt` (sonnet) is the default for read-through seats — it does targeted git-diff and ranged reads rather than thrashing a whole namespace for a small window — while `explore` (haiku) is reserved for trivially greppable single-file concerns whose contract tells it to do one global diff sweep (haiku is ~0.25–0.3× sonnet's per-call cost, so a few extra greps there stay net-cheaper). Give each contract a per-concern **call budget** and, on lenses that overlap (fail-loudly / spec-shapes / correctness on the same defect), tell each to state its angle concisely; the synthesizer de-duplicates overlapping findings by root cause.
 
 Data shape, validated loudly at registration against the **`:skein.spools.agents/roster`** clojure.spec (inspect it with `s/form`; the seam output below is likewise specced as `:skein.spools.agents/review-specs`): each entry requires a unique `:name` (doubles as the run's review focus), a `:harness` (resolved against the shuttle registry at **review time**, not registration time, so roster files may load before config registers aliases), and a `:contract` — the reviewer's precise single-concern mandate, layered onto the workspace base review contract in the prompt. `:scope` is optional prompt-level confinement text. `:synthesizer` optionally overrides the synthesis run's harness (default: first reviewer's). Unknown keys fail loudly to catch typos (closed key sets and name uniqueness are checked beyond the spec, which is structurally open).
 
@@ -236,9 +240,11 @@ Data shape, validated loudly at registration against the **`:skein.spools.agents
 ```clojure
 (agents/roster-review-specs :change-review {:target plan-id})
 ;; => {:roster :change-review :target "..." :review-pass "change-review-1a2b3c4d"
-;;     :reviewers [{:name "test-sleeps" :harness :grunt :prompt "..." :attrs {...}} ...]
+;;     :reviewers [{:name "test-sleeps" :harness :explore :prompt "..." :attrs {...}} ...]
 ;;     :synthesizer {:name "synthesis" :harness :review-gpt :prompt "..." :attrs {...}}}
 ```
+
+**Change context.** `roster-review-specs` (and `review!`'s `:change-context`) take an optional `:skein.spools.agents/change-context` value — `{:commit-range "main..HEAD" :files ["a.clj" "b.clj"] :windows [{:path "a.clj" :lines "40-90"}]}` — that is injected into every reviewer prompt as the authoritative diff surface so reviewers read the changed files instead of re-deriving the diff. It is validated against its spec and fails loudly when malformed; the synthesizer never carries it. The `agent review` CLI builds this from `--commit-range`/`--changed-files`; trusted Clojure can also pass cheap code windows.
 
 Each specs call mints a `:review-pass` tag (override with `:review-id`): reviewers prefix their notes with it, the synthesizer filters on it, and every run/gate carries it as `shuttle/review-pass` — so repeated rounds on one target stay separable without run ids, which don't exist at workflow-definition time. The single-prompt-source property is test-enforced; the gate→treadle mapping itself is deliberately untested here in phase 1 (treadle owns gate consumption and fails loudly on a missing `shuttle/harness`/`shuttle/prompt`).
 

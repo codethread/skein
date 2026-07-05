@@ -1,6 +1,7 @@
 (ns skein.spools.agents
   "Agent coordination spool layered over the shuttle run engine."
-  (:require [clojure.spec.alpha :as s]
+  (:require [clojure.java.shell :as shell]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.patterns.alpha :as patterns]
@@ -167,12 +168,13 @@
                    :semantics ["Read a strand's notes in order; optionally filter one council round."]
                    :returns [{"id" "note id" "note" "text" "at" "timestamp" "by" "optional run id" "round" "optional integer"}]}
            :review {:group "memory-review"
-                    :usage "agent review <target-id> [--roster name | --members n --harness a,b --contract text] [--cwd dir] [--spawned-by run] [--synthesize]"
+                    :usage "agent review <target-id> [--roster name | --members n --harness a,b --contract text] [--cwd dir] [--commit-range range] [--changed-files a,b] [--spawned-by run] [--synthesize]"
                     :semantics ["Spawn independent read-only reviewers of the target strand and its subtree; reviewing a plan root reviews the whole feature."
                                 "Each reviewer reads strand contracts plus repository state at --cwd. Pass the worktree where the diff lives."
                                 "Findings are appended as notes on the target. --synthesize adds a run depending on all reviewers; await it for the verdict."
-                                "--roster fans out a named declarative roster (see rosters): one run per entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so --members/--harness/--contract are rejected with it."]
-                    :fails ["target not found" "no reviewers" "reviewer missing harness" "unknown roster" "--roster with --members/--harness/--contract"]
+                                "--roster fans out a named declarative roster (see rosters): one run per entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so --members/--harness/--contract are rejected with it."
+                                "--commit-range names the diff surface (e.g. main..HEAD): its changed files are expanded via git at --cwd and injected into every reviewer prompt so reviewers stop re-deriving the diff. --changed-files overrides the file list explicitly (csv)."]
+                    :fails ["target not found" "no reviewers" "reviewer missing harness" "unknown roster" "--roster with --members/--harness/--contract" "commit range not expandable at --cwd"]
                     :returns {"target" "target id" "reviewers" ["run ids"] "synthesizer" "optional run id"}}
            :rosters {:group "memory-review"
                      :usage "agent rosters"
@@ -408,6 +410,24 @@
   (s/keys :req-un [:skein.spools.agents.roster/reviewers]
           :opt-un [:skein.spools.agents.roster/synthesizer]))
 
+;; Change context: the caller-supplied diff surface (commit range + changed
+;; files, plus cheap code windows) injected into every reviewer prompt so
+;; reviewers stop re-deriving the diff. Distinct from dynamic reviewer
+;; *selection* from git changes, which remains deferred to a future RFC.
+(s/def :skein.spools.agents.change-context/commit-range non-blank?)
+(s/def :skein.spools.agents.change-context/files (s/coll-of non-blank? :kind vector? :min-count 1))
+(s/def :skein.spools.agents.change-context.window/path non-blank?)
+(s/def :skein.spools.agents.change-context.window/lines non-blank?)
+(s/def :skein.spools.agents.change-context/window
+  (s/keys :req-un [:skein.spools.agents.change-context.window/path]
+          :opt-un [:skein.spools.agents.change-context.window/lines]))
+(s/def :skein.spools.agents.change-context/windows
+  (s/coll-of :skein.spools.agents.change-context/window :kind vector? :min-count 1))
+(s/def :skein.spools.agents/change-context
+  (s/keys :opt-un [:skein.spools.agents.change-context/commit-range
+                   :skein.spools.agents.change-context/files
+                   :skein.spools.agents.change-context/windows]))
+
 ;; roster-review-specs output: the public seam shape workflow authors consume.
 (s/def :skein.spools.agents.review-specs/prompt non-blank?)
 (s/def :skein.spools.agents.review-specs/attrs (s/map-of string? string?))
@@ -583,16 +603,55 @@
 ;; byte-for-byte (the frozen roster tests are the compatibility proof); the
 ;; review-specific framing (target subtree, focus, scope, notes-only discipline)
 ;; stays inline because it is not part of the shared blackboard vocabulary.
-(defn- review-prompt [{:keys [target-id focus contract scope note-tag]}]
+(defn- change-context-block
+  "Render a caller-supplied change context into a reviewer prompt block: the
+  commit range, the changed-file list, and any cheap code windows, up front so
+  reviewers read the diff surface instead of re-deriving it. A nil context
+  yields the empty string, so a review prompt with no supplied context stays
+  byte-identical to the pre-change-context form."
+  [{:keys [commit-range files windows] :as change-context}]
+  (if (nil? change-context)
+    ""
+    (str "[change under review]\n"
+         (when (non-blank? commit-range)
+           (str "Commit range: " commit-range "\n"))
+         (when (seq files)
+           (str "Changed files (" (count files) "):\n"
+                (str/join (map #(str "  " % "\n") files))))
+         (when (seq windows)
+           (str "Code windows:\n"
+                (str/join (map (fn [{:keys [path lines]}]
+                                 (str "  " path (when lines (str ":" lines)) "\n"))
+                               windows))))
+         "This is the authoritative diff surface: read only these files (and windows where given); "
+         "do not re-derive the diff or scan unrelated namespaces.\n")))
+
+(defn- review-prompt [{:keys [target-id focus contract scope note-tag change-context]}]
   (str contract "\n\n"
        "Review target strand " target-id " and its subtree.\n"
        (when (not (str/blank? focus))
          (str "Focus: " focus "\n"))
        (when (not (str/blank? scope))
          (str "Scope: confine this review to " scope "\n"))
+       (change-context-block change-context)
        (read-the-board-fragment {:view :strand :board-id target-id})
        (post-with-tag-fragment {:board-id target-id :tag note-tag})
        "Findings are notes-only; do not write verdict attributes."))
+
+(defn- validate-change-context!
+  "Fail loudly unless `change-context` is nil or conforms to
+  `:skein.spools.agents/change-context`. Both the roster path
+  (`roster-review-specs`) and the ad-hoc path (`review!`) route through this so a
+  malformed diff surface can never reach a reviewer prompt. `caller` names the
+  seam for the failure message."
+  [caller change-context]
+  (when (and (some? change-context)
+             (not (s/valid? :skein.spools.agents/change-context change-context)))
+    (fail! (str caller " :change-context does not conform to spec")
+           {:change-context change-context
+            :spec :skein.spools.agents/change-context
+            :explain (s/explain-str :skein.spools.agents/change-context change-context)}))
+  change-context)
 
 (defn- review-synthesis-prompt [{:keys [target-id review-runs contract note-tag]}]
   (let [cmd (shuttle/pinned-strand-command)]
@@ -606,6 +665,9 @@
                 " synthesize those notes and ignore other rounds.\n"))
          (when (seq review-runs)
            (str "Review run ids: " (str/join ", " review-runs) "\n"))
+         "De-duplicate by root cause: when several reviewers flag the same underlying defect from "
+         "different angles, report it once, name the corroborating reviewers, and keep each distinct "
+         "root cause to a single entry rather than repeating overlapping findings.\n"
          "Read target notes with `" cmd " agent notes " target-id "`, append one synthesis note with `"
          cmd " agent note " target-id " \"<synthesis>\" --by <your run-id>`, then finish with the synthesis.")))
 
@@ -634,13 +696,20 @@
   `:review-id`): reviewers prefix their notes with it and the synthesizer
   filters on it, so one pass's findings stay separable on a target that
   accumulates notes across rounds — run ids cannot serve here because
-  workflow-composed synthesis is defined before any run exists."
-  [roster {:keys [target review-id]}]
+  workflow-composed synthesis is defined before any run exists.
+
+  `:change-context` (an optional `:skein.spools.agents/change-context` value:
+  `{:commit-range :files :windows}`) is the caller-supplied diff surface. When
+  present it is injected into every reviewer prompt so reviewers read the
+  changed files instead of re-deriving the diff; the synthesizer never carries
+  it. Malformed change context fails loudly against its spec."
+  [roster {:keys [target review-id change-context]}]
   (when-not (non-blank? target)
     (fail! "roster-review-specs requires a non-blank :target" {:roster roster :target target}))
   (when (and (some? review-id) (not (non-blank? review-id)))
     (fail! "roster-review-specs :review-id must be a non-blank string when present"
            {:roster roster :review-id review-id}))
+  (validate-change-context! "roster-review-specs" change-context)
   (let [[roster-id roster-def] (if (map? roster)
                                  [:inline (validate-roster! :inline roster)]
                                  (let [id (roster-key roster)]
@@ -661,7 +730,8 @@
                                                  :focus entry-name
                                                  :contract (str base "\n\n[reviewer: " entry-name "]\n" contract)
                                                  :scope scope
-                                                 :note-tag pass-id})
+                                                 :note-tag pass-id
+                                                 :change-context change-context})
                          :attrs (assoc shared-attrs "shuttle/review-focus" entry-name)})
                       (:reviewers roster-def))
      ;; the synthesizer weighs findings roster-independently, so it receives
@@ -1023,19 +1093,31 @@
   reviewer count, harnesses, and contracts for that review: combining it with
   `:reviewers`, `:members`, `:harnesses`, or `:contract` fails loudly. A
   roster review always synthesizes, from the same `roster-review-specs` data
-  a workflow composition would consume."
-  [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd roster]
+  a workflow composition would consume.
+
+  `:change-context` (a `:skein.spools.agents/change-context` value) is the
+  caller-supplied diff surface — commit range, changed files, cheap code
+  windows — injected into every reviewer prompt so reviewers read the diff
+  instead of re-deriving it. The synthesizer never receives it (it weighs
+  notes, not the diff)."
+  [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd roster change-context]
               :or {members 2}
               :as opts}]
   (when-not (api/show (rt) target-id)
     (fail! "Review target strand not found" {:id target-id}))
+  ;; validate the diff surface on every path — the roster path re-checks it in
+  ;; roster-review-specs, but a direct :members/:harnesses caller with no
+  ;; :roster would otherwise thread a malformed :change-context straight into
+  ;; review-prompt.
+  (validate-change-context! "review!" change-context)
   (when roster
     (when-let [conflicts (seq (filter #(contains? opts %) [:reviewers :members :harnesses :contract]))]
       (fail! "Roster review takes reviewer count, harnesses, and contracts from the roster"
              {:roster roster :conflicts (vec conflicts)
               :cli-flags (vec (keep {:members "--members" :harnesses "--harness" :contract "--contract"}
                                     conflicts))})))
-  (let [roster-specs (when roster (roster-review-specs roster {:target target-id}))
+  (let [roster-specs (when roster (roster-review-specs roster {:target target-id
+                                                               :change-context change-context}))
         contract (or contract (shuttle/default-review-contract-text))
         reviewer-specs
         (or (:reviewers roster-specs)
@@ -1052,7 +1134,8 @@
                        :harness (or harness (fail! "Review reviewer requires :harness" {:reviewer {:focus focus}}))
                        :prompt (review-prompt {:target-id target-id :focus focus
                                                :contract (or (:contract reviewer) contract)
-                                               :scope (:scope reviewer)})
+                                               :scope (:scope reviewer)
+                                               :change-context change-context})
                        :attrs {"shuttle/review-target" target-id
                                "shuttle/review-focus" (or focus "")}})
                     reviewers)))
@@ -1177,22 +1260,58 @@
   (when s
     (mapv str/trim (remove str/blank? (str/split s #",")))))
 
+(defn- git-changed-files
+  "Expand an explicit commit range to the files it touches within a worktree.
+  Authoritative, not a guess: the caller names the range, so this only lists
+  its paths. A git failure fails loudly so a bad range or missing worktree
+  surfaces instead of silently dropping the change context."
+  [cwd commit-range]
+  (let [{:keys [exit out err]} (shell/sh "git" "-C" cwd "diff" "--name-only" commit-range)]
+    (if (zero? exit)
+      (into [] (remove str/blank?) (str/split-lines out))
+      (fail! "Could not expand commit range in worktree"
+             {:cwd cwd :commit-range commit-range :exit exit :git-error (str/trim (str err))}))))
+
+(defn- change-context-from-flags
+  "Build a `:skein.spools.agents/change-context` value from review flags, or nil
+  when the caller supplied no diff surface. An explicit `--changed-files` list
+  wins; otherwise `--commit-range` is expanded to its files via git at `--cwd`.
+  A commit range that cannot be expanded fails loudly — a missing `--cwd`, or a
+  git failure via `git-changed-files` — so a range is never emitted without its
+  file list, and reviewers never receive a partial diff surface the prompt still
+  frames as authoritative."
+  [flags]
+  (let [commit-range (get flags "--commit-range")
+        cwd (get flags "--cwd")
+        files (or (split-csv (get flags "--changed-files"))
+                  (when (non-blank? commit-range)
+                    (when-not (non-blank? cwd)
+                      (fail! "--commit-range requires --cwd to expand the range to files"
+                             {:commit-range commit-range}))
+                    (git-changed-files cwd commit-range)))]
+    (when (or (non-blank? commit-range) (seq files))
+      (cond-> {}
+        (non-blank? commit-range) (assoc :commit-range commit-range)
+        (seq files) (assoc :files files)))))
+
 (defn- op-review [argv]
   (let [{:keys [positional flags]}
         (parse-argv argv {"--members" :single "--harness" :single "--synthesize" :bool
                           "--contract" :single "--spawned-by" :single "--cwd" :single
-                          "--roster" :single})]
+                          "--roster" :single "--commit-range" :single "--changed-files" :single})]
     (when-not (= 1 (count positional))
       (fail! "review requires <target-id>" {:got positional}))
-    (review! (first positional)
-             (cond-> {}
-               (get flags "--roster") (assoc :roster (get flags "--roster"))
-               (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
-               (get flags "--harness") (assoc :harnesses (split-csv (get flags "--harness")))
-               (get flags "--contract") (assoc :contract (get flags "--contract"))
-               (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
-               (get flags "--cwd") (assoc :cwd (get flags "--cwd"))
-               (get flags "--synthesize") (assoc :synthesize? true)))))
+    (let [change-context (change-context-from-flags flags)]
+      (review! (first positional)
+               (cond-> {}
+                 (get flags "--roster") (assoc :roster (get flags "--roster"))
+                 (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
+                 (get flags "--harness") (assoc :harnesses (split-csv (get flags "--harness")))
+                 (get flags "--contract") (assoc :contract (get flags "--contract"))
+                 (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
+                 (get flags "--cwd") (assoc :cwd (get flags "--cwd"))
+                 change-context (assoc :change-context change-context)
+                 (get flags "--synthesize") (assoc :synthesize? true))))))
 
 (defn- op-rosters [argv]
   (when (seq argv)

@@ -1,6 +1,7 @@
 (ns skein.agents-test
   "Tests for the agents coordination spool layered over shuttle."
   (:require [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -359,6 +360,111 @@
         (let [prompt (#'agents/review-prompt {:target-id "s1" :contract "C" :note-tag "p1"})]
           (is (str/includes? prompt (#'agents/read-the-board-fragment {:view :strand :board-id "s1"})))
           (is (str/includes? prompt (#'agents/post-with-tag-fragment {:board-id "s1" :tag "p1"}))))))))
+
+;; ---------------------------------------------------------------------------
+;; Change context: the caller-supplied diff surface injected into reviewers
+;; ---------------------------------------------------------------------------
+
+(deftest change-context-block-renders-the-diff-surface
+  (testing "a nil context yields the empty string so prompts stay byte-identical"
+    (is (= "" (#'agents/change-context-block nil))))
+  (testing "a full context lists the commit range, changed files, and code windows"
+    (let [block (#'agents/change-context-block
+                 {:commit-range "main..HEAD"
+                  :files ["src/a.clj" "src/b.clj"]
+                  :windows [{:path "src/a.clj" :lines "40-90"} {:path "src/b.clj"}]})]
+      (is (str/includes? block "[change under review]"))
+      (is (str/includes? block "Commit range: main..HEAD"))
+      (is (str/includes? block "Changed files (2):"))
+      (is (str/includes? block "  src/a.clj\n"))
+      (is (str/includes? block "  src/a.clj:40-90\n"))
+      (is (str/includes? block "authoritative diff surface"))))
+  (testing "review-prompt injects the change context when supplied and omits it otherwise"
+    (with-agents
+      (fn [_]
+        (let [with-ctx (#'agents/review-prompt {:target-id "s1" :contract "C" :note-tag "p1"
+                                                :change-context {:commit-range "main..HEAD"
+                                                                 :files ["src/a.clj"]}})
+              without (#'agents/review-prompt {:target-id "s1" :contract "C" :note-tag "p1"})]
+          (is (str/includes? with-ctx "Commit range: main..HEAD"))
+          (is (not (str/includes? without "[change under review]"))))))))
+
+(deftest synthesis-prompt-asks-for-root-cause-dedup
+  (with-agents
+    (fn [_]
+      (is (str/includes? (#'agents/review-synthesis-prompt {:target-id "s1" :contract "C" :note-tag "p1"})
+                         "De-duplicate by root cause")))))
+
+(deftest roster-review-specs-carry-change-context
+  (with-agents
+    (fn [rt]
+      (agents/defroster! :ctx
+        {:reviewers [{:name "a" :harness :sh :contract "Contract A."}
+                     {:name "b" :harness :sh :contract "Contract B."}]
+         :synthesizer {:harness :sh}})
+      (let [target (api/add rt {:title "ctx target"})
+            change-context {:commit-range "main..HEAD" :files ["src/a.clj" "test/a_test.clj"]}
+            specs (agents/roster-review-specs :ctx {:target (:id target)
+                                                    :change-context change-context})]
+        (testing "every reviewer prompt carries the diff surface"
+          (is (every? #(str/includes? (:prompt %) "Commit range: main..HEAD") (:reviewers specs)))
+          (is (every? #(str/includes? (:prompt %) "src/a.clj") (:reviewers specs))))
+        (testing "the synthesizer never carries the change context"
+          (is (not (str/includes? (get-in specs [:synthesizer :prompt]) "[change under review]"))))
+        (testing "review! threads the change context onto spawned runs"
+          (let [review (agents/review! (:id target) {:roster :ctx :change-context change-context})
+                run (api/show rt (first (:reviewers review)))]
+            (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "Commit range: main..HEAD"))))
+        (testing "malformed change context fails loudly against its spec"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"change-context does not conform"
+                                (agents/roster-review-specs :ctx {:target (:id target)
+                                                                  :change-context {:files "not-a-vector"}}))))))))
+
+(deftest review-validates-change-context-on-the-ad-hoc-path
+  (with-agents
+    (fn [rt]
+      (let [target (api/add rt {:title "ad-hoc ctx target"})]
+        (testing "a direct :reviewers caller with no :roster fails loudly on a malformed change context"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"change-context does not conform"
+                                (agents/review! (:id target)
+                                                {:reviewers [{:harness :sh :focus "correctness"}]
+                                                 :change-context {:files "not-a-vector"}}))))))))
+
+(deftest change-context-from-flags-builds-the-diff-surface
+  (testing "an explicit changed-files list wins without touching git"
+    (is (= {:commit-range "main..HEAD" :files ["x.clj" "y.clj"]}
+           (#'agents/change-context-from-flags {"--commit-range" "main..HEAD"
+                                                "--changed-files" "x.clj, y.clj"}))))
+  (testing "no diff flags yields nil"
+    (is (nil? (#'agents/change-context-from-flags {"--cwd" "/tmp"}))))
+  (testing "a commit range with no --cwd to expand it fails loudly instead of emitting a partial surface"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--commit-range requires --cwd"
+                          (#'agents/change-context-from-flags {"--commit-range" "main..HEAD"})))))
+
+(deftest git-changed-files-expands-a-commit-range
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory
+                      (.toPath (io/file "/tmp")) "skein-agents-git"
+                      (make-array java.nio.file.attribute.FileAttribute 0)))
+        path (.getCanonicalPath dir)
+        git (fn [& args] (apply shell/sh "git" "-C" path args))]
+    (try
+      (git "init" "-q")
+      (git "config" "user.email" "t@example.com")
+      (git "config" "user.name" "t")
+      (spit (io/file dir "a.txt") "one\n")
+      (git "add" "-A")
+      (git "commit" "-q" "-m" "base")
+      (spit (io/file dir "a.txt") "two\n")
+      (spit (io/file dir "b.txt") "new\n")
+      (git "add" "-A")
+      (git "commit" "-q" "-m" "change")
+      (testing "an explicit range expands to only its touched files"
+        (is (= ["a.txt" "b.txt"] (sort (#'agents/git-changed-files path "HEAD~1..HEAD")))))
+      (testing "an unexpandable range fails loudly instead of dropping the context"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Could not expand commit range"
+                              (#'agents/git-changed-files path "no-such-ref..HEAD"))))
+      (finally
+        (shell/sh "rm" "-rf" path)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Panel primitive (PLAN-Pnl-001.PH4)
