@@ -1,0 +1,6 @@
+# Mechanical formatting commits, excluded from blame.
+# Use: git blame --ignore-revs-file .git-blame-ignore-revs <file>
+# or:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Codebase-wide cljfmt + gofumpt pass (card 2xpnh, epic 3g5q2)
+eed10f5e1cade55d81d4c2e7e57e46cba6955650
