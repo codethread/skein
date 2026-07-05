@@ -46,7 +46,6 @@
    "C" ['skein.config-test 'skein.kanban-test]})
 
 (def shard-timeout-minutes 5)
-(def shard-summary-prefix "::skein-shard-summary ")
 
 (defn- summary-zero [] test/*initial-report-counters*)
 (defn- merge-summaries [& summaries] (apply merge-with + (summary-zero) (map #(dissoc % :type) summaries)))
@@ -57,10 +56,15 @@
   ns-sym)
 
 (defn- run-namespace [group ns-sym]
-  (require-namespace! ns-sym)
   (let [out (StringWriter.) started (System/nanoTime)]
     (binding [test/*report-counters* (ref (summary-zero)) test/*test-out* out]
-      (let [summary (try (test/run-tests ns-sym)
+      ;; Require inside the try so a require-time failure (e.g. add-libs/git-dep
+      ;; resolution under load) is reported as an :error in this namespace's
+      ;; summary instead of propagating out and exiting the shard with no
+      ;; summary at all. run-parallel still pre-requires serially to avoid
+      ;; concurrent first-load races; that leaves this require a cheap no-op.
+      (let [summary (try (require-namespace! ns-sym)
+                         (test/run-tests ns-sym)
                          (catch Throwable t
                            (test/do-report {:type :error :message (str "Uncaught exception while running " ns-sym) :expected nil :actual t})
                            @test/*report-counters*))]
@@ -78,30 +82,34 @@
   (print output) (when-not (.endsWith output "\n") (println))
   (println "Namespace summary:" ns (assoc summary :group group :elapsed-ms elapsed-ms)))
 
-(defn- java-command [shard-id]
+(defn- java-command [shard-id summary-file]
   (let [java-bin (str (System/getProperty "java.home") java.io.File/separator "bin" java.io.File/separator "java")]
     [java-bin
      "--enable-native-access=ALL-UNNAMED"
      "-cp" (System/getProperty "java.class.path")
-     "clojure.main" "-m" "skein.test-runner" "--shard" shard-id]))
+     "clojure.main" "-m" "skein.test-runner" "--shard" shard-id "--summary-file" summary-file]))
 
-(defn- parse-shard-summary [shard-id output]
-  (let [lines (str/split-lines output)
-        summary-lines (filter #(.startsWith % shard-summary-prefix) lines)]
-    (when-not (= 1 (count summary-lines))
-      (throw (ex-info "Shard produced no unique parseable summary"
-                      {:shard shard-id :summary-lines (count summary-lines)})))
-    (edn/read-string (subs (first summary-lines) (count shard-summary-prefix)))))
+(defn- read-shard-summary [shard-id ^java.io.File summary-file]
+  (let [content (when (.isFile summary-file) (slurp summary-file))]
+    (when (str/blank? content)
+      (throw (ex-info "Shard wrote no summary payload"
+                      {:shard shard-id :summary-file (str summary-file)})))
+    (edn/read-string content)))
 
 (defn- start-shard! [[shard-id _]]
-  (let [process (-> (ProcessBuilder. ^java.util.List (java-command shard-id))
+  (let [summary-file (doto (java.io.File/createTempFile (str "skein-shard-" shard-id "-") ".edn")
+                       (.deleteOnExit))
+        process (-> (ProcessBuilder. ^java.util.List (java-command shard-id (.getAbsolutePath summary-file)))
                     (.redirectErrorStream true)
                     (.start))]
     ;; Drain stdout from spawn: waiting to read until waitFor would block the
     ;; shard once its output exceeds the OS pipe buffer and misreport the
-    ;; write stall as a hung shard at the timeout.
+    ;; write stall as a hung shard at the timeout. The machine summary payload
+    ;; travels through summary-file (out-of-band of stdout) so background
+    ;; non-test thread chatter can never split or corrupt it.
     {:shard shard-id
      :process process
+     :summary-file summary-file
      :output-future (future (with-open [reader (io/reader (.getInputStream process))]
                               (slurp reader)))}))
 
@@ -110,12 +118,12 @@
 
   Failure outcomes carry :error with shard attribution so the parent can print
   every shard's output before exiting non-zero."
-  [{:keys [shard process output-future]}]
+  [{:keys [shard process output-future summary-file]}]
   (if (.waitFor process shard-timeout-minutes TimeUnit/MINUTES)
     (let [exit (.exitValue process)
           output @output-future
           parsed (try
-                   (parse-shard-summary shard output)
+                   (read-shard-summary shard summary-file)
                    (catch Throwable t
                      {:parse-error (ex-message t)}))]
       (cond
@@ -139,9 +147,9 @@
     (try
       (mapv await-shard! started)
       (finally
-        (doseq [{:keys [process]} started
-                :when (.isAlive process)]
-          (.destroyForcibly process))))))
+        (doseq [{:keys [process ^java.io.File summary-file]} started]
+          (when (.isAlive process) (.destroyForcibly process))
+          (.delete summary-file))))))
 
 (defn- start-shards-thread! []
   (let [result (promise)
@@ -164,7 +172,9 @@
 (defn- run-parent []
   (concat (run-serial :parent/serial serial-namespaces) (run-parallel)))
 
-(defn- run-shard [shard-id]
+(defn- run-shard [shard-id summary-file]
+  (when-not summary-file
+    (throw (ex-info "Shard mode requires --summary-file" {:shard shard-id})))
   (let [namespaces (get add-libs-shards shard-id)]
     (when-not namespaces
       (throw (ex-info "Unknown add-libs shard" {:shard shard-id :known-shards (sort (keys add-libs-shards))})))
@@ -178,7 +188,10 @@
       (doseq [result results] (print-result! result))
       (println "\nNamespace timings (ms):" (:timings payload))
       (println "Aggregate summary:" summary)
-      (print shard-summary-prefix) (prn payload)
+      ;; Machine payload goes to the parent-provided sidecar file, never
+      ;; stdout: the parent reads it only after waitFor, so the fully-flushed
+      ;; spit is immune to stdout interleaving by non-test background threads.
+      (spit summary-file (pr-str payload))
       (flush)
       ;; Explicit exit either way: drain/agent pool threads are non-daemon and
       ;; would otherwise hold the shard JVM (and the parent's waitFor) ~60s.
@@ -187,13 +200,15 @@
 (defn- parse-args [args]
   (case (first args)
     nil {:mode :parent}
-    "--shard" {:mode :shard :shard (second args)}
+    "--shard" (let [[_ shard & opts] args
+                    opt-map (apply hash-map opts)]
+                {:mode :shard :shard shard :summary-file (get opt-map "--summary-file")})
     (throw (ex-info "Unknown test-runner arguments" {:args args}))))
 
 (defn -main [& args]
-  (let [{:keys [mode shard]} (parse-args args)]
+  (let [{:keys [mode shard summary-file]} (parse-args args)]
     (case mode
-      :shard (run-shard shard)
+      :shard (run-shard shard summary-file)
       :parent (let [shards-result (start-shards-thread!)
                     parent-results (run-parent)
                     shard-outcome @shards-result

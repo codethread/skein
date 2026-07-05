@@ -158,7 +158,9 @@
                   :status :started
                   :title "Hello"}
                  (chime/notify! {:title "Hello" :body "Body text"})))
-          (eventually #(file-contains? out-file "TITLE=Hello"))
+          ;; Wait for the record terminator, not the title: the notifier script
+          ;; writes TITLE first and "---" last, and snapshotting mid-write races.
+          (eventually #(file-contains? out-file "---"))
           (is (file-contains? out-file "BODY=Body text")))))))
 
 (deftest rule-registration-validation

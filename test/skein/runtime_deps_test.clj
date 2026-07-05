@@ -59,11 +59,14 @@
 (defn- daemon-value [rt form]
   (with-open [conn (nrepl/connect :host (get-in rt [:metadata :endpoint :host])
                                   :port (get-in rt [:metadata :endpoint :port]))]
-    (let [responses (nrepl/message (nrepl/client conn 30000)
-                                   {:op "eval" :code (pr-str form)})]
+    (let [responses (doall (nrepl/message (nrepl/client conn 90000)
+                                          {:op "eval" :code (pr-str form)}))]
       (when-let [ex (some :ex responses)]
         (throw (ex-info "Daemon eval threw" {:exception ex :responses responses})))
-      (some :value responses))))
+      (if (some #(some #{"done"} (:status %)) responses)
+        (some :value responses)
+        (throw (ex-info "nREPL client drained without a done status (maven resolution/add-libs likely exceeded the client timeout)"
+                        {:responses responses}))))))
 
 (deftest daemon-runtime-can-hot-add-config-dir-local-root
   (let [config-dir (temp-dir "skein-runtime-deps-config")

@@ -340,10 +340,10 @@
             lib (symbol (str "demo/event-handler-lib-" suffix))]
         (write-local-lib! config-dir "event-handler" ns-sym)
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/event-handler"}}}))
-        (is (= :loaded (get-in (client/call-world (get-in rt [:metadata :config-dir]) {} :sync-approved-spools)
+        (is (= :loaded (get-in (client/call-world (get-in rt [:metadata :config-dir]) {:timeout-ms 30000} :sync-approved-spools)
                                [:spools lib :status])))
-        (is (= :loaded (:status (client/call-world (get-in rt [:metadata :config-dir]) {} :use! :events {:ns ns-sym :spools [lib]}))))
-        (let [entry (client/call-world (get-in rt [:metadata :config-dir]) {}
+        (is (= :loaded (:status (client/call-world (get-in rt [:metadata :config-dir]) {:timeout-ms 30000} :use! :events {:ns ns-sym :spools [lib]}))))
+        (let [entry (client/call-world (get-in rt [:metadata :config-dir]) {:timeout-ms 30000}
                                        :register-event-handler! :lib #{:strand/added}
                                        (symbol (str ns-sym) "event-handler") {})]
           (is (= :lib (:key entry)))
@@ -1254,11 +1254,12 @@
                                  :files {"modules/connected.clj"
                                          (str "(ns demo.connected)\n"
                                               "(defn install! [] (spit " (pr-str (str result-file)) " (pr-str :daemon-called)) :ok)\n")}}]
-        (let [result (client/call-world (:config-dir ctx) {} :use! :connected {:file "modules/connected.clj"
-                                                                               :call 'demo.connected/install!})]
+        (let [result (client/call-world (:config-dir ctx) {:timeout-ms 30000} :use! :connected
+                                        {:file "modules/connected.clj"
+                                         :call 'demo.connected/install!})]
           (is (= :loaded (:status result)))
           (is (= :ok (get-in result [:call :return])))
           (is (= :daemon-called (read-string (slurp result-file))))
-          (is (= :loaded (:status (client/call-world (:config-dir ctx) {} :use :connected))))))
+          (is (= :loaded (:status (client/call-world (:config-dir ctx) {:timeout-ms 30000} :use :connected))))))
       (finally
         (delete-recursive root)))))

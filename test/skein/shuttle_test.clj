@@ -42,33 +42,48 @@
       (finally
         (db-test/delete-sqlite-family! db-file)))))
 
+(defn- await-budget-ms
+  "Default poll deadline for the await-* helpers below, in ms. Scales via the
+  SKEIN_TEST_AWAIT_SCALE env var (a multiplier, default 1) so a single knob
+  widens every call site under fork-heavy or otherwise loaded machines instead
+  of editing each timeout."
+  []
+  (long (* 10000 (if-let [scale (System/getenv "SKEIN_TEST_AWAIT_SCALE")]
+                   (try (Double/parseDouble scale)
+                        (catch NumberFormatException _
+                          (throw (ex-info "SKEIN_TEST_AWAIT_SCALE must be a number"
+                                          {:env "SKEIN_TEST_AWAIT_SCALE" :value scale}))))
+                   1.0))))
+
 (defn- await-phase
   "Poll until the strand's shuttle/phase is in `phases` or timeout; return it."
-  [rt id phases timeout-ms]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-    (loop []
-      (let [strand (api/show rt id)
-            phase (get-in strand [:attributes :shuttle/phase])]
-        (cond
-          (contains? phases phase) strand
-          (> (System/currentTimeMillis) deadline)
-          (throw (ex-info "Timed out waiting for run phase"
-                          {:id id :want phases :strand strand}))
-          :else (do (Thread/sleep 50) (recur)))))))
+  ([rt id phases] (await-phase rt id phases (await-budget-ms)))
+  ([rt id phases timeout-ms]
+   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+     (loop []
+       (let [strand (api/show rt id)
+             phase (get-in strand [:attributes :shuttle/phase])]
+         (cond
+           (contains? phases phase) strand
+           (> (System/currentTimeMillis) deadline)
+           (throw (ex-info "Timed out waiting for run phase"
+                           {:id id :want phases :strand strand}))
+           :else (do (Thread/sleep 50) (recur))))))))
 
 (defn- await-attr-matching
   "Poll until attribute `k` satisfies `pred` or timeout; return the strand."
-  [rt id k pred timeout-ms]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-    (loop []
-      (let [strand (api/show rt id)
-            value (get-in strand [:attributes k])]
-        (cond
-          (pred value) strand
-          (> (System/currentTimeMillis) deadline)
-          (throw (ex-info "Timed out waiting for matching attribute"
-                          {:id id :attr k :value value :strand strand}))
-          :else (do (Thread/sleep 50) (recur)))))))
+  ([rt id k pred] (await-attr-matching rt id k pred (await-budget-ms)))
+  ([rt id k pred timeout-ms]
+   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+     (loop []
+       (let [strand (api/show rt id)
+             value (get-in strand [:attributes k])]
+         (cond
+           (pred value) strand
+           (> (System/currentTimeMillis) deadline)
+           (throw (ex-info "Timed out waiting for matching attribute"
+                           {:id id :attr k :value value :strand strand}))
+           :else (do (Thread/sleep 50) (recur))))))))
 
 (deftest harness-registry-validates-and-resolves-aliases
   (with-shuttle
@@ -105,7 +120,7 @@
   (with-shuttle
     (fn [rt]
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "echo hello-shuttle"})
-            done (await-phase rt (:id run) #{"done"} 10000)]
+            done (await-phase rt (:id run) #{"done"})]
         (is (= "closed" (:state done)))
         (is (= "hello-shuttle" (get-in done [:attributes :shuttle/result])))
         (is (= 1 (get-in done [:attributes :shuttle/attempt])))
@@ -115,7 +130,7 @@
   (with-shuttle
     (fn [rt]
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "echo boom >&2; exit 3"})
-            failed (await-phase rt (:id run) #{"failed"} 10000)]
+            failed (await-phase rt (:id run) #{"failed"})]
         (is (= "active" (:state failed)))
         (is (str/includes? (get-in failed [:attributes :shuttle/error]) "exited 3"))
         (is (str/includes? (get-in failed [:attributes :shuttle/error]) "boom"))))))
@@ -128,7 +143,7 @@
         ;; writes no result yet still exits 0. Recording that as done with an
         ;; empty shuttle/result dodges agent-failures and both recovery paths.
         (let [run (shuttle/spawn-run! {:harness :sh :prompt "exit 0"})
-              failed (await-phase rt (:id run) #{"failed"} 10000)]
+              failed (await-phase rt (:id run) #{"failed"})]
           (is (= "active" (:state failed)) "stays active so it is loud and retryable")
           (is (= "failed" (get-in failed [:attributes :shuttle/phase])))
           (is (= 0 (get-in failed [:attributes :shuttle/exit-code])))
@@ -138,7 +153,7 @@
                            (get-in failed [:attributes :shuttle/phase]))))))
       (testing "a blank (whitespace-only) result fails the same way"
         (let [run (shuttle/spawn-run! {:harness :sh :prompt "printf '   \\n'"})
-              failed (await-phase rt (:id run) #{"failed"} 10000)]
+              failed (await-phase rt (:id run) #{"failed"})]
           (is (= "failed" (get-in failed [:attributes :shuttle/phase])))
           (is (str/includes? (get-in failed [:attributes :shuttle/error]) "empty result")))))))
 
@@ -150,14 +165,14 @@
             child-b (shuttle/spawn-run! {:harness :sh :prompt "echo b"})
             collector (shuttle/spawn-run! {:harness :sh :prompt "echo collected"
                                            :depends-on [(:id blocker) (:id child-a) (:id child-b)]})]
-        (await-phase rt (:id child-a) #{"done"} 10000)
-        (await-phase rt (:id child-b) #{"done"} 10000)
+        (await-phase rt (:id child-a) #{"done"})
+        (await-phase rt (:id child-b) #{"done"})
         (testing "collector stays pending while any dependency is active"
           (Thread/sleep 300)
           (is (= "pending" (get-in (api/show rt (:id collector)) [:attributes :shuttle/phase]))))
         (testing "closing the last dependency triggers the spawn via events"
           (api/update rt (:id blocker) {:state "closed"})
-          (let [done (await-phase rt (:id collector) #{"done"} 10000)]
+          (let [done (await-phase rt (:id collector) #{"done"})]
             (is (= "collected" (get-in done [:attributes :shuttle/result])))))))))
 
 (deftest spawned-by-records-provenance-tree
@@ -166,8 +181,8 @@
       (let [parent (shuttle/spawn-run! {:harness :sh :prompt "echo parent"})
             child (shuttle/spawn-run! {:harness :sh :prompt "echo child"
                                        :spawned-by (:id parent)})]
-        (await-phase rt (:id parent) #{"done"} 10000)
-        (await-phase rt (:id child) #{"done"} 10000)
+        (await-phase rt (:id parent) #{"done"})
+        (await-phase rt (:id child) #{"done"})
         (is (= (:id parent)
                (get-in (api/show rt (:id child)) [:attributes :shuttle/spawned-by])))
         (is (some #(and (= (:id child) (:to_strand_id %)) (= "parent-of" (:edge_type %)))
@@ -183,7 +198,7 @@
                                      :prompt "echo delegated"
                                      :attrs {"treadle/gate" (:id gate)}})]
         (is (= (:id gate) (:for (shuttle/run-summary (api/show rt (:id run))))))
-        (await-phase rt (:id run) #{"done"} 10000)))))
+        (await-phase rt (:id run) #{"done"})))))
 
 (deftest notes-are-append-only-memory-with-rounds
   (with-shuttle
@@ -221,9 +236,9 @@
   (with-shuttle
     (fn [rt]
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "sleep 30; echo survived"})]
-        (await-phase rt (:id run) #{"running"} 10000)
+        (await-phase rt (:id run) #{"running"})
         (shuttle/kill! (:id run))
-        (let [failed (await-phase rt (:id run) #{"failed"} 10000)]
+        (let [failed (await-phase rt (:id run) #{"failed"})]
           (is (str/includes? (get-in failed [:attributes :shuttle/error]) "killed")))))))
 
 (deftest reconcile-respawns-orphans-and-exhausts-bounded-attempts
@@ -240,7 +255,7 @@
               summary (shuttle/reconcile!)]
           (is (= [(:id orphan)] (:respawned summary)))
           (is (= "recovered"
-                 (get-in (await-phase rt (:id orphan) #{"done"} 10000)
+                 (get-in (await-phase rt (:id orphan) #{"done"})
                          [:attributes :shuttle/result])))))
       (testing "a run out of attempts is marked exhausted, stays active"
         (let [spent (api/add rt {:title "spent"
@@ -282,7 +297,7 @@
                                   "shuttle/phase" "pending"}})
         (let [run-id (:id (first (filter #(= "handmade" (:title %))
                                          (api/list rt shuttle/run-query {}))))
-              failed (await-phase rt run-id #{"failed"} 10000)]
+              failed (await-phase rt run-id #{"failed"})]
           (is (str/includes? (get-in failed [:attributes :shuttle/error]) "Harness not found")))))))
 
 (deftest recovered-run-with-late-registered-alias-defers-then-respawns
@@ -298,14 +313,13 @@
             summary (shuttle/reconcile!)]
         (is (= [(:id orphan)] (:respawned summary)))
         (let [deferred (await-attr-matching rt (:id orphan) :shuttle/error
-                                            #(and % (str/includes? % "Harness not found"))
-                                            10000)]
+                                            #(and % (str/includes? % "Harness not found")))]
           (is (= "pending" (get-in deferred [:attributes :shuttle/phase])))
           (is (some? (get-in deferred [:attributes :shuttle/recovered-at])))
           (is (= 1 (get-in deferred [:attributes :shuttle/attempt]))))
         (shuttle/defalias! :late-sh {:alias-of :sh})
         (shuttle/scan!)
-        (let [done (await-phase rt (:id orphan) #{"done"} 10000)]
+        (let [done (await-phase rt (:id orphan) #{"done"})]
           (is (= "closed" (:state done)))
           (is (= "recovered-late" (get-in done [:attributes :shuttle/result])))
           (is (= 2 (get-in done [:attributes :shuttle/attempt]))))))))
@@ -325,7 +339,7 @@
                                                  "shuttle/pid" 99999999}})
                 summary (shuttle/reconcile!)]
             (is (= [(:id orphan)] (:respawned summary)))
-            (let [failed (await-phase rt (:id orphan) #{"failed"} 10000)]
+            (let [failed (await-phase rt (:id orphan) #{"failed"})]
               (is (= "active" (:state failed)))
               (is (str/includes? (get-in failed [:attributes :shuttle/error])
                                  "Harness not found"))))))
@@ -348,8 +362,12 @@
    :attach ["echo" "attach" :handle/pid]
    :doc "test-only fake multiplexer over detached processes"})
 
-(defn- process-alive? [pid]
-  (zero? (:exit (clojure.java.shell/sh "kill" "-0" (str pid)))))
+(defn- process-alive?
+  "Zero-fork liveness probe: ProcessHandle/of avoids the fork+exec `kill -0`
+  did per poll, which was itself a casualty under fork-storm test load."
+  [pid]
+  (let [handle (java.lang.ProcessHandle/of (Long/parseLong (str pid)))]
+    (and (.isPresent handle) (.isAlive (.get handle)))))
 
 (defn- await-process-death [pid timeout-ms]
   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
@@ -363,15 +381,16 @@
   "Poll until the strand carries attribute `k` or timeout; return the strand.
   Needed for interactive launches: phase running is written durably before
   the backend starts, so the handle lands strictly after running."
-  [rt id k timeout-ms]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-    (loop []
-      (let [strand (api/show rt id)]
-        (cond
-          (some? (get-in strand [:attributes k])) strand
-          (> (System/currentTimeMillis) deadline)
-          (throw (ex-info "Timed out waiting for attribute" {:id id :attr k :strand strand}))
-          :else (do (Thread/sleep 50) (recur)))))))
+  ([rt id k] (await-attr rt id k (await-budget-ms)))
+  ([rt id k timeout-ms]
+   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+     (loop []
+       (let [strand (api/show rt id)]
+         (cond
+           (some? (get-in strand [:attributes k])) strand
+           (> (System/currentTimeMillis) deadline)
+           (throw (ex-info "Timed out waiting for attribute" {:id id :attr k :strand strand}))
+           :else (do (Thread/sleep 50) (recur))))))))
 
 (defn- forget-in-flight!
   "Simulate a weaver crash: drop this runtime's in-flight ownership so
@@ -387,7 +406,7 @@
   (let [run (shuttle/spawn-run! (merge {:harness :sh :prompt "sleep 300"
                                         :mode :interactive :backend :fake-mux}
                                        opts))
-        running (await-attr rt (:id run) (keyword "shuttle" "handle.pid") 10000)
+        running (await-attr rt (:id run) (keyword "shuttle" "handle.pid"))
         pid (get-in running [:attributes (keyword "shuttle" "handle.pid")])]
     (is (process-alive? pid))
     {:run running :pid pid}))
@@ -441,7 +460,7 @@
             (is (= (str "echo attach " pid) (:attach summary)))))
         (testing "closing the served strand reaps the session"
           (api/update rt (:id target) {:state "closed"})
-          (let [done (await-phase rt (:id run) #{"done"} 10000)]
+          (let [done (await-phase rt (:id run) #{"done"})]
             (is (= "closed" (:state done)))
             (is (nil? (get-in done [:attributes :shuttle/teardown-error])))
             (is (true? (await-process-death pid 5000)))
@@ -456,7 +475,7 @@
       (let [{:keys [run pid]} (spawn-interactive! rt)]
         (is (= "manual-close" (get-in run [:attributes :shuttle/completion])))
         (api/update rt (:id run) {:state "closed"})
-        (let [done (await-phase rt (:id run) #{"done"} 10000)]
+        (let [done (await-phase rt (:id run) #{"done"})]
           (is (= "closed" (:state done)))
           (is (true? (await-process-death pid 5000))))))))
 
@@ -466,7 +485,7 @@
       (let [target (api/add rt {:title "keep my terminal"})
             {:keys [run pid]} (spawn-interactive! rt {:parent (:id target) :reap :manual})]
         (api/update rt (:id target) {:state "closed"})
-        (let [done (await-phase rt (:id run) #{"done"} 10000)]
+        (let [done (await-phase rt (:id run) #{"done"})]
           (is (= "closed" (:state done)))
           (is (process-alive? pid))
           (clojure.java.shell/sh "kill" (str pid)))))))
@@ -480,7 +499,7 @@
           (clojure.java.shell/sh "kill" "-9" (str pid))
           (is (true? (await-process-death pid 5000)))
           (shuttle/supervise!)
-          (let [failed (await-phase rt (:id run) #{"failed"} 10000)]
+          (let [failed (await-phase rt (:id run) #{"failed"})]
             (is (= "active" (:state failed)))
             (is (str/includes? (get-in failed [:attributes :shuttle/error]) "session ended")))
           (is (= "active" (:state (api/show rt (:id target)))))))
@@ -492,7 +511,7 @@
           (api/update rt (:id target) {:state "closed"})
           (clojure.java.shell/sh "kill" "-9" (str pid))
           (shuttle/supervise!)
-          (let [done (await-phase rt (:id run) #{"done"} 10000)]
+          (let [done (await-phase rt (:id run) #{"done"})]
             (is (= "closed" (:state done)))))))))
 
 (deftest harness-capture-overrides-backend-scrollback
@@ -510,7 +529,7 @@
             run (shuttle/spawn-run! {:harness :sh-hooked :prompt "sleep 300"
                                      :mode :interactive :backend :fake-mux
                                      :parent (:id target)})
-            running (await-attr rt (:id run) (keyword "shuttle" "handle.pid") 10000)
+            running (await-attr rt (:id run) (keyword "shuttle" "handle.pid"))
             pid (get-in running [:attributes (keyword "shuttle" "handle.pid")])]
         (testing "capture! peeks a live session without killing it"
           (let [{:keys [text path]} (shuttle/capture! (:id run))]
@@ -519,14 +538,14 @@
             (is (process-alive? pid))))
         (testing "teardown persists the harness capture, not backend scrollback"
           (api/update rt (:id target) {:state "closed"})
-          (let [done (await-phase rt (:id run) #{"done"} 10000)
+          (let [done (await-phase rt (:id run) #{"done"})
                 log (get-in done [:attributes :shuttle/log])]
             (is (str/starts-with? (slurp log) "dialogue log for"))))
         (testing "capture! fails loudly when nothing provides a capture op"
           (shuttle/defbackend! :bare-mux (dissoc fake-mux :capture :attach))
           (let [bare (shuttle/spawn-run! {:harness :sh :prompt "sleep 300"
                                           :mode :interactive :backend :bare-mux})]
-            (await-attr rt (:id bare) (keyword "shuttle" "handle.pid") 10000)
+            (await-attr rt (:id bare) (keyword "shuttle" "handle.pid"))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no capture op"
                                   (shuttle/capture! (:id bare))))
             (shuttle/kill! (:id bare))))))))
@@ -585,7 +604,7 @@
          :stop ["sh" "-c" "kill \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]})
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "sleep 300"
                                      :mode :interactive :backend :broken-mux})
-            failed (await-phase rt (:id run) #{"failed"} 10000)
+            failed (await-phase rt (:id run) #{"failed"})
             session (get-in failed [:attributes :shuttle/session])
             pid-file (io/file "/tmp" (str session ".pid"))
             pid (str/trim (slurp pid-file))]
@@ -638,7 +657,7 @@
   captured (sess-abc)."
   [rt]
   (let [pred (shuttle/spawn-run! {:harness :session-echo :prompt "start"})
-        done (await-phase rt (:id pred) #{"done"} 10000)]
+        done (await-phase rt (:id pred) #{"done"})]
     (is (= "sess-abc" (get-in done [:attributes :shuttle/session-id])))
     done))
 
@@ -665,7 +684,7 @@
         (testing "provenance: shuttle/resumes attr and a resumes annotation edge"
           (is (= (:id pred) (get-in (api/show rt (:id resumer)) [:attributes :shuttle/resumes])))
           (is (= [(:id pred)] (edge-targets rt (:id resumer) "resumes"))))
-        (let [done (await-phase rt (:id resumer) #{"done"} 10000)]
+        (let [done (await-phase rt (:id resumer) #{"done"})]
           (testing "the resolved :resume splice rides ahead of the prompt"
             (is (str/includes? (get-in done [:attributes :shuttle/result]) "--resume sess-abc")))
           (is (= (:id pred) (:resumes (shuttle/run-summary done)))))))))
@@ -675,7 +694,7 @@
     (fn [rt]
       (shuttle/defharness! :session-echo session-echo)
       (let [plain (await-phase rt (:id (shuttle/spawn-run! {:harness :session-echo :prompt "solo"}))
-                               #{"done"} 10000)]
+                               #{"done"})]
         (is (nil? (get-in plain [:attributes :shuttle/resumes])))
         (is (not (str/includes? (get-in plain [:attributes :shuttle/result]) "--resume")))
         (is (empty? (edge-targets rt (:id plain) "resumes")))))))
@@ -736,7 +755,7 @@
                                  :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
                                               "shuttle/prompt" "continue" "shuttle/phase" "pending"
                                               "shuttle/resumes" (:id pred)}})
-            failed (await-phase rt (:id resumer) #{"failed"} 10000)]
+            failed (await-phase rt (:id resumer) #{"failed"})]
         (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
         (is (str/includes? (get-in failed [:attributes :shuttle/error]) "missing a required attribute"))))))
 
@@ -771,7 +790,7 @@
                                             "shuttle/prompt" "continue" "shuttle/phase" "pending"
                                             "shuttle/mode" "interactive" "shuttle/backend" "fake-mux"
                                             "shuttle/resumes" (:id pred)}})
-              failed (await-phase rt (:id run) #{"failed"} 10000)]
+              failed (await-phase rt (:id run) #{"failed"})]
           (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
           (is (str/includes? (get-in failed [:attributes :shuttle/error]) "cannot resume"))))
       (testing "a handmade cross-harness resumer is rejected at launch"
@@ -780,7 +799,7 @@
                                :attributes {"shuttle/run" "true" "shuttle/harness" "sh"
                                             "shuttle/prompt" "echo x" "shuttle/phase" "pending"
                                             "shuttle/resumes" (:id pred)}})
-              failed (await-phase rt (:id run) #{"failed"} 10000)]
+              failed (await-phase rt (:id run) #{"failed"})]
           (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
           (is (str/includes? (get-in failed [:attributes :shuttle/error]) "exact same harness"))))
       (testing "a second handmade continuation of a live session is rejected at launch"
@@ -797,7 +816,7 @@
                                  :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
                                               "shuttle/prompt" "second" "shuttle/phase" "pending"
                                               "shuttle/resumes" (:id pred)}})
-                failed (await-phase rt (:id run) #{"failed"} 10000)]
+                failed (await-phase rt (:id run) #{"failed"})]
             (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
             (is (str/includes? (get-in failed [:attributes :shuttle/error]) "already continues"))))))))
 
