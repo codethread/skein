@@ -1320,3 +1320,117 @@
           (is (= :loaded (:status (client/call-world (:config-dir ctx) {:timeout-ms 30000} :use :connected))))))
       (finally
         (delete-recursive root)))))
+
+;; ---------------------------------------------------------------------------
+;; spool-state reload-awareness: versioned reinit / migrate so a preserved value
+;; whose shape drifted between deploys can never be reused silently.
+;; ---------------------------------------------------------------------------
+
+(deftest spool-state-unversioned-reuses-existing-value
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [first-value (runtime-alpha/spool-state rt ::demo (constantly {:v 1}))
+            ;; a second init-fn returning a different shape must NOT run: the
+            ;; unversioned accessor reuses the first value for the runtime life.
+            second-value (runtime-alpha/spool-state rt ::demo (fn [] (throw (ex-info "should not init" {}))))]
+        (is (= {:v 1} first-value))
+        (is (identical? first-value second-value))))))
+
+(deftest spool-state-versioned-reuses-on-matching-version
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [opts {:version 1}
+            a (runtime-alpha/spool-state rt ::demo opts (constantly {:v 1}))
+            b (runtime-alpha/spool-state rt ::demo opts (fn [] (throw (ex-info "should not reinit" {}))))]
+        (is (identical? a b))
+        (is (= 1 (::runtime-alpha/version (meta a)))
+            "version is stored as value metadata, leaving the plain value visible")))))
+
+(deftest spool-state-reinits-on-version-mismatch
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [closed? (atom false)
+            v1 (runtime-alpha/spool-state rt ::demo {:version 1}
+                                          (constantly {:shape :old :close-fn #(reset! closed? true)}))
+            ;; a bumped version with a new-shape init-fn deliberately reinits and
+            ;; releases the old value's resources via its :close-fn.
+            v2 (runtime-alpha/spool-state rt ::demo {:version 2}
+                                          (constantly {:shape :new :extra true}))]
+        (is (= :old (:shape v1)))
+        (is (= :new (:shape v2)))
+        (is (true? (:extra v2)))
+        (is (true? @closed?) "mismatched reinit runs the old value's close-fn")
+        (is (= 2 (::runtime-alpha/version (meta v2))))))))
+
+(deftest spool-state-migrate-fn-owns-old-value
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [closed? (atom false)
+            _v1 (runtime-alpha/spool-state rt ::demo {:version 1}
+                                           (constantly {:keep :registry :close-fn #(reset! closed? true)}))
+            migrated (runtime-alpha/spool-state
+                      rt ::demo
+                      {:version 2 :migrate-fn (fn [old] {:keep (:keep old) :fresh true})}
+                      (fn [] (throw (ex-info "migrate-fn owns reinit, init-fn must not run" {}))))]
+        (is (= {:keep :registry :fresh true} (into {} migrated)))
+        (is (false? @closed?) "migrate-fn owns the old value; the runtime does not auto-close")
+        (is (= 2 (::runtime-alpha/version (meta migrated))))))))
+
+(deftest spool-state-versioned-requires-metadata-support
+  (with-runtime
+    (fn [rt _config-dir]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must support metadata"
+                            (runtime-alpha/spool-state rt ::demo {:version 1}
+                                                       (constantly (Object.))))))))
+
+(deftest spool-state-rejects-malformed-opts
+  (with-runtime
+    (fn [rt _config-dir]
+      (testing "a typo'd key fails loudly instead of degrading to unversioned reuse"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                              (runtime-alpha/spool-state rt ::demo {:versoin 2} (constantly {:v 1})))))
+      (testing "opts must be a map or nil"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts must be a map"
+                              (runtime-alpha/spool-state rt ::demo 2 (constantly {:v 1})))))
+      (testing ":version must be a non-nil comparable tag"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":version must be"
+                              (runtime-alpha/spool-state rt ::demo {:version nil} (constantly {:v 1}))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":version must be"
+                              (runtime-alpha/spool-state rt ::demo {:version 1.5} (constantly {:v 1})))))
+      (testing ":migrate-fn must be a function and requires a :version to compare"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":migrate-fn must be a function"
+                              (runtime-alpha/spool-state rt ::demo {:version 1 :migrate-fn 5} (constantly {:v 1}))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":migrate-fn requires a :version"
+                              (runtime-alpha/spool-state rt ::demo {:migrate-fn identity} (constantly {:v 1}))))))))
+
+(deftest spool-state-serializes-concurrent-version-mismatch-reinit
+  ;; Several threads observing the same version mismatch must not each build a
+  ;; replacement: a lock-free CAS loser would discard its freshly-built value
+  ;; (and the executors it holds) and leak them for the JVM lifetime. The reinit
+  ;; — init-fn plus the old value's close-fn — must run exactly once.
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [inits (atom 0)
+            closes (atom 0)
+            build-fn (fn [] (swap! inits inc) (Thread/sleep 20) {:shape :new})]
+        (runtime-alpha/spool-state rt ::demo {:version 1}
+                                   (constantly {:shape :old :close-fn #(swap! closes inc)}))
+        (let [n 8
+              start (java.util.concurrent.CountDownLatch. 1)
+              futures (doall (repeatedly n #(future (.await start)
+                                                    (runtime-alpha/spool-state rt ::demo {:version 2} build-fn))))]
+          (.countDown start)
+          (run! deref futures)
+          (is (= 1 @inits) "init-fn built the replacement exactly once")
+          (is (= 1 @closes) "the old value's close-fn ran exactly once")
+          (is (= :new (:shape (runtime-alpha/spool-state rt ::demo {:version 2} build-fn)))))))))
+
+(deftest spool-state-reinit-survives-close-fn-failure
+  ;; A failing best-effort cleanup during a version-mismatch reinit is warned,
+  ;; not swallowed silently and not fatal — the reinit still completes.
+  (with-runtime
+    (fn [rt _config-dir]
+      (runtime-alpha/spool-state rt ::demo {:version 1}
+                                 (constantly {:shape :old :close-fn #(throw (ex-info "boom" {}))}))
+      (let [v2 (runtime-alpha/spool-state rt ::demo {:version 2} (constantly {:shape :new}))]
+        (is (= :new (:shape v2)))))))

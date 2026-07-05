@@ -907,3 +907,101 @@
             (runtime/stop! rt))))
       (finally
         (db-test/delete-sqlite-family! db-file)))))
+
+;; ---------------------------------------------------------------------------
+;; Reload safety: versioned spool-state, tolerant set-once registration, and
+;; loud failure when executors are missing (see daemon-runtime.md §spool-state).
+;; ---------------------------------------------------------------------------
+
+(deftest state-shape-matches-declared-version
+  ;; If new-state gains or loses a key without a matching state-version bump, a
+  ;; post-upgrade reload would reuse a shape-mismatched preserved map. This test
+  ;; is the drift alarm: it pins the exact key set the current version covers.
+  (with-shuttle
+    (fn [_rt]
+      (is (= #{:harness-registry :backend-registry :in-flight :recovery-scheduler
+               :worker-executor :preamble-extension :preamble-conflicts
+               :default-review-contract :close-fn}
+             (set (keys (#'shuttle/new-state))))
+          "new-state key set changed — bump shuttle/state-version and this assertion together"))))
+
+(deftest set-preamble-extension-tolerates-reload
+  (with-shuttle
+    (fn [_rt]
+      (testing "first registration and idempotent re-registration of same text"
+        (is (false? (:replaced (shuttle/set-preamble-extension! "worker contract A"))))
+        (is (false? (:replaced (shuttle/set-preamble-extension! "worker contract A")))))
+      (testing "different text replaces rather than failing startup dead"
+        (let [result (shuttle/set-preamble-extension! "worker contract B")]
+          (is (true? (:replaced result)))
+          (is (true? (:preamble-extension result))))
+        (is (str/includes? (#'shuttle/preamble "run-1" "task body") "worker contract B"))))))
+
+(deftest set-preamble-extension-records-conflicts-durably
+  ;; A genuine cross-spool clash (different text) must leave a durable trace, not
+  ;; a stderr-only warning that scrolls away on a long-lived daemon; a same-text
+  ;; replay is not a conflict and records nothing.
+  (with-shuttle
+    (fn [_rt]
+      (shuttle/set-preamble-extension! "worker contract A")
+      (testing "identical replay records no conflict"
+        (shuttle/set-preamble-extension! "worker contract A")
+        (is (= [] (shuttle/preamble-extension-conflicts))))
+      (testing "a genuine conflict is recorded durably"
+        (shuttle/set-preamble-extension! "worker contract B")
+        (let [conflicts (shuttle/preamble-extension-conflicts)]
+          (is (= 1 (count conflicts)))
+          (is (= "worker contract A" (:previous (first conflicts))))
+          (is (= "worker contract B" (:replacement (first conflicts))))
+          (is (string? (:at (first conflicts)))))))))
+
+(deftest in-flight-run-ids-reflects-tracked-runs
+  ;; The parked-run detector uses this to tell a genuinely parked ready run from
+  ;; one already in flight, so it must report every tracked phase.
+  (with-shuttle
+    (fn [_rt]
+      (is (= #{} (shuttle/in-flight-run-ids)) "empty when nothing is tracked")
+      (swap! (#'shuttle/in-flight) assoc
+             "run-a" {:phase :claimed}
+             "run-b" {:phase :running}
+             "run-c" {:phase :deferred-recovery})
+      (is (= #{"run-a" "run-b" "run-c"} (shuttle/in-flight-run-ids))
+          "claimed, running, and deferred-recovery runs all count as in-flight")
+      (swap! (#'shuttle/in-flight) dissoc "run-b")
+      (is (= #{"run-a" "run-c"} (shuttle/in-flight-run-ids))))))
+
+(deftest missing-executor-fails-loudly
+  ;; The morning incident: a preserved state lacking :worker-executor turned
+  ;; scan!'s launch into (.execute nil ..), silently parking runs. The getter
+  ;; now fails loudly (TEN-003) instead of NPE-ing into the event worker.
+  (with-shuttle
+    (fn [rt]
+      (swap! (:spool-state rt) update :skein.spools.shuttle/state
+             (fn [s] (with-meta (dissoc s :worker-executor) (meta s))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Required shuttle spool-state entry is missing"
+                            (#'shuttle/worker-executor))))))
+
+(deftest reload-with-changed-state-shape-reinits
+  ;; Simulate a reload that preserved a pre-upgrade state: no version tag and
+  ;; missing the executor/scheduler keys. Accessing state must deliberately
+  ;; migrate to the current shape (fresh executors) rather than reuse it.
+  (with-shuttle
+    (fn [rt]
+      (let [old-registry (atom {:pi ::alias})
+            old-in-flight (atom {"run-x" {:phase :running}})
+            old-state {:harness-registry old-registry
+                       :backend-registry (atom {})
+                       :in-flight old-in-flight
+                       :preamble-extension (atom "preserved preamble")
+                       :default-review-contract (atom nil)}]
+        ;; overwrite the installed (version 1) state with an untagged old-shape map
+        (swap! (:spool-state rt) assoc :skein.spools.shuttle/state old-state)
+        (let [reinit (#'shuttle/state)]
+          (is (some? (:worker-executor reinit)) "reinit supplies a fresh worker executor")
+          (is (some? (:recovery-scheduler reinit)) "reinit supplies a fresh recovery scheduler")
+          (is (some? (:close-fn reinit)))
+          (is (identical? old-registry (:harness-registry reinit)) "durable registry carried over by migrate")
+          (is (identical? old-in-flight (:in-flight reinit)) "in-flight tracking carried over by migrate")
+          (is (= "preserved preamble" @(:preamble-extension reinit)))
+          ;; and the fail-loud getters now resolve real executors
+          (is (some? (#'shuttle/worker-executor))))))))

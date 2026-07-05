@@ -850,6 +850,65 @@
                                                " (" (config-attr % :shuttle/phase) ")")
                                          blockers)))}))))
 
+(def ^:private parked-run-threshold-ms
+  "How long a ready, unclaimed pending run may sit before it counts as silently
+  parked rather than momentarily between scans."
+  (* 5 60 1000))
+
+(def ^:private sqlite-timestamp-formatter
+  (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd HH:mm:ss"))
+
+(def ^:private logged-ts-parse-failures
+  "Distinct unparseable `updated_at` values already warned about, so a
+  persistently malformed row does not respam the log on every chime scan."
+  (atom #{}))
+
+(defn- strand-age-ms
+  "Milliseconds since a strand's last mutation, parsing SQLite's UTC
+  `yyyy-MM-dd HH:mm:ss` updated_at. Returns nil when absent or unparseable.
+
+  A parse failure would silently disable the parked-run detector for that strand
+  (its whole point is catching silent failures), so an unparseable timestamp is
+  warned to stderr once per distinct value rather than swallowed — a timestamp
+  format drift surfaces instead of defeating the detector unnoticed."
+  [strand]
+  (when-let [ts (:updated_at strand)]
+    (try
+      (- (System/currentTimeMillis)
+         (-> (java.time.LocalDateTime/parse ts sqlite-timestamp-formatter)
+             (.toInstant java.time.ZoneOffset/UTC)
+             (.toEpochMilli)))
+      (catch Exception e
+        (when-not (contains? @logged-ts-parse-failures ts)
+          (swap! logged-ts-parse-failures conj ts)
+          (binding [*out* *err*]
+            (println (str "[config] WARN parked-run detector could not parse strand updated_at;"
+                          " the detector is disabled for this strand "
+                          (pr-str {:strand (:id strand) :updated_at ts
+                                   :exception/message (ex-message e)})))))
+        nil))))
+
+(defn parked-run-rule
+  "Notify when a ready pending shuttle run has sat unclaimed past the threshold.
+
+  This is the silent-parking detector: the morning incident left runs ready and
+  pending forever because scan! launched them onto a nil executor. A run that is
+  ready (blockers cleared), still `pending`, not tracked in-flight, and older
+  than the threshold is one the launch path should have spawned but did not."
+  [{:keys [strand ready-ids]}]
+  (when (and (= "active" (:state strand))
+             (= "true" (config-attr strand :shuttle/run))
+             (= "pending" (config-attr strand :shuttle/phase))
+             (contains? ready-ids (:id strand))
+             (not (contains? (shuttle/in-flight-run-ids) (:id strand)))
+             (when-let [age (strand-age-ms strand)]
+               (>= age parked-run-threshold-ms)))
+    {:title (str "Agent run parked: " (:title strand))
+     :body (str "Shuttle run " (:id strand) " has been ready and pending for over "
+                (quot parked-run-threshold-ms 60000) " minutes with no in-flight claim."
+                " This is the silent-parking signature — verify the weaver's shuttle"
+                " executors are healthy and the run was not dropped by a reload.")}))
+
 (defn- register-chime-rules!
   "Register the repo's attention rules with the chime engine."
   []
@@ -858,7 +917,8 @@
    (chime/defrule! :treadle-error 'config/treadle-error-rule)
    (chime/defrule! :kanban-started 'config/kanban-started-rule)
    (chime/defrule! :kanban-completed 'config/kanban-completed-rule)
-   (chime/defrule! :kanban-blocked 'config/kanban-blocked-rule)])
+   (chime/defrule! :kanban-blocked 'config/kanban-blocked-rule)
+   (chime/defrule! :parked-run 'config/parked-run-rule)])
 
 ;; ---------------------------------------------------------------------------
 ;; repo-local op arg-specs

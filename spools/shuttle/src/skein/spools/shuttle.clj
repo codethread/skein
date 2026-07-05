@@ -67,6 +67,28 @@
         (doto (Thread. runnable (str prefix "-" (swap! counter inc)))
           (.setDaemon true))))))
 
+(defn- warn!
+  "Emit a loud-but-non-fatal shuttle warning to the weaver's stderr log.
+
+  Used where failing dead would be worse than continuing (a reload replacing a
+  set-once registration): the world stays operable and the divergence is still
+  visible in the weaver log."
+  [message data]
+  (binding [*out* *err*]
+    (println (str "[shuttle] WARN " message " " (pr-str data)))))
+
+(def ^:private state-version
+  "Shape version for the shuttle's runtime spool-state map.
+
+  Bump this whenever `new-state`'s key set changes. Spool state survives
+  `reload!`, so a post-upgrade reload would otherwise reuse a preserved map that
+  predates a newly added key (`:worker-executor`/`:recovery-scheduler` were the
+  incident: scan!'s `(.execute nil ..)` then parked every new run silently). A
+  changed version makes the runtime reinit through `migrate-state` deliberately
+  instead. The `state-shape-matches-declared-version` test fails loudly if
+  `new-state` and this version drift apart."
+  2)
+
 (defn- new-state []
   (let [scheduler (ScheduledThreadPoolExecutor. 1 (daemon-thread-factory "shuttle-recovery"))
         workers (Executors/newCachedThreadPool (daemon-thread-factory "shuttle-run"))]
@@ -78,6 +100,10 @@
      :recovery-scheduler scheduler
      :worker-executor workers
      :preamble-extension (atom nil)
+     ;; durable record of genuine set-preamble-extension! conflicts (a second
+     ;; distinct registrant replacing an existing value), so the clash survives
+     ;; as queryable state rather than a stderr line lost on a long-lived daemon.
+     :preamble-conflicts (atom [])
      :default-review-contract (atom nil)
      :close-fn (fn []
                  (.shutdownNow scheduler)
@@ -87,15 +113,60 @@
                  (when-not (.awaitTermination workers 1000 TimeUnit/MILLISECONDS)
                    (fail! "Shuttle worker executor did not stop" {})))}))
 
+(defn- migrate-state
+  "Reinit a preserved shuttle state whose shape predates `state-version`.
+
+  Durable registries, in-flight tracking, and the set-once override atoms carry
+  over; the executors and close hook are rebuilt fresh so scan!/scheduling never
+  runs against a stale or missing executor. The old recovery scheduler is
+  stopped (best-effort, accepting no new ticks) while the old worker pool is
+  left to drain any in-flight run monitors as daemon threads rather than being
+  interrupted mid-run."
+  [old]
+  (when-let [scheduler (:recovery-scheduler old)]
+    (try (.shutdown ^ScheduledThreadPoolExecutor scheduler)
+         (catch Throwable t
+           (warn! "Old recovery scheduler shutdown failed during migrate; it may leak"
+                  {:exception/message (ex-message t)}))))
+  (merge (new-state)
+         (select-keys old [:harness-registry :backend-registry :in-flight
+                           :preamble-extension :preamble-conflicts
+                           :default-review-contract])))
+
 (defn- state []
-  (runtime/spool-state (rt) ::state new-state))
+  (runtime/spool-state (rt) ::state
+                       {:version state-version :migrate-fn migrate-state}
+                       new-state))
+
+(defn- require-state-entry
+  "Return spool-state entry `k`, failing loudly when it is missing.
+
+  A missing executor or scheduler means a shape-mismatched state slipped through
+  without a reinit; parking runs on a `(.execute nil ..)` is exactly the silent
+  fallback TEN-003 forbids, so surface it as a loud error at the launch seam
+  instead."
+  [k]
+  (let [s (state)]
+    (or (get s k)
+        (fail! "Required shuttle spool-state entry is missing"
+               {:missing k :present (vec (sort (keys s)))}))))
 
 (defn- harness-registry [] (:harness-registry (state)))
 (defn- backend-registry [] (:backend-registry (state)))
 (defn- in-flight [] (:in-flight (state)))
 (defn- preamble-extension [] (:preamble-extension (state)))
-(defn- recovery-scheduler [] (:recovery-scheduler (state)))
-(defn- worker-executor [] (:worker-executor (state)))
+(defn- preamble-conflicts-atom [] (:preamble-conflicts (state)))
+(defn- recovery-scheduler [] (require-state-entry :recovery-scheduler))
+(defn- worker-executor [] (require-state-entry :worker-executor))
+
+(defn in-flight-run-ids
+  "Return the set of run ids the shuttle is currently tracking in-flight
+  (claimed, running, or awaiting recovery).
+
+  Attention detectors use this to tell a genuinely parked ready run — one that
+  scan! should have launched but did not — from one already in flight."
+  []
+  (set (keys @(in-flight))))
 (defn- default-review-contract
   "Workspace review-contract override atom; nil means the generic contract applies."
   []
@@ -494,16 +565,42 @@
 (defn set-preamble-extension!
   "Register additional preamble text appended after shuttle's engine contract.
 
-  A second registration with different text fails loudly so composed spools do
-  not silently replace each other's worker contract. Re-registering the same
-  text is idempotent for config reloads."
+  Reload-tolerant, but it distinguishes the two cases the previous fail-loud path
+  could not tell apart:
+
+  - Replay (same spool re-running its own registration on `reload!`): identical
+    text is a silent no-op (`:replaced false`).
+  - Conflict (a second, distinct registrant clashing on the worker contract):
+    different text replaces the value AND is recorded durably in the shuttle's
+    `:preamble-conflicts` state (see `preamble-extension-conflicts`), plus a
+    stderr warning. It deliberately does not fail: a hard error here would abort a
+    `reload!` mid-startup and leave the world with zero ops (the original
+    incident), which is worse than a recorded clash. The durable record is the
+    fail-loud substitute — an operator/detector can see the conflict long after
+    the stderr line has scrolled away, unlike the prior stderr-only signal."
   [text]
   (when-not (and (string? text) (not (str/blank? text)))
     (fail! "Preamble extension must be non-blank text" {:text text}))
-  (let [[old _] (swap-vals! (preamble-extension) #(or % text))]
-    (when (and old (not= old text))
-      (fail! "Preamble extension already registered" {}))
-    {:preamble-extension true}))
+  (let [[old _] (reset-vals! (preamble-extension) text)
+        replaced? (boolean (and old (not= old text)))]
+    (when replaced?
+      (swap! (preamble-conflicts-atom) conj
+             {:at (now) :previous old :replacement text})
+      (warn! "Preamble extension replaced on conflicting re-registration"
+             {:previous old :replacement text}))
+    {:preamble-extension true :replaced replaced?}))
+
+(defn preamble-extension-conflicts
+  "Return the durable record of genuine set-preamble-extension! conflicts.
+
+  Each entry is `{:at <iso-instant> :previous <text> :replacement <text>}` for a
+  re-registration that replaced an existing, non-identical preamble extension —
+  a cross-spool worker-contract clash. Identical replays are not recorded. The
+  record survives for the weaver lifetime (and across `reload!`, carried through
+  `migrate-state`) so a conflict stays visible to operators and attention
+  detectors after the stderr warning has scrolled off."
+  []
+  @(preamble-conflicts-atom))
 
 (defn- preamble [run-id prompt-prefix]
   (let [cmd (pinned-strand-command)]

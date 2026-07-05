@@ -127,7 +127,7 @@
          ((requiring-resolve 'skein.spools.shuttle/default-review-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
-          :kanban-started :treadle-error]
+          :kanban-started :parked-run :treadle-error]
          (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer roster registers from .skein/reviewers.clj
   (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))]

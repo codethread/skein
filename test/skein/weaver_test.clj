@@ -640,7 +640,14 @@
                (api/reload-config! rt)))
         (is (= [:shared :local] (read-string (slurp order-file))))))))
 
-(deftest reload-failing-local-init-fails-loudly-without-shared-only-state
+(deftest reload-failure-preserves-earlier-registrations-and-fails-loudly
+  ;; A failed reload must never leave a world with no useful ops (SPEC-004.C96).
+  ;; The initial clear wipes pre-reload registrations and reinstalls built-ins;
+  ;; a later startup file that throws still leaves every registration that
+  ;; loaded before the failure in place, then rethrows loudly. The failure path
+  ;; deliberately does NOT re-clear — that would take already-loaded userland
+  ;; ops down with the failure, which is exactly the "zero useful ops until a
+  ;; manual reset" cliff.
   (with-runtime
     (fn [rt _]
       (let [workspace (get-in rt [:metadata :config-dir])]
@@ -658,12 +665,17 @@
           (catch clojure.lang.ExceptionInfo e
             (is (= (.getCanonicalPath (io/file workspace "init.local.clj"))
                    (:file (ex-data e))))))
-        (is (= {} (api/queries rt)))
-        (is (= [] (api/event-handlers rt)))
+        ;; pre-reload registrations were wiped by the initial clear, but the
+        ;; registrations init.clj made before init.local.clj threw survive.
+        (is (= #{"shared"} (set (keys (api/queries rt)))))
+        (is (= [:shared] (mapv :key (api/event-handlers rt))))
         (is (= [] (api/hooks rt)))
+        ;; built-in ops stay registered, so the world is never left op-less.
         (is (= ["help"] (mapv :name (api/ops rt))))
-        (is (not (wait-until #(some (fn [event] (= "shared-only" (:event/id event)))
-                                    @delivered-events))))))))
+        ;; dispatch resumes on the failure path too, so init.clj's own enqueued
+        ;; event reaches the handler it successfully registered.
+        (is (wait-until #(some (fn [event] (= "shared-only" (:event/id event)))
+                               @delivered-events)))))))
 
 (deftest reload-layering-clears-events-and-hooks-before-local-overlay
   (with-runtime

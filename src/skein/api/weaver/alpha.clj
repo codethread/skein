@@ -585,7 +585,12 @@
        :files files
        :returns (mapv :return files)})
     (catch Throwable t
-      (clear-reload-state! runtime)
+      ;; Do not re-clear on failure. The initial clear-reload-state! already
+      ;; reinstalled the built-in ops, and startup files register userland ops
+      ;; incrementally, so a spool install that throws midway would otherwise
+      ;; take every already-registered op down with it — the "zero useful ops
+      ;; until a manual atom reset" cliff. Leave whatever loaded so the world
+      ;; stays operable, resume dispatch, and rethrow the failure loudly.
       (runtime/resume-event-system! runtime)
       (throw t))))
 
