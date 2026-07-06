@@ -1,5 +1,13 @@
 # Skein Batteries Spool
 
+> This is the **contract** doc: the per-op behavior guarantees for the shipped
+> `strand <op>` surface. Its two companions are
+> [`batteries.cookbook.md`](./batteries.cookbook.md) — worked scripting recipes
+> (how you compose the ops in a shell or pipeline) — and
+> [`batteries.api.md`](./batteries.api.md) — the generated op/arg-spec reference.
+> Reach for the cookbook when you want a runnable pipeline, the API doc when you
+> want an exact flag list, and this doc for what each op promises.
+
 ## 1. Overview
 
 `skein.spools.batteries` is the shipped *core strand command surface*, expressed
@@ -96,10 +104,17 @@ strand update <id> [--title t] [--state active|closed] [--attr key=value]… \
 ```
 
 Patches title, lifecycle state, attributes, and outgoing edges of one existing
-strand. `--attr` fully replaces the attribute map (same string-map precedence
-and duplicate-key loudness as `add`); `--attributes` is intentionally add-only
-(old C7). Accepts `active|closed`; cannot set `replaced`. Returns the
-normalized strand.
+strand. `--attr` **merges** into the existing attribute map — it does not replace
+it. The weaver applies the patch with SQLite `json_patch`
+(`skein.core.db/update-strand!`), so keys you pass are added or overwritten and
+keys you omit are left untouched. Because `--attr` values are always strings,
+`update` has no way to *remove* an attribute key: `--attr key=null` stores the
+literal string `"null"`, and `update` accepts no `--attributes` flag to carry a
+typed JSON `null` (the merge-patch value that would delete a key). Removing a key
+is a trusted-path operation — `skein.api.weaver.alpha/update` with
+`{:attributes {"key" nil}}`. Duplicate keys within one `--attr` set fail loudly,
+as on `add`. `--attributes` is not accepted here (it is `add`-only, old C7).
+Accepts `active|closed`; cannot set `replaced`. Returns the normalized strand.
 
 #### `supersede` — BAT-C7
 

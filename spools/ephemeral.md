@@ -1,5 +1,13 @@
 # Skein Ephemeral Spool
 
+> This is the **contract** doc: the attribute convention, the surface, and the
+> workspace-wide burn semantics. Its two companions are
+> [`ephemeral.cookbook.md`](./ephemeral.cookbook.md) — worked composition recipes
+> (when a throwaway strand earns its place, how to burn the right ones, and
+> reaching the convention from the shell) — and
+> [`ephemeral.api.md`](./ephemeral.api.md) — generated fn signatures and
+> docstrings.
+
 ## 1. Overview
 
 `skein.spools.ephemeral` is a small reference spool for temporary,
