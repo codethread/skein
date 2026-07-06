@@ -131,9 +131,9 @@
   (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run :treadle-error]
          (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
-  ;; the declarative reviewer roster registers from .skein/reviewers.clj
+  ;; the declarative reviewer rosters register from .skein/reviewers.clj
   (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))]
-    (is (= [:change-review] (mapv :name rosters)))
+    (is (= [:change-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
 
 (deftest current-dags-op-builds-self-contained-plan-task-projection
@@ -321,13 +321,18 @@
     (fn [_rt]
       (load-file ".skein/reviewers.clj")
       ((requiring-resolve 'reviewers/install!))
-      (let [[roster :as rosters] ((requiring-resolve 'skein.spools.agents/rosters))]
-        (is (= [:change-review] (mapv :name rosters)))
+      (let [[roster docs-roster :as rosters] ((requiring-resolve 'skein.spools.agents/rosters))]
+        (is (= [:change-review :docs-review] (mapv :name rosters)))
         (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:reviewers roster)))]
           (is (some? sleeps) "owner-required test-sleeps reviewer is declared")
           (is (str/includes? (:contract sleeps) "time itself is a genuine component")))
         (is (= :review-gpt (get-in roster [:synthesizer :harness]))
-            "sign-off synthesis stays on the cross-vendor GPT seat")))))
+            "sign-off synthesis stays on the cross-vendor GPT seat")
+        (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:reviewers docs-roster)))]
+          (is (some? fact-check) "docs roster leads with the accuracy seat")
+          (is (str/includes? (:contract fact-check) "NEVER the canonical .skein")))
+        (is (= :review-gpt (get-in docs-roster [:synthesizer :harness]))
+            "docs sign-off synthesis stays on the cross-vendor GPT seat")))))
 
 (deftest codex-harness-persists-sessions-and-declares-resume
   ;; PLAN-Pnl-001.A2/PH2: the repo :codex harness drops --ephemeral (sessions

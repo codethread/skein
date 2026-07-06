@@ -116,7 +116,68 @@
 
    :synthesizer {:harness :review-gpt}})
 
+(def docs-review
+  "Roster fanned out over human-facing prose changes: READMEs, docs/, spool
+  contract docs and cookbooks, release notes. Distilled from the five-seat
+  panel that reviewed the 2026-07 docs refresh and spool-cookbook batches
+  (passes panel-0461821b, panel-1e14b735), whose seat mix repeatedly caught
+  disjoint defect classes. Generated `spools/*.api.md` files mirror
+  docstrings and are out of scope."
+  {:reviewers
+   [{:name "docs-fact-check"
+     :harness :review-gpt
+     :contract (str "Verify every command, flag, filename, path, and behavioral claim in the "
+                    "changed prose against the repo's sources of truth: the contract docs, "
+                    "generated api docs, devflow/specs, source, and tests. Spot-run the "
+                    "highest-risk snippets where practical — `make build`, then a disposable "
+                    "workspace from your own `ws=$(mktemp -d)` shell variable with every "
+                    "--workspace expansion guarded as \"${ws:?}\"; NEVER the canonical .skein "
+                    "world. Flag invented surface, stale claims the diff should have updated, "
+                    "and citations that do not support the prose. Accuracy findings are "
+                    "must-fix. Budget ~15-20 calls plus the snippet runs you choose.")}
+
+    {:name "docs-tone"
+     :harness :review-gpt
+     :contract (str "Police the house voice: warm, plain, confident. The prose is usually "
+                    "opus-authored, which trends over-familiar and hyperbolic, so flag "
+                    "overselling, forced enthusiasm, chumminess, empty hedging, and 'why' "
+                    "prose that asserts instead of reasons — and equally lifeless corporate "
+                    "flatness. Give a replacement sentence for every flag. Read only the "
+                    "changed prose files. Budget ~10-12 calls.")}
+
+    {:name "llm-tells"
+     :harness :grunt
+     :contract (str "Sweep the changed prose with the docs-style checklist skill at "
+                    ".claude/skills/docs-style/SKILL.md (in this worktree): grep its word "
+                    "tells, contrast reframes ('it's not X, it's Y'), rule-of-three padding, "
+                    "em-dash overuse, and bold-term-colon bullet walls, then do its cadence "
+                    "read. Report each hit with file, section, offending text, and a plain "
+                    "rewrite. Skip generated *.api.md files. Budget ~10-12 calls.")}
+
+    {:name "reader-newbie"
+     :harness :explore
+     :contract (str "PERSONA: a developer meeting this material for the first time — no "
+                    "Clojure, no prior Skein vocabulary beyond getting-started. Read the "
+                    "changed docs top to bottom, in order, taking every instruction "
+                    "literally. Report only comprehension breaks: terms used before they are "
+                    "explained, steps that assume unstated knowledge, snippets that do not "
+                    "say where they run (shell vs REPL vs config), and points where you "
+                    "cannot tell what to do next. One linear read per file; no source "
+                    "spelunking. Budget ~8-10 calls.")}
+
+    {:name "reader-skeptic"
+     :harness :hard-gpt
+     :contract (str "PERSONA: a tired tech lead deciding whether this documentation helps or "
+                    "rots. For each changed doc: does it solve problems a real team hits, or "
+                    "is it filler demonstrating API calls? Does its reasoning give the cost "
+                    "of the alternative or just vibes? Are cited sources real, durable, and "
+                    "load-bearing — never session anecdotes or hardcoded incidental detail "
+                    "that will silently rot? Name anything you would cut. Budget ~12-15 calls.")}]
+
+   :synthesizer {:harness :review-gpt}})
+
 (defn install!
-  "Register this repository's reviewer roster with the agents spool."
+  "Register this repository's reviewer rosters with the agents spool."
   []
-  {:rosters [(agents/defroster! :change-review change-review)]})
+  {:rosters [(agents/defroster! :change-review change-review)
+             (agents/defroster! :docs-review docs-review)]})
