@@ -29,11 +29,8 @@
 (defn- generated-id? [x]
   (and (string? x) (boolean (re-matches generated-id-pattern x))))
 
-(def indexed-attr-key-pattern-source
-  "Regex source for declared indexed attribute keys that may be embedded in SQL JSON paths."
-  "[a-z0-9][a-z0-9._/-]*")
-
-(def ^:private relation-name-pattern (re-pattern indexed-attr-key-pattern-source))
+(def ^:private relation-name-pattern-source "[a-z0-9][a-z0-9._/-]*")
+(def ^:private relation-name-pattern (re-pattern relation-name-pattern-source))
 
 (defn- relation-name? [x]
   (and (string? x) (boolean (re-matches relation-name-pattern x))))
@@ -51,13 +48,25 @@
 (s/def ::from ::id)
 (s/def ::to ::id)
 (s/def ::edge-type relation-name?)
-(s/def ::indexed-attr-key relation-name?)
 (s/def ::type ::edge-type)
 (s/def ::title non-blank-string?)
 (s/def ::attr-key keyword?)
 (s/def ::cli-attr-value string?)
 (s/def ::cli-attributes (s/map-of ::attr-key ::cli-attr-value))
 (s/def ::attributes json-object-encodable-attributes?)
+(s/def ::attribute-key (s/or :keyword keyword? :string non-blank-string?))
+(s/def ::attribute-key-set (s/coll-of ::attribute-key :kind coll? :min-count 1))
+(s/def ::strand-id ::id)
+(s/def ::archived? boolean?)
+(s/def ::changed nat-int?)
+(s/def :skein.attribute-archive/keys (s/coll-of string? :kind vector?))
+(s/def ::attribute-archive-result
+  (s/keys :req-un [::strand-id ::archived? ::changed :skein.attribute-archive/keys]))
+(s/def ::status #{:migrated :already-current})
+(s/def ::strands nat-int?)
+(s/def :skein.attribute-storage/attributes nat-int?)
+(s/def ::attribute-storage-migration-result
+  (s/keys :req-un [::status ::strands :skein.attribute-storage/attributes]))
 (s/def :skein/omitted #{true})
 (s/def ::bytes nat-int?)
 (s/def ::omitted-attribute-descriptor

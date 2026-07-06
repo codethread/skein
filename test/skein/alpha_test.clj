@@ -58,10 +58,24 @@
       (api/init rt)
       (let [feature (api/add rt {:title "Feature" :attributes {:kind "feature"}})
             task (api/add rt {:title "Task" :attributes {:owner "agent"}})]
+        (is (= {:status :already-current :strands 2 :attributes 2}
+               (api/migrate-attribute-storage! rt)))
         (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
         (api/register-query rt 'agent-owned [:= [:attr :owner] "agent"])
         (is (= [(:id task)] (graph/query-ids! rt 'agent-owned {})))
         (is (= [(:id task)] (mapv :id (graph/strands-by-ids rt [(:id task) (:id task)]))))
+        (is (= {:strand-id (:id task)
+                :keys ["owner"]
+                :archived? true
+                :changed 1}
+               (api/archive! rt (:id task) [:owner])))
+        (is (= [] (api/list rt [:= [:attr :owner] "agent"] {})))
+        (is (= {:owner "agent"} (:attributes (api/show rt (:id task)))))
+        (is (= {:strand-id (:id task)
+                :keys ["owner"]
+                :archived? false
+                :changed 1}
+               (api/unarchive! rt (:id task) [:owner])))
         (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id task)] {})))
         (is (= #{(:id feature) (:id task)}
                (set (map :id (:strands (graph/subgraph rt [(:id feature)]))))))
@@ -129,4 +143,3 @@
                                          {:state-dir "/tmp/skein-state-world"}
                                          :strands-by-ids
                                          ["a" "b"])))))
-

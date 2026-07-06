@@ -1,6 +1,7 @@
 (ns skein.core.db-test
   "Tests for skein.core.db: strand/edge persistence, queries, and SQLite behavior."
   (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
             [skein.core.db :as db]
@@ -41,10 +42,15 @@
 (deftest init-creates-strand-schema
   (with-db
     (fn [ds]
-      (is (= #{"id" "title" "state" "attributes" "created_at" "updated_at"}
+      (is (= #{"id" "title" "state" "created_at" "updated_at"}
              (set (map :name (db/execute! ds ["PRAGMA table_info(strands)"])))))
+      (is (= #{"strand_id" "key" "value" "archived"}
+             (set (map :name (db/execute! ds ["PRAGMA table_info(attributes)"])))))
+      (is (some #(= "idx_attributes_key_value_hot" (:name %))
+                (db/execute! ds ["PRAGMA index_list(attributes)"])))
       (is (= #{"from_strand_id" "to_strand_id" "edge_type" "attributes"}
              (set (map :name (db/execute! ds ["PRAGMA table_info(strand_edges)"])))))
+      (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'indexed_attr_keys'"])))
       (is (= #{"depends-on" "parent-of" "supersedes"}
              (set (db/list-acyclic-relations ds))))
       (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('tasks', 'task_edges')"]))))))
@@ -70,6 +76,116 @@
                             (db/add-strand! ds {:title "Bad" :state "replaced"})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown core strand fields"
                             (db/add-strand! ds {:title "Bad" :priority "high"}))))))
+
+(defn attr-rows [ds strand-id]
+  (mapv #(update % :value db/<-json)
+        (db/execute! ds ["SELECT strand_id, key, value, archived FROM attributes WHERE strand_id = ? ORDER BY key" strand-id])))
+
+(deftest strand-attributes-use-eav-rows-and-assembled-reads
+  (with-db
+    (fn [ds]
+      (let [strand (db/add-strand! ds {:title "Attrs"
+                                       :attributes {:z 1 "a" {:nested true} :drop "x"}})
+            id (:id strand)]
+        (is (nil? (some #(= "attributes" (:name %))
+                        (db/execute! ds ["PRAGMA table_info(strands)"]))))
+        (is (= [{:strand_id id :key "a" :value {:nested true} :archived 0}
+                {:strand_id id :key "drop" :value "x" :archived 0}
+                {:strand_id id :key "z" :value 1 :archived 0}]
+               (attr-rows ds id)))
+        (is (= "{\"a\":{\"nested\":true},\"drop\":\"x\",\"z\":1}"
+               (:attributes (db/get-strand ds id))))
+        (db/update-strand! ds id {:attributes {:b 2 :drop nil}})
+        (is (= {:a {:nested true} :b 2 :z 1}
+               (db/<-json (:attributes (db/get-strand ds id)))))
+        (is (= ["a" "b" "z"] (mapv :key (attr-rows ds id))))
+        (db/update-strand! ds id {:attributes {:b nil}})
+        (is (= {:a {:nested true} :z 1}
+               (db/<-json (:attributes (db/get-strand ds id)))))))))
+
+(deftest attribute-rows-cascade-when-strand-is-burned
+  (with-db
+    (fn [ds]
+      (let [strand (:id (db/add-strand! ds {:title "Cascade" :attributes {:owner "agent"}}))]
+        (is (= 1 (:c (db/execute-one! ds ["SELECT count(*) AS c FROM attributes WHERE strand_id = ?" strand]))))
+        (db/burn-by-id! ds strand)
+        (is (zero? (:c (db/execute-one! ds ["SELECT count(*) AS c FROM attributes WHERE strand_id = ?" strand]))))))))
+
+(deftest full-reads-include-archived-attributes-and-hot-reads-exclude-them
+  (with-db
+    (fn [ds]
+      (let [strand (:id (db/add-strand! ds {:title "Archive candidate"
+                                            :attributes {:owner "agent" :payload "cold"}}))]
+        (db/execute! ds ["UPDATE attributes SET archived = 1 WHERE strand_id = ? AND key = 'payload'" strand])
+        (is (= {:owner "agent" :payload "cold"}
+               (db/<-json (:attributes (db/get-strand ds strand)))))
+        (is (= {:owner "agent"}
+               (-> (db/all-strands ds)
+                   first
+                   :attributes
+                   db/<-json)))
+        (is (= {:owner "agent"}
+               (-> (db/ready-strands ds)
+                   first
+                   :attributes
+                   db/<-json)))))))
+
+(deftest archive-primitives-are-atomic-idempotent-and-fail-loud
+  (with-db
+    (fn [ds]
+      (let [strand (:id (db/add-strand! ds {:title "Archive candidate"
+                                            :attributes {:z 1 :a "hot" :payload "cold"}}))]
+        (is (= {:strand-id strand
+                :keys ["a" "payload"]
+                :archived? true
+                :changed 2}
+               (db/archive-attributes! ds strand [:payload :a])))
+        (is (= {:strand-id strand
+                :keys ["a" "payload"]
+                :archived? true
+                :changed 0}
+               (db/archive-attributes! ds strand [:a :payload])))
+        (is (= {:z 1}
+               (-> (db/all-strands ds) first :attributes db/<-json)))
+        (is (= {:z 1}
+               (-> (db/all-strands ds [:= [:attr :z] 1]) first :attributes db/<-json)))
+        (is (empty? (db/all-strands ds [:exists [:attr :payload]])))
+        (is (= {:a "hot" :payload "cold" :z 1}
+               (db/<-json (:attributes (db/get-strand ds strand)))))
+        (let [missing (is (thrown? clojure.lang.ExceptionInfo
+                                   (db/unarchive-attributes! ds strand [:payload :missing])))]
+          (is (= {:reason :missing-keys
+                  :strand-id strand
+                  :keys ["missing"]}
+                 (ex-data missing))))
+        (is (= #{"a" "payload"}
+               (set (map :key (filter #(= 1 (:archived %)) (attr-rows ds strand))))))
+        (is (= {:strand-id strand
+                :keys ["a" "payload" "z"]
+                :archived? false
+                :changed 2}
+               (db/unarchive-attributes! ds strand)))
+        (is (= {:a "hot" :payload "cold" :z 1}
+               (-> (db/all-strands ds) first :attributes db/<-json)))))))
+
+(deftest archive-primitives-reject-bad-input
+  (with-db
+    (fn [ds]
+      (let [strand (:id (db/add-strand! ds {:title "Archive candidate"
+                                            :attributes {:payload "cold"}}))]
+        (let [bad-id (is (thrown? clojure.lang.ExceptionInfo
+                                  (db/archive-attributes! ds "")))]
+          (is (= :malformed-strand-id (:reason (ex-data bad-id)))))
+        (let [unknown-id (is (thrown? clojure.lang.ExceptionInfo
+                                      (db/archive-attributes! ds "missing")))]
+          (is (= {:reason :missing-strand
+                  :strand-id "missing"
+                  :keys nil}
+                 (ex-data unknown-id))))
+        (doseq [keys [[] nil [""] [42]]]
+          (let [bad-keys (is (thrown? clojure.lang.ExceptionInfo
+                                      (db/archive-attributes! ds strand keys)))]
+            (is (= :malformed-keys (:reason (ex-data bad-keys))))))))))
 
 (deftest active-readiness-and-reactivation
   (with-db
@@ -215,32 +331,37 @@
           (is (= [] (db/incoming-edges ds ["nope-missing"] "parent-of")))
           (is (= [] (db/outgoing-edges ds ["nope-missing"] "parent-of"))))))))
 
-(deftest indexed-attr-key-declarations-create-registry-and-expression-index
+(deftest row-backed-attr-queries-have-uniform-capability
   (with-db
     (fn [ds]
-      (is (= {:key "owner" :indexed true} (db/declare-indexed-attr-key! ds "owner")))
-      (is (= {:key "owner" :indexed true} (db/declare-indexed-attr-key! ds "owner")))
-      (is (db/indexed-attr-key? ds "owner"))
-      (is (= ["owner"] (db/list-indexed-attr-keys ds)))
-      (let [e (is (thrown? clojure.lang.ExceptionInfo
-                           (db/declare-indexed-attr-key! ds "bad key")))]
-        (is (= {:key "bad key"
-                :spec ::specs/indexed-attr-key
-                :allowed-pattern specs/indexed-attr-key-pattern-source}
-               (ex-data e)))))))
+      (db/add-strand! ds {:title "Agent" :attributes {:owner "agent" :rank 5 :kind "impl" :profile {:name "ann"}}})
+      (db/add-strand! ds {:title "Human" :attributes {:owner "human" :rank 2 :kind "impl"}})
+      (db/add-strand! ds {:title "Scratch" :attributes {:rank 9 :kind "scratch"}})
+      (doseq [[query titles]
+              [[[:= [:attr :owner] "agent"] ["Agent"]]
+               [[:!= [:attr :owner] "agent"] ["Human"]]
+               [[:< [:attr :rank] 5] ["Human"]]
+               [[:<= [:attr :rank] 5] ["Agent" "Human"]]
+               [[:> [:attr :rank] 5] ["Scratch"]]
+               [[:>= [:attr :rank] 5] ["Agent" "Scratch"]]
+               [[:in [:attr :owner] ["agent" "human"]] ["Agent" "Human"]]
+               [[:exists [:attr :owner]] ["Agent" "Human"]]
+               [[:missing [:attr :owner]] ["Scratch"]]
+               [[:= [:attr :profile :name] "ann"] ["Agent"]]
+               [[:and [:= [:attr :owner] "agent"] [:= [:attr :kind] "impl"]] ["Agent"]]]]
+        (is (= titles (sort (mapv :title (db/all-strands ds query)))) (pr-str query))))))
 
-(deftest declared-indexed-attr-key-query-uses-expression-index
+(deftest row-backed-attr-query-uses-partial-index
   (with-db
     (fn [ds]
-      (db/declare-indexed-attr-key! ds "owner")
       (db/add-strand! ds {:title "Agent" :attributes {:owner "agent"}})
       (db/add-strand! ds {:title "Human" :attributes {:owner "human"}})
       (is (= ["Agent"] (mapv :title (db/all-strands ds [:= [:attr :owner] "agent"]))))
-      (let [{:keys [sql params]} (binding [query/*indexed-attr-key?* #(db/indexed-attr-key? ds %)]
-                                   (query/compile-query [:= [:attr :owner] "agent"] {}))
+      (let [{:keys [sql params]} (query/compile-query [:= [:attr :owner] "agent"] {})
             plan (db/execute! ds (into [(str "EXPLAIN QUERY PLAN SELECT t.id FROM strands t WHERE " sql)] params))]
-        (is (= "json_extract(t.attributes, '$.\"owner\"') = ?" sql))
-        (is (some #(re-find #"USING INDEX idx_strands_attr_" (:detail %)) plan))))))
+        (is (= "EXISTS (SELECT 1 FROM attributes AS a INDEXED BY idx_attributes_key_value_hot WHERE a.strand_id = t.id AND a.archived = 0 AND a.key = ? AND json_extract(a.value, ?) = ?)" sql))
+        (is (= ["owner" "$" "agent"] params))
+        (is (some #(str/includes? (:detail %) "idx_attributes_key_value_hot") plan))))))
 
 (deftest relation-declarations-and-scoped-cycle-checks
   (with-db
@@ -282,7 +403,117 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"after edges"
                                 (db/declare-acyclic-relation! ds "related-to"))))))))
 
-(deftest init-rejects-old-closed-edge-schema
+(defn create-legacy-document-schema! [ds]
+  (db/execute! ds ["CREATE TABLE strands (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'active',
+                    attributes TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    CHECK (state IN ('active', 'closed', 'replaced'))
+                  )"])
+  (db/execute! ds ["CREATE TABLE strand_edges (
+                    from_strand_id TEXT NOT NULL REFERENCES strands(id) ON DELETE CASCADE,
+                    to_strand_id TEXT NOT NULL REFERENCES strands(id) ON DELETE CASCADE,
+                    edge_type TEXT NOT NULL,
+                    attributes TEXT NOT NULL DEFAULT '{}',
+                    PRIMARY KEY (from_strand_id, to_strand_id, edge_type),
+                    CHECK (json_valid(attributes))
+                  )"]))
+
+(defn insert-legacy-strand! [ds id title attributes-json]
+  (db/execute! ds ["INSERT INTO strands (id, title, attributes) VALUES (?, ?, ?)"
+                   id title attributes-json]))
+
+(deftest migrate-attribute-storage-converts-legacy-documents-and-is-idempotent
+  (let [db-file (temp-db-file)
+        ds (db/datasource db-file)]
+    (try
+      (create-legacy-document-schema! ds)
+      (insert-legacy-strand! ds "a" "A" (db/->json {:z 1 :a {:nested true}}))
+      (insert-legacy-strand! ds "b" "B" (db/->json {:owner "agent"}))
+      (db/execute! ds ["INSERT INTO strand_edges (from_strand_id, to_strand_id, edge_type, attributes)
+                        VALUES ('b', 'a', 'depends-on', '{}')"])
+      (is (= {:status :migrated :strands 2 :attributes 3}
+             (db/migrate-attribute-storage! ds)))
+      (is (= #{"id" "title" "state" "created_at" "updated_at"}
+             (set (map :name (db/execute! ds ["PRAGMA table_info(strands)"])))))
+      (is (= [{:strand_id "a" :key "a" :value {:nested true} :archived 0}
+              {:strand_id "a" :key "z" :value 1 :archived 0}]
+             (attr-rows ds "a")))
+      (is (= {:a {:nested true} :z 1}
+             (db/<-json (:attributes (db/get-strand ds "a")))))
+      (is (= [["b" "a" "depends-on"]]
+             (mapv (juxt :from_strand_id :to_strand_id :edge_type)
+                   (db/execute! ds ["SELECT from_strand_id, to_strand_id, edge_type FROM strand_edges"]))))
+      (is (= {:status :already-current :strands 2 :attributes 3}
+             (db/migrate-attribute-storage! ds)))
+      (finally
+        (delete-sqlite-family! db-file)))))
+
+(deftest migrate-attribute-storage-fails-loudly-on-bad-legacy-documents
+  (doseq [[raw reason] [["not-json" :malformed-json]
+                        ["[\"not\", \"object\"]" :shape-invalid]]]
+    (let [db-file (temp-db-file)
+          ds (db/datasource db-file)]
+      (try
+        (create-legacy-document-schema! ds)
+        (insert-legacy-strand! ds "bad" "Bad" raw)
+        (let [e (is (thrown? clojure.lang.ExceptionInfo
+                             (db/migrate-attribute-storage! ds)))]
+          (is (= reason (:reason (ex-data e)))))
+        (is (nil? (some #(= "attributes" (:name %))
+                        (db/execute! ds ["PRAGMA table_info(attributes)"]))))
+        (finally
+          (delete-sqlite-family! db-file))))))
+
+(deftest migrate-attribute-storage-fails-loudly-on-parity-mismatch
+  (let [db-file (temp-db-file)
+        ds (db/datasource db-file)
+        write-rows! @#'db/write-attribute-rows!]
+    (try
+      (create-legacy-document-schema! ds)
+      (insert-legacy-strand! ds "a" "A" (db/->json {:a 1 :drop "lost"}))
+      (with-redefs-fn {#'db/write-attribute-rows! (fn [tx strand-id attributes]
+                                                    (write-rows! tx strand-id (dissoc attributes :drop)))}
+        (fn []
+          (let [e (is (thrown? clojure.lang.ExceptionInfo
+                               (db/migrate-attribute-storage! ds)))]
+            (is (= :parity-mismatch (:reason (ex-data e)))))))
+      (finally
+        (delete-sqlite-family! db-file)))))
+
+(deftest migrate-attribute-storage-rejects-mixed-and-unknown-schemas
+  (testing "mixed document and row schema"
+    (let [db-file (temp-db-file)
+          ds (db/datasource db-file)]
+      (try
+        (create-legacy-document-schema! ds)
+        (db/execute! ds ["CREATE TABLE attributes (
+                          strand_id TEXT NOT NULL,
+                          key TEXT NOT NULL,
+                          value TEXT NOT NULL,
+                          archived INTEGER NOT NULL DEFAULT 0,
+                          PRIMARY KEY (strand_id, key)
+                        )"])
+        (let [e (is (thrown? clojure.lang.ExceptionInfo
+                             (db/migrate-attribute-storage! ds)))]
+          (is (= :mixed-schema (:reason (ex-data e)))))
+        (finally
+          (delete-sqlite-family! db-file)))))
+  (testing "unknown schema"
+    (let [db-file (temp-db-file)
+          ds (db/datasource db-file)]
+      (try
+        (db/execute! ds ["CREATE TABLE strands (id TEXT PRIMARY KEY, title TEXT NOT NULL)"])
+        (let [e (is (thrown? clojure.lang.ExceptionInfo
+                             (db/migrate-attribute-storage! ds)))]
+          (is (= :unknown-schema (:reason (ex-data e)))))
+        (finally
+          (delete-sqlite-family! db-file))))))
+
+(deftest init-rejects-old-document-strand-schema
   (let [db-file (temp-db-file)
         ds (db/datasource db-file)]
     (try
@@ -303,7 +534,7 @@
                          CHECK (edge_type IN ('depends-on', 'related-to', 'parent-of', 'supersedes')),
                          CHECK (json_valid(attributes))
                        )"])
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strand_edges table is not compatible"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strands table is not compatible"
                             (db/init! ds)))
       (finally
         (delete-sqlite-family! db-file)))))

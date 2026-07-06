@@ -20,10 +20,6 @@
 (def ^:dynamic ^:private *strand-alias* "t")
 (def ^:dynamic ^:private *allow-edge-predicates* true)
 (def ^:dynamic ^:private *validating-query-def* false)
-(def ^:dynamic *indexed-attr-key?*
-  "Predicate consulted during query compilation to identify declared indexed attribute keys."
-  (constantly false))
-
 (defn- fail! [message data]
   (throw (ex-info message data)))
 
@@ -44,32 +40,50 @@
     (fail! "Attribute path must contain at least one segment" {:path segments}))
   (str "$" (str/join (map quote-json-path-segment segments))))
 
-(defn- indexed-attr-key-error-data [key]
-  {:key key
-   :spec ::specs/indexed-attr-key
-   :allowed-pattern specs/indexed-attr-key-pattern-source})
+(defn- attr-field [field]
+  (when-not (and (vector? field) (= :attr (first field)))
+    (fail! "Expected attribute query field" {:field field}))
+  (let [segments (rest field)]
+    (when-not (seq segments)
+      (fail! "Attribute path must contain at least one segment" {:path segments}))
+    (let [attr-key (attr-segment-name (first segments))]
+      (when (str/blank? attr-key)
+        (fail! "Attribute path segments must not be blank" {:segment (first segments)}))
+      {:key attr-key
+       :value-path (if (= 1 (count segments))
+                     "$"
+                     (attr-path (rest segments)))})))
 
-(defn- require-indexed-attr-key! [key]
-  (when-not (s/valid? ::specs/indexed-attr-key key)
-    (fail! "Indexed attribute key must match the allowed pattern" (indexed-attr-key-error-data key)))
-  key)
+(defn- attr-field? [field]
+  (and (vector? field) (= :attr (first field))))
 
-(defn- compile-attr-field [segments]
-  (let [path (attr-path segments)
-        declared-key (when (= 1 (count segments))
-                       (attr-segment-name (first segments)))]
-    (if (and declared-key (*indexed-attr-key?* declared-key))
-      (do
-        (require-indexed-attr-key! declared-key)
-        {:sql (str "json_extract(" *strand-alias* ".attributes, '$.\"" declared-key "\"')") :params []})
-      {:sql (str "json_extract(" *strand-alias* ".attributes, ?)") :params [path]})))
+(defn- attr-value-sql [alias]
+  (str "json_extract(" alias ".value, ?)"))
+
+(defn- attr-exists-sql [predicate-sql]
+  (str "EXISTS (SELECT 1 FROM attributes AS a INDEXED BY idx_attributes_key_value_hot"
+       " WHERE a.strand_id = " *strand-alias* ".id"
+       " AND a.archived = 0"
+       " AND a.key = ?"
+       " AND " predicate-sql
+       ")"))
+
+(defn- compile-attr-predicate [field predicate-sql predicate-params]
+  (let [{:keys [key value-path]} (attr-field field)]
+    {:sql (attr-exists-sql predicate-sql)
+     :params (vec (concat [key value-path] predicate-params))}))
+
+(defn- compile-missing-attr-predicate [field]
+  (let [{:keys [key value-path]} (attr-field field)]
+    {:sql (str "NOT " (attr-exists-sql (str (attr-value-sql "a") " IS NOT NULL")))
+     :params [key value-path]}))
 
 (defn- compile-field [field]
   (cond
     (contains? field-columns field) {:sql (str *strand-alias* "." (field-columns field)) :params []}
 
-    (and (vector? field) (= :attr (first field)))
-    (compile-attr-field (rest field))
+    (attr-field? field)
+    (fail! "Attribute fields compile only as predicates" {:field field})
 
     :else
     (fail! "Unknown query field" {:field field :allowed (keys field-columns)})))
@@ -84,12 +98,14 @@
 (declare compile-expr)
 
 (defn- compile-comparison [op field value params]
-  (let [{field-sql :sql field-params :params} (compile-field field)
-        value (if (and (vector? value) (= :param (first value)))
+  (let [value (if (and (vector? value) (= :param (first value)))
                 (param-value params value)
                 value)]
-    {:sql (str field-sql " " op " ?")
-     :params (conj (vec field-params) value)}))
+    (if (attr-field? field)
+      (compile-attr-predicate field (str (attr-value-sql "a") " " op " ?") [value])
+      (let [{field-sql :sql field-params :params} (compile-field field)]
+        {:sql (str field-sql " " op " ?")
+         :params (conj (vec field-params) value)}))))
 
 (defn- join-compiled [operator compiled]
   {:sql (str "(" (str/join (str " " operator " ") (map :sql compiled)) ")")
@@ -152,23 +168,35 @@
                (compile-comparison ">=" (first args) (second args) params))
        :in (do
              (when-not (= 2 (count args)) (fail! ":in requires field and values" {:expr expr}))
-             (let [{field-sql :sql field-params :params} (compile-field (first args))
+             (let [field (first args)
                    values (let [v (second args)]
                             (if (and (vector? v) (= :param (first v)))
                               (param-value params v)
                               v))]
                (when-not (and (coll? values) (seq values))
                  (fail! ":in values must be a non-empty collection" {:values values}))
-               {:sql (str field-sql " IN (" (str/join ", " (repeat (count values) "?")) ")")
-                :params (vec (concat field-params values))}))
+               (if (attr-field? field)
+                 (compile-attr-predicate
+                  field
+                  (str (attr-value-sql "a") " IN (" (str/join ", " (repeat (count values) "?")) ")")
+                  values)
+                 (let [{field-sql :sql field-params :params} (compile-field field)]
+                   {:sql (str field-sql " IN (" (str/join ", " (repeat (count values) "?")) ")")
+                    :params (vec (concat field-params values))}))))
        :exists (do
                  (when-not (= 1 (count args)) (fail! ":exists requires one field" {:expr expr}))
-                 (let [compiled (compile-field (first args))]
-                   {:sql (str (:sql compiled) " IS NOT NULL") :params (:params compiled)}))
+                 (let [field (first args)]
+                   (if (attr-field? field)
+                     (compile-attr-predicate field (str (attr-value-sql "a") " IS NOT NULL") [])
+                     (let [compiled (compile-field field)]
+                       {:sql (str (:sql compiled) " IS NOT NULL") :params (:params compiled)}))))
        :missing (do
                   (when-not (= 1 (count args)) (fail! ":missing requires one field" {:expr expr}))
-                  (let [compiled (compile-field (first args))]
-                    {:sql (str (:sql compiled) " IS NULL") :params (:params compiled)}))
+                  (let [field (first args)]
+                    (if (attr-field? field)
+                      (compile-missing-attr-predicate field)
+                      (let [compiled (compile-field field)]
+                        {:sql (str (:sql compiled) " IS NULL") :params (:params compiled)}))))
        :edge/out (do
                    (when-not (= 2 (count args)) (fail! ":edge/out requires relation and target query" {:expr expr}))
                    (compile-edge :out (first args) (second args) params))

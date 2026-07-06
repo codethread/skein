@@ -295,7 +295,8 @@ After validation, `git status --short` should not show generated SQLite or runti
 
 ```sh
 sqlite3 smoke-cli.sqlite.workspace/data/skein.sqlite '.schema'
-sqlite3 smoke-cli.sqlite.workspace/data/skein.sqlite 'select id, title, attributes from strands;'
+sqlite3 smoke-cli.sqlite.workspace/data/skein.sqlite 'select id, title, state from strands;'
+sqlite3 smoke-cli.sqlite.workspace/data/skein.sqlite 'select strand_id, key, value, archived from attributes order by strand_id, key;'
 sqlite3 smoke-cli.sqlite.workspace/data/skein.sqlite 'select from_strand_id, to_strand_id, edge_type, attributes from strand_edges;'
 ```
 
@@ -303,7 +304,7 @@ sqlite3 smoke-cli.sqlite.workspace/data/skein.sqlite 'select from_strand_id, to_
 
 - Keep the CLI thin: parse command-line input, normalize output, and route strand commands through the weaver client.
 - Keep SQL and shared persistence behavior in `skein.core.db`.
-- Keep strand attributes as JSON `TEXT`; do not introduce JSONB assumptions.
+- Keep strand attribute values as JSON `TEXT` in the `attributes` table; do not introduce JSONB assumptions.
 - Keep public CLI automation in `cli/` and weaver transport glue thin.
 - Keep interactive convenience wrappers in `skein.repl`.
 - Fail loudly on invalid CLI input instead of silently falling back.

@@ -10,7 +10,8 @@
             [skein.core.db :as db]
             [skein.core.weaver.runtime :as runtime]
             [skein.core.weaver.scheduler :as scheduler]
-            [skein.core.query :as query])
+            [skein.core.query :as query]
+            [skein.core.specs :as specs])
   (:import [java.time Instant]
            [java.util UUID]
            [java.nio.file FileSystemException FileVisitResult Files LinkOption SimpleFileVisitor StandardCopyOption]
@@ -1138,15 +1139,44 @@
   [runtime]
   (db/list-acyclic-relations (ds runtime)))
 
-(defn declare-indexed-attr-key!
-  "Declare an attribute key for literal-path query compilation and indexing."
-  [runtime key]
-  (db/declare-indexed-attr-key! (ds runtime) key))
+(defn- require-archive-result! [result]
+  (when-not (s/valid? ::specs/attribute-archive-result result)
+    (throw (ex-info "Attribute archive result is invalid"
+                    {:result result
+                     :explain (s/explain-str ::specs/attribute-archive-result result)})))
+  result)
 
-(defn indexed-attr-keys
-  "Return declared indexed attribute keys."
+(defn- require-migration-result! [result]
+  (when-not (s/valid? ::specs/attribute-storage-migration-result result)
+    (throw (ex-info "Attribute storage migration result is invalid"
+                    {:result result
+                     :explain (s/explain-str ::specs/attribute-storage-migration-result result)})))
+  result)
+
+(defn archive!
+  "Archive all attributes, or an explicit non-empty key set, for one strand.
+
+  This is a trusted in-process primitive only; it has no socket or CLI surface."
+  ([runtime strand-id]
+   (require-archive-result! (db/archive-attributes! (ds runtime) strand-id)))
+  ([runtime strand-id keys]
+   (require-archive-result! (db/archive-attributes! (ds runtime) strand-id keys))))
+
+(defn unarchive!
+  "Unarchive all attributes, or an explicit non-empty key set, for one strand.
+
+  This is a trusted in-process primitive only; it has no socket or CLI surface."
+  ([runtime strand-id]
+   (require-archive-result! (db/unarchive-attributes! (ds runtime) strand-id)))
+  ([runtime strand-id keys]
+   (require-archive-result! (db/unarchive-attributes! (ds runtime) strand-id keys))))
+
+(defn migrate-attribute-storage!
+  "Explicitly migrate a legacy document-column world to row-backed attributes.
+
+  This is a trusted in-process primitive only; it has no socket or CLI surface."
   [runtime]
-  (db/list-indexed-attr-keys (ds runtime)))
+  (require-migration-result! (db/migrate-attribute-storage! (ds runtime))))
 
 (defn show
   "Return one normalized strand by id, or nil when absent."

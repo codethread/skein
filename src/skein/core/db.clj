@@ -2,6 +2,7 @@
   "SQLite persistence for strands, edges, relation metadata, graph queries, and
   weaver-owned scheduler wakes."
   (:import [java.security SecureRandom]
+           [java.sql Connection]
            [java.time Instant]
            [java.util UUID]
            [org.sqlite SQLiteConfig SQLiteConfig$JournalMode SQLiteConfig$Pragma SQLiteConfig$TransactionMode SQLiteDataSource])
@@ -41,6 +42,7 @@
     ;; DEFERRED transactions upgrading mid-transaction fail fast by design.
     (.setBusyTimeout 5000)
     (.setTransactionMode SQLiteConfig$TransactionMode/IMMEDIATE)
+    (.enforceForeignKeys true)
     (.setJournalMode SQLiteConfig$JournalMode/WAL)
     (.setPragma SQLiteConfig$Pragma/MMAP_SIZE (str sqlite-mmap-size-bytes))
     (.setPragma SQLiteConfig$Pragma/CACHE_SIZE (str sqlite-cache-size-kib))))
@@ -102,6 +104,14 @@
   [ds sql-params]
   (jdbc/execute-one! ds sql-params {:builder-fn rs/as-unqualified-lower-maps}))
 
+(defn- run-owned-transaction
+  "Call f in a transaction unless connectable is already a JDBC connection."
+  [connectable f]
+  (if (instance? Connection connectable)
+    (f connectable)
+    (jdbc/with-transaction [tx connectable]
+      (f tx))))
+
 (defn- require-valid! [spec value message]
   (when-not (s/valid? spec value)
     (throw (ex-info message {:value value :explain (s/explain-str spec value)})))
@@ -136,18 +146,30 @@
   [s]
   (json/read-str (or s "{}") :key-fn keyword))
 
+(defn- attr-value->json
+  "Encode one attribute value as JSON text."
+  [v]
+  (json/write-str v :key-fn json-key))
+
 (def ^:private schema-sql
   [["PRAGMA foreign_keys = ON"]
    ["CREATE TABLE IF NOT EXISTS strands (
        id TEXT PRIMARY KEY,
        title TEXT NOT NULL,
        state TEXT NOT NULL DEFAULT 'active',
-       attributes TEXT NOT NULL DEFAULT '{}',
        created_at TEXT NOT NULL DEFAULT (datetime('now')),
        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-       CHECK (state IN ('active', 'closed', 'replaced')),
-       CHECK (json_valid(attributes))
+       CHECK (state IN ('active', 'closed', 'replaced'))
      )"]
+   ["CREATE TABLE IF NOT EXISTS attributes (
+       strand_id TEXT NOT NULL REFERENCES strands(id) ON DELETE CASCADE,
+       key TEXT NOT NULL,
+       value TEXT NOT NULL CHECK (json_valid(value)),
+       archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+       PRIMARY KEY (strand_id, key)
+     )"]
+   ["CREATE INDEX IF NOT EXISTS idx_attributes_key_value_hot ON attributes(key, value) WHERE archived = 0"]
+   ["CREATE INDEX IF NOT EXISTS idx_attributes_strand_hot ON attributes(strand_id) WHERE archived = 0"]
    ["CREATE TABLE IF NOT EXISTS strand_edges (
        from_strand_id TEXT NOT NULL REFERENCES strands(id) ON DELETE CASCADE,
        to_strand_id TEXT NOT NULL REFERENCES strands(id) ON DELETE CASCADE,
@@ -159,9 +181,6 @@
    ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]
    ["CREATE TABLE IF NOT EXISTS acyclic_relations (
        relation TEXT PRIMARY KEY
-     )"]
-   ["CREATE TABLE IF NOT EXISTS indexed_attr_keys (
-       key TEXT PRIMARY KEY
      )"]
    ["CREATE TABLE IF NOT EXISTS scheduler_wakes (
        key TEXT PRIMARY KEY,
@@ -189,16 +208,55 @@
      )"]
    ["CREATE INDEX IF NOT EXISTS idx_scheduler_history_status ON scheduler_history(status, id)"]])
 
-(def ^:private required-strand-columns #{"id" "title" "state" "attributes" "created_at" "updated_at"})
+(def ^:private required-strand-columns #{"id" "title" "state" "created_at" "updated_at"})
+(def ^:private forbidden-strand-columns #{"attributes"})
+(def ^:private legacy-strand-columns (conj required-strand-columns "attributes"))
+(def ^:private required-attribute-columns #{"strand_id" "key" "value" "archived"})
 (def ^:private required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
 (def ^:private shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes"})
 
 (defn- missing-columns [ds table required]
   (seq (remove (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))) required)))
 
+(defn- table-exists? [ds table]
+  (boolean
+   (execute-one! ds ["SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?" table])))
+
+(defn- table-columns [ds table]
+  (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))))
+
+(defn- current-row-schema? [ds]
+  (and (table-exists? ds "strands")
+       (table-exists? ds "attributes")
+       (empty? (missing-columns ds "strands" required-strand-columns))
+       (empty? (missing-columns ds "attributes" required-attribute-columns))
+       (not (contains? (table-columns ds "strands") "attributes"))))
+
+(defn- legacy-document-schema? [ds]
+  (and (table-exists? ds "strands")
+       (not (table-exists? ds "attributes"))
+       (empty? (missing-columns ds "strands" legacy-strand-columns))))
+
+(defn- classify-attribute-storage-schema [ds]
+  (let [strand-columns (when (table-exists? ds "strands") (table-columns ds "strands"))
+        has-document-column? (contains? strand-columns "attributes")
+        has-attributes-table? (table-exists? ds "attributes")]
+    (cond
+      (current-row-schema? ds) :current
+      (legacy-document-schema? ds) :legacy-document
+      (and has-document-column? has-attributes-table?) :mixed
+      :else :unknown)))
+
 (defn- ensure-current-schema! [ds]
   (when-let [missing (missing-columns ds "strands" required-strand-columns)]
     (throw (ex-info "Existing strands table is not compatible with the current schema; use a new database or migrate it explicitly."
+                    {:missing-columns (vec missing)})))
+  (when-let [present (seq (filter forbidden-strand-columns
+                                  (map :name (execute! ds ["PRAGMA table_info(strands)"]))))]
+    (throw (ex-info "Existing strands table is not compatible with the current schema; use a new database or migrate it explicitly."
+                    {:forbidden-columns (vec present)})))
+  (when-let [missing (missing-columns ds "attributes" required-attribute-columns)]
+    (throw (ex-info "Existing attributes table is not compatible with the current schema; use a new database or migrate it explicitly."
                     {:missing-columns (vec missing)})))
   (let [edge-schema (:sql (execute-one! ds ["SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'strand_edges'"]))]
     (when (or (missing-columns ds "strand_edges" required-edge-columns)
@@ -260,7 +318,57 @@
       (throw (ex-info "Duplicate batch ref" {:ref duplicate-ref}))))
   strands)
 
-(def ^:private strand-columns "id, title, state, attributes, created_at, updated_at")
+(def ^:private strand-columns "id, title, state, created_at, updated_at")
+
+(defn- assembled-attributes-sql [strand-id-expr hot-only?]
+  (str "COALESCE((
+          SELECT json_group_object(key, json(value))
+          FROM (
+            SELECT key, value
+            FROM attributes
+            WHERE strand_id = " strand-id-expr
+       (when hot-only? " AND archived = 0")
+       " ORDER BY key
+          )
+        ), '{}') AS attributes"))
+
+(defn- strand-select-sql [alias hot-only?]
+  (str alias ".id, " alias ".title, " alias ".state, "
+       (assembled-attributes-sql (str alias ".id") hot-only?)
+       ", " alias ".created_at, " alias ".updated_at"))
+
+(defn- strand-row-by-id [ds strand-id hot-only?]
+  (execute-one! ds
+                [(str "SELECT " (strand-select-sql "t" hot-only?)
+                      " FROM strands t WHERE t.id = ?")
+                 strand-id]))
+
+(defn- write-attribute-rows! [ds strand-id attributes]
+  (doseq [[k v] (sort-by (comp str key) attributes)]
+    (execute! ds ["INSERT INTO attributes (strand_id, key, value)
+                   VALUES (?, ?, json(?))
+                   ON CONFLICT(strand_id, key) DO UPDATE
+                   SET value = excluded.value,
+                       archived = 0"
+                  strand-id (json-key k) (attr-value->json v)])))
+
+(defn- replace-attribute-rows! [ds strand-id attributes]
+  (execute! ds ["DELETE FROM attributes WHERE strand_id = ?" strand-id])
+  (write-attribute-rows! ds strand-id (or attributes {})))
+
+(defn- patch-attribute-rows! [ds strand-id attributes]
+  (let [current (-> (strand-row-by-id ds strand-id false) :attributes <-json)
+        patched (reduce-kv (fn [m k v]
+                             (if (nil? v)
+                               (dissoc m k)
+                               (assoc m k v)))
+                           current
+                           attributes)]
+    (require-valid! ::specs/attributes patched "Attributes must be nil or a map that encodes to a JSON object")
+    (doseq [[k v] attributes]
+      (if (nil? v)
+        (execute! ds ["DELETE FROM attributes WHERE strand_id = ? AND key = ?" strand-id (json-key k)])
+        (write-attribute-rows! ds strand-id {k v})))))
 
 (def ^:private generic-states #{"active" "closed"})
 
@@ -271,10 +379,12 @@
 
 (defn- insert-strand! [ds id title state attributes]
   (execute-one! ds
-                [(str "INSERT INTO strands (id, title, state, attributes)
-                       VALUES (?, ?, ?, json(?))
+                [(str "INSERT INTO strands (id, title, state)
+                       VALUES (?, ?, ?)
                        RETURNING " strand-columns)
-                 id title state (->json attributes)]))
+                 id title state])
+  (replace-attribute-rows! ds id attributes)
+  (strand-row-by-id ds id false))
 
 (defn- unique-strand-id-error? [^Exception e]
   (str/includes? (.getMessage e) "UNIQUE constraint failed: strands.id"))
@@ -307,7 +417,10 @@
         (throw (ex-info "Unable to generate unique strand id" {:attempts max-id-attempts})))
       (let [id (generate-id)
             result (try
-                     [:created (insert-strand! ds id title (:state strand) attributes)]
+                     [:created (run-owned-transaction
+                                ds
+                                (fn [tx]
+                                  (insert-strand! tx id title (:state strand) attributes)))]
                      (catch org.sqlite.SQLiteException e
                        (if (unique-strand-id-error? e)
                          [:retry nil]
@@ -429,46 +542,6 @@
         (throw (ex-info "Cannot declare relation acyclic after edges of that relation exist" {:relation relation})))
       (insert-acyclic-relation! ds relation))))
 
-(defn indexed-attr-key?
-  "Return true when key is declared as an indexed attribute key in ds."
-  [ds key]
-  (boolean (execute-one! ds ["SELECT 1 AS found FROM indexed_attr_keys WHERE key = ?" key])))
-
-(defn list-indexed-attr-keys
-  "Return all declared indexed attribute keys in sorted order."
-  [ds]
-  (mapv :key (execute! ds ["SELECT key FROM indexed_attr_keys ORDER BY key"])))
-
-(defn- indexed-attr-key-error-data [key]
-  {:key key
-   :spec ::specs/indexed-attr-key
-   :allowed-pattern specs/indexed-attr-key-pattern-source})
-
-(defn- require-valid-indexed-attr-key! [key]
-  (when-not (s/valid? ::specs/indexed-attr-key key)
-    (throw (ex-info "Indexed attribute key must match the allowed pattern" (indexed-attr-key-error-data key))))
-  key)
-
-(defn- indexed-attr-index-name [key]
-  (str "idx_strands_attr_" (Long/toString (Integer/toUnsignedLong (hash key)) 16)))
-
-(defn- indexed-attr-json-path [key]
-  (str "'$.\"" key "\"'"))
-
-(defn declare-indexed-attr-key!
-  "Declare key as indexed and ensure its SQLite expression index exists.
-
-  Existing declarations are idempotent. Invalid keys throw ex-info with the
-  shared canonical indexed-attr-key ex-data. Unlike acyclic relation declaration,
-  this operation has no late-declaration guard."
-  [ds key]
-  (require-valid-indexed-attr-key! key)
-  (let [index-name (indexed-attr-index-name key)]
-    (execute! ds [(str "CREATE INDEX IF NOT EXISTS " index-name
-                       " ON strands (json_extract(attributes, " (indexed-attr-json-path key) "))")])
-    (execute-one! ds ["INSERT INTO indexed_attr_keys (key) VALUES (?) ON CONFLICT(key) DO NOTHING" key])
-    {:key key :indexed true}))
-
 (defn- require-acyclic-edge! [ds from to type]
   (when (= from to)
     (throw (ex-info "Strand edges must not point to the same strand" {:from from :to to :type type})))
@@ -514,13 +587,15 @@
 (defn- set-strand-state-internal! [ds strand-id state]
   (require-updated-strand
    strand-id
-   (execute-one! ds
-                 [(str "UPDATE strands
-                         SET state = ?,
-                             updated_at = datetime('now')
-                         WHERE id = ?
-                         RETURNING " strand-columns)
-                  state strand-id])))
+   (do
+     (execute-one! ds
+                   [(str "UPDATE strands
+                           SET state = ?,
+                               updated_at = datetime('now')
+                           WHERE id = ?
+                           RETURNING " strand-columns)
+                    state strand-id])
+     (strand-row-by-id ds strand-id false))))
 
 (defn ^:no-doc supersede-strand-in-transaction!
   [tx old-id replacement-id]
@@ -577,9 +652,7 @@
 (defn get-strand
   "Return the strand row for strand-id, or nil when it does not exist."
   [ds strand-id]
-  (execute-one! ds
-                [(str "SELECT " strand-columns " FROM strands WHERE id = ?")
-                 strand-id]))
+  (strand-row-by-id ds strand-id false))
 
 (defn- require-updated-strand
   "Return row or throw a Strand not found error for strand-id."
@@ -598,24 +671,28 @@
     (throw (ex-info "Strand title must be non-blank" {:title title})))
   (when (contains? patch :state)
     (require-generic-state! state :state))
-  (require-updated-strand strand-id (get-strand ds strand-id))
-  (require-updated-strand
-   strand-id
-   (execute-one! ds
-                 [(str "UPDATE strands
-                         SET title = COALESCE(?, title),
-                             state = COALESCE(?, state),
-                             attributes = CASE WHEN ? IS NULL THEN attributes ELSE json_patch(attributes, json(?)) END,
-                             updated_at = datetime('now')
-                         WHERE id = ?
-                         RETURNING " strand-columns)
-                  title (when (contains? patch :state) state)
-                  (when attributes (->json attributes)) (when attributes (->json attributes))
-                  strand-id])))
+  (run-owned-transaction
+   ds
+   (fn [tx]
+     (require-updated-strand strand-id (get-strand tx strand-id))
+     (when (contains? patch :attributes)
+       (patch-attribute-rows! tx strand-id attributes))
+     (require-updated-strand
+      strand-id
+      (do
+        (execute-one! tx
+                      [(str "UPDATE strands
+                             SET title = COALESCE(?, title),
+                                 state = COALESCE(?, state),
+                                 updated_at = datetime('now')
+                             WHERE id = ?
+                             RETURNING " strand-columns)
+                       title (when (contains? patch :state) state)
+                       strand-id])
+        (strand-row-by-id tx strand-id false))))))
 
-(defn- compile-query-for-ds [ds query-def params]
-  (binding [query/*indexed-attr-key?* #(indexed-attr-key? ds %)]
-    (query/compile-query query-def params)))
+(defn- compile-query-for-ds [_ds query-def params]
+  (query/compile-query query-def params))
 
 (defn query-strands
   "Return strand rows matching query-def and optional query params."
@@ -624,7 +701,8 @@
   ([ds query-def params]
    (let [{:keys [sql params]} (compile-query-for-ds ds query-def params)]
      (mapv identity
-           (execute! ds (into [(str "SELECT " strand-columns " FROM strands t WHERE " sql " ORDER BY t.id")]
+           (execute! ds (into [(str "SELECT " (strand-select-sql "t" true)
+                                    " FROM strands t WHERE " sql " ORDER BY t.id")]
                               params))))))
 
 (defn query-strand-ids
@@ -659,6 +737,234 @@
         (when (seq missing)
           (throw (ex-info "Strand ids not found" {:context context :missing missing})))))
     ids))
+
+(defn- archive-error [reason strand-id keys]
+  {:reason reason
+   :strand-id strand-id
+   :keys (when (coll? keys) (vec keys))})
+
+(defn- require-archive-strand-id! [strand-id keys]
+  (when-not (s/valid? ::specs/id strand-id)
+    (throw (ex-info "Attribute archive strand id is invalid"
+                    (archive-error :malformed-strand-id strand-id keys))))
+  strand-id)
+
+(defn- normalize-archive-keys! [keys]
+  (when-not (s/valid? ::specs/attribute-key-set keys)
+    (throw (ex-info "Attribute archive keys must be a non-empty collection of attribute keys"
+                    (archive-error :malformed-keys nil keys))))
+  (->> keys (map json-key) ordered-distinct sort vec))
+
+(defn- archive-rows [ds strand-id keys]
+  (execute! ds (into [(str "SELECT key, archived
+                            FROM attributes
+                            WHERE strand_id = ?
+                              AND key IN (" (placeholders keys) ")
+                            ORDER BY key")
+                      strand-id]
+                     keys)))
+
+(defn- require-archive-keys-present! [rows strand-id keys]
+  (let [found (set (map :key rows))
+        missing (vec (remove found keys))]
+    (when (seq missing)
+      (throw (ex-info "Attribute archive keys not found"
+                      (archive-error :missing-keys strand-id missing))))))
+
+(defn- all-attribute-keys [ds strand-id]
+  (mapv :key (execute! ds ["SELECT key FROM attributes WHERE strand_id = ? ORDER BY key" strand-id])))
+
+(def ^:private all-archive-keys :skein.core.db/all-archive-keys)
+
+(defn- archive-attributes-in-transaction! [tx strand-id requested-keys archived?]
+  (require-archive-strand-id! strand-id requested-keys)
+  (when-not (get-strand tx strand-id)
+    (throw (ex-info "Attribute archive strand not found"
+                    (archive-error :missing-strand strand-id requested-keys))))
+  (let [archive-keys (if (= all-archive-keys requested-keys)
+                       (all-attribute-keys tx strand-id)
+                       (normalize-archive-keys! requested-keys))
+        rows (if (empty? archive-keys) [] (archive-rows tx strand-id archive-keys))
+        target (if archived? 1 0)
+        changed (count (remove #(= target (:archived %)) rows))]
+    (require-archive-keys-present! rows strand-id archive-keys)
+    (when (seq archive-keys)
+      (execute! tx (into [(str "UPDATE attributes
+                                SET archived = ?
+                                WHERE strand_id = ?
+                                  AND key IN (" (placeholders archive-keys) ")")
+                          target strand-id]
+                         archive-keys))
+      (let [post-count (:c (execute-one! tx (into [(str "SELECT count(*) AS c
+                                                      FROM attributes
+                                                      WHERE strand_id = ?
+                                                        AND archived = ?
+                                                        AND key IN (" (placeholders archive-keys) ")")
+                                                   strand-id target]
+                                                  archive-keys)))]
+        (when-not (= (count archive-keys) post-count)
+          (throw (ex-info "Attribute archive write count mismatch"
+                          (archive-error :write-count-mismatch strand-id archive-keys))))))
+    (assoc {:strand-id strand-id
+            :archived? archived?
+            :changed changed}
+           :keys archive-keys)))
+
+(defn archive-attributes!
+  "Mark all attributes, or an explicit non-empty key set, archived for strand-id.
+
+  The requested keys are validated before writing and committed atomically.
+  Repeating an already-applied archive returns `:changed 0`."
+  ([ds strand-id]
+   (run-owned-transaction
+    ds
+    #(archive-attributes-in-transaction! % strand-id all-archive-keys true)))
+  ([ds strand-id keys]
+   (run-owned-transaction
+    ds
+    #(archive-attributes-in-transaction! % strand-id keys true))))
+
+(defn unarchive-attributes!
+  "Mark all attributes, or an explicit non-empty key set, hot for strand-id.
+
+  The requested keys are validated before writing and committed atomically.
+  Repeating an already-applied unarchive returns `:changed 0`."
+  ([ds strand-id]
+   (run-owned-transaction
+    ds
+    #(archive-attributes-in-transaction! % strand-id all-archive-keys false)))
+  ([ds strand-id keys]
+   (run-owned-transaction
+    ds
+    #(archive-attributes-in-transaction! % strand-id keys false))))
+
+(defn- migration-error [reason data]
+  (merge {:reason reason} data))
+
+(defn- current-storage-counts [ds status]
+  {:status status
+   :strands (:c (execute-one! ds ["SELECT count(*) AS c FROM strands"]))
+   :attributes (:c (execute-one! ds ["SELECT count(*) AS c FROM attributes"]))})
+
+(defn- parse-legacy-attributes! [{:keys [id attributes]}]
+  (let [parsed (try
+                 (json/read-str attributes :key-fn keyword)
+                 (catch Exception e
+                   (throw (ex-info "Legacy strand attributes are malformed JSON"
+                                   (migration-error :malformed-json
+                                                    {:strand-id id
+                                                     :attributes attributes})
+                                   e))))]
+    (when-not (s/valid? ::specs/attributes parsed)
+      (throw (ex-info "Legacy strand attributes do not conform to the attribute map contract"
+                      (migration-error :shape-invalid
+                                       {:strand-id id
+                                        :attributes parsed
+                                        :explain (s/explain-str ::specs/attributes parsed)}))))
+    (assoc parsed ::strand-id id)))
+
+(defn- legacy-attribute-documents! [ds]
+  (mapv parse-legacy-attributes!
+        (execute! ds ["SELECT id, attributes FROM strands ORDER BY id"])))
+
+(defn- legacy-attribute-count [documents]
+  (reduce + (map #(count (dissoc % ::strand-id)) documents)))
+
+(defn- row-attributes-map [ds strand-id]
+  (<-json (:attributes (strand-row-by-id ds strand-id false))))
+
+(defn- verify-migrated-rows! [ds documents]
+  (doseq [document documents]
+    (let [strand-id (::strand-id document)
+          expected (dissoc document ::strand-id)
+          actual (row-attributes-map ds strand-id)]
+      (when-not (= expected actual)
+        (throw (ex-info "Migrated attribute rows do not match the legacy document"
+                        (migration-error :parity-mismatch
+                                         {:strand-id strand-id
+                                          :expected expected
+                                          :actual actual}))))))
+  true)
+
+(defn- create-attributes-storage! [ds]
+  (execute! ds ["CREATE TABLE attributes (
+                  strand_id TEXT NOT NULL REFERENCES strands(id) ON DELETE CASCADE,
+                  key TEXT NOT NULL,
+                  value TEXT NOT NULL CHECK (json_valid(value)),
+                  archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+                  PRIMARY KEY (strand_id, key)
+                )"])
+  (execute! ds ["CREATE INDEX idx_attributes_key_value_hot ON attributes(key, value) WHERE archived = 0"])
+  (execute! ds ["CREATE INDEX idx_attributes_strand_hot ON attributes(strand_id) WHERE archived = 0"]))
+
+(defn- rebuild-strands-without-attribute-document! [ds]
+  (execute! ds ["CREATE TABLE strands_new (
+                  id TEXT PRIMARY KEY,
+                  title TEXT NOT NULL,
+                  state TEXT NOT NULL DEFAULT 'active',
+                  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                  CHECK (state IN ('active', 'closed', 'replaced'))
+                )"])
+  (execute! ds ["INSERT INTO strands_new (id, title, state, created_at, updated_at)
+                 SELECT id, title, state, created_at, updated_at FROM strands"])
+  (execute! ds ["DROP TABLE strands"])
+  (execute! ds ["ALTER TABLE strands_new RENAME TO strands"]))
+
+(defn- with-migration-connection [connectable f]
+  (if (instance? Connection connectable)
+    (f connectable)
+    (with-open [conn (jdbc/get-connection connectable)]
+      (f conn))))
+
+(defn- migrate-legacy-attribute-storage! [connectable]
+  (with-migration-connection
+    connectable
+    (fn [conn]
+      (let [documents (legacy-attribute-documents! conn)
+            strand-count (count documents)
+            attribute-count (legacy-attribute-count documents)]
+        (execute! conn ["PRAGMA foreign_keys = OFF"])
+        (try
+          (jdbc/with-transaction [tx conn]
+            (create-attributes-storage! tx)
+            (doseq [document documents]
+              (write-attribute-rows! tx (::strand-id document) (dissoc document ::strand-id)))
+            (verify-migrated-rows! tx documents)
+            (rebuild-strands-without-attribute-document! tx))
+          (execute! conn ["PRAGMA foreign_keys = ON"])
+          (when-let [violations (seq (execute! conn ["PRAGMA foreign_key_check"]))]
+            (throw (ex-info "Migrated attribute storage failed foreign-key validation"
+                            (migration-error :foreign-key-mismatch
+                                             {:violations violations}))))
+          (ensure-current-schema! conn)
+          {:status :migrated
+           :strands strand-count
+           :attributes attribute-count}
+          (finally
+            (execute! conn ["PRAGMA foreign_keys = ON"])))))))
+
+(defn migrate-attribute-storage!
+  "Explicitly migrate a legacy document-column world to row-backed attributes.
+
+  Current row-backed worlds return `:already-current`. Mixed or unknown schemas,
+  malformed JSON, shape-invalid source documents, and parity mismatches fail
+  loudly with diagnostic ex-data. This function is never called by `init!`."
+  [ds]
+  (case (classify-attribute-storage-schema ds)
+    :current (current-storage-counts ds :already-current)
+    :legacy-document (migrate-legacy-attribute-storage! ds)
+    :mixed (throw (ex-info "Attribute storage schema is partially migrated"
+                           (migration-error :mixed-schema
+                                            {:strand-columns (vec (sort (table-columns ds "strands")))
+                                             :attributes-table? (table-exists? ds "attributes")})))
+    :unknown (throw (ex-info "Attribute storage schema is not recognized"
+                             (migration-error :unknown-schema
+                                              {:tables (mapv :name (execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"]))
+                                               :strand-columns (when (table-exists? ds "strands")
+                                                                 (vec (sort (table-columns ds "strands"))))
+                                               :attributes-columns (when (table-exists? ds "attributes")
+                                                                     (vec (sort (table-columns ds "attributes"))))})))))
 
 (defn- delete-strands! [ds ids]
   (doseq [id ids]
@@ -850,7 +1156,8 @@
       []
       (let [rows-by-id (into {}
                              (map (juxt :id identity))
-                             (execute! ds (into [(str "SELECT " strand-columns " FROM strands WHERE id IN (" (placeholders ids) ")")]
+                             (execute! ds (into [(str "SELECT " (strand-select-sql "t" false)
+                                                      " FROM strands t WHERE t.id IN (" (placeholders ids) ")")]
                                                 ids)))]
         (mapv rows-by-id ids)))))
 
@@ -936,8 +1243,8 @@
                       )")
              rows (mapv identity
                         (execute! ds (into [(str cte "
-                                       SELECT " strand-columns "
-                                       FROM strands
+                                       SELECT " (strand-select-sql "t" false) "
+                                       FROM strands t
                                        WHERE id IN (SELECT id FROM nodes)
                                        ORDER BY id")]
                                            (concat root-ids [type]))))
@@ -1006,7 +1313,8 @@
 (defn all-strands
   "Return all strand rows, or rows matching query-def and optional params."
   ([ds]
-   (mapv identity (execute! ds [(str "SELECT " strand-columns " FROM strands ORDER BY id")])))
+   (mapv identity (execute! ds [(str "SELECT " (strand-select-sql "t" true)
+                                     " FROM strands t ORDER BY t.id")])))
   ([ds query-def]
    (query-strands ds query-def {}))
   ([ds query-def params]
@@ -1019,7 +1327,7 @@
   ([ds]
    (mapv identity
          (execute! ds
-                   [(str "SELECT " strand-columns "
+                   [(str "SELECT " (strand-select-sql "t" true) "
                FROM strands t
                WHERE t.state = 'active'
                  AND NOT EXISTS (
@@ -1037,7 +1345,7 @@
    (let [{query-sql :sql query-params :params} (compile-query-for-ds ds query-def params)]
      (mapv identity
            (execute! ds
-                     (into [(str "SELECT " strand-columns "
+                     (into [(str "SELECT " (strand-select-sql "t" true) "
                  FROM strands t
                  WHERE t.state = 'active'
                    AND NOT EXISTS (
@@ -1213,4 +1521,3 @@
   "Return the most recent failed wakes, newest first, capped by `scheduler-history-limit`."
   [ds]
   (recent-history ds "failed"))
-

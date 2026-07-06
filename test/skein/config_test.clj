@@ -133,7 +133,7 @@
          (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
   (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))]
-    (is (= [:change-review :docs-review] (mapv :name rosters)))
+    (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
 
 (deftest current-dags-op-builds-self-contained-plan-task-projection
@@ -321,13 +321,18 @@
     (fn [_rt]
       (load-file ".skein/reviewers.clj")
       ((requiring-resolve 'reviewers/install!))
-      (let [[roster docs-roster :as rosters] ((requiring-resolve 'skein.spools.agents/rosters))]
-        (is (= [:change-review :docs-review] (mapv :name rosters)))
+      (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))
+            roster (first (filter #(= :change-review (:name %)) rosters))
+            complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))
+            docs-roster (first (filter #(= :docs-review (:name %)) rosters))]
+        (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
         (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:reviewers roster)))]
           (is (some? sleeps) "owner-required test-sleeps reviewer is declared")
           (is (str/includes? (:contract sleeps) "time itself is a genuine component")))
         (is (= :review-gpt (get-in roster [:synthesizer :harness]))
             "sign-off synthesis stays on the cross-vendor GPT seat")
+        (is (= :hard-gpt (get-in complex-roster [:synthesizer :harness]))
+            "complex patch review is synthesized outside its reviewer seats")
         (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:reviewers docs-roster)))]
           (is (some? fact-check) "docs roster leads with the accuracy seat")
           (is (str/includes? (:contract fact-check) "NEVER the canonical .skein")))

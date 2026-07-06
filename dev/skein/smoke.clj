@@ -5,6 +5,7 @@
             [clojure.string]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.api.weaver.alpha :as weaver-api]
+            [skein.core.db :as db]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as runtime]
             [skein.repl :as repl])
@@ -544,6 +545,46 @@
   (assert (some #(= "smoke-fire" (:key %)) (scheduler/recent-fires runtime))
           "completed wake is visible in scheduler introspection"))
 
+(defn smoke-attribute-storage! [runtime]
+  (let [owner "attribute-storage-smoke"
+        strand (weaver-api/add runtime {:title "Attribute storage smoke"
+                                        :attributes {:owner owner
+                                                     :payload {:nested true}}})
+        strand-id (:id strand)
+        rows (mapv #(update % :value json/read-str :key-fn keyword)
+                   (db/execute! (:datasource runtime)
+                                ["SELECT strand_id, key, value, archived FROM attributes WHERE strand_id = ? ORDER BY key"
+                                 strand-id]))]
+    (assert= [{:strand_id strand-id :key "owner" :value owner :archived 0}
+              {:strand_id strand-id :key "payload" :value {:nested true} :archived 0}]
+             rows
+             "row-backed attribute storage stores one JSON value row per attribute")
+    (let [migration (weaver-api/migrate-attribute-storage! runtime)]
+      (assert= :already-current (:status migration)
+               "attribute storage migration recognizes current row-backed storage")
+      (assert (<= 1 (:strands migration))
+              (str "attribute storage migration reports current strand count\n" (pr-str migration)))
+      (assert (<= 2 (:attributes migration))
+              (str "attribute storage migration reports current attribute count\n" (pr-str migration))))
+    (assert= {:strand-id strand-id
+              :keys ["owner"]
+              :archived? true
+              :changed 1}
+             (weaver-api/archive! runtime strand-id [:owner])
+             "trusted archive API marks selected attribute rows archived")
+    (assert= [] (weaver-api/list runtime [:= [:attr :owner] owner] {})
+             "hot query/list paths exclude archived attributes")
+    (assert= owner (get-in (weaver-api/show runtime strand-id) [:attributes :owner])
+             "full point reads include archived attributes")
+    (assert= {:strand-id strand-id
+              :keys ["owner"]
+              :archived? false
+              :changed 1}
+             (weaver-api/unarchive! runtime strand-id [:owner])
+             "trusted unarchive API restores selected attribute rows")
+    (assert= [strand-id] (mapv :id (weaver-api/list runtime [:= [:attr :owner] owner] {}))
+             "hot query/list paths include unarchived attributes again")))
+
 (defn smoke-repl! [db-file]
   (clean-runtime-artifacts! db-file)
   (try
@@ -580,6 +621,7 @@
               (assert= #{dependent}
                        (set (map :from (:rewired-dependencies result)))
                        "skein.repl supersede! rewires direct dependents"))))
+        (smoke-attribute-storage! runtime)
         (smoke-scheduler! runtime)
         (finally
           (runtime/stop! runtime))))
