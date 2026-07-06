@@ -117,7 +117,7 @@
                    "devflow-choose" "devflow-complete" "devflow-advance"
                    "devflow-describe" "devflow-history" "devflow-archive"
                    "devflow-status" "workflow-runs" "devflow-conventions"
-                   "flow-await" "flow-status" "agent"]]
+                   "flow-await" "flow-status" "hitl" "land" "agent"]]
     (is (some #(= op-name (:name %)) (api/ops rt))))
   (is (some #(= "delegate-pipeline" (:name %)) (api/patterns rt)))
   ;; agent-plan is spool-owned now; a real startup wires the agents spool in
@@ -390,6 +390,121 @@
         (is (= [["feature" true false]] (positionals "devflow-status")))
         (is (= "Start the devflow lifecycle for a feature."
                (get-in (op! "help" ["devflow-start"]) [:arg-spec :doc])))))))
+
+(deftest land-ops-drive-a-poured-run-end-to-end
+  (with-config-runtime
+    (fn [_rt]
+      (let [started (op! "land" ["start" "land-x" "--branch" "land-x" "--worktree" "/tmp/land-x"])]
+        (is (= "land-start" (:operation started)))
+        (is (false? (:done started)))
+        (is (= "land.pr.open" (:action-ref (first (:ready started))))))
+      ;; drive the linear steps up to the sign-off checkpoint
+      (is (= "land.ci.green"
+             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "pushed; PR #1"]))))))
+      (is (= "land.signoff.review"
+             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "HEAD green"]))))))
+      (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])]
+        (is (= "checkpoint" (:kind (first (:ready at-checkpoint)))))
+        (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
+      ;; the sign-off checkpoint offers approved + abort; abort requires a reason
+      (let [choices (workflow/choice-details "land-x")
+            abort-input (get-in choices ["abort" "input"])]
+        (is (= #{"approved" "abort"} (set (keys choices))))
+        (is (= "reason" (get (first abort-input) "key")))
+        (is (true? (get (first abort-input) "required"))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing required keys"
+                            (op! "land" ["choose" "land-x" "abort"])))
+      ;; approved is terminal-in-molecule: it continues to the local merge/verify
+      (let [approved (op! "land" ["choose" "land-x" "approved"])]
+        (is (= "land-choose" (:operation approved)))
+        (is (= "land.merge.local-verify" (:action-ref (first (:ready approved))))))
+      (is (= "land.main.ci-green"
+             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "merged; gates green"]))))))
+      (let [ready-cleanup (op! "land" ["complete" "land-x" "main pushed"])
+            cleanup-step (first (:ready ready-cleanup))]
+        (is (= "land.cleanup" (:action-ref cleanup-step)))
+        ;; cardless run: the cleanup instruction must omit kanban-finish
+        ;; entirely rather than render a literal "<card>" placeholder
+        (is (not (str/includes? (:instruction cleanup-step) "kanban finish")))
+        (is (not (str/includes? (:instruction cleanup-step) "<card>"))))
+      (let [done (op! "land" ["complete" "land-x" "cleaned up"])]
+        (is (true? (:done done)))
+        (is (empty? (:ready done))))
+      (let [status (op! "land" ["status" "land-x"])]
+        (is (= "land-status" (:operation status)))
+        (is (true? (:done status)))
+        (is (empty? (:ready status)))
+        (is (seq (:history status)))))))
+
+(deftest land-signoff-abort-routes-to-record-step
+  (with-config-runtime
+    (fn [_rt]
+      (op! "land" ["start" "land-y" "--branch" "land-y" "--worktree" "/tmp/land-y" "--card" "card-1"])
+      (op! "land" ["complete" "land-y"])           ; push-draft-pr
+      (op! "land" ["complete" "land-y"])           ; ci-green
+      (op! "land" ["complete" "land-y"])           ; signoff-review
+      (let [aborted (op! "land" ["choose" "land-y" "abort" "{\"reason\":\"scope changed\"}"])]
+        (is (= "land-choose" (:operation aborted)))
+        ;; routing is a hard cutover to the reason-recording continuation
+        (is (= "land.abort.record" (:action-ref (first (:ready aborted))))))
+      (let [done (op! "land" ["complete" "land-y" "abort recorded"])]
+        (is (true? (:done done)))
+        (is (empty? (:ready done)))))))
+
+(deftest land-cleanup-instruction-interpolates-the-real-card-id
+  (with-config-runtime
+    (fn [_rt]
+      (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" "card-2"])
+      (op! "land" ["complete" "land-w"])                            ; push-draft-pr
+      (op! "land" ["complete" "land-w"])                            ; ci-green
+      (op! "land" ["complete" "land-w"])                            ; signoff-review
+      (op! "land" ["choose" "land-w" "approved"])
+      (op! "land" ["complete" "land-w"])                            ; merge-local-verify
+      (let [ready-cleanup (op! "land" ["complete" "land-w"])        ; push-main-ci-green
+            cleanup-step (first (:ready ready-cleanup))]
+        (is (= "land.cleanup" (:action-ref cleanup-step)))
+        (is (str/includes? (:instruction cleanup-step)
+                           "strand kanban finish card-2 --outcome done"))
+        (is (not (str/includes? (:instruction cleanup-step) "<card>")))))))
+
+(deftest land-start-fails-loudly-on-a-blank-card
+  (with-config-runtime
+    (fn [_rt]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"card must be a non-blank string"
+                            (op! "land" ["start" "land-blank-card"
+                                         "--branch" "land-blank-card"
+                                         "--worktree" "/tmp/land-blank-card"
+                                         "--card" ""])))
+      ;; absent --card stays legal: not every land run has a card
+      (is (= "land-start"
+             (:operation (op! "land" ["start" "land-no-card"
+                                      "--branch" "land-no-card"
+                                      "--worktree" "/tmp/land-no-card"])))))))
+
+(deftest land-op-renders-arg-spec-subcommand-help-and-fails-loudly
+  (with-config-runtime
+    (fn [_rt]
+      (let [help (op! "help" ["land"])
+            subs (get-in help [:arg-spec :subcommands])
+            by-name (into {} (map (juxt :name identity)) subs)]
+        (is (= #{"about" "start" "next" "complete" "choose" "status"}
+               (set (map :name subs))))
+        (is (str/starts-with? (get-in help [:arg-spec :doc])
+                              "Drive the coordinator landing workflow"))
+        ;; flags render sorted by key: branch, card, worktree
+        (is (= [["branch" true] ["card" false] ["worktree" true]]
+               (mapv (juxt :name :required) (get-in by-name ["start" :flags]))))
+        (is (= [["feature" true false]]
+               (mapv (juxt :name :required :variadic) (get-in by-name ["start" :positionals]))))
+        (is (= [["feature" true false] ["choice" true false] ["tail" false true]]
+               (mapv (juxt :name :required :variadic) (get-in by-name ["choose" :positionals])))))
+      ;; required flags and positionals fail loudly at parse
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required flag --branch"
+                            (op! "land" ["start" "no-flags"])))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required argument feature"
+                            (op! "land" ["start" "--branch" "b" "--worktree" "w"])))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow run"
+                            (op! "land" ["status" "never-landed"]))))))
 
 (deftest flow-status-op-joins-history-frontier-gates-runs-and-stalls
   (with-config-runtime
