@@ -1,0 +1,42 @@
+# AFK task queue for attr-scaling-ship-now (ASSN-PLAN-001).
+# Sliced by plan phase, one sequential pi-main worker each; sequencing is by
+# blocked_by (the sign-off `approved` payload runs them as sequential gates).
+# The JSON-ready sign-off payload (tasks for the `approved` choice) is
+# tasks/signoff-payload.json.
+tasks:
+  - id: 1
+    description: L0a storage pragmas — WAL/mmap/cache on datasource open (PH1)
+    task_file: tasks/001-l0a-pragmas.md
+    signoff_id: assn-001-l0a-pragmas
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: L1 lean reads, ::omitted-attribute-descriptor spec, attr-get guard (PH2)
+    task_file: tasks/002-l1-lean-reads.md
+    signoff_id: assn-002-l1-lean-reads
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: L0b hot-key registry, ::indexed-attr-key spec, literal-path compile, blocking invariant gate (PH3)
+    task_file: tasks/003-l0b-registry.md
+    signoff_id: assn-003-l0b-registry
+    status: pending
+    blocked_by: [2]
+  - id: 4
+    description: Root-spec merge (AA8) + batteries contract + docs-check (PH4)
+    task_file: tasks/004-specs-docs.md
+    signoff_id: assn-004-specs-docs
+    status: pending
+    blocked_by: [3]
+  - id: 5
+    description: Full validation sweep + smoke (PH4 / P6 V1-V7)
+    task_file: tasks/005-validation-sweep.md
+    signoff_id: assn-005-validation-sweep
+    status: pending
+    blocked_by: [4]
+  - id: 6
+    description: Draft PR, green CI, squash-merge to main, cleanup (PH4 close)
+    task_file: tasks/006-pr-merge.md
+    signoff_id: assn-006-pr-merge
+    status: pending
+    blocked_by: [5]
