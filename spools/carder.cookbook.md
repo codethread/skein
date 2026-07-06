@@ -224,8 +224,10 @@ orphan recipe above) — in the wrapper:
   (let [{:keys [days include-plumbing]} (:op/args ctx)
         result (carder/report (cond-> {}
                                 days (assoc :days days)
-                                (some? include-plumbing) (assoc :include-plumbing? include-plumbing)))]
-    (update-in result [:orphans :rows] #(remove expected-orphan? %))))
+                                (some? include-plumbing) (assoc :include-plumbing? include-plumbing)))
+        kept   (vec (remove expected-orphan? (get-in result [:orphans :rows])))]
+    ;; keep :count and :rows in sync after filtering, matching report's shape
+    (update result :orphans assoc :rows kept :count (count kept))))
 ```
 
 A scheduled job is the same call on a timer: run `report` on an interval and
