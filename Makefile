@@ -1,4 +1,4 @@
-.PHONY: build install dash fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report
+.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
@@ -6,6 +6,8 @@ SOURCE_LDFLAGS := -X skein-strand-cli/internal/config.InstalledSource=$(CURDIR)
 GOFUMPT_VERSION := v0.8.0
 GOLANGCI_LINT_VERSION := v2.1.6
 GOVULNCHECK_VERSION := v1.1.4
+QUICKDOC_DEPS := '{:deps {io.github.borkdude/quickdoc {:git/tag "v0.2.6" :git/sha "ce86780"}}}'
+QUICKDOC_SCRIPT := scripts/generate_api_docs.clj
 
 # repo-local build for agents/worktrees validating CLI changes without touching
 # the user's global install; run the resulting ./bin/strand and ./bin/mill directly
@@ -22,6 +24,24 @@ install:
 dash:
 	bun install --cwd scripts/shuttle-dash --silent
 	bun scripts/shuttle-dash/index.tsx
+
+api-docs:
+	@if command -v bb >/dev/null 2>&1; then \
+		bb -Sdeps $(QUICKDOC_DEPS) $(QUICKDOC_SCRIPT); \
+	else \
+		PATH="/opt/homebrew/opt/openjdk/bin:$$PATH" clojure -Sdeps $(QUICKDOC_DEPS) -M $(QUICKDOC_SCRIPT); \
+	fi
+
+docs-site:
+	uvx --from mkdocs --with mkdocs-material mkdocs build --strict
+
+docs-check:
+	$(MAKE) api-docs
+	git diff --exit-code -- 'spools/*.api.md'
+	$(MAKE) docs-site
+
+docs-serve:
+	uvx --from mkdocs --with mkdocs-material mkdocs serve --dev-addr 127.0.0.1:8000
 
 fmt:
 	clojure -M:format/fix

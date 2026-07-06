@@ -1,5 +1,13 @@
 # Skein Workflow Spool
 
+> This is the **contract** doc: guarantees, run lifecycle, routing semantics, and
+> the `workflow/*` attribute vocabulary. Its two companions are
+> [`workflow.cookbook.md`](./workflow.cookbook.md) — worked composition recipes
+> (how/why you shape a workflow) — and [`workflow.api.md`](./workflow.api.md) —
+> generated fn signatures and docstrings. Reach for the cookbook when you want a
+> runnable pattern, the API doc when you want an exact arity, and this doc for
+> what the engine promises.
+
 ## 1. Overview
 
 `skein.spools.workflow` is a Clojure-native workflow layer built on ordinary
@@ -632,72 +640,24 @@ step's `:attributes` as-is; `step-strand` itself adds only the
 `workflow/role`/`workflow/phase` pair and lifts a step's `:description`
 field into a plain `"description"` attribute.
 
-## 8. End-to-end example
+## 8. Worked examples
 
-```clojure
-(require '[skein.spools.workflow :as workflow])
+Worked, runnable compositions live in the companion
+[`workflow.cookbook.md`](./workflow.cookbook.md), each with the situation it
+suits, a complete snippet, and why that shape is right. Start there for:
 
-(defn ship-workflow [{:keys [revision] :as _params}]
-  (workflow/workflow
-    (fn [{:keys [feature]}] (str "Ship " feature))
-    {:params {:feature (workflow/param :required true)
-              :revision (workflow/param :default (boolean revision))}}
-    (workflow/step :design
-                   (fn [{:keys [feature]}] (str "Design " feature))
-                   :self
-                   :condition [:!= :revision true])       ; skip on revise rounds
-    (workflow/step :implement
-                   (fn [{:keys [feature]}] (str "Implement " feature))
-                   :self
-                   :depends-on [:design])
-    (workflow/checkpoint :signoff
-                         "Approve implementation?"
-                         :depends-on [:implement]
-                         :kind :human
-                         :choices [{:key :approved
-                                    :label "Approve"
-                                    :description "Ship it."}
-                                   {:key :revise
-                                    :label "Revise"
-                                    :description "Send implementation back and re-run the stage."
-                                    :revise {:params {:revision true}}}])))
+- a linear stage with a human sign-off and a `:revise` loop (the former
+  end-to-end example);
+- routing a multi-stage lifecycle through named `:next` stages;
+- reusing a sub-flow with `call`;
+- external wait points with gates;
+- forge-agnostic tool bindings;
+- fan-out over a collection with a chained `:loop`.
 
-;; run — seed :definition so :revise can re-pour ship-workflow, and :context so
-;; the revise loop carries :feature forward. Every mutation returns
-;; {:ready [...] :done bool}; each ready view also carries :run-id "ship-feature-x".
-(workflow/start! "ship-feature-x" (ship-workflow {:feature "feature x"})
-                 {:feature "feature x"}
-                 {:definition 'my.ns/ship-workflow :context {:feature "feature x"}})
-;; => {:ready [{:id :design ...}] :done false}
-
-(workflow/complete! "ship-feature-x")
-;; => {:ready [{:id :implement ...}] :done false}
-
-(workflow/complete! "ship-feature-x")
-;; => {:ready [{:id :signoff :kind "checkpoint" :choices ["approved" "revise"] ...}] :done false}
-
-;; revise: closes this round's root and pours a fresh one under the same
-;; run-id; :design is condition-skipped, so the round is ready at :implement
-(workflow/choose! "ship-feature-x" :revise {})
-;; => {:ready [{:id :implement ...}] :done false}
-
-;; advance! also drives the run one step regardless of kind
-(workflow/advance! "ship-feature-x")
-;; => {:ready [{:id :signoff ...}] :done false}
-
-;; approve: closes the checkpoint; no :next means the run is now done
-(workflow/choose! "ship-feature-x" :approved {})
-;; => {:ready [] :done true}   ; all step/checkpoint/procedure strands closed
-
-(workflow/done? "ship-feature-x")
-;; => true
-```
-
-A checkpoint choice with `:next` routes to a continuation workflow and closes
-out the rest of the current run (see §5) — see `skein.spools.devflow`'s
-`proposal-workflow` `:approved` → `:spec-plan` for a named routed hand-off, and
-its `human-signoff-proposal` `:revise {:params {:revision true}}` for a
-declarative revise loop.
+The test suite in
+[`test/skein/spools/workflow_test.clj`](../test/skein/spools/workflow_test.clj)
+drives every documented behavior against a real weaver and doubles as an
+executable reference.
 
 ## 9. See also
 

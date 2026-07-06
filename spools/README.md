@@ -19,19 +19,36 @@ userland APIs for trusted config and REPL workflows. Use that namespace's
 `peers`, `peer`, and `call!` helpers when a shipped spool or repo config needs
 to discover and invoke same-machine sibling weavers.
 
+## Doc triad
+
+Each shipped spool's docs follow a three-file convention:
+
+- **`<spool>.md`** — the **contract**: hand-authored guarantees, run lifecycle,
+  and the attribute vocabulary. This is the load-bearing promise.
+- **`<spool>.cookbook.md`** — authored **composition recipes**: how to shape
+  real work out of the primitives, and *why* each shape is right. Present only
+  where the value is in composition; [`workflow.cookbook.md`](./workflow.cookbook.md)
+  is the template.
+- **`<spool>.api.md`** — the **generated reference**: every public fn's
+  signature, arity, and docstring, produced from source. Never hand-edit these;
+  regenerate with `make api-docs`.
+
+Signatures live only in the generated API doc; contracts and cookbooks link to
+them rather than restating them.
+
 ## Index
 
-| Spool | Contract doc | Purpose |
-|---|---|---|
-| `skein.spools.batteries` | [batteries.md](./batteries.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave` and the `query`/`pattern` registry-introspection reads, all parser-backed. |
-| `skein.spools.workflow` | [workflow.md](./workflow.md) | Workflow engine: plain-data definitions compiled to strand batches, with loops, gates, checkpoints, routing, and rebindable tool bindings. |
-| `skein.spools.ephemeral` | [ephemeral.md](./ephemeral.md) | Small helper for temporary, parent-owned strands marked and burned via a userland attribute. |
-| `skein.spools.guild` | [guild.md](./guild.md) | Versioned public weaver op API declarations, `guild.describe` introspection, and loud structured deprecation for local peer coordination. |
-| `skein.spools.bobbin` | [bobbin.md](./bobbin.md) | Context-pack assembler: one self-contained JSON bundle of a strand's blockers, dependents, provenance, notes, and workflow context, plus deterministic prompt-text rendering. |
-| `skein.spools.selvage` | [selvage.md](./selvage.md) | Opt-in attribute vocabulary lint: data-first checks per attribute namespace, on-demand `check`/`check-all`, and post-hoc watch-mode violation recording. |
-| `skein.spools.carder` | [carder.md](./carder.md) | Read-only graph hygiene reports: stale active work, orphaned strands, and work blocked behind failed agent runs. |
-| `skein.spools.roster` | [roster.md](./roster.md) | Active-work registry: `roster/*` attribute vocabulary, explicit-runtime `track!`/`heartbeat!`/`finish!`/`roster`/`await-quiet!` helpers, a declared-subcommand `roster` op and named query, awaitable quiet/stale semantics, and automatic workflow/devflow root stamping. |
-| `skein.spools.loom` | [loom.md](./loom.md) | Read-only work-graph projections: active parent-of work DAGs with depends-on edges, per-branch progress views joined to a ready frontier, and workflow flow-status (history/frontier/gates/runs/stalls) with a Mermaid gate chain. Registers no ops. |
+| Spool | Contract doc | API reference | Purpose |
+|---|---|---|---|
+| `skein.spools.batteries` | [batteries.md](./batteries.md) | [batteries.api.md](./batteries.api.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave` and the `query`/`pattern` registry-introspection reads, all parser-backed. |
+| `skein.spools.workflow` | [workflow.md](./workflow.md) | [workflow.api.md](./workflow.api.md) · [cookbook](./workflow.cookbook.md) | Workflow engine: plain-data definitions compiled to strand batches, with loops, gates, checkpoints, routing, and rebindable tool bindings. |
+| `skein.spools.ephemeral` | [ephemeral.md](./ephemeral.md) | [ephemeral.api.md](./ephemeral.api.md) | Small helper for temporary, parent-owned strands marked and burned via a userland attribute. |
+| `skein.spools.guild` | [guild.md](./guild.md) | [guild.api.md](./guild.api.md) | Versioned public weaver op API declarations, `guild.describe` introspection, and loud structured deprecation for local peer coordination. |
+| `skein.spools.bobbin` | [bobbin.md](./bobbin.md) | [bobbin.api.md](./bobbin.api.md) | Context-pack assembler: one self-contained JSON bundle of a strand's blockers, dependents, provenance, notes, and workflow context, plus deterministic prompt-text rendering. |
+| `skein.spools.selvage` | [selvage.md](./selvage.md) | [selvage.api.md](./selvage.api.md) | Opt-in attribute vocabulary lint: data-first checks per attribute namespace, on-demand `check`/`check-all`, and post-hoc watch-mode violation recording. |
+| `skein.spools.carder` | [carder.md](./carder.md) | [carder.api.md](./carder.api.md) | Read-only graph hygiene reports: stale active work, orphaned strands, and work blocked behind failed agent runs. |
+| `skein.spools.roster` | [roster.md](./roster.md) | [roster.api.md](./roster.api.md) | Active-work registry: `roster/*` attribute vocabulary, explicit-runtime `track!`/`heartbeat!`/`finish!`/`roster`/`await-quiet!` helpers, a declared-subcommand `roster` op and named query, awaitable quiet/stale semantics, and automatic workflow/devflow root stamping. |
+| `skein.spools.loom` | [loom.md](./loom.md) | [loom.api.md](./loom.api.md) | Read-only work-graph projections: active parent-of work DAGs with depends-on edges, per-branch progress views joined to a ready frontier, and workflow flow-status (history/frontier/gates/runs/stalls) with a Mermaid gate chain. Registers no ops. |
 
 ## External git-distributed spools
 
@@ -67,14 +84,14 @@ publishing a spool for others by git coordinate, SHA-pinned approval,
 README Dependency information / Activation snippets, Maven-only spool-root
 dependencies, and local development overrides, see [Writing shared spools](../docs/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution).
 
-| Spool | Contract doc | Purpose |
-|---|---|---|
-| `skein.spools.shuttle` | [shuttle/README.md](./shuttle/README.md) | Agent shuttle **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, append-only run memory, and the preamble seam. Registers no ops. |
-| `skein.spools.agents` | [agents/README.md](./agents/README.md) | Cross-harness subagent surface over shuttle: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
-| `skein.spools.treadle` | [shuttle/treadle.md](./shuttle/treadle.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning shuttle runs and delivering successful results through `workflow/complete!`. |
-| `skein.spools.chime` | [chime/README.md](./chime/README.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
-| `skein.spools.kanban` | [kanban.md](./kanban.md) | User-facing kanban board: feature/epic cards, refinement/pending/claimed lanes, notes and handovers via `strand kanban`. |
-| `skein.spools.cron` | [cron/README.md](./cron/README.md) | Generic weaver timer engine: registers named jobs that fire on a fixed interval with uniform jitter on a spool-owned scheduled executor, with last-outcome/next-fire status and a loud inspectable failure log. Ships no jobs. |
+| Spool | Contract doc | API reference | Purpose |
+|---|---|---|---|
+| `skein.spools.shuttle` | [shuttle/README.md](./shuttle/README.md) | [shuttle.api.md](./shuttle.api.md) | Agent shuttle **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, append-only run memory, and the preamble seam. Registers no ops. |
+| `skein.spools.agents` | [agents/README.md](./agents/README.md) | [agents.api.md](./agents.api.md) | Cross-harness subagent surface over shuttle: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
+| `skein.spools.treadle` | [shuttle/treadle.md](./shuttle/treadle.md) | [treadle.api.md](./treadle.api.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning shuttle runs and delivering successful results through `workflow/complete!`. |
+| `skein.spools.chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
+| `skein.spools.kanban` | [kanban.md](./kanban.md) | [kanban.api.md](./kanban.api.md) | User-facing kanban board: feature/epic cards, refinement/pending/claimed lanes, notes and handovers via `strand kanban`. |
+| `skein.spools.cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) | Generic weaver timer engine: registers named jobs that fire on a fixed interval with uniform jitter on a spool-owned scheduled executor, with last-outcome/next-fire status and a loud inspectable failure log. Ships no jobs. |
 
 ## Reference examples
 

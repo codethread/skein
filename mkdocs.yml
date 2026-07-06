@@ -1,0 +1,104 @@
+site_name: Skein Docs
+site_description: Source documentation projection for Skein
+site_url: ""
+docs_dir: .mkdocs
+site_dir: site
+
+repo_url: https://github.com/codethread/skein
+repo_name: codethread/skein
+
+# Rewrites repo-relative links that leave the docs collection (source files,
+# RFC/archive material) to GitHub blob URLs, so builds can run --strict and
+# every remaining warning is a genuinely broken link.
+hooks:
+  - scripts/mkdocs_hooks.py
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+nav:
+  # The root landing page lives directly in .mkdocs/index.md so the site
+  # remains a committed projection over repository docs instead of rewriting docs/skein.md.
+  - Home: index.md
+  - Skein: docs/skein.md
+  - Getting Started: docs/getting-started.md
+  - Writing Shared Spools: docs/writing-shared-spools.md
+  - Library Authoring: docs/library-authoring.md
+  - Specs:
+      - Tenets: devflow/TENETS.md
+      - Philosophy: devflow/PHILOSOPHY.md
+      - Alpha Surface: devflow/specs/alpha-surface.md
+      - CLI Surface: devflow/specs/cli.md
+      - Weaver Runtime: devflow/specs/daemon-runtime.md
+      - REPL API: devflow/specs/repl-api.md
+      - Strand Model: devflow/specs/strand-model.md
+  - Spools:
+      - Index: spools/README.md
+      - Batteries:
+          - Contract: spools/batteries.md
+          - API: spools/batteries.api.md
+      - Workflow:
+          - Contract: spools/workflow.md
+          - Cookbook: spools/workflow.cookbook.md
+          - API: spools/workflow.api.md
+      - Devflow Lifecycle: spools/devflow.md
+      - Ephemeral Strands:
+          - Contract: spools/ephemeral.md
+          - API: spools/ephemeral.api.md
+      - Weaver Guild:
+          - Contract: spools/guild.md
+          - API: spools/guild.api.md
+      - Bobbin Context Packs:
+          - Contract: spools/bobbin.md
+          - API: spools/bobbin.api.md
+      - Selvage Attribute Lint:
+          - Contract: spools/selvage.md
+          - API: spools/selvage.api.md
+      - Carder Graph Hygiene:
+          - Contract: spools/carder.md
+          - API: spools/carder.api.md
+      - Roster Active-Work Registry:
+          - Contract: spools/roster.md
+          - API: spools/roster.api.md
+      - Loom Work-Graph Projections:
+          - Contract: spools/loom.md
+          - API: spools/loom.api.md
+      - Kanban Board:
+          - Contract: spools/kanban.md
+          - API: spools/kanban.api.md
+      - Agent Shuttle:
+          - Contract: spools/shuttle/README.md
+          - API: spools/shuttle.api.md
+      - Agents Spool:
+          - Contract: spools/agents/README.md
+          - API: spools/agents.api.md
+      - Treadle Gate Bridge:
+          - Contract: spools/shuttle/treadle.md
+          - API: spools/treadle.api.md
+      - Chime Notifications:
+          - Contract: spools/chime/README.md
+          - API: spools/chime.api.md
+      - Cron Engine:
+          - Contract: spools/cron/README.md
+          - API: spools/cron.api.md

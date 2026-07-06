@@ -65,6 +65,11 @@ clojure -M:test
 (cd cli && go test ./...)
 clojure -M:repl
 make dash                     # code-owner TUI over the live coordination world: agent runs/plans, kanban board, devflow (scripts/shuttle-dash/, Ink app polling the strand CLI)
+
+make api-docs                 # regenerate the spools/*.api.md reference from source docstrings (quickdoc)
+make docs-site                # build the mkdocs static site (pure projection of the checked-in docs)
+make docs-serve               # serve the docs site locally at 127.0.0.1:8000 for preview
+make docs-check               # CI gate: regenerate api-docs, fail on drift, then build the site
 ```
 
 ## Agent operation quick reference
@@ -259,7 +264,10 @@ make lint            # clj-kondo (custom project hooks in .clj-kondo/) + splint 
 make reflect-check   # compiles every src + spool namespace with *warn-on-reflection*, fails on any warning
 make security-report # non-blocking: clj-watson github-advisory scan (GITHUB_TOKEN) + govulncheck; this is what CI runs
 make deps-report     # non-blocking, local-only: antq outdated deps, govulncheck, clj-watson deep NVD scan (needs CLJ_WATSON_NVD_API_KEY exported)
+make docs-check      # blocking CI gate: regenerate spools/*.api.md, fail on drift, then build the docs site
 ```
+
+`make docs-check` is a blocking CI gate: run it (or `make api-docs`) after touching any spool docstring so the generated `spools/*.api.md` stays in sync. The mkdocs site is a pure projection of the checked-in docs, built by CI to GitHub Pages — agents never need to build or serve it to do their work.
 
 The codebase-wide formatting commit is listed in `.git-blame-ignore-revs`; enable locally with `git config blame.ignoreRevsFile .git-blame-ignore-revs`. Splint intentionally disables `prefer-method-values` (parked 1.12 style migration) and `catch-throwable` (audited load-bearing daemon boundaries) — rationale in `.splint.edn`; do not silence new findings without the same written justification.
 
