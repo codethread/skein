@@ -168,7 +168,10 @@ the gate's `treadle/run` attribute** (optionally rewriting `shuttle/prompt`). Th
 next scan finds no live run for the gate and spawns a fresh delegation.
 
 ```clojure
-(require '[skein.api.weaver.alpha :as api])
+(require '[skein.api.weaver.alpha :as api]
+         '[skein.api.current.alpha :as current])
+
+(def rt (current/runtime))              ; the active weaver runtime
 
 ;; find stalled subagent gates (spawn-side error, or a dead delegated run)
 (api/list-query rt 'stalled-gates {})

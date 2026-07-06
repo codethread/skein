@@ -57,27 +57,25 @@ only vocabulary a caller needs.
 ```clojure
 (require '[skein.spools.shuttle :as shuttle])
 
-;; A concrete harness. codex exec prints only its final message on stdout, so
+;; A concrete harness. This agent prints only its final message on stdout, so
 ;; :raw parses cleanly; the prompt is appended to argv (:arg is the default).
-(shuttle/defharness! :codex
-  {:argv ["codex" "exec" "--skip-git-repo-check" "--color" "never"
-          "--dangerously-bypass-approvals-and-sandbox"
-          "-c" "shell_environment_policy.inherit=all"]
+(shuttle/defharness! :my-agent
+  {:argv ["my-agent" "run" "--headless"]     ; your launcher plus its flags
    :parse :raw
-   :doc "Codex CLI headless; final message on stdout."})
+   :doc "In-house agent CLI; final message on stdout."})
 
-;; Named tiers over the shipped :claude harness — one line each.
-(shuttle/defalias! :explore
-  {:alias-of :claude :extra-args ["--model" "haiku"]
+;; Named tiers over the base harness — one line each.
+(shuttle/defalias! :cheap
+  {:alias-of :my-agent :extra-args ["--tier" "small"]
    :doc "Fast read-only exploration and fan-out search."})
-(shuttle/defalias! :grunt
-  {:alias-of :claude :extra-args ["--model" "sonnet"]
+(shuttle/defalias! :standard
+  {:alias-of :my-agent :extra-args ["--tier" "mid"]
    :doc "Tests, mechanical edits, grunt work."})
-(shuttle/defalias! :build
-  {:alias-of :claude :extra-args ["--model" "opus"]
+(shuttle/defalias! :deep
+  {:alias-of :my-agent :extra-args ["--tier" "large"]
    :doc "Feature building, reviews, council seats."})
 
-(shuttle/resolve-harness :build)   ; => the flattened :claude def + opus args
+(shuttle/resolve-harness :deep)   ; => the flattened :my-agent def + large-tier args
 ```
 
 **Why this shape.**
@@ -103,12 +101,12 @@ only vocabulary a caller needs.
   `:fast-reviewer` over `:explore` over `:claude` composes without repetition.
   Cycles and missing bases fail loudly at `resolve-harness` time.
 
-Honest source: this repo's harness roster in
-[`.skein/config.clj`](../.skein/config.clj) (`register-harness-aliases!` —
-`:codex`, `:explore`/`:grunt`/`:build`, the GPT seats), and the registry tests
-`harness-registry-validates-and-resolves-aliases` and
-`stdin-prompt-stays-off-argv` in
-[`test/skein/shuttle_test.clj`](../test/skein/shuttle_test.clj).
+Honest source: the registry tests `harness-registry-validates-and-resolves-aliases`
+and `stdin-prompt-stays-off-argv` in
+[`test/skein/shuttle_test.clj`](../test/skein/shuttle_test.clj). This repo applies
+the same shape in its own harness roster
+([`.skein/config.clj`](../.skein/config.clj), `register-harness-aliases!`) — one
+concrete harness plus named tiers over it.
 
 ---
 
@@ -158,7 +156,7 @@ with `:resume <predecessor-run-id>` then continues that predecessor's session.
   [§3.1, "Session continuation"](./shuttle/README.md#31-session-continuation-resume)).
 - **Persistence is never required.** A harness with no `:resume` splice is
   first-class and simply cannot be resumed; a run that never passes `:resume`
-  behaves byte-identically to a no-resume engine. The shipped `:codex` harness
+  behaves byte-identically to a no-resume engine. This repo's `:codex` harness
   even declares a splice that stays inert until a session-capturing parse lands
   — declared but harmless.
 
@@ -183,7 +181,10 @@ in — the collector spawns only when the last blocker closes.
 
 ```clojure
 (require '[skein.spools.shuttle :as shuttle]
-         '[skein.api.weaver.alpha :as api])
+         '[skein.api.weaver.alpha :as api]
+         '[skein.api.current.alpha :as current])
+
+(def rt (current/runtime))              ; the active weaver runtime
 
 ;; two workers that run in parallel (no edges between them)
 (def a (shuttle/spawn-run! {:harness :sh :prompt "echo a"}))

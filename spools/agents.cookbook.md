@@ -1,8 +1,8 @@
 # Skein Agents Spool — Cookbook
 
-Coordination recipes for `skein.spools.agents`: the shapes real delegation takes
-once you stop thinking in verbs and start thinking in loops — plan, delegate,
-await, verify, close, repeat — and *why* each shape holds up.
+Composition recipes for `skein.spools.agents`: the shapes real delegation takes
+as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape
+holds up.
 
 This is the **how/why** half of the agents docs. The other two halves are:
 
@@ -28,14 +28,14 @@ your situation and lift the snippet:
 2. **Composition** — which verbs combine, and in what order.
 3. **Snippet** — a complete, runnable form. Delegation snippets use the built-in
    `sh` harness, which runs its prompt as a shell command, so you can rehearse a
-   plan's shape for pennies before pointing it at a real coding agent.
+   plan's shape without a real coding agent before pointing it at one.
 4. **Why this shape** — the reasoning: what the readiness graph buys you, which
    guard you're leaning on, and what the sloppy version would cost.
 
 Each recipe cites the honest source it was distilled from — the README contract,
-this repo's own reviewer roster and config, the executable coverage in
-[`agents_test.clj`](../test/skein/agents_test.clj), or this session's live
-coordination practice.
+this repo's reviewer roster and config, or the executable coverage in
+[`agents_test.clj`](../test/skein/agents_test.clj) — so you can read the
+load-bearing version.
 
 ---
 
@@ -200,18 +200,15 @@ strand agent review <target> --members 2 --harness claude,review-gpt --synthesiz
 - **`--commit-range` injects the diff, so reviewers read it instead of guessing
   it.** The range's changed files are expanded via `git diff --name-only` and
   handed to every reviewer as the authoritative diff surface — which also means a
-  range against a **stale branch** hands reviewers a misleading surface. In this
-  session's live docs review, six roster reviewers all independently flagged that
-  the branch was behind `origin/main`, so the range showed an unrelated feature
-  being deleted; the synthesizer raised it as the one blocking finding. Name the
-  merge-base, not a stale `origin/main`.
+  range against a **stale branch** hands reviewers a misleading surface: it can
+  expand to the wrong file set, so the reviewers hunt a diff you didn't mean.
+  Prefer the merge-base, or another range whose changed files match the review
+  surface you mean.
 
 Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj)
 `change-review` roster (six single-concern reviewers, `review-gpt` synthesizer),
-the review verb and roster semantics in
-[`agents/README.md` §3](./agents/README.md#reviewer-rosters), and this session's
-live `change-review` fan-out over the docs-refresh card (pass tag
-`change-review-5921dce5`), whose synthesis caught the stale-branch regression.
+and the review verb and roster semantics in
+[`agents/README.md` §3](./agents/README.md#reviewer-rosters).
 
 ---
 
@@ -249,11 +246,10 @@ ride the control surface.
   `strand agent council --members n --harness one` seats N *identical* agents;
   the moment seats need different harnesses it's structured data, and structured
   data does not ride argv (TEN-006). `:seats` is that seam.
-- **Cross-vendor is the point, not a bonus.** Seating a second frontier model —
-  and synthesizing with a GPT seat — is how this repo keeps sign-off from ever
-  coming from the family that authored the work. It's the same discipline the
-  reviewer roster encodes with its `review-gpt` synthesizer, applied to live
-  deliberation.
+- **Cross-vendor seating is deliberate.** In this repo the extra seat and the
+  synthesizer come from a different model family, so sign-off does not rest on the
+  family that authored the work. It's the same discipline the reviewer roster
+  encodes with its `review-gpt` synthesizer, applied to live deliberation.
 - **Rounds are barriers, not a poll loop.** Each turn row `depends-on` every
   seat's previous-turn run, so a round completes before the next opens and the
   deliberation structure is queryable straight from run attributes
