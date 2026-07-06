@@ -109,6 +109,9 @@ Genuinely plan-level mechanics, not contract questions — all deferred to spec/
 
 - **PROP-EavAttrStorage-001.Q1:** The exact secondary-index set beyond the `(key, value) WHERE archived = 0` partial index (e.g. whether a `(strand_id) WHERE archived = 0` assembly-path partial index earns its keep), finalized by the benchmark gate.
 - **PROP-EavAttrStorage-001.Q2:** The `archive!` / `unarchive!` trusted-surface tier and exact spec-defined IO shape. The proposal settles the semantic input domain as strand-id plus optional explicit key set; spec work names the functions, schemas the args/results, and chooses the trusted namespace.
-- **PROP-EavAttrStorage-001.Q3:** The migrate op's name, invocation surface, and idempotency/verification story for cutting the canonical world over.
+- **PROP-EavAttrStorage-001.Q3:** The migrate op's implementation mechanics for cutting the canonical world over. Spec/plan work names the trusted op `migrate-attribute-storage!` and fixes its idempotency, result shape, and parity-mismatch failure contract.
 - **PROP-EavAttrStorage-001.Q4:** The precise self-join SQL shape for cross-key predicates in `query.clj` and the assembly query shape, to be validated for plan-parity by the benchmark gate and the uniform-capability regression tests.
-- **PROP-EavAttrStorage-001.Q5:** Whether the deep-module principle lands in `TENETS.md` (as a new `TEN-00x`) or as a `PHILOSOPHY.md` design implication (`PROP-EavAttrStorage-001.S8`).
+
+Resolved during spec/plan work:
+
+- **PROP-EavAttrStorage-001.Q5.RESOLVED:** The deep-module principle lands in `TENETS.md` as `TEN-007`.
