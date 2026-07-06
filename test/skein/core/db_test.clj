@@ -95,12 +95,20 @@
                (attr-rows ds id)))
         (is (= "{\"a\":{\"nested\":true},\"drop\":\"x\",\"z\":1}"
                (:attributes (db/get-strand ds id))))
+        (is (= "{\"a\":{\"nested\":true},\"drop\":\"x\",\"z\":1}"
+               (-> (db/ready-strands ds) first :attributes)))
         (db/update-strand! ds id {:attributes {:b 2 :drop nil}})
         (is (= {:a {:nested true} :b 2 :z 1}
                (db/<-json (:attributes (db/get-strand ds id)))))
+        (db/update-strand! ds id {:attributes {:a {:extra true}}})
+        (is (= {:a {:nested true :extra true} :b 2 :z 1}
+               (db/<-json (:attributes (db/get-strand ds id)))))
+        (db/update-strand! ds id {:attributes {:a {:nested nil}}})
+        (is (= {:a {:extra true} :b 2 :z 1}
+               (db/<-json (:attributes (db/get-strand ds id)))))
         (is (= ["a" "b" "z"] (mapv :key (attr-rows ds id))))
         (db/update-strand! ds id {:attributes {:b nil}})
-        (is (= {:a {:nested true} :z 1}
+        (is (= {:a {:extra true} :z 1}
                (db/<-json (:attributes (db/get-strand ds id)))))))))
 
 (deftest attribute-rows-cascade-when-strand-is-burned
@@ -486,6 +494,31 @@
           (let [e (is (thrown? clojure.lang.ExceptionInfo
                                (db/migrate-attribute-storage! ds)))]
             (is (= :parity-mismatch (:reason (ex-data e)))))))
+      (is (nil? (some #(= "attributes" (:name %))
+                      (db/execute! ds ["PRAGMA table_info(attributes)"]))))
+      (finally
+        (delete-sqlite-family! db-file)))))
+
+(deftest migrate-attribute-storage-rolls-back-post-rebuild-validation-failures
+  (let [db-file (temp-db-file)
+        ds (db/datasource db-file)]
+    (try
+      (db/execute! ds ["CREATE TABLE strands (
+                         id TEXT PRIMARY KEY,
+                         title TEXT NOT NULL,
+                         state TEXT NOT NULL DEFAULT 'active',
+                         attributes TEXT NOT NULL DEFAULT '{}',
+                         created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                         CHECK (state IN ('active', 'closed', 'replaced'))
+                       )"])
+      (insert-legacy-strand! ds "a" "A" (db/->json {:a 1}))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strand_edges table is not compatible"
+                            (db/migrate-attribute-storage! ds)))
+      (is (nil? (some #(= "attributes" (:name %))
+                      (db/execute! ds ["PRAGMA table_info(attributes)"]))))
+      (is (contains? (set (map :name (db/execute! ds ["PRAGMA table_info(strands)"])))
+                     "attributes"))
       (finally
         (delete-sqlite-family! db-file)))))
 
@@ -541,6 +574,7 @@
                        )"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strands table is not compatible"
                             (db/init! ds)))
+      (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attributes'"])))
       (finally
         (delete-sqlite-family! db-file)))))
 
@@ -806,6 +840,17 @@
                               (jdbc/with-transaction [tx connectable]
                                 (db/add-strand! tx {:title "Rolled back"})
                                 (throw (ex-info "boom" {})))))
+        (is (= ["Mem"] (mapv :title (db/all-strands connectable)))))
+      (testing "top-level operations own a transaction on held memory connections"
+        (db/execute! connectable ["CREATE TRIGGER fail_attribute_insert
+                                   BEFORE INSERT ON attributes
+                                   BEGIN
+                                     SELECT RAISE(ABORT, 'boom');
+                                   END"])
+        (is (thrown-with-msg? org.sqlite.SQLiteException #"boom"
+                              (db/add-strand! connectable {:title "Rolled back top-level"
+                                                           :attributes {:owner "agent"}})))
+        (db/execute! connectable ["DROP TRIGGER fail_attribute_insert"])
         (is (= ["Mem"] (mapv :title (db/all-strands connectable)))))
       (finally
         (close-fn)))

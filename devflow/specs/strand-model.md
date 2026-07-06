@@ -76,17 +76,15 @@ The `strands` table stores lifecycle state as columns. Attribute values live in 
 
 The weaver datasource opens each SQLite database with WAL journaling, a non-zero memory map size, and an enlarged page cache. These pragmas are applied on open for every world and change no schema or read shape.
 
-The `indexed_attr_keys` table stores declared hot filter keys as bare attribute-key strings, mirroring the `acyclic_relations` table shape with one `TEXT PRIMARY KEY` column. The table is created additively with `CREATE TABLE IF NOT EXISTS`, so existing worlds gain it without a rebuild. Every stored key is validated at declaration against `::specs/indexed-attr-key`, whose allowed pattern is `[a-z0-9][a-z0-9._/-]*`; invalid keys fail loudly with ex-data `{:key <value> :spec ::specs/indexed-attr-key :allowed-pattern <regex-source>}`. The table is the source of truth for which keys the query compiler treats as index-usable.
-
-For each declared key, storage ensures an expression index over `json_extract(attributes, '$."<key>"')` with `CREATE INDEX IF NOT EXISTS`. Index creation is additive and result-equivalent over existing rows. JSON `TEXT` attribute storage is unchanged for every key, declared or not; no JSONB assumptions, side table, overflow table, or generated column is part of the current model.
+Storage has no declared hot-key registry. Every hot attribute row is uniformly indexable by `(key, value)` and by `strand_id`, so no userland or API caller declares a key before querying it.
 
 ## SPEC-001.P9 Query fields
 
 Queryable core fields include `:id`, `:title`, `:state`, `:created_at`, `:updated_at`, and attribute paths. Removed lifecycle fields such as `:active`, `:inactive_at`, `:status`, and `:final_at` are not accepted by the core query compiler.
 
-A predicate over a declared attribute key compiles to a literal JSON path (`json_extract(t.attributes, '$."<key>"')`) so SQLite can match the corresponding expression index. Result semantics are identical to the bound-parameter form; only index-usability changes. Because this is the only place attribute keys are spliced into SQL text, the compiler re-validates the key against `::specs/indexed-attr-key` before literal emission and fails loudly rather than splicing an invalid key.
+Attribute predicates compile against the row-backed `attributes` table, not against JSON paths on `strands`. Equality and `:in` predicates use `strand_id IN (...)` subqueries over hot attribute rows. Inequality, range, existence, and missing predicates use `EXISTS` / `NOT EXISTS` shapes tied to the candidate strand id. Logical composition keeps those predicates as ordinary SQL fragments.
 
-A predicate over an undeclared attribute key compiles to the bound-parameter form (`json_extract(t.attributes, ?)` with the path as a parameter) and keeps full capability across every predicate type (`:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition). The undeclared-key invariant is blocking: the suite asserts byte-identical compiled SQL and full predicate capability for undeclared keys, so declaration adds capability to declared keys without removing it from any key.
+Every attribute key has the same predicate capability: `:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition. Archived attributes are excluded from hot query membership.
 
 ## SPEC-001.P10 Deferred
 

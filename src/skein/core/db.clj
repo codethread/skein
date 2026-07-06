@@ -12,6 +12,7 @@
             [clojure.string :as str]
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
+            [next.jdbc.transaction :as tx]
             [skein.core.query :as query]
             [skein.core.specs :as specs]))
 
@@ -105,10 +106,12 @@
   (jdbc/execute-one! ds sql-params {:builder-fn rs/as-unqualified-lower-maps}))
 
 (defn- run-owned-transaction
-  "Call f in a transaction unless connectable is already a JDBC connection."
+  "Call f in a transaction owned by this operation.
+
+  next.jdbc tracks nested transactions itself, including over raw SQLite
+  connections used by memory storage."
   [connectable f]
-  (if (instance? Connection connectable)
-    (f connectable)
+  (binding [tx/*nested-tx* :ignore]
     (jdbc/with-transaction [tx connectable]
       (f tx))))
 
@@ -270,6 +273,8 @@
 
   Existing incompatible schemas throw instead of being migrated implicitly."
   [ds]
+  (when (some #(table-exists? ds %) ["strands" "attributes" "strand_edges"])
+    (ensure-current-schema! ds))
   (doseq [stmt schema-sql]
     (execute! ds stmt))
   (ensure-current-schema! ds)
@@ -357,8 +362,8 @@
                                         SELECT strand_id, key, value
                                         FROM attributes
                                         WHERE strand_id IN (" (placeholders ids) ")"
-                                      (when hot-only? " AND archived = 0")
-                                      ")
+                                    (when hot-only? " AND archived = 0")
+                                    " ORDER BY strand_id, key)
                                       GROUP BY strand_id")]
                               (cond-> []
                                 lean-byte-floor (conj lean-byte-floor)
@@ -369,9 +374,9 @@
   ([ds rows hot-only?]
    (attach-batched-attributes ds rows hot-only? nil))
   ([ds rows hot-only? lean-byte-floor]
-  (let [ids (mapv :id rows)
-        attrs-by-id (attribute-json-by-strand-id ds ids hot-only? lean-byte-floor)]
-    (mapv #(assoc % :attributes (get attrs-by-id (:id %) "{}")) rows))))
+   (let [ids (mapv :id rows)
+         attrs-by-id (attribute-json-by-strand-id ds ids hot-only? lean-byte-floor)]
+     (mapv #(assoc % :attributes (get attrs-by-id (:id %) "{}")) rows))))
 
 (defn- strand-columns-sql [alias]
   (str alias ".id, " alias ".title, " alias ".state, "
@@ -396,19 +401,29 @@
   (execute! ds ["DELETE FROM attributes WHERE strand_id = ?" strand-id])
   (write-attribute-rows! ds strand-id (or attributes {})))
 
+(defn- merge-json-patch-value [current patch]
+  (if (and (map? current) (map? patch))
+    (reduce-kv (fn [m k v]
+                 (if (nil? v)
+                   (dissoc m k)
+                   (update m k merge-json-patch-value v)))
+               current
+               patch)
+    patch))
+
 (defn- patch-attribute-rows! [ds strand-id attributes]
   (let [current (-> (strand-row-by-id ds strand-id false) :attributes <-json)
         patched (reduce-kv (fn [m k v]
                              (if (nil? v)
                                (dissoc m k)
-                               (assoc m k v)))
+                               (update m k merge-json-patch-value v)))
                            current
                            attributes)]
     (require-valid! ::specs/attributes patched "Attributes must be nil or a map that encodes to a JSON object")
     (doseq [[k v] attributes]
       (if (nil? v)
         (execute! ds ["DELETE FROM attributes WHERE strand_id = ? AND key = ?" strand-id (json-key k)])
-        (write-attribute-rows! ds strand-id {k v})))))
+        (write-attribute-rows! ds strand-id {k (get patched k)})))))
 
 (def ^:private generic-states #{"active" "closed"})
 
@@ -971,13 +986,13 @@
             (doseq [document documents]
               (write-attribute-rows! tx (::strand-id document) (dissoc document ::strand-id)))
             (verify-migrated-rows! tx documents)
-            (rebuild-strands-without-attribute-document! tx))
+            (rebuild-strands-without-attribute-document! tx)
+            (when-let [violations (seq (execute! tx ["PRAGMA foreign_key_check"]))]
+              (throw (ex-info "Migrated attribute storage failed foreign-key validation"
+                              (migration-error :foreign-key-mismatch
+                                               {:violations violations}))))
+            (ensure-current-schema! tx))
           (execute! conn ["PRAGMA foreign_keys = ON"])
-          (when-let [violations (seq (execute! conn ["PRAGMA foreign_key_check"]))]
-            (throw (ex-info "Migrated attribute storage failed foreign-key validation"
-                            (migration-error :foreign-key-mismatch
-                                             {:violations violations}))))
-          (ensure-current-schema! conn)
           (execute! conn ["PRAGMA optimize"])
           {:status :migrated
            :strands strand-count

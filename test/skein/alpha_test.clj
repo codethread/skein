@@ -4,6 +4,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.hooks.alpha :as hooks]
             [skein.api.views.alpha :as views]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is use-fixtures]]
             [skein.core.client]
             [skein.api.weaver.alpha :as api]
@@ -76,6 +77,13 @@
                 :archived? false
                 :changed 1}
                (api/unarchive! rt (:id task) [:owner])))
+        (api/update rt (:id task) {:attributes {:payload (str/join (repeat 1100 "x"))}})
+        (let [lean-task (first (filter #(= (:id task) (:id %))
+                                       (api/ready-lean rt 1024)))
+              payload (get-in lean-task [:attributes :payload])]
+          (is (true? (:skein/omitted payload)))
+          (is (pos-int? (:bytes payload))))
+        (api/update rt (:id task) {:attributes {:payload nil}})
         (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id task)] {})))
         (is (= #{(:id feature) (:id task)}
                (set (map :id (:strands (graph/subgraph rt [(:id feature)]))))))
