@@ -1,0 +1,57 @@
+# Large-attribute Scaling (ship now) Proposal
+
+**Document ID:** `PROP-AttrScalingShipNow-001`
+**Last Updated:** 2026-07-06
+**Related RFCs:** None (no existing RFC covers attribute storage/query indexing; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language this touches but does not conflict)
+**Related root specs:** [Strand Model](../../specs/strand-model.md) (P4 Attributes, P8 Persistence, P9 Query fields), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md)
+
+**Evidence base:** four completed spikes plus cross-vendor review, held under `/tmp/claude/attr-scaling-ship-now-brief/` (kanban card `bvb0g`): `SYNTHESIS.md` §8 is the adopted recommendation; `NARROWING.md` is the GPT design-narrowing review whose contract decisions are adopted here; `FACTCHECK.md` is the opus adversarial fact-check (every load-bearing structural claim CONFIRMED, three precision caveats folded in); `DESIGN.md` is the semantics/contract POC; `RESULTS-baseline.md`, `RESULTS-inline.md`, and `RESULTS-sidetable.md` are the benchmark harnesses.
+
+## PROP-AttrScalingShipNow-001.P1 Problem
+
+Skein stores every strand attribute as one JSON `TEXT` blob and returns full blobs on every read. Measured on the canonical world (2026-07-06: 1,981 strands, 2,101 edges, 4.67MB attribute bytes), 83% of attribute bytes live in four spool-owned payload keys — `shuttle/prompt`, `shuttle/note`, `shuttle/result`, and `body` — while query filters only ever touch tiny metadata keys (`kind`, `owner`, `workflow/role`, `shuttle/run`, ...). Three independent scaling failures follow from this shape, two of which degrade the tool's primary consumer (LLM agents, TEN-001) and one of which is already real today:
+
+- **F1 — row-count scan floor.** There is no index on any attribute path, so every filtered `list`/`ready`/query full-scans and JSON-parses every row. A payload-free control already blows a 50ms interactive budget at 50k strands. The compiler makes this unfixable in place: `skein.core.query/compile-field` emits `json_extract(t.attributes, ?)` with the JSON *path* as a bound parameter, and SQLite can never match a bound-path expression to an expression index (EXPLAIN-verified). Any shipped expression index today is dead weight.
+- **F2 — payload materialization penalty.** `json_extract` in a `WHERE` clause forces materializing every scanned row's full blob regardless of the `SELECT` list, so scan cost grows with payload size once the working set outgrows cache (hundreds of ms to seconds at 250k, environment-dependent).
+- **F3 — write amplification (real today at ~2k strands).** A one-field patch rewrites the whole blob's overflow chain: a `status` flip on a real 40KB `shuttle/note` row physically writes ~35–48KB. This is write-byte churn (WAL/journal volume, throughput under concurrency, SSD wear) — not patch latency, which is safe everywhere (0.05–1.6ms, PK-addressed).
+
+Separately and most immediately, **every `list`/`ready`/query response dumps full payload blobs into agent context** — the single cheapest, safest, highest-value fix and a direct TEN-001 concern, independent of any storage change.
+
+## PROP-AttrScalingShipNow-001.P2 Goals
+
+- **PROP-AttrScalingShipNow-001.G1:** Ship the free, no-contract-change wins now: SQLite pragmas (`journal_mode=WAL`, `mmap_size`, larger `cache_size`) that the evidence shows are 3–5× faster writes and −25–50% on scans with near-zero downside.
+- **PROP-AttrScalingShipNow-001.G2:** Make attribute indexes actually usable by letting the query compiler emit literal JSON paths for a set of **trusted-declared** hot filter keys, so expression indexes on those keys can eliminate rows (F1), while leaving every undeclared key exactly as it is today.
+- **PROP-AttrScalingShipNow-001.G3:** Stop CLI/agent read surfaces from returning large attribute values by default, replacing them with a small typed, **storage-neutral** omission descriptor plus byte count, with an explicit hydration switch — fixing agent-context bloat now.
+- **PROP-AttrScalingShipNow-001.G4:** Keep trusted in-process spool reads full-fidelity, so existing spool readers (`attr-get`, shuttle, treadle, bobbin, roster) that consume payload values by key never receive a descriptor in place of a value.
+- **PROP-AttrScalingShipNow-001.G5:** Prepare, but do not adopt, the declared-key overflow storage design (L2) so it can be shipped later without redesign when real re-measurement justifies it.
+
+**Hard acceptance invariant (governs every goal above):** an **undeclared** attribute key must never become slower or less capable than it is today. Declaration is the only thing that changes a key's storage or query behavior; the default path for the long tail of keys is untouched.
+
+## PROP-AttrScalingShipNow-001.P3 Non-goals
+
+- **PROP-AttrScalingShipNow-001.NG1:** No declared-key overflow storage table in this feature. L2 (a `strand_attr_overflow` side table with a durable declaration registry) is explicitly **deferred**. This proposal must neither implement it nor make a design choice that precludes it.
+- **PROP-AttrScalingShipNow-001.NG2:** No automatic size-threshold storage offload. Value size is not a compile-time property of a key, so the compiler can neither route nor fail loudly on a size-selected predicate (TEN-003); ruled out on semantics, not performance.
+- **PROP-AttrScalingShipNow-001.NG3:** No naming-convention offload. The real heavy keys match no clean convention and it would force renames across shuttle/agents/treadle/bobbin/roster.
+- **PROP-AttrScalingShipNow-001.NG4:** No content-addressed / dedup storage (measured dedup potential ≤2%).
+- **PROP-AttrScalingShipNow-001.NG5:** No per-world configuration knob for the L1 size floor, and no automatic index inference from named queries or from repo config. Declaration is trusted daemon/REPL surface (TEN-006); the floor is a fixed default (TEN-004).
+- **PROP-AttrScalingShipNow-001.NG6:** No change to which keys agents may filter on for undeclared keys, no change to the JSON-`TEXT` storage of undeclared attributes, and no JSONB assumptions.
+- **PROP-AttrScalingShipNow-001.NG7:** No implementation strategy, phase breakdown, migration mechanics, or task slicing here — those belong in the feature plan.
+
+## PROP-AttrScalingShipNow-001.P4 Proposed scope
+
+Three layers, ordered by value-per-risk. L0a and L1 change no undeclared-key behavior; L0b changes behavior only for keys a trusted operator explicitly declares.
+
+- **PROP-AttrScalingShipNow-001.S1 (L0a — pragmas):** The weaver datasource gains `journal_mode=WAL`, an `mmap_size`, and a larger `cache_size`. No schema, contract, or read-shape change; applies to every world on open. This is the write-amplification (F3) mitigation as well — WAL reduces the operational sting of blob-chain rewrites.
+- **PROP-AttrScalingShipNow-001.S2 (L0b — declared hot-key indexing):** Add a trusted declaration registry for *hot filter (metadata) keys*, mirroring the existing `acyclic_relations` / `declare-acyclic-relation!` pattern (including its late-declaration guard). For declared keys only, the query compiler emits a literal JSON path so an expression index can be used; the feature also creates those indexes for declared keys. Every undeclared key keeps today's bound-parameter form and full capability. Scope is deliberately the small metadata keys that appear in predicates — not payload keys. Generated columns are a noted fallback mechanism if literal-path expression indexes prove awkward, but are not the chosen default.
+- **PROP-AttrScalingShipNow-001.S3 (L1 — lean-by-default reads):** CLI/agent list surfaces (`list`, `ready`, and query-backed listing) return attribute values above a fixed size floor as a typed, **storage-neutral** omission descriptor (`{:skein/omitted true :bytes N}` or equivalent) — meaning "omitted from this read surface", explicitly **not** claiming any storage mechanism, since none exists yet. `show` / point reads and trusted in-process spool reads stay full-fidelity by default. Hydration is explicit (a `--hydrate` switch on the lean ops / `:hydrate?` in trusted code, and/or per-key fetch). The size floor is a fixed conservative default, not per-world config.
+- **PROP-AttrScalingShipNow-001.S4 (contract statement):** State the acceptance invariant prominently in the feature plan and any spec delta: declaration is the only lever that alters a key's behavior; undeclared keys are never slower or less capable than today. Root-spec deltas to Strand Model P4/P8/P9 (read tiers; the declaration registry as an `acyclic_relations` parallel; declared-key literal-path/index behavior) are staged in `devflow/feat/attr-scaling-ship-now/specs/` during spec work, not owned by this proposal.
+- **PROP-AttrScalingShipNow-001.S5 (L2 — deferred, prepared):** The declared-key overflow table (Policy B: plain-ROWID `strand_attr_overflow`, CASCADE, durable registry, fail-loud predicate rejection over declared-offloaded keys, additive cutover with an explicit trusted migrate op for already-populated keys) is documented as the prepared next step so it can ship without redesign. It is out of scope to build now, and nothing in S1–S4 may preclude it. The L1 descriptor's storage-neutral wording is precisely what keeps L2 optional.
+
+## PROP-AttrScalingShipNow-001.P5 Open questions
+
+- **PROP-AttrScalingShipNow-001.Q1:** L0b index mechanism — do we ship literal-path expression indexes on declared keys, or generated (virtual) columns? The narrowing review favors starting with literal-path expression indexes (smaller, less DDL churn) with generated columns as the fallback; the plan should confirm which the implementation commits to.
+- **PROP-AttrScalingShipNow-001.Q2:** L1 descriptor exact shape and byte-count source — confirm the key/value shape (`:skein/omitted` vs another storage-neutral spelling) and that the byte count is derivable from the inline value at read time without a second fetch.
+- **PROP-AttrScalingShipNow-001.Q3:** L1 size floor value — pick the fixed default (evidence suggests ~1KB order) and document it; deferred config is explicitly out (NG5).
+- **PROP-AttrScalingShipNow-001.Q4:** Declaration surface for L0b hot keys — confirm the trusted op/registry name and that it stays separate from any future L2 offload declaration (do not build one combined per-key capability system).
+- **PROP-AttrScalingShipNow-001.Q5:** Alpha-world cutover — confirm L0a/L0b/L1 are additive (startup pragmas; `CREATE INDEX IF NOT EXISTS` for declared keys; read-surface change only) so existing worlds are not force-rebuilt, reserving fail-loud schema rejection for genuinely incompatible layouts (TEN-000).
+- **PROP-AttrScalingShipNow-001.Q6:** L2 re-evaluation trigger and prep — record the concrete triggers (worlds approaching ~50k strands, operationally visible WAL churn, payload profiles trending past ~64KB) and the cheap decisive prep task (re-run the W4b large-value-replace benchmark on plain-ROWID fixtures, since the measured regression was taken on the rejected WITHOUT-ROWID design and is unverified on the recommended one). This is context for a future L2 decision, not work owned here.
