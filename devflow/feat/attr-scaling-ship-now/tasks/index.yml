@@ -3,6 +3,14 @@
 # blocked_by (the sign-off `approved` payload runs them as sequential gates).
 # The JSON-ready sign-off payload (tasks for the `approved` choice) is
 # tasks/signoff-payload.json.
+#
+# Enforcement note (review change-review-91481536): the devflow `approved`
+# delegation path reads only id/title/body/harness per task — it has no
+# per-task cwd/validation/max-attempts mechanics. The payload therefore
+# carries ONLY those four fields; every gate (validation commands, the
+# one-fix-then-stop merge rail in task 6, worktree cwd) is enforced by the
+# task BODY via the worker contract, and cwd comes from the single top-level
+# delegate-cwd sign-off param.
 tasks:
   - id: 1
     description: L0a storage pragmas — WAL/mmap/cache on datasource open (PH1)

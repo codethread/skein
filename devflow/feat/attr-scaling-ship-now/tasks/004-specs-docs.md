@@ -21,7 +21,9 @@ Land the contract prose now that code exists (`AA8`, `A7`). No behavior change.
   declared indexing, and WAL storage were the original design), preserving the
   richer-than-`require-valid-relation-name!` ex-data wording for both the
   `::indexed-attr-key` rejection (`{:key :spec :allowed-pattern}`) and the
-  `attr-get` guard (offending key + `show <id>` recovery path).
+  `attr-get` guard (the canonical literal
+  `{:key <attribute-key> :strand-id <strand-id> :recovery "show <strand-id>"}`,
+  exactly as implemented in Task 002).
 - Land the per-op lean-read wording in the `skein.spools.batteries` contract:
   `spools/batteries.md` — `list`/`ready`/query-backed listing lean-by-default
   above the 1 KiB floor, `show` full, no hydration flag (ASSN-DELTA-002.CC1–CC3).

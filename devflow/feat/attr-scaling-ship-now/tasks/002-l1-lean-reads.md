@@ -24,8 +24,11 @@ descriptor spec, and the fail-loud trusted-reader guard.
 - `src/skein/api/weaver/alpha.clj` (`AA4`): keep every trusted in-process read
   full-fidelity (`show`, `list`, `ready`, `strands-by-ids`, `subgraph`, query
   execution as consumed in process — ASSN-DELTA-003.CC6). **No** lean transform
-  in `normalize-row` (`TC3`, `R1`). Expose a lean-projection helper for the op
-  boundary to call (do not apply it here).
+  in `normalize-row` (`TC3`, `R1`). The lean-projection helper is **internal** —
+  implement it privately (`skein.core.*` or private in batteries), not on the
+  accretion-locked `skein.api.weaver.alpha` surface; its only consumer is
+  batteries, and it is promoted to the alpha tier only if a second cross-spool
+  consumer appears.
 - `spools/src/skein/spools/batteries.clj` (`AA5`): `list-op`, `ready-op`, and the
   named-query listing path apply the lean projection above the **fixed 1024-byte
   (1 KiB)** floor (ASSN-DELTA-001.CC7); values ≤ floor pass through verbatim;
@@ -35,16 +38,17 @@ descriptor spec, and the fail-loud trusted-reader guard.
   `make docs-check` sync land in Task 004.
 - `spools/src/skein/spools/util.clj` (`AA6`): `attr-get` fail-loud guard —
   reject a value conforming to `::specs/omitted-attribute-descriptor` where a raw
-  value is expected, throwing `ex-info` whose ex-data carries the offending
-  attribute **key** and the full-fidelity **recovery path** (`show <id>`)
+  value is expected, throwing `ex-info` with the **canonical ex-data**
+  `{:key <attribute-key> :strand-id <strand-id> :recovery "show <strand-id>"}`
+  — exactly these key names, so no later worker invents a divergent shape
   (ASSN-DELTA-001.CC6, ASSN-DELTA-003.CC7). Richer than
   `require-valid-relation-name!`'s bare `{:relation relation}`.
 - Tests (`AA7`, under `test/skein/**` — e.g. `test/skein/spools/batteries_test.clj`,
   `test/skein/spools/util_test.clj`, and a specs test): descriptor
   discrimination (a descriptor is never a plain string/number/boolean),
   lean-vs-full split by op, the 1 KiB floor boundary (just-under passes, just-over
-  omitted), and the `attr-get` guard's loud rejection including its ex-data
-  contract (offending key + `show <id>` recovery path). Use isolated weaver
+  omitted), and the `attr-get` guard's loud rejection including its canonical
+  ex-data (`{:key … :strand-id … :recovery …}`). Use isolated weaver
   worlds (skein.test.alpha / spools test-support; mirror existing
   `batteries_test.clj`/`util_test.clj`).
 

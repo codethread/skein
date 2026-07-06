@@ -30,7 +30,13 @@ contract, or read-shape change. This is `AA1`'s pragma portion; the
 
 - Pragmas apply on open for file and memory storage; no API/read-shape/schema
   effect. `ensure-current-schema!` still validates only `strands`/`strand_edges`.
-- Focused `db` tests cover the pragma-on-open behavior; full suite green.
+- Focused `db` tests cover the pragma-on-open behavior **by asserting the
+  queried-back pragma values per storage kind**: file-backed storage must
+  report `journal_mode=wal` (anything else fails — a real WAL failure must
+  never pass silently); `sqlite-memory` is expected to report
+  `journal_mode=memory` (SQLite ignores WAL for in-memory databases; assert
+  that fallback explicitly so it can never mask a file-backed failure). Full
+  suite green.
 - `git status --short` shows no generated SQLite/WAL/SHM artifacts (V7).
 
 ## Validation
