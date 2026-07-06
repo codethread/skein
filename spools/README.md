@@ -86,12 +86,12 @@ dependencies, and local development overrides, see [Writing shared spools](../do
 
 | Spool | Contract doc | API reference | Purpose |
 |---|---|---|---|
-| `skein.spools.shuttle` | [shuttle/README.md](./shuttle/README.md) | [shuttle.api.md](./shuttle.api.md) | Agent shuttle **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, append-only run memory, and the preamble seam. Registers no ops. |
-| `skein.spools.agents` | [agents/README.md](./agents/README.md) | [agents.api.md](./agents.api.md) | Cross-harness subagent surface over shuttle: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
-| `skein.spools.treadle` | [shuttle/treadle.md](./shuttle/treadle.md) | [treadle.api.md](./treadle.api.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning shuttle runs and delivering successful results through `workflow/complete!`. |
-| `skein.spools.chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
-| `skein.spools.kanban` | [kanban.md](./kanban.md) | [kanban.api.md](./kanban.api.md) | User-facing kanban board: feature/epic cards, refinement/pending/claimed lanes, notes and handovers via `strand kanban`. |
-| `skein.spools.cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) | Generic weaver timer engine: registers named jobs that fire on a fixed interval with uniform jitter on a spool-owned scheduled executor, with last-outcome/next-fire status and a loud inspectable failure log. Ships no jobs. |
+| `skein.spools.shuttle` | [shuttle/README.md](./shuttle/README.md) | [shuttle.api.md](./shuttle.api.md) · [cookbook](./shuttle.cookbook.md) | Agent shuttle **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, append-only run memory, and the preamble seam. Registers no ops. |
+| `skein.spools.agents` | [agents/README.md](./agents/README.md) | [agents.api.md](./agents.api.md) · [cookbook](./agents.cookbook.md) | Cross-harness subagent surface over shuttle: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
+| `skein.spools.treadle` | [shuttle/treadle.md](./shuttle/treadle.md) | [treadle.api.md](./treadle.api.md) · [cookbook](./treadle.cookbook.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning shuttle runs and delivering successful results through `workflow/complete!`. |
+| `skein.spools.chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) · [cookbook](./chime.cookbook.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
+| `skein.spools.kanban` | [kanban.md](./kanban.md) | [kanban.api.md](./kanban.api.md) · [cookbook](./kanban.cookbook.md) | User-facing kanban board: feature/epic cards, refinement/pending/claimed lanes, notes and handovers via `strand kanban`. |
+| `skein.spools.cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) · [cookbook](./cron.cookbook.md) | Generic weaver timer engine: registers named jobs that fire on a fixed interval with uniform jitter on a spool-owned scheduled executor, with last-outcome/next-fire status and a loud inspectable failure log. Ships no jobs. |
 
 ## Reference examples
 

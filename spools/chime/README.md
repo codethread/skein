@@ -17,6 +17,10 @@ Chime spawns a user-configured local process with the user's authority, so it
 is an approved local-root spool like shuttle rather than a shipped classpath
 spool.
 
+For composition recipes — binding a notifier, writing rules that fire on an
+attribute transition or on readiness, and debugging when the notifications go
+quiet — see the [cookbook](../chime.cookbook.md).
+
 ## Loading
 
 Approve the local root from the selected workspace's `spools.edn`:

@@ -1,5 +1,13 @@
 # Skein Treadle Spool
 
+> This is the **contract** doc: gate request attributes, the `treadle/*`
+> vocabulary, delivery semantics, and recovery. Its two companions are
+> [`treadle.cookbook.md`](../treadle.cookbook.md) — worked composition recipes
+> (how/why you bridge a `:subagent` gate to a run, and recover a stalled one) —
+> and [`treadle.api.md`](../treadle.api.md) — generated fn signatures and
+> docstrings. Reach for the cookbook when you want a runnable pattern, the API
+> doc when you want an exact arity, and this doc for what the adapter promises.
+
 ## Overview
 
 `skein.spools.treadle` is the shuttle-backed adapter for workflow gates whose waiter is `subagent`. It watches ready workflow gates, spawns shuttle runs, and completes the gate with the run result when the run succeeds.

@@ -1,5 +1,15 @@
 # Skein Shuttle Spool
 
+> This is the **contract** doc: run lifecycle, the harness/backend registries,
+> the claims model, crash reconciliation, and the `shuttle/*` attribute
+> vocabulary. Its two companions are
+> [`shuttle.cookbook.md`](../shuttle.cookbook.md) — worked composition recipes
+> (how/why you wire a harness tier, the preamble seam, readiness chains, or a
+> backend) — and [`shuttle.api.md`](../shuttle.api.md) — generated fn signatures
+> and docstrings. Reach for the cookbook when you want a runnable pattern, the
+> API doc when you want an exact arity, and this doc for what the engine
+> promises.
+
 ## 1. Overview
 
 `skein.spools.shuttle` is a trusted userland spool for spawning coding-agent runs from ordinary Skein strands. It is a pure run **engine**: it registers no CLI operations of its own. The agent-facing verb surface (`strand agent ...`), delegation, and coordinator/worker guidance live in the [agents spool](../agents/README.md), which composes this engine.

@@ -2,6 +2,11 @@
 
 `skein.spools.agents` is the cross-harness subagent surface. It composes the [shuttle run engine](../shuttle/README.md) and owns the whole agent-facing vocabulary: the `strand agent ...` verbs, the `agent-plan` weave pattern, delegation and recovery, and both the worker contract and the coordinator guidance.
 
+This README is the contract — what each verb promises. For the *shapes* real
+coordination takes — the plan/delegate/await/verify/close loop, contract-first
+recovery, roster review, cross-vendor panels — see the composition recipes in
+[`agents.cookbook.md`](../agents.cookbook.md).
+
 ---
 
 ## 1. User guide (for humans)

@@ -1,5 +1,13 @@
 # Kanban spool
 
+> This is the **contract** doc: the board model, the lanes and priority ladder,
+> the `kanban/*` attribute vocabulary, and the CLI op surface. Its two companions
+> are [`kanban.cookbook.md`](./kanban.cookbook.md) — worked composition recipes
+> (how/why you run work through the board) — and [`kanban.api.md`](./kanban.api.md)
+> — generated fn signatures and docstrings. Reach for the cookbook when you want a
+> runnable flow, the API doc when you want an exact signature, and this doc for
+> what the board guarantees.
+
 The kanban spool is the user-facing work board held entirely in Skein strands. It tracks **user↔agent** work: everything a user asks for becomes a `feature` card (occasionally grouped under an `epic`), and every agent working directly with a user works under a claimed card. It complements — never replaces — devflow runs, agent plans, and delegation, which all hang beneath cards.
 
 ## Model

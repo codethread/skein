@@ -86,19 +86,25 @@ nav:
           - API: spools/loom.api.md
       - Kanban Board:
           - Contract: spools/kanban.md
+          - Cookbook: spools/kanban.cookbook.md
           - API: spools/kanban.api.md
       - Agent Shuttle:
           - Contract: spools/shuttle/README.md
+          - Cookbook: spools/shuttle.cookbook.md
           - API: spools/shuttle.api.md
       - Agents Spool:
           - Contract: spools/agents/README.md
+          - Cookbook: spools/agents.cookbook.md
           - API: spools/agents.api.md
       - Treadle Gate Bridge:
           - Contract: spools/shuttle/treadle.md
+          - Cookbook: spools/treadle.cookbook.md
           - API: spools/treadle.api.md
       - Chime Notifications:
           - Contract: spools/chime/README.md
+          - Cookbook: spools/chime.cookbook.md
           - API: spools/chime.api.md
       - Cron Engine:
           - Contract: spools/cron/README.md
+          - Cookbook: spools/cron.cookbook.md
           - API: spools/cron.api.md

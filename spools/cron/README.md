@@ -22,6 +22,11 @@ Cron itself spawns no external processes and ships no jobs. Because a real job
 almost always escalates capability (a shell subprocess, a network call), cron is
 an approved local-root spool like shuttle rather than a shipped classpath spool.
 
+For composition recipes — registering an interval+jitter job, seeding the first
+fire from external state, registering from `init.clj` rather than `install!`, and
+coordinating many weavers with a best-effort lock — see the
+[cookbook](../cron.cookbook.md).
+
 ## Dependency information
 
 Cron has no spool prerequisites. Approve the local root from the selected
