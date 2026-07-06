@@ -7,8 +7,10 @@
   `skein.spools.loom` owns the read-only work-graph projections (all activated
   from init.clj). This config holds only repo policy and wiring: CLI-facing
   root ops wrapping the devflow and loom projections, a few named queries, the
-  `delegate-pipeline` weave pattern, repo-local shuttle harness aliases, this
-  repo's chime attention rules, and the default review contract. The generic
+  `delegate-pipeline` weave pattern, the hand-authored coordinator `land`
+  workflow (family \"land\", registered on `skein.spools.workflow`) and its
+  `land` op, repo-local shuttle harness aliases, this repo's chime attention
+  rules, and the default review contract. The generic
   graph-projection logic behind `current-dags`, `branches`, and `flow-status`
   lives in `skein.spools.loom`; the ops here supply repo policy — which
   attribute names a branch, which query feeds the ready frontier — and register
@@ -747,13 +749,15 @@
                   :depends-on [:push-main-ci-green]
                   :attributes {"workflow/action-ref" "land.cleanup"
                                "workflow/instruction"
-                               (fn [{:keys [branch]}]
+                               (fn [{:keys [branch card]}]
                                  (str "Delete the remote branch (`git push origin --delete " branch "`), which also"
                                       " closes the draft PR. Remove the worktree and local branch"
                                       " (`wktree remove --branch " branch " --force`; force is expected after the"
-                                      " squash-merge). Finish or annotate the kanban card"
-                                      " (`strand kanban finish <card> --outcome done` when a card is set). Then close"
-                                      " this land run's root to complete it."))})))
+                                      " squash-merge)."
+                                      (if (non-blank-string? card)
+                                        (str " Finish the kanban card (`strand kanban finish " card " --outcome done`).")
+                                        "")
+                                      " Then close this land run's root to complete it."))})))
 
 (defn- register-land-workflows!
   "Register the land run's routing targets (the abort continuation) with the
@@ -765,10 +769,13 @@
 
 (defn- land-start!
   "Pour and start the land run for a feature branch; run-id is the feature slug."
-  [feature {:keys [branch worktree card]}]
+  [feature {:keys [branch worktree card] :as opts}]
   (require-non-blank! :feature feature)
   (require-non-blank! :branch branch)
   (require-non-blank! :worktree worktree)
+  (when (and (contains? opts :card) (not (non-blank-string? card)))
+    (throw (ex-info "card must be a non-blank string when provided"
+                    {:argument :card :value card})))
   (let [context (cond-> {:feature feature :branch branch :worktree worktree}
                   (non-blank-string? card) (assoc :card card))]
     (workflow/start! feature

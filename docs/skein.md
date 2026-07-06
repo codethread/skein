@@ -94,11 +94,13 @@ is the enforcement: push the branch and open a draft PR, drive CI green at HEAD,
 then run the declared roster sign-off — sign-off is only valid on a pushed branch
 with a draft PR and green CI. A coordinator sign-off checkpoint (`approved`
 continues; `abort` records a required reason and leaves the branch untouched)
-then gates a squash-merge into *local* main, which must pass the full local
+then gates a squash-merge into *local* main (regenerating `make api-docs` into
+the squash first if spool docstrings changed), which must pass the full local
 verification gate (`clojure -M:test`, `go test`, `make fmt-check lint
 reflect-check docs-check`, and the smoke suite) before main is pushed; main is
 only landed once its own CI is green, after which cleanup deletes the remote
-branch/PR, removes the worktree, and closes the run. Worker agents never land —
+branch/PR, removes the worktree, finishes the kanban card when one is set
+(`strand kanban finish <card> --outcome done`), and closes the run. Worker agents never land —
 they stop at implemented+committed; only a coordinator holding delegated sign-off
 authority drives a `land` run (`strand land about` for the manual, `strand help
 land` for the command surface).

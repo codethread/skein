@@ -420,8 +420,13 @@
         (is (= "land.merge.local-verify" (:action-ref (first (:ready approved))))))
       (is (= "land.main.ci-green"
              (:action-ref (first (:ready (op! "land" ["complete" "land-x" "merged; gates green"]))))))
-      (is (= "land.cleanup"
-             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "main pushed"]))))))
+      (let [ready-cleanup (op! "land" ["complete" "land-x" "main pushed"])
+            cleanup-step (first (:ready ready-cleanup))]
+        (is (= "land.cleanup" (:action-ref cleanup-step)))
+        ;; cardless run: the cleanup instruction must omit kanban-finish
+        ;; entirely rather than render a literal "<card>" placeholder
+        (is (not (str/includes? (:instruction cleanup-step) "kanban finish")))
+        (is (not (str/includes? (:instruction cleanup-step) "<card>"))))
       (let [done (op! "land" ["complete" "land-x" "cleaned up"])]
         (is (true? (:done done)))
         (is (empty? (:ready done))))
@@ -445,6 +450,36 @@
       (let [done (op! "land" ["complete" "land-y" "abort recorded"])]
         (is (true? (:done done)))
         (is (empty? (:ready done)))))))
+
+(deftest land-cleanup-instruction-interpolates-the-real-card-id
+  (with-config-runtime
+    (fn [_rt]
+      (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" "card-2"])
+      (op! "land" ["complete" "land-w"])                            ; push-draft-pr
+      (op! "land" ["complete" "land-w"])                            ; ci-green
+      (op! "land" ["complete" "land-w"])                            ; signoff-review
+      (op! "land" ["choose" "land-w" "approved"])
+      (op! "land" ["complete" "land-w"])                            ; merge-local-verify
+      (let [ready-cleanup (op! "land" ["complete" "land-w"])        ; push-main-ci-green
+            cleanup-step (first (:ready ready-cleanup))]
+        (is (= "land.cleanup" (:action-ref cleanup-step)))
+        (is (str/includes? (:instruction cleanup-step)
+                           "strand kanban finish card-2 --outcome done"))
+        (is (not (str/includes? (:instruction cleanup-step) "<card>")))))))
+
+(deftest land-start-fails-loudly-on-a-blank-card
+  (with-config-runtime
+    (fn [_rt]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"card must be a non-blank string"
+                            (op! "land" ["start" "land-blank-card"
+                                         "--branch" "land-blank-card"
+                                         "--worktree" "/tmp/land-blank-card"
+                                         "--card" ""])))
+      ;; absent --card stays legal: not every land run has a card
+      (is (= "land-start"
+             (:operation (op! "land" ["start" "land-no-card"
+                                      "--branch" "land-no-card"
+                                      "--worktree" "/tmp/land-no-card"])))))))
 
 (deftest land-op-renders-arg-spec-subcommand-help-and-fails-loudly
   (with-config-runtime
