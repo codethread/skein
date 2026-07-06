@@ -58,6 +58,10 @@ which convention it guards.
   {:doc "Enforce the kanban board attribute table this repo committed to."
    :checks [{:attr "kanban/card"     :enum ["true"]}
             {:attr "kanban/type"     :enum ["feature" "epic"]}
+            ;; kanban.md fixes the lanes (refinement/pending/claimed) but leaves
+            ;; the closed outcome open-ended (done/abandoned/…). Pin the outcome
+            ;; set THIS board actually uses rather than treating it as a
+            ;; spool-fixed enum, and widen it when your board adopts a new one.
             {:attr "kanban/status"   :enum ["refinement" "pending" "claimed" "done" "abandoned"]}
             {:attr "kanban/priority" :enum ["p1" "p2" "p3" "p4"]}]})
 
@@ -91,8 +95,11 @@ which convention it guards.
   is the whole reason this lives in a spool and not in the core.
 
 Honest source: the `kanban/*` attribute table in
-[`kanban.md`](./kanban.md) ("Card state lives under the `kanban/*` attribute
-topic"), and the `shuttle` vocabulary in [selvage.md §2](./selvage.md#2-usage).
+[`kanban.md`](./kanban.md), which fixes `kanban/status` to
+`refinement`/`pending`/`claimed` or an explicit closed outcome (`done`,
+`abandoned`, …) — so the outcome values above are a workspace choice, not a
+spool-fixed enum — and the `shuttle` vocabulary in
+[selvage.md §2](./selvage.md#2-usage).
 The same shape hardens the `roster/*` table
 ([`roster.md`](./roster.md)) or the `workflow/role` enum
 ([`workflow.md`](./workflow.md#7-attribute-vocabulary)).
@@ -119,6 +126,9 @@ returns the flat violation vector across every matched strand.
 ;; => [ ... every violation in the active graph ... ]
 
 ;; Scoped: only the strands owned by this agent, or only kanban cards.
+;; The scope is a query form: [:= a b] tests equality and [:attr k] reads
+;; attribute k, so [:= [:attr :owner] "agent"] matches strands whose owner
+;; attribute is "agent" (full DSL: ../devflow/specs/repl-api.md, SPEC-003.C13a).
 (selvage/check-all [:= [:attr :owner] "agent"])
 (selvage/check-all [:= [:attr :kanban/card] "true"])
 ;; => [{:strand-id "..." :vocab :kanban :attr "kanban/status" :check :enum :value "wip" ...}]

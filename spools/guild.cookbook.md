@@ -182,7 +182,7 @@ explain or redirect, but it can never report success.
 
 ;; 2. once callers have moved, deprecate v1 with a pointer to its replacement
 (guild/deprecate! 'gate.status.v1
-  {:replacement "gate.status.v2" :since "2026-07-02"})
+  {:replacement "gate.status.v2" :since "<YYYY-MM-DD>"})
 
 ;; now guild.describe reports v2 :active and v1 :deprecated; invoking v1 throws:
 ;; ex-info {:code :op/deprecated :op "gate.status.v1" :replacement "gate.status.v2"}

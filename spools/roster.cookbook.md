@@ -17,11 +17,14 @@ Division of truth: the attribute table and fn signatures live in the contract
 and generated API doc; narrative and composition live here. This cookbook never
 restates the `roster/*` table or a signature — it links to them.
 
-Every public helper takes `runtime` as its first argument and never resolves the
-ambient runtime itself, so these recipes assume you already hold one —
+The runtime-touching helpers used here — `track!`, `heartbeat!`, `finish!`,
+`roster`, and `await-quiet!` — take `runtime` as their first argument and never
+resolve the ambient runtime themselves, so these recipes assume you already hold
+one —
 `(require '[skein.spools.roster :as roster] '[skein.api.current.alpha :as current])`
-and `(def rt (current/runtime))` in trusted config or a live weaver REPL. From
-the shell the same surface is `strand roster …`.
+and `(def rt (current/runtime))` in trusted config or a live weaver REPL. (The
+discovery helpers `about` and `prime` take no runtime.) From the shell the same
+surface is `strand roster …`.
 
 ## How to read a recipe
 
@@ -136,16 +139,16 @@ strand roster await-quiet --feature roster-spool --timeout-ms 60000
   state of the scope at the moment it returns; it enforces no lock or exclusivity
   (roster never does). The coordinator decides what quiet *means* — here, "safe
   to land" — which is why the return is a reason to branch on, not a boolean.
-- **`:stale` outranks `:quiet` on purpose.** A run that stopped heartbeating is
-  the thing you most need to see, so staleness short-circuits before the wait can
-  ever report quiet. Landing on a silently stalled fan-out is exactly the bug
-  this ordering prevents.
+- **`:stale` outranks `:quiet` on purpose.** A stopped heartbeat needs attention
+  before a coordinator lands, so staleness short-circuits ahead of any quiet
+  report. Landing on a silently stalled fan-out is exactly the bug this ordering
+  prevents.
 - **Scopes compose with the same vocabulary as tracking.** You await the same
   `:feature`/`:branch`/`:worktree` you tracked under, so the barrier lines up
   with the work without a second bookkeeping model.
-- **The deadline is honest.** With no quiet and no stale entry, `await-quiet!`
-  returns `:timeout` (default thirty minutes, matching `workflow/await!`) rather
-  than blocking indefinitely — a coordinator always gets control back.
+- **`await-quiet!` returns control at the deadline.** With no quiet and no stale
+  entry, it returns `:timeout` (default thirty minutes, matching `workflow/await!`)
+  rather than blocking indefinitely, so a coordinator always gets control back.
 
 Honest source: the await semantics in [`roster.md`](./roster.md) (Staleness and
 awaiting; `SPEC-RosterSpool-001.C5`), pinned by

@@ -55,7 +55,8 @@ feed it to `update --edge depends-on:<id>`, then let `ready` compute the
 unblocked frontier.
 
 ```sh
-# jq or any JSON reader works; these examples use a tiny python helper
+# the id() helper below needs python3 on PATH; with jq installed you can
+# instead write id() { jq -r .id; } and drop the python dependency
 id() { python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])'; }
 
 design=$(strand add "Design the API" --state closed | id)
@@ -77,8 +78,10 @@ strand ready
 - **`ready` gates on *active* blockers only.** A `depends-on` edge to a `closed`
   strand doesn't block; only an active dependency does. That is why the design
   above is created `--state closed` — the docs strand is ready immediately.
-  Close (or `supersede`) the blocker and its dependents surface on the next
-  `ready`.
+  Close the blocker and its dependents surface on the next `ready`. `supersede`
+  only unblocks a dependent when the replacement is *itself* already closed: it
+  rewires the `depends-on` edge onto the replacement, so an active replacement
+  just moves the block onto the new strand.
 - **Edges are directional and repeatable.** `--edge depends-on:<id>` adds one
   outgoing edge; repeat the flag to fan a strand out over several dependencies.
   A malformed spec (no `:`, empty terminal) fails loudly before the update lands.

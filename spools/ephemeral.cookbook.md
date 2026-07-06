@@ -103,7 +103,11 @@ filter for the parent you're finishing, then burn exactly those ids.
 (ephemeral/ephemeral! (:id task-a) "A scratch")
 (ephemeral/ephemeral! (:id task-b) "B scratch")
 
-;; scope the shared query form to just task-a's children
+;; scope the shared query form to just task-a's children.
+;; Query forms are data: [:and a b] requires both predicates, [:= :id x] tests a
+;; field for equality, and [:edge/in "parent-of" q] matches strands on the
+;; incoming side of a parent-of edge whose other endpoint satisfies q. Full DSL
+;; in the REPL API spec (../devflow/specs/repl-api.md, SPEC-003.C13a).
 (def a-scratch
   [:and ephemeral/ephemeral-query [:edge/in "parent-of" [:= :id (:id task-a)]]])
 
@@ -156,14 +160,18 @@ cid=$(printf '%s' "$child" | jq -r .id)
 strand update "$task_id" --edge parent-of:"$cid"
 ```
 
-`strand list --query` and `strand burn` only take a **registered** query name, so
-register `ephemeral-query` under a name once from trusted config or a live REPL:
+`strand list --query` takes a **registered** query name, so register
+`ephemeral-query` under a name once from trusted config or a live REPL:
 
 ```clojure
 (require '[skein.spools.ephemeral :as ephemeral]
          '[skein.repl :as repl])
 (repl/defquery! 'ephemeral ephemeral/ephemeral-query)
 ```
+
+`strand burn` is id-only — it never takes a query. So from the shell you list via
+the named query and burn the ids it hands back; for a query-shaped bulk burn, drop
+into the REPL and call `graph/burn-by-ids!` on the ids `query-ids!` computes.
 
 ```sh
 strand list --query ephemeral        # the active ephemeral strands
@@ -175,7 +183,8 @@ strand burn "$cid"                   # burn one by id when you're done with it
 - **There is no `strand ephemeral` op, and there doesn't need to be.** The value
   is the attribute, not a command — `--attr ephemeral=true` on an ordinary `add`
   *is* an ephemeral strand. Registering the query name is what lets the generic
-  `list`/`burn` ops operate on the class from the shell.
+  `list`/`ready` ops select the class from the shell; `burn` still takes ids, so
+  a query-shaped bulk burn belongs in the REPL via `graph/burn-by-ids!`.
 - **Register the query once, in config.** `defquery!` names the reusable
   `ephemeral-query` value so every later `strand list --query ephemeral` resolves
   it; an inline query form is rejected by the CLI, which only dispatches

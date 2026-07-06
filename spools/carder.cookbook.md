@@ -102,8 +102,11 @@ exactly what this repo's `carder-report` op does for its kanban card roots.
 (carder/orphans)
 ;; => [{:id "..." :title "Loose note" :state "active" ...} ...]
 
-;; Suppress the roots you know are legitimately edge-free — e.g. unstarted
-;; kanban cards — before presenting the list. (Adapted from .skein/config.clj.)
+;; Suppress the roots you know are legitimately edge-free before presenting the
+;; list. The predicate below is a REPO-LOCAL POLICY EXAMPLE, not spool contract:
+;; it encodes THIS repo's rule that unstarted kanban cards are expected orphans
+;; (adapted from .skein/config.clj). Write your own predicate for whatever roots
+;; your board treats as legitimately edge-free.
 (defn- expected-orphan? [row]
   (and (= "true" (get-in row [:attributes :kanban/card]))
        (contains? #{"pending" "refinement"} (get-in row [:attributes :kanban/status]))))
@@ -140,8 +143,8 @@ roots from the orphan section; and
 
 **Situation.** A delegated agent run failed and stayed active (failures are loud
 and visible on purpose). Downstream strands that `depends-on` it are now stuck —
-ready-looking but really waiting on a corpse. You want to find that stuck work
-and route it back into recovery.
+ready-looking but still blocked on the failed run. You want to find that stuck
+work and route it back into recovery.
 
 **Composition.** `blocked-by-failure` returns each active strand that has an
 active `depends-on` blocker whose `shuttle/phase` is `"failed"` or
@@ -188,7 +191,7 @@ carries both blocker ids and the `shuttle/error`; the retry contract is in the
 
 ---
 
-## Recipe: Wire the hygiene report into a coordinator's routine
+## Recipe: Wrap the hygiene report in your own op or scheduled sweep
 
 **Situation.** A one-off `stale` or `orphans` call is easy to forget. You want
 the whole hygiene picture — stale, orphaned, failure-blocked — available on
@@ -196,9 +199,9 @@ demand as a first-class command, or fired on a schedule so drift surfaces withou
 anyone remembering to look.
 
 **Composition.** `report` rolls all three sections into one JSON-compatible map,
-each with a `:count` and `:rows`. Register a thin op around it for on-demand use
-(this repo ships exactly that as `strand carder-report`), or drive it from a
-timer for a standing sweep.
+each with a `:count` and `:rows`. Wrap that one call behind whatever surface your
+workspace already uses — a registered op for on-demand runs, or a scheduled job
+for a standing sweep — and keep any policy in the wrapper, not the spool.
 
 ```clojure
 (require '[skein.spools.carder :as carder])
@@ -210,22 +213,26 @@ timer for a standing sweep.
 ;;     :blocked-by-failure {:count 1 :rows [...]}}
 ```
 
-As a registered op, the report becomes a command with typed flags (adapted from
-this repo's `.skein/config.clj`):
+Registered as an op, the report becomes a command with typed flags. Keep the op
+body a thin unpack over `report` and put workspace policy — the default
+threshold, your own orphan suppression (the `expected-orphan?` predicate from the
+orphan recipe above) — in the wrapper:
 
 ```clojure
-;; op body: read-only wrapper, plus the workspace's expected-orphan suppression
-(defn carder-report-op [ctx]
-  (let [{:keys [days include-plumbing]} (:op/args ctx)]
-    (suppress-expected-carder-orphans
-     (carder/report (cond-> {}
-                      days (assoc :days days)
-                      (some? include-plumbing) (assoc :include-plumbing? include-plumbing))))))
+;; op body: a thin read-only wrapper over report, plus your own orphan policy
+(defn hygiene-report-op [ctx]
+  (let [{:keys [days include-plumbing]} (:op/args ctx)
+        result (carder/report (cond-> {}
+                                days (assoc :days days)
+                                (some? include-plumbing) (assoc :include-plumbing? include-plumbing)))]
+    (update-in result [:orphans :rows] #(remove expected-orphan? %))))
 ```
 
-```sh
-strand carder-report --days 7
-```
+A scheduled job is the same call on a timer: run `report` on an interval and
+raise a card (or post a note) whenever a section is non-empty. This repo wires
+exactly this shape — a read-only report op — in
+[`.skein/config.clj`](../.skein/config.clj); treat that as one worked example, not
+the required form.
 
 **Why this shape.**
 
@@ -234,20 +241,18 @@ strand carder-report --days 7
   §3](./carder.md#3-surface)) — so a CLI op is a thin `(:op/args ctx)` unpack,
   and a scheduled job is one call whose result you post as a note or a card.
 - **The op is where workspace policy lives.** The default threshold, the
-  expected-orphan suppression, and whether to include plumbing are all *this
-  workspace's* choices; keeping them in the op body leaves the spool a pure,
+  expected-orphan suppression, and whether to include plumbing are all *your
+  workspace's* choices; keeping them in the wrapper leaves the spool a pure,
   reusable report.
-- **On demand or on a timer, same call.** A coordinator runs `strand
-  carder-report` when tidying; a `skein.spools.cron` job runs the identical
-  `report` on an interval and raises a card when a section is non-empty — the
-  same pattern this repo uses for its scheduled NVD dependency scan. Pick the
-  cadence; the report doesn't care who calls it.
+- **On demand or on a timer, same call.** A coordinator runs the op when tidying;
+  a scheduled job runs the identical `report` on an interval and raises a card
+  when a section is non-empty. Pick the cadence; the report doesn't care who
+  calls it.
 
-Honest source: the `carder-report-op`, its `carder-report-arg-spec`
-(`--days`/`--include-plumbing` flags), and the op registration in this repo's
-[`.skein/config.clj`](../.skein/config.clj); the scheduled-sweep pattern mirrors
-the same file's cron `:nvd-scan` job, which fires a report on a timer and raises
-a kanban card on findings ([cron README](./cron/README.md)).
+Honest source: the `(report opts)` contract in
+[carder.md §3](./carder.md#3-surface), and this repo's own read-only report op in
+[`.skein/config.clj`](../.skein/config.clj) as one worked example of the wrapper
+shape.
 
 ---
 

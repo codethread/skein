@@ -116,9 +116,9 @@ renders a trimmed brief with no extra work.
   and `pack` throws with the allowed set in `ex-data`, so a typo in `:include`
   surfaces immediately instead of silently dropping context (contract
   [§3](./bobbin.md#3-surface)).
-- **Fewer sections, sharper agent.** A reviewer briefed on blockers and notes
-  shouldn't also be handed the target's children and dependents — trimming keeps
-  the prompt pointed at the decision you actually want made.
+- **Trim the pack to the decision at hand.** A reviewer briefed on blockers and
+  notes shouldn't also be handed the target's children and dependents — trimming
+  keeps the prompt pointed at the decision you actually want made.
 
 Honest source: the `:include` subset and its loud-failure behaviour verified
 against a live weaver, pinned by

@@ -1,9 +1,8 @@
 # Skein Loom Spool — Cookbook
 
 Composition recipes for `skein.spools.loom`: how to turn its read-only
-projections into the things people actually look at — a branch dashboard, a
-live workflow feed, a rendered gate chain — and *why* each shape is the right
-one.
+projections into a branch dashboard, a live workflow feed, or a rendered gate
+chain, and *why* each shape is the right one.
 
 This is the **how/why** half of the loom docs. The other two are:
 
@@ -18,10 +17,13 @@ contract and generated API doc; narrative and composition live here. This
 cookbook never restates a signature — it links to them. When a recipe needs an
 exact arity, follow the link.
 
-Loom mutates nothing and resolves no ambient runtime: every fn takes the active
-runtime as its first argument, so these recipes assume you already hold one —
+Loom mutates nothing. Its graph projections — `work-dags`, `branch-views`, and
+`flow-status` — resolve no ambient runtime and take the active runtime as their
+first argument, so these recipes assume you already hold one —
 `(require '[skein.spools.loom :as loom] '[skein.api.current.alpha :as current])`
-and `(def rt (current/runtime))` inside trusted config or a live weaver REPL.
+and `(def rt (current/runtime))` inside trusted config or a live weaver REPL. The
+pure helpers `summarize` and `gate-chain-mermaid` take plain data instead and need
+no runtime.
 
 ## How to read a recipe
 
@@ -38,7 +40,7 @@ already renders it.
 
 ---
 
-## Recipe: A per-branch dashboard that stays yours to style
+## Recipe: A per-branch dashboard with repo-defined policy
 
 **Situation.** You want a "what's happening on each feature branch" view: one
 row per branch, each showing its work root, the active work hanging beneath it,
@@ -54,11 +56,17 @@ hangs each root's active `parent-of` descendants beneath it, and marks the ones
 on your ready frontier.
 
 ```clojure
-;; the repo's own "ready work" definition: normal tasks, workflow steps, and
-;; checkpoints, but not the bookkeeping strands (workflow/role molecule /
-;; procedure / digest) that would clutter a human's frontier.
+;; the repo's own "ready work" definition: active work, minus shuttle run records
+;; and the bookkeeping strands (workflow/role molecule / digest / procedure) that
+;; would clutter a human's frontier.
+;; Query forms are data: [:and ...] requires all clauses, [:or ...] any, [:= a b]
+;; tests equality, [:missing [:attr k]] matches a strand lacking attribute k,
+;; [:in [:attr k] vs] tests membership, and [:not p] negates it. Full DSL:
+;; ../devflow/specs/repl-api.md, SPEC-003.C13a.
 (def work-query
   [:and [:= :state "active"]
+   [:or [:missing [:attr "shuttle/run"]]
+    [:not [:= [:attr "shuttle/run"] "true"]]]
    [:or [:missing [:attr "workflow/role"]]
     [:not [:in [:attr "workflow/role"] ["molecule" "digest" "procedure"]]]]])
 
