@@ -1,147 +1,271 @@
 # Getting started with Skein
 
-This guide walks through installing `strand` and `mill`, starting a mill-routed weaver, and
-working with strands, the REPL, and runtime config.
+This guide takes you from nothing to a working Skein setup, then a little
+further, into the live REPL and your own custom command. You can follow it top
+to bottom. You do not need to know Clojure or any graph tooling to start.
 
-## Core ideas
+It is written in two halves:
 
-Skein's data model is deliberately small. A **strand** is a simple node with a
-title and a lifecycle `state`; almost everything else you care about lives in
-its open-ended `attributes` map. You invent the attribute names — `owner`,
-`priority`, `kanban`, whatever your workflow needs — rather than waiting for the
-schema to grow. Relationships between strands are edges, which are themselves
-just typed, attribute-bearing links.
+1. **The everyday CLI** — install, start a weaver, add strands, ask what is
+   ready. This is all most people need day to day.
+2. **The live machine** — the REPL, named queries, and building your own
+   behavior. Optional, and clearly marked, so you can stop after part one and
+   come back later.
 
-On top of that model you get two ways to work:
+The guide marks places where you can skip ahead. If a section is not what you
+need right now, skip it. Already sold on the live-runtime story and want to jump
+straight to it? Go to [The REPL: a live machine](#the-repl-a-live-machine).
 
-- A small, predictable **CLI** (`strand`) for everyday CRUD and safe, scriptable
-  consumption of existing state. Those commands emit JSON.
-- A live **Lisp machine**: the long-lived weaver owns the store and runtime
-  state, and `mill weaver repl` attaches directly to that running weaver JVM
-  so you can query, mutate, and _extend_ Skein at runtime — registering queries,
-  patterns, views, event handlers, and custom operations without restarting anything.
+## Prefer to learn by asking?
 
-The CLI stays thin on purpose; runtime customization belongs in trusted config
-and the REPL. See [PHILOSOPHY.md](../devflow/PHILOSOPHY.md) for the reasoning.
+Skein's own repository is written to be read by coding agents, and it ships
+agent-facing docs, `prime` orientation commands, and the specs behind every
+contract. If you already work with a coding agent, you can point it at a Skein
+checkout and ask questions as you go.
 
-Install the CLIs from the Skein checkout. `make install` records this checkout as mill's install-time source for future weaver launches and thin nREPL attach clients; it does not affect what `mill init` writes.
+- `mill skein prime` prints orientation for the Skein source, docs, and how to
+  extend a `.skein` config. `mill strand prime` explains the strand
+  planning-and-tracking workflow. Both run with no weaver.
+- `docs/skein.md`, the `spools/` contracts, and `devflow/specs/` hold the real
+  detail.
+
+An agent that has read that surface can answer "how do I model a review step?"
+or "what belongs in the CLI versus the REPL?" interactively. You can follow this
+guide without an agent; the agent is optional.
+
+## The mental model in one minute
+
+A **strand** is a small record with three parts: a title, a **lifecycle
+`state`** (whether it is `active`, `closed`, or `replaced`), and an **open map of
+`attributes`**. "Open map" means the attribute names are yours to invent
+(`owner`, `priority`, `kind`, `kanban`, whatever your workflow needs) instead of
+waiting for a schema to grow.
+
+Strands connect with **edges**: links from one strand to another. Edges are
+**typed**, meaning each carries a relation name like `depends-on`, and they can
+carry attributes of their own.
+
+You work with strands two ways:
+
+- The **`strand` CLI** for everyday create, update, and read. Its commands print
+  JSON, so scripts and agents can consume them.
+- The **weaver's REPL** for everything richer: querying, mutating, and extending
+  Skein while it runs, without restarting anything. A REPL is an interactive
+  Clojure prompt; more on it in part two.
+
+The CLI stays deliberately thin. Runtime customization lives in trusted config
+and the REPL. See [PHILOSOPHY.md](../devflow/PHILOSOPHY.md) for why the line is
+drawn there.
+
+## Before you start
+
+You need a few things on the machine:
+
+- **Git**, and a Git repository to track work in. Skein is repo-first and does
+  not run outside Git.
+- **make**, to build and install the CLIs.
+- **Go**, which compiles the `strand` and `mill` command-line tools.
+- **A JVM**, which runs the weaver (Skein is a Clojure program).
+
+Install those the usual way for your platform before the steps below.
+
+## Install
+
+Skein installs from a cloned source checkout of this repository.
 
 ```sh
 make install
 ```
 
-## Table of contents
-
-- [Core ideas](#core-ideas)
-- [Choosing a workspace](#choosing-a-workspace)
-- [Start the weaver](#start-the-weaver)
-- [Add and inspect strands](#add-and-inspect-strands)
-- [Close and delete strands](#close-and-delete-strands)
-- [REPL workflow](#repl-workflow)
-- [IDE REPL setup](./ide-repl/)
-- [Startup config and runtime helpers](#startup-config-and-runtime-helpers)
-  - [Custom operations](#custom-operations)
-- [Example: a small userland kanban op](#example-a-small-userland-kanban-op)
-- [Stop the weaver](#stop-the-weaver)
+This builds and installs the `strand` and `mill` CLIs and records this checkout
+as mill's source for launching weavers. It does not change anything `mill init`
+writes into a repo.
 
 ## Choosing a workspace
 
-By default, `strand` is **repo-first**. With no `--workspace`, `mill` resolves the canonical repository root and uses that repo's `.skein` directory as your workspace; linked worktrees of the same repository share it.
+A workspace is one isolated Skein setup. By default `strand` is **repo-first**:
+when you do not pass `--workspace`, `mill` looks upward for the Git repository
+root (the "canonical" root that linked worktrees share) and uses that repo's
+`.skein` directory as your workspace. Two worktrees of the same repository talk
+to the same weaver and the same data.
 
-That `.skein` directory holds trusted config only. The mill-owned runtime state — metadata, sockets, and SQLite data — lives under Skein's XDG state root, not in your repo.
+If you omit `--workspace` outside a Git repository, the command fails with a
+remediation message instead of guessing. It will not invent a workspace from
+your current directory or fall back to a global one.
 
-Outside a supported Git layout, no-flag commands fail with remediation rather than guess. They won't create an accidental workspace from your current directory or fall back to a global personal workspace.
+That `.skein` directory holds trusted config only. The runtime state (metadata,
+sockets, and the SQLite database) lives under Skein's own state directory, not in
+your repo.
 
-Initialize a repo workspace from the Git repo you want to use Skein in:
+Create a workspace in the repo you want to use Skein in:
 
 ```sh
 mill init
 ```
 
-Mill resolves the Skein source checkout it uses to launch the weaver from, in order:
+`mill init` creates or completes `.skein` at the Git root. It writes shared,
+committable config files (covered later) and never overwrites ones you already
+have. It fails loudly outside Git, does not run `git init`, and does not create
+the database; the weaver prepares storage when it starts.
 
-- `SKEIN_SOURCE`,
-- the install-time source recorded by `make install`, or
-- a canonical Skein checkout as the current directory.
-
-`mill init` does not persist a source path in `.skein/config.json`.
-
-`mill init` without `--workspace` creates or completes `.skein` at the Git
-root and fails loudly outside Git. To work in a separate, disposable workspace
-instead (recommended for tests and isolated agent work), create one and target it
-with `--workspace`:
+**Escape hatch — throwaway workspaces.** For experiments, tests, or agent work,
+use a disposable workspace so you never touch a real repo's config:
 
 ```sh
 workspace=$(mktemp -d)
 mill init --workspace "$workspace"
 ```
 
-`--workspace` is not sticky: pass the same path on **every** command that should
-target that workspace (for example `mill weaver start --workspace "$workspace"`). The
-basic repo workspace examples below omit the flag for readability, but examples that
-reload config or create demo data use an explicit disposable `$workspace` so you do
-not casually mutate or reload the default repo workspace.
+`--workspace` is not sticky, so pass the same path on **every** command that
+should target it, for example `mill weaver start --workspace "$workspace"`. The
+plain examples below leave the flag off for readability; the customization
+examples later use an explicit `$workspace` so you never casually reload a real
+repo's config.
 
 ## Start the weaver
 
-Start mill once in a durable terminal, then ask it to start the selected workspace's weaver. Weaver startup prepares storage; there is no separate post-start `mill init` or database init step.
+Start mill once in a terminal you can leave open, then ask it to start the
+weaver for your workspace:
 
 ```sh
 mill start
 mill weaver start
 ```
 
+There is no separate database-init step. Starting the weaver prepares storage.
+
 ## Add and inspect strands
 
-Add strands:
+Add a couple of strands, with a few attributes of your own choosing:
 
 ```sh
 strand add "Review docs" --attr owner=ct --attr area=docs
-strand add "Scratch idea" --attr temporary=true --attr example_category=scratch
+strand add "Scratch idea" --attr temporary=true
 ```
 
-List and inspect ready strands — these commands emit JSON:
+Attributes are plain `key=value` strings. `--attr temporary=true` stores the
+string `"true"`, not a JSON boolean; richer values are a REPL job, covered later.
+
+List everything, or just what is ready. These commands print JSON:
 
 ```sh
 strand list
 strand ready
 ```
 
-## Close and delete strands
+## Dependencies and readiness
 
-Deactivate a persistent strand:
+An edge named `depends-on` from `A` to `B` means "A is blocked while B is
+active". To add one, you need the id of the strand you depend on. `strand add`
+prints the new strand as JSON, so create the blocker first and read its `"id"`
+from the output:
 
 ```sh
-strand update <strand-id> --state closed
+strand add "Sketch the model"
 ```
 
-Closed rows remain visible with `state="closed"`. Use `strand burn <id>` for
-explicit deletion.
+The output includes a field like `"id": "ab12c"`. Use that generated id (yours
+will differ) to add a second strand that depends on it:
 
-## REPL workflow
+```sh
+strand add "Build the weaver" --edge depends-on:ab12c
+strand ready
+```
 
-Open a live weaver REPL:
+`ready` returns active strands whose `depends-on` targets are inactive or absent
+(closed, replaced, or never created), so it shows "Sketch the model" but not
+"Build the weaver". Close the first and the second becomes ready. Use the id
+printed for "Sketch the model" earlier:
+
+```sh
+strand update ab12c --state closed
+strand ready
+```
+
+**Scripting tip.** Once you are comfortable, you can capture an id in one line
+instead of copying it by hand. `jq` is the standard JSON command-line tool, and
+`$(...)` runs a command and keeps its output in a shell variable:
+
+```sh
+design=$(strand add "Sketch the model" | jq -r '.id')
+strand add "Build the weaver" --edge depends-on:"$design"
+```
+
+`depends-on`, `parent-of`, and `supersedes` are Skein's three **declared acyclic
+relations**: a "relation" is an edge type, and "acyclic" means Skein rejects
+cycles in each of them (A cannot end up depending on itself through a chain). It
+also rejects an edge from a strand to itself on any relation.
+
+## Closing and deleting
+
+There is no special "done" command. Close a strand when it is no longer active,
+and record an outcome as an attribute if you want one:
+
+```sh
+strand update <strand-id> --state closed --attr outcome=done
+```
+
+On `update`, `--attr` merges into the strand's existing attributes: this call
+adds `outcome=done` and leaves `owner`, `area`, and anything else already there
+untouched. To change one attribute, name just that one.
+
+Closed strands stay visible with `state="closed"`. Deletion is separate and
+explicit:
+
+```sh
+strand burn <strand-id>
+```
+
+---
+
+That is the everyday CLI: add, relate, ask what is ready, close, and occasionally
+burn. If you do not need the REPL or runtime customization, you can stop here and
+run `mill weaver stop`. The rest of this guide covers the REPL and building your
+own behavior.
+
+## The REPL: a live machine
+
+The weaver is a running Clojure image. `mill weaver repl` attaches directly to
+it, so the code you type runs inside the weaver, against your real strands, with
+no restart between edits.
 
 ```sh
 mill weaver repl
 ```
 
-For editor-driven REPL work, see the [IDE REPL setup guide](./ide-repl/) for connecting VS Code/Calva to a running weaver nREPL.
+For editor-driven work, see the [IDE REPL setup guide](./ide-repl/) for
+connecting VS Code or Calva to the running weaver's nREPL.
 
-Useful forms. In Clojure the function name comes first inside the parens, so
-`(strand! "x")` calls `strand!` with `"x"` (where `!` indicates mutation but is semantic, not syntax). See the
-[Clojure crash course](./clojure-crash-course.md) for more:
+**Reading the Clojure below.** A handful of rules cover everything in this
+section:
+
+- A call puts the function name first, inside the parentheses: `(strand! "x")`
+  calls `strand!` with `"x"`.
+- The `!` on a name is a convention for "this changes something", not syntax.
+- A word starting with a colon, like `:owner`, is a **keyword**: a plain,
+  self-describing name often used as a map key.
+- Curly braces make a **map** of key/value pairs: `{:owner "ct"}`.
+- `def` gives a value a name you can reuse: `(def s ...)` binds `s`.
+
+The [Clojure crash course](./clojure-crash-course.md) covers the rest. If you
+came for the payoff, the worked
+[custom command example](#example-your-own-kanban-command) is further down.
+
+Create a strand and look it up:
+
+```clojure
+(def s (:id (strand! "My first REPL strand" {:owner "ct"}))) ; create; keep its :id in s
+(strand s)                                                   ; look it up by id
+```
+
+Create several related strands in one transactional call. `:ref` values are
+temporary handles (stand-in names) so `:edges` can link siblings before the real
+ids exist; the returned `:refs` map binds each handle to its generated id:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.batch.alpha :as batch])             ; batch graph mutations
+         '[skein.api.batch.alpha :as batch])   ; transactional graph mutations
 
-(def s (:id (strand! "My first REPL strand" {:owner "ct"}))) ; create one strand; keep its :id in s
-(strand s)                                           ; look up that strand by id
-
-;; create several related strands in one transactional call.
-;; :ref values are temporary handles so :edges can link siblings;
-;; the returned :refs map binds each ref to its generated id.
 (def refs
   (:refs
    (batch/apply! (current/runtime)
@@ -150,34 +274,38 @@ Useful forms. In Clojure the function name comes first inside the parens, so
                {:ref :docs   :title "Write getting-started" :attributes {:owner "agent"}}]
      :edges   [{:op :upsert :from :build :to :design :type "depends-on"}
                {:op :upsert :from :docs  :to :build  :type "depends-on"}]})))
+```
 
+Now write a small helper and use it:
+
+```clojure
 (defn brief
   "Keep just the :id and :title of each strand row."
   [rows]
   (map #(select-keys % [:id :title]) rows))
 
-(brief (strands))                                    ; every strand, summarized (one dense line)
+(brief (strands))   ; every strand, summarized
 ```
 
-The weaver is a live image, so you can improve `brief` while it runs and the new
-definition takes effect on the next call — no restart, no lost state:
+Because the weaver is live, you can improve `brief` while it runs. Redefine it,
+and the next call uses the new version. No restart, no lost strands:
 
 ```clojure
-(require '[clojure.pprint :refer [pprint]])          ; load pretty printing
+(require '[clojure.pprint :refer [pprint]])
 
-(defn brief                                          ; redefine in place
+(defn brief
   "Pretty-print just the :id and :title of each strand row."
   [rows]
   (pprint (map #(select-keys % [:id :title]) rows)))
 
-(brief (strands))                                    ; same call, now nicely formatted
-(brief (ready))                                      ; only strands with no active dependency
-(update! s {:state "closed"})                        ; close one (row stays, state becomes "closed")
+(brief (strands))   ; same call, now pretty-printed
+(brief (ready))     ; only strands with no active dependency
+(update! s {:state "closed"})   ; close one; the row stays, state becomes "closed"
 ```
 
 Skein ships graph helpers too. `graph/subgraph` walks a declared acyclic
-relation (`depends-on` here) from a root id and returns the connected strands and
-edges; fold that into an ASCII tree:
+relation from a root id and returns the connected strands and edges. Fold that
+into an ASCII tree:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -198,7 +326,7 @@ edges; fold that into an ASCII tree:
                                  (children id))))]
     (str/join "\n" (lines root-id 0))))
 
-(println (dag-tree (:docs refs)))                    ; walk from the docs strand
+(println (dag-tree (:docs refs)))   ; walk from the docs strand
 ```
 
 Produces:
@@ -209,16 +337,18 @@ Write getting-started
    └─ Sketch the data model
 ```
 
-Define and consume a named query. The query is a data expression, here "the
-`owner` attribute equals `ct`"; see the [REPL API spec](../devflow/specs/repl-api.md)
-for the full predicate DSL:
+## Named queries: from the REPL to the CLI
+
+A query is a data expression, here "the `owner` attribute equals `ct`". Register
+one by name in the REPL:
 
 ```clojure
-(defquery! 'mine '[:= [:attr :owner] "ct"]) ; register a query named "mine"
-(strands 'mine)                             ; list strands matching it
+(defquery! 'mine '[:= [:attr :owner] "ct"])   ; register a query named "mine"
+(strands 'mine)                               ; run it in the REPL
 ```
 
-The CLI can discover and consume the same weaver-memory query during that weaver lifetime:
+The plain CLI can discover and run the same query for as long as this weaver
+keeps running:
 
 ```sh
 strand query list
@@ -227,15 +357,31 @@ strand list --query mine
 strand ready --query mine
 ```
 
-`query list` / `query explain <name>` are read-only discovery commands for named queries. Applying a query stays on `list --query` and `ready --query`.
+`query list` and `query explain <name>` are read-only discovery. Applying a
+query stays on `list --query` and `ready --query`. See the
+[REPL API spec](../devflow/specs/repl-api.md) for the full predicate language.
+
+Named queries registered this way last only for the current weaver run. To keep
+one across restarts, register it from startup config, covered next.
 
 ## Startup config and runtime helpers
 
-Fresh `mill init` creates missing workspace files without overwriting existing files. For repo workspaces, the usual layout is:
+Skip this section unless you want behavior that survives a restart or that the
+whole repo should share.
+
+**What survives a restart.** Your strands do, because they live in SQLite.
+Anything you registered only in a live REPL (named queries, patterns, views,
+custom ops, event handlers) is weaver-lifetime state and disappears when the
+weaver stops. Move those registrations into startup config so the weaver
+re-installs them every time it boots. Reloading config (rather than restarting)
+re-runs the startup files in place and never touches your strands.
+
+`mill init` creates missing workspace files without overwriting existing ones.
+For a repo workspace the layout is:
 
 ```text
 .skein/
-  .gitignore          # commit: ignore local/runtime artifacts
+  .gitignore          # commit: ignore local and runtime artifacts
   config.json         # commit: shared alpha workspace config
   init.clj            # commit: shared trusted startup config
   spools.edn          # commit: shared approved local-root spools
@@ -244,26 +390,44 @@ Fresh `mill init` creates missing workspace files without overwriting existing f
   spools.local.edn    # gitignored: personal approved-spool overlay
 ```
 
-Generated `.skein/.gitignore` ignores `config.local.json`, `init.local.clj`,
-`spools.local.edn`, and accidental `state/`, `data/`, `weaver.*`, and SQLite/runtime artifacts. Normal runtime metadata, sockets, and SQLite data live under mill-owned XDG state paths, not in `.skein`.
-`config.json`, `init.clj`, and `spools.edn` are suitable to commit when the repo wants shared
-Skein behavior. The generated `init.clj` is a small resilient bootstrap:
+These files are "trusted" because the weaver loads and runs them as code with
+weaver authority, so treat them like any committed source. Commit the shared
+files when you want the whole repo to get the same behavior. Keep personal,
+machine-specific overlays in the gitignored `*.local.*` files. Runtime metadata,
+sockets, and SQLite data live under Skein's state directory, not in `.skein`.
+
+The generated `init.clj` is a small bootstrap:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime-alpha])
 
 (def runtime (current/runtime))
+
 (runtime-alpha/sync! runtime)
+(runtime-alpha/use! runtime :skein/spools-batteries
+  {:ns 'skein.spools.batteries
+   :call 'skein.spools.batteries/activate!})
 ```
 
-Create your own config or spool files when you need runtime behavior.
-`init.clj` is the place for shared repo behavior: load approved spools,
-register queries, register weave patterns, register views, register event
-handlers, or call your own install functions. `init.local.clj` is loaded after
-`init.clj` for personal machine-specific behavior.
+The weaver loads `init.clj`, then `init.local.clj`. This is where you register
+queries and patterns, load approved spools, and install your own conventions. To
+make the `mine` query above permanent, add its registration to `init.clj`:
 
-Built-in `skein.api.*.alpha` namespaces are privileged helpers shipped on the Skein classpath, not ordinary user/community spools. User/community spools are trusted Clojure roots approved in `spools.edn` / `spools.local.edn`, synced through `skein.api.runtime.alpha`, and experimented with from the live REPL. `spools.local.edn` overlays `spools.edn` by coordinate, so a personal workflow spool or fork can replace a shared entry without changing committed config:
+```clojure
+(require '[skein.api.weaver.alpha :as api])
+(api/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
+```
+
+Two kinds of code can extend the weaver:
+
+- **Built-in `skein.api.*.alpha` namespaces** — privileged helpers shipped on
+  the Skein classpath.
+- **Your own trusted spools** — Clojure you approve in `spools.edn` and load
+  through config or the REPL.
+
+`spools.local.edn` overlays `spools.edn` by coordinate, so a personal fork can
+replace a shared entry without editing committed config:
 
 ```clojure
 ;; .skein/spools.edn, committed
@@ -273,81 +437,40 @@ Built-in `skein.api.*.alpha` namespaces are privileged helpers shipped on the Sk
 ```clojure
 ;; .skein/spools.local.edn, gitignored
 {:spools {team/workflows {:local/root "~/dev/workflows/team-workflows"}
-        personal/ops   {:local/root "~/dev/workflows/personal-ops"}}}
+          personal/ops   {:local/root "~/dev/workflows/personal-ops"}}}
 ```
 
-```clojure
-;; .skein/init.local.clj, gitignored
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
-(def runtime (current/runtime))
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :personal/ops
-  {:ns 'personal.ops.alpha
-   :spools #{'personal/ops}
-   :call 'personal.ops.alpha/install!})
-```
+Skein does not resolve floating or transitive dependencies here: it will not
+chase version ranges or pull a spool's own dependencies for you. A `:local/root`
+must already exist on disk. A shared spool can also be approved by a pinned git
+coordinate (`:git/url` plus a 40-character `:git/sha`); on first use `sync!`
+fetches that exact commit and caches it by sha. The
+[writing shared spools](./writing-shared-spools.md) guide covers the
+git-distribution path, and the
+[shipped reference spools](../spools/README.md) are worked examples of spool
+design, driven end to end by their own tests.
 
-Require `skein.api.batch.alpha` explicitly when you want `(batch/apply! runtime payload)` for transactional graph mutations. `weave --pattern` and `batch/apply!` are two doors into the same transactional engine: `weave` is the CLI-safe, named, spec-checked, create-only front door; raw batch is the trusted REPL/config loading dock that can also update, burn, and upsert edges. Package management, source fetching, and install commands are outside this MVP; local roots must already exist.
-
-Example pattern and view setup in your own startup-loaded spool:
-
-```clojure
-(ns my.workflow
-  (:require [clojure.spec.alpha :as s]
-            [skein.api.graph.alpha :as graph]
-            [skein.api.patterns.alpha :as patterns]
-            [skein.api.views.alpha :as views]
-            [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as api]))
-
-(s/def ::title string?)
-(s/def ::task-input (s/keys :req-un [::title]))
-
-(defn task-pattern [{:keys [input]}]
-  [{:ref 'impl
-    :title (:title input)
-    :attributes {:owner "ct"}}
-   {:ref 'review
-    :title (str "Review: " (:title input))
-    :attributes {:kind "review"}
-    :edges [{:type "depends-on" :to 'impl}]}])
-
-(defn owned-view [{:keys [params]}]
-  (let [rt (current/runtime)
-        ids (graph/query-ids! rt 'owned params)]
-    {:ids ids
-     :strands (graph/strands-by-ids rt ids)}))
-
-(defn install! []
-  (let [rt (current/runtime)]
-    (api/register-query! rt 'owned [:= [:attr :owner] "ct"])
-    (patterns/register-pattern! rt 'task 'my.workflow/task-pattern ::task-input)
-    (views/register-view! rt 'owned-view 'my.workflow/owned-view)))
-```
-
-Lower-privilege CLI callers can discover, inspect, and invoke registered patterns with JSON stdin:
-
-```sh
-strand pattern list
-strand pattern explain task
-printf '{"title":"Implement feature"}\n' | strand --stdin weave --pattern task --input :stdin
-```
-
-Pattern discovery mirrors query discovery (`query list` / `query explain <name>`), while application follows the definition type: queries apply through `list --query` / `ready --query`, and patterns apply through `weave --pattern`.
+**Keep it governable.** Runtime programmability is easy to overuse. Try new
+behavior in a disposable workspace first, and promote it into committed
+`init.clj` or a spool only after review, with someone named to own it and its
+commands documented for the agents and people who depend on them. Once custom
+behavior grows past a helper or two, follow
+[writing shared spools](./writing-shared-spools.md) for the maintainable path.
 
 ### Custom operations
 
-Every weaver command is a registered op invoked directly at the `strand` root as
-`strand <op> [args]`; there is no `op` sub-prefix. The built-in `help` op lists
-registered ops and explains one op's arg-spec:
+Every weaver command is a registered op, invoked as `strand <op> [args]`. There
+is no `op` sub-prefix. The built-in `help` op lists registered ops and explains
+one op's arguments:
 
 ```sh
 strand help
 strand help <op>
 ```
 
-Register custom handlers from trusted Clojure with `skein.api.weaver.alpha/register-op!`. The Go CLI forwards everything after the operation name as string argv:
+Register your own from trusted Clojure with
+`skein.api.weaver.alpha/register-op!`. The CLI forwards everything after the op
+name as string argv:
 
 ```clojure
 (require '[skein.api.current.alpha :as current])
@@ -356,21 +479,22 @@ Register custom handlers from trusted Clojure with `skein.api.weaver.alpha/regis
 (defn echo-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
 
-(api/register-op! (current/runtime) 'echo "Echo raw argv" 'my.workflow/echo-op)
+(api/register-op! (current/runtime) 'echo "Echo raw argv" 'user/echo-op)
 ```
 
 ```sh
 strand echo --flag value
 ```
 
-## Example: a small userland kanban op
+## Example: your own kanban command
 
-The `op` surface is intentionally generic: Skein only routes argv to a trusted
-weaver-side handler. Workflow behavior such as a kanban board belongs in your
-config or spool code, not in core Skein.
+The op surface is deliberately generic: Skein only routes argv to a trusted
+weaver-side handler. Workflow behavior like a kanban board belongs in your config
+or spool code, not in core Skein. Here is a small one, built in a disposable
+workspace so you can try it without touching a real repo. Promote something like
+this into a committed workspace only once it earns its keep and has an owner.
 
-For a safe demo, use a disposable workspace and append this handler to
-`$workspace/init.clj` rather than the default repo `.skein/init.clj`:
+Append this handler to `$workspace/init.clj` (not a real repo's `.skein/init.clj`):
 
 ```clojure
 (require '[clojure.string :as str])
@@ -389,7 +513,7 @@ For a safe demo, use a disposable workspace and append this handler to
                     (throw (ex-info "--max must be a positive integer" {:value value})))
                   n))
       (throw (ex-info "Unknown kanban argument" {:argument (first remaining)
-                                                  :argv argv})))))
+                                                 :argv argv})))))
 
 (defn title-cell [strand]
   (or (:title strand) ""))
@@ -404,10 +528,10 @@ For a safe demo, use a disposable workspace and append this handler to
         render-row (fn [[a b c]]
                      (str "| " (pad a width) " | " (pad b width) " | " (pad c width) " |"))]
     (str/join "\n" (concat [line
-                              (render-row ["Ready" "In progress" "Done"])
-                              line]
-                            (map render-row rows)
-                            [line]))))
+                            (render-row ["Ready" "In progress" "Done"])
+                            line]
+                           (map render-row rows)
+                           [line]))))
 
 (defn by-kanban [rt status limit]
   (->> (api/list rt [:= [:attr :kanban] status] {})
@@ -415,7 +539,7 @@ For a safe demo, use a disposable workspace and append this handler to
        vec))
 
 (defn kanban-op [{:op/keys [argv]}]
-  (let [rt (skein.api.current.alpha/runtime)
+  (let [rt (current/runtime)
         max-rows (parse-max argv)
         cols [(by-kanban rt "ready" max-rows)
               (by-kanban rt "in-progress" max-rows)
@@ -429,17 +553,20 @@ For a safe demo, use a disposable workspace and append this handler to
 (api/register-op! (current/runtime) 'kanban "Show strands grouped by :attr kanban" 'user/kanban-op)
 ```
 
-Reload that disposable workspace's config so its running weaver installs the
-handler. Do not run reload examples against the default repo workspace unless you
-intend to reload its shared `.skein` config:
+Reload that disposable workspace's config so its weaver installs the handler.
+Only reload the workspace you mean to; do not point this at a real repo unless
+you intend to reload its shared config. This one-liner sends a `reload!` form to
+the weaver over stdin (`printf` prints the Clojure, `mill weaver repl --stdin`
+evaluates it):
 
 ```sh
 printf '(do (require '\''[skein.api.current.alpha :as current] '\''[skein.api.runtime.alpha :as runtime-alpha]) (runtime-alpha/reload! (current/runtime)))\n' \
   | mill weaver repl --stdin --workspace "$workspace"
 ```
 
-Create a few demo strands with one batch call. Batch entries use temporary
-`:ref` values so the result can report generated ids:
+Create a few demo strands with one batch call. `cat <<'EOF' ... EOF` is a shell
+heredoc: it feeds the lines between the markers to the command on the left, so
+the Clojure block reaches the weaver's REPL on stdin:
 
 ```sh
 cat <<'EOF' | mill weaver repl --stdin --workspace "$workspace"
@@ -467,15 +594,14 @@ cat <<'EOF' | mill weaver repl --stdin --workspace "$workspace"
 EOF
 ```
 
-Invoke the custom operation in that disposable workspace. `--max` is optional and
-defaults to 5 rows:
+Now invoke your command. `--max` is optional and defaults to 5 rows:
 
 ```sh
 strand --workspace "$workspace" kanban --max 15
 ```
 
-`strand` keeps public command output JSON-only, so render the table field when
-you want terminal-friendly ASCII:
+`strand` keeps public output JSON, so pull out the `table` field when you want
+the terminal-friendly view:
 
 ```sh
 strand --workspace "$workspace" kanban --max 15 | jq -r .table
@@ -492,50 +618,35 @@ Produces something like:
 +--------------------------+--------------------------+--------------------------+
 ```
 
-Call registered views from trusted Clojure, not from a public `strand view` CLI command:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.views.alpha :as views])
-(views/view! (current/runtime) 'owned-view {})
-```
-
-Register event handlers from trusted config or weaver-loadable spools when you want asynchronous reactions to strand mutations. Event helpers are not public CLI commands:
-
-```clojure
-(ns my.workflow
-  (:require [skein.api.current.alpha :as current]
-            [skein.api.events.alpha :as events]))
-
-(defn record-add! [event]
-  (println "added" (:strand/id event)))
-
-(events/register! (current/runtime) :example/record-add #{:strand/added} 'my.workflow/record-add!)
-(events/handlers (current/runtime))
-(events/recent-failures (current/runtime))
-```
-
-Hot-reload the selected workspace `init.clj` from the live weaver REPL:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
-(runtime-alpha/reload! (current/runtime))
-```
-
-Reload clears weaver-lifetime spool sync state, module-use state, named queries, views, patterns, custom ops, lifecycle hooks, event handlers, queued events, and recent event failures, then re-runs `init.clj` followed by `init.local.clj`.
-
-Use the live stdin REPL for scripts. Include `--workspace` when scripting
-against a disposable or test workspace:
-
-```sh
-printf '(skein.api.current.alpha/runtime)\n' | mill weaver repl --stdin --workspace "$workspace"
-```
+You just added a command to Skein without recompiling or restarting it. Views
+and event handlers work the same way, from trusted Clojure; see
+[docs/skein.md](./skein.md) for those.
 
 ## Stop the weaver
 
-Stop the weaver when finished:
+Stop the weaver when you are finished:
 
 ```sh
 mill weaver stop --workspace "$workspace"
 ```
+
+For a repo workspace, drop the flag:
+
+```sh
+mill weaver stop
+```
+
+## Where to go next
+
+- [Skein user reference](./skein.md) — the complete model, CLI, weaver, REPL,
+  and workspace behavior, with a spec index at the end.
+- [Shipped reference spools](../spools/README.md) — a workflow engine, a feature
+  lifecycle, a kanban board, and more, as working code.
+- [Writing shared spools](./writing-shared-spools.md) — building extensions
+  other people can run.
+- [Library authoring](./library-authoring.md) — testing spools against a chosen
+  Skein checkout.
+- [Clojure crash course](./clojure-crash-course.md) — enough Clojure to be
+  comfortable in the REPL.
+- [Tenets](../devflow/TENETS.md) and [philosophy](../devflow/PHILOSOPHY.md) —
+  why Skein is shaped the way it is.
