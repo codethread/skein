@@ -1,5 +1,13 @@
 # Skein Carder Spool
 
+> This is the **contract** doc: what each report means, the runtime it needs, the
+> exclusion rules, and the option vocabulary. Its two companions are
+> [`carder.cookbook.md`](./carder.cookbook.md) — worked composition recipes
+> (how/why you build a hygiene loop) — and [`carder.api.md`](./carder.api.md) —
+> generated fn signatures and docstrings. Reach for the cookbook when you want a
+> runnable pattern, the API doc when you want an exact arity, and this doc for
+> what the spool promises.
+
 ## 1. Overview
 
 `skein.spools.carder` is a read-only reference spool for graph hygiene and
@@ -62,6 +70,9 @@ Malformed options fail loudly with `ex-info`; unknown keys are not ignored.
 
 ## 4. See also
 
+- [carder.cookbook.md](./carder.cookbook.md) — worked composition recipes: stale
+  triage, orphan sweeps, failure-blocked retry, and wiring a hygiene report into
+  a routine.
 - [README.md](./README.md) — shipped spools index.
 - `test/skein/spools/carder_test.clj` — executable contract examples against a
   real weaver runtime.

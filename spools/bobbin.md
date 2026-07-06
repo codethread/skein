@@ -1,5 +1,12 @@
 # Skein Bobbin Spool
 
+> This is the **contract** doc: the bundle sections, the self-contained-edges
+> guarantee, and the render rules. Its two companions are
+> [`bobbin.cookbook.md`](./bobbin.cookbook.md) — worked composition recipes
+> (briefing a delegated agent or reviewer, trimming a pack, feeding it to a tool)
+> — and [`bobbin.api.md`](./bobbin.api.md) — generated fn signatures and
+> docstrings.
+
 ## 1. Overview
 
 `skein.spools.bobbin` assembles a compact context bundle for one strand:

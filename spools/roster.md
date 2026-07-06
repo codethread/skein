@@ -1,5 +1,14 @@
 # Roster spool
 
+> This is the **contract** doc: the `roster/*` vocabulary, staleness/await
+> semantics, the automatic workflow/devflow integration, and the CLI op. Its two
+> companions are [`roster.cookbook.md`](./roster.cookbook.md) — worked
+> composition recipes (how/why you track a job, await quiet before landing, or
+> let workflow/devflow roots track themselves) — and
+> [`roster.api.md`](./roster.api.md) — generated fn signatures and docstrings.
+> Reach for the cookbook when you want a runnable pattern, the API doc when you
+> want an exact arity, and this doc for what the spool promises.
+
 The roster spool is the durable, graph-native answer to "what work is active in this weaver?" It records active work as ordinary strands under a shared `roster/*` attribute vocabulary, exposes explicit-runtime helpers and a `strand roster` op for tracking, and makes quiet/stale states awaitable — without replacing workflow runs, devflow stages, kanban lanes, shuttle run state, or `strand branches` (SPEC-RosterSpool-001.P1). It summarizes work roots for coordination and enforces no locks, ownership, merge gates, or exclusivity (SPEC-RosterSpool-001.NG1).
 
 `skein.spools.roster` ships on the weaver classpath beside batteries, workflow, and carder, so no `spools.edn` approval is needed — `require` it and call `install!` from `init.clj`, an activated spool, or a live `mill weaver repl` (see [Activation](#activation)).
@@ -118,29 +127,11 @@ Roster ships on the classpath, so activation is a `require` plus an `install!` c
 
 ## Examples
 
-Track an AFK loop, heartbeat it as it progresses, and finish it:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.spools.roster :as roster])
-
-(def rt (current/runtime))
-(def entry (:id (roster/track! rt {:feature "roster-spool"
-                                   :owner "afk-loop"
-                                   :engine "afk"
-                                   :branch "roster-spool"})))
-(roster/heartbeat! rt entry)
-(roster/roster rt {:feature "roster-spool"})          ; => [{:strand ... :stale? false :age-ms 12}]
-(roster/finish! rt entry {:status "finished" :result "done"})
-```
-
-Wait for a feature's active work to go quiet from the shell:
-
-```sh
-strand roster track --feature roster-spool --owner ci --engine manual
-strand roster list --feature roster-spool
-strand roster await-quiet --feature roster-spool --timeout-ms 60000
-```
+The worked, compositional examples live in
+[`roster.cookbook.md`](./roster.cookbook.md): tracking a long-running job with
+`track!`/`heartbeat!`/`finish!`, using `await-quiet!` as a fan-in barrier before
+landing, and letting workflow/devflow roots track themselves. Each recipe pairs
+a runnable snippet with the reasoning behind its shape.
 
 The spool's behavior is driven end-to-end against a real weaver runtime by
 [`test/skein/roster_test.clj`](../test/skein/roster_test.clj),

@@ -1,5 +1,13 @@
 # Skein Guild Spool
 
+> This is the **contract** doc: the declaration surface, naming and versioning
+> conventions, and the worked two-repo example. Its two companions are
+> [`guild.cookbook.md`](./guild.cookbook.md) — worked composition recipes
+> (how/why you publish, discover, and evolve a peer op API) — and
+> [`guild.api.md`](./guild.api.md) — generated fn signatures and docstrings.
+> Reach for the cookbook when you want a runnable pattern, the API doc when you
+> want an exact arity, and this doc for what the spool promises.
+
 ## Overview
 
 `skein.spools.guild` is a small reference spool for publishing a weaver's

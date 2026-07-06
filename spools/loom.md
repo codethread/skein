@@ -1,5 +1,13 @@
 # Skein Loom Spool
 
+> This is the **contract** doc: what each projection returns, the `branch-views`
+> options, and the `flow-status` payload shape. Its two companions are
+> [`loom.cookbook.md`](./loom.cookbook.md) — worked composition recipes (how/why
+> you turn these projections into a dashboard, a live feed, or a gate chain) —
+> and [`loom.api.md`](./loom.api.md) — generated fn signatures and docstrings.
+> Reach for the cookbook when you want a runnable pattern, the API doc when you
+> want an exact arity, and this doc for what the spool promises.
+
 ## 1. Overview
 
 `skein.spools.loom` is a read-only reference spool that projects the active
