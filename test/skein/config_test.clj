@@ -343,7 +343,7 @@
 (deftest devflow-ops-fail-loudly-on-bad-input
   (with-config-runtime
     (fn [_rt]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"expects between"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required argument feature"
                             (op! "devflow-start" [])))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"worktree-check"
                             (op! "devflow-start" ["bad-feature" "nope"])))
@@ -362,6 +362,34 @@
         ;; the engine's checkpoint guard surfaces through the op wrapper
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Cannot complete a checkpoint"
                               (op! "devflow-complete" ["checkpoint-feature"])))))))
+
+(deftest devflow-ops-render-arg-spec-help
+  ;; the discovery convention requires generated help from arg-spec data, not
+  ;; hand-written usage strings: every devflow wrapper op must render its
+  ;; positional contract through the built-in help projection, so
+  ;; devflow-conventions' `strand help devflow-*` pointers resolve to real help.
+  (with-config-runtime
+    (fn [_rt]
+      (letfn [(positionals [op-name]
+                (->> (get-in (op! "help" [op-name]) [:arg-spec :positionals])
+                     (mapv (juxt :name :required :variadic))))]
+        (is (= [["feature" true false] ["worktree-check" false false]]
+               (positionals "devflow-start")))
+        (is (= [["feature" true false]] (positionals "devflow-next")))
+        (is (= [["feature" true false] ["step-selector" false true]]
+               (positionals "devflow-choices")))
+        (is (= [["feature" true false] ["choice" true false] ["tail" false true]]
+               (positionals "devflow-choose")))
+        (is (= [["feature" true false] ["tail" false true]]
+               (positionals "devflow-complete")))
+        (is (= [["feature" true false] ["tail" false true]]
+               (positionals "devflow-advance")))
+        (is (= [["stage-key" false false]] (positionals "devflow-describe")))
+        (is (= [["feature" true false]] (positionals "devflow-history")))
+        (is (= [["feature" true false]] (positionals "devflow-archive")))
+        (is (= [["feature" true false]] (positionals "devflow-status")))
+        (is (= "Start the devflow lifecycle for a feature."
+               (get-in (op! "help" ["devflow-start"]) [:arg-spec :doc])))))))
 
 (deftest flow-status-op-joins-history-frontier-gates-runs-and-stalls
   (with-config-runtime

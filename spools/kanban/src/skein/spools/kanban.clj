@@ -645,20 +645,20 @@
                         |covering: what is done, what is next, validation state, gotchas, and where the
                         |work lives (branch/worktree). Resume path for a cold agent: `kanban board` ->
                         |`kanban card <id>` -> latest handover.")
-   :commands [{:usage "strand kanban prime — full agent priming: working discipline + command surface (repo agent docs point here)"}
-              {:usage (str "strand kanban add <title> [--body <text>] [--source <path-or-url>] "
-                           "[--status pending|refinement] [--type feature|epic] [--epic <epic-id>] "
-                           "[--priority p1|p2|p3|p4]")}
-              {:usage "strand weave --pattern kanban-batch --input '<json>'"}
-              {:usage "strand kanban board"}
-              {:usage "strand kanban card <id>"}
-              {:usage "strand kanban next"}
-              {:usage "strand kanban priority <id> <p1|p2|p3|p4>"}
-              {:usage "strand kanban promote <id>"}
-              {:usage "strand kanban claim <id> --owner <name> --branch <branch> [--worktree <path>]"}
-              {:usage "strand kanban note <id> <text> [--author <name>] [--handover]"}
-              {:usage "strand kanban finish <id> [--outcome done|abandoned]"}
-              {:usage "(skein.spools.kanban/print-board!) — ASCII board from mill weaver repl (CLI output stays JSON-only)"}]
+   :discovery {:help "strand help kanban"
+               :prime "strand kanban prime"
+               :batch-pattern "strand pattern explain kanban-batch"}
+   :commands [{:verb "prime" :purpose "Full agent priming: working discipline plus command surface."}
+              {:verb "add" :purpose "Create a feature or epic card."}
+              {:verb "board" :purpose "Return the grouped board snapshot."}
+              {:verb "card" :purpose "Show one card with notes, active work, related cards, and ready frontier."}
+              {:verb "next" :purpose "Return the next pending feature card by priority and age."}
+              {:verb "priority" :purpose "Change a card's p1..p4 ordering priority."}
+              {:verb "promote" :purpose "Move a refinement card into the pending lane."}
+              {:verb "claim" :purpose "Move a card into claimed and stamp owner/branch/worktree."}
+              {:verb "note" :purpose "Append an immutable card note, optionally marked as handover."}
+              {:verb "finish" :purpose "Close a card with an explicit outcome."}
+              {:repl "skein.spools.kanban/print-board!" :purpose "ASCII board from mill weaver repl; CLI output stays JSON-only."}]
    :patterns [{:name "kanban-batch"
                :input {:items [{:key "slug"
                                 :title "Feature title"

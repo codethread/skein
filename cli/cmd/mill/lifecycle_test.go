@@ -254,10 +254,40 @@ func TestResolveLaunchSourcePrecedence(t *testing.T) {
 	if err != nil || resolved != installedSource {
 		t.Fatalf("installed source should win, got source=%q err=%v", resolved, err)
 	}
+	missingInstalled := filepath.Join(t.TempDir(), "missing")
+	config.InstalledSource = missingInstalled
+	var diag bytes.Buffer
+	origDiag := sourceDiagOut
+	sourceDiagOut = &diag
+	resolved, err = resolveLaunchSource(cwdSource)
+	sourceDiagOut = origDiag
+	if err != nil || resolved != cwdSource {
+		t.Fatalf("missing installed source should fall back to cwd, got source=%q err=%v", resolved, err)
+	}
+	// The bypass of an unusable installed source must not be silent: the operator
+	// needs to see which checkout actually launched.
+	warn := diag.String()
+	if !strings.Contains(warn, missingInstalled) || !strings.Contains(warn, cwdSource) || !strings.Contains(warn, "warning") {
+		t.Fatalf("expected bypass warning naming configured source and cwd fallback, got %q", warn)
+	}
+
 	config.InstalledSource = ""
 	resolved, err = resolveLaunchSource(cwdSource)
 	if err != nil || resolved != cwdSource {
 		t.Fatalf("Skein checkout cwd should win, got source=%q err=%v", resolved, err)
+	}
+}
+
+func TestResolveLaunchSourceUnusableInstalledAndNoCheckoutFailsLoud(t *testing.T) {
+	origInstalled := config.InstalledSource
+	config.InstalledSource = filepath.Join(t.TempDir(), "missing-install")
+	t.Cleanup(func() { config.InstalledSource = origInstalled })
+	t.Setenv("SKEIN_SOURCE", "")
+	// A cwd that is not a Skein checkout: neither source resolves, so the loud
+	// combined error must still cite the dropped installed-source failure.
+	_, err := resolveLaunchSource(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "installed source is unusable") || !strings.Contains(err.Error(), "not a canonical Skein checkout") {
+		t.Fatalf("expected combined failure preserving installed-source error, got %v", err)
 	}
 }
 

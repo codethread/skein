@@ -16,9 +16,25 @@ build:
 	go build -ldflags "$(SOURCE_LDFLAGS)" -o ./bin/strand $(GO_CLI)
 	go build -ldflags "$(SOURCE_LDFLAGS)" -o ./bin/mill $(MILL_CLI)
 
+# stamp the user's global binaries with the CANONICAL repo checkout (the shared
+# .git common dir's parent), not the invoking worktree, so an install run from a
+# feature worktree does not repoint mill at ephemeral worktree state. Resolve in
+# the recipe and fail loudly: a parse-time $(shell ...) here bakes an empty
+# source silently when git rev-parse fails.
 install:
-	go install -ldflags "$(SOURCE_LDFLAGS)" $(GO_CLI)
-	go install -ldflags "$(SOURCE_LDFLAGS)" $(MILL_CLI)
+	@gitdir="$$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; \
+	if [ -z "$$gitdir" ]; then \
+		echo "make install: not inside a Skein git checkout (git rev-parse --git-common-dir failed); cannot resolve the canonical repo path to stamp into the binaries" >&2; \
+		exit 1; \
+	fi; \
+	src="$$(dirname "$$gitdir")"; \
+	if [ -z "$$src" ] || [ ! -d "$$src" ]; then \
+		echo "make install: resolved canonical Skein source '$$src' is empty or not a directory" >&2; \
+		exit 1; \
+	fi; \
+	echo "make install: stamping InstalledSource=$$src"; \
+	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(GO_CLI) && \
+	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(MILL_CLI)
 
 # code-owner TUI over live shuttle agent runs; polls the strand CLI
 dash:

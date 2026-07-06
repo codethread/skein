@@ -212,14 +212,6 @@
 ;; devflow ops: thin CLI wrappers over skein.spools.devflow
 ;; ---------------------------------------------------------------------------
 
-(defn- require-argv-range!
-  "Return argv when its count is within [min-n max-n], otherwise fail with usage."
-  [op argv min-n max-n usage]
-  (when-not (<= min-n (count argv) max-n)
-    (throw (ex-info (str op " expects between " min-n " and " max-n " arguments")
-                    {:argv argv :usage usage})))
-  argv)
-
 (defn- require-non-blank!
   "Return value when it is a non-blank string, otherwise fail with arg context."
   [arg value]
@@ -237,18 +229,26 @@
                       {:input raw})))
     value))
 
-(defn- split-step-arg
-  "Split one optional trailing `step=<id>` selector out of argv.
+;; The blessed arg-spec parser (skein.api.cli.alpha) binds positionals strictly
+;; by order, so it cannot express the position-independent `step=<id>` selector
+;; these ops accept, nor disambiguate the optional json-input/notes slots it can
+;; sit among (docs/skein.md "Discovery tiers"). We therefore declare the fixed
+;; positionals in each arg-spec — which drives generated `strand help <op>` — and
+;; collect the optional tail into one variadic positional, then split `step=<id>`
+;; out of that tail here. Fail-loud errors reference `strand help <op>` in their
+;; data instead of a hand-written usage string.
+(defn- pop-step-selector
+  "Split one optional `step=<id>` selector out of variadic tail tokens.
 
-  `step=` is an explicit token rather than a positional argument so it never
-  collides with other optional args (notes, JSON input). Returns
-  `[other-args step-id-or-nil]`, failing loudly on duplicate selectors or a
+  `step=` is a whole token rather than a positional slot so it never collides
+  with the other optional args (notes, JSON input) sharing the tail. Returns
+  `[other-tokens step-id-or-nil]`, failing loudly on a duplicate selector or a
   blank id."
-  [op argv usage]
-  (let [{steps true others false} (group-by #(str/starts-with? % "step=") argv)]
+  [op tail]
+  (let [{steps true others false} (group-by #(str/starts-with? % "step=") tail)]
     (when (> (count steps) 1)
       (throw (ex-info (str op " accepts at most one step=<id> selector")
-                      {:argv argv :usage usage})))
+                      {:op op :help (str "strand help " op) :tail (vec tail)})))
     (when-let [step (first steps)]
       (require-non-blank! :step (subs step (count "step="))))
     [(vec others) (some-> (first steps) (subs (count "step=")))]))
@@ -259,40 +259,34 @@
 (defn devflow-start-op
   "Start the devflow lifecycle for a feature.
 
-  Usage: `strand devflow-start <feature> [worktree-check]` where
-  worktree-check is `required` (default) or `already-in-worktree-ok`.
-  The feature name is the workflow run-id for all other devflow ops."
+  The feature name is the workflow run-id for all other devflow ops;
+  worktree-check is `required` (default) or `already-in-worktree-ok`."
   [ctx]
-  (let [usage "strand devflow-start <feature> [required|already-in-worktree-ok]"
-        [feature worktree-check] (require-argv-range! "devflow-start" (:op/argv ctx) 1 2 usage)
-        _ (require-non-blank! :feature feature)
-        _ (when (and worktree-check (not (contains? worktree-check-values worktree-check)))
-            (throw (ex-info "worktree-check must be required or already-in-worktree-ok"
-                            {:value worktree-check :usage usage})))
-        opts (if worktree-check {:worktree-check worktree-check} {})]
+  (let [{:keys [feature worktree-check]} (:op/args ctx)]
+    (require-non-blank! :feature feature)
+    (when (and worktree-check (not (contains? worktree-check-values worktree-check)))
+      (throw (ex-info "worktree-check must be required or already-in-worktree-ok"
+                      {:value worktree-check :help "strand help devflow-start"})))
     (merge {:operation "devflow-start"
             :feature feature}
-           (devflow/start! feature opts))))
+           (devflow/start! feature (if worktree-check {:worktree-check worktree-check} {})))))
 
 (defn devflow-next-op
-  "Return the ready devflow step views for a feature.
-
-  Usage: `strand devflow-next <feature>`."
+  "Return the ready devflow step views for a feature."
   [ctx]
-  (let [usage "strand devflow-next <feature>"
-        [feature] (require-argv-range! "devflow-next" (:op/argv ctx) 1 1 usage)]
+  (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-next"
      :feature feature
      :ready (devflow/next-steps feature)}))
 
 (defn devflow-choices-op
-  "Return choice explanations for the feature's current checkpoint.
-
-  Usage: `strand devflow-choices <feature> [step=<id>]`."
+  "Return choice explanations for the feature's current checkpoint."
   [ctx]
-  (let [usage "strand devflow-choices <feature> [step=<id>]"
-        [args step] (split-step-arg "devflow-choices" (:op/argv ctx) usage)
-        [feature] (require-argv-range! "devflow-choices" args 1 1 usage)]
+  (let [{:keys [feature step-selector]} (:op/args ctx)
+        [extra step] (pop-step-selector "devflow-choices" step-selector)]
+    (when (seq extra)
+      (throw (ex-info "devflow-choices accepts only a feature and an optional step=<id> selector"
+                      {:op "devflow-choices" :help "strand help devflow-choices" :extra extra})))
     {:operation "devflow-choices"
      :feature feature
      :choices (devflow/choice-details feature (if step {:step step} {}))}))
@@ -300,33 +294,35 @@
 (defn devflow-choose-op
   "Record a devflow checkpoint choice, optionally with JSON input.
 
-  Usage: `strand devflow-choose <feature> <choice> [json-input] [step=<id>]`.
   `json-input` must be a JSON object; routed choices merge it into the next
   stage's params (an abort requires `{\"reason\":\"...\"}`)."
   [ctx]
-  (let [usage "strand devflow-choose <feature> <choice> [json-input] [step=<id>]"
-        [args step] (split-step-arg "devflow-choose" (:op/argv ctx) usage)
-        [feature choice raw-input] (require-argv-range! "devflow-choose" args 2 3 usage)
-        input (if raw-input (parse-json-object-arg "devflow-choose" raw-input) {})]
-    (merge {:operation "devflow-choose"
-            :feature feature
-            :choice choice}
-           (devflow/choose! feature (keyword choice) input (if step {:step step} {})))))
+  (let [{:keys [feature choice tail]} (:op/args ctx)
+        [rest-tokens step] (pop-step-selector "devflow-choose" tail)
+        raw-input (first rest-tokens)]
+    (when (> (count rest-tokens) 1)
+      (throw (ex-info "devflow-choose accepts at most one JSON-input argument"
+                      {:op "devflow-choose" :help "strand help devflow-choose" :extra (vec (rest rest-tokens))})))
+    (let [input (if raw-input (parse-json-object-arg "devflow-choose" raw-input) {})]
+      (merge {:operation "devflow-choose"
+              :feature feature
+              :choice choice}
+             (devflow/choose! feature (keyword choice) input (if step {:step step} {}))))))
 
 (defn devflow-complete-op
-  "Close the feature's current non-checkpoint devflow step.
-
-  Usage: `strand devflow-complete <feature> [notes] [step=<id>]`."
+  "Close the feature's current non-checkpoint devflow step."
   [ctx]
-  (let [usage "strand devflow-complete <feature> [notes] [step=<id>]"
-        [args step] (split-step-arg "devflow-complete" (:op/argv ctx) usage)
-        [feature notes] (require-argv-range! "devflow-complete" args 1 2 usage)
-        opts (cond-> {}
-               notes (assoc :notes notes)
-               step (assoc :step step))]
+  (let [{:keys [feature tail]} (:op/args ctx)
+        [rest-tokens step] (pop-step-selector "devflow-complete" tail)
+        notes (first rest-tokens)]
+    (when (> (count rest-tokens) 1)
+      (throw (ex-info "devflow-complete accepts at most one notes argument"
+                      {:op "devflow-complete" :help "strand help devflow-complete" :extra (vec (rest rest-tokens))})))
     (merge {:operation "devflow-complete"
             :feature feature}
-           (devflow/complete! feature opts))))
+           (devflow/complete! feature (cond-> {}
+                                        notes (assoc :notes notes)
+                                        step (assoc :step step))))))
 
 (defn- checkpoint-ready?
   "Return true when the selected ready devflow step for feature is a checkpoint."
@@ -339,69 +335,65 @@
                    (devflow/next-step feature))]
     (= "checkpoint" (:kind selected))))
 
-(defn- parse-advance-argv
-  "Parse devflow-advance positional args into a feature and workflow advance opts."
-  [argv]
-  (let [usage "strand devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]"
-        [args step] (split-step-arg "devflow-advance" argv usage)
-        [feature & rest-args] (require-argv-range! "devflow-advance" args 1 4 usage)
-        _ (require-non-blank! :feature feature)
+(defn- parse-advance-tail
+  "Parse devflow-advance tail tokens into workflow advance opts.
+
+  The tail carries the optional `[choice] [json-input] [notes]` args plus a
+  position-independent `step=<id>` selector. With one bare optional arg it is a
+  choice when the selected ready step is a checkpoint and notes otherwise; JSON
+  input must be an object starting with `{`."
+  [feature tail]
+  (let [[args step] (pop-step-selector "devflow-advance" tail)
+        _ (when (> (count args) 3)
+            (throw (ex-info "devflow-advance accepts at most a choice, JSON input, and notes"
+                            {:op "devflow-advance" :help "strand help devflow-advance" :extra (vec args)})))
         [choice raw-input notes]
-        (case (count rest-args)
+        (case (count args)
           0 [nil nil nil]
-          1 (let [arg (first rest-args)]
+          1 (let [arg (first args)]
               (cond
                 (str/starts-with? arg "{") [nil arg nil]
                 (checkpoint-ready? feature step) [arg nil nil]
                 :else [nil nil arg]))
-          2 (let [[a b] rest-args]
+          2 (let [[a b] args]
               (if (str/starts-with? a "{")
                 [nil a b]
                 [a b nil]))
-          3 rest-args)
+          3 args)
         input (when raw-input
                 (when-not (str/starts-with? raw-input "{")
                   (throw (ex-info "devflow-advance JSON input must start with {"
-                                  {:input raw-input :usage usage})))
+                                  {:op "devflow-advance" :help "strand help devflow-advance" :input raw-input})))
                 (parse-json-object-arg "devflow-advance" raw-input))]
-    [feature (cond-> {}
-               step (assoc :step step)
-               choice (assoc :choice (keyword choice))
-               input (assoc :input input)
-               notes (assoc :notes notes))]))
+    (cond-> {}
+      step (assoc :step step)
+      choice (assoc :choice (keyword choice))
+      input (assoc :input input)
+      notes (assoc :notes notes))))
 
 (defn devflow-advance-op
-  "Advance the current devflow step or checkpoint for a feature.
-
-  Usage: `strand devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]`.
-  With one bare optional arg, the arg is a choice when the selected ready step is
-  a checkpoint and notes otherwise. JSON input must be an object starting with
-  `{`; abort choices require a JSON object with a reason key."
+  "Advance the current devflow step or checkpoint for a feature."
   [ctx]
-  (let [[feature opts] (parse-advance-argv (:op/argv ctx))]
+  (let [{:keys [feature tail]} (:op/args ctx)]
+    (require-non-blank! :feature feature)
     (merge {:operation "devflow-advance"
             :feature feature}
-           (devflow/advance! feature opts))))
+           (devflow/advance! feature (parse-advance-tail feature tail)))))
 
 (defn devflow-describe-op
   "Return the devflow cycle or one registered stage description.
 
-  Usage: `strand devflow-describe [stage-key]`, where stage-key is a stable
-  devflow registry key such as `proposal` or `spec-plan`."
+  stage-key is a stable devflow registry key such as `proposal` or `spec-plan`."
   [ctx]
-  (let [usage "strand devflow-describe [stage-key]"
-        [stage] (require-argv-range! "devflow-describe" (:op/argv ctx) 0 1 usage)]
+  (let [{:keys [stage-key]} (:op/args ctx)]
     {:operation "devflow-describe"
-     :stage stage
-     :description (if stage (devflow/describe (keyword stage)) (devflow/describe))}))
+     :stage stage-key
+     :description (if stage-key (devflow/describe (keyword stage-key)) (devflow/describe))}))
 
 (defn devflow-history-op
-  "Return ordered devflow run history for a feature.
-
-  Usage: `strand devflow-history <feature>`."
+  "Return ordered devflow run history for a feature."
   [ctx]
-  (let [usage "strand devflow-history <feature>"
-        [feature] (require-argv-range! "devflow-history" (:op/argv ctx) 1 1 usage)]
+  (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-history"
      :feature feature
      :history (devflow/history feature)}))
@@ -409,11 +401,9 @@
 (defn devflow-archive-op
   "Archive a finished devflow run into one closed digest strand.
 
-  Usage: `strand devflow-archive <feature>`. Fails loudly while any devflow
-  stage root for the feature is still active."
+  Fails loudly while any devflow stage root for the feature is still active."
   [ctx]
-  (let [usage "strand devflow-archive <feature>"
-        [feature] (require-argv-range! "devflow-archive" (:op/argv ctx) 1 1 usage)]
+  (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-archive"
      :feature feature
      :digest (devflow/archive! feature)}))
@@ -421,11 +411,9 @@
 (defn devflow-status-op
   "Return the active devflow root, ready steps, and done state for a feature.
 
-  Usage: `strand devflow-status <feature>`. Fails loudly for a feature that
-  never started a devflow run."
+  Fails loudly for a feature that never started a devflow run."
   [ctx]
-  (let [usage "strand devflow-status <feature>"
-        [feature] (require-argv-range! "devflow-status" (:op/argv ctx) 1 1 usage)]
+  (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-status"
      :feature feature
      :roots (mapv loom/summarize (devflow/feature-roots feature))
@@ -457,25 +445,25 @@
             {:namespace "skein.spools.kanban"
              :doc "spools/kanban.md"
              :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed lanes, notes, and handovers."}]
-   :ops [{:name "kanban" :usage "strand kanban <about|add|board|card|next|promote|claim|note|finish> ..."}
-         {:name "branches" :usage "strand branches [branch]"}
-         {:name "devflow-start" :usage "strand devflow-start <feature> [required|already-in-worktree-ok]"}
-         {:name "devflow-next" :usage "strand devflow-next <feature>"}
-         {:name "devflow-choices" :usage "strand devflow-choices <feature> [step=<id>]"}
-         {:name "devflow-choose" :usage "strand devflow-choose <feature> <choice> [json-input] [step=<id>]"}
-         {:name "devflow-complete" :usage "strand devflow-complete <feature> [notes] [step=<id>]"}
-         {:name "devflow-advance" :usage "strand devflow-advance <feature> [choice] [json-input] [notes] [step=<id>]"}
-         {:name "devflow-describe" :usage "strand devflow-describe [stage-key]"}
-         {:name "devflow-history" :usage "strand devflow-history <feature>"}
-         {:name "devflow-archive" :usage "strand devflow-archive <feature>"}
-         {:name "devflow-status" :usage "strand devflow-status <feature>"}
-         {:name "workflow-runs" :usage "strand workflow-runs [family]"}
-         {:name "current-dags" :usage "strand current-dags"}
-         {:name "carder-report" :usage "strand carder-report [--days <n>] [--include-plumbing true|false]"}
-         {:name "agent" :usage "strand agent about — the delegation manual (spawn/delegate/retry/status/ps/await/logs/kill/note/notes/council/review); shipped by skein.spools.agents"}
-         {:name "flow-await" :usage "strand flow-await <workflow-run-id> [--timeout-secs <n>]"}
-         {:name "flow-status" :usage "strand flow-status <workflow-run-id>"}
-         {:name "hitl" :usage "strand hitl <parent-id> <title> --context <text> [--cwd <dir>] [--harness <name>] [--backend <name>] — interactive user+agent session with a self-terminating tracking strand"}]
+   :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
+         {:name "branches" :help "strand help branches"}
+         {:name "devflow-start" :help "strand help devflow-start"}
+         {:name "devflow-next" :help "strand help devflow-next"}
+         {:name "devflow-choices" :help "strand help devflow-choices"}
+         {:name "devflow-choose" :help "strand help devflow-choose"}
+         {:name "devflow-complete" :help "strand help devflow-complete"}
+         {:name "devflow-advance" :help "strand help devflow-advance"}
+         {:name "devflow-describe" :help "strand help devflow-describe"}
+         {:name "devflow-history" :help "strand help devflow-history"}
+         {:name "devflow-archive" :help "strand help devflow-archive"}
+         {:name "devflow-status" :help "strand help devflow-status"}
+         {:name "workflow-runs" :help "strand help workflow-runs"}
+         {:name "current-dags" :help "strand help current-dags"}
+         {:name "carder-report" :help "strand help carder-report"}
+         {:name "agent" :help "strand help agent" :manual "strand agent about"}
+         {:name "flow-await" :help "strand help flow-await"}
+         {:name "flow-status" :help "strand help flow-status"}
+         {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}]
    :patterns [{:name "agent-plan"
                :purpose "Create a feature strand plus task/review children for agent work; now shipped by skein.spools.agents, not this config."}
               {:name "delegate-pipeline"
@@ -822,6 +810,92 @@
 ;; ---------------------------------------------------------------------------
 ;; repo-local op arg-specs
 ;; ---------------------------------------------------------------------------
+
+(def ^:private feature-positional
+  "Required `<feature>` positional shared by the devflow wrapper ops."
+  {:name :feature
+   :type :string
+   :required? true
+   :doc "Feature name; the workflow run id shared by all devflow ops."})
+
+;; Ops that carry a position-independent `step=<id>` selector alongside other
+;; optional args declare a single variadic `:tail` positional; the arg-spec
+;; parser binds positionals strictly by order, so pop-step-selector interprets
+;; that tail in the handler (see the comment above that fn).
+(def ^:private devflow-start-arg-spec
+  {:op "devflow-start"
+   :doc "Start the devflow lifecycle for a feature."
+   :positionals [feature-positional
+                 {:name :worktree-check
+                  :type :string
+                  :doc "Worktree policy: required (default) or already-in-worktree-ok."}]})
+
+(def ^:private devflow-next-arg-spec
+  {:op "devflow-next"
+   :doc "Show the ready devflow step views for a feature."
+   :positionals [feature-positional]})
+
+(def ^:private devflow-choices-arg-spec
+  {:op "devflow-choices"
+   :doc "Explain the current devflow checkpoint choices for a feature."
+   :positionals [feature-positional
+                 {:name :step-selector
+                  :type :string
+                  :variadic? true
+                  :doc "Optional trailing `step=<id>` selector for a specific ready step."}]})
+
+(def ^:private devflow-choose-arg-spec
+  {:op "devflow-choose"
+   :doc "Record a devflow checkpoint choice for a feature, optionally with JSON input."
+   :positionals [feature-positional
+                 {:name :choice
+                  :type :string
+                  :required? true
+                  :doc "Checkpoint choice key, e.g. approved or abort."}
+                 {:name :tail
+                  :type :string
+                  :variadic? true
+                  :doc "Optional JSON-object input and a trailing `step=<id>` selector."}]})
+
+(def ^:private devflow-complete-arg-spec
+  {:op "devflow-complete"
+   :doc "Close the current non-checkpoint devflow step for a feature."
+   :positionals [feature-positional
+                 {:name :tail
+                  :type :string
+                  :variadic? true
+                  :doc "Optional notes and a trailing `step=<id>` selector."}]})
+
+(def ^:private devflow-advance-arg-spec
+  {:op "devflow-advance"
+   :doc "Advance the current devflow step or checkpoint for a feature."
+   :positionals [feature-positional
+                 {:name :tail
+                  :type :string
+                  :variadic? true
+                  :doc "Optional `[choice] [json-input] [notes]` and a trailing `step=<id>` selector."}]})
+
+(def ^:private devflow-describe-arg-spec
+  {:op "devflow-describe"
+   :doc "Describe the devflow cycle or one registered stage."
+   :positionals [{:name :stage-key
+                  :type :string
+                  :doc "Optional stage key such as proposal or spec-plan."}]})
+
+(def ^:private devflow-history-arg-spec
+  {:op "devflow-history"
+   :doc "Show ordered devflow run history for a feature."
+   :positionals [feature-positional]})
+
+(def ^:private devflow-archive-arg-spec
+  {:op "devflow-archive"
+   :doc "Archive a finished devflow run into one digest strand."
+   :positionals [feature-positional]})
+
+(def ^:private devflow-status-arg-spec
+  {:op "devflow-status"
+   :doc "Show the devflow root, ready steps, and done state for a feature."
+   :positionals [feature-positional]})
 
 (def ^:private current-dags-arg-spec
   {:op "current-dags"
@@ -1248,52 +1322,52 @@
            (api/register-op!
             runtime
             'devflow-start
-            "Start the devflow lifecycle for a feature"
+            (op-metadata devflow-start-arg-spec)
             'config/devflow-start-op)
            (api/register-op!
             runtime
             'devflow-next
-            "Show ready devflow steps for a feature"
+            (op-metadata devflow-next-arg-spec)
             'config/devflow-next-op)
            (api/register-op!
             runtime
             'devflow-choices
-            "Explain the current devflow checkpoint choices for a feature"
+            (op-metadata devflow-choices-arg-spec)
             'config/devflow-choices-op)
            (api/register-op!
             runtime
             'devflow-choose
-            "Record a devflow checkpoint choice for a feature"
+            (op-metadata devflow-choose-arg-spec)
             'config/devflow-choose-op)
            (api/register-op!
             runtime
             'devflow-complete
-            "Close the current devflow step for a feature"
+            (op-metadata devflow-complete-arg-spec)
             'config/devflow-complete-op)
            (api/register-op!
             runtime
             'devflow-advance
-            "Advance the current devflow step or checkpoint for a feature"
+            (op-metadata devflow-advance-arg-spec)
             'config/devflow-advance-op)
            (api/register-op!
             runtime
             'devflow-describe
-            "Describe the devflow cycle or one stage"
+            (op-metadata devflow-describe-arg-spec)
             'config/devflow-describe-op)
            (api/register-op!
             runtime
             'devflow-history
-            "Show ordered devflow run history for a feature"
+            (op-metadata devflow-history-arg-spec)
             'config/devflow-history-op)
            (api/register-op!
             runtime
             'devflow-archive
-            "Archive a finished devflow run into one digest strand"
+            (op-metadata devflow-archive-arg-spec)
             'config/devflow-archive-op)
            (api/register-op!
             runtime
             'devflow-status
-            "Show devflow root, ready steps, and done state for a feature"
+            (op-metadata devflow-status-arg-spec)
             'config/devflow-status-op)
            (api/register-op!
             runtime

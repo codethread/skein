@@ -26,16 +26,40 @@ func resolveLifecycleWorld(req client.MillWorldRequest) (config.World, error) {
 	return loaded, nil
 }
 
+// sourceDiagOut receives launch-source warning diagnostics (e.g. a configured
+// installed source that has become unusable and is being bypassed). Defaults to
+// stderr so it never corrupts stdout doc/JSON output; overridable in tests.
+var sourceDiagOut io.Writer = os.Stderr
+
 func resolveLaunchSource(cwd string) (string, error) {
 	if source := os.Getenv("SKEIN_SOURCE"); source != "" {
 		return config.ValidateSource("SKEIN_SOURCE", source)
 	}
+	var installedErr error
 	if config.InstalledSource != "" {
-		return config.ValidateSource("installed Skein source", config.InstalledSource)
+		resolved, err := config.ValidateSource("installed Skein source", config.InstalledSource)
+		if err == nil {
+			return resolved, nil
+		}
+		installedErr = err
 	}
-	root, err := config.GitRoot(cwd)
-	if err == nil {
-		return config.ValidateSource("canonical Skein checkout cwd", root)
+	root, rootErr := config.GitRoot(cwd)
+	if rootErr == nil {
+		resolved, err := config.ValidateSource("canonical Skein checkout cwd", root)
+		if err == nil {
+			if installedErr != nil {
+				// mill was installed with a source checkout that has since become
+				// unusable; the cwd fallback keeps launch working but the operator
+				// must know which checkout ran and that a reinstall is pending —
+				// silently launching a different checkout is the trap this warns off.
+				_, _ = fmt.Fprintf(sourceDiagOut, "warning: configured installed Skein source %q is unusable (%v); launching weaver from cwd checkout %q instead — reinstall mill from the canonical checkout to refresh it\n", config.InstalledSource, installedErr, resolved)
+			}
+			return resolved, nil
+		}
+		rootErr = err
+	}
+	if installedErr != nil {
+		return "", fmt.Errorf("unable to resolve Skein source for weaver launch; installed source is unusable (%w), and cwd is not a canonical Skein checkout (%v); set SKEIN_SOURCE to a Skein checkout or reinstall mill from the canonical checkout", installedErr, rootErr)
 	}
 	return "", fmt.Errorf("unable to resolve Skein source for weaver launch; set SKEIN_SOURCE to a Skein checkout, reinstall mill with a valid install-time source, or run mill weaver start from a canonical Skein checkout cwd containing deps.edn")
 }

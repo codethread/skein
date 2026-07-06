@@ -108,8 +108,9 @@
           (is (= 4 (count (:working-agreement prime))))
           (is (= 3 (count (:staying-aware prime))))
           (is (every? #(nil? (re-find #"\n" %)) (:staying-aware prime))))
-        (testing "prime advertises itself in the command surface"
-          (is (some #(re-find #"kanban prime" (:usage %)) (:commands prime))))))))
+        (testing "prime advertises itself in the command surface without duplicating usage"
+          (is (some #(= "prime" (:verb %)) (:commands prime)))
+          (is (= "strand help kanban" (get-in prime [:discovery :help]))))))))
 
 (deftest fill-wraps-prose-and-preserves-indented-blocks
   (testing "flush-left lines soft-wrap; a bare bar starts a new item; an indented line keeps the item verbatim"
