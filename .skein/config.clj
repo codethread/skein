@@ -642,16 +642,16 @@
   Nothing merges or pushes; the branch and worktree stay for follow-up."
   [_opts]
   (workflow/workflow
-    (fn [{:keys [branch]}] (str "Abort land: " branch))
-    {:params {:branch (workflow/param :required true)
-              :reason (workflow/param :required true)}
-     :attributes {"workflow/family" "land"
-                  "land/stage" "abort"}}
-    (workflow/step :record-abort
-                   (fn [{:keys [branch reason]}] (str "Record land abort for " branch ": " reason))
-                   :self
-                   :attributes {"workflow/action-ref" "land.abort.record"
-                                "workflow/instruction" "Record the abort reason on the kanban card and work root, leave a handover note, then stop. Do NOT merge or push — nothing has landed; the branch and worktree stay for follow-up."})))
+   (fn [{:keys [branch]}] (str "Abort land: " branch))
+   {:params {:branch (workflow/param :required true)
+             :reason (workflow/param :required true)}
+    :attributes {"workflow/family" "land"
+                 "land/stage" "abort"}}
+   (workflow/step :record-abort
+                  (fn [{:keys [branch reason]}] (str "Record land abort for " branch ": " reason))
+                  :self
+                  :attributes {"workflow/action-ref" "land.abort.record"
+                               "workflow/instruction" "Record the abort reason on the kanban card and work root, leave a handover note, then stop. Do NOT merge or push — nothing has landed; the branch and worktree stay for follow-up."})))
 
 (defn land-workflow
   "Return the coordinator LANDING workflow for a feature branch (family \"land\").
@@ -665,95 +665,95 @@
   text is command-precise and fail-loud, so the discipline lives in the data."
   [_opts]
   (workflow/workflow
-    (fn [{:keys [branch]}] (str "Land: " branch))
-    {:params {:feature (workflow/param :required true)
-              :branch (workflow/param :required true)
-              :worktree (workflow/param :required true)
-              :card (workflow/param :default nil)}
-     :attributes {"workflow/family" "land"
-                  "land/branch" (fn [{:keys [branch]}] branch)}}
-    (workflow/step :push-draft-pr
-                   (fn [{:keys [branch]}] (str "Push " branch " and open a draft PR"))
-                   :self
-                   :attributes {"workflow/action-ref" "land.pr.open"
-                                "workflow/instruction"
-                                (fn [{:keys [branch]}]
-                                  (str "Push the branch to origin: `git push -u origin " branch "`."
-                                       " Open a draft PR against main: `gh pr create --draft --title <semantic subject> --body <summary>`."
-                                       " If an open PR for " branch " already exists, reuse it instead"
-                                       " (`gh pr view " branch " --json url,number,state`). Record the PR url"
-                                       " and number in this step's notes before completing."))})
-    (workflow/step :ci-green
-                   (fn [{:keys [branch]}] (str "Watch CI to green at " branch " HEAD"))
-                   :self
-                   :depends-on [:push-draft-pr]
-                   :attributes {"workflow/action-ref" "land.ci.green"
-                                "workflow/instruction"
-                                "Watch CI to green at the current branch HEAD: `gh pr checks <pr> --watch`. ALL checks must pass at HEAD. If any check is red, fix it in the worktree, commit, `git push`, and re-watch — stay in THIS step until every check is green. Completing this step asserts green CI at the current HEAD sha; record the HEAD sha (`git rev-parse HEAD`) and the check evidence in notes."})
-    (workflow/step :signoff-review
-                   (fn [{:keys [branch]}] (str "Run roster sign-off review for " branch))
-                   :self
-                   :depends-on [:ci-green]
-                   :attributes {"workflow/action-ref" "land.signoff.review"
-                                "workflow/instruction"
-                                (fn [{:keys [worktree]}]
-                                  (str "Run the declared roster review:"
-                                       " `strand agent review <work-root> --roster change-review --cwd " worktree
-                                       " --commit-range origin/main..HEAD`. Drive every fix round to done; each fix"
-                                       " round re-pushes the branch and MUST re-establish green CI (the ci-green bar)"
-                                       " before this step may complete. SIGN-OFF IS ONLY VALID WITH A PUSHED BRANCH"
-                                       " AND GREEN CI — that is why this step follows CI. Record the review pass ids"
-                                       " and the final verdict in notes."))})
-    (workflow/checkpoint :signoff
-                         (fn [{:keys [branch]}] (str "Sign off landing " branch))
-                         :depends-on [:signoff-review]
-                         :kind :agent
-                         :choices [{:key :approved
-                                    :label "Approve"
-                                    :description "Sign-off approved on a pushed branch with green CI; continue to the local squash-merge and verification. The coordinator holds this delegated sign-off authority."}
-                                   {:key :abort
-                                    :label "Abort"
-                                    :description "Stop landing intentionally; nothing merges. Records the reason and leaves the branch/worktree for follow-up."
-                                    :next :land-abort
-                                    :input land-abort-reason-input}]
-                         :attributes {"workflow/decision-point" "land-signed-off"})
-    (workflow/step :merge-local-verify
-                   (fn [{:keys [branch]}] (str "Squash-merge " branch " to local main and verify"))
-                   :self
-                   :depends-on [:signoff]
-                   :attributes {"workflow/action-ref" "land.merge.local-verify"
-                                "workflow/instruction"
-                                (fn [{:keys [branch]}]
-                                  (str "Squash-merge " branch " into LOCAL main without pushing (coding:git-merge"
-                                       " semantics: a semantic squash subject plus a `Squashed commits` body)."
-                                       " If spool docstrings changed, regenerate `make api-docs` into the squash."
-                                       " Then, on the merged local main, run the full local verification gate:"
-                                       " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" flock -w 3600 /tmp/skein-test.lock clojure -M:test`,"
-                                       " `(cd cli && go test ./...)`, `make fmt-check lint reflect-check docs-check`,"
-                                       " and the smoke suite `clojure -M:smoke`. If any gate fails:"
-                                       " `git reset --hard origin/main`, fix on the branch, and re-satisfy the"
-                                       " ci-green and signoff-review steps before re-attempting. Record every gate"
-                                       " result in notes. Do NOT push in this step."))})
-    (workflow/step :push-main-ci-green
-                   "Push main and watch main CI to green"
-                   :self
-                   :depends-on [:merge-local-verify]
-                   :attributes {"workflow/action-ref" "land.main.ci-green"
-                                "workflow/instruction"
-                                "Push main: `git push origin main`. Watch ALL main workflows to completion (`gh run list --branch main`, `gh run watch <run-id>`). Transient infra failures may be re-run with `gh run rerun <run-id>`. Completing this step asserts green CI on the main sha. Record the run ids in notes."})
-    (workflow/step :cleanup
-                   (fn [{:keys [branch]}] (str "Clean up " branch " and close the land run"))
-                   :self
-                   :depends-on [:push-main-ci-green]
-                   :attributes {"workflow/action-ref" "land.cleanup"
-                                "workflow/instruction"
-                                (fn [{:keys [branch]}]
-                                  (str "Delete the remote branch (`git push origin --delete " branch "`), which also"
-                                       " closes the draft PR. Remove the worktree and local branch"
-                                       " (`wktree remove --branch " branch " --force`; force is expected after the"
-                                       " squash-merge). Finish or annotate the kanban card"
-                                       " (`strand kanban finish <card> --outcome done` when a card is set). Then close"
-                                       " this land run's root to complete it."))})))
+   (fn [{:keys [branch]}] (str "Land: " branch))
+   {:params {:feature (workflow/param :required true)
+             :branch (workflow/param :required true)
+             :worktree (workflow/param :required true)
+             :card (workflow/param :default nil)}
+    :attributes {"workflow/family" "land"
+                 "land/branch" (fn [{:keys [branch]}] branch)}}
+   (workflow/step :push-draft-pr
+                  (fn [{:keys [branch]}] (str "Push " branch " and open a draft PR"))
+                  :self
+                  :attributes {"workflow/action-ref" "land.pr.open"
+                               "workflow/instruction"
+                               (fn [{:keys [branch]}]
+                                 (str "Push the branch to origin: `git push -u origin " branch "`."
+                                      " Open a draft PR against main: `gh pr create --draft --title <semantic subject> --body <summary>`."
+                                      " If an open PR for " branch " already exists, reuse it instead"
+                                      " (`gh pr view " branch " --json url,number,state`). Record the PR url"
+                                      " and number in this step's notes before completing."))})
+   (workflow/step :ci-green
+                  (fn [{:keys [branch]}] (str "Watch CI to green at " branch " HEAD"))
+                  :self
+                  :depends-on [:push-draft-pr]
+                  :attributes {"workflow/action-ref" "land.ci.green"
+                               "workflow/instruction"
+                               "Watch CI to green at the current branch HEAD: `gh pr checks <pr> --watch`. ALL checks must pass at HEAD. If any check is red, fix it in the worktree, commit, `git push`, and re-watch — stay in THIS step until every check is green. Completing this step asserts green CI at the current HEAD sha; record the HEAD sha (`git rev-parse HEAD`) and the check evidence in notes."})
+   (workflow/step :signoff-review
+                  (fn [{:keys [branch]}] (str "Run roster sign-off review for " branch))
+                  :self
+                  :depends-on [:ci-green]
+                  :attributes {"workflow/action-ref" "land.signoff.review"
+                               "workflow/instruction"
+                               (fn [{:keys [worktree]}]
+                                 (str "Run the declared roster review:"
+                                      " `strand agent review <work-root> --roster change-review --cwd " worktree
+                                      " --commit-range origin/main..HEAD`. Drive every fix round to done; each fix"
+                                      " round re-pushes the branch and MUST re-establish green CI (the ci-green bar)"
+                                      " before this step may complete. SIGN-OFF IS ONLY VALID WITH A PUSHED BRANCH"
+                                      " AND GREEN CI — that is why this step follows CI. Record the review pass ids"
+                                      " and the final verdict in notes."))})
+   (workflow/checkpoint :signoff
+                        (fn [{:keys [branch]}] (str "Sign off landing " branch))
+                        :depends-on [:signoff-review]
+                        :kind :agent
+                        :choices [{:key :approved
+                                   :label "Approve"
+                                   :description "Sign-off approved on a pushed branch with green CI; continue to the local squash-merge and verification. The coordinator holds this delegated sign-off authority."}
+                                  {:key :abort
+                                   :label "Abort"
+                                   :description "Stop landing intentionally; nothing merges. Records the reason and leaves the branch/worktree for follow-up."
+                                   :next :land-abort
+                                   :input land-abort-reason-input}]
+                        :attributes {"workflow/decision-point" "land-signed-off"})
+   (workflow/step :merge-local-verify
+                  (fn [{:keys [branch]}] (str "Squash-merge " branch " to local main and verify"))
+                  :self
+                  :depends-on [:signoff]
+                  :attributes {"workflow/action-ref" "land.merge.local-verify"
+                               "workflow/instruction"
+                               (fn [{:keys [branch]}]
+                                 (str "Squash-merge " branch " into LOCAL main without pushing (coding:git-merge"
+                                      " semantics: a semantic squash subject plus a `Squashed commits` body)."
+                                      " If spool docstrings changed, regenerate `make api-docs` into the squash."
+                                      " Then, on the merged local main, run the full local verification gate:"
+                                      " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" flock -w 3600 /tmp/skein-test.lock clojure -M:test`,"
+                                      " `(cd cli && go test ./...)`, `make fmt-check lint reflect-check docs-check`,"
+                                      " and the smoke suite `clojure -M:smoke`. If any gate fails:"
+                                      " `git reset --hard origin/main`, fix on the branch, and re-satisfy the"
+                                      " ci-green and signoff-review steps before re-attempting. Record every gate"
+                                      " result in notes. Do NOT push in this step."))})
+   (workflow/step :push-main-ci-green
+                  "Push main and watch main CI to green"
+                  :self
+                  :depends-on [:merge-local-verify]
+                  :attributes {"workflow/action-ref" "land.main.ci-green"
+                               "workflow/instruction"
+                               "Push main: `git push origin main`. Watch ALL main workflows to completion (`gh run list --branch main`, `gh run watch <run-id>`). Transient infra failures may be re-run with `gh run rerun <run-id>`. Completing this step asserts green CI on the main sha. Record the run ids in notes."})
+   (workflow/step :cleanup
+                  (fn [{:keys [branch]}] (str "Clean up " branch " and close the land run"))
+                  :self
+                  :depends-on [:push-main-ci-green]
+                  :attributes {"workflow/action-ref" "land.cleanup"
+                               "workflow/instruction"
+                               (fn [{:keys [branch]}]
+                                 (str "Delete the remote branch (`git push origin --delete " branch "`), which also"
+                                      " closes the draft PR. Remove the worktree and local branch"
+                                      " (`wktree remove --branch " branch " --force`; force is expected after the"
+                                      " squash-merge). Finish or annotate the kanban card"
+                                      " (`strand kanban finish <card> --outcome done` when a card is set). Then close"
+                                      " this land run's root to complete it."))})))
 
 (defn- register-land-workflows!
   "Register the land run's routing targets (the abort continuation) with the
