@@ -255,6 +255,11 @@ ride the control surface.
   deliberation structure is queryable straight from run attributes
   (`shuttle/panel-seat`, `shuttle/panel-turn`). You compose the deliberation; the
   panel compiler owns the choreography.
+- **The top-level input map is conventional, not spec-backed.** The `:seats`
+  vector inside it is validated (the panel spec checks seat shape and name
+  uniqueness), but `council!`'s outer option keys are checked ad hoc inside the
+  function — a typoed key fails at runtime, not against a named spec. Copy the
+  shape from the API doc rather than from memory.
 
 Honest source: the panel composition layer in
 [`agents/README.md` §6](./agents/README.md#6-panels-presets-and-the-composition-layer),
