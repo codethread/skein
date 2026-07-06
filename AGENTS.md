@@ -255,7 +255,8 @@ Quality gates (all blocking in CI via `.github/workflows/quality.yml` and held a
 make fmt-check       # cljfmt (style-guide defaults, .cljfmt.edn) + gofumpt; `make fmt` fixes
 make lint            # clj-kondo (custom project hooks in .clj-kondo/) + splint + golangci-lint
 make reflect-check   # compiles every src + spool namespace with *warn-on-reflection*, fails on any warning
-make deps-report     # non-blocking: antq outdated deps, govulncheck, clj-watson (needs an NVD API key)
+make security-report # non-blocking: clj-watson github-advisory scan (GITHUB_TOKEN) + govulncheck; this is what CI runs
+make deps-report     # non-blocking, local-only: antq outdated deps, govulncheck, clj-watson deep NVD scan (needs CLJ_WATSON_NVD_API_KEY exported)
 ```
 
 The codebase-wide formatting commit is listed in `.git-blame-ignore-revs`; enable locally with `git config blame.ignoreRevsFile .git-blame-ignore-revs`. Splint intentionally disables `prefer-method-values` (parked 1.12 style migration) and `catch-throwable` (audited load-bearing daemon boundaries) — rationale in `.splint.edn`; do not silence new findings without the same written justification.

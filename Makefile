@@ -48,7 +48,8 @@ reflect-check:
 deps-report:
 	-clojure -M:deps/antq
 	-cd cli && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
-	-clojure -M:security/clj-watson
+	# local-only deep NVD scan; needs CLJ_WATSON_NVD_API_KEY exported
+	-clojure -M:security/clj-watson-nvd
 
 security-report:
 	-clojure -M:security/clj-watson

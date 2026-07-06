@@ -78,29 +78,11 @@ jobs:
           cli: latest
       - run: make reflect-check
 
-  dependency-report:
-    name: Dependency freshness report
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
-      - uses: DeLaGuardo/setup-clojure@13.4
-        with:
-          cli: latest
-      - run: make deps-report
-
   security-report:
     name: Security report
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -115,3 +97,5 @@ jobs:
         with:
           cli: latest
       - run: make security-report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

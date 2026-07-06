@@ -42,4 +42,6 @@
   :deps/antq {:extra-deps {com.github.liquidz/antq {:mvn/version "2.11.1276"}}
               :main-opts ["-m" "antq.core"]}
   :security/clj-watson {:extra-deps {io.github.clj-holmes/clj-watson {:git/tag "v6.1.0" :git/sha "be98e4d"}}
-                        :main-opts ["-m" "clj-watson.cli" "scan" "-p" "deps.edn" "--run-without-nvd-api-key"]}}}
+                        :main-opts ["-m" "clj-watson.cli" "scan" "-p" "deps.edn" "-t" "github-advisory"]}
+  :security/clj-watson-nvd {:extra-deps {io.github.clj-holmes/clj-watson {:git/tag "v6.1.0" :git/sha "be98e4d"}}
+                            :main-opts ["-m" "clj-watson.cli" "scan" "-p" "deps.edn"]}}}
