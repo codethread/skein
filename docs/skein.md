@@ -87,6 +87,22 @@ spool, the git-distributed `skein.spools.devflow` spool (approved via a
 feature lifecycle, feature-scoped queries, and the `agent-plan` pattern for
 lightweight work DAGs.
 
+The same config registers the **landing workflow** (family `land`) behind the
+`land` op — the coordinator-only discipline for taking a finished branch to
+landed. It is a single sequential `skein.spools.workflow` molecule whose ordering
+is the enforcement: push the branch and open a draft PR, drive CI green at HEAD,
+then run the declared roster sign-off — sign-off is only valid on a pushed branch
+with a draft PR and green CI. A coordinator sign-off checkpoint (`approved`
+continues; `abort` records a required reason and leaves the branch untouched)
+then gates a squash-merge into *local* main, which must pass the full local
+verification gate (`clojure -M:test`, `go test`, `make fmt-check lint
+reflect-check docs-check`, and the smoke suite) before main is pushed; main is
+only landed once its own CI is green, after which cleanup deletes the remote
+branch/PR, removes the worktree, and closes the run. Worker agents never land —
+they stop at implemented+committed; only a coordinator holding delegated sign-off
+authority drives a `land` run (`strand land about` for the manual, `strand help
+land` for the command surface).
+
 ## Weaver
 
 The weaver is the application core. It is a long-lived local Clojure process that owns:
