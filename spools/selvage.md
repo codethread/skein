@@ -1,5 +1,13 @@
 # Skein Selvage Spool
 
+> This is the **contract** doc: the vocabulary model, check forms, watch-mode
+> semantics, and the violation shape. Its two companions are
+> [`selvage.cookbook.md`](./selvage.cookbook.md) — worked composition recipes
+> (how/why you grow and enforce a vocabulary) — and
+> [`selvage.api.md`](./selvage.api.md) — generated fn signatures and docstrings.
+> Reach for the cookbook when you want a runnable pattern, the API doc when you
+> want an exact arity, and this doc for what the spool promises.
+
 ## 1. Overview
 
 `skein.spools.selvage` is a reference spool for opt-in attribute vocabulary
@@ -96,6 +104,9 @@ are keyword keys such as `:shuttle/phase`.
 
 ## 5. See also
 
+- [selvage.cookbook.md](./selvage.cookbook.md) — worked composition recipes:
+  hardening an attribute table, pre-merge sweeps, watch mode, and evolving a
+  vocabulary.
 - [README.md](./README.md) — shipped spools index.
 - `test/skein/spools/selvage_test.clj` — executable examples against a real
   weaver runtime.
