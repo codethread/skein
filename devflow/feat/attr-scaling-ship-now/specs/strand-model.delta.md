@@ -1,0 +1,76 @@
+# Strand Model delta for attr-scaling-ship-now
+
+**Document ID:** `ASSN-DELTA-001`
+**Root spec:** [strand-model.md](../../../specs/strand-model.md)
+**Feature:** [../proposal.md](../proposal.md)
+**Status:** Draft
+**Last Updated:** 2026-07-06
+
+## ASSN-DELTA-001.P1 Summary
+
+This delta adds three storage-and-read behaviors to the strand model, all governed by one hard invariant: **an undeclared attribute key is never slower or less capable than it is today.** Declaration is the only lever that changes a key's storage or query behavior; the long tail of undeclared keys is untouched.
+
+- **Lean read tier (L1).** CLI/agent list-style reads replace attribute values above a fixed byte floor with a typed, storage-neutral omission descriptor. Point reads and every trusted in-process read stay full-fidelity.
+- **Declared hot-key indexing (L0b).** A durable declaration registry — parallel to `acyclic_relations` — names hot metadata filter keys. Declared keys compile to literal JSON paths so an expression index can eliminate rows; undeclared keys keep today's bound-parameter form and full capability.
+- **Storage pragmas (L0a).** The weaver datasource opens WAL journaling with a memory-map and larger page cache. No schema, contract, or read-shape change.
+
+The declared-key overflow storage table (L2) remains explicitly out of scope (`PROP-AttrScalingShipNow-001.NG1`); nothing here precludes it.
+
+## ASSN-DELTA-001.P2 Contract changes — SPEC-001.P4 Attributes (read tiers)
+
+- **ASSN-DELTA-001.CC1:** Attribute reads have two tiers. The **full tier** returns every attribute value verbatim. The **lean tier** returns attribute values whose JSON-encoded UTF-8 byte length exceeds a fixed floor as an omission descriptor instead of the value; every value at or below the floor passes through unchanged. Small metadata keys — the keys queries filter on — are therefore never omitted.
+- **ASSN-DELTA-001.CC2:** The omission descriptor is a typed map `{:skein/omitted true :bytes N}` where `:skein/omitted` is literally `true` (the discriminator) and `:bytes` is the non-negative JSON-encoded UTF-8 byte length of the omitted value. It is **storage-neutral**: it means "omitted from this read surface", not "stored elsewhere". No storage mechanism is claimed or implied, so the shape stays valid whether or not L2 ever ships.
+- **ASSN-DELTA-001.CC3:** The descriptor is the single source of truth `skein.core.specs` contract `::specs/omitted-attribute-descriptor` (`s/keys :req [:skein/omitted] :req-un [::bytes]`, `:skein/omitted` = `#{true}`, `:bytes` = `nat-int?`). The lean-tier emitter constructs values that conform to this spec; every consumer discriminates against it. Ad hoc per-call-site map-shape checks for the descriptor are not the contract.
+- **ASSN-DELTA-001.CC4:** The descriptor is structurally a map and can never be confused with a genuine attribute value that a reader consumes as a string/number/boolean. `:bytes` is derivable from the inline value at read time; building the descriptor requires no second fetch.
+- **ASSN-DELTA-001.CC5:** The lean tier is the default only for CLI/agent list-style read surfaces (`list`, `ready`, query-backed listing). Point reads (`show`/`get`) and all trusted in-process reads default to the full tier. The split is **by read tier / caller**, not global: trusted spool readers that consume payload values by key (`skein.spools.util/attr-get` and the shuttle/treadle/bobbin/roster readers built on it) always receive real values.
+- **ASSN-DELTA-001.CC6:** A fail-loud boundary guard enforces `ASSN-DELTA-001.CC5` beyond call-path separation: the canonical trusted spool reader `attr-get` rejects an omission descriptor where a raw value is expected, throwing loudly (per `::specs/omitted-attribute-descriptor`) rather than returning it. A lean-projected strand misrouted into a trusted reader fails immediately instead of handing a spool a descriptor in place of its payload (TEN-003).
+- **ASSN-DELTA-001.CC7:** The size floor is a **fixed** conservative default of 1024 bytes (1 KiB). It is not per-world config, not a named-query-derived inference, and not repo config (`PROP-AttrScalingShipNow-001.NG5`, TEN-004).
+
+## ASSN-DELTA-001.P3 Contract changes — SPEC-001.P8 Persistence
+
+- **ASSN-DELTA-001.CC8:** The weaver datasource opens each SQLite database with `journal_mode=WAL`, a non-zero `mmap_size`, and an enlarged `cache_size`, applied on open for every world. This changes no schema, no contract, and no read shape.
+- **ASSN-DELTA-001.CC9:** A durable `indexed_attr_keys` table stores the declared hot filter keys as bare attribute-path strings, exactly mirroring the `acyclic_relations` table shape (single `TEXT PRIMARY KEY` column, uniqueness by primary key). It is created additively with `CREATE TABLE IF NOT EXISTS`; existing worlds gain it without a rebuild. Its entries are the source of truth for which keys the query compiler treats as index-usable.
+- **ASSN-DELTA-001.CC10:** For each declared key the feature creates an expression index over `json_extract(attributes, '$."<key>"')` with `CREATE INDEX IF NOT EXISTS`. Index creation is additive and result-equivalent over existing rows; declaring a key is safe whether or not rows already carry it.
+- **ASSN-DELTA-001.CC11:** JSON `TEXT` attribute storage is unchanged for every key, declared or not. No JSONB assumptions, no side/overflow table, no generated columns are introduced by this feature (`PROP-AttrScalingShipNow-001.NG1`, `NG6`).
+
+## ASSN-DELTA-001.P4 Contract changes — SPEC-001.P9 Query fields
+
+- **ASSN-DELTA-001.CC12:** A predicate over a **declared** attribute key compiles to a literal JSON path (`json_extract(t.attributes, '$."<key>"')`) so SQLite can match the corresponding expression index. Result semantics are identical to the bound-parameter form; only index-usability changes.
+- **ASSN-DELTA-001.CC13:** A predicate over an **undeclared** attribute key compiles to exactly today's bound-parameter form (`json_extract(t.attributes, ?)` with the path as a parameter) and keeps full capability across every predicate type (`:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition). Declaration adds capability to declared keys; it never removes capability from any key.
+- **ASSN-DELTA-001.CC14:** The undeclared-key invariant is a **blocking** contract, not prose: the suite carries a regression gate asserting that an undeclared key's compiled SQL is byte-identical to today's bound-parameter form and remains filterable across all predicate types (see `ASSN-DELTA-001.D2` and the plan's validation strategy). Because the undeclared path emits identical SQL and gains no plan-altering index, it cannot become slower — the invariant is enforced structurally, not by a timing benchmark.
+
+## ASSN-DELTA-001.P5 Design decisions
+
+### ASSN-DELTA-001.D1 The omission descriptor is a spec, not scattered shape checks
+
+- **Decision:** The descriptor's shape and discriminator live in one `skein.core.specs` clojure.spec; the emitter conforms to it and every consumer validates against it.
+- **Rationale:** G4 makes descriptor-vs-value discrimination a correctness boundary (a spool that reads `{:skein/omitted true …}` as a payload string is silently wrong). A single spec, mirroring the patterned-weave precedent of owning input shapes as specs, gives one authoritative definition instead of hand-rolled map checks drifting across call sites.
+- **Rejected:** Documenting the shape in prose only and checking `(and (map? v) (contains? v :skein/omitted))` at each seam.
+
+### ASSN-DELTA-001.D2 The undeclared-key invariant is guarded structurally, not by timing
+
+- **Decision:** Enforce "undeclared keys never slower or less capable" with a blocking compile-level regression test (identical SQL form + full predicate-type capability), not a wall-clock benchmark in CI.
+- **Rationale:** The invariant holds by construction — the undeclared path emits the same SQL and gains no index that changes its query plan. A structural equality/capability assertion is deterministic and non-flaky; a timing gate would be load-sensitive under concurrent swarm runs and prove nothing the structural check does not.
+- **Rejected:** A before/after latency benchmark as the CI gate; leaving the invariant as unenforced proposal text.
+
+### ASSN-DELTA-001.D3 Hydration is composition, not new surface
+
+- **Decision:** Ship no `--hydrate` flag and no `:hydrate?` argument. Full fidelity for a specific row is reached by composing the existing surface: lean `list`/`ready`/query returns ids plus small attrs plus descriptors, then full-fidelity `show <id>` returns the whole row.
+- **Rationale:** An agent lists to locate candidate ids, then acts on the one (or few) it needs the payload of — a small, already-supported point read per id. TEN-004 says delegate to userland composition what composition already serves rather than shipping a lever. Trusted in-process bulk reads already stay full-fidelity, so no bulk-hydrate need exists on the CLI/agent surface.
+- **Rejected:** A hydration switch on the lean ops. If a future workload proves composition genuinely insufficient (e.g. bulk payload fetch across many ids on the agent surface), that is a separately justified feature, not a lever shipped speculatively now.
+
+### ASSN-DELTA-001.D4 The hot-key registry reuses acyclic-relations idioms and drops the guard that guards nothing
+
+- **Decision:** `indexed_attr_keys` reuses the `acyclic_relations` table shape and declaration idioms — durable single-column PK table, idempotent trusted `declare-*!`, `list-*`, and key-syntax validation. It deliberately does **not** carry a late-declaration guard.
+- **Rationale:** The `acyclic_relations` late-declaration guard protects a real invariant (declaring a relation acyclic after cyclic edges exist would silently corrupt reachability reasoning). Declaring a key hot has no such hazard: emitting a literal path is result-equivalent to the bound-parameter form, and `CREATE INDEX IF NOT EXISTS` over existing rows is well-defined and additive. Inventing a guard with no invariant to protect would be surface for its own sake (TEN-004). This is an honest generalization of the pattern, not a parallel invention.
+- **Rejected:** Standing up a structurally independent registry mechanism; copying the late-declaration guard by rote where it protects nothing.
+
+### ASSN-DELTA-001.D5 The registry needs no dedicated spec section
+
+- **Decision:** The registry entry stays a single validated attribute-path string; it gets no compound clojure.spec beyond reusing key-syntax validation, exactly as `acyclic_relations` entries are bare validated relation-name strings.
+- **Rationale:** A dedicated descriptor spec earns its place only where a compound public shape carries correctness stakes (the omission descriptor, `ASSN-DELTA-001.D1`). A bare string with a syntax check and a PK uniqueness constraint has neither; adding a spec section for it would be ceremony without contract value.
+- **Rejected:** A dedicated `::indexed-attr-key-registry` spec or its own strand-model section paralleling the omission descriptor.
+
+## ASSN-DELTA-001.P6 Open questions
+
+- **ASSN-DELTA-001.Q1:** None for contract scope. The trusted op/registry names, the exact `mmap_size`/`cache_size` values, and the declared bootstrap key set (if any ship by default) are implementation choices finalized in the plan while preserving the behavior above.
