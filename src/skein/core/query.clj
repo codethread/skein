@@ -61,16 +61,26 @@
   (str "json_extract(" alias ".value, ?)"))
 
 (defn- attr-exists-sql [predicate-sql]
-  (str "EXISTS (SELECT 1 FROM attributes AS a INDEXED BY idx_attributes_key_value_hot"
+  (str "EXISTS (SELECT 1 FROM attributes AS a"
        " WHERE a.strand_id = " *strand-alias* ".id"
        " AND a.archived = 0"
        " AND a.key = ?"
        " AND " predicate-sql
        ")"))
 
-(defn- compile-attr-predicate [field predicate-sql predicate-params]
+(defn- attr-semi-join-sql [predicate-sql]
+  (str *strand-alias* ".id IN (SELECT a.strand_id FROM attributes AS a"
+       " WHERE a.archived = 0"
+       " AND a.key = ?"
+       " AND " predicate-sql
+       ")"))
+
+(defn- compile-attr-predicate [field predicate-sql predicate-params shape]
   (let [{:keys [key value-path]} (attr-field field)]
-    {:sql (attr-exists-sql predicate-sql)
+    {:sql ((case shape
+             :exists attr-exists-sql
+             :semi-join attr-semi-join-sql)
+           predicate-sql)
      :params (vec (concat [key value-path] predicate-params))}))
 
 (defn- compile-missing-attr-predicate [field]
@@ -102,7 +112,11 @@
                 (param-value params value)
                 value)]
     (if (attr-field? field)
-      (compile-attr-predicate field (str (attr-value-sql "a") " " op " ?") [value])
+      (compile-attr-predicate
+       field
+       (str (attr-value-sql "a") " " op " ?")
+       [value]
+       (if (#{"=" "<" "<="} op) :semi-join :exists))
       (let [{field-sql :sql field-params :params} (compile-field field)]
         {:sql (str field-sql " " op " ?")
          :params (conj (vec field-params) value)}))))
@@ -179,7 +193,8 @@
                  (compile-attr-predicate
                   field
                   (str (attr-value-sql "a") " IN (" (str/join ", " (repeat (count values) "?")) ")")
-                  values)
+                  values
+                  :semi-join)
                  (let [{field-sql :sql field-params :params} (compile-field field)]
                    {:sql (str field-sql " IN (" (str/join ", " (repeat (count values) "?")) ")")
                     :params (vec (concat field-params values))}))))
@@ -187,7 +202,7 @@
                  (when-not (= 1 (count args)) (fail! ":exists requires one field" {:expr expr}))
                  (let [field (first args)]
                    (if (attr-field? field)
-                     (compile-attr-predicate field (str (attr-value-sql "a") " IS NOT NULL") [])
+                     (compile-attr-predicate field (str (attr-value-sql "a") " IS NOT NULL") [] :exists)
                      (let [compiled (compile-field field)]
                        {:sql (str (:sql compiled) " IS NOT NULL") :params (:params compiled)}))))
        :missing (do

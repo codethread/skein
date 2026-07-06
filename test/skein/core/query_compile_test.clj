@@ -7,9 +7,16 @@
   (query/compile-query expr {}))
 
 (defn attr-exists-sql [predicate]
-  (str "EXISTS (SELECT 1 FROM attributes AS a INDEXED BY idx_attributes_key_value_hot"
+  (str "EXISTS (SELECT 1 FROM attributes AS a"
        " WHERE a.strand_id = t.id"
        " AND a.archived = 0"
+       " AND a.key = ?"
+       " AND " predicate
+       ")"))
+
+(defn attr-semi-join-sql [predicate]
+  (str "t.id IN (SELECT a.strand_id FROM attributes AS a"
+       " WHERE a.archived = 0"
        " AND a.key = ?"
        " AND " predicate
        ")"))
@@ -17,22 +24,22 @@
 (deftest attr-keys-compile-to-row-backed-exists-predicates
   (testing "single predicate forms bind value path and top-level key"
     (doseq [[expr sql params]
-            [[[:= [:attr :owner] "agent"] (attr-exists-sql "json_extract(a.value, ?) = ?") ["owner" "$" "agent"]]
+            [[[:= [:attr :owner] "agent"] (attr-semi-join-sql "json_extract(a.value, ?) = ?") ["owner" "$" "agent"]]
              [[:!= [:attr :owner] "agent"] (attr-exists-sql "json_extract(a.value, ?) <> ?") ["owner" "$" "agent"]]
-             [[:< [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) < ?") ["rank" "$" 3]]
-             [[:<= [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) <= ?") ["rank" "$" 3]]
+             [[:< [:attr :rank] 3] (attr-semi-join-sql "json_extract(a.value, ?) < ?") ["rank" "$" 3]]
+             [[:<= [:attr :rank] 3] (attr-semi-join-sql "json_extract(a.value, ?) <= ?") ["rank" "$" 3]]
              [[:> [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) > ?") ["rank" "$" 3]]
              [[:>= [:attr :rank] 3] (attr-exists-sql "json_extract(a.value, ?) >= ?") ["rank" "$" 3]]
-             [[:in [:attr :owner] ["agent" "human"]] (attr-exists-sql "json_extract(a.value, ?) IN (?, ?)") ["owner" "$" "agent" "human"]]
+             [[:in [:attr :owner] ["agent" "human"]] (attr-semi-join-sql "json_extract(a.value, ?) IN (?, ?)") ["owner" "$" "agent" "human"]]
              [[:exists [:attr :owner]] (attr-exists-sql "json_extract(a.value, ?) IS NOT NULL") ["owner" "$"]]
              [[:missing [:attr :owner]] (str "NOT " (attr-exists-sql "json_extract(a.value, ?) IS NOT NULL")) ["owner" "$"]]]]
       (is (= {:sql sql :params params} (compiled expr)) (pr-str expr))))
   (testing "nested attributes use the remaining JSON path inside the stored value"
-    (is (= {:sql (attr-exists-sql "json_extract(a.value, ?) = ?")
+    (is (= {:sql (attr-semi-join-sql "json_extract(a.value, ?) = ?")
             :params ["owner" "$.\"name\"" "agent"]}
            (compiled [:= [:attr :owner :name] "agent"]))))
   (testing "logical composition preserves row-backed self-join predicates"
-    (is (= {:sql (str "(" (attr-exists-sql "json_extract(a.value, ?) = ?")
+    (is (= {:sql (str "(" (attr-semi-join-sql "json_extract(a.value, ?) = ?")
                       " AND (NOT "
                       (attr-exists-sql "json_extract(a.value, ?) IS NOT NULL")
                       "))")

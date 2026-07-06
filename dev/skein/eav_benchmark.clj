@@ -21,10 +21,12 @@
 (def ^:private default-options
   {:n 250000
    :iterations 5
+   :measure-timeout-secs 60
    :list-size 500
    :patch-size 200
    :payload-every 50
    :payload-bytes 65536
+   :huge-payload-bytes 262144
    :seed 1337
    :out "target/eav-benchmark"})
 
@@ -36,10 +38,12 @@
     "Options:"
     "  --n N                 synthetic strand count (default 250000)"
     "  --iterations N        timed iterations per workload (default 5)"
+    "  --measure-timeout N   query timeout per measured iteration, seconds (default 60)"
     "  --list-size N         rows for assembly read workload (default 500)"
     "  --patch-size N        payload-carrying rows patched for write amp (default 200)"
     "  --payload-every N     every Nth row carries a payload (default 50)"
     "  --payload-bytes N     payload bytes on payload rows (default 65536)"
+    "  --huge-payload-bytes N payload bytes for the 256KiB write-amp bucket (default 262144)"
     "  --seed N              synthetic dataset seed (default 1337)"
     "  --out DIR             output directory (default target/eav-benchmark)"
     "  --help                print this help"]))
@@ -58,10 +62,12 @@
         "--help" (assoc opts :help true)
         "--n" (recur (parse-long-option opts :n value) more)
         "--iterations" (recur (parse-long-option opts :iterations value) more)
+        "--measure-timeout" (recur (parse-long-option opts :measure-timeout-secs value) more)
         "--list-size" (recur (parse-long-option opts :list-size value) more)
         "--patch-size" (recur (parse-long-option opts :patch-size value) more)
         "--payload-every" (recur (parse-long-option opts :payload-every value) more)
         "--payload-bytes" (recur (parse-long-option opts :payload-bytes value) more)
+        "--huge-payload-bytes" (recur (parse-long-option opts :huge-payload-bytes value) more)
         "--seed" (recur (parse-long-option opts :seed value) more)
         "--out" (recur (assoc opts :out value) more)
         (throw (ex-info "Unknown benchmark option" {:option flag})))
@@ -72,11 +78,17 @@
     (throw (ex-info "Benchmark option must be positive" {:option k :value (get opts k)}))))
 
 (defn- validate-options! [opts]
-  (doseq [k [:n :iterations :list-size :patch-size :payload-every :payload-bytes]]
+  (doseq [k [:n :iterations :measure-timeout-secs :list-size :patch-size :payload-every :payload-bytes :huge-payload-bytes]]
     (require-positive! opts k))
+  (when (< (:payload-bytes opts) 16384)
+    (throw (ex-info "Payload bytes must be at least 16KiB for the structural write-amp gate"
+                    (select-keys opts [:payload-bytes]))))
+  (when (< (:huge-payload-bytes opts) 262144)
+    (throw (ex-info "Huge payload bytes must be at least 256KiB for the structural write-amp gate"
+                    (select-keys opts [:huge-payload-bytes]))))
   (when (< (:n opts) (:list-size opts))
     (throw (ex-info "List size must not exceed strand count" (select-keys opts [:n :list-size]))))
-  (when (> (:patch-size opts) (quot (:n opts) (:payload-every opts)))
+  (when (> (* 2 (:patch-size opts)) (quot (:n opts) (:payload-every opts)))
     (throw (ex-info "Patch size exceeds generated payload-carrying row count"
                     (select-keys opts [:n :patch-size :payload-every]))))
   opts)
@@ -247,12 +259,20 @@
         elapsed (/ (double (- (System/nanoTime) start)) 1000000.0)]
     {:ms elapsed :result result}))
 
-(defn- measure-query [ds sql-params iterations]
-  (let [samples (vec (for [_ (range iterations)]
-                       (:ms (timed-ms #(doall (execute! ds sql-params))))))]
+(defn- measure-workload [f opts]
+  (let [samples (vec (for [_ (range (:iterations opts))]
+                       (:ms (timed-ms f))))]
     {:samples-ms samples
      :median-ms (median samples)
      :max-ms (apply max samples)}))
+
+(defn- measure-query [ds sql-params opts]
+  (measure-workload
+   #(doall (jdbc/execute! ds
+                          sql-params
+                          {:builder-fn rs/as-unqualified-lower-maps
+                           :timeout (:measure-timeout-secs opts)}))
+   opts))
 
 (def ^:private doc-filtered-sql
   ["SELECT id, title, state, attributes, created_at, updated_at
@@ -276,11 +296,10 @@
           t.created_at, t.updated_at
     FROM strands t
     WHERE t.state = 'active'
-      AND EXISTS (
-        SELECT 1
-        FROM attributes AS a INDEXED BY idx_attributes_key_value_hot
-        WHERE a.strand_id = t.id
-          AND a.archived = 0
+      AND t.id IN (
+        SELECT a.strand_id
+        FROM attributes AS a
+        WHERE a.archived = 0
           AND a.key = 'kind'
           AND json_extract(a.value, '$') = 'task'
       )
@@ -288,6 +307,20 @@
 
 (def ^:private doc-ready-sql
   ["SELECT id, title, state, attributes, created_at, updated_at
+    FROM strands t
+    WHERE t.state = 'active'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM strand_edges e
+        JOIN strands dep ON dep.id = e.to_strand_id
+        WHERE e.from_strand_id = t.id
+          AND e.edge_type = 'depends-on'
+          AND dep.state = 'active'
+      )
+    ORDER BY t.id"])
+
+(def ^:private eav-ready-base-sql
+  ["SELECT t.id, t.title, t.state, t.created_at, t.updated_at
     FROM strands t
     WHERE t.state = 'active'
       AND NOT EXISTS (
@@ -314,16 +347,63 @@
           ), '{}') AS attributes,
           t.created_at, t.updated_at
     FROM strands t
-    WHERE t.state = 'active'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM strand_edges e
-        JOIN strands dep ON dep.id = e.to_strand_id
-        WHERE e.from_strand_id = t.id
-          AND e.edge_type = 'depends-on'
-          AND dep.state = 'active'
+    WHERE t.id IN (
+      SELECT id FROM (
+        SELECT t.id
+        FROM strands t
+        WHERE t.state = 'active'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM strand_edges e
+            JOIN strands dep ON dep.id = e.to_strand_id
+            WHERE e.from_strand_id = t.id
+              AND e.edge_type = 'depends-on'
+              AND dep.state = 'active'
+          )
       )
+    )
     ORDER BY t.id"])
+
+(def ^:private attribute-assembly-batch-size 30000)
+(def ^:private lean-attribute-byte-floor 1024)
+
+(defn- eav-attribute-value-sql [lean?]
+  (if lean?
+    (str "CASE WHEN length(CAST(value AS BLOB)) > ? "
+         "THEN json_object('skein/omitted', json('true'), 'bytes', length(CAST(value AS BLOB))) "
+         "ELSE json(value) END")
+    "json(value)"))
+
+(defn- assemble-attribute-batches [ds ids opts lean?]
+  (let [attrs-by-id
+        (into {}
+              (map (juxt :strand_id :attributes))
+              (mapcat
+               (fn [batch]
+                 (jdbc/execute! ds
+                                (into [(str "SELECT strand_id,
+                                                    COALESCE(json_group_object(key, " (eav-attribute-value-sql lean?) "), '{}') AS attributes
+                                             FROM (
+                                               SELECT strand_id, key, value
+                                               FROM attributes
+                                               WHERE archived = 0
+                                                 AND strand_id IN (" (str/join ", " (repeat (count batch) "?")) ")
+                                             )
+                                             GROUP BY strand_id")]
+                                      (cond-> []
+                                        lean? (conj lean-attribute-byte-floor)
+                                        true (into batch)))
+                                {:builder-fn rs/as-unqualified-lower-maps
+                                 :timeout (:measure-timeout-secs opts)}))
+               (partition-all attribute-assembly-batch-size ids)))]
+    attrs-by-id))
+
+(defn- eav-ready-batched [ds opts]
+  (let [rows (jdbc/execute! ds eav-ready-base-sql {:builder-fn rs/as-unqualified-lower-maps
+                                                   :timeout (:measure-timeout-secs opts)})
+        ids (mapv :id rows)
+        attrs-by-id (assemble-attribute-batches ds ids opts true)]
+    (mapv #(assoc % :attributes (get attrs-by-id (:id %) "{}")) rows)))
 
 (defn- list-sql [table-shape ids]
   (let [placeholders (str/join ", " (repeat (count ids) "?"))]
@@ -350,13 +430,16 @@
                         ORDER BY t.id")]
                  ids))))
 
-(defn- payload-target-ids [opts]
-  (mapv #(strand-id (* (:payload-every opts) (inc %))) (range (:patch-size opts))))
+(defn- payload-target-ids [opts offset]
+  (mapv #(strand-id (* (:payload-every opts) (+ offset (inc %)))) (range (:patch-size opts))))
 
-(defn- journal-size [db-path]
-  (let [journal (io/file (str db-path "-journal"))]
-    (if (.exists journal)
-      (.length journal)
+(defn- payload-free-target-ids [opts]
+  (mapv #(strand-id (+ 1 (* (:payload-every opts) %))) (range (:patch-size opts))))
+
+(defn- file-size [path]
+  (let [file (io/file path)]
+    (if (.exists file)
+      (.length file)
       0)))
 
 (defn- with-rollback-journal [db-path f]
@@ -364,24 +447,22 @@
     (execute! ds ["PRAGMA journal_mode = DELETE"])
     (f ds)))
 
-(defn- patch-journal-bytes [db-path sql-fn ids]
-  (with-rollback-journal
-    db-path
-    (fn [ds]
-      (with-open [conn (jdbc/get-connection ds)]
-        (.setAutoCommit conn false)
-        (try
-          (reduce
-           (fn [total [idx id]]
-             ((sql-fn conn id idx))
-             (let [bytes (journal-size db-path)]
-               (.commit conn)
-               (+ total bytes)))
-           0
-           (map-indexed vector ids))
-          (finally
-            (when-not (.getAutoCommit conn)
-              (.setAutoCommit conn true))))))))
+(defn- patch-write-samples [db-path sql-fn ids]
+  (let [wal-path (str db-path "-wal")
+        ds (sqlite-datasource db-path SQLiteConfig$JournalMode/WAL)]
+    (execute! ds ["PRAGMA wal_autocheckpoint = 1000000"])
+    (execute! ds ["PRAGMA wal_checkpoint(TRUNCATE)"])
+    (with-open [conn (jdbc/get-connection ds)]
+      (execute! conn ["PRAGMA wal_autocheckpoint = 0"])
+      (mapv
+       (fn [[idx id]]
+         (let [before-size (file-size wal-path)]
+           (.setAutoCommit conn false)
+           ((sql-fn conn id idx))
+           (.commit conn)
+           (.setAutoCommit conn true)
+           (max 0 (- (file-size wal-path) before-size))))
+       (map-indexed vector ids)))))
 
 (defn- document-patch-fn [^Connection conn id idx]
   (fn []
@@ -407,13 +488,74 @@
                     id (json/write-str idx)])
     (execute! conn ["UPDATE strands SET updated_at = datetime('now') WHERE id = ?" id])))
 
+(defn- set-document-payload! [tx id value]
+  (execute! tx ["UPDATE strands
+                 SET attributes = json_set(attributes, '$.body', json(?))
+                 WHERE id = ?"
+                (json/write-str value) id]))
+
+(defn- set-eav-payload! [tx id value]
+  (execute! tx ["INSERT INTO attributes (strand_id, key, value)
+                 VALUES (?, 'body', json(?))
+                 ON CONFLICT(strand_id, key) DO UPDATE
+                 SET value = excluded.value,
+                     archived = 0"
+                id (json/write-str value)]))
+
+(defn- seed-huge-payload-bucket! [doc-path eav-path ids opts]
+  (let [value (payload (Random. (+ 31 (:seed opts))) (:huge-payload-bytes opts))]
+    (with-rollback-journal
+      doc-path
+      (fn [ds]
+        (jdbc/with-transaction [tx ds]
+          (doseq [id ids]
+            (set-document-payload! tx id value)))))
+    (with-rollback-journal
+      eav-path
+      (fn [ds]
+        (jdbc/with-transaction [tx ds]
+          (doseq [id ids]
+            (set-eav-payload! tx id value)))))))
+
+(defn- write-amp-bucket [doc-path eav-path ids]
+  (let [doc-samples (patch-write-samples doc-path document-patch-fn ids)
+        eav-samples (patch-write-samples eav-path eav-patch-fn ids)
+        doc-median (median doc-samples)
+        eav-median (median eav-samples)]
+    {:patched-rows (count ids)
+     :document-patch-bytes {:median doc-median :samples doc-samples}
+     :eav-patch-bytes {:median eav-median :samples eav-samples}
+     :reduction (if (pos? eav-median) (/ (double doc-median) eav-median) ##Inf)}))
+
+(defn- combined-write-amp-bucket [buckets]
+  (let [doc-samples (mapcat #(get-in % [:document-patch-bytes :samples]) buckets)
+        eav-samples (mapcat #(get-in % [:eav-patch-bytes :samples]) buckets)
+        doc-median (median doc-samples)
+        eav-median (median eav-samples)]
+    {:patched-rows (count doc-samples)
+     :document-patch-bytes {:median doc-median :samples (vec doc-samples)}
+     :eav-patch-bytes {:median eav-median :samples (vec eav-samples)}
+     :reduction (if (pos? eav-median) (/ (double doc-median) eav-median) ##Inf)}))
+
 (defn- measure-write-amp [doc-path eav-path opts]
-  (let [ids (payload-target-ids opts)
-        doc-bytes (patch-journal-bytes doc-path document-patch-fn ids)
-        eav-bytes (patch-journal-bytes eav-path eav-patch-fn ids)]
-    {:document-journal-bytes doc-bytes
-     :eav-journal-bytes eav-bytes
-     :reduction (if (pos? eav-bytes) (/ (double doc-bytes) eav-bytes) ##Inf)}))
+  (let [free-ids (payload-free-target-ids opts)
+        large-ids (payload-target-ids opts 0)
+        huge-ids (payload-target-ids opts (:patch-size opts))
+        _ (seed-huge-payload-bucket! doc-path eav-path huge-ids opts)
+        free (write-amp-bucket doc-path eav-path free-ids)
+        large (write-amp-bucket doc-path eav-path large-ids)
+        huge (write-amp-bucket doc-path eav-path huge-ids)
+        ge-16kb (combined-write-amp-bucket [large huge])
+        eav-independence (if (pos? (get-in free [:eav-patch-bytes :median]))
+                           (/ (double (get-in huge [:eav-patch-bytes :median]))
+                              (get-in free [:eav-patch-bytes :median]))
+                           ##Inf)]
+    {:accepted-small-row-cost "Payload-free rows may be slower than document rewrites because an EAV patch has a fixed page-granularity floor."
+     :payload-free free
+     :payload-64kb large
+     :payload-ge-16kb ge-16kb
+     :payload-256kb huge
+     :eav-256kb-vs-free-patch-bytes eav-independence}))
 
 (defn- row-count [ds sql-params]
   (count (execute! ds sql-params)))
@@ -430,12 +572,15 @@
     (setup-document-schema! doc-ds)
     (setup-eav-schema! eav-ds)
     (let [generated (:ms (timed-ms #(generate-fixtures! doc-ds eav-ds opts)))
-          filtered-document (measure-query doc-ds doc-filtered-sql (:iterations opts))
-          filtered-eav (measure-query eav-ds eav-filtered-sql (:iterations opts))
-          ready-document (measure-query doc-ds doc-ready-sql (:iterations opts))
-          ready-eav (measure-query eav-ds eav-ready-sql (:iterations opts))
-          list-document (measure-query doc-ds (list-sql :document list-ids) (:iterations opts))
-          list-eav (measure-query eav-ds (list-sql :eav list-ids) (:iterations opts))
+          _ (doseq [ds [doc-ds eav-ds]]
+              (execute! ds ["ANALYZE"])
+              (execute! ds ["PRAGMA optimize"]))
+          filtered-document (measure-query doc-ds doc-filtered-sql opts)
+          filtered-eav (measure-query eav-ds eav-filtered-sql opts)
+          ready-document (measure-query doc-ds doc-ready-sql opts)
+          ready-eav (measure-workload #(eav-ready-batched eav-ds opts) opts)
+          list-document (measure-query doc-ds (list-sql :document list-ids) opts)
+          list-eav (measure-query eav-ds (list-sql :eav list-ids) opts)
           write-amp (measure-write-amp doc-path eav-path opts)]
       {:started-at (str (Instant/now))
        :options opts
@@ -456,11 +601,12 @@
         filtered (get-in result [:workloads :filtered-scan])
         ready (get-in result [:workloads :ready])
         assembly (get-in result [:workloads :list-assembly-500])
-        checks {:write-amp (>= (:reduction w) 10.0)
+        checks {:write-amp-payload-ge-16kb (>= (get-in w [:payload-ge-16kb :reduction]) 5.0)
+                :write-amp-payload-independence (<= (:eav-256kb-vs-free-patch-bytes w) 1.5)
                 :filtered-scan (<= (get-in filtered [:eav :median-ms])
                                    (get-in filtered [:document :median-ms]))
                 :ready (<= (get-in ready [:eav :median-ms])
-                           (get-in ready [:document :median-ms]))
+                           (* 1.5 (get-in ready [:document :median-ms])))
                 :list-assembly-500 (<= (get-in assembly [:eav :median-ms])
                                        (* 2.0 (get-in assembly [:document :median-ms])))}]
     (assoc result

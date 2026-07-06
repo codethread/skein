@@ -277,7 +277,7 @@
     (bootstrap-acyclic-relation! ds relation))
   ds)
 
-(declare get-strand update-strand! add-edge! strands-by-ids require-updated-strand require-existing-strand-ids!)
+(declare get-strand update-strand! add-edge! strands-by-ids require-updated-strand require-existing-strand-ids! placeholders)
 
 (def ^:private batch-strand-keys #{:title :state :attributes :ref :edges})
 (def ^:private batch-edge-keys #{:type :to :attributes})
@@ -336,6 +336,46 @@
   (str alias ".id, " alias ".title, " alias ".state, "
        (assembled-attributes-sql (str alias ".id") hot-only?)
        ", " alias ".created_at, " alias ".updated_at"))
+
+(def ^:private attribute-assembly-batch-size 30000)
+
+(defn- attribute-value-sql [lean-byte-floor]
+  (if lean-byte-floor
+    (str "CASE WHEN length(CAST(value AS BLOB)) > ? "
+         "THEN json_object('skein/omitted', json('true'), 'bytes', length(CAST(value AS BLOB))) "
+         "ELSE json(value) END")
+    "json(value)"))
+
+(defn- attribute-json-by-strand-id [ds strand-ids hot-only? lean-byte-floor]
+  (into {}
+        (map (juxt :strand_id :attributes))
+        (mapcat
+         (fn [ids]
+           (execute! ds (into [(str "SELECT strand_id,
+                                             COALESCE(json_group_object(key, " (attribute-value-sql lean-byte-floor) "), '{}') AS attributes
+                                      FROM (
+                                        SELECT strand_id, key, value
+                                        FROM attributes
+                                        WHERE strand_id IN (" (placeholders ids) ")"
+                                      (when hot-only? " AND archived = 0")
+                                      ")
+                                      GROUP BY strand_id")]
+                              (cond-> []
+                                lean-byte-floor (conj lean-byte-floor)
+                                true (into ids)))))
+         (partition-all attribute-assembly-batch-size strand-ids))))
+
+(defn- attach-batched-attributes
+  ([ds rows hot-only?]
+   (attach-batched-attributes ds rows hot-only? nil))
+  ([ds rows hot-only? lean-byte-floor]
+  (let [ids (mapv :id rows)
+        attrs-by-id (attribute-json-by-strand-id ds ids hot-only? lean-byte-floor)]
+    (mapv #(assoc % :attributes (get attrs-by-id (:id %) "{}")) rows))))
+
+(defn- strand-columns-sql [alias]
+  (str alias ".id, " alias ".title, " alias ".state, "
+       alias ".created_at, " alias ".updated_at"))
 
 (defn- strand-row-by-id [ds strand-id hot-only?]
   (execute-one! ds
@@ -938,6 +978,7 @@
                             (migration-error :foreign-key-mismatch
                                              {:violations violations}))))
           (ensure-current-schema! conn)
+          (execute! conn ["PRAGMA optimize"])
           {:status :migrated
            :strands strand-count
            :attributes attribute-count}
@@ -1325,9 +1366,10 @@
 
   Optional query-def and params further filter candidate strands."
   ([ds]
-   (mapv identity
-         (execute! ds
-                   [(str "SELECT " (strand-select-sql "t" true) "
+   (attach-batched-attributes
+    ds
+    (execute! ds
+              [(str "SELECT " (strand-columns-sql "t") "
                FROM strands t
                WHERE t.state = 'active'
                  AND NOT EXISTS (
@@ -1338,14 +1380,16 @@
                      AND e.edge_type = 'depends-on'
                      AND dep.state = 'active'
                  )
-               ORDER BY t.id")])))
+               ORDER BY t.id")])
+    true))
   ([ds query-def]
    (ready-strands ds query-def {}))
   ([ds query-def params]
    (let [{query-sql :sql query-params :params} (compile-query-for-ds ds query-def params)]
-     (mapv identity
-           (execute! ds
-                     (into [(str "SELECT " (strand-select-sql "t" true) "
+     (attach-batched-attributes
+      ds
+      (execute! ds
+                (into [(str "SELECT " (strand-columns-sql "t") "
                  FROM strands t
                  WHERE t.state = 'active'
                    AND NOT EXISTS (
@@ -1358,7 +1402,53 @@
                    )
                    AND " query-sql "
                  ORDER BY t.id")]
-                           query-params))))))
+                      query-params))
+      true))))
+
+(defn ready-strands-lean
+  "Return ready strands with oversized hot attributes replaced by descriptors.
+
+  This is the storage-owned projection used by lean list/ready command surfaces
+  so they do not fetch payloads they will omit from the wire result."
+  ([ds lean-byte-floor]
+   (attach-batched-attributes
+    ds
+    (execute! ds
+              [(str "SELECT " (strand-columns-sql "t") "
+               FROM strands t
+               WHERE t.state = 'active'
+                 AND NOT EXISTS (
+                   SELECT 1
+                   FROM strand_edges e
+                   JOIN strands dep ON dep.id = e.to_strand_id
+                   WHERE e.from_strand_id = t.id
+                     AND e.edge_type = 'depends-on'
+                     AND dep.state = 'active'
+                 )
+               ORDER BY t.id")])
+    true
+    lean-byte-floor))
+  ([ds lean-byte-floor query-def params]
+   (let [{query-sql :sql query-params :params} (compile-query-for-ds ds query-def params)]
+     (attach-batched-attributes
+      ds
+      (execute! ds
+                (into [(str "SELECT " (strand-columns-sql "t") "
+                 FROM strands t
+                 WHERE t.state = 'active'
+                   AND NOT EXISTS (
+                     SELECT 1
+                     FROM strand_edges e
+                     JOIN strands dep ON dep.id = e.to_strand_id
+                     WHERE e.from_strand_id = t.id
+                       AND e.edge_type = 'depends-on'
+                       AND dep.state = 'active'
+                   )
+                   AND " query-sql "
+                 ORDER BY t.id")]
+                      query-params))
+      true
+      lean-byte-floor))))
 
 ;; Scheduler wakes are weaver runtime coordination state (RFC-009.Q1.OUT), not
 ;; strands: dedicated tables, no edges, and no participation in the strand

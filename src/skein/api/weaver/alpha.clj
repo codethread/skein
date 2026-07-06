@@ -1231,6 +1231,13 @@
   ([runtime query-def params]
    (normalize (db/ready-strands (ds runtime) query-def params))))
 
+(defn ready-lean
+  "Return ready strands with oversized attributes replaced by descriptors."
+  ([runtime lean-byte-floor]
+   (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor)))
+  ([runtime lean-byte-floor query-def params]
+   (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params))))
+
 (defn ready-query
   "Return ready strands from the result set of a registered query definition."
   [runtime query-name params]

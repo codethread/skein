@@ -182,6 +182,11 @@
                     query-def)]
     (lean-strands (query-fn rt query-def params))))
 
+(defn- run-named-ready-query-lean [rt query-name raw-params]
+  (let [query-def (api/resolve-query rt (handle-name query-name))
+        params (validate-query-params query-def raw-params)]
+    (api/ready-lean rt lean-attribute-byte-floor query-def params)))
+
 ;; --- op handlers ------------------------------------------------------------
 
 (defn add-op
@@ -255,10 +260,10 @@
     (if query
       (do (when (str/blank? query)
             (throw (ex-info "--query requires a non-empty name" {})))
-          (run-named-query rt api/ready query params nil))
+          (run-named-ready-query-lean rt query params))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
-          (lean-strands (api/ready rt))))))
+          (api/ready-lean rt lean-attribute-byte-floor)))))
 
 (defn subgraph-op
   "Return a relation-scoped subgraph rooted at one strand."
