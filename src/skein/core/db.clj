@@ -2,9 +2,9 @@
   "SQLite persistence for strands, edges, relation metadata, graph queries, and
   weaver-owned scheduler wakes."
   (:import [java.security SecureRandom]
-           [java.sql DriverManager]
            [java.time Instant]
-           [java.util UUID])
+           [java.util UUID]
+           [org.sqlite SQLiteConfig SQLiteConfig$JournalMode SQLiteConfig$Pragma SQLiteConfig$TransactionMode SQLiteDataSource])
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
@@ -15,6 +15,9 @@
             [skein.core.specs :as specs]))
 
 (def ^:private default-db-file "skein.sqlite")
+
+(def ^:private sqlite-mmap-size-bytes 268435456)
+(def ^:private sqlite-cache-size-kib -20000)
 
 (def ^:private id-alphabet "abcdefghijklmnopqrstuvwxyz0123456789")
 (def ^:private id-length 5)
@@ -28,6 +31,26 @@
    (repeatedly id-length
                #(nth id-alphabet (.nextInt secure-random (count id-alphabet))))))
 
+(defn- sqlite-config
+  "Return the shared SQLite connection configuration for every storage kind."
+  ^SQLiteConfig []
+  (doto (SQLiteConfig.)
+    ;; Concurrent writers (socket connections, event handlers, spool worker
+    ;; threads) must queue on the lock rather than fail SQLITE_BUSY. IMMEDIATE
+    ;; transactions take the write lock at BEGIN, where busy_timeout applies;
+    ;; DEFERRED transactions upgrading mid-transaction fail fast by design.
+    (.setBusyTimeout 5000)
+    (.setTransactionMode SQLiteConfig$TransactionMode/IMMEDIATE)
+    (.setJournalMode SQLiteConfig$JournalMode/WAL)
+    (.setPragma SQLiteConfig$Pragma/MMAP_SIZE (str sqlite-mmap-size-bytes))
+    (.setPragma SQLiteConfig$Pragma/CACHE_SIZE (str sqlite-cache-size-kib))))
+
+(defn- sqlite-data-source
+  "Return a SQLite datasource for jdbc-url with the shared open-time pragmas."
+  [jdbc-url]
+  (doto (SQLiteDataSource. (sqlite-config))
+    (.setUrl jdbc-url)))
+
 (defn datasource
   "Create a SQLite datasource for db-file, creating parent directories first.
 
@@ -35,12 +58,7 @@
   ([] (datasource default-db-file))
   ([db-file]
    (io/make-parents db-file)
-   ;; Concurrent writers (socket connections, event handlers, spool worker
-   ;; threads) must queue on the lock rather than fail SQLITE_BUSY. IMMEDIATE
-   ;; transactions take the write lock at BEGIN, where busy_timeout applies;
-   ;; DEFERRED transactions upgrading mid-transaction fail fast by design.
-   (jdbc/get-datasource {:jdbcUrl (str "jdbc:sqlite:" db-file
-                                       "?busy_timeout=5000&transaction_mode=IMMEDIATE")})))
+   (sqlite-data-source (str "jdbc:sqlite:" db-file))))
 
 (defn file-storage
   "Return a file-backed SQLite storage handle for db-file.
@@ -67,7 +85,7 @@
   error. One held connection makes this serialized trusted test storage, not
   production-like pooled storage."
   []
-  (let [conn (DriverManager/getConnection "jdbc:sqlite::memory:")]
+  (let [^java.sql.Connection conn (.createConnection (sqlite-config) "jdbc:sqlite::memory:")]
     {:storage-kind :sqlite-memory
      :storage-label (str "sqlite-memory:" (UUID/randomUUID))
      :canonical-db-path nil
@@ -141,6 +159,9 @@
    ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]
    ["CREATE TABLE IF NOT EXISTS acyclic_relations (
        relation TEXT PRIMARY KEY
+     )"]
+   ["CREATE TABLE IF NOT EXISTS indexed_attr_keys (
+       key TEXT PRIMARY KEY
      )"]
    ["CREATE TABLE IF NOT EXISTS scheduler_wakes (
        key TEXT PRIMARY KEY,
@@ -408,6 +429,46 @@
         (throw (ex-info "Cannot declare relation acyclic after edges of that relation exist" {:relation relation})))
       (insert-acyclic-relation! ds relation))))
 
+(defn indexed-attr-key?
+  "Return true when key is declared as an indexed attribute key in ds."
+  [ds key]
+  (boolean (execute-one! ds ["SELECT 1 AS found FROM indexed_attr_keys WHERE key = ?" key])))
+
+(defn list-indexed-attr-keys
+  "Return all declared indexed attribute keys in sorted order."
+  [ds]
+  (mapv :key (execute! ds ["SELECT key FROM indexed_attr_keys ORDER BY key"])))
+
+(defn- indexed-attr-key-error-data [key]
+  {:key key
+   :spec ::specs/indexed-attr-key
+   :allowed-pattern specs/indexed-attr-key-pattern-source})
+
+(defn- require-valid-indexed-attr-key! [key]
+  (when-not (s/valid? ::specs/indexed-attr-key key)
+    (throw (ex-info "Indexed attribute key must match the allowed pattern" (indexed-attr-key-error-data key))))
+  key)
+
+(defn- indexed-attr-index-name [key]
+  (str "idx_strands_attr_" (Long/toString (Integer/toUnsignedLong (hash key)) 16)))
+
+(defn- indexed-attr-json-path [key]
+  (str "'$.\"" key "\"'"))
+
+(defn declare-indexed-attr-key!
+  "Declare key as indexed and ensure its SQLite expression index exists.
+
+  Existing declarations are idempotent. Invalid keys throw ex-info with the
+  shared canonical indexed-attr-key ex-data. Unlike acyclic relation declaration,
+  this operation has no late-declaration guard."
+  [ds key]
+  (require-valid-indexed-attr-key! key)
+  (let [index-name (indexed-attr-index-name key)]
+    (execute! ds [(str "CREATE INDEX IF NOT EXISTS " index-name
+                       " ON strands (json_extract(attributes, " (indexed-attr-json-path key) "))")])
+    (execute-one! ds ["INSERT INTO indexed_attr_keys (key) VALUES (?) ON CONFLICT(key) DO NOTHING" key])
+    {:key key :indexed true}))
+
 (defn- require-acyclic-edge! [ds from to type]
   (when (= from to)
     (throw (ex-info "Strand edges must not point to the same strand" {:from from :to to :type type})))
@@ -552,12 +613,16 @@
                   (when attributes (->json attributes)) (when attributes (->json attributes))
                   strand-id])))
 
+(defn- compile-query-for-ds [ds query-def params]
+  (binding [query/*indexed-attr-key?* #(indexed-attr-key? ds %)]
+    (query/compile-query query-def params)))
+
 (defn query-strands
   "Return strand rows matching query-def and optional query params."
   ([ds query-def]
    (query-strands ds query-def {}))
   ([ds query-def params]
-   (let [{:keys [sql params]} (query/compile-query query-def params)]
+   (let [{:keys [sql params]} (compile-query-for-ds ds query-def params)]
      (mapv identity
            (execute! ds (into [(str "SELECT " strand-columns " FROM strands t WHERE " sql " ORDER BY t.id")]
                               params))))))
@@ -567,7 +632,7 @@
   ([ds query-def]
    (query-strand-ids ds query-def {}))
   ([ds query-def params]
-   (let [{:keys [sql params]} (query/compile-query query-def params)]
+   (let [{:keys [sql params]} (compile-query-for-ds ds query-def params)]
      (mapv :id (execute! ds (into [(str "SELECT t.id FROM strands t WHERE " sql " ORDER BY t.id")]
                                   params))))))
 
@@ -803,7 +868,7 @@
      (if (empty? seed-ids)
        []
        (if where
-         (let [{where-sql :sql where-params :params} (query/compile-query where (or params {}))]
+         (let [{where-sql :sql where-params :params} (compile-query-for-ds ds where (or params {}))]
            (mapv :id
                  (execute! ds (into [(str "WITH RECURSIVE paths(id, candidate_id) AS (
                                            SELECT t.id,
@@ -969,7 +1034,7 @@
   ([ds query-def]
    (ready-strands ds query-def {}))
   ([ds query-def params]
-   (let [{query-sql :sql query-params :params} (query/compile-query query-def params)]
+   (let [{query-sql :sql query-params :params} (compile-query-for-ds ds query-def params)]
      (mapv identity
            (execute! ds
                      (into [(str "SELECT " strand-columns "

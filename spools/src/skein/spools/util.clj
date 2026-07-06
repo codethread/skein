@@ -11,7 +11,8 @@
   source instead of re-deriving them per file. `skein.spools.workflow` is a
   deliberate exception: it keeps its own branded `reject-unknown-keys!` rather
   than adopting this one."
-  (:require [clojure.spec.alpha :as s]))
+  (:require [clojure.spec.alpha :as s]
+            [skein.core.specs :as specs]))
 
 (defn fail!
   "Throw an `ex-info` carrying `message` and a contextual `data` map (TEN-003).
@@ -90,6 +91,15 @@
             (on-timeout value)
             (do (Thread/sleep (long poll-ms)) (recur)))))))
 
+(defn- reject-omitted-attribute! [strand k value]
+  (when (specs/omitted-attribute-descriptor? value)
+    (let [strand-id (:id strand)]
+      (fail! "Attribute value was omitted from this lean read; fetch the full strand before reading it"
+             {:key k
+              :strand-id strand-id
+              :recovery (str "show " strand-id)})))
+  value)
+
 (defn attr-get
   "Read attribute `k` from a normalized strand, tolerating keyword- or
   string-keyed attribute maps.
@@ -105,10 +115,14 @@
   value reads back as that value instead of falling through to the string key.
   Neither the keying a strand happens to carry nor a falsey value may change what
   an attribute means. This is the canonical spool read companion to
-  `attr-key->str`; spools require it rather than re-deriving a per-file reader."
+  `attr-key->str`; spools require it rather than re-deriving a per-file reader.
+
+  Fails loudly if the selected value is a lean-read omission descriptor, because
+  trusted spool readers require a raw full-fidelity attribute value."
   [strand k]
   (let [attrs (:attributes strand)
-        kw (keyword k)]
-    (if (contains? attrs kw)
-      (get attrs kw)
-      (get attrs (attr-key->str kw)))))
+        kw (keyword k)
+        value (if (contains? attrs kw)
+                (get attrs kw)
+                (get attrs (attr-key->str kw)))]
+    (reject-omitted-attribute! strand k value)))

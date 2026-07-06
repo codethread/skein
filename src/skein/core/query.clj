@@ -20,6 +20,9 @@
 (def ^:dynamic ^:private *strand-alias* "t")
 (def ^:dynamic ^:private *allow-edge-predicates* true)
 (def ^:dynamic ^:private *validating-query-def* false)
+(def ^:dynamic *indexed-attr-key?*
+  "Predicate consulted during query compilation to identify declared indexed attribute keys."
+  (constantly false))
 
 (defn- fail! [message data]
   (throw (ex-info message data)))
@@ -41,12 +44,32 @@
     (fail! "Attribute path must contain at least one segment" {:path segments}))
   (str "$" (str/join (map quote-json-path-segment segments))))
 
+(defn- indexed-attr-key-error-data [key]
+  {:key key
+   :spec ::specs/indexed-attr-key
+   :allowed-pattern specs/indexed-attr-key-pattern-source})
+
+(defn- require-indexed-attr-key! [key]
+  (when-not (s/valid? ::specs/indexed-attr-key key)
+    (fail! "Indexed attribute key must match the allowed pattern" (indexed-attr-key-error-data key)))
+  key)
+
+(defn- compile-attr-field [segments]
+  (let [path (attr-path segments)
+        declared-key (when (= 1 (count segments))
+                       (attr-segment-name (first segments)))]
+    (if (and declared-key (*indexed-attr-key?* declared-key))
+      (do
+        (require-indexed-attr-key! declared-key)
+        {:sql (str "json_extract(" *strand-alias* ".attributes, '$.\"" declared-key "\"')") :params []})
+      {:sql (str "json_extract(" *strand-alias* ".attributes, ?)") :params [path]})))
+
 (defn- compile-field [field]
   (cond
     (contains? field-columns field) {:sql (str *strand-alias* "." (field-columns field)) :params []}
 
     (and (vector? field) (= :attr (first field)))
-    {:sql (str "json_extract(" *strand-alias* ".attributes, ?)") :params [(attr-path (rest field))]}
+    (compile-attr-field (rest field))
 
     :else
     (fail! "Unknown query field" {:field field :allowed (keys field-columns)})))

@@ -4,10 +4,12 @@
   payload-ref attributes, loud failures, and JSON-shape equivalence with the
   underlying weaver API the old socket dispatch delegates to."
   (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [matcher-combinators.matchers :as m]
             [matcher-combinators.test :refer [match?]]
             [skein.api.weaver.alpha :as api]
+            [skein.core.specs :as specs]
             [skein.spools.batteries :as batteries]
             [skein.spools.test-support :refer [with-runtime]]))
 
@@ -175,6 +177,35 @@
         (testing "--param without --query fails loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires --query"
                                 (api/op! rt 'list ["--param" "who=agent"]))))))))
+
+(deftest list-ready-and-named-queries-lean-project-large-attributes-only
+  (with-batteries
+    (fn [rt]
+      (api/register-query! rt 'owned {:params [:who]
+                                      :where [:= [:attr :owner] [:param :who]]})
+      (let [at-floor (str/join (repeat 1022 "a"))
+            over-floor (str/join (repeat 1023 "b"))
+            strand (api/add rt {:title "Payload"
+                                :attributes {:owner "agent"
+                                             :at-floor at-floor
+                                             :over-floor over-floor}})
+            lean-list (first (filter #(= (:id strand) (:id %)) (api/op! rt 'list [])))
+            lean-ready (first (filter #(= (:id strand) (:id %)) (api/op! rt 'ready [])))
+            lean-query (first (api/op! rt 'list ["--query" "owned" "--param" "who=agent"]))
+            full-show (api/op! rt 'show [(:id strand)])
+            full-api-list (first (filter #(= (:id strand) (:id %)) (api/list rt)))]
+        (testing "list/ready/query preserve values at the fixed 1 KiB floor"
+          (doseq [row [lean-list lean-ready lean-query]]
+            (is (= "agent" (get-in row [:attributes :owner])))
+            (is (= at-floor (get-in row [:attributes :at-floor])))))
+        (testing "list/ready/query replace values above the floor with the descriptor"
+          (doseq [row [lean-list lean-ready lean-query]]
+            (let [descriptor (get-in row [:attributes :over-floor])]
+              (is (specs/omitted-attribute-descriptor? descriptor))
+              (is (= {:skein/omitted true :bytes 1025} descriptor)))))
+        (testing "show and trusted API list remain full-fidelity"
+          (is (= over-floor (get-in full-show [:attributes :over-floor])))
+          (is (= over-floor (get-in full-api-list [:attributes :over-floor]))))))))
 
 (deftest subgraph-op-shape
   (with-batteries

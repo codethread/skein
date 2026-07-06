@@ -168,7 +168,7 @@ matching the socket `weave` case.
 strand show <id>
 ```
 
-Returns one normalized strand by id, or JSON `null` when absent.
+Returns one normalized strand by id, or JSON `null` when absent. `show` is the full-fidelity point read: every attribute value is returned verbatim, including values larger than the lean-read floor.
 
 #### `list` — BAT-C11
 
@@ -182,7 +182,10 @@ resolves a weaver-registered named query with repeatable string-valued
 `--param key=value`; `--state` overlays the query as an additional
 `[:= :state …]` clause. `--param` without `--query`, a blank `--query`, and
 unknown query params all fail loudly. Returns a JSON array of normalized
-strands.
+strands. The result uses the lean read tier by default: any attribute value
+whose JSON-encoded UTF-8 length is above the fixed 1 KiB floor is replaced with
+`{"skein/omitted": true, "bytes": N}`; values at or below the floor pass through
+unchanged. There is no hydration flag; use `show <id>` to fetch a full row.
 
 #### `ready` — BAT-C12
 
@@ -192,7 +195,9 @@ strand ready [--query name [--param key=value]…]
 
 Returns strands with `state="active"` and no active `depends-on` blocker (old
 C10), optionally scoped to a named query's result set exactly as `list`.
-`ready` takes no `--state`.
+`ready` takes no `--state`. Like `list`, `ready` uses the lean read tier by
+default for large attribute values above the fixed 1 KiB floor and has no
+hydration flag; use `show <id>` for full fidelity.
 
 #### `subgraph` — BAT-C13
 

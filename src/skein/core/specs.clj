@@ -29,7 +29,11 @@
 (defn- generated-id? [x]
   (and (string? x) (boolean (re-matches generated-id-pattern x))))
 
-(def ^:private relation-name-pattern #"[a-z0-9][a-z0-9._/-]*")
+(def indexed-attr-key-pattern-source
+  "Regex source for declared indexed attribute keys that may be embedded in SQL JSON paths."
+  "[a-z0-9][a-z0-9._/-]*")
+
+(def ^:private relation-name-pattern (re-pattern indexed-attr-key-pattern-source))
 
 (defn- relation-name? [x]
   (and (string? x) (boolean (re-matches relation-name-pattern x))))
@@ -47,12 +51,18 @@
 (s/def ::from ::id)
 (s/def ::to ::id)
 (s/def ::edge-type relation-name?)
+(s/def ::indexed-attr-key relation-name?)
 (s/def ::type ::edge-type)
 (s/def ::title non-blank-string?)
 (s/def ::attr-key keyword?)
 (s/def ::cli-attr-value string?)
 (s/def ::cli-attributes (s/map-of ::attr-key ::cli-attr-value))
 (s/def ::attributes json-object-encodable-attributes?)
+(s/def :skein/omitted #{true})
+(s/def ::bytes nat-int?)
+(s/def ::omitted-attribute-descriptor
+  (s/keys :req [:skein/omitted]
+          :req-un [::bytes]))
 (s/def ::state #{"active" "closed" "replaced"})
 (s/def ::generic-state #{"active" "closed"})
 (s/def ::format #{"human" "edn" "json"})
@@ -102,3 +112,8 @@
                    :skein.scheduler-wake/wake-at
                    :skein.scheduler-wake/handler]
           :opt-un [:skein.scheduler-wake/payload]))
+
+(defn omitted-attribute-descriptor?
+  "Return true when value conforms to the lean-read omission descriptor spec."
+  [value]
+  (s/valid? ::omitted-attribute-descriptor value))

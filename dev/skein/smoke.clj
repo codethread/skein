@@ -247,8 +247,21 @@
           (assert= "Body from a file payload"
                    (get-in (parse-json (run-strand-config! workspace "show" via-payload)) [:attributes :body])
                    "dispatcher resolves --attr body=:payload/body from a --payload file"))
+        (let [large-body (apply str (repeat 1025 "x"))
+              large-id (cli-add-config! workspace "Large body" "--attr" (str "body=" large-body))
+              listed-large (first (filter #(= large-id (:id %)) (parse-json (run-strand-config! workspace "list"))))
+              shown-large (parse-json (run-strand-config! workspace "show" large-id))
+              omitted-body (get-in listed-large [:attributes :body])]
+          (assert= true
+                   (:skein/omitted omitted-body)
+                   "dispatcher list returns the typed omission descriptor marker for large attributes")
+          (assert (<= 1025 (:bytes omitted-body))
+                  (str "dispatcher list reports omitted large-attribute bytes\n" (pr-str omitted-body)))
+          (assert= large-body
+                   (get-in shown-large [:attributes :body])
+                   "dispatcher show returns full large attributes after a lean list"))
         (let [all (titles (parse-json (run-strand-config! workspace "list")))]
-          (doseq [t ["Design model" "Write docs v2" "Body via stdin" "Body via payload"]]
+          (doseq [t ["Design model" "Write docs v2" "Body via stdin" "Body via payload" "Large body"]]
             (assert (some #{t} all) (str "dispatcher list returns all strands, missing: " t "\nin: " (pr-str all)))))
         ;; Live op discovery through the core help op.
         (let [help-list (parse-json (run-strand-config! workspace "help"))

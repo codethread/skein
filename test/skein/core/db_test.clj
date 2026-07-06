@@ -25,6 +25,19 @@
       (finally
         (delete-sqlite-family! db-file)))))
 
+(defn pragma-value [ds pragma]
+  (first (vals (db/execute-one! ds [(str "PRAGMA " pragma)]))))
+
+(deftest sqlite-file-storage-applies-open-pragmas
+  (let [db-file (temp-db-file)
+        ds (db/datasource db-file)]
+    (try
+      (is (= "wal" (pragma-value ds "journal_mode")))
+      (is (= 268435456 (pragma-value ds "mmap_size")))
+      (is (= -20000 (pragma-value ds "cache_size")))
+      (finally
+        (delete-sqlite-family! db-file)))))
+
 (deftest init-creates-strand-schema
   (with-db
     (fn [ds]
@@ -201,6 +214,33 @@
           ;; seeds, these edge-projection primitives do not validate id existence
           (is (= [] (db/incoming-edges ds ["nope-missing"] "parent-of")))
           (is (= [] (db/outgoing-edges ds ["nope-missing"] "parent-of"))))))))
+
+(deftest indexed-attr-key-declarations-create-registry-and-expression-index
+  (with-db
+    (fn [ds]
+      (is (= {:key "owner" :indexed true} (db/declare-indexed-attr-key! ds "owner")))
+      (is (= {:key "owner" :indexed true} (db/declare-indexed-attr-key! ds "owner")))
+      (is (db/indexed-attr-key? ds "owner"))
+      (is (= ["owner"] (db/list-indexed-attr-keys ds)))
+      (let [e (is (thrown? clojure.lang.ExceptionInfo
+                           (db/declare-indexed-attr-key! ds "bad key")))]
+        (is (= {:key "bad key"
+                :spec ::specs/indexed-attr-key
+                :allowed-pattern specs/indexed-attr-key-pattern-source}
+               (ex-data e)))))))
+
+(deftest declared-indexed-attr-key-query-uses-expression-index
+  (with-db
+    (fn [ds]
+      (db/declare-indexed-attr-key! ds "owner")
+      (db/add-strand! ds {:title "Agent" :attributes {:owner "agent"}})
+      (db/add-strand! ds {:title "Human" :attributes {:owner "human"}})
+      (is (= ["Agent"] (mapv :title (db/all-strands ds [:= [:attr :owner] "agent"]))))
+      (let [{:keys [sql params]} (binding [query/*indexed-attr-key?* #(db/indexed-attr-key? ds %)]
+                                   (query/compile-query [:= [:attr :owner] "agent"] {}))
+            plan (db/execute! ds (into [(str "EXPLAIN QUERY PLAN SELECT t.id FROM strands t WHERE " sql)] params))]
+        (is (= "json_extract(t.attributes, '$.\"owner\"') = ?" sql))
+        (is (some #(re-find #"USING INDEX idx_strands_attr_" (:detail %)) plan))))))
 
 (deftest relation-declarations-and-scoped-cycle-checks
   (with-db
@@ -516,6 +556,12 @@
     (is (= :sqlite-memory (:storage-kind storage)))
     (is (nil? (:canonical-db-path storage)))
     (try
+      (testing "sqlite-memory runs through the shared open path but keeps memory journaling"
+        (is (= "memory" (pragma-value connectable "journal_mode")))
+        ;; SQLite reports no mmap_size row for a pure in-memory database even
+        ;; when the shared open-time config requests one.
+        (is (nil? (pragma-value connectable "mmap_size")))
+        (is (= -20000 (pragma-value connectable "cache_size"))))
       (db/init! connectable)
       (let [strand (db/add-strand! connectable {:title "Mem"})]
         (is (= "Mem" (:title (db/get-strand connectable (:id strand))))))

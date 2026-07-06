@@ -10,9 +10,9 @@
 
 (def parallel-namespaces
   "Test namespaces that are safe to run concurrently, one namespace per worker."
-  ['skein.core.db-test 'skein.core.contract-props-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test
+  ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test
    'skein.spools.bobbin-test 'skein.spools.carder-test 'skein.spools.loom-test 'skein.spools.selvage-test
-   'skein.guild-test 'skein.agents-test 'skein.treadle-test 'skein.test.alpha-test 'skein.api.cli.alpha-test
+   'skein.guild-test 'skein.agents-test 'skein.test.alpha-test 'skein.api.cli.alpha-test
    'skein.spools.batteries-test 'skein.roster-test 'skein.spools.util-test])
 
 (def serial-namespaces
@@ -46,7 +46,10 @@
    'skein.chime-test
    ;; arms real cron executor timers and polls for async job fires; same
    ;; real-timer reasoning as the scheduler suites above.
-   'skein.cron-test])
+   'skein.cron-test
+   ;; Treadle delivers async shuttle gate outcomes through runtime event workers;
+   ;; keep it out of parent parallel load so the hard sleeps remain deterministic.
+   'skein.treadle-test])
 
 (def add-libs-shards
   "Subprocess JVM shard groups for tests that mutate JVM-global tools.deps state."

@@ -50,3 +50,13 @@
                           (util/poll-until-deadline! (dissoc valid :pred->result))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #":on-timeout must be a function"
                           (util/poll-until-deadline! (dissoc valid :on-timeout))))))
+
+(deftest attr-get-rejects-omitted-attribute-descriptors
+  (let [strand {:id "abc123"
+                :attributes {:payload {:skein/omitted true :bytes 2048}}}
+        e (is (thrown-with-msg? clojure.lang.ExceptionInfo #"omitted from this lean read"
+                                (util/attr-get strand :payload)))]
+    (is (= {:key :payload
+            :strand-id "abc123"
+            :recovery "show abc123"}
+           (ex-data e)))))

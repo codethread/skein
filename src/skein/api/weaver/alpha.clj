@@ -1138,6 +1138,16 @@
   [runtime]
   (db/list-acyclic-relations (ds runtime)))
 
+(defn declare-indexed-attr-key!
+  "Declare an attribute key for literal-path query compilation and indexing."
+  [runtime key]
+  (db/declare-indexed-attr-key! (ds runtime) key))
+
+(defn indexed-attr-keys
+  "Return declared indexed attribute keys."
+  [runtime]
+  (db/list-indexed-attr-keys (ds runtime)))
+
 (defn show
   "Return one normalized strand by id, or nil when absent."
   [runtime id]

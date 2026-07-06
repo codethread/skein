@@ -21,10 +21,13 @@
             [clojure.walk :as walk]
             [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as api]
-            [skein.core.query :as query])
-  (:import [java.io PushbackReader StringReader]))
+            [skein.core.query :as query]
+            [skein.core.specs :as specs])
+  (:import [java.io PushbackReader StringReader]
+           [java.nio.charset StandardCharsets]))
 
 (def ^:private generic-states #{"active" "closed"})
+(def ^:private lean-attribute-byte-floor 1024)
 (def ^:private readable-states #{"active" "closed" "replaced"})
 
 (defn- validate-generic-state
@@ -132,6 +135,28 @@
   [query-name]
   (symbol (query/query-lookup-name query-name)))
 
+(defn- json-byte-count [value]
+  (alength (.getBytes (json/write-str value) StandardCharsets/UTF_8)))
+
+(defn- omitted-attribute-descriptor [bytes]
+  (let [descriptor {:skein/omitted true :bytes bytes}]
+    (when-not (specs/omitted-attribute-descriptor? descriptor)
+      (throw (ex-info "Internal omission descriptor did not conform to spec"
+                      {:descriptor descriptor})))
+    descriptor))
+
+(defn- lean-attribute-value [value]
+  (let [bytes (json-byte-count value)]
+    (if (> bytes lean-attribute-byte-floor)
+      (omitted-attribute-descriptor bytes)
+      value)))
+
+(defn- lean-strand [strand]
+  (update strand :attributes #(into {} (map (fn [[k v]] [k (lean-attribute-value v)])) %)))
+
+(defn- lean-strands [strands]
+  (mapv lean-strand strands))
+
 (defn- validate-query-params
   "Restrict provided string params to a query's declared keyword names, failing
   loudly on unknown params (mirrors the JSON socket dispatch contract)."
@@ -155,7 +180,7 @@
         query-def (if state
                     [:and (query/query-expr query-def params) [:= :state state]]
                     query-def)]
-    (query-fn rt query-def params)))
+    (lean-strands (query-fn rt query-def params))))
 
 ;; --- op handlers ------------------------------------------------------------
 
@@ -205,7 +230,7 @@
   (api/burn-by-ids (:op/runtime ctx) [(:id (:op/args ctx))] (request-context :burn)))
 
 (defn list-op
-  "List strands, optionally filtered by lifecycle state and/or a named query."
+  "List lean-projected strands, optionally filtered by lifecycle state and/or a named query."
   [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [state query param]} (:op/args ctx)
@@ -217,12 +242,12 @@
           (run-named-query rt api/list query params state))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
-          (if state
-            (api/list rt [:= :state state] {})
-            (api/list rt))))))
+          (lean-strands (if state
+                          (api/list rt [:= :state state] {})
+                          (api/list rt)))))))
 
 (defn ready-op
-  "List ready strands, optionally from the result set of a named query."
+  "List lean-projected ready strands, optionally from the result set of a named query."
   [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [query param]} (:op/args ctx)
@@ -233,7 +258,7 @@
           (run-named-query rt api/ready query params nil))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
-          (api/ready rt)))))
+          (lean-strands (api/ready rt))))))
 
 (defn subgraph-op
   "Return a relation-scoped subgraph rooted at one strand."
@@ -327,7 +352,7 @@
 
 (def ^:private list-arg-spec
   {:op "list"
-   :doc "List strands, optionally filtered by state and/or a named query."
+   :doc "List lean-projected strands, optionally filtered by state and/or a named query."
    :flags {:state {:type :string
                    :doc "Filter by lifecycle state: active, closed, or replaced."}
            :query {:type :string
@@ -337,7 +362,7 @@
 
 (def ^:private ready-arg-spec
   {:op "ready"
-   :doc "List ready strands, optionally from a named query result set."
+   :doc "List lean-projected ready strands, optionally from a named query result set."
    :flags {:query {:type :string
                    :doc "Weaver-registered named query."}
            :param {:type :map
