@@ -618,7 +618,24 @@
                                                          :brief "b" :continuity :resume}]
                                                 :turns {:rounds 2}
                                                 :blackboard :fresh}
-                                               {}))))))))
+                                               {}))))
+        (testing "invalid panel options are validated and include the failing value"
+          (let [bad {:target 1}
+                ex (try
+                     (agents/panel! {:seats [{:name "a" :harness :sh :brief "b" :continuity :fresh}]
+                                     :blackboard :target}
+                                    bad)
+                     (catch clojure.lang.ExceptionInfo e
+                       e))]
+            (is (instance? clojure.lang.ExceptionInfo ex))
+            (is (= bad (:value (ex-data ex)))
+                "panel options fail with invalid value")
+            (is (str/includes? (ex-message ex) "panel! options"))))
+        (testing "unknown panel options fail loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/panel! {:seats [{:name "a" :harness :sh :brief "b"}]
+                                                :blackboard :fresh}
+                                               {:tarhet "x"}))))))))
 
 (deftest panel-specs-blackboard-directive-is-tightly-specd
   ;; the compiled seam is a consumer contract, so a malformed blackboard
@@ -698,14 +715,28 @@
         (testing "council fails loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
                                 (agents/council! "  " {:harness :sh})))
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not conform"
                                 (agents/council! "t" {:harness :sh :rounds 0})))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires a harness"
                                 (agents/council! "t" {:members 2}))
               "the silent :claude default is gone: no harness resolves loudly")
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not both"
                                 (agents/council! "t" {:harness :sh :members 2
-                                                      :seats [{:name "a" :harness :sh}]}))))))))
+                                                      :seats [{:name "a" :harness :sh}]})))
+          (let [bad {:harness 1 :rounds 2}
+                ex (try
+                     (agents/council! "t" bad)
+                     (catch clojure.lang.ExceptionInfo e
+                       e))]
+            (is (instance? clojure.lang.ExceptionInfo ex))
+            (is (= bad (:value (ex-data ex)))
+                "council invalid input carries the failing value")
+            (is (str/includes? (ex-message ex) "council! options")))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/council! "t" {:harness :sh :membres 2})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/council! "t" {:harness :sh
+                                                      :seats [{:name "a" :harnes :sh}]}))))))))
 
 (deftest delegate-fails-loudly-for-contract-violations
   (with-agents

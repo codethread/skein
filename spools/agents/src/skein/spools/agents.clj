@@ -9,7 +9,7 @@
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as api]
             [skein.spools.shuttle :as shuttle]
-            [skein.spools.util :refer [fail! attr-get]]))
+            [skein.spools.util :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
 
 (defn- rt
   []
@@ -465,6 +465,42 @@
   so roster files may load before config registers aliases."
   [v]
   (or (keyword? v) (non-blank? v)))
+
+;; Shared option map shapes for council/panel spawns.
+(s/def :skein.spools.agents.council-input/harness harness-ref?)
+(s/def :skein.spools.agents.council-input/synthesizer harness-ref?)
+(s/def :skein.spools.agents.council-input/members pos-int?)
+(s/def :skein.spools.agents.council-input/rounds pos-int?)
+(s/def :skein.spools.agents.council-input/spawned-by non-blank?)
+(s/def :skein.spools.agents.council-input/cwd non-blank?)
+(s/def :skein.spools.agents.council.seat/name non-blank?)
+(s/def :skein.spools.agents.council.seat/harness harness-ref?)
+(s/def :skein.spools.agents.council.seat/brief non-blank?)
+(s/def :skein.spools.agents.council/seat
+  (s/keys :req-un [:skein.spools.agents.council.seat/name]
+          :opt-un [:skein.spools.agents.council.seat/harness
+                   :skein.spools.agents.council.seat/brief]))
+(def ^:private council-seat-input-keys
+  #{:name :harness :brief})
+
+(s/def :skein.spools.agents.council-input/seats
+  (s/coll-of :skein.spools.agents.council/seat :kind vector? :min-count 1))
+(s/def :skein.spools.agents/council-input
+  (s/keys :opt-un [:skein.spools.agents.council-input/harness
+                   :skein.spools.agents.council-input/members
+                   :skein.spools.agents.council-input/rounds
+                   :skein.spools.agents.council-input/seats
+                   :skein.spools.agents.council-input/synthesizer
+                   :skein.spools.agents.council-input/spawned-by
+                   :skein.spools.agents.council-input/cwd]))
+
+(s/def :skein.spools.agents.panel-input/target non-blank?)
+(s/def :skein.spools.agents.panel-input/review-id non-blank?)
+(s/def :skein.spools.agents/panel-input
+  (s/keys :opt-un [:skein.spools.agents.council-input/spawned-by
+                   :skein.spools.agents.council-input/cwd
+                   :skein.spools.agents.panel-input/target
+                   :skein.spools.agents.panel-input/review-id]))
 
 ;; The roster shape is spec-defined: the spec is the source of truth for
 ;; structure, and validation consults it. Manual checks below cover only what
@@ -1089,11 +1125,17 @@
   rounds block prior rounds). The synthesizer, when the panel declares one,
   depends on the final turn row.
 
-  Options: `:target` (required for a `:target` blackboard), `:review-id`,
-  `:spawned-by`, `:cwd`. Returns `{:panel :blackboard :turns [[run-ids...]...]
-  :synthesizer? :review-pass}`."
-  [panel {:keys [target review-id spawned-by cwd]}]
-  (let [specs (panel-specs panel {:target target :review-id review-id})
+  Options are validated by `:skein.spools.agents/panel-input`. `:target` is
+  required for a `:target` blackboard, `:review-id` tags notes and resumes,
+  `:spawned-by` and `:cwd` ride onto every run.
+
+  Returns `{:panel :blackboard :turns [[run-ids...]...] :synthesizer? :review-pass}`."
+  [panel opts]
+  (let [opts (require-valid! :skein.spools.agents/panel-input
+                              (reject-unknown-keys! "panel! options" #{:target :review-id :spawned-by :cwd} opts)
+                              "panel! options do not conform to spec")
+        {:keys [target review-id spawned-by cwd]} opts
+        specs (panel-specs panel {:target target :review-id review-id})
         board-id (case (get-in specs [:blackboard :kind])
                    :target (get-in specs [:blackboard :id])
                    :fresh (:id (api/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
@@ -1269,6 +1311,8 @@
   shared council strand across turns, then a synthesizer weighs the whole
   deliberation.
 
+  Option input is validated by `:skein.spools.agents/council-input`.
+
   Scalar convenience: `:members n` mints N identical seats, each running the
   council-wide `:harness`. Rich control: `:seats [{:name :harness? :brief?}]`
   gives per-seat harness and perspective; `:members` and `:seats` are mutually
@@ -1279,10 +1323,15 @@
 
   Returns `{:council <shared strand id> :turns [[run-ids]...] :synthesizer
   <run id>}`."
-  [topic {:keys [harness members rounds seats synthesizer spawned-by cwd]
-          :or {members 2 rounds 2}
-          :as opts}]
-  (when (str/blank? topic)
+  [topic opts]
+  (let [opts (require-valid! :skein.spools.agents/council-input
+                              (cond-> (reject-unknown-keys! "council! options" #{:harness :members :rounds :seats :synthesizer :spawned-by :cwd} opts)
+                                (contains? opts :seats)
+                                (update :seats #(mapv (partial reject-unknown-keys! "council! seat" council-seat-input-keys) %)))
+                              "council! options do not conform to spec")
+        {:keys [harness members rounds seats synthesizer spawned-by cwd]
+         :or {members 2 rounds 2}} opts]
+    (when (str/blank? topic)
     (fail! "Council topic must be non-blank" {}))
   (when (and (contains? opts :seats) (contains? opts :members))
     (fail! "Council takes :members (scalar) or :seats (per-seat), not both"
@@ -1321,7 +1370,7 @@
                                cwd (assoc :cwd cwd)))]
     (cond-> {:council (:blackboard result)
              :turns (:turns result)}
-      (:synthesizer result) (assoc :synthesizer (:synthesizer result)))))
+      (:synthesizer result) (assoc :synthesizer (:synthesizer result))))))
 
 (defn- op-note [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--by" :single "--round" :single})]

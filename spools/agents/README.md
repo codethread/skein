@@ -337,7 +337,7 @@ A panel is plain data, validated loudly against the **`:skein.spools.agents/pane
  :synthesis? {:harness … :brief? …} | :none}
 ```
 
-`panel-specs` compiles a panel into fully-built run specs (output specced as **`:skein.spools.agents/panel-specs`**); `panel!` spawns from them. Both apply the defaults above.
+`panel-specs` compiles a panel into fully-built run specs (output specced as **`:skein.spools.agents/panel-specs`**); `panel!` spawns from them. Both apply the defaults above. `panel!` validates its option map against **`:skein.spools.agents/panel-input`**.
 
 - **Turn-as-run.** Seat *s* on turn *r* is one run, stamped `shuttle/panel-seat`, `shuttle/panel-turn`, `shuttle/review-target`, and `shuttle/review-pass`, so the deliberation structure is queryable from *run* attributes (notes keep the existing `{:by :round}` + tag-in-text convention — no new note facets).
 - **Barriers.** Turn row *r* `depends-on` every seat's turn *r−1* run, so a round completes before the next opens.
@@ -348,7 +348,7 @@ A panel is plain data, validated loudly against the **`:skein.spools.agents/pane
 ### The presets over the panel
 
 - **`review!` / rosters.** A single-round `:target` panel *is* the independent review shape; `roster->panel` converts a roster into exactly that panel. `review!` keeps its own spawn path (`roster-review-specs`, §3) so its established prompts and run attributes stay contractually frozen (the compatibility floor), while sharing the same internal blackboard-protocol fragments as the panel compiler — so the two cannot drift.
-- **`council!`.** Re-shipped as a `:fresh`-blackboard panel preset. `:members n` expands to N identical seats on a council-wide `:harness`; `:seats [{:name :harness? :brief?}]` gives per-seat harness/perspective (a cross-vendor council) and is mutually exclusive with `:members`. Harness has **no silent default** — a seat with neither its own nor a council-wide harness fails loudly, mirroring `delegate`. `:rounds` become turn-as-run barrier rows; the old poll-loop prompt choreography is gone (the panel compiler owns it).
+- **`council!`.** Re-shipped as a `:fresh`-blackboard panel preset. `:members n` expands to N identical seats on a council-wide `:harness`; `:seats [{:name :harness? :brief?}]` gives per-seat harness/perspective (a cross-vendor council) and is mutually exclusive with `:members`. Harness has **no silent default** — a seat with neither its own nor a council-wide harness fails loudly, mirroring `delegate`. `:rounds` become turn-as-run barrier rows; the old poll-loop prompt choreography is gone (the panel compiler owns it). The option map is validated against **`:skein.spools.agents/council-input`**.
 
 ### Treadle / workflow boundary
 
