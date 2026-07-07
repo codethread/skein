@@ -132,7 +132,7 @@ strand brief block worker-contract
   named durable things ride argv, per-run rich data does not.
 
 Honest source: the [clause-block section](./brief.md#the-clause-block), this
-repo's `.skein/config.clj` `pipeline-task-prompt`, and
+repo's `.skein/config.clj` `pipeline-task-prompt` shape, and
 `brief-reconstructs-a-real-pipeline-prompt` and
 `install!-registers-a-fetch-only-op` in
 [`test/skein/spools/brief_test.clj`](../test/skein/spools/brief_test.clj).

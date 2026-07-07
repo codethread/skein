@@ -131,18 +131,22 @@
 
 (def ^:private brief-keys
   #{:context :mission :body :deliverable :scope :budgets :rules :blocks})
+(def ^:private context-keys #{:ref})
 (def ^:private deliverable-keys #{:path :format :end-with :validate})
 (def ^:private scope-keys #{:owns :forbid-reads :commit?})
 
 (defn validate-brief
   "Return `brief`, failing loudly when it is not a map, carries keys outside the
-  closed set, or violates the `::brief` spec. Sub-maps `:deliverable`/`:scope`
-  are held to their own closed key sets so a typo like `:owned` fails at
-  authoring time instead of silently vanishing from the rendered prompt."
+  closed set, or violates the `::brief` spec. Sub-maps `:context`,
+  `:deliverable`, and `:scope` are held to their own closed key sets so a typo
+  like `:owned` fails at authoring time instead of silently vanishing from the
+  rendered prompt."
   [brief]
   (when-not (map? brief)
     (fail! "brief must be a map" {:brief brief}))
   (reject-unknown-keys! "brief" brief-keys brief)
+  (when (map? (:context brief))
+    (reject-unknown-keys! "brief :context" context-keys (:context brief)))
   (when-let [d (:deliverable brief)] (reject-unknown-keys! "brief :deliverable" deliverable-keys d))
   (when-let [sc (:scope brief)] (reject-unknown-keys! "brief :scope" scope-keys sc))
   (require-valid! ::brief brief "brief is malformed"))
@@ -311,9 +315,14 @@
   attribute naming an unregistered guide fails loudly rather than silently
   yielding no guidance (TEN-003)."
   [runtime strand]
-  (when-let [raw (attr-get strand guide-attr)]
-    (let [k (keyword raw)]
-      {:key k :guide (guide runtime k)})))
+  (when (or (contains? (:attributes strand) guide-attr)
+            (contains? (:attributes strand) "guide/key"))
+    (let [raw (attr-get strand guide-attr)]
+      (when-not (string? raw)
+        (fail! "guide/key attribute must be a string"
+               {:attribute guide-attr :value raw :type (some-> raw type str)}))
+      (let [k (keyword raw)]
+        {:key k :guide (guide runtime k)}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Discovery: about / prime

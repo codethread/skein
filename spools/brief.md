@@ -160,4 +160,5 @@ See [`brief.cookbook.md`](./brief.cookbook.md) for worked recipes, and
 [`test/skein/spools/brief_test.clj`](../test/skein/spools/brief_test.clj), which
 drives every documented behavior against a real weaver and doubles as an
 executable reference — including `pipeline-brief`, which reconstructs a real
-`pipeline-task-prompt` on top of `brief->prompt`.
+`pipeline-task-prompt` shape on top of `brief->prompt`, including its delegated
+run context section.

@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-005`
 **Status:** Implemented
-**Last Updated:** 2026-07-05
+**Last Updated:** 2026-07-07
 **Related:** [Strand Model](./strand-model.md), [CLI Surface](./cli.md), [REPL API](./repl-api.md), [Weaver Runtime](./daemon-runtime.md), [Spools index](../../spools/README.md), [Writing shared spools](../../docs/writing-shared-spools.md)
 
 ## SPEC-005.P1 Purpose
@@ -13,7 +13,7 @@ This spec draws the line around what Skein ships as "alpha": which surface is in
 
 - **SPEC-005.C1:** The four root specs are the behavior contracts for shipped engine surface: strand model and storage semantics (SPEC-001), the public `strand`/`mill` CLI (SPEC-002), the trusted Clojure/REPL surface (SPEC-003), and the weaver runtime, transports, and registries (SPEC-004).
 - **SPEC-005.C2:** The blessed spool-facing API is every `skein.api.*.alpha` namespace — currently `batch`, `cli`, `current`, `events`, `graph`, `hooks`, `patterns`, `peers`, `relations`, `runtime`, `scheduler`, `views`, `weaver` — plus `skein.test.alpha`, `skein.userland.alpha`, and the human-facing `skein.repl` helpers. Each is specified in SPEC-003/SPEC-004 (relations in SPEC-001.P5) and follows accretion-based compatibility within its subnamespace.
-- **SPEC-005.C3:** Classpath-shipped reference spools are in-contract through their spool docs: `batteries`, `bobbin`, `brief`, `carder`, `ephemeral`, `guild`, `roster`, `selvage`, and `workflow` at [`spools/*.md`](../../spools/README.md). The spool-authoring helper namespaces `skein.spools.util` and `skein.spools.format` are in-contract only to the extent documented in [writing shared spools](../../docs/writing-shared-spools.md); their undocumented remainder is internal until documented.
+- **SPEC-005.C3:** Classpath-shipped reference spools are in-contract through their spool docs: `batteries`, `bobbin`, `brief`, `carder`, `ephemeral`, `guild`, `loom`, `roster`, `selvage`, `text-search`, and `workflow` at [`spools/*.md`](../../spools/README.md). The spool-authoring helper namespaces `skein.spools.util` and `skein.spools.format` are in-contract only to the extent documented in [writing shared spools](../../docs/writing-shared-spools.md); their undocumented remainder is internal until documented.
 - **SPEC-005.C4:** Repo-local approved spools in this repository (the `spools/shuttle` root — which also hosts treadle — plus `spools/agents`, `spools/chime`, and `spools/kanban`) and externally distributed spools (devflow) are userland, not shipped alpha surface. Their READMEs/docs are their own contracts with their own cadence, outside this line.
 
 ## SPEC-005.P3 Explicitly internal

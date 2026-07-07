@@ -74,7 +74,7 @@ One primitive substrate for two things every delegating workspace re-invents:
 Function.
 
 Return the brief/guide conventions and installed helper surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L322-L357">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L331-L366">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/block">`block`</a>
 ``` clojure
@@ -107,7 +107,7 @@ Render `brief` to the single deterministic prompt string every consumer
   sections, resolving each `:blocks` key against `runtime`'s clause-block
   registry (an unknown block fails loudly). Sections with no content are omitted
   so a sparse brief renders a tight prompt.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L183-L209">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L187-L213">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/brief-attrs">`brief-attrs`</a>
 ``` clojure
@@ -120,7 +120,7 @@ Return the projection attributes for validated `brief`: `brief/owns` (its
   when the brief declares it. Pure — projects scalars a `describe`/projection
   view reads, never the rich brief itself (that stays trusted-Clojure payload).
   Validates first, so a malformed brief never projects a half-formed attr set.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L225-L235">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L229-L239">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/brief-op">`brief-op`</a>
 ``` clojure
@@ -129,7 +129,7 @@ Return the projection attributes for validated `brief`: `brief/owns` (its
 Function.
 
 Dispatch parsed `strand brief ...` subcommands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L381-L392">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L390-L401">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/budgets-attr">`budgets-attr`</a>
 
@@ -138,7 +138,7 @@ Dispatch parsed `strand brief ...` subcommands.
 
 Projection attribute carrying a brief's `:budgets` map so a describe /
   projection view can show what a run may spend before it is poured.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L220-L223">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L224-L227">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/defblock!">`defblock!`</a>
 ``` clojure
@@ -167,7 +167,7 @@ Register authoring guide `guide` under keyword `k` in `runtime`, returning `k`.
   :constraints :validation :templates :see-also`) is optional freeform data.
   Fails loudly on a non-keyword key, keys outside the closed set, or a missing
   `:purpose`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L268-L284">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L272-L288">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/guide">`guide`</a>
 ``` clojure
@@ -177,7 +177,7 @@ Function.
 
 Return the guide registered under `k`, failing loudly on an unknown key with
   the available keys.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L286-L291">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L290-L295">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/guide-attr">`guide-attr`</a>
 
@@ -186,7 +186,7 @@ Return the guide registered under `k`, failing loudly on an unknown key with
 
 The strand attribute a workflow step sets to advertise the guide its driving
   agent should fetch before acting (generalises devflow's `devflow/guide`).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L303-L306">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L307-L310">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/guides">`guides`</a>
 ``` clojure
@@ -196,7 +196,7 @@ Function.
 
 Return every registered guide key mapped to its `:purpose` — the index a
   step-view or `strand brief guides` renders.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L293-L297">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L297-L301">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/install!">`install!`</a>
 ``` clojure
@@ -207,7 +207,7 @@ Function.
 Install the `brief` op into the active weaver. The clause-block and guide
   registries are runtime-owned and start empty; trusted config populates them
   with `defblock!`/`defguide!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L407-L420">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L416-L429">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/overlapping-owns">`overlapping-owns`</a>
 ``` clojure
@@ -222,7 +222,7 @@ Return owned-path collisions across sibling task maps, as a vector of
   advisory: it *detects* the collision a userland disjoint-scope check would act
   on; it wires no enforcement into any delegate/pour path (open Q3 — enforcement
   stays a userland opt-in).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L237-L255">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L241-L259">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/owns-attr">`owns-attr`</a>
 
@@ -231,7 +231,7 @@ Return owned-path collisions across sibling task maps, as a vector of
 
 Projection attribute carrying a brief's `:scope :owns` paths so a describe /
   projection view can show what a run will own before it is poured.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L215-L218">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L219-L222">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/prime">`prime`</a>
 ``` clojure
@@ -241,7 +241,7 @@ Function.
 
 Return full agent priming for the brief/guide surface: `about` plus the
   working discipline for authoring contracts and fetching guidance.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L359-L375">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L368-L384">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/strand-guide">`strand-guide`</a>
 ``` clojure
@@ -253,7 +253,7 @@ Resolve the guide advertised by `strand`'s `guide/key` attribute, or nil when
   the strand advertises none. Returns `{:key <kw> :guide <map>}`. A `guide/key`
   attribute naming an unregistered guide fails loudly rather than silently
   yielding no guidance (TEN-003).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L308-L316">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L312-L325">Source</a></sub></p>
 
 ## <a name="skein.spools.brief/validate-brief">`validate-brief`</a>
 ``` clojure
@@ -262,7 +262,8 @@ Resolve the guide advertised by `strand`'s `guide/key` attribute, or nil when
 Function.
 
 Return `brief`, failing loudly when it is not a map, carries keys outside the
-  closed set, or violates the `::brief` spec. Sub-maps `:deliverable`/`:scope`
-  are held to their own closed key sets so a typo like `:owned` fails at
-  authoring time instead of silently vanishing from the rendered prompt.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L137-L148">Source</a></sub></p>
+  closed set, or violates the `::brief` spec. Sub-maps `:context`,
+  `:deliverable`, and `:scope` are held to their own closed key sets so a typo
+  like `:owned` fails at authoring time instead of silently vanishing from the
+  rendered prompt.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/brief.clj#L138-L152">Source</a></sub></p>

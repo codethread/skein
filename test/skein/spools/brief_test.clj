@@ -4,8 +4,8 @@
   and `overlapping-owns` collision detector, the `guide/key` step-advertising
   convention, and the installed `brief` op. The `pipeline-brief` fixture is the
   wired end-to-end consumer proof: it reconstructs `.skein/config.clj`'s
-  `pipeline-task-prompt` on top of `brief->prompt`, showing the renderer
-  replaces a real string-concatenation site."
+  `pipeline-task-prompt` shape on top of `brief->prompt`, including the real
+  run-context section."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as api]
@@ -48,6 +48,8 @@
                         (brief/validate-brief {:deliverable {:paths "x"}})))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"brief :scope received unknown keys"
                         (brief/validate-brief {:scope {:owned ["x"]}})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"brief :context received unknown keys"
+                        (brief/validate-brief {:context {:ref "x" :notee "typo"}})))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed"
                         (brief/validate-brief {:budgets {:web-searches "eighteen"}})))
   (testing "a well-formed brief validates and is returned unchanged"
@@ -167,7 +169,16 @@
         (testing "an advertised-but-unregistered guide fails loudly"
           (let [dangling (api/add rt {:title "x" :attributes {:guide/key "ghost"}})]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown guide"
-                                  (brief/strand-guide rt dangling)))))))))
+                                  (brief/strand-guide rt dangling)))))
+        (testing "a malformed guide/key attr fails with the raw value"
+          (let [bad (api/add rt {:title "x" :attributes {:guide/key false}})]
+            (try
+              (brief/strand-guide rt bad)
+              (is false "expected malformed guide/key to throw")
+              (catch clojure.lang.ExceptionInfo e
+                (is (re-find #"must be a string" (ex-message e)))
+                (is (false? (:value (ex-data e))))
+                (is (= :guide/key (:attribute (ex-data e))))))))))))
 
 ;; --- wired consumer proof: pipeline-task-prompt on top of brief -------------
 
@@ -177,26 +188,27 @@
    "Never close your assigned strand; never commit unless told."])
 
 (defn pipeline-brief
-  "Reconstruct `.skein/config.clj`'s `pipeline-task-prompt` as a brief: the
-  standing worker contract as a registered clause block, plus this task's
-  title/body/validation as brief sections."
-  [rt {:keys [title body validation]}]
+  "Reconstruct `.skein/config.clj`'s `pipeline-task-prompt` shape as a brief:
+  the delegated run context, task title/body, and standing worker contract."
+  [rt run-id {:keys [title body]}]
   (brief/defblock! rt :worker-contract {:title "Worker contract" :lines worker-contract-lines})
-  (brief/brief->prompt rt (cond-> {:mission [title] :blocks [:worker-contract]}
-                            body (assoc :body body)
-                            (seq validation) (assoc :deliverable {:validate validation}))))
+  (brief/brief->prompt rt (cond-> {:context (str "Delegated pipeline run: " run-id)
+                                   :mission [title]
+                                   :blocks [:worker-contract]}
+                            body (assoc :body body))))
 
 (deftest brief-reconstructs-a-real-pipeline-prompt
   (with-runtime
     (fn [rt _]
-      (let [prompt (pipeline-brief rt {:title "Add priority filter"
-                                       :body "Filter ready strands by attribute priority=high."
-                                       :validation ["clojure -M:test"]})]
+      (let [prompt (pipeline-brief rt "pipe-1" {:title "Add priority filter"
+                                                :body "Filter ready strands by attribute priority=high."})]
+        (is (str/includes? prompt "## Context"))
+        (is (str/includes? prompt "Delegated pipeline run: pipe-1"))
         (is (str/includes? prompt "## Worker contract"))
         (is (str/includes? prompt "Never close your assigned strand"))
         (is (str/includes? prompt "Add priority filter"))
         (is (str/includes? prompt "priority=high"))
-        (is (str/includes? prompt "clojure -M:test"))))))
+        (is (not (str/includes? prompt "## Deliverable")))))))
 
 ;; --- installed op -----------------------------------------------------------
 
