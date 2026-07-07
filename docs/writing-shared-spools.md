@@ -357,3 +357,37 @@ the ergonomics layer by distributed spools ever shows up in practice, the
 sanctioned next step is a lint over approved spool roots at
 `skein.api.runtime.alpha/sync!` time that rejects a spool whose source requires
 `skein.userland.alpha`.
+
+## Unsafe spools
+
+Every rule above says: build on `skein.api.*.alpha`, never on `skein.core.*`.
+Sometimes a genuinely useful capability lives on the wrong side of that line —
+the blessed surface deliberately doesn't expose it, and won't. When you reach
+past the contract anyway, do it in the open, like a Rust `unsafe` block: the
+capability stays available, the danger stays visible, and the next reader knows
+exactly what they're trusting.
+
+The worked reference is
+[`skein.spools.text-search`](../spools/text-search.md): it requires
+`skein.core.db` and runs SQL against the physical tables to search titles and
+attribute values, including archived rows the query language cannot see. It is a
+maintained example of rule-breaking, not a blessed path. If you must write one,
+follow the same three markers so the break is never silent:
+
+1. **`UNSAFE:` docstring prefix.** The namespace docstring's first line begins
+   with `UNSAFE:` and names the internal namespaces it requires. A reader
+   opening the source sees the bargain before the code.
+2. **A README/contract unsafe-declaration section.** The contract doc opens with
+   an **Unsafe declaration**: the exact internal namespaces required; why the
+   blessed `api.*` surface cannot serve this; and the breakage contract —
+   `skein.core.*` changes freely (TEN-000), so the spool may break on any
+   upgrade and is maintained *in-repo, in lockstep* with the storage it reads.
+3. **In-repo lockstep maintenance.** An unsafe spool ships in this repo, beside
+   the internals it couples to, so a `skein.core.*` change and the spool's fix
+   land together. An external spool that copies the pattern pins itself to
+   internals that will move and owns its own breakage — say so, and don't
+   distribute one.
+
+This convention is enforced by review today. The enforcement direction — a
+`register!`-level `:unsafe` flag and a lint spool that surfaces
+`skein.core.*`-requiring spool sources — lives on kanban card `mubro`.

@@ -21,6 +21,14 @@
 (runtime-alpha/use! runtime :skein/spools-loom
                     {:ns 'skein.spools.loom
                      :call 'skein.spools.loom/install!})
+;; UNSAFE spool: text-search reaches past the blessed api.* contract into
+;; skein.core.db to LIKE-search titles and attribute values, including archived
+;; rows the query language cannot see. It is a maintained, in-the-open example
+;; of rule-breaking (see spools/text-search.md), not a blessed path — activated
+;; here so the reference stays exercised.
+(runtime-alpha/use! runtime :skein/spools-text-search
+                    {:ns 'skein.spools.text-search
+                     :call 'skein.spools.text-search/install!})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
 ;; spools.local.edn checkout), never on an incidental classpath copy.

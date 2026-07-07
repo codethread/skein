@@ -92,6 +92,10 @@ nav:
           - Contract: spools/loom.md
           - Cookbook: spools/loom.cookbook.md
           - API: spools/loom.api.md
+      - Text Search (UNSAFE):
+          - Contract: spools/text-search.md
+          - Cookbook: spools/text-search.cookbook.md
+          - API: spools/text-search.api.md
       - Kanban Board:
           - Contract: spools/kanban.md
           - Cookbook: spools/kanban.cookbook.md
