@@ -402,12 +402,12 @@
   (write-attribute-rows! ds strand-id (or attributes {})))
 
 (defn- merge-json-patch-value [current patch]
-  (if (and (map? current) (map? patch))
+  (if (map? patch)
     (reduce-kv (fn [m k v]
                  (if (nil? v)
                    (dissoc m k)
                    (update m k merge-json-patch-value v)))
-               current
+               (if (map? current) current {})
                patch)
     patch))
 

@@ -81,6 +81,9 @@
   (mapv #(update % :value db/<-json)
         (db/execute! ds ["SELECT strand_id, key, value, archived FROM attributes WHERE strand_id = ? ORDER BY key" strand-id])))
 
+(defn sqlite-json-patch [ds current patch]
+  (:patched (db/execute-one! ds ["SELECT json_patch(?, ?) AS patched" current patch])))
+
 (deftest strand-attributes-use-eav-rows-and-assembled-reads
   (with-db
     (fn [ds]
@@ -110,6 +113,36 @@
         (db/update-strand! ds id {:attributes {:b nil}})
         (is (= {:a {:extra true} :z 1}
                (db/<-json (:attributes (db/get-strand ds id)))))))))
+
+(deftest strand-attribute-json-patch-matches-sqlite-object-semantics
+  (with-db
+    (fn [ds]
+      (let [strand (db/add-strand! ds {:title "Patch"
+                                       :attributes {:scalar "old"
+                                                    :existing {:keep true
+                                                               :drop "x"}}})
+            id (:id strand)]
+        (db/update-strand! ds id {:attributes {:absent {:keep {:nested true
+                                                               :drop nil}
+                                                        :drop nil}}})
+        (is (= {:keep {:nested true}}
+               (-> (db/get-strand ds id) :attributes db/<-json :absent)))
+
+        (db/update-strand! ds id {:attributes {:scalar {:keep {:nested true
+                                                               :drop nil}
+                                                        :drop nil}}})
+        (is (= {:keep {:nested true}}
+               (-> (db/get-strand ds id) :attributes db/<-json :scalar)))
+
+        (db/update-strand! ds id {:attributes {:existing {:keep {:nested true}
+                                                          :drop nil}}})
+        (is (= {:keep {:nested true}}
+               (-> (db/get-strand ds id) :attributes db/<-json :existing)))
+
+        (let [patch "{\"keep\":{\"nested\":true,\"drop\":null},\"drop\":null}"
+              expected (db/<-json (sqlite-json-patch ds "\"old\"" patch))]
+          (is (= expected
+                 (-> (db/get-strand ds id) :attributes db/<-json :scalar))))))))
 
 (deftest attribute-rows-cascade-when-strand-is-burned
   (with-db
