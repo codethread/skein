@@ -49,7 +49,10 @@
    'skein.cron-test
    ;; Treadle delivers async shuttle gate outcomes through runtime event workers;
    ;; keep it out of parent parallel load so the hard sleeps remain deterministic.
-   'skein.treadle-test])
+   'skein.treadle-test
+   ;; Reed runs :shell gate commands off the event thread and delivers async gate
+   ;; outcomes through runtime event workers; same hard-sleep reasoning as treadle.
+   'skein.spools.reed-test])
 
 (def add-libs-shards
   "Subprocess JVM shard groups for tests that mutate JVM-global tools.deps state."
