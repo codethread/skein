@@ -108,6 +108,76 @@ the wrong world or throws.
    the map entirely. Omit a key you don't want to touch; only set it to `nil`
    when you deliberately mean "remove this attribute".
 
+## Shared helper namespaces
+
+The shipped reference spools share two small helper namespaces. They are part of
+the spool-authoring contract only where this guide documents them. Prefer these
+helpers over local copies when writing a shared spool.
+
+### `skein.spools.util`
+
+Require it from spool code when you need fail-loud validation, attribute-key
+normalisation, or a caller-owned polling loop:
+
+```clojure
+(require '[skein.spools.util :as spool-util])
+```
+
+- `(fail! message data)` and `(fail! message data cause)` throw `ex-info` with
+  the supplied message, data map, and optional cause. Use this for TEN-003
+  boundary failures so callers receive structured context.
+- `(reject-unknown-keys! context allowed m)` returns `m` after checking that all
+  its keys are in the `allowed` set. Unknown keys throw with `:unknown` and
+  `:allowed` data; use this on option maps rather than ignoring typos.
+- `(require-valid! spec value message)` returns `value` when it satisfies the
+  `clojure.spec` and throws with `:value` plus `:explain` data when it does not.
+- `(attr-key->str k)` converts a strand attribute key to its string wire key.
+  Keywords lose the leading colon and preserve namespaces; strings pass through.
+  Use it when writing attribute maps whose keys may have been authored as
+  keywords.
+- `(attr-get strand k)` reads `k` from `(:attributes strand)` whether the map is
+  keyword-keyed on the native path or string-keyed after a JSON round trip. It
+  tests presence with `contains?`, so explicit falsey values are preserved, and
+  it fails loudly if the selected value is a lean-read omission descriptor.
+- `(poll-until-deadline! {:keys [deadline poll-ms check pred->result on-timeout]})`
+  calls the zero-arg `check`, passes each value to `pred->result`, and returns
+  the first non-nil result. If the epoch-millis `deadline` has passed, it calls
+  `on-timeout` with the last checked value and returns that. `deadline` and
+  `poll-ms` are required; the helper does not invent timeout or cadence defaults.
+  It validates all five entries before polling, so bad inputs fail at the seam
+  instead of surfacing later as a bare null or sleep error.
+
+### `skein.spools.format`
+
+Require it when a spool needs to publish prose as data, such as `about` payloads
+or long rule descriptions:
+
+```clojure
+(require '[skein.spools.format :as spool-format])
+```
+
+Both helpers read `|`-margin strings. The first `|` on each source line marks
+column 0, so the surrounding Clojure form may be indented freely.
+
+- `(fill block)` returns a vector of item strings. A bare `|` line separates
+  items. Flush-left prose lines inside an item are trimmed and joined with
+  spaces; an item with any indentation after the bar is preserved verbatim so
+  command samples keep their layout.
+- `(reflow block)` returns one string for a single prose value. It ignores blank
+  barred lines, trims each remaining barred line, and joins them with spaces.
+
+Example:
+
+```clojure
+(spool-format/fill
+  "|First prose item
+   |continues on the next source line.
+   |
+   |  strand list --query work")
+;; => ["First prose item continues on the next source line."
+;;     "  strand list --query work"]
+```
+
 ## The discovery surface your spool ships
 
 Skein's discovery convention has three tiers — generated `help`, authored `about`, run-first `prime` — described in [`docs/skein.md`](./skein.md) ("Discovery tiers"). For a spool op this means:
