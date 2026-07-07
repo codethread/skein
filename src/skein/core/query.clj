@@ -107,19 +107,68 @@
 
 (declare compile-expr)
 
+(defn- resolve-query-value [value params]
+  (if (and (vector? value) (= :param (first value)))
+    (param-value params value)
+    value))
+
+(defn- attr-comparison-shape [op]
+  (if (#{"=" "<" "<="} op) :semi-join :exists))
+
 (defn- compile-comparison [op field value params]
-  (let [value (if (and (vector? value) (= :param (first value)))
-                (param-value params value)
-                value)]
+  (let [value (resolve-query-value value params)]
     (if (attr-field? field)
       (compile-attr-predicate
        field
        (str (attr-value-sql "a") " " op " ?")
        [value]
-       (if (#{"=" "<" "<="} op) :semi-join :exists))
+       (attr-comparison-shape op))
       (let [{field-sql :sql field-params :params} (compile-field field)]
         {:sql (str field-sql " " op " ?")
          :params (conj (vec field-params) value)}))))
+
+(defn- compile-negated-attr-comparison [op field value params]
+  (compile-attr-predicate
+   field
+   (str "NOT (" (attr-value-sql "a") " " op " ?)")
+   [(resolve-query-value value params)]
+   :exists))
+
+(defn- compile-negated-attr-in [field values params]
+  (let [values (resolve-query-value values params)]
+    (when-not (and (coll? values) (seq values))
+      (fail! ":in values must be a non-empty collection" {:values values}))
+    (compile-attr-predicate
+     field
+     (str "NOT (" (attr-value-sql "a") " IN (" (str/join ", " (repeat (count values) "?")) "))")
+     values
+     :exists)))
+
+(defn- compile-negated-attr-expr [expr params]
+  (when (vector? expr)
+    (let [[op & args] expr]
+      (case op
+        (:= :!= :< :<= :> :>=)
+        (let [[field value] args]
+          (when (and (= 2 (count args)) (attr-field? field))
+            (compile-negated-attr-comparison
+             (case op
+               := "="
+               :!= "<>"
+               :< "<"
+               :<= "<="
+               :> ">"
+               :>= ">=")
+             field
+             value
+             params)))
+
+        :in
+        (let [[field values] args]
+          (when (and (= 2 (count args)) (attr-field? field))
+            (compile-negated-attr-in field values params)))
+
+        nil))))
 
 (defn- join-compiled [operator compiled]
   {:sql (str "(" (str/join (str " " operator " ") (map :sql compiled)) ")")
@@ -166,8 +215,9 @@
              (join-compiled "OR" (map #(compile-expr % params) args)))
        :not (do
               (when-not (= 1 (count args)) (fail! ":not requires exactly one child expression" {:expr expr}))
-              (let [compiled (compile-expr (first args) params)]
-                {:sql (str "(NOT " (:sql compiled) ")") :params (:params compiled)}))
+              (or (compile-negated-attr-expr (first args) params)
+                  (let [compiled (compile-expr (first args) params)]
+                    {:sql (str "(NOT " (:sql compiled) ")") :params (:params compiled)})))
        := (do (when-not (= 2 (count args)) (fail! ":= requires field and value" {:expr expr}))
               (compile-comparison "=" (first args) (second args) params))
        :!= (do (when-not (= 2 (count args)) (fail! ":!= requires field and value" {:expr expr}))

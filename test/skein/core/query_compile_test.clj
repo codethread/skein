@@ -1,6 +1,8 @@
 (ns skein.core.query-compile-test
   "Tests for structural query compilation invariants."
   (:require [clojure.test :refer [deftest is testing]]
+            [skein.core.db :as db]
+            [skein.core.db-test :as db-test]
             [skein.core.query :as query]))
 
 (defn compiled [expr]
@@ -45,6 +47,69 @@
                       "))")
             :params ["owner" "$" "agent" "blocked" "$"]}
            (compiled [:and [:= [:attr :owner] "agent"] [:not [:exists [:attr :blocked]]]])))))
+
+(deftest negated-attr-comparisons-compile-through-present-rows
+  (testing "negated attr predicates keep missing and archived keys out of the result"
+    (doseq [[expr sql params]
+            [[[:not [:= [:attr :owner] "agent"]]
+              (attr-exists-sql "NOT (json_extract(a.value, ?) = ?)")
+              ["owner" "$" "agent"]]
+             [[:not [:< [:attr :rank] 3]]
+              (attr-exists-sql "NOT (json_extract(a.value, ?) < ?)")
+              ["rank" "$" 3]]
+             [[:not [:in [:attr :owner] ["agent" "human"]]]
+              (attr-exists-sql "NOT (json_extract(a.value, ?) IN (?, ?))")
+              ["owner" "$" "agent" "human"]]]]
+      (is (= {:sql sql :params params} (compiled expr)) (pr-str expr)))))
+
+(defn- query-titles [ds expr]
+  (set (map :title (db/query-strands ds expr))))
+
+(deftest negated-attr-predicates-require-present-hot-keys
+  (db-test/with-db
+    (fn [ds]
+      (let [eq-nonmatching (:id (db/add-strand! ds {:title "eq nonmatching"
+                                                    :attributes {:eq-owner "human"}}))
+            eq-matching (:id (db/add-strand! ds {:title "eq matching"
+                                                 :attributes {:eq-owner "agent"}}))
+            eq-absent (:id (db/add-strand! ds {:title "eq absent"}))
+            eq-archived (:id (db/add-strand! ds {:title "eq archived"
+                                                 :attributes {:eq-owner "human"}}))
+            lt-nonmatching (:id (db/add-strand! ds {:title "lt nonmatching"
+                                                    :attributes {:lt-rank 5}}))
+            lt-matching (:id (db/add-strand! ds {:title "lt matching"
+                                                 :attributes {:lt-rank 2}}))
+            lt-absent (:id (db/add-strand! ds {:title "lt absent"}))
+            lt-archived (:id (db/add-strand! ds {:title "lt archived"
+                                                 :attributes {:lt-rank 5}}))
+            in-nonmatching (:id (db/add-strand! ds {:title "in nonmatching"
+                                                    :attributes {:in-owner "human"}}))
+            in-matching (:id (db/add-strand! ds {:title "in matching"
+                                                 :attributes {:in-owner "agent"}}))
+            in-absent (:id (db/add-strand! ds {:title "in absent"}))
+            in-archived (:id (db/add-strand! ds {:title "in archived"
+                                                 :attributes {:in-owner "human"}}))]
+        (db/archive-attributes! ds eq-archived [:eq-owner])
+        (db/archive-attributes! ds lt-archived [:lt-rank])
+        (db/archive-attributes! ds in-archived [:in-owner])
+
+        (testing ":not over :="
+          (is (= #{"eq nonmatching"}
+                 (query-titles ds [:and
+                                   [:in :id [eq-nonmatching eq-matching eq-absent eq-archived]]
+                                   [:not [:= [:attr :eq-owner] "agent"]]]))))
+
+        (testing ":not over :<"
+          (is (= #{"lt nonmatching"}
+                 (query-titles ds [:and
+                                   [:in :id [lt-nonmatching lt-matching lt-absent lt-archived]]
+                                   [:not [:< [:attr :lt-rank] 3]]]))))
+
+        (testing ":not over :in"
+          (is (= #{"in nonmatching"}
+                 (query-titles ds [:and
+                                   [:in :id [in-nonmatching in-matching in-absent in-archived]]
+                                   [:not [:in [:attr :in-owner] ["agent"]]]]))))))))
 
 (deftest attr-keys-are-never-spliced-into-sql
   (let [{:keys [sql params]} (compiled [:= [:attr "owner\") OR 1 = 1 --"] "agent"])]
