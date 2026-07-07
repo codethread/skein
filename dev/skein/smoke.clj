@@ -101,6 +101,31 @@
             (str message ": expected failure from " (pr-str command) "\n" output))
     output))
 
+(defn terminate-process!
+  "Terminate a smoke-owned process and assert that its PID exits."
+  [^Process process label]
+  (let [pid (.pid process)]
+    (when (.isAlive process)
+      (.destroy process)
+      (when-not (.waitFor process 5 java.util.concurrent.TimeUnit/SECONDS)
+        (.destroyForcibly process)
+        (when-not (.waitFor process 5 java.util.concurrent.TimeUnit/SECONDS)
+          (throw (ex-info (str label " pid " pid " did not exit after SIGKILL")
+                          {:label label :pid pid})))))
+    (when (metadata/pid-alive? pid)
+      (throw (ex-info (str label " pid " pid " is still alive after teardown")
+                      {:label label :pid pid})))))
+
+(defn cleanup-process!
+  "Terminate a smoke-owned process without masking an in-flight failure."
+  [^Process process label failure]
+  (try
+    (terminate-process! process label)
+    (catch Throwable cleanup-error
+      (if-let [primary @failure]
+        (.addSuppressed primary cleanup-error)
+        (throw cleanup-error)))))
+
 (defn build-cli! []
   (run-process! "Go strand CLI build succeeds" ["go" "build" "-o" "./cli/bin/strand" "./cli/cmd/strand"])
   (run-process! "Go mill CLI build succeeds" ["go" "build" "-o" "./cli/bin/mill" "./cli/cmd/mill"])
@@ -115,11 +140,17 @@
             (.put "SKEIN_SOURCE" checkout-root))
         process (.start builder)
         metadata (java.io.File. smoke-run-root "xdg-state/skein/mill.json")]
-    (loop [attempts 100]
-      (cond
-        (.isFile metadata) process
-        (zero? attempts) (throw (ex-info "mill did not publish metadata" {:output (slurp (.getInputStream process))}))
-        :else (do (Thread/sleep 50) (recur (dec attempts)))))))
+    (let [failure (atom nil)]
+      (try
+        (loop [attempts 100]
+          (cond
+            (.isFile metadata) process
+            (zero? attempts) (throw (ex-info "mill did not publish metadata" {:metadata-path (.getAbsolutePath metadata)}))
+            :else (do (Thread/sleep 50) (recur (dec attempts)))))
+        (catch Throwable t
+          (reset! failure t)
+          (cleanup-process! process "smoke mill" failure)
+          (throw t))))))
 
 (defn parse-json [s]
   (json/read-str s :key-fn keyword))
@@ -491,13 +522,16 @@
   (delete-built-cli!)
   (try
     (build-cli!)
-    (let [mill (start-mill!)]
+    (let [mill (start-mill!)
+          failure (atom nil)]
       (try
         (smoke-cli-help!)
         (smoke-bootstrap! db-file)
+        (catch Throwable t
+          (reset! failure t)
+          (throw t))
         (finally
-          (.destroy mill)
-          (.waitFor mill))))
+          (cleanup-process! mill "smoke mill" failure))))
     (finally
       (clean-runtime-artifacts! db-file)
       (delete-built-cli!))))
