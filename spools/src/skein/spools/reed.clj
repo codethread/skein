@@ -11,12 +11,14 @@
   `delegates` edge, and no session/harness vocabulary. This namespace is the only
   adapter that knows both the workflow gate contract and process execution."
   (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
             [skein.api.weaver.alpha :as api]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime])
-  (:import [java.nio.charset StandardCharsets]
+  (:import [java.lang ProcessHandle]
+           [java.nio.charset StandardCharsets]
            [java.time Instant]
            [java.util.concurrent Executors ExecutorService ThreadFactory TimeUnit]))
 
@@ -27,6 +29,16 @@
   "Fixed cap on captured combined stdout+stderr: reed retains only the last N
   bytes so a runaway child cannot exhaust weaver heap (`PLAN-ShellGates-001.R3`)."
   (* 16 1024))
+
+(def ^:private timeout-reader-drain-ms
+  "Maximum extra wait for the stdout/stderr reader after a timeout kill.
+
+  This keeps `shell/timeout-secs` a true wall-clock-ish bound even when a
+  descendant process inherited the merged output pipe and delays EOF."
+  250)
+
+(def ^:private timeout-output-marker
+  "\n[reed: output truncated after timeout while waiting for process pipes to close]\n")
 
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous reed worker threads."
@@ -102,6 +114,15 @@
       (and (integer? v) (pos? v)) (long v)
       :else (fail! "shell/timeout-secs must be a positive integer" {:gate (:id gate) :value v}))))
 
+(defn- parse-cwd
+  "Return the optional `shell/cwd` string, or fail loudly on malformed values."
+  [gate]
+  (let [v (attr gate :shell/cwd)]
+    (cond
+      (nil? v) nil
+      (and (string? v) (not (str/blank? v))) v
+      :else (fail! "shell/cwd must be a non-blank string" {:gate (:id gate) :value v}))))
+
 ;; ---------------------------------------------------------------------------
 ;; Process execution (worker thread only)
 
@@ -132,11 +153,25 @@
               (System/arraycopy chunk head ring 0 (- n head)))
             (recur (+ total (long n)))))))))
 
+(defn- destroy-process-tree! [^Process process]
+  (doseq [^ProcessHandle descendant (iterator-seq (.iterator (.descendants (.toHandle process))))]
+    (try
+      (.destroyForcibly descendant)
+      (catch Throwable _
+        nil)))
+  (.destroyForcibly process))
+
+(defn- timeout-output [reader]
+  (let [output (deref reader timeout-reader-drain-ms ::timed-out)]
+    (if (= ::timed-out output)
+      {:output timeout-output-marker :output-truncated? true}
+      {:output output})))
+
 (defn- execute!
   "Run `argv` (a `List<String>`) directly with no implicit shell, capturing a
   bounded combined stdout+stderr tail. Returns `{:exit int :output str}` on
   natural exit, or `{:timeout? true :exit int :output str}` when a
-  `timeout-secs` bound elapses and the process is force-killed."
+  `timeout-secs` bound elapses and the process tree is force-killed."
   [argv cwd timeout-secs]
   (let [pb (doto (ProcessBuilder. ^java.util.List argv)
              (.redirectErrorStream true))]
@@ -150,9 +185,10 @@
         (if timeout-secs
           (if (.waitFor process (long timeout-secs) TimeUnit/SECONDS)
             {:exit (.exitValue process) :output @reader}
-            (do (.destroyForcibly process)
+            (do (destroy-process-tree! process)
                 (.waitFor process)
-                {:timeout? true :exit (.exitValue process) :output @reader}))
+                (merge {:timeout? true :exit (.exitValue process)}
+                       (timeout-output reader))))
           (do (.waitFor process)
               {:exit (.exitValue process) :output @reader}))))))
 
@@ -190,9 +226,12 @@
     (let [gate (api/show (rt) gate-id)
           argv (parse-argv gate)
           timeout-secs (parse-timeout gate)
-          {:keys [exit output timeout?]} (execute! argv (attr gate :shell/cwd) timeout-secs)]
+          cwd (parse-cwd gate)
+          {:keys [exit output timeout? output-truncated?]} (execute! argv cwd timeout-secs)]
       (cond
-        timeout? (fail-gate! gate-id (str "shell command timed out after " timeout-secs "s") exit output)
+        timeout? (fail-gate! gate-id (cond-> (str "shell command timed out after " timeout-secs "s")
+                                       output-truncated? (str "; output truncated while waiting for process pipes to close"))
+                             exit output)
         (zero? exit) (pass! run-id gate-id exit output)
         :else (fail-gate! gate-id (str "shell command exited " exit) exit output)))
     (catch Throwable t

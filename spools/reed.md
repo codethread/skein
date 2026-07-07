@@ -61,8 +61,8 @@ interpolates).
 |---|---|---|
 | `workflow/gate` = `"shell"` | yes | Marks a ready workflow gate for reed fulfillment. Other waiters are ignored. |
 | `shell/argv` | yes | JSON array of strings, executed directly with **no** implicit shell. Missing, non-array, empty, or non-string-element argv fails loudly onto `shell/error`, spawning no process. An author who wants shell features writes `["sh" "-c" "…"]` explicitly. |
-| `shell/cwd` | no | Working directory for the process. Absent → the weaver's default working directory. |
-| `shell/timeout-secs` | no | Positive-integer wall-clock bound; on expiry the process is force-killed and `shell/error` is stamped. A non-positive or non-integer value fails loudly onto `shell/error` — reed never silently clamps. |
+| `shell/cwd` | no | Non-blank string working directory for the process. Absent → the weaver's default working directory. A non-string or blank value fails loudly onto `shell/error`, spawning no process. |
+| `shell/timeout-secs` | no | Positive-integer wall-clock bound; on expiry the process tree is force-killed and `shell/error` is stamped. A non-positive or non-integer value fails loudly onto `shell/error` — reed never silently clamps. |
 
 ## Shell attributes
 
@@ -119,9 +119,10 @@ are:
 
 - non-zero exit → `shell command exited <n>` (with exit code and output);
 - timeout → `shell command timed out after <n>s` (with exit code and output —
-  the process is force-killed);
-- invalid argv or a spawn error → the underlying error message (no exit code or
-  output, because no process ran).
+  the process tree is force-killed; if inherited pipes do not close promptly,
+  `shell/error` and `shell/output` include an explicit truncation marker);
+- invalid argv, invalid cwd, or a spawn error → the underlying error message (no
+  exit code or output, because no process ran).
 
 Because the check is deterministic, a gate stamped `shell/error` — or one still
 carrying a live `shell/running` claim — is **skipped** on every later scan, so an

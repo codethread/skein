@@ -100,7 +100,7 @@
           ;; the expensive check runs once, not per mutation.
           (api/add rt {:title "noise-1"})
           (api/add rt {:title "noise-2"})
-          (Thread/sleep 300)
+          (reed/scan!)
           (is (= 1 (run-count)))
           (is (some? (attr (api/show rt gate-id) :shell/error)))
           ;; clearing shell/error (and fixing the command) re-runs the check once
@@ -114,20 +114,22 @@
             (is (nil? (attr closed :shell/error)))
             (is (= 2 (run-count)))))))))
 
-(deftest invalid-argv-fails-loudly-and-spawns-no-process
+(deftest invalid-input-fails-loudly-and-spawns-no-process
   (with-reed
     (fn [rt]
-      (doseq [[i bad] (map-indexed vector [{}
-                                           {"shell/argv" ""}
-                                           {"shell/argv" []}
-                                           {"shell/argv" ["echo" 5]}])]
+      (doseq [[i [bad expected]] (map-indexed vector [[{} "shell/argv"]
+                                                      [{"shell/argv" ""} "shell/argv"]
+                                                      [{"shell/argv" []} "shell/argv"]
+                                                      [{"shell/argv" ["echo" 5]} "shell/argv"]
+                                                      [{"shell/argv" ["true"] "shell/cwd" 7} "shell/cwd"]
+                                                      [{"shell/argv" ["true"] "shell/cwd" ""} "shell/cwd"]])]
         (let [run-id (str "invalid-" i)]
           (workflow/start! run-id (single-gate run-id bad) {})
           (let [gate-id (:id (ready-shell-gate run-id))
                 errored (await-eventually #(let [g (api/show rt gate-id)]
                                              (when (attr g :shell/error) g)))]
             (is (= "active" (:state errored)) (str "case " i))
-            (is (str/includes? (attr errored :shell/error) "shell/argv") (str "case " i))
+            (is (str/includes? (attr errored :shell/error) expected) (str "case " i))
             ;; no process ran: no exit code and no captured output
             (is (nil? (attr errored :shell/exit-code)) (str "case " i))
             (is (nil? (attr errored :shell/output)) (str "case " i))))))))
@@ -139,6 +141,15 @@
       (workflow/start! "timeout" (single-gate "timeout" {"shell/argv" ["sh" "-c" "sleep 30"]
                                                          "shell/timeout-secs" 1}) {})
       (let [gate-id (:id (ready-shell-gate "timeout"))
+            errored (await-eventually #(let [g (api/show rt gate-id)]
+                                         (when (attr g :shell/error) g)))]
+        (is (= "active" (:state errored)))
+        (is (str/includes? (attr errored :shell/error) "timed out")))
+      ;; Time is the behavior under test: a backgrounded descendant inherits the
+      ;; output pipe, so the timeout path must still reach a terminal stamp.
+      (workflow/start! "timeout-descendant" (single-gate "timeout-descendant" {"shell/argv" ["sh" "-c" "sleep 30 & sleep 30"]
+                                                                               "shell/timeout-secs" 1}) {})
+      (let [gate-id (:id (ready-shell-gate "timeout-descendant"))
             errored (await-eventually #(let [g (api/show rt gate-id)]
                                          (when (attr g :shell/error) g)))]
         (is (= "active" (:state errored)))
@@ -161,7 +172,7 @@
                               (workflow/gate :sub "Delegate" :subagent
                                              :attributes {"shell/argv" ["true"]})) {})
       (let [sub-gate-id (:id (first (workflow/next-steps "iso")))]
-        (Thread/sleep 300)
+        (reed/scan!)
         (is (= "active" (:state (api/show rt sub-gate-id))))
         (is (nil? (attr (api/show rt sub-gate-id) :shell/running)))
         (is (nil? (attr (api/show rt sub-gate-id) :shell/exit-code))))
@@ -173,7 +184,6 @@
             output (attr closed :shell/output)]
         (is (zero? (attr closed :shell/exit-code)))
         (is (pos? (count output)))
-        #_{:clj-kondo/ignore [:unresolved-var]}
         (is (<= (count output) @#'reed/output-tail-bytes))
         (is (< (count output) 200000))))))
 
@@ -184,7 +194,7 @@
       (let [first-step (first (workflow/next-steps "comp"))]
         (is (= "First" (:title first-step)))
         ;; the :shell gate is not ready yet, so reed must not touch it
-        (Thread/sleep 200)
+        (reed/scan!)
         (let [gate (shell-gate-strand rt "comp")]
           (is (= "active" (:state gate)))
           (is (nil? (attr gate :shell/running)))
@@ -200,6 +210,5 @@
   ;; Drift alarm for reed's versioned spool-state: a key added to new-state
   ;; without a state-version bump would survive reload! as a stale map.
   (test-support/assert-state-shape
-   #_{:clj-kondo/ignore [:unresolved-var]}
    #'reed/new-state
    #{:scan-monitor :worker-executor :close-fn}))
