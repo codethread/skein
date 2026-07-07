@@ -12,5 +12,5 @@ tasks:
   - id: 3
     description: Repo-live activation + full validation sweep (PH3)
     task_file: tasks/003-activation-validation.md
-    status: pending
+    status: complete
     blocked_by: [2]
