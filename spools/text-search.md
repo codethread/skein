@@ -123,8 +123,8 @@ Result rows are `{:id :title :key :snippet}`, ordered by strand id then key:
 - **Overflow** — `search` fetches one row past `--limit`. If the match set
   exceeds the limit it throws, naming `--limit` and query-narrowing, rather than
   returning a silently truncated page. Results are capped, never truncated: you
-  get the whole set or a clear instruction to narrow it (consistent with the
-  cap-not-truncate rule on card ncso4).
+  get the whole set or a clear instruction to narrow it. This follows TEN-003:
+  a partial result would look successful while hiding matching rows.
 - **Non-positive `--limit`** — a `--limit` of zero or below fails loudly.
 
 ## 5. See also

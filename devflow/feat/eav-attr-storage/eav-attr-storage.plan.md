@@ -9,7 +9,7 @@
 **Evidence base:** `/tmp/claude/attr-scaling-ship-now-brief/` (`SYNTHESIS.md` §5 side-table measurements bound the benchmark envelope; `DESIGN.md` semantics; `RESULTS-*.md` harness methodology)
 **Builds on:** `attr-scaling-ship-now`, merged at `5595fe7`; this branch is rebased onto that baseline (L0a pragmas, L1 lean reads, and the L0b registry are canonical and in scope for preservation or removal per the deltas).
 **Status:** Shipped
-**Last Updated:** 2026-07-06
+**Last Updated:** 2026-07-07
 
 ## EAS-PLAN-001.P1 Goal and scope
 

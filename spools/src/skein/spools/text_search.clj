@@ -1,6 +1,6 @@
 (ns skein.spools.text-search
-  "UNSAFE: substring search over strand titles and attribute values, including
-  archived (cold) attribute rows the query language cannot see.
+  "UNSAFE: uses skein.core.db for substring search over strand titles and
+  attribute values, including archived rows the query language cannot see.
 
   This spool is a deliberate, maintained example of breaking Skein's
   namespace-tier rules in the open — the Clojure equivalent of a Rust `unsafe`
@@ -32,7 +32,8 @@
   See `spools/text-search.md` for the full unsafe declaration and design
   rationale. Every query pattern is parameter-bound — user text is never spliced
   into SQL — and the op is read-only: it mutates no strands, edges, or state."
-  (:require [clojure.string :as str]
+  (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as api]
             ;; UNSAFE: physical-table access. A blessed spool builds on
@@ -46,6 +47,38 @@
   so a caller always sees a complete result set or a clear instruction to narrow
   it."
   50)
+
+(defn- non-blank-string? [value]
+  (and (string? value) (not (str/blank? value))))
+
+(s/def ::text non-blank-string?)
+(s/def ::archived? boolean?)
+(s/def :skein.spools.text-search.search/key non-blank-string?)
+(s/def ::limit pos-int?)
+(s/def ::search-opts
+  (s/keys :req-un [::text]
+          :opt-un [::archived? :skein.spools.text-search.search/key ::limit]))
+(s/def ::id string?)
+(s/def ::title string?)
+(s/def :skein.spools.text-search.result/key (s/nilable string?))
+(s/def ::snippet string?)
+(s/def ::result-row
+  (s/keys :req-un [::id ::title :skein.spools.text-search.result/key ::snippet]))
+
+(defn- require-search-opts! [opts]
+  (when-not (s/valid? ::search-opts opts)
+    (fail! "text-search opts are invalid"
+           {:opts opts
+            :explain (s/explain-str ::search-opts opts)}))
+  opts)
+
+(defn- require-result-rows! [rows]
+  (doseq [row rows]
+    (when-not (s/valid? ::result-row row)
+      (fail! "text-search result row is invalid"
+             {:row row
+              :explain (s/explain-str ::result-row row)})))
+  rows)
 
 (defn- runtime-datasource
   "Return the runtime's raw SQLite datasource, failing loudly when absent.
@@ -99,16 +132,13 @@
   title, or the attribute value as stored JSON). Rows are ordered by strand id
   then key.
 
-  Read-only. Fails loudly (TEN-003) on a blank pattern, a non-positive `:limit`,
-  or an overflow: `search` fetches one row past `:limit` and, if the result
-  exceeds it, throws naming `--limit` and query-narrowing rather than silently
-  truncating (cap-not-truncate)."
-  [runtime {:keys [text archived? key limit] :or {limit default-limit}}]
-  (when-not (and (string? text) (not (str/blank? text)))
-    (fail! "text-search requires a non-blank search pattern" {:text text}))
-  (when-not (and (integer? limit) (pos? limit))
-    (fail! "text-search :limit must be a positive integer" {:limit limit}))
-  (let [ds (runtime-datasource runtime)
+  Read-only. Fails loudly (TEN-003) on malformed opts or overflow: `search`
+  fetches one row past `:limit` and, if the result exceeds it, throws naming
+  `--limit` and query-narrowing rather than silently truncating."
+  [runtime opts]
+  (let [{:keys [text archived? key limit] :or {archived? false limit default-limit}}
+        (require-search-opts! opts)
+        ds (runtime-datasource runtime)
         like (str "%" (like-escape text) "%")
         attr-sql (attr-select archived? key)
         ;; A --key search is an attribute-value search only; titles are not
@@ -124,7 +154,7 @@
                   " rows; narrow the query (scope with --key or a more specific pattern) "
                   "or raise --limit — results are capped, never truncated")
              {:reason :overflow :limit limit}))
-    (mapv #(select-keys % [:id :title :key :snippet]) rows)))
+    (require-result-rows! (mapv #(select-keys % [:id :title :key :snippet]) rows))))
 
 (defn search-op
   "Handle `strand search ...`, threading parsed args into `search`.

@@ -59,10 +59,22 @@
 (deftest blank-pattern-fails-loudly
   (with-runtime
     (fn [rt _]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank search pattern"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
                             (text-search/search rt {:text "   "})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank search pattern"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
                             (text-search/search rt {:text nil}))))))
+
+(deftest malformed-options-fail-loudly-before-changing-search-mode
+  (with-runtime
+    (fn [rt _]
+      (testing ":archived? must be a boolean, not a truthy string"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
+                              (text-search/search rt {:text "needle" :archived? "false"}))))
+      (testing ":key must be a non-blank string"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
+                              (text-search/search rt {:text "needle" :key ""})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
+                              (text-search/search rt {:text "needle" :key :owner})))))))
 
 (deftest overflow-fails-loudly-and-caps-rather-than-truncates
   (with-runtime
@@ -75,7 +87,7 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"more than the --limit"
                               (text-search/search rt {:text "widget" :limit 2}))))
       (testing "a non-positive limit fails loudly"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":limit must be a positive integer"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
                               (text-search/search rt {:text "widget" :limit 0})))))))
 
 (deftest op-handler-threads-args-and-coerces-the-archived-flag

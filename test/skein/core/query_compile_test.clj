@@ -57,6 +57,15 @@
              [[:not [:< [:attr :rank] 3]]
               (attr-exists-sql "NOT (json_extract(a.value, ?) < ?)")
               ["rank" "$" 3]]
+             [[:not [:!= [:attr :owner] "agent"]]
+              (attr-exists-sql "NOT (json_extract(a.value, ?) <> ?)")
+              ["owner" "$" "agent"]]
+             [[:not [:> [:attr :rank] 3]]
+              (attr-exists-sql "NOT (json_extract(a.value, ?) > ?)")
+              ["rank" "$" 3]]
+             [[:not [:>= [:attr :rank] 3]]
+              (attr-exists-sql "NOT (json_extract(a.value, ?) >= ?)")
+              ["rank" "$" 3]]
              [[:not [:in [:attr :owner] ["agent" "human"]]]
               (attr-exists-sql "NOT (json_extract(a.value, ?) IN (?, ?))")
               ["owner" "$" "agent" "human"]]]]
@@ -88,10 +97,34 @@
                                                  :attributes {:in-owner "agent"}}))
             in-absent (:id (db/add-strand! ds {:title "in absent"}))
             in-archived (:id (db/add-strand! ds {:title "in archived"
-                                                 :attributes {:in-owner "human"}}))]
+                                                 :attributes {:in-owner "human"}}))
+            neq-nonmatching (:id (db/add-strand! ds {:title "neq nonmatching"
+                                                     :attributes {:neq-owner "agent"}}))
+            neq-matching (:id (db/add-strand! ds {:title "neq matching"
+                                                  :attributes {:neq-owner "human"}}))
+            neq-absent (:id (db/add-strand! ds {:title "neq absent"}))
+            neq-archived (:id (db/add-strand! ds {:title "neq archived"
+                                                  :attributes {:neq-owner "agent"}}))
+            gt-nonmatching (:id (db/add-strand! ds {:title "gt nonmatching"
+                                                    :attributes {:gt-rank 2}}))
+            gt-matching (:id (db/add-strand! ds {:title "gt matching"
+                                                 :attributes {:gt-rank 5}}))
+            gt-absent (:id (db/add-strand! ds {:title "gt absent"}))
+            gt-archived (:id (db/add-strand! ds {:title "gt archived"
+                                                 :attributes {:gt-rank 2}}))
+            gte-nonmatching (:id (db/add-strand! ds {:title "gte nonmatching"
+                                                     :attributes {:gte-rank 2}}))
+            gte-matching (:id (db/add-strand! ds {:title "gte matching"
+                                                  :attributes {:gte-rank 3}}))
+            gte-absent (:id (db/add-strand! ds {:title "gte absent"}))
+            gte-archived (:id (db/add-strand! ds {:title "gte archived"
+                                                  :attributes {:gte-rank 2}}))]
         (db/archive-attributes! ds eq-archived [:eq-owner])
         (db/archive-attributes! ds lt-archived [:lt-rank])
         (db/archive-attributes! ds in-archived [:in-owner])
+        (db/archive-attributes! ds neq-archived [:neq-owner])
+        (db/archive-attributes! ds gt-archived [:gt-rank])
+        (db/archive-attributes! ds gte-archived [:gte-rank])
 
         (testing ":not over :="
           (is (= #{"eq nonmatching"}
@@ -109,7 +142,25 @@
           (is (= #{"in nonmatching"}
                  (query-titles ds [:and
                                    [:in :id [in-nonmatching in-matching in-absent in-archived]]
-                                   [:not [:in [:attr :in-owner] ["agent"]]]]))))))))
+                                   [:not [:in [:attr :in-owner] ["agent"]]]]))))
+
+        (testing ":not over :!="
+          (is (= #{"neq nonmatching"}
+                 (query-titles ds [:and
+                                   [:in :id [neq-nonmatching neq-matching neq-absent neq-archived]]
+                                   [:not [:!= [:attr :neq-owner] "agent"]]]))))
+
+        (testing ":not over :>"
+          (is (= #{"gt nonmatching"}
+                 (query-titles ds [:and
+                                   [:in :id [gt-nonmatching gt-matching gt-absent gt-archived]]
+                                   [:not [:> [:attr :gt-rank] 3]]]))))
+
+        (testing ":not over :>="
+          (is (= #{"gte nonmatching"}
+                 (query-titles ds [:and
+                                   [:in :id [gte-nonmatching gte-matching gte-absent gte-archived]]
+                                   [:not [:>= [:attr :gte-rank] 3]]]))))))))
 
 (deftest attr-keys-are-never-spliced-into-sql
   (let [{:keys [sql params]} (compiled [:= [:attr "owner\") OR 1 = 1 --"] "agent"])]

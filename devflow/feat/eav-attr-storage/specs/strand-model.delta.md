@@ -4,7 +4,7 @@
 **Root spec:** [strand-model.md](../../../specs/strand-model.md)
 **Feature:** [../proposal.md](../proposal.md)
 **Status:** Merged
-**Last Updated:** 2026-07-06
+**Last Updated:** 2026-07-07
 
 ## EAS-DELTA-001.P1 Summary
 
@@ -12,7 +12,7 @@ This delta replaces the single `strands.attributes` JSON document with one attri
 
 - **EAV storage (SPEC-001.P8).** An `attributes` table stores one JSON-encoded value per `(strand_id, key)`; the `strands.attributes` document column is removed. Every key becomes independently addressable, patchable, and indexable.
 - **Archive tier as a flag (SPEC-001.P4/P8).** An `archived` flag plus `WHERE archived = 0` partial indexes gives a cold tier that hot query paths structurally cannot see. Trusted `archive!` / `unarchive!` primitives move rows across the tier per strand and per explicit key set; archive **policy** is userland.
-- **Uniform query capability (SPEC-001.P9).** `[:attr k]` predicates compile to an `EXISTS`/join over non-archived rows with full predicate capability for **every** key and cross-key self-joins; result semantics are identical to today's document form.
+- **Uniform query capability (SPEC-001.P9).** `[:attr k]` predicates compile to an `EXISTS`/join over non-archived rows with full predicate capability for **every** key and cross-key self-joins. Leaf negation matches today's document form; composite negation over `:and` / `:or` is tracked on kanban card `2yic2`.
 - **L0b removal.** The declared-key indexing machinery promoted at `5595fe7` (the `indexed_attr_keys` table, `::specs/indexed-attr-key`, and literal-path emission in `query.clj`) is **removed**; rows make every non-archived key uniformly indexable by construction, so its coverage folds into the new uniform-capability gates.
 - **Preserved.** The L0a storage pragmas (WAL/mmap/cache) and the L1 lean-read wire contract (byte floor, `::specs/omitted-attribute-descriptor`, the `attr-get` guard) survive unchanged, because they are storage-neutral (pragmas) or a wire concern (L1), not a document-shape concern.
 
@@ -35,7 +35,7 @@ This delta replaces the single `strands.attributes` JSON document with one attri
 
 ## EAS-DELTA-001.P4 Contract changes — SPEC-001.P9 Query fields
 
-- **EAS-DELTA-001.CC12:** A `[:attr k]` predicate compiles to an `EXISTS`/join over the **non-archived** attribute rows for that strand and key. Full predicate capability is preserved for **every** key — `:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition — with result semantics identical to today's document form. This is where `PROP-EavAttrStorage-001.G3` is enforced structurally, not by benchmark: no non-archived key is ever less capable than today, because there is no longer a declared/undeclared distinction to make one key less capable than another.
+- **EAS-DELTA-001.CC12:** A `[:attr k]` predicate compiles to an `EXISTS`/join over the **non-archived** attribute rows for that strand and key. Full predicate capability is preserved for **every** key — `:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition. Leaf negation has result semantics identical to today's document form. `:not` around `:and` / `:or` composites of attribute predicates can still diverge on missing or archived keys; unification is tracked on kanban card `2yic2`. This is where `PROP-EavAttrStorage-001.G3` is enforced structurally, not by benchmark: no non-archived key is ever less capable than today, because there is no longer a declared/undeclared distinction to make one key less capable than another.
 - **EAS-DELTA-001.CC13:** Cross-key predicates compile to self-joins over the `attributes` table (one joined row per referenced key, each constrained to `archived = 0`). The exact self-join SQL shape is a plan-level mechanic validated for plan-parity by the benchmark gate and the uniform-capability regression tests (`EAS-DELTA-001.Q4`).
 - **EAS-DELTA-001.CC14:** The bound-parameter-vs-literal-path split from SPEC-001.P9 is **removed** along with the declared-key registry (`EAS-DELTA-001.CC9`). Attribute keys are never spliced literally into SQL text; the query compiler binds keys and values as parameters and gains index usability from the partial index on the rows, not from per-key expression indexes over a document. The old clause requiring re-validation of a declared key against `::specs/indexed-attr-key` before literal emission no longer applies.
 - **EAS-DELTA-001.CC15:** Queryable core fields are otherwise unchanged (`:id`, `:title`, `:state`, `:created_at`, `:updated_at`, and attribute paths); removed lifecycle fields stay rejected.

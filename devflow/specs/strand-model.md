@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-001`
 **Status:** Implemented
-**Last Updated:** 2026-07-06
+**Last Updated:** 2026-07-07
 **Code:** `src/skein/core/db.clj`
 
 ## SPEC-001.P1 Purpose
@@ -82,7 +82,7 @@ Storage has no declared hot-key registry. Every hot attribute row is uniformly i
 
 Queryable core fields include `:id`, `:title`, `:state`, `:created_at`, `:updated_at`, and attribute paths. Removed lifecycle fields such as `:active`, `:inactive_at`, `:status`, and `:final_at` are not accepted by the core query compiler.
 
-Attribute predicates compile against the row-backed `attributes` table, not against JSON paths on `strands`. Equality, `<`, `<=`, and `:in` predicates use `strand_id IN (...)` subqueries over hot attribute rows. `:!=`, `>`, `>=`, existence, and missing predicates use `EXISTS` / `NOT EXISTS` shapes tied to the candidate strand id; explicit negation of attribute comparisons also uses an `EXISTS` shape with the negated predicate. This split preserves negation and SQL `NULL` semantics parity while keeping the index-friendly semi-join shape for the positive predicates that can use it. Logical composition keeps those predicates as ordinary SQL fragments.
+Attribute predicates compile against the row-backed `attributes` table, not against JSON paths on `strands`. Equality, `<`, `<=`, and `:in` predicates use `strand_id IN (...)` subqueries over hot attribute rows. `:!=`, `>`, `>=`, existence, and missing predicates use `EXISTS` / `NOT EXISTS` shapes tied to the candidate strand id; explicit negation of leaf attribute comparisons also uses an `EXISTS` shape with the negated predicate. This split is historical. Logical composition keeps those predicates as ordinary SQL fragments, so `:not` around `:and` / `:or` composites of attribute predicates can still diverge from the old document-form `NULL` behavior for missing or archived keys; unifying those shapes is tracked on kanban card `2yic2`.
 
 Every attribute key has the same predicate capability: `:=`, `:!=`, `:<`/`:<=`/`:>`/`:>=`, `:in`, `:exists`, `:missing`, and logical composition. Archived attributes are excluded from hot query membership.
 

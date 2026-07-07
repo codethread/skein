@@ -1,7 +1,7 @@
 # EAV Attribute Storage Proposal
 
 **Document ID:** `PROP-EavAttrStorage-001`
-**Last Updated:** 2026-07-06
+**Last Updated:** 2026-07-07
 **Related RFCs:** None (no existing RFC covers attribute storage representation; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language whose attribute predicates this re-implements over rows without changing their surface)
 **Related root specs:** [Strand Model](../../specs/strand-model.md) (SPEC-001.P4 Attributes, P8 Persistence, P9 Query fields), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004.P3a storage model, P4 API boundary), [Alpha Surface](../../specs/alpha-surface.md)
 **Builds on:** [attr-scaling-ship-now](../attr-scaling-ship-now/proposal.md), merged to `main` at `5595fe7`, and the root-spec clauses it promoted from `ASSN-DELTA-001/002/003`. This branch has been rebased onto that post-merge baseline, so every spec delta here is written against the current root specs: L0a pragmas, L1 lean reads, and the L0b indexed-attribute registry are present and in scope for removal or preservation as described below.
