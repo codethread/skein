@@ -101,10 +101,17 @@
 
 (defn- java-command [shard-id summary-file]
   (let [java-bin (str (System/getProperty "java.home") java.io.File/separator "bin" java.io.File/separator "java")]
-    [java-bin
-     "--enable-native-access=ALL-UNNAMED"
-     "-cp" (System/getProperty "java.class.path")
-     "clojure.main" "-m" "skein.test-runner" "--shard" shard-id "--summary-file" summary-file]))
+    (-> [java-bin "--enable-native-access=ALL-UNNAMED"]
+        ;; The add-libs shards resolve runtime Maven coordinates (e.g.
+        ;; runtime-deps-test's maven-spike spool). A bare `java -cp clojure.main`
+        ;; child inherits no deps basis, so add-libs sees no :mvn/repos and can
+        ;; only resolve artifacts already warm in ~/.m2 — every download reports
+        ;; "could not be resolved (absent)" on a cold cache. Forward the parent's
+        ;; basis so the shard resolves coordinates exactly like a real weaver.
+        (cond-> (System/getProperty "clojure.basis")
+          (conj (str "-Dclojure.basis=" (System/getProperty "clojure.basis"))))
+        (conj "-cp" (System/getProperty "java.class.path")
+              "clojure.main" "-m" "skein.test-runner" "--shard" shard-id "--summary-file" summary-file))))
 
 (defn- read-shard-summary [shard-id ^java.io.File summary-file]
   (let [content (when (.isFile summary-file) (slurp summary-file))]

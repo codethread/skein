@@ -29,7 +29,13 @@ jobs:
           key: clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
           restore-keys: |
             clojure-${{ runner.os }}-
+      # Hosted runners have ~2 cores, so the suite's fixed cross-thread poll
+      # deadlines run under far more fork/CPU pressure than a dev machine.
+      # Widen every await budget through the single test-support knob instead
+      # of editing call sites; a solo local run leaves it unset (scale 1.0).
       - run: clojure -M:test
+        env:
+          SKEIN_TEST_AWAIT_SCALE: '3'
 
   cli-go-test:
     name: CLI Go tests

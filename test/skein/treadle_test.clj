@@ -64,9 +64,13 @@
       (let [[first-step] (workflow/next-steps "happy")]
         (workflow/complete! "happy" {:step (:id first-step)}))
       (let [gate-id (:id (ready-subagent-gate "happy"))
+            ;; Wait for the terminal treadle signal, not just run close: delivery
+            ;; (gate outcome, notes, the :treadle/delivered stamp, unblocking the
+            ;; next step) runs asynchronously after the run's state flips to
+            ;; closed, so keying on close alone races that propagation.
             run (await-eventually #(some-> (run-for-gate rt gate-id)
-                                           ((fn [r] (when (= "closed" (:state (api/show rt (:id r))))
-                                                      (api/show rt (:id r)))))))
+                                           ((fn [r] (let [s (api/show rt (:id r))]
+                                                      (when (= "true" (attr s :treadle/delivered)) s))))))
             gate (api/show rt (attr run :treadle/gate))
             after (first (workflow/next-steps "happy"))]
         (is (= "true" (attr (api/show rt (:id run)) :treadle/delivered)))
