@@ -305,6 +305,21 @@ For an AFK implementer picking this up cold:
 - **Do NOT** restart/stop/reload the canonical mill or weaver. This is code + docs.
   Any live poking uses a disposable `--workspace "$(mktemp -d)"`. Config pickup for a
   selected workspace is `runtime-alpha/reload!`, never a restart.
+- **Task-queue slicing (recorded 2026-07-07 by the task-breakdown run).** The queue
+  is three sequential AFK tasks, one per phase: `TASK-ShellGates-001` (PH1 — reed.clj
+  + full `reed_test.clj` matrix), `TASK-ShellGates-002` (PH2 — `reed.md`/cookbook/
+  generated `reed.api.md`, workflow.md/README indexes, `DELTA-ShellGates-001` merge),
+  `TASK-ShellGates-003` (PH3 — `.skein/init.clj` activation + `CLAUDE.md`/`AGENTS.md`
+  entries + full validation sweep). The suggested reed-core / failure-semantics split
+  (slices 1+2) was **deliberately merged** into `TASK-ShellGates-001`: the loud,
+  distinct failure path (`A5`/`A6`, the feature's whole point per `G3`/`S4`) and the
+  claim/skip predicate are load-bearing to the executor's core, so a happy-path-only
+  reed is not an independently shippable increment — matching treadle's shape
+  (scan/execute/error is one coherent namespace) and this plan's own single-increment
+  framing of PH1. `TASK-ShellGates-002` also has the implementer register reed in
+  `scripts/generate_api_docs.clj`'s explicit `spool-docs` list (the api-doc generator
+  enumerates spools by name, so `reed.api.md` is invisible to `make api-docs` until
+  listed).
 
 ## PLAN-ShellGates-001.P9 Developer Notes
 
