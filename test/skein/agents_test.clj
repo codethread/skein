@@ -2,6 +2,7 @@
   "Tests for the agents coordination spool layered over shuttle."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
+            [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -34,7 +35,16 @@
         (is (not (contains? detail :raw-envelope)))
         (is (= ["about" "await" "backends" "council" "delegate" "harnesses" "kill" "logs" "note" "notes" "ps" "retry" "review" "rosters" "spawn" "status"]
                (sort (keys (get-in detail [:arg-spec :subcommands])))))
-        (let [review-flags (get-in detail [:arg-spec :subcommands "review" :flags])]
+        (let [review-flags (get-in detail [:arg-spec :subcommands "review" :flags])
+              manual-entries (->> agents/about-doc :verbs vals)
+              manual-verbs (set (map :verb manual-entries))
+              declared-verbs (set (keys (get-in detail [:arg-spec :subcommands])))]
+          (is (every? string? manual-verbs)
+              "every agent about-doc verb entry must carry a string :verb")
+          (is (empty? (set/difference manual-verbs declared-verbs))
+              (str "about-doc verbs missing from arg-spec: " (sort (set/difference manual-verbs declared-verbs))))
+          (is (empty? (set/difference declared-verbs manual-verbs))
+              (str "arg-spec subcommands missing from about-doc: " (sort (set/difference declared-verbs manual-verbs))))
           (is (contains? review-flags :commit-range))
           (is (contains? review-flags :changed-files)))))))
 

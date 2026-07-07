@@ -71,7 +71,13 @@
               :phase-enum ["pending" "running" "done" "failed" "exhausted" "superseded"]
               :terminal-phases ["done" "failed" "exhausted" "superseded"]
               :active-terminal-phases ["failed" "exhausted"]}
-   :verbs {:spawn {:group "engine"
+   :verbs {
+           :about {:group "memory-review"
+                    :help-topic "strand help agent"
+                    :verb "about"
+                    :semantics ["Return the agent coordination manual."]
+                    :returns {"manual" "string"}}
+           :spawn {:group "engine"
                    :help-topic "strand help agent"
                    :verb "spawn"
                    :takes "No positional args; raw run creation, no task contract."

@@ -648,7 +648,8 @@
    :discovery {:help "strand help kanban"
                :prime "strand kanban prime"
                :batch-pattern "strand pattern explain kanban-batch"}
-   :commands [{:verb "prime" :purpose "Full agent priming: working discipline plus command surface."}
+   :commands [{:verb "about" :purpose "Return the kanban convention and installed helper surface."}
+              {:verb "prime" :purpose "Full agent priming: working discipline plus command surface."}
               {:verb "add" :purpose "Create a feature or epic card."}
               {:verb "board" :purpose "Return the grouped board snapshot."}
               {:verb "card" :purpose "Show one card with notes, active work, related cards, and ready frontier."}
