@@ -130,7 +130,7 @@
         (is (= "active" (:state failed)))
         (is (= gate-id (attr failed :treadle/gate)))
         (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/next-steps "retry")))))
-        (api/update rt gate-id {:attributes {"treadle/run" nil
+        (api/update rt gate-id {:attributes {"treadle/run" ""
                                              "shuttle/prompt" "echo recovered"}})
         (let [fresh (await-eventually #(some (fn [r]
                                                (when (not= (:id failed) (:id r)) r))
@@ -171,7 +171,7 @@
         (is (= "failed" (:phase (treadle/gate-stalled? (ready-subagent-gate "blank")))))
         (is (some #(= gate-id (:id %)) (api/list-query rt 'stalled-gates {})))
         ;; (d) recover by clearing the gate's run stamp: the treadle respawns a fresh run
-        (api/update rt gate-id {:attributes {"treadle/run" nil
+        (api/update rt gate-id {:attributes {"treadle/run" ""
                                              "shuttle/prompt" "echo recovered"}})
         (let [fresh (await-eventually #(some (fn [r] (when (not= (:id failed) (:id r)) r))
                                              (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))

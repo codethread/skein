@@ -180,7 +180,7 @@
 
 (defn- spawn-for-gate! [run-id gate-view]
   (let [gate (api/show (rt) (:id gate-view))]
-    (when-not (or (attr gate :treadle/run) (attr gate :treadle/error))
+    (when-not (or (non-blank (attr gate :treadle/run)) (non-blank (attr gate :treadle/error)))
       (try
         (if (ensure-run-stamp! gate)
           nil
@@ -238,10 +238,11 @@
   a coordinator clears the stamp. No wall-clock hang policy is applied."
   [gate-view]
   (let [gate (api/show (rt) (:id gate-view))
-        run-id (attr gate :treadle/run)
+        run-id (non-blank (attr gate :treadle/run))
+        error (non-blank (attr gate :treadle/error))
         run (when run-id (api/show (rt) run-id))]
     (cond
-      (attr gate :treadle/error) {:gate (:id gate) :error (attr gate :treadle/error)}
+      error {:gate (:id gate) :error error}
       (contains? (set stalled-run-phases) (attr run :shuttle/phase))
       {:gate (:id gate) :run run-id :phase (attr run :shuttle/phase)
        :error (attr run :shuttle/error)})))
@@ -271,7 +272,8 @@
                          [:and [:= :state "active"]
                           [:= [:attr "workflow/gate"] "subagent"]
                           [:or
-                           [:exists [:attr "treadle/error"]]
+                           [:and [:exists [:attr "treadle/error"]]
+                            [:not [:= [:attr "treadle/error"] ""]]]
                            [:edge/out "delegates"
                             [:and [:missing [:attr "treadle/superseded-by"]]
                              [:in [:attr "shuttle/phase"] stalled-run-phases]]]]])
