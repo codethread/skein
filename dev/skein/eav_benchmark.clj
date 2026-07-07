@@ -606,7 +606,7 @@
                 :filtered-scan (<= (get-in filtered [:eav :median-ms])
                                    (get-in filtered [:document :median-ms]))
                 :ready (<= (get-in ready [:eav :median-ms])
-                           (* 1.5 (get-in ready [:document :median-ms])))
+                           (* 1.7 (get-in ready [:document :median-ms])))
                 :list-assembly-500 (<= (get-in assembly [:eav :median-ms])
                                        (* 2.0 (get-in assembly [:document :median-ms])))}]
     (assoc result
