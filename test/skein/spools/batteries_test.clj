@@ -178,6 +178,30 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires --query"
                                 (api/op! rt 'list ["--param" "who=agent"]))))))))
 
+(deftest list-and-ready-result-caps-fail-loudly-with-explicit-override
+  (with-batteries
+    (fn [rt]
+      (let [_rows (doall (for [n (range 3)]
+                           (api/add rt {:title (str "Task " n) :attributes {}})))]
+        (testing "workspace cap is enforced before returning partial list results"
+          (batteries/set-read-limit! rt 2)
+          (is (= 2 (batteries/read-limit rt)))
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (api/op! rt 'list [])))]
+            (is (= "read-limit-exceeded" (-> ex ex-data :code)))
+            (is (= 3 (-> ex ex-data :total)))
+            (is (= 2 (-> ex ex-data :limit)))
+            (is (str/includes? (ex-message ex) "--limit N"))))
+        (testing "explicit --limit above the total allows an intentional full read"
+          (is (= 3 (count (api/op! rt 'list ["--limit" "3"])))))
+        (testing "ready uses the same cap"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Read result matched 3 strands"
+                                (api/op! rt 'ready []))))
+        (testing "invalid configured and explicit limits fail loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+                                (batteries/set-read-limit! rt 0)))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+                                (api/op! rt 'list ["--limit" "0"]))))))))
+
 (deftest list-ready-and-named-queries-lean-project-large-attributes-only
   (with-batteries
     (fn [rt]

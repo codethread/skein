@@ -173,7 +173,7 @@ Returns one normalized strand by id, or JSON `null` when absent. `show` is the f
 #### `list` — BAT-C11
 
 ```
-strand list [--state active|closed|replaced] [--query name [--param key=value]…]
+strand list [--state active|closed|replaced] [--query name [--param key=value]…] [--limit N]
 ```
 
 Lists strands. Optional `--state` filters lifecycle (`active|closed|replaced`;
@@ -185,19 +185,31 @@ unknown query params all fail loudly. Returns a JSON array of normalized
 strands. The result uses the lean read tier by default: any attribute value
 whose JSON-encoded UTF-8 length is above the fixed 1 KiB floor is replaced with
 `{"skein/omitted": true, "bytes": N}`; values at or below the floor pass through
-unchanged. There is no hydration flag; use `show <id>` to fetch a full row.
+unchanged.
+
+`list` is result-capped before attribute assembly. The default cap is 500 rows;
+trusted workspace config may set another cap with
+`skein.spools.batteries/set-read-limit!`, and one call may override it with
+`--limit N`. If more rows match, `list` fails with `read-limit-exceeded`, naming
+the total, the cap, and the remedies: narrow with `--query`/`--param`/`--state`,
+or pass explicit `--limit N`. Set `--limit` above the reported total for an
+intentional full read. Successful results are never truncated, and batteries
+has no pagination surface. There is no hydration flag; use `show <id>` to fetch
+a full row.
 
 #### `ready` — BAT-C12
 
 ```
-strand ready [--query name [--param key=value]…]
+strand ready [--query name [--param key=value]…] [--limit N]
 ```
 
 Returns strands with `state="active"` and no active `depends-on` blocker (old
 C10), optionally scoped to a named query's result set exactly as `list`.
 `ready` takes no `--state`. Like `list`, `ready` uses the lean read tier by
 default for large attribute values above the fixed 1 KiB floor and has no
-hydration flag; use `show <id>` for full fidelity.
+hydration flag; use `show <id>` for full fidelity. It uses the same default cap,
+trusted config override, `--limit N` call override, and loud
+`read-limit-exceeded` behavior as `list`.
 
 #### `subgraph` — BAT-C13
 

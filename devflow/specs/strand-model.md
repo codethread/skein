@@ -40,7 +40,7 @@ The omission descriptor is the typed map `{:skein/omitted true :bytes N}`, where
 
 The descriptor's single source of truth is the `skein.core.specs` contract `::specs/omitted-attribute-descriptor` (`s/keys :req [:skein/omitted] :req-un [::bytes]`, `:skein/omitted` = `#{true}`, `:bytes` = `nat-int?`). Lean-tier emitters construct values that conform to this spec, and consumers discriminate against the spec rather than ad hoc map-shape checks.
 
-The lean tier is the default only for CLI/agent list-style read surfaces (`list`, `ready`, and query-backed listing). Point reads (`show`) and all trusted in-process reads default to the full tier. The canonical trusted spool reader `attr-get` fails loudly if it is handed an omission descriptor where a raw value is expected; its `ex-info` ex-data is `{:key <attribute-key> :strand-id <strand-id> :recovery "show <strand-id>"}` so the operator can identify the omitted key and fetch the full row.
+The lean tier is the default only for CLI/agent list-style read surfaces (`list`, `ready`, and query-backed listing). Those same surfaces are result-capped by default before attribute assembly, so a large match fails loudly instead of returning a partial set. Point reads (`show`) and all trusted in-process reads default to the full, unbounded tier. The canonical trusted spool reader `attr-get` fails loudly if it is handed an omission descriptor where a raw value is expected; its `ex-info` ex-data is `{:key <attribute-key> :strand-id <strand-id> :recovery "show <strand-id>"}` so the operator can identify the omitted key and fetch the full row.
 
 ## SPEC-001.P5 Edges
 

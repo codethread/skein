@@ -1238,6 +1238,26 @@
   ([ds query-def params]
    (query-strands ds query-def params)))
 
+(defn- require-positive-limit! [limit]
+  (require-valid! ::specs/read-limit limit "Read result limit must be a positive integer"))
+
+(defn- bounded-select!
+  "Return selected rows, failing loudly when more than limit rows match."
+  [ds select-sql params count-sql limit]
+  (require-positive-limit! limit)
+  (let [probe (execute! ds (into [(str select-sql " LIMIT ?")] (conj (vec params) (inc limit))))]
+    (if (<= (count probe) limit)
+      probe
+      (let [total (:total (execute-one! ds (into [count-sql] params)))]
+        (throw (ex-info (str "Read result matched " total " strands, exceeding the configured cap of " limit
+                             ". Narrow the read with --query/--param/--state or pass explicit --limit N; "
+                             "set --limit above " total " for an intentional full read.")
+                        {:code "read-limit-exceeded"
+                         :total total
+                         :limit limit
+                         :remedies ["narrow via --query/--param/--state"
+                                    "pass explicit --limit N above the total for an intentional full read"]}))))))
+
 (defn all-strands-lean
   "Return all strand rows with oversized hot attributes replaced by descriptors."
   ([ds lean-byte-floor]
@@ -1257,6 +1277,20 @@
                              WHERE " query-sql "
                              ORDER BY t.id")]
                       query-params))
+      true
+      lean-byte-floor)))
+  ([ds lean-byte-floor query-def params limit]
+   (let [{query-sql :sql query-params :params} (compile-query-for-ds ds query-def params)
+         select-sql (str "SELECT " (strand-columns-sql "t") "
+                          FROM strands t
+                          WHERE " query-sql "
+                          ORDER BY t.id")
+         count-sql (str "SELECT count(*) AS total
+                         FROM strands t
+                         WHERE " query-sql)]
+     (attach-batched-attributes
+      ds
+      (bounded-select! ds select-sql query-params count-sql limit)
       true
       lean-byte-floor))))
 
@@ -1346,6 +1380,30 @@
                    AND " query-sql "
                  ORDER BY t.id")]
                       query-params))
+      true
+      lean-byte-floor)))
+  ([ds lean-byte-floor query-def params limit]
+   (let [{query-sql :sql query-params :params} (compile-query-for-ds ds query-def params)
+         ready-sql "t.state = 'active'
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM strand_edges e
+                      JOIN strands dep ON dep.id = e.to_strand_id
+                      WHERE e.from_strand_id = t.id
+                        AND e.edge_type = 'depends-on'
+                        AND dep.state = 'active'
+                    )"
+         where-sql (str ready-sql " AND " query-sql)
+         select-sql (str "SELECT " (strand-columns-sql "t") "
+                          FROM strands t
+                          WHERE " where-sql "
+                          ORDER BY t.id")
+         count-sql (str "SELECT count(*) AS total
+                         FROM strands t
+                         WHERE " where-sql)]
+     (attach-batched-attributes
+      ds
+      (bounded-select! ds select-sql query-params count-sql limit)
       true
       lean-byte-floor))))
 

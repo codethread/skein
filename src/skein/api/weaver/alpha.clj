@@ -1226,11 +1226,16 @@
    (normalize (db/all-strands (ds runtime) query-def params))))
 
 (defn list-lean
-  "Return strands with oversized attributes replaced by descriptors."
+  "Return strands with oversized attributes replaced by descriptors.
+
+  The optional limit arity is for the CLI/wire read surface; the trusted
+  in-process arities remain unbounded by default."
   ([runtime lean-byte-floor]
    (require-lean-result! (normalize (db/all-strands-lean (ds runtime) lean-byte-floor))))
   ([runtime lean-byte-floor query-def params]
-   (require-lean-result! (normalize (db/all-strands-lean (ds runtime) lean-byte-floor query-def params)))))
+   (require-lean-result! (normalize (db/all-strands-lean (ds runtime) lean-byte-floor query-def params))))
+  ([runtime lean-byte-floor query-def params limit]
+   (require-lean-result! (normalize (db/all-strands-lean (ds runtime) lean-byte-floor query-def params limit)))))
 
 (defn list-query
   "Return strands matching a registered query definition."
@@ -1245,11 +1250,16 @@
    (normalize (db/ready-strands (ds runtime) query-def params))))
 
 (defn ready-lean
-  "Return ready strands with oversized attributes replaced by descriptors."
+  "Return ready strands with oversized attributes replaced by descriptors.
+
+  The optional limit arity is for the CLI/wire read surface; the trusted
+  in-process arities remain unbounded by default."
   ([runtime lean-byte-floor]
    (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor))))
   ([runtime lean-byte-floor query-def params]
-   (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params)))))
+   (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params))))
+  ([runtime lean-byte-floor query-def params limit]
+   (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params limit)))))
 
 (defn ready-query
   "Return ready strands from the result set of a registered query definition."

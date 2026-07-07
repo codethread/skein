@@ -17,15 +17,19 @@
   accepts `active|closed` for mutations and `active|closed|replaced` for `list`
   filtering."
   (:require [clojure.data.json :as json]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.walk :as walk]
             [skein.api.current.alpha :as current]
+            [skein.api.runtime.alpha :as runtime-api]
             [skein.api.weaver.alpha :as api]
-            [skein.core.query :as query])
+            [skein.core.query :as query]
+            [skein.core.specs :as specs])
   (:import [java.io PushbackReader StringReader]))
 
 (def ^:private generic-states #{"active" "closed"})
 (def ^:private lean-attribute-byte-floor 1024)
+(def ^:private default-read-limit 500)
 (def ^:private readable-states #{"active" "closed" "replaced"})
 
 (defn- validate-generic-state
@@ -43,6 +47,35 @@
     (throw (ex-info "Strand state must be active, closed, or replaced"
                     {:state state :allowed (vec (sort readable-states))})))
   state)
+
+(defn- validate-read-limit
+  "Return limit when it is a positive integer, else fail loudly."
+  [limit]
+  (when-not (s/valid? ::specs/read-limit limit)
+    (throw (ex-info "Read result limit must be a positive integer"
+                    {:limit limit :explain (s/explain-str ::specs/read-limit limit)})))
+  limit)
+
+(defn- read-limit-state [rt]
+  (runtime-api/spool-state rt ::read-limit #(atom default-read-limit)))
+
+(defn read-limit
+  "Return the runtime's batteries read-result cap for CLI list/ready ops."
+  [rt]
+  @(read-limit-state rt))
+
+(defn set-read-limit!
+  "Set the runtime's batteries read-result cap for CLI list/ready ops.
+
+  Intended for trusted workspace config. Invalid values fail loudly instead of
+  falling back to the default cap."
+  [rt limit]
+  (let [limit (validate-read-limit limit)]
+    (reset! (read-limit-state rt) limit)
+    limit))
+
+(defn- effective-read-limit [rt explicit-limit]
+  (validate-read-limit (or explicit-limit (read-limit rt))))
 
 (defn- request-context
   "Build the mutation request context so hooks and events see the operation."
@@ -150,18 +183,18 @@
 (defn- run-named-query
   "Resolve a named query, validate params, overlay an optional state filter, and
   invoke the runtime list/ready fn exactly as the socket dispatch does."
-  [rt query-fn query-name raw-params state]
+  [rt query-fn query-name raw-params state limit]
   (let [query-def (api/resolve-query rt (handle-name query-name))
         params (validate-query-params query-def raw-params)
         query-def (if state
                     [:and (query/query-expr query-def params) [:= :state state]]
                     query-def)]
-    (query-fn rt lean-attribute-byte-floor query-def params)))
+    (query-fn rt lean-attribute-byte-floor query-def params limit)))
 
-(defn- run-named-ready-query-lean [rt query-name raw-params]
+(defn- run-named-ready-query-lean [rt query-name raw-params limit]
   (let [query-def (api/resolve-query rt (handle-name query-name))
         params (validate-query-params query-def raw-params)]
-    (api/ready-lean rt lean-attribute-byte-floor query-def params)))
+    (api/ready-lean rt lean-attribute-byte-floor query-def params limit)))
 
 ;; --- op handlers ------------------------------------------------------------
 
@@ -214,32 +247,32 @@
   "List lean-projected strands, optionally filtered by lifecycle state and/or a named query."
   [ctx]
   (let [rt (:op/runtime ctx)
-        {:keys [state query param]} (:op/args ctx)
-        params (or param {})]
+        {:keys [state query param limit]} (:op/args ctx)
+        params (or param {})
+        limit (effective-read-limit rt limit)]
     (when state (validate-readable-state state))
     (if query
       (do (when (str/blank? query)
             (throw (ex-info "--query requires a non-empty name" {})))
-          (run-named-query rt api/list-lean query params state))
+          (run-named-query rt api/list-lean query params state limit))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
-          (if state
-            (api/list-lean rt lean-attribute-byte-floor [:= :state state] {})
-            (api/list-lean rt lean-attribute-byte-floor))))))
+          (api/list-lean rt lean-attribute-byte-floor (if state [:= :state state] [:exists :id]) {} limit)))))
 
 (defn ready-op
   "List lean-projected ready strands, optionally from the result set of a named query."
   [ctx]
   (let [rt (:op/runtime ctx)
-        {:keys [query param]} (:op/args ctx)
-        params (or param {})]
+        {:keys [query param limit]} (:op/args ctx)
+        params (or param {})
+        limit (effective-read-limit rt limit)]
     (if query
       (do (when (str/blank? query)
             (throw (ex-info "--query requires a non-empty name" {})))
-          (run-named-ready-query-lean rt query params))
+          (run-named-ready-query-lean rt query params limit))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
-          (api/ready-lean rt lean-attribute-byte-floor)))))
+          (api/ready-lean rt lean-attribute-byte-floor [:exists :id] {} limit)))))
 
 (defn subgraph-op
   "Return a relation-scoped subgraph rooted at one strand."
@@ -339,7 +372,9 @@
            :query {:type :string
                    :doc "Weaver-registered named query."}
            :param {:type :map
-                   :doc "Named-query parameter key=value; repeatable."}}})
+                   :doc "Named-query parameter key=value; repeatable."}
+           :limit {:type :int
+                   :doc "Explicit maximum result count; set above the total for an intentional full read."}}})
 
 (def ^:private ready-arg-spec
   {:op "ready"
@@ -347,7 +382,9 @@
    :flags {:query {:type :string
                    :doc "Weaver-registered named query."}
            :param {:type :map
-                   :doc "Named-query parameter key=value; repeatable."}}})
+                   :doc "Named-query parameter key=value; repeatable."}
+           :limit {:type :int
+                   :doc "Explicit maximum result count; set above the total for an intentional full read."}}})
 
 (def ^:private subgraph-arg-spec
   {:op "subgraph"

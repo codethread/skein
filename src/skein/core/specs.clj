@@ -64,6 +64,7 @@
   (s/keys :req-un [::strand-id ::archived? ::changed :skein.attribute-archive/keys]))
 (s/def :skein/omitted #{true})
 (s/def ::bytes nat-int?)
+(s/def ::read-limit pos-int?)
 (s/def ::omitted-attribute-descriptor
   (s/keys :req [:skein/omitted]
           :req-un [::bytes]))
