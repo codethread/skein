@@ -5,7 +5,7 @@
 **Related RFCs:** [RFC-010 Shuttle-backed Agent Coordination](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (the treadle `:subagent` gate executor this feature is a sibling to); adjacent [RFC-009 Weaver Scheduler Primitive](../../rfcs/2026-06-29-weaver-scheduler.md) (the weaver async-runtime substrate an off-event-thread executor runs on — adjacent, no conflict)
 **Related root specs:** No behavioral root-spec change (strand-model / cli / repl-api / daemon-runtime are untouched; this is spool-layer behaviour over the existing gate primitive). [Alpha Surface](../../specs/alpha-surface.md) gains a spool-index entry for the new contract doc (S6).
 **Related contracts:** [Workflow spool](../../../spools/workflow.md) (§3 Gates, §4 executor registry / awaiting attention, §7 vocabulary), [Treadle spool](../../../spools/shuttle/treadle.md) (the precedent gate executor), [Shuttle spool](../../../spools/shuttle/README.md) (§3 harnesses, §5 run/result semantics), [Agents spool](../../../spools/agents/README.md) (the agent-plan `validation` field)
-**Source:** problem statement authored in the `notes` workspace, `/Users/ct/dev/projects/notes/.skein/proposals/2026-07-07-workflow-shell-gates.md` (reproduction detail and telemetry live there; this proposal restates what a repo reader needs).
+**Source:** problem statement authored in the `notes` workspace (`.skein/proposals/2026-07-07-workflow-shell-gates.md` there) — an external workspace not shipped with this repo and not required reading; all load-bearing evidence is restated below.
 
 ## PROP-ShellGates-001.P1 Problem
 
@@ -170,8 +170,9 @@ Two source-proposal framings need correcting so the plan does not inherit them:
   one-line guard that can ship separately.
 - **PROP-ShellGates-001.NG7:** No implementation strategy, phase breakdown,
   migration mechanics, or detailed testing strategy/test matrix here — those
-  belong in the feature plan. The detailed op-level surface and test matrix in
-  commit `340ba17` are intentionally cut and will be re-derived at spec/plan time.
+  belong in the feature plan — see
+  [workflow-shell-gates.plan.md](./workflow-shell-gates.plan.md) for the
+  `shell/*` attribute contract table and the test matrix.
 
 ## PROP-ShellGates-001.P4 Proposed scope
 

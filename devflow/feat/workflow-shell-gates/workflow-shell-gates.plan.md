@@ -6,7 +6,7 @@
 **RFC:** None owns this. Sibling to [RFC-010 Shuttle-backed Coordination](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (treadle, the precedent executor); adjacent [RFC-009 Weaver Scheduler](../../rfcs/2026-06-29-weaver-scheduler.md) (the async substrate an off-event-thread executor runs on — no conflict).
 **Root specs:** [Alpha Surface](../../specs/alpha-surface.md) (`SPEC-005`, contract-index only). Strand Model / CLI / REPL API / Weaver Runtime are untouched.
 **Feature specs:** [Alpha Surface delta](./specs/alpha-surface.delta.md) (`DELTA-ShellGates-001`).
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-07
 
 ## PLAN-ShellGates-001.P1 Goal and scope
@@ -193,7 +193,7 @@ context).
 - **PLAN-ShellGates-001.V1 (`clojure -M:test`):** the new `skein.spools.reed-test`
   namespace, driving real trivial deterministic commands (`true`, `false`,
   `test -s <fixture>`, an `sh -c` that writes a fixture) rather than any harness.
-  Required cases (proposal §Testing sketch in commit `340ba17`, re-derived):
+  Required cases:
   - **pass** — a `:shell` gate whose command exits 0 closes the gate, records
     `workflow/outcome-by "shell"`, `shell/exit-code 0`, and bounded `shell/output`;
     the dependent step becomes ready.
