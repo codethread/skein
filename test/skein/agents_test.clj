@@ -1093,7 +1093,13 @@
 ;; Interactive delegation
 
 (def ^:private fake-mux
-  {:start ["sh" "-c" "nohup \"$1\" >/dev/null 2>&1 & printf '{\"pid\":\"%s\"}' \"$!\"" "fake-mux" :command]
+  ;; The detached session runs the launcher command and then sleeps, staying
+  ;; alive until :stop kills it — a real multiplexer session (tmux holding a
+  ;; live TUI) outlives the command that opened it and ends only when reaped.
+  ;; A session that exited the instant its command finished would let the
+  ;; liveness probe in ps/supervise fail the run "dead" before the test closes
+  ;; its served strand, a race that only surfaces under slow-runner load.
+  {:start ["sh" "-c" "nohup sh -c '\"$0\" >/dev/null 2>&1; exec sleep 600' \"$1\" >/dev/null 2>&1 & printf '{\"pid\":\"%s\"}' \"$!\"" "fake-mux" :command]
    :alive ["kill" "-0" :handle/pid]
    :stop ["kill" :handle/pid]
    :attach ["echo" "attach" :handle/pid]

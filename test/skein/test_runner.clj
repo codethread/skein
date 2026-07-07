@@ -100,9 +100,19 @@
   (println "Namespace summary:" ns (assoc summary :group group :elapsed-ms elapsed-ms)))
 
 (defn- java-command [shard-id summary-file]
-  (let [java-bin (str (System/getProperty "java.home") java.io.File/separator "bin" java.io.File/separator "java")]
-    [java-bin
-     "--enable-native-access=ALL-UNNAMED"
+  (let [java-bin (str (System/getProperty "java.home") java.io.File/separator "bin" java.io.File/separator "java")
+        ;; The add-libs shards resolve runtime Maven coordinates (e.g.
+        ;; runtime-deps-test's maven-spike spool). A bare `java -cp clojure.main`
+        ;; child inherits no deps basis, so add-libs sees no :mvn/repos and can
+        ;; only resolve artifacts already warm in ~/.m2 — every download reports
+        ;; "could not be resolved (absent)" on a cold cache. Forward the parent's
+        ;; basis so the shard resolves coordinates exactly like a real weaver;
+        ;; a launch path without one cannot run the shards correctly, so refuse it.
+        basis (or (System/getProperty "clojure.basis")
+                  (throw (ex-info "clojure.basis system property is missing: shard subprocesses need the parent's deps basis for runtime add-libs; launch the suite via the clojure CLI (clojure -M:test)"
+                                  {:property "clojure.basis"})))]
+    [java-bin "--enable-native-access=ALL-UNNAMED"
+     (str "-Dclojure.basis=" basis)
      "-cp" (System/getProperty "java.class.path")
      "clojure.main" "-m" "skein.test-runner" "--shard" shard-id "--summary-file" summary-file]))
 

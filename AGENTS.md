@@ -251,7 +251,7 @@ Use `strand flow-await <workflow-run-id> [--timeout-secs n]` to block until a wo
 
 ## Validation and smoke testing
 
-Primary validation:
+Primary validation (also blocking in CI via `.github/workflows/quality.yml`):
 
 ```sh
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test
@@ -287,6 +287,8 @@ flock -w 3600 /tmp/skein-test.lock clojure -M:test
 This is a cooperative queue at the gate, not code-level locking, and it is deliberately **not** baked into the `:test` alias: a solo interactive run must not pay the mutex cost, and the lock only means something when siblings honour the same convention. Reach for it whenever you know other agents may be testing at the same time. The queue also protects unrelated interactive sessions on the machine, since the fork-pressure starvation it prevents is machine-global.
 
 `flock` is util-linux: `brew install util-linux`, then symlink `flock` into a directory on `PATH`. Any equivalent whole-run mutex on the same well-known lock path serves the same purpose.
+
+For slow or contended environments the suite also has a single timing knob: the `SKEIN_TEST_AWAIT_SCALE` env var multiplies every await budget in test support (CI sets it to `3` in `quality.yml` for the ~2-core hosted runners; unset means scale 1.0 locally).
 
 Tests and smoke workflows must isolate weaver workspaces with temporary workspaces. Do not start test weavers through implicit repo discovery or any user-owned workspace.
 
