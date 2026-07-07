@@ -181,7 +181,7 @@ register it from startup config after chime is active.
                      (when-let [served (:for summary)]
                        (str "\nServes: " served))
                      (if (str/blank? attach)
-                       "\nAttach: run strand agent ps to show the current command."
+                       "\nAttach: no backend attach hint is configured for this run."
                        (str "\nAttach: " attach)))}))))
 
 (chime/defrule! :interactive-session-running 'my.rules/interactive-session-running)
@@ -200,7 +200,13 @@ register it from startup config after chime is active.
   `shuttle/runs` is the Clojure side of `strand agent ps`; it performs the
   interactive liveness check and renders the backend's display-only `:attach`
   argv over the stored handle. If a backend has no attach template yet, the rule
-  points the human back to `strand agent ps` instead of inventing a command.
+  says no attach hint is configured instead of inventing a command.
+
+Honest source: shuttle's `run-summary` / `runs` implementation in
+[`spools/shuttle/src/skein/spools/shuttle.clj`](shuttle/src/skein/spools/shuttle.clj)
+renders `:attach` from the backend's display-only `:attach` op, and
+[`spools/agents/README.md`](agents/README.md) documents that `strand agent ps`
+carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
 
 ---
 
