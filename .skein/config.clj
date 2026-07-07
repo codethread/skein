@@ -20,6 +20,7 @@
             [clojure.string :as str]
             [skein.api.patterns.alpha :as patterns]
             [skein.spools.agents :as agents]
+            [skein.spools.brief :as brief]
             [skein.spools.carder :as carder]
             [skein.spools.chime :as chime]
             [skein.spools.cron :as cron]
@@ -67,13 +68,29 @@
   [task k]
   (or (get task k) (get task (name k))))
 
+(def ^:private worker-contract-block-key
+  "Clause-block key the standing shuttle worker contract is registered under, so
+  pipeline-task-prompt references it by name from a brief rather than
+  string-concatenating the same preamble into every delegated prompt."
+  :worker-contract)
+
+(def ^:private worker-contract-block
+  "The standing shuttle worker contract as a reusable brief clause block."
+  {:title "Worker contract" :lines [agents/worker-contract]})
+
 (defn- pipeline-task-prompt
-  "Return the prompt for one delegate-pipeline task."
+  "Return the prompt for one delegate-pipeline task, rendered through a brief so
+  the fixed worker contract lives in one registered clause block and this task's
+  run/title/body ride the shared brief->prompt seam. install! registers the
+  clause block; a missing block would fail loudly here rather than silently drop
+  the contract."
   [run-id item]
-  (str agents/worker-contract "\n\n"
-       "Delegated pipeline run: " run-id "\n"
-       "Task: " (task-value item :title) "\n\n"
-       (or (task-value item :body) (task-value item :title))))
+  (brief/brief->prompt
+   (current/runtime)
+   (cond-> {:context (str "Delegated pipeline run: " run-id)
+            :mission [(task-value item :title)]
+            :blocks [worker-contract-block-key]}
+     (task-value item :body) (assoc :body (task-value item :body)))))
 
 (defn- compiled-workflow-strands
   "Return workflow compile output as a weave-compatible strand vector."
@@ -1579,6 +1596,9 @@
   (let [runtime (current/runtime)]
     {:installed true
      :namespace 'config
+     ;; Register the standing worker contract as a brief clause block so
+     ;; pipeline-task-prompt renders it by key; idempotent across reload.
+     :brief-blocks [(brief/defblock! runtime worker-contract-block-key worker-contract-block)]
      :harnesses (register-harness-aliases!)
    ;; agent review consumes the one authoritative policy text by default; the
    ;; text itself now ships from skein.spools.agents, set-default-review-contract!

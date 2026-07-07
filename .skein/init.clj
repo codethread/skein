@@ -21,6 +21,13 @@
 (runtime-alpha/use! runtime :skein/spools-loom
                     {:ns 'skein.spools.loom
                      :call 'skein.spools.loom/install!})
+;; brief is the classpath-shipped brief/guide primitive: it installs the
+;; fetch-only `brief` op and owns the clause-block/guide registries. config.clj
+;; registers this repo's worker-contract clause block and renders
+;; pipeline-task-prompt through it, so brief must sync before config loads.
+(runtime-alpha/use! runtime :skein/spools-brief
+                    {:ns 'skein.spools.brief
+                     :call 'skein.spools.brief/install!})
 ;; UNSAFE spool: text-search reaches past the blessed api.* contract into
 ;; skein.core.db to LIKE-search titles and attribute values, including archived
 ;; rows the query language cannot see. It is a maintained, in-the-open example
@@ -93,8 +100,8 @@
 (runtime-alpha/use! runtime :config
                     {:file "config.clj"
                      :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
-                             :skein/spools-loom :skein/spools-shuttle :skein/spools-agents :skein/spools-chime
-                             :skein/spools-cron]
+                             :skein/spools-loom :skein/spools-brief :skein/spools-shuttle :skein/spools-agents
+                             :skein/spools-chime :skein/spools-cron]
                      :call 'config/install!})
 ;; Register the scheduled NVD deep-scan cron job here rather than in
 ;; config/install! so config_test (which loads config.clj and calls install!
