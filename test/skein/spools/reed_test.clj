@@ -97,12 +97,17 @@
           (is (= 3 (attr errored :shell/exit-code)))
           (is (= 1 (run-count)))
           ;; unrelated graph mutations fire scans, but the errored gate is skipped:
-          ;; the expensive check runs once, not per mutation.
+          ;; the expensive check runs once, not per mutation. This is deterministic
+          ;; without waiting: claim-and-dispatch! stamps shell/running on the scan
+          ;; thread strictly before the only worker-pool submission path, so a
+          ;; re-dispatch regression is visible as a claim marker the moment scan!
+          ;; returns — no marker means nothing was submitted.
           (api/add rt {:title "noise-1"})
           (api/add rt {:title "noise-2"})
           (reed/scan!)
-          (is (= 1 (run-count)))
+          (is (nil? (attr (api/show rt gate-id) :shell/running)))
           (is (some? (attr (api/show rt gate-id) :shell/error)))
+          (is (= 1 (run-count)))
           ;; clearing shell/error (and fixing the command) re-runs the check once
           ;; and closes the gate on the next scan.
           (api/update rt gate-id {:attributes {"shell/error" nil
