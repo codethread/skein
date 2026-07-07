@@ -286,7 +286,7 @@ flock -w 3600 /tmp/skein-test.lock clojure -M:test
 
 This is a cooperative queue at the gate, not code-level locking, and it is deliberately **not** baked into the `:test` alias: a solo interactive run must not pay the mutex cost, and the lock only means something when siblings honour the same convention. Reach for it whenever you know other agents may be testing at the same time. The queue also protects unrelated interactive sessions on the machine, since the fork-pressure starvation it prevents is machine-global.
 
-`flock` is a util-linux tool and is not shipped with macOS — on this host install it with `brew install util-linux` (it lands at `/opt/homebrew/opt/util-linux/bin/flock`, so add that to `PATH` or symlink it). Any equivalent whole-run mutex on the same well-known lock path serves the same purpose.
+`flock` is util-linux: `brew install util-linux`, then symlink it into `PATH`. Any equivalent whole-run mutex on the same well-known lock path serves the same purpose.
 
 Tests and smoke workflows must isolate weaver workspaces with temporary workspaces. Do not start test weavers through implicit repo discovery or any user-owned workspace.
 
