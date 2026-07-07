@@ -14,8 +14,9 @@ Ship reed's contract-doc triad and wire it into every index, then generate its
 api doc and merge the alpha-surface delta. No code behaviour changes here — this
 task documents the spool Task 001 shipped and registers it in the doc/spec
 indexes so `make docs-check` stays green (`PLAN-ShellGates-001.PH2`, `.AA2`–
-`.AA7`). Human-facing prose must read plainly (run the `docs-style` gate over
-`reed.md`/`reed.cookbook.md`); the generated `reed.api.md` is exempt.
+`.AA7`). Human-facing prose must read plainly: sweep `reed.md`/`reed.cookbook.md`
+against the checklist at `.claude/skills/docs-style/SKILL.md` (in this worktree)
+before committing; the generated `reed.api.md` is exempt.
 
 ## P2 Must implement exactly
 
@@ -71,7 +72,7 @@ indexes so `make docs-check` stays green (`PLAN-ShellGates-001.PH2`, `.AA2`–
   ```sh
   cd /Users/ct/dev/projects/skein-src__workflow-shell-gates
   make docs-check       # regenerates spools/*.api.md, fails on drift, builds the site
-  make fmt-check && make lint
+  make fmt-check && make lint && make reflect-check
   ```
   `make docs-check` must pass with no drift — re-run `make api-docs` if `reed.md`
   docstrings changed.
@@ -94,7 +95,8 @@ indexes so `make docs-check` stays green (`PLAN-ShellGates-001.PH2`, `.AA2`–
 
 ## P5 References
 
-- `PLAN-ShellGates-001.md` — `AA2`–`AA7` (affected docs/indexes), `A4` (the
+- `devflow/feat/workflow-shell-gates/workflow-shell-gates.plan.md`
+  (`PLAN-ShellGates-001`) — `AA2`–`AA7` (affected docs/indexes), `A4` (the
   `shell/*` table to reproduce in `reed.md`), `A5`–`A7` (semantics), `P9`
   (root-spec-delta reasoning, the `loom`-omission note).
 - `DELTA-ShellGates-001` (`devflow/feat/workflow-shell-gates/specs/alpha-surface.delta.md`)

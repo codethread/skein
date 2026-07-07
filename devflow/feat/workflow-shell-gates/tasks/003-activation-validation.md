@@ -66,15 +66,28 @@ start. Do not run `runtime-alpha/reload!` against the canonical world, do not
   make fmt-check && make lint && make reflect-check && make docs-check
   ```
 - **DW3** the config change is validated **without** touching the canonical weaver:
-  smoke-test the activation in a **disposable** world only —
+  smoke-test the activation in a **disposable** world only, with your own mill —
   ```sh
-  ws=$(mktemp -d); xdg=$(mktemp -d)
-  # init a disposable world, copy/point init at the reed activation, reload the
-  # DISPOSABLE runtime (never the canonical one), assert install! ran clean.
+  cd /Users/ct/dev/projects/skein-src__workflow-shell-gates
+  make build
+  PATH="$PWD/bin:$PATH"
+  ws=$(mktemp -d); xdg=$(mktemp -d); export XDG_STATE_HOME="$xdg"
+  mill init --workspace "${ws:?}"
+  # append to "${ws:?}/init.clj" the same reed activation form added to .skein/init.clj
+  mill start & mill_pid=$!
+  until mill status >/dev/null 2>&1; do sleep 0.1; done
+  mill weaver start --workspace "${ws:?}"
+  printf '(some? (get (skein.spools.workflow/registered-executors) "shell"))\n' \
+    | mill weaver repl --stdin --workspace "${ws:?}" | grep -q true
+  mill weaver stop --workspace "${ws:?}"
+  kill "$mill_pid"
   ```
-  Do not reload or restart the canonical weaver. If validating the activation
-  requires more than a disposable-world check, report that instead of poking the
-  canonical world.
+  (Adjust the eval form to the executor-registry lookup Task 001 actually shipped
+  — string vs keyword waiter key — but the acceptance is fixed: the disposable
+  weaver starts clean with the activation loaded and reed's `:shell` executor is
+  registered, asserted by the `grep -q true` exit status.) Do not reload or
+  restart the canonical weaver. If validating the activation requires more than
+  this disposable-world check, report that instead of poking the canonical world.
 - **DW4** `git status --short` shows no generated SQLite/runtime artifacts.
 - **DW5** one atomic commit on `workflow-shell-gates` with the init.clj activation
   and the `CLAUDE.md`/`AGENTS.md` edits. Update this task's `status` to `complete`
@@ -92,7 +105,8 @@ start. Do not run `runtime-alpha/reload!` against the canonical world, do not
 
 ## P5 References
 
-- `PLAN-ShellGates-001.md` — `AA9` (activation shape), `PH3` (dormant-activation /
+- `devflow/feat/workflow-shell-gates/workflow-shell-gates.plan.md`
+  (`PLAN-ShellGates-001`) — `AA9` (activation shape), `PH3` (dormant-activation /
   never-reload rule), `P6.V1`–`V4` (validation sweep + isolation), `P8` last
   bullet (never restart/reload; disposable `--workspace` for any live poke),
   `Q1` (activation-now decision — this queue activates).

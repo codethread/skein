@@ -174,9 +174,9 @@ sections cited — do not re-derive design here.
   argv `java.util.List`) is a reflection hot spot and must be type-hinted.
 - **DW3** `git status --short` shows no generated SQLite/`-wal`/`-shm`/runtime
   artifacts after the run (`PLAN-ShellGates-001.V3`).
-- **DW4** one atomic commit on `workflow-shell-gates` containing exactly
-  `reed.clj` + `reed_test.clj`. Update this task's `status` to `complete` in
-  `tasks/index.yml` in the same commit.
+- **DW4** one atomic commit on `workflow-shell-gates` containing exactly three
+  files: `reed.clj`, `reed_test.clj`, and the `tasks/index.yml` edit flipping
+  this task's `status` to `complete`.
 
 ## P4 Out of scope
 
@@ -194,7 +194,8 @@ sections cited — do not re-derive design here.
 
 ## P5 References
 
-- `PLAN-ShellGates-001.md` — binds this task: `D1` (naming), `D2` (fixed design),
+- `devflow/feat/workflow-shell-gates/workflow-shell-gates.plan.md`
+  (`PLAN-ShellGates-001`) — binds this task: `D1` (naming), `D2` (fixed design),
   `A1`–`A7` (approach), `P5` (test matrix), `P7.R1`–`R6` (risks), `P8` (file-map
   anchors, shuttle-specific exclusions, tenets).
 - `spools/shuttle/src/skein/spools/treadle.clj` + `test/skein/treadle_test.clj` —
