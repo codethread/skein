@@ -92,6 +92,10 @@ nav:
           - Contract: spools/loom.md
           - Cookbook: spools/loom.cookbook.md
           - API: spools/loom.api.md
+      - Brief/Guide Primitives:
+          - Contract: spools/brief.md
+          - Cookbook: spools/brief.cookbook.md
+          - API: spools/brief.api.md
       - Text Search (UNSAFE):
           - Contract: spools/text-search.md
           - Cookbook: spools/text-search.cookbook.md
