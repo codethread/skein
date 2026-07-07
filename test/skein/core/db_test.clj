@@ -209,6 +209,25 @@
         (is (= {:a "hot" :payload "cold" :z 1}
                (-> (db/all-strands ds) first :attributes db/<-json)))))))
 
+(deftest writing-archived-key-makes-only-that-key-hot
+  (with-db
+    (fn [ds]
+      (let [strand (:id (db/add-strand! ds {:title "Archive candidate"
+                                            :attributes {:owner "agent"
+                                                         :payload "cold"
+                                                         :status "stale"}}))]
+        (db/archive-attributes! ds strand [:payload :status])
+        (db/update-strand! ds strand {:attributes {:payload "fresh"}})
+        (is (= {:owner "agent" :payload "fresh"}
+               (-> (db/all-strands ds) first :attributes db/<-json)))
+        (is (= [strand]
+               (db/query-strand-ids ds [:= [:attr :payload] "fresh"] {})))
+        (is (empty? (db/query-strand-ids ds [:= [:attr :status] "stale"] {})))
+        (is (= {"owner" 0
+                "payload" 0
+                "status" 1}
+               (into {} (map (juxt :key :archived)) (attr-rows ds strand))))))))
+
 (deftest archive-primitives-reject-bad-input
   (with-db
     (fn [ds]

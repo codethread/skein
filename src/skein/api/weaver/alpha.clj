@@ -1170,6 +1170,9 @@
 (defn archive!
   "Archive all attributes, or an explicit non-empty key set, for one strand.
 
+  A later write to an archived key makes that key hot again. Untouched archived
+  keys remain archived.
+
   This is a trusted in-process primitive only; it has no socket or CLI surface."
   ([runtime strand-id]
    (require-archive-result! (db/archive-attributes! (ds runtime) strand-id)))
@@ -1178,6 +1181,9 @@
 
 (defn unarchive!
   "Unarchive all attributes, or an explicit non-empty key set, for one strand.
+
+  A later write to an archived key has the same hot-data result for that key.
+  Untouched archived keys remain archived.
 
   This is a trusted in-process primitive only; it has no socket or CLI surface."
   ([runtime strand-id]

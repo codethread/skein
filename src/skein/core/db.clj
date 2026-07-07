@@ -388,7 +388,12 @@
                       " FROM strands t WHERE t.id = ?")
                  strand-id]))
 
-(defn- write-attribute-rows! [ds strand-id attributes]
+(defn- write-attribute-rows!
+  "Write attribute rows as fresh hot data.
+
+  Updating an archived key intentionally resets only that key to
+  `archived = 0`; untouched archived keys remain cold."
+  [ds strand-id attributes]
   (doseq [[k v] (sort-by (comp str key) attributes)]
     (execute! ds ["INSERT INTO attributes (strand_id, key, value)
                    VALUES (?, ?, json(?))

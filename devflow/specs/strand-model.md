@@ -72,7 +72,7 @@ A ready strand is a strand with `state="active"` and no direct `depends-on` depe
 
 ## SPEC-001.P8 Persistence
 
-The `strands` table stores lifecycle state as columns. Attribute values live in the row-backed `attributes` table: one `(strand_id, key, value, archived)` row per attribute, with each `value` stored as JSON `TEXT` and archived rows excluded from hot query/list paths while full point reads can still project the complete attribute map. The `strand_edges` table stores relation names and edge attributes as JSON `TEXT`. The `acyclic_relations` table stores durable per-relation acyclicity declarations. The default weaver-owned database filename is `skein.sqlite`. JSONB assumptions are not part of this contract.
+The `strands` table stores lifecycle state as columns. Attribute values live in the row-backed `attributes` table: one `(strand_id, key, value, archived)` row per attribute, with each `value` stored as JSON `TEXT` and archived rows excluded from hot query/list paths while full point reads can still project the complete attribute map. Writing an archived key resets that key to hot data and does not change any other archived key on the strand. The `strand_edges` table stores relation names and edge attributes as JSON `TEXT`. The `acyclic_relations` table stores durable per-relation acyclicity declarations. The default weaver-owned database filename is `skein.sqlite`. JSONB assumptions are not part of this contract.
 
 The weaver datasource opens each SQLite database with WAL journaling, a non-zero memory map size, and an enlarged page cache. These pragmas are applied on open for every world and change no schema or read shape.
 
