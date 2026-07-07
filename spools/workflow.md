@@ -172,6 +172,10 @@ for `<waiter>`", so a driving agent can tell work-steps from wait-steps.
   `:subagent` gates by spawning shuttle runs, registers the `:subagent`
   executor, and closes each gate with the run's result. See
   `shuttle/treadle.md`.
+- A shipped classpath executor, `skein.spools.reed`, fulfills ready `:shell`
+  gates by running the gate's `shell/argv` command directly, registers the
+  `:shell` executor, and closes each gate with `complete!` on a zero exit
+  (stamping a loud `shell/error` otherwise). See `reed.md`.
 
 **Dynamic fan-out needs no primitive.** The run subgraph is recomputed live
 from the graph on every poll, so userland may add strands to a running
@@ -677,4 +681,6 @@ executable reference.
 - [README.md](./README.md) — shipped spools index and loading notes.
 - [`skein.spools.treadle`](./shuttle/treadle.md) — shipped
   local-root adapter that binds workflow `:subagent` gates to shuttle runs.
+- [`skein.spools.reed`](./reed.md) — shipped classpath executor that fulfills
+  workflow `:shell` gates by running their command.
 

@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-ShellGates-001`
 **Root spec:** [alpha-surface.md](../../../specs/alpha-surface.md) (`SPEC-005`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-ShellGates-001`)
-**Status:** Reviewed
+**Status:** Merged
 **Last Updated:** 2026-07-07
 
 ## DELTA-ShellGates-001.P1 Summary

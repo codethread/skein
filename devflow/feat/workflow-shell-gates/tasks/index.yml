@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: Contract docs, indexes, generated api, delta merge (PH2)
     task_file: tasks/002-contract-docs.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: Repo-live activation + full validation sweep (PH3)
