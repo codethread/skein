@@ -111,7 +111,7 @@ filter for the parent you're finishing, then burn exactly those ids.
 (def a-scratch
   [:and ephemeral/ephemeral-query [:edge/in "parent-of" [:= :id (:id task-a)]]])
 
-(def a-ids (graph/query-ids! rt a-scratch {}))
+(def a-ids (graph/query-ids rt a-scratch {}))
 ;; => ["s-a1" ...]
 
 (graph/burn-by-ids! rt a-ids)
@@ -127,7 +127,7 @@ filter for the parent you're finishing, then burn exactly those ids.
 - **`ephemeral-query` is a value, so it composes.** It is exposed as data (not
   hidden behind a fn) precisely so you can AND it with any other predicate — a
   parent filter here, an owner filter elsewhere — and hand the result to
-  `query-ids!`. The contract calls this out as the way to get finer granularity
+  `query-ids`. The contract calls this out as the way to get finer granularity
   than the workspace-wide burn (contract [§3](./ephemeral.md#3-surface)).
 - **`[:edge/in "parent-of" ...]` reads "children of this parent".** The scratch
   strands are the targets of the parent's `parent-of` edges, so an edge-*in*
@@ -137,7 +137,7 @@ filter for the parent you're finishing, then burn exactly those ids.
   the hood, so there is no second code path to trust.
 
 Honest source: the scoped-burn composition verified against a live weaver, built
-from `ephemeral-query` plus the `graph/query-ids!` / `graph/burn-by-ids!` helpers
+from `ephemeral-query` plus the `graph/query-ids` / `graph/burn-by-ids!` helpers
 the spool itself composes.
 
 ---
@@ -171,7 +171,7 @@ strand update "$task_id" --edge parent-of:"$cid"
 
 `strand burn` is id-only — it never takes a query. So from the shell you list via
 the named query and burn the ids it hands back; for a query-shaped bulk burn, drop
-into the REPL and call `graph/burn-by-ids!` on the ids `query-ids!` computes.
+into the REPL and call `graph/burn-by-ids!` on the ids `query-ids` computes.
 
 ```sh
 strand list --query ephemeral        # the active ephemeral strands

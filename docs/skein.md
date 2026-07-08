@@ -563,7 +563,7 @@ Views let you register named read-only transformations backed by weaver-loadable
 
 (defn owned-view [{:keys [params]}]
   (let [rt (current/runtime)
-        ids (graph/query-ids! rt 'owned params)]
+        ids (graph/query-ids rt 'owned params)]
     {:ids ids
      :strands (graph/strands-by-ids rt ids)}))
 

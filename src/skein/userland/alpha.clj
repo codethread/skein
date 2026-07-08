@@ -157,7 +157,7 @@
 (defn defquery!
   "Register `query-name` to `query-def` in the resolved runtime query registry."
   [query-name query-def]
-  (graph/register-query (resolve-runtime) query-name query-def))
+  (graph/register-query! (resolve-runtime) query-name query-def))
 
 (defn load-queries!
   "Merge one EDN map of named query definitions into the resolved runtime.
@@ -165,7 +165,7 @@
   Deliberately diverges from `skein.repl/load-queries!`, which takes a file
   path and reads EDN from disk: trusted in-process code owns its own I/O."
   [registry]
-  (graph/load-queries (resolve-runtime) registry))
+  (graph/load-queries! (resolve-runtime) registry))
 
 (defn queries
   "Return the resolved runtime's in-memory named query registry."

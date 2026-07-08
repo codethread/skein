@@ -435,7 +435,7 @@
                "  (spit event-marker (:title (:strand event))))\n"
                "(defn smoke-owned-view [{:keys [params]}]\n"
                "  (let [runtime (current/runtime)\n"
-               "        ids (graph/query-ids! runtime 'smoke-owned {})]\n"
+               "        ids (graph/query-ids runtime 'smoke-owned {})]\n"
                "    {:params params\n"
                "     :ids ids\n"
                "     :strands (graph/strands-by-ids runtime ids)}))\n"
@@ -472,12 +472,12 @@
             payload (edn/read-string (run-mill-config-stdin! workspace (str "(do (require '[skein.api.current.alpha :as current] "
                                                                             "'[skein.api.graph.alpha :as graph] '[skein.api.views.alpha "
                                                                             ":as views]) (let [runtime (current/runtime)] {:query-ids "
-                                                                            "(graph/query-ids! runtime 'smoke-owned {}) :view (views/view! "
+                                                                            "(graph/query-ids runtime 'smoke-owned {}) :view (views/view! "
                                                                             "runtime 'smoke-owned-view {:source \"stdin\"}) :views "
                                                                             "(views/views runtime)}))\n") "weaver" "repl" "--stdin"))]
         (assert= [strand-id] (:query-ids payload) "startup registered query is available through graph helper")
         (assert= {:source "stdin"} (get-in payload [:view :params]) "startup view receives params")
-        (assert= [strand-id] (get-in payload [:view :ids]) "startup view can call graph/query-ids!")
+        (assert= [strand-id] (get-in payload [:view :ids]) "startup view can call graph/query-ids")
         (assert= ["Startup transformed strand"] (titles (get-in payload [:view :strands])) "startup view can hydrate graph strands")
         (assert= [{:name "smoke-owned-view" :fn 'smoke.startup/smoke-owned-view}]
                  (:views payload)

@@ -32,7 +32,7 @@
   ([]
    (ephemeral-ids {}))
   ([_opts]
-   (graph/query-ids! (current/runtime) ephemeral-query {})))
+   (graph/query-ids (current/runtime) ephemeral-query {})))
 
 (defn burn-ephemeral!
   "Burn all active userland ephemeral strands."

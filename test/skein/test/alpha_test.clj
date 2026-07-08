@@ -28,7 +28,7 @@
   (t/with-weaver-world [ctx {:config-json "{}\n"
                              :spools-edn {:spools {}}
                              :init (str require-api
-                                        " (graph/register-query (current/runtime) 'from-init [:= :state \"active\"])")
+                                        " (graph/register-query! (current/runtime) 'from-init [:= :state \"active\"])")
                              :files {"modules/demo.clj" "(ns demo)\n"}}]
     (is (= "{}\n" (slurp (io/file (:config-dir ctx) "config.json"))))
     (is (= "{:spools {}}" (slurp (io/file (:config-dir ctx) "spools.edn"))))

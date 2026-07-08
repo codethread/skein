@@ -19,29 +19,19 @@
   [(query/canonical-query-name query-name)
    (query/validate-query-def! query-def)])
 
-(defn register-query
-  "Register a named query definition in the runtime query registry."
+(defn register-query!
+  "Register a named query definition and return its canonical API shape."
   [runtime query-name query-def]
   (let [entry (validated-query-entry [query-name query-def])]
     (swap! (access/query-registry runtime) conj entry)
     (into {} [entry])))
 
-(defn load-queries
+(defn load-queries!
   "Merge validated named query definitions into the runtime query registry."
   [runtime query-defs]
   (let [validated-query-defs (into {} (map validated-query-entry) query-defs)]
     (swap! (access/query-registry runtime) merge validated-query-defs)
     validated-query-defs))
-
-(defn register-query!
-  "Register a named query definition and return its canonical API shape."
-  [runtime query-name query-def]
-  (register-query runtime query-name query-def))
-
-(defn load-queries!
-  "Load multiple named query definitions and return their canonical API shape."
-  [runtime query-defs]
-  (load-queries runtime query-defs))
 
 (defn queries
   "Return registered query definitions keyed by canonical string name."
@@ -81,7 +71,7 @@
            :definition-form (pr-str query-def)
            :summary "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments.")))
 
-(defn query-ids!
+(defn query-ids
   "Return strand ids matching an ad hoc query definition or registered query name."
   [runtime query-or-name params]
   (let [query-def (if (or (vector? query-or-name) (map? query-or-name))

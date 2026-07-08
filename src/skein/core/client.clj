@@ -24,14 +24,14 @@
    :supersede 'skein.api.weaver.alpha/supersede
    :declare-acyclic-relation! 'skein.api.weaver.alpha/declare-acyclic-relation!
    :acyclic-relations 'skein.api.weaver.alpha/acyclic-relations
-   :register-query 'skein.api.graph.alpha/register-query
-   :load-queries 'skein.api.graph.alpha/load-queries
+   :register-query 'skein.api.graph.alpha/register-query!
+   :load-queries 'skein.api.graph.alpha/load-queries!
    :queries 'skein.api.graph.alpha/queries
    :query-explain 'skein.api.graph.alpha/query-explain
    :resolve-query 'skein.api.graph.alpha/resolve-query
    :list-query 'skein.api.weaver.alpha/list-query
    :ready-query 'skein.api.weaver.alpha/ready-query
-   :query-ids 'skein.api.graph.alpha/query-ids!
+   :query-ids 'skein.api.graph.alpha/query-ids
    :strands-by-ids 'skein.api.graph.alpha/strands-by-ids
    :ancestor-root-ids 'skein.api.graph.alpha/ancestor-root-ids
    :subgraph 'skein.api.graph.alpha/subgraph

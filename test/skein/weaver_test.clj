@@ -458,8 +458,8 @@
     (try
       (api/init rt-a)
       (api/init rt-b)
-      (graph/register-query rt-a 'mine [:= [:attr :owner] "a"])
-      (graph/register-query rt-b 'mine [:= [:attr :owner] "b"])
+      (graph/register-query! rt-a 'mine [:= [:attr :owner] "a"])
+      (graph/register-query! rt-b 'mine [:= [:attr :owner] "b"])
       (let [a (api/add rt-a {:title "A" :attributes {:owner "a"}})
             b (api/add rt-b {:title "B" :attributes {:owner "b"}})]
         (is (= [(:id a)] (mapv :id (api/list-query rt-a 'mine {}))))
@@ -649,7 +649,7 @@
   (with-runtime
     (fn [rt _]
       (let [workspace (get-in rt [:metadata :config-dir])]
-        (graph/register-query rt 'prior [:= [:attr :owner] "prior"])
+        (graph/register-query! rt 'prior [:= [:attr :owner] "prior"])
         (reset! delivered-events [])
         (events/register! rt :prior #{:strand/added} 'skein.weaver-test/capture-event {})
         (hooks/register! rt :prior #{:payload/received} 'skein.weaver-test/capture-hook {})
@@ -658,7 +658,7 @@
                    "         '[skein.api.graph.alpha :as graph]\n"
                    "         '[skein.api.events.alpha :as events])\n"
                    "(let [rt (current/runtime)]\n"
-                   "  (graph/register-query rt 'shared [:= [:attr :owner] \"shared\"])\n"
+                   "  (graph/register-query! rt 'shared [:= [:attr :owner] \"shared\"])\n"
                    "  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n"
                    "  (events/enqueue! rt {:event/type :strand/added :event/id \"shared-only\" "
                    ":event/at \"2026-06-29T00:00:00Z\" :event/source :test}))\n"))
@@ -1439,10 +1439,10 @@
       (let [open-query [:= :state "active"]
             owner-query {:params [:owner]
                          :where [:= [:attr :owner] [:param :owner]]}]
-        (is (= {"mine" owner-query} (graph/register-query rt 'mine owner-query)))
+        (is (= {"mine" owner-query} (graph/register-query! rt 'mine owner-query)))
         (is (= owner-query (graph/resolve-query rt :mine)))
         (is (= {"mine" owner-query} (graph/queries rt)))
-        (is (= {"open" open-query} (graph/load-queries rt {:open open-query})))
+        (is (= {"open" open-query} (graph/load-queries! rt {:open open-query})))
         (is (= {"mine" owner-query
                 "open" open-query}
                (graph/queries rt)))))))
@@ -1455,7 +1455,7 @@
             human (api/add rt {:title "Human" :attributes {:owner "human"}})
             owners-query {:params [:owners]
                           :where [:in [:attr :owner] [:param :owners]]}]
-        (is (= {"owners" owners-query} (graph/register-query rt 'owners owners-query)))
+        (is (= {"owners" owners-query} (graph/register-query! rt 'owners owners-query)))
         (is (= [(:id agent)] (mapv :id (api/list-query rt :owners {:owners ["agent"]}))))
         (is (= #{(:id agent) (:id human)}
                (set (map :id (api/list-query rt :owners {:owners ["agent" "human"]})))))
@@ -1475,12 +1475,12 @@
             edge-query {:params [:relation]
                         :where [:edge/out [:param :relation] [:= :state "active"]]}]
         (api/update rt (:id blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
-        (is (= {"blocked" edge-query} (graph/register-query rt 'blocked edge-query)))
+        (is (= {"blocked" edge-query} (graph/register-query! rt 'blocked edge-query)))
         (is (= [(:id blocked)] (mapv :id (api/list-query rt :blocked {:relation "depends-on"}))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"nested edge predicates"
-                              (graph/register-query rt 'bad-edge
-                                                    [:edge/out "depends-on"
-                                                     [:edge/in "depends-on" [:= :state "active"]]])))
+                              (graph/register-query! rt 'bad-edge
+                                                     [:edge/out "depends-on"
+                                                      [:edge/in "depends-on" [:= :state "active"]]])))
         (is (= {"blocked" edge-query} (graph/queries rt)))))))
 
 (deftest weaver-query-introspection-api-describes-registered-definitions
@@ -1499,12 +1499,12 @@
                                     [:and
                                      [:= [:attr :owner] [:param :owner]]
                                      [:= :state "active"]]]}]
-        (graph/load-queries rt {:open open-query
-                                :mine owner-query
-                                :declared-unused declared-unused-query
-                                :owners owners-query
-                                :literal literal-query
-                                :blocked relation-query})
+        (graph/load-queries! rt {:open open-query
+                                 :mine owner-query
+                                 :declared-unused declared-unused-query
+                                 :owners owners-query
+                                 :literal literal-query
+                                 :blocked relation-query})
         (is (= [{:name "blocked" :params [:relation :owner] :referenced-params [:relation :owner]}
                 {:name "declared-unused" :params [:owner :unused] :referenced-params [:owner]}
                 {:name "literal" :params [] :referenced-params []}
@@ -1551,10 +1551,10 @@
             feature (api/add rt {:title "Feature" :attributes {:kind "feature"}})]
         (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id agent)}
                                               {:type "parent-of" :to (:id human)}]})
-        (graph/register-query rt 'agent-owned {:params [:owner]
-                                               :where [:= [:attr :owner] [:param :owner]]})
-        (is (= [(:id agent)] (graph/query-ids! rt 'agent-owned {:owner "agent"})))
-        (is (= [(:id human)] (graph/query-ids! rt [:= [:attr :owner] "human"] {})))
+        (graph/register-query! rt 'agent-owned {:params [:owner]
+                                                :where [:= [:attr :owner] [:param :owner]]})
+        (is (= [(:id agent)] (graph/query-ids rt 'agent-owned {:owner "agent"})))
+        (is (= [(:id human)] (graph/query-ids rt [:= [:attr :owner] "human"] {})))
         (is (= [(:id human) (:id agent)]
                (mapv :id (graph/strands-by-ids rt [(:id human) (:id agent) (:id human)]))))
         (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id agent)])))
@@ -2298,20 +2298,20 @@
           (is (= "missing" (:canonical-query (ex-data e))))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (graph/register-query rt 'user/mine [:= :state "active"])))
+                            (graph/register-query! rt 'user/mine [:= :state "active"])))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (graph/load-queries rt {"mine" [:= :state "active"]})))
+                            (graph/load-queries! rt {"mine" [:= :state "active"]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (graph/load-queries rt {'user/mine [:= :state "active"]})))
+                            (graph/load-queries! rt {'user/mine [:= :state "active"]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Unknown query operator"
-                            (graph/register-query rt :broken [:unknown :state "active"])))
-      (graph/register-query rt :ok [:= :state "active"])
+                            (graph/register-query! rt :broken [:unknown :state "active"])))
+      (graph/register-query! rt :ok [:= :state "active"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Unknown query operator"
-                            (graph/load-queries rt {:bad [:unknown :state "active"]})))
+                            (graph/load-queries! rt {:bad [:unknown :state "active"]})))
       (is (= {"ok" [:= :state "active"]} (graph/queries rt))))))
 
 (deftest weaver-api-update-preserves-domain-errors-and-rolls-back
@@ -2348,7 +2348,7 @@
   (let [world (temp-world)
         init (io/file (:config-dir world) "init.clj")]
     (try
-      (spit init "(require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph]) (graph/register-query (current/runtime) 'trusted [:= :state \"active\"])")
+      (spit init "(require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph]) (graph/register-query! (current/runtime) 'trusted [:= :state \"active\"])")
       (let [rt (runtime/start! nil {:world world :publish? false})]
         (try
           (is (= {"trusted" [:= :state "active"]} (graph/queries rt)))
