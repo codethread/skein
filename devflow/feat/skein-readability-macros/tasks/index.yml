@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: Convert config.clj queries to defquery
     task_file: tasks/005-convert-config-queries.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 6
     description: Convert config.clj ops to defop
