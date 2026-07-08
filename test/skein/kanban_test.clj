@@ -1,11 +1,13 @@
 (ns skein.kanban-test
   "Tests for the kanban board spool against a disposable weaver runtime."
   (:require [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
+            [skein.spools.kanban :as kanban]
             [skein.spools.test-support :refer [with-runtime]]))
 
 (defn- spool-root []
@@ -23,6 +25,21 @@
 
 (defn- op! [rt & argv]
   (api/op! rt 'kanban argv))
+
+(deftest kanban-about-commands-match-declared-subcommands
+  (with-runtime
+    (fn [rt config-dir]
+      (install-kanban! rt config-dir)
+      (let [detail (api/resolve-op rt 'kanban)
+            manual-entries (-> (kanban/about) :commands)
+            manual-commands (set (keep :verb manual-entries))
+            declared-commands (set (keys (get-in detail [:arg-spec :subcommands])))]
+        (is (every? #(or (:verb %) (:repl %)) manual-entries)
+            "every kanban about command entry must carry :verb or documented :repl")
+        (is (empty? (set/difference manual-commands declared-commands))
+            (str "kanban about commands missing from arg-spec: " (sort (set/difference manual-commands declared-commands))))
+        (is (empty? (set/difference declared-commands manual-commands))
+            (str "kanban arg-spec subcommands missing from about: " (sort (set/difference declared-commands manual-commands))))))))
 
 (deftest kanban-add-next-claim-and-finish-round-trip
   (with-runtime

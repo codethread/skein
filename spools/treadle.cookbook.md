@@ -165,7 +165,10 @@ it.
 **Composition.** Discovery is the `stalled-gates` named query (or the
 `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear
 the gate's `treadle/run` attribute** (optionally rewriting `shuttle/prompt`). The
-next scan finds no live run for the gate and spawns a fresh delegation.
+next scan finds no live run for the gate and spawns a fresh delegation. From the
+CLI, use `strand update <gate-id> --attr treadle/run=`; an empty string is treated
+as cleared. For spawn-side errors, `--attr treadle/error=` clears the error for
+the next scan.
 
 ```clojure
 (require '[skein.api.weaver.alpha :as api]

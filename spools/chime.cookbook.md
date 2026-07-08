@@ -147,6 +147,69 @@ in [`.skein/config.clj`](../.skein/config.clj), registered together in
 
 ---
 
+## Recipe: Notify when an interactive session is waiting
+
+**Situation.** A `strand hitl` or `agent delegate --interactive` run starts a
+live multiplexer session. The attach command is available from `strand agent ps`,
+but the human should not have to poll for it. You want one notification when an
+interactive shuttle run enters `running`, with the same attach hint that `ps`
+shows.
+
+**Composition.** Keep this in userland. Shuttle exposes durable run attributes
+and the `ps` summary includes `attach`; chime only needs a normal rule that
+recognises a running interactive run. Put the rule in trusted workspace code and
+register it from startup config after chime is active.
+
+```clojure
+(ns my.rules
+  "Workspace attention rules."
+  (:require [clojure.string :as str]
+            [skein.spools.chime :as chime]
+            [skein.spools.shuttle :as shuttle]))
+
+(defn interactive-session-running
+  "Notify when an interactive shuttle session is ready for the human."
+  [{:keys [strand]}]
+  (let [attrs (:attributes strand)]
+    (when (and (= "true" (get attrs "shuttle/run"))
+               (= "interactive" (get attrs "shuttle/mode"))
+               (= "running" (get attrs "shuttle/phase")))
+      (let [summary (some #(when (= (:id %) (:id strand)) %) (shuttle/runs {:active true}))
+            attach (:attach summary)]
+        {:title (str "Interactive session ready: " (:title strand))
+         :body  (str "Run " (:id strand) " is waiting for a human."
+                     (when-let [served (:for summary)]
+                       (str "\nServes: " served))
+                     (if (str/blank? attach)
+                       "\nAttach: no backend attach hint is configured for this run."
+                       (str "\nAttach: " attach)))}))))
+
+(chime/defrule! :interactive-session-running 'my.rules/interactive-session-running)
+```
+
+**Why this shape.**
+
+- **Shuttle stays decoupled from chime.** The rule lives in workspace code.
+  Shuttle does not learn what notification engine a user has, and chime does not
+  gain shuttle-specific branching.
+- **The match is durable.** `shuttle/mode=interactive` and
+  `shuttle/phase=running` are run attributes, so the rule still explains itself
+  after a restart. Chime's per-`[rule strand]` dedup means a long-running session
+  notifies once while it remains running.
+- **The attach text comes from the same surface humans already use.**
+  `shuttle/runs` is the Clojure side of `strand agent ps`; it performs the
+  interactive liveness check and renders the backend's display-only `:attach`
+  argv over the stored handle. If a backend has no attach template yet, the rule
+  says no attach hint is configured instead of inventing a command.
+
+Honest source: shuttle's `run-summary` / `runs` implementation in
+[`spools/shuttle/src/skein/spools/shuttle.clj`](shuttle/src/skein/spools/shuttle.clj)
+renders `:attach` from the backend's display-only `:attach` op, and
+[`spools/agents/README.md`](agents/README.md) documents that `strand agent ps`
+carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+
+---
+
 ## Recipe: Notify about a different strand than the one that changed
 
 **Situation.** The strand worth telling a human about is not the one that

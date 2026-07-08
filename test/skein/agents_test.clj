@@ -2,6 +2,7 @@
   "Tests for the agents coordination spool layered over shuttle."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
+            [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -34,7 +35,16 @@
         (is (not (contains? detail :raw-envelope)))
         (is (= ["about" "await" "backends" "council" "delegate" "harnesses" "kill" "logs" "note" "notes" "ps" "retry" "review" "rosters" "spawn" "status"]
                (sort (keys (get-in detail [:arg-spec :subcommands])))))
-        (let [review-flags (get-in detail [:arg-spec :subcommands "review" :flags])]
+        (let [review-flags (get-in detail [:arg-spec :subcommands "review" :flags])
+              manual-entries (->> agents/about-doc :verbs vals)
+              manual-verbs (set (map :verb manual-entries))
+              declared-verbs (set (keys (get-in detail [:arg-spec :subcommands])))]
+          (is (every? string? manual-verbs)
+              "every agent about-doc verb entry must carry a string :verb")
+          (is (empty? (set/difference manual-verbs declared-verbs))
+              (str "about-doc verbs missing from arg-spec: " (sort (set/difference manual-verbs declared-verbs))))
+          (is (empty? (set/difference declared-verbs manual-verbs))
+              (str "arg-spec subcommands missing from about-doc: " (sort (set/difference declared-verbs manual-verbs))))
           (is (contains? review-flags :commit-range))
           (is (contains? review-flags :changed-files)))))))
 
@@ -618,7 +628,24 @@
                                                          :brief "b" :continuity :resume}]
                                                 :turns {:rounds 2}
                                                 :blackboard :fresh}
-                                               {}))))))))
+                                               {}))))
+        (testing "invalid panel options are validated and include the failing value"
+          (let [bad {:target 1}
+                ex (try
+                     (agents/panel! {:seats [{:name "a" :harness :sh :brief "b" :continuity :fresh}]
+                                     :blackboard :target}
+                                    bad)
+                     (catch clojure.lang.ExceptionInfo e
+                       e))]
+            (is (instance? clojure.lang.ExceptionInfo ex))
+            (is (= bad (:value (ex-data ex)))
+                "panel options fail with invalid value")
+            (is (str/includes? (ex-message ex) "panel! options"))))
+        (testing "unknown panel options fail loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/panel! {:seats [{:name "a" :harness :sh :brief "b"}]
+                                                :blackboard :fresh}
+                                               {:tarhet "x"}))))))))
 
 (deftest panel-specs-blackboard-directive-is-tightly-specd
   ;; the compiled seam is a consumer contract, so a malformed blackboard
@@ -698,14 +725,28 @@
         (testing "council fails loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
                                 (agents/council! "  " {:harness :sh})))
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not conform"
                                 (agents/council! "t" {:harness :sh :rounds 0})))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires a harness"
                                 (agents/council! "t" {:members 2}))
               "the silent :claude default is gone: no harness resolves loudly")
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not both"
                                 (agents/council! "t" {:harness :sh :members 2
-                                                      :seats [{:name "a" :harness :sh}]}))))))))
+                                                      :seats [{:name "a" :harness :sh}]})))
+          (let [bad {:harness 1 :rounds 2}
+                ex (try
+                     (agents/council! "t" bad)
+                     (catch clojure.lang.ExceptionInfo e
+                       e))]
+            (is (instance? clojure.lang.ExceptionInfo ex))
+            (is (= bad (:value (ex-data ex)))
+                "council invalid input carries the failing value")
+            (is (str/includes? (ex-message ex) "council! options")))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/council! "t" {:harness :sh :membres 2})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+                                (agents/council! "t" {:harness :sh
+                                                      :seats [{:name "a" :harnes :sh}]}))))))))
 
 (deftest delegate-fails-loudly-for-contract-violations
   (with-agents
@@ -1052,7 +1093,13 @@
 ;; Interactive delegation
 
 (def ^:private fake-mux
-  {:start ["sh" "-c" "nohup \"$1\" >/dev/null 2>&1 & printf '{\"pid\":\"%s\"}' \"$!\"" "fake-mux" :command]
+  ;; The detached session runs the launcher command and then sleeps, staying
+  ;; alive until :stop kills it — a real multiplexer session (tmux holding a
+  ;; live TUI) outlives the command that opened it and ends only when reaped.
+  ;; A session that exited the instant its command finished would let the
+  ;; liveness probe in ps/supervise fail the run "dead" before the test closes
+  ;; its served strand, a race that only surfaces under slow-runner load.
+  {:start ["sh" "-c" "nohup sh -c '\"$0\" >/dev/null 2>&1; exec sleep 600' \"$1\" >/dev/null 2>&1 & printf '{\"pid\":\"%s\"}' \"$!\"" "fake-mux" :command]
    :alive ["kill" "-0" :handle/pid]
    :stop ["kill" :handle/pid]
    :attach ["echo" "attach" :handle/pid]

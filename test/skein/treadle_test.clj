@@ -64,9 +64,15 @@
       (let [[first-step] (workflow/next-steps "happy")]
         (workflow/complete! "happy" {:step (:id first-step)}))
       (let [gate-id (:id (ready-subagent-gate "happy"))
+            ;; Wait for the terminal treadle signal, not just run close: delivery
+            ;; (gate outcome, notes, the :treadle/delivered stamp, unblocking the
+            ;; next step) runs asynchronously after the run's state flips to
+            ;; closed, so keying on close alone races that propagation. Accept any
+            ;; delivered value here — the assertion below reports a wrong terminal
+            ;; state (e.g. "gate-closed", "error: ...") instead of timing out.
             run (await-eventually #(some-> (run-for-gate rt gate-id)
-                                           ((fn [r] (when (= "closed" (:state (api/show rt (:id r))))
-                                                      (api/show rt (:id r)))))))
+                                           ((fn [r] (let [s (api/show rt (:id r))]
+                                                      (when (some? (attr s :treadle/delivered)) s))))))
             gate (api/show rt (attr run :treadle/gate))
             after (first (workflow/next-steps "happy"))]
         (is (= "true" (attr (api/show rt (:id run)) :treadle/delivered)))
@@ -130,7 +136,7 @@
         (is (= "active" (:state failed)))
         (is (= gate-id (attr failed :treadle/gate)))
         (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/next-steps "retry")))))
-        (api/update rt gate-id {:attributes {"treadle/run" nil
+        (api/update rt gate-id {:attributes {"treadle/run" ""
                                              "shuttle/prompt" "echo recovered"}})
         (let [fresh (await-eventually #(some (fn [r]
                                                (when (not= (:id failed) (:id r)) r))
@@ -171,7 +177,7 @@
         (is (= "failed" (:phase (treadle/gate-stalled? (ready-subagent-gate "blank")))))
         (is (some #(= gate-id (:id %)) (api/list-query rt 'stalled-gates {})))
         ;; (d) recover by clearing the gate's run stamp: the treadle respawns a fresh run
-        (api/update rt gate-id {:attributes {"treadle/run" nil
+        (api/update rt gate-id {:attributes {"treadle/run" ""
                                              "shuttle/prompt" "echo recovered"}})
         (let [fresh (await-eventually #(some (fn [r] (when (not= (:id failed) (:id r)) r))
                                              (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))

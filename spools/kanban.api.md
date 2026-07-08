@@ -48,7 +48,7 @@ User-facing kanban board over Skein strands.
 Function.
 
 Return the kanban convention and installed helper surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L616-L667">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L616-L668">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/add!">`add!`</a>
 ``` clojure
@@ -126,7 +126,7 @@ Close a kanban card with an explicit outcome status.
 Function.
 
 Install the kanban op, batch pattern, and board queries into the active weaver.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L813-L833">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L814-L834">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/kanban-batch">`kanban-batch`</a>
 ``` clojure
@@ -150,7 +150,7 @@ Create pending feature cards with bodies and depends-on edges.
 Function.
 
 Dispatch parsed `strand kanban ...` subcommands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L796-L811">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L797-L812">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/next-card">`next-card`</a>
 ``` clojure
@@ -190,7 +190,7 @@ Return the full agent-priming payload for working the kanban board.
   attribute, command, and pattern surface and adds the working agreement,
   pick-up flow, notes/handover discipline, adjacent-work awareness, and branch
   visibility that an agent needs before touching the board.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L669-L739">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L670-L740">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/print-board!">`print-board!`</a>
 ``` clojure

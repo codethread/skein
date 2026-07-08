@@ -42,7 +42,7 @@ Return durable stall detail for a ready subagent gate view, or nil.
   a gate whose run was retired by `agent retry` (which supersedes the run without
   re-linking the fresh one) stays discoverable rather than silently pending until
   a coordinator clears the stamp. No wall-clock hang policy is applied.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L231-L247">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L231-L248">Source</a></sub></p>
 
 ## <a name="skein.spools.treadle/install!">`install!`</a>
 ``` clojure
@@ -54,7 +54,7 @@ Install the treadle event handler and perform an initial scan.
 
   Fails loudly unless `skein.spools.shuttle/install!` has already registered
   the shuttle engine in this weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L249-L284">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L250-L286">Source</a></sub></p>
 
 ## <a name="skein.spools.treadle/on-event">`on-event`</a>
 ``` clojure

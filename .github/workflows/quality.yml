@@ -7,6 +7,93 @@ on:
   workflow_dispatch:
 
 jobs:
+  clojure-test:
+    name: Clojure test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clojure-${{ runner.os }}-
+      # Hosted runners have ~2 cores, so the suite's fixed cross-thread poll
+      # deadlines run under far more fork/CPU pressure than a dev machine.
+      # Widen every await budget through the single test-support knob instead
+      # of editing call sites; a solo local run leaves it unset (scale 1.0).
+      - run: clojure -M:test
+        env:
+          SKEIN_TEST_AWAIT_SCALE: '3'
+
+  cli-go-test:
+    name: CLI Go tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: go-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            go-clojure-${{ runner.os }}-
+      - run: go test ./...
+        working-directory: cli
+
+  smoke-test:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: smoke-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            smoke-clojure-${{ runner.os }}-
+      - run: clojure -M:smoke
+
   format-check:
     name: Format check
     runs-on: ubuntu-latest
