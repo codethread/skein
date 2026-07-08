@@ -1,6 +1,6 @@
 tasks:
   - id: 1
-    description: Wire macros spool onto test and reflect-check classpath
+    description: Wire macros spool onto test classpath
     task_file: tasks/001-wire-macros-spool-classpath.md
     status: complete
     blocked_by: []

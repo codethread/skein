@@ -65,10 +65,11 @@ feature extends that proven shape to the config concerns that actually drift.
   `register-chime-rules!`. Beyond those two config files, the new spool namespaces under `.skein/spools/macros` (S1),
   and an `init.clj` require/activation touch for the `:macros/*` module if loading needs it, no `.skein` file changes.
 - **PROP-SkeinReadabilityMacros-001.S3 (accepted RFC resolutions, carried into scope):** `defop` accepts either a named
-  arg-spec var or an inline arg-spec map, mirroring `defpattern`'s `:spec`/`:input` (RFC-020.Q1). `install-ops!` /
-  `install-queries!` derive the mechanical `:ops`/`:queries` name listings in `devflow-conventions` from the remembered
-  entries, removing the fourth name repetition, while the hand-authored conventions prose stays authored (RFC-020.Q2).
-  Remembering is per-namespace, matching the `defpattern` precedent (RFC-020.Q3).
+  arg-spec var or an inline arg-spec map, mirroring `defpattern`'s `:spec`/`:input` (RFC-020.Q1). `install-queries!`
+  derives the mechanical `:queries` name listing in `devflow-conventions` from the remembered entries, removing that name
+  repetition, while `:ops` stays hand-authored for editorial grouping (the recorded RFC-020.Q2 fallback; see
+  PLAN-Srm-001.DN1) and the hand-authored conventions prose stays authored (RFC-020.Q2). Remembering is per-namespace,
+  matching the `defpattern` precedent (RFC-020.Q3).
 - **PROP-SkeinReadabilityMacros-001.S4 (acceptance criteria):** The feature is done when the registered runtime surface
   is provably unchanged. Three gates, all green:
   - **Surface diff.** `strand devflow-conventions` output is byte-identical before and after, together with `strand help`,

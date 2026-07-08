@@ -194,9 +194,11 @@ Each `install!` calls `install-queries!`/`install-ops!`/`install-rules!` for its
 - **RFC-020.OUT1:** Accepted 2026-07-08 on the devflow run `skein-readability-macros` (coordinator, delegated
   authority). O2 with REC1-REC4 lands as the feature; O5 promotion and land's `defworkflow` fusion remain deferred
   follow-ups. Three open questions resolved at acceptance: **Q1** — `defop` accepts both a named arg-spec var and an
-  inline arg-spec map, mirroring `defpattern`'s `:spec`/`:input`. **Q2** — `install-ops!`/`install-queries!` derive the
-  mechanical `:ops`/`:queries` name listings in `devflow-conventions` from the remembered entries, while hand-authored
-  conventions prose stays authored. **Q3** — remembering is per-namespace, matching the `defpattern` precedent. If the
+  inline arg-spec map, mirroring `defpattern`'s `:spec`/`:input`. **Q2** — `install-queries!` derives the mechanical
+  `:queries` name listing in `devflow-conventions` from the remembered entries, while `:ops` stays hand-authored for
+  editorial grouping (the recorded Q2 fallback: the config `defop` author order diverges from the listing's editorial
+  order, so a derivation cannot reproduce it without reordering; see PLAN-Srm-001.DN1) and hand-authored conventions
+  prose stays authored. **Q3** — remembering is per-namespace, matching the `defpattern` precedent. If the
   macro indirection is later judged too costly against TEN-001, O4 is the recorded data-first fallback that still removes
   the registration boilerplate without macroexpansion opacity. Feature proposal:
   [PROP-SkeinReadabilityMacros-001](../feat/skein-readability-macros/proposal.md).
