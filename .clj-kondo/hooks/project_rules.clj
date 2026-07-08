@@ -71,3 +71,17 @@
         used (api/list-node (list (api/token-node 'do) opts-node query-node))
         def-node (api/list-node (list (api/token-node 'def) name-node docstring-node used))]
     {:node (with-meta def-node (meta node))}))
+
+(defn defop
+  "Analyze `defop` as a defn of the `<name>-op` handler var so kondo resolves the
+  handler, its args, and body.
+
+  Rewrites `(defop name docstring opts argv & body)` into a
+  `(defn <name>-op docstring argv body...)` wrapped in a `do` that also evaluates
+  opts so its symbols are still checked, mirroring the macro's real expansion."
+  [{:keys [node]}]
+  (let [[_ name-node docstring-node opts-node argv-node & body] (:children node)
+        handler-node (api/token-node (symbol (str (api/sexpr name-node) "-op")))
+        defn-node (api/list-node (list* (api/token-node 'defn) handler-node docstring-node argv-node body))
+        used (api/list-node (list (api/token-node 'do) opts-node defn-node))]
+    {:node (with-meta used (meta node))}))
