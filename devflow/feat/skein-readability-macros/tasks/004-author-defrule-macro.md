@@ -25,7 +25,8 @@ remember-then-install shape. Do not convert `attention.clj` — that is task 8.
   `register-chime-rules!` result (a vector of the `defrule!` returns) so `attention/install!` keeps its `:chime-rules` return.
   Preserve today's registration order.
 - **TASK-Srm-004.MI4:** Fail loudly at macroexpansion on a non-symbol name or a missing/non-string docstring, throwing an
-  `ex-info` naming the rule. Follow the `defpattern` guard style.
+  `ex-info` naming the rule. Follow the `defpattern` guard style. Duplicate-name contract (PLAN-Srm-001.V4): re-evaluating the
+  same `defrule` replaces the remembered entry (reload-friendly); duplicates are not a macroexpansion error.
 - **TASK-Srm-004.MI5:** Unit tests in `test/skein/macros/rules_test.clj`: a `defrule` block defines the `<name>-rule` var and
   remembers the entry with the right keyword and fully-qualified symbol; `install-rules!` calls `chime/defrule!` for each
   remembered rule (assert against an isolated `:publish? false` runtime with chime installed, or a stubbed `defrule!` seam);

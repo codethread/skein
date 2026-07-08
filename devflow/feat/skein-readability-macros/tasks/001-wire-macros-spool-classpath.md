@@ -1,4 +1,4 @@
-# Task 1: Wire macros spool onto test and reflect-check classpath
+# Task 1: Wire macros spool onto the test classpath
 
 **Document ID:** `TASK-Srm-001`
 
@@ -8,14 +8,15 @@ Type: AFK
 
 Prepare the load paths so later slices can `require` the new `skein.macros.{queries,ops,rules}` namespaces from `.skein/config.clj`
 and `.skein/attention.clj` on every path that loads those files. The live weaver already has the `skein.macros/macros` spool on
-its classpath through the `:macros/patterns` init module, but `config_test` and `reflect-check` load the config files in-process
-off `deps.edn`, and the spool's `src` is not on those classpaths. This slice adds the path and orders the init modules; it makes
+its classpath through the `:macros/patterns` init module, but `test/skein/config_test.clj` loads the config files in-process
+off `deps.edn`, and the spool's `src` is not on the `:test` classpath (`reflect-check` compiles only `src` plus shipped spool
+roots and needs no change). This slice adds the path and orders the init modules; it makes
 no behavioural change and adds no macro yet.
 
 ## TASK-Srm-001.P2 Must implement exactly
 
-- **TASK-Srm-001.MI1:** In `deps.edn`, add `.skein/spools/macros/src` to the `:test` alias `:extra-paths` and the `:reflect-check`
-  alias `:extra-paths`, alongside the existing `spools/*/src` entries.
+- **TASK-Srm-001.MI1:** In `deps.edn`, add `.skein/spools/macros/src` to the `:test` alias `:extra-paths`, alongside the
+  existing `spools/*/src` entries. Do not touch the `:reflect-check` alias — it compiles only `src` plus shipped spool roots.
 - **TASK-Srm-001.MI2:** In `.skein/init.clj`, add `:after [:macros/patterns]` to the `:config` `use!` block and the `:attention`
   `use!` block, extending their existing `:after` vectors (do not replace the existing dependencies). Do not change any other
   part of `init.clj` — no new `use!` block, no reordering of existing modules, no edit to the ordering comments.
@@ -37,4 +38,4 @@ no behavioural change and adds no macro yet.
 ## TASK-Srm-001.P5 References
 
 - **TASK-Srm-001.REF1:** [PLAN-Srm-001.PH1](../skein-readability-macros.plan.md), PLAN-Srm-001.A2.
-- **TASK-Srm-001.REF2:** `deps.edn` `:test`/`:reflect-check` aliases; `.skein/init.clj` `:config`/`:attention` modules.
+- **TASK-Srm-001.REF2:** `deps.edn` `:test` alias; `.skein/init.clj` `:config`/`:attention` modules.

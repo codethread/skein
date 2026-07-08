@@ -27,10 +27,10 @@ plan owns the build strategy, the load/classpath wiring the refactor needs, and 
   byte-identical. `harnesses.clj`, `reviewers.clj`, and `nvd_scan.clj` are untouched (RFC-020.REC1).
 - **PLAN-Srm-001.A2:** Wire the macros onto every load path before any file requires them. The macros live under
   `.skein/spools/macros/src` in the already-pinned `skein.macros/macros` spool, so the live weaver already has them on its
-  classpath through the `:macros/patterns` init module. But `config_test` and `reflect-check` load `.skein/config.clj` and
-  `.skein/attention.clj` in-process off `deps.edn`, so `.skein/spools/macros/src` must join the `:test` and `:reflect-check`
-  extra-paths, and the `:config`/`:attention` init modules gain `:after [:macros/patterns]` so the spool resolves before those
-  files load. No new `install!` module and no change to `init.clj`'s `use!` activation model or ordering comments (RFC-020.NG1).
+  classpath through the `:macros/patterns` init module. But `test/skein/config_test.clj` loads `.skein/config.clj` and
+  `.skein/attention.clj` in-process off `deps.edn`, so `.skein/spools/macros/src` must join the `:test` extra-paths
+  (`reflect-check` compiles only `src` plus shipped spool roots and needs no change), and the `:config`/`:attention` init
+  modules gain `:after [:macros/patterns]` so the spool resolves before those files load. No new `install!` module and no change to `init.clj`'s `use!` activation model or ordering comments (RFC-020.NG1).
 - **PLAN-Srm-001.A3:** Hold identity invariants. Registered query/op/rule names stay identical, handler symbols stay
   `config/<name>-op` and `attention/<name>-rule`, and each macro derives its var name so existing intra-file references still
   resolve — the one to watch is `work-query`, which `branches-op` reads directly. `defop` accepts either a named arg-spec var or
@@ -52,7 +52,7 @@ plan owns the build strategy, the load/classpath wiring the refactor needs, and 
 | PLAN-Srm-001.AA4 | `.skein/config.clj` | Queries and ops as `defquery`/`defop` blocks; `register-query-map!`, op vector, `op-metadata` deleted; conventions listings derived |
 | PLAN-Srm-001.AA5 | `.skein/attention.clj` | Rules authored as `defrule` blocks; `register-chime-rules!` deleted; `install!` calls `install-rules!` |
 | PLAN-Srm-001.AA6 | `.skein/init.clj` | `:config`/`:attention` modules gain `:after [:macros/patterns]`; activation model otherwise unchanged |
-| PLAN-Srm-001.AA7 | `deps.edn` | `.skein/spools/macros/src` added to the `:test` and `:reflect-check` extra-paths |
+| PLAN-Srm-001.AA7 | `deps.edn` | `.skein/spools/macros/src` added to the `:test` extra-paths |
 | PLAN-Srm-001.AA8 | `test/skein/macros/*_test.clj` (new) | Unit tests for the three macros' expansion, remembering, and fail-loud behavior |
 
 ## PLAN-Srm-001.P4 Contract and migration impact
@@ -68,7 +68,7 @@ plan owns the build strategy, the load/classpath wiring the refactor needs, and 
 
 ### PLAN-Srm-001.PH1 Classpath and load wiring
 
-Outcome: `.skein/spools/macros/src` is on the `:test` and `:reflect-check` classpaths and the `:config`/`:attention` init
+Outcome: `.skein/spools/macros/src` is on the `:test` classpath and the `:config`/`:attention` init
 modules order after `:macros/patterns`. `clojure -M:test` and `make reflect-check` stay green with no behavioural change.
 
 ### PLAN-Srm-001.PH2 The three grouping macros
@@ -103,8 +103,10 @@ rule firing, and `devflow-conventions` are byte-identical between the status-quo
   every op, `agent harnesses`, `agent rosters`, `pattern list`, `devflow-conventions`, each named query's rows, and a chime rule
   firing, then asserting byte-identical output against the status-quo config. The canonical world is never touched.
 - **PLAN-Srm-001.V3:** `clojure -M:smoke` on the branch, and `make fmt-check lint reflect-check docs-check` held at zero findings.
-- **PLAN-Srm-001.V4:** Fail-loud checks on each macro: a missing docstring, a missing arg-spec/handler body, or a duplicate
-  construct name throws at macroexpansion naming the construct, not deep inside `install-*!`.
+- **PLAN-Srm-001.V4:** Fail-loud checks on each macro: a missing docstring or a missing arg-spec/handler body throws at
+  macroexpansion naming the construct. Re-defining the same name replaces the remembered entry (reload-friendly, matching
+  `defpattern`); a genuine collision between distinct constructs fails loudly at install/register time with the construct
+  name in the error.
 
 ## PLAN-Srm-001.P7 Risks and open questions
 

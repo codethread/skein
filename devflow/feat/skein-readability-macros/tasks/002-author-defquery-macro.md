@@ -45,6 +45,8 @@ config file — that is task 5.
   including the new tests.
 - **TASK-Srm-002.DW2:** The macro expands to a real, greppable `def` and a `remember-query!` call; no query registration happens
   at macroexpansion time (registration is deferred to `install-queries!`).
+- **TASK-Srm-002.DW2a:** Duplicate-name contract (PLAN-Srm-001.V4): re-evaluating the same `defquery` replaces the remembered
+  entry (reload-friendly, matching `defpattern`); duplicates are not a macroexpansion error.
 - **TASK-Srm-002.DW3:** One atomic commit; nothing pushed; no generated artifacts in `git status --short`.
 
 ## TASK-Srm-002.P4 Out of scope
