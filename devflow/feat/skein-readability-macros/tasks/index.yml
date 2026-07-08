@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: Wire macros spool onto test and reflect-check classpath
     task_file: tasks/001-wire-macros-spool-classpath.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: Author skein.macros.queries defquery
