@@ -85,3 +85,16 @@
         defn-node (api/list-node (list* (api/token-node 'defn) handler-node docstring-node argv-node body))
         used (api/list-node (list (api/token-node 'do) opts-node defn-node))]
     {:node (with-meta used (meta node))}))
+
+(defn defrule
+  "Analyze `defrule` as a defn of the `<name>-rule` handler var so kondo resolves
+  the handler, its args, and body.
+
+  Rewrites `(defrule name docstring argv & body)` into a
+  `(defn <name>-rule docstring argv body...)`, mirroring the macro's real
+  expansion."
+  [{:keys [node]}]
+  (let [[_ name-node docstring-node argv-node & body] (:children node)
+        handler-node (api/token-node (symbol (str (api/sexpr name-node) "-rule")))
+        defn-node (api/list-node (list* (api/token-node 'defn) handler-node docstring-node argv-node body))]
+    {:node (with-meta defn-node (meta node))}))
