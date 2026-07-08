@@ -42,5 +42,5 @@ tasks:
   - id: 9
     description: Byte-identical surface verification
     task_file: tasks/009-verify-byte-identical-surface.md
-    status: pending
+    status: complete
     blocked_by: [7, 8]
