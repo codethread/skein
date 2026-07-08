@@ -120,7 +120,9 @@
         ;; basis so the shard resolves coordinates exactly like a real weaver;
         ;; a launch path without one cannot run the shards correctly, so refuse it.
         basis (or (System/getProperty "clojure.basis")
-                  (throw (ex-info "clojure.basis system property is missing: shard subprocesses need the parent's deps basis for runtime add-libs; launch the suite via the clojure CLI (clojure -M:test)"
+                  (throw (ex-info (str "clojure.basis system property is missing: shard subprocesses need the "
+                                       "parent's deps basis for runtime add-libs; launch the suite via the "
+                                       "clojure CLI (clojure -M:test)")
                                   {:property "clojure.basis"})))]
     [java-bin "--enable-native-access=ALL-UNNAMED"
      (str "-Dclojure.basis=" basis)

@@ -648,7 +648,14 @@
         (api/register-event-handler! rt :prior #{:strand/added} 'skein.weaver-test/capture-event {})
         (api/register-hook! rt :prior #{:payload/received} 'skein.weaver-test/capture-hook {})
         (spit (io/file workspace "init.clj")
-              "(require '[skein.api.current.alpha :as current]\n         '[skein.api.weaver.alpha :as api]\n         '[skein.api.events.alpha :as events])\n(let [rt (current/runtime)]\n  (api/register-query rt 'shared [:= [:attr :owner] \"shared\"])\n  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n  (api/enqueue-event! rt {:event/type :strand/added :event/id \"shared-only\" :event/at \"2026-06-29T00:00:00Z\" :event/source :test}))\n")
+              (str "(require '[skein.api.current.alpha :as current]\n"
+                   "         '[skein.api.weaver.alpha :as api]\n"
+                   "         '[skein.api.events.alpha :as events])\n"
+                   "(let [rt (current/runtime)]\n"
+                   "  (api/register-query rt 'shared [:= [:attr :owner] \"shared\"])\n"
+                   "  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n"
+                   "  (api/enqueue-event! rt {:event/type :strand/added :event/id \"shared-only\" "
+                   ":event/at \"2026-06-29T00:00:00Z\" :event/source :test}))\n"))
         (spit (io/file workspace "init.local.clj")
               "(throw (ex-info \"local boom\" {:source :local}))\n")
         (try
@@ -680,9 +687,19 @@
         (Thread/sleep 250)
         (is (seq (api/recent-event-failures rt)))
         (spit (io/file workspace "init.clj")
-              "(require '[skein.api.current.alpha :as current]\n         '[skein.api.events.alpha :as events]\n         '[skein.api.hooks.alpha :as hooks])\n(let [rt (current/runtime)]\n  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n  (hooks/register! rt :shared #{:payload/received} 'skein.weaver-test/capture-hook))\n")
+              (str "(require '[skein.api.current.alpha :as current]\n"
+                   "         '[skein.api.events.alpha :as events]\n"
+                   "         '[skein.api.hooks.alpha :as hooks])\n"
+                   "(let [rt (current/runtime)]\n"
+                   "  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n"
+                   "  (hooks/register! rt :shared #{:payload/received} 'skein.weaver-test/capture-hook))\n"))
         (spit (io/file workspace "init.local.clj")
-              "(require '[skein.api.current.alpha :as current]\n         '[skein.api.events.alpha :as events]\n         '[skein.api.hooks.alpha :as hooks])\n(let [rt (current/runtime)]\n  (events/register! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)\n  (hooks/register! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))\n")
+              (str "(require '[skein.api.current.alpha :as current]\n"
+                   "         '[skein.api.events.alpha :as events]\n"
+                   "         '[skein.api.hooks.alpha :as hooks])\n"
+                   "(let [rt (current/runtime)]\n"
+                   "  (events/register! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)\n"
+                   "  (hooks/register! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))\n"))
         (api/reload-config! rt)
         (is (= #{:shared :local} (set (mapv :key (api/event-handlers rt)))))
         (is (= #{:shared :local} (set (mapv :key (api/hooks rt)))))
@@ -956,7 +973,10 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"queue is full"
                             (api/enqueue-event! rt (test-event :x "full"))))
       (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
-        (spit init "(require '[skein.api.current.alpha :as current]\n         '[skein.api.events.alpha :as events])\n(let [rt (current/runtime)]\n  (events/register! rt :after-reload #{:x} 'skein.weaver-test/capture-event))\n")
+        (spit init (str "(require '[skein.api.current.alpha :as current]\n"
+                        "         '[skein.api.events.alpha :as events])\n"
+                        "(let [rt (current/runtime)]\n"
+                        "  (events/register! rt :after-reload #{:x} 'skein.weaver-test/capture-event))\n"))
         (api/reload-config! rt)
         (deliver @handler-release true)
         (is (= [:after-reload] (mapv :key (api/event-handlers rt))))
@@ -1193,7 +1213,10 @@
     (fn [rt _]
       (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
         (api/register-hook! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (spit init "(require '[skein.api.current.alpha :as current]\n         '[skein.api.hooks.alpha :as hooks])\n(let [rt (current/runtime)]\n  (hooks/register! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))\n")
+        (spit init (str "(require '[skein.api.current.alpha :as current]\n"
+                        "         '[skein.api.hooks.alpha :as hooks])\n"
+                        "(let [rt (current/runtime)]\n"
+                        "  (hooks/register! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))\n"))
         (api/reload-config! rt)
         (is (= [{:key :fresh
                  :types #{:payload/received}
@@ -1491,7 +1514,8 @@
                 :definition owner-query
                 :where-form (pr-str (:where owner-query))
                 :definition-form (pr-str owner-query)
-                :summary "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments."}
+                :summary (str "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` "
+                              "and pass runtime values with repeated `--param key=value` arguments.")}
                (api/query-explain rt :mine)))
 
         (try

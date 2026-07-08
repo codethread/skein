@@ -12,7 +12,8 @@
   cross-vendor validation so no model family signs off its own work, and the
   refactor/complex-patch flow inverts the docs routing — codex GPT seats
   author diff-shaped changes, Claude reviews them."
-  (:require [skein.spools.agents :as agents]
+  (:require [skein.api.format.alpha :as format-alpha]
+            [skein.spools.agents :as agents]
             [skein.spools.shuttle :as shuttle]))
 
 (defn- register-harness-aliases!
@@ -70,7 +71,10 @@
    (shuttle/defalias! :oracle
      {:alias-of :claude
       :extra-args ["--model" "claude-fable-5"]
-      :doc "Claude Fable oracle: reserved for extreme diagnosis cases only — deep forensics and design diagnosis where cheaper seats have failed or the blast radius justifies it."})
+      :doc (format-alpha/reflow
+            "|Claude Fable oracle: reserved for extreme diagnosis cases only — deep
+             |forensics and design diagnosis where cheaper seats have failed or the
+             |blast radius justifies it.")})
    ;; GPT seats for cross-vendor validation. Routing policy: build (opus) is
    ;; favoured for anything prose/docs-heavy, but never signs off its own
    ;; work — sign-off review of opus-authored output always includes a GPT
@@ -95,7 +99,10 @@
    (shuttle/defalias! :patch-gpt
      {:alias-of :codex
       :extra-args ["-m" "gpt-5.5" "-c" "model_reasoning_effort=low"]
-      :doc "GPT-5.5 low reasoning via codex exec: default implementer seat for the refactor/complex-patch flow — precise diff-based edits over existing code; escalate the hardest slices to hard-gpt."})
+      :doc (format-alpha/reflow
+            "|GPT-5.5 low reasoning via codex exec: default implementer seat for the
+             |refactor/complex-patch flow — precise diff-based edits over existing
+             |code; escalate the hardest slices to hard-gpt.")})
    ;; Cheap GPT-5.4-mini seats verified by the bench spool smoke run. Keep them
    ;; scoped to low-stakes, single-concern review/recon/validation work unless a
    ;; larger run proves they hold up on broader tasks.

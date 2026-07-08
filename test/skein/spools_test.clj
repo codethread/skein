@@ -1096,7 +1096,10 @@
       (Thread/sleep 250)
       (is (seq (api/recent-event-failures rt)))
       (spit (io/file config-dir "init.clj")
-            "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api])\n(let [rt (current/runtime)]\n  (api/register-query rt 'fresh [:= [:attr :owner] \"fresh\"])\n  (api/register-event-handler! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n")
+            (str "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api])\n"
+                 "(let [rt (current/runtime)]\n"
+                 "  (api/register-query rt 'fresh [:= [:attr :owner] \"fresh\"])\n"
+                 "  (api/register-event-handler! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n"))
       (is (= :loaded (:status (runtime-alpha/reload! rt))))
       (is (nil? (runtime-alpha/use rt :stale)))
       (is (nil? (get (api/queries rt) "stale")))

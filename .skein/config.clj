@@ -22,6 +22,7 @@
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.api.current.alpha :as current]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.weaver.alpha :as api]))
 
 ;; ---------------------------------------------------------------------------
@@ -360,7 +361,11 @@
          {:name "flow-await" :help "strand help flow-await"}
          {:name "flow-status" :help "strand help flow-status"}
          {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
-         {:name "land" :help "strand help land" :manual "strand land about" :purpose "Coordinator-only landing workflow: push+draft-PR, green CI, roster sign-off, squash-merge to local main with full verification, then green main CI. Registered by .skein/workflows.clj."}]
+         {:name "land" :help "strand help land" :manual "strand land about"
+          :purpose (format-alpha/reflow
+                    "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
+                     |sign-off, squash-merge to local main with full verification, then
+                     |green main CI. Registered by .skein/workflows.clj.")}]
    :patterns [{:name "agent-plan"
                :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.agents."}
               {:name "delegate-pipeline"

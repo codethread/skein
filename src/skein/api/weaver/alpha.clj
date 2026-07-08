@@ -7,6 +7,7 @@
             [clojure.string :as str]
             [next.jdbc :as jdbc]
             [skein.api.cli.alpha :as cli]
+            [skein.api.format.alpha :as format-alpha]
             [skein.core.db :as db]
             [skein.core.weaver.runtime :as runtime]
             [skein.core.weaver.scheduler :as scheduler]
@@ -199,7 +200,10 @@
 (defn- reject-legacy-spool-config! [runtime]
   (let [legacy-files (filter #(legacy-config-present? (spools-file runtime %)) ["libs.edn" "libs.local.edn"])]
     (when (seq legacy-files)
-      (throw (ex-info "Legacy runtime library config files are no longer supported; rename libs.edn/libs.local.edn to spools.edn/spools.local.edn and change top-level :libs to :spools"
+      (throw (ex-info (format-alpha/reflow
+                       "|Legacy runtime library config files are no longer supported; rename
+                         |libs.edn/libs.local.edn to spools.edn/spools.local.edn and change
+                         |top-level :libs to :spools")
                       {:legacy-files (vec legacy-files)
                        :config-dir (config-dir runtime)})))))
 

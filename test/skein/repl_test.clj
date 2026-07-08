@@ -230,7 +230,13 @@
   (with-runtime
     (fn [rt _]
       (let [out (java.io.StringWriter.)]
-        (binding [*in* (java.io.StringReader. "(require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime-alpha])\n(def rt (current/runtime))\n(runtime-alpha/approved rt)\n(runtime-alpha/syncs rt)\n(runtime-alpha/uses rt)\n")
+        (binding [*in* (java.io.StringReader.
+                        (str "(require '[skein.api.current.alpha :as current] "
+                             "'[skein.api.runtime.alpha :as runtime-alpha])\n"
+                             "(def rt (current/runtime))\n"
+                             "(runtime-alpha/approved rt)\n"
+                             "(runtime-alpha/syncs rt)\n"
+                             "(runtime-alpha/uses rt)\n"))
                   *out* out
                   *err* (java.io.StringWriter.)
                   *ns* (the-ns 'user)]
@@ -265,7 +271,8 @@
                              :where [:= [:attr :owner] [:param :owner]]}
                 :where-form "[:= [:attr :owner] [:param :owner]]"
                 :definition-form "{:params [:owner], :where [:= [:attr :owner] [:param :owner]]}"
-                :summary "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments."}
+                :summary (str "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` "
+                              "and pass runtime values with repeated `--param key=value` arguments.")}
                (repl/query-explain :agent-ready)))
         (try
           (repl/query-explain :missing)

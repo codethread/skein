@@ -8,6 +8,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as api]
+            [skein.spools.format :as fmt]
             [skein.spools.shuttle :as shuttle]
             [skein.spools.util :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
 
@@ -51,21 +52,88 @@
 
 (def review-contract
   "Read-only reviewer contract text used as the workspace default for `agent review`."
-  "[review contract]\n- You are a read-only reviewer: inspect the target strand, its subtree when present, notes, and repository state.\n- Do not edit files, mutate strands, close tasks, set status=implemented, commit, or spawn mutating workers.\n- Append prioritized findings as notes on the target strand with agent note.\n- Report only actionable correctness, regression, contract, and maintainability risks; say when no findings are found.")
+  (str "[review contract]\n- "
+       (str/join "\n- "
+                 (fmt/fill "
+                   |You are a read-only reviewer: inspect the target strand, its subtree
+                   |when present, notes, and repository state.
+                   |
+                   |Do not edit files, mutate strands, close tasks, set
+                   |status=implemented, commit, or spawn mutating workers.
+                   |
+                   |Append prioritized findings as notes on the target strand with agent
+                   |note.
+                   |
+                   |Report only actionable correctness, regression, contract, and
+                   |maintainability risks; say when no findings are found."))))
 
 (def worker-contract
   "Worker contract text appended to every shuttle preamble."
-  "[worker contract]\n- Read your assigned strand AND its notes first: strand show <task-id>; agent notes <task-id> — the body may be newer than your launch prompt, and a predecessor's notes may save you from repeating its mistakes.\n- Record progress as you go: strand update <task-id> --attr progress=...\n- Set --attr status=implemented only when your validation gate is green.\n- Never close your assigned strand. Never mutate sibling or parent strands. Never commit unless your contract says so.\n- Kill processes by PID only — never pkill -f/pattern kills. The shipped claude/pi harnesses now deliver the worker prompt on stdin, but other/custom harnesses may still pass it in argv (:prompt-via :arg, the default), so a pattern kill aimed at a stuck JVM can still strafe sibling agents whose prompt quotes the same text (a pkill -f \"clojure -M:test\" murdered two delegated runs on 2026-07-05). Find the pid and kill it.\n- Spawn read-only helpers freely: agent spawn --harness explore --prompt \"...\" --spawned-by <your-run-id>; then agent await <helper-run-id> — the findings are in the returned result.\n- Leave durable findings for the coordinator and successors: agent note <task-id> \"...\" --by <your-run-id>.\n- Keep delegation shallow; never spawn a second mutator inside your own file scope.")
+  (str "[worker contract]\n- "
+       (str/join "\n- "
+                 (fmt/fill "
+                   |Read your assigned strand AND its notes first: strand show <task-id>;
+                   |agent notes <task-id> — the body may be newer than your launch prompt,
+                   |and a predecessor's notes may save you from repeating its mistakes.
+                   |
+                   |Record progress as you go: strand update <task-id> --attr progress=...
+                   |
+                   |Set --attr status=implemented only when your validation gate is green.
+                   |
+                   |Never close your assigned strand. Never mutate sibling or parent
+                   |strands. Never commit unless your contract says so.
+                   |
+                   |Kill processes by PID only — never pkill -f/pattern kills. The shipped
+                   |claude/pi harnesses now deliver the worker prompt on stdin, but
+                   |other/custom harnesses may still pass it in argv (:prompt-via :arg,
+                   |the default), so a pattern kill aimed at a stuck JVM can still strafe
+                   |sibling agents whose prompt quotes the same text (a pkill -f
+                   |\"clojure -M:test\" murdered two delegated runs on 2026-07-05). Find
+                   |the pid and kill it.
+                   |
+                   |Spawn read-only helpers freely: agent spawn --harness explore --prompt
+                   |\"...\" --spawned-by <your-run-id>; then agent await <helper-run-id> —
+                   |the findings are in the returned result.
+                   |
+                   |Leave durable findings for the coordinator and successors: agent note
+                   |<task-id> \"...\" --by <your-run-id>.
+                   |
+                   |Keep delegation shallow; never spawn a second mutator inside your own
+                   |file scope."))))
 
 (def about-doc
   "Structured manual returned by `agent about`."
-  {:manual "agent — spawn and coordinate coding-agent runs over the strand graph. Every operational verb returns JSON (`about` returns this manual). All verbs are flat under `strand agent <verb>`."
+  {:manual (fmt/reflow "
+             |agent — spawn and coordinate coding-agent runs over the strand graph. Every
+             |operational verb returns JSON (`about` returns this manual). All verbs are
+             |flat under `strand agent <verb>`.")
    :concepts {:read-first true
-              :traps ["A RUN is a strand carrying shuttle/* attributes; a TASK is an ordinary work strand you delegate. Their ids look identical; each verb states which kind it takes."
-                      "Run success never closes the task it served: YOU verify, then close the task to unblock dependents. Skip the close and the plan silently stalls."
-                      "A task's FILE SCOPE is the set of files its body names as owned; every scope rule (disjoint siblings, one mutator per scope) refers to that owned set."
-                      "An INTERACTIVE run is a live multiplexer session (mode=interactive): it completes when the strand it serves closes, not when a process exits. ps shows its attach command; a session that dies early fails the run loudly."]
-              :composition "council is a preset over an internal PANEL primitive — seats × a shared blackboard × turn-as-run rows × synthesis (skein.spools.agents/panel!). review shares the same blackboard protocol and is expressible as a single-round panel (skein.spools.agents/roster->panel), but fans out through roster-review-specs so its established prompts and attrs stay frozen. There is deliberately no panel verb: compose panels from trusted Clojure or reach for them through these presets."
+              :traps (fmt/fill "
+                       |A RUN is a strand carrying shuttle/* attributes; a TASK is an ordinary
+                       |work strand you delegate. Their ids look identical; each verb states
+                       |which kind it takes.
+                       |
+                       |Run success never closes the task it served: YOU verify, then close
+                       |the task to unblock dependents. Skip the close and the plan silently
+                       |stalls.
+                       |
+                       |A task's FILE SCOPE is the set of files its body names as owned; every
+                       |scope rule (disjoint siblings, one mutator per scope) refers to that
+                       |owned set.
+                       |
+                       |An INTERACTIVE run is a live multiplexer session (mode=interactive): it
+                       |completes when the strand it serves closes, not when a process exits.
+                       |ps shows its attach command; a session that dies early fails the run
+                       |loudly.")
+              :composition (fmt/reflow "
+                             |council is a preset over an internal PANEL primitive — seats × a
+                             |shared blackboard × turn-as-run rows × synthesis
+                             |(skein.spools.agents/panel!). review shares the same blackboard
+                             |protocol and is expressible as a single-round panel
+                             |(skein.spools.agents/roster->panel), but fans out through
+                             |roster-review-specs so its established prompts and attrs stay
+                             |frozen. There is deliberately no panel verb: compose panels from
+                             |trusted Clojure or reach for them through these presets.")
               :scheduler "depends-on readiness is the only scheduler: a pending run starts the moment its blockers close."
               :run-result "A successful run closes itself with the worker's final message in shuttle/result. A failed run stays active, loud, and visible until retry or kill."
               :phase-enum ["pending" "running" "done" "failed" "exhausted" "superseded"]
@@ -81,18 +149,45 @@
                    :help-topic "strand help agent"
                    :verb "spawn"
                    :takes "No positional args; raw run creation, no task contract."
-                   :semantics ["Async; the run starts when ready."
-                               "--for attaches the run under a strand (parent-of edge). spawn is the raw helper verb: its runs are stamped non-serving (shuttle/serves=false), so a spawn --for a task is a recon/one-off helper and never gates that task's later delegation. Delegation of a task's own work is delegate's job, not spawn's."
-                               "--spawned-by is the caller's run id for helper provenance only. Helpers usually pass only --spawned-by."
-                               "--interactive launches the harness into a multiplexer session via --backend instead of exec-and-wait. With --for the run completes when that strand closes; without it, when the run strand itself is closed. --reap manual leaves the session open for the human after completion (default auto tears it down)."]
-                   :fails ["missing --harness" "missing --prompt" "unknown flag" "malformed --max-attempts" "--interactive without --backend" "--backend/--reap without --interactive"]
-                   :returns {"id" "run id" "title" "string" "state" "active|closed" "phase" "pending" "harness" "string" "mode" "optional interactive" "session" "optional session name" "attach" "optional human attach command"}}
+                   :semantics (fmt/fill "
+                                |Async; the run starts when ready.
+                                |
+                                |--for attaches the run under a strand (parent-of edge). spawn is
+                                |the raw helper verb: its runs are stamped non-serving
+                                |(shuttle/serves=false), so a spawn --for a task is a recon/one-off
+                                |helper and never gates that task's later delegation. Delegation of
+                                |a task's own work is delegate's job, not spawn's.
+                                |
+                                |--spawned-by is the caller's run id for helper provenance only.
+                                |Helpers usually pass only --spawned-by.
+                                |
+                                |--interactive launches the harness into a multiplexer session via
+                                |--backend instead of exec-and-wait. With --for the run completes
+                                |when that strand closes; without it, when the run strand itself is
+                                |closed. --reap manual leaves the session open for the human after
+                                |completion (default auto tears it down).")
+                   :fails ["missing --harness" "missing --prompt" "unknown flag"
+                           "malformed --max-attempts" "--interactive without --backend"
+                           "--backend/--reap without --interactive"]
+                   :returns {"id" "run id" "title" "string" "state" "active|closed"
+                             "phase" "pending" "harness" "string" "mode" "optional interactive"
+                             "session" "optional session name" "attach" "optional human attach command"}}
            :ps {:group "engine"
                 :help-topic "strand help agent"
                 :verb "ps"
-                :semantics ["List shuttle run summaries; --active restricts to active run strands; --for restricts to runs serving one strand."
-                            "Listing doubles as an interactive liveness check: a dead session is failed here. Interactive summaries carry mode/backend/session and the attach command to hand the human."]
-                :returns [{"id" "run id" "title" "string" "state" "string" "phase" "string" "harness" "string" "for" "optional served strand" "spawned-by" "optional parent run" "attempt" "optional integer" "result" "optional string" "error" "optional string" "mode" "optional interactive" "backend" "optional string" "session" "optional string" "attach" "optional string"}]}
+                :semantics (fmt/fill "
+                             |List shuttle run summaries; --active restricts to active run
+                             |strands; --for restricts to runs serving one strand.
+                             |
+                             |Listing doubles as an interactive liveness check: a dead session is
+                             |failed here. Interactive summaries carry mode/backend/session and
+                             |the attach command to hand the human.")
+                :returns [{"id" "run id" "title" "string" "state" "string" "phase" "string"
+                           "harness" "string" "for" "optional served strand"
+                           "spawned-by" "optional parent run" "attempt" "optional integer"
+                           "result" "optional string" "error" "optional string"
+                           "mode" "optional interactive" "backend" "optional string"
+                           "session" "optional string" "attach" "optional string"}]}
            :await {:group "engine"
                    :help-topic "strand help agent"
                    :verb "await"
@@ -104,8 +199,15 @@
            :logs {:group "engine"
                   :help-topic "strand help agent"
                   :verb "logs"
-                  :semantics ["Return captured stdout/stderr text and paths for debugging and failure forensics."
-                              "For a RUNNING interactive run, logs captures the session transcript fresh (harness :capture when configured, else backend scrollback) — a coordinator peek without attaching. Finished interactive runs return the transcript persisted at teardown; err is omitted for interactive runs."]
+                  :semantics (fmt/fill "
+                               |Return captured stdout/stderr text and paths for debugging and
+                               |failure forensics.
+                               |
+                               |For a RUNNING interactive run, logs captures the session
+                               |transcript fresh (harness :capture when configured, else backend
+                               |scrollback) — a coordinator peek without attaching. Finished
+                               |interactive runs return the transcript persisted at teardown; err
+                               |is omitted for interactive runs.")
                   :fails ["missing run id" "run has no shuttle/log" "log file missing" "malformed --tail" "interactive run with no capture op"]
                   :returns {"id" "run id" "out" {"path" "string" "text" "string"} "err" {"path" "string" "text" "string (headless only)"}}}
            :kill {:group "engine"
@@ -129,36 +231,101 @@
                       :help-topic "strand help agent"
                       :verb "delegate"
                       :takes "An active, ready task strand."
-                      :semantics ["Builds the worker prompt from the task's current title, body, and validation attribute."
-                                  "Injects the worker contract and spawns a run attached --for the task."
-                                  "Harness resolution is --harness flag > task harness attribute > loud failure; there is no default."
-                                  "cwd resolution is --cwd flag > task cwd attribute > workspace root."
-                                  "A task with any non-superseded SERVING run is not delegable: pending/running is active, failed/exhausted wants retry, done must be verified and closed. Read-only helper runs (recon spawns, reviewers, panel/council seats — stamped shuttle/serves=false) never count, so reviewing or reconning a task never blocks delegating it."
-                                  "--interactive opens a live multiplexer session for the task instead of a headless run — this is how hitl=true tasks are delegated. Backend resolution is --backend flag > task backend attribute > loud failure. The session is torn down when the task closes (the agent closes it once the human agrees the work is done)."]
-                      :fails ["task not found" "task not active" "task not ready" "missing body and --prompt" "missing harness" "hitl=true without --interactive" "missing backend with --interactive" "--backend/--reap without --interactive" "has active run" "failed/exhausted run wants retry" "successful run awaits verification"]
+                      :semantics (fmt/fill "
+                                   |Builds the worker prompt from the task's current title, body,
+                                   |and validation attribute.
+                                   |
+                                   |Injects the worker contract and spawns a run attached --for the
+                                   |task.
+                                   |
+                                   |Harness resolution is --harness flag > task harness attribute >
+                                   |loud failure; there is no default.
+                                   |
+                                   |cwd resolution is --cwd flag > task cwd attribute > workspace
+                                   |root.
+                                   |
+                                   |A task with any non-superseded SERVING run is not delegable:
+                                   |pending/running is active, failed/exhausted wants retry, done
+                                   |must be verified and closed. Read-only helper runs (recon
+                                   |spawns, reviewers, panel/council seats — stamped
+                                   |shuttle/serves=false) never count, so reviewing or reconning a
+                                   |task never blocks delegating it.
+                                   |
+                                   |--interactive opens a live multiplexer session for the task
+                                   |instead of a headless run — this is how hitl=true tasks are
+                                   |delegated. Backend resolution is --backend flag > task backend
+                                   |attribute > loud failure. The session is torn down when the
+                                   |task closes (the agent closes it once the human agrees the work
+                                   |is done).")
+                      :fails ["task not found" "task not active" "task not ready"
+                              "missing body and --prompt" "missing harness"
+                              "hitl=true without --interactive" "missing backend with --interactive"
+                              "--backend/--reap without --interactive" "has active run"
+                              "failed/exhausted run wants retry" "successful run awaits verification"]
                       :returns {"task" "task id" "run" {"id" "run id" "phase" "pending" "harness" "string" "attach" "optional string"}}}
            :delegate-ready {:group "delegation"
                             :help-topic "strand help agent"
                             :verb "delegate"
                             :takes "A plan/root strand."
-                            :semantics ["Fan out every ready, non-hitl task under the plan that has no active, failed/exhausted, or successful non-superseded SERVING run. Read-only helper runs (shuttle/serves=false) are ignored, so a reconned or reviewed task is still delegated."
-                                        "Every task is classified exactly once against pre-spawn state, so a task delegated this pass is never also reported in skipped."
-                                        "Harness comes from each task's harness attribute; mixed-harness fan-out is expected."
-                                        "Fails loudly up front, delegating nothing, if any selected ready task lacks harness."
-                                        "Idempotent: re-invoke after verifying and closing finished tasks to pick up newly unblocked work."]
+                            :semantics (fmt/fill "
+                                         |Fan out every ready, non-hitl task under the plan that has
+                                         |no active, failed/exhausted, or successful non-superseded
+                                         |SERVING run. Read-only helper runs (shuttle/serves=false)
+                                         |are ignored, so a reconned or reviewed task is still
+                                         |delegated.
+                                         |
+                                         |Every task is classified exactly once against pre-spawn
+                                         |state, so a task delegated this pass is never also
+                                         |reported in skipped.
+                                         |
+                                         |Harness comes from each task's harness attribute;
+                                         |mixed-harness fan-out is expected.
+                                         |
+                                         |Fails loudly up front, delegating nothing, if any selected
+                                         |ready task lacks harness.
+                                         |
+                                         |Idempotent: re-invoke after verifying and closing finished
+                                         |tasks to pick up newly unblocked work.")
                             :skipped-reasons ["hitl" "has-active-run" "failed-needs-retry" "already-succeeded"]
                             :fails ["positional task supplied with --ready" "selected ready tasks missing harness"]
-                            :returns {"plan" "plan id" "delegated" [{"task" "task id" "run" {"id" "run id" "phase" "pending" "harness" "string"}}] "skipped" [{"task" "task id" "reason" "hitl|has-active-run|failed-needs-retry|already-succeeded"}]}}
+                            :returns {"plan" "plan id"
+                                      "delegated" [{"task" "task id" "run" {"id" "run id" "phase" "pending" "harness" "string"}}]
+                                      "skipped" [{"task" "task id" "reason" "hitl|has-active-run|failed-needs-retry|already-succeeded"}]}}
            :retry {:group "delegation"
                    :help-topic "strand help agent"
                    :verb "retry"
-                   :semantics ["The recovery verb. Given a task id, find its failed/exhausted SERVING run (read-only helpers — recon spawns, reviewers, seats — are ignored so a failed helper never shadows the real delegation failure), close it with phase superseded, rebuild the prompt from the task's current body, and spawn fresh. Retry a failed helper by passing its run id directly."
-                               "When the contract was wrong, edit the task body first with `strand update <task-id> --attr body=:payload/<name> --payload <name>=<path>` or `--attr body=:stdin`."
-                               "Given a raw run id, supersede and respawn from the original prompt while preserving served target, spawned-by provenance, depends-on edges, cwd, and max-attempts."
-                               "A resumed run (one continuing a predecessor's session) re-resumes that same session by default. --fresh severs the linkage and respawns cold on the run's full-brief prompt, since a fresh process can never take the short continuation form."
-                               "A plain retry of a run whose failure is resume-classed (the session was lost) fails loudly instructing --fresh, never looping against a dead session."
-                               "A failed interactive run retries as a fresh session preserving mode, backend, and reap policy; there are deliberately no retry flags to change them — respawn with spawn/delegate if the backend itself was the problem."]
-                   :fails ["target not found" "nothing failed/exhausted to supersede" "multiple failed serving runs under the task (retry a specific run id)" "resume-classed failure retried without --fresh"]
+                   :semantics (fmt/fill "
+                                |The recovery verb. Given a task id, find its failed/exhausted
+                                |SERVING run (read-only helpers — recon spawns, reviewers, seats —
+                                |are ignored so a failed helper never shadows the real delegation
+                                |failure), close it with phase superseded, rebuild the prompt from
+                                |the task's current body, and spawn fresh. Retry a failed helper by
+                                |passing its run id directly.
+                                |
+                                |When the contract was wrong, edit the task body first with
+                                |`strand update <task-id> --attr body=:payload/<name> --payload
+                                |<name>=<path>` or `--attr body=:stdin`.
+                                |
+                                |Given a raw run id, supersede and respawn from the original
+                                |prompt while preserving served target, spawned-by provenance,
+                                |depends-on edges, cwd, and max-attempts.
+                                |
+                                |A resumed run (one continuing a predecessor's session)
+                                |re-resumes that same session by default. --fresh severs the
+                                |linkage and respawns cold on the run's full-brief prompt, since a
+                                |fresh process can never take the short continuation form.
+                                |
+                                |A plain retry of a run whose failure is resume-classed (the
+                                |session was lost) fails loudly instructing --fresh, never looping
+                                |against a dead session.
+                                |
+                                |A failed interactive run retries as a fresh session preserving
+                                |mode, backend, and reap policy; there are deliberately no retry
+                                |flags to change them — respawn with spawn/delegate if the backend
+                                |itself was the problem.")
+                   :fails ["target not found" "nothing failed/exhausted to supersede"
+                           "multiple failed serving runs under the task (retry a specific run id)"
+                           "resume-classed failure retried without --fresh"]
                    :returns {"superseded" "old run id" "task" "optional task id" "run" {"id" "new run id" "phase" "pending" "harness" "string"}}}
            :status {:group "delegation"
                     :help-topic "strand help agent"
@@ -188,28 +355,70 @@
            :review {:group "memory-review"
                     :help-topic "strand help agent"
                     :verb "review"
-                    :semantics ["Spawn independent read-only reviewers of the target strand and its subtree; reviewing a plan root reviews the whole feature."
-                                "Reviewer and synthesizer runs are non-serving helpers (shuttle/serves=false): they hang under the target but never gate a later delegate of it, so a target can be reviewed before or after it is delegated."
-                                "Each reviewer reads strand contracts plus repository state at --cwd. Pass the worktree where the diff lives."
-                                "Findings are appended as notes on the target. --synthesize adds a run depending on all reviewers; await it for the verdict."
-                                "--roster fans out a named declarative roster (see rosters): one run per entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so --members/--harness/--contract are rejected with it."
-                                "--commit-range names the diff surface (e.g. main..HEAD): its changed files are expanded via git at --cwd and injected into every reviewer prompt so reviewers stop re-deriving the diff. --changed-files overrides the file list explicitly (csv)."]
-                    :fails ["target not found" "no reviewers" "reviewer missing harness" "unknown roster" "--roster with --members/--harness/--contract" "commit range not expandable at --cwd"]
+                    :semantics (fmt/fill "
+                                 |Spawn independent read-only reviewers of the target strand and
+                                 |its subtree; reviewing a plan root reviews the whole feature.
+                                 |
+                                 |Reviewer and synthesizer runs are non-serving helpers
+                                 |(shuttle/serves=false): they hang under the target but never
+                                 |gate a later delegate of it, so a target can be reviewed before
+                                 |or after it is delegated.
+                                 |
+                                 |Each reviewer reads strand contracts plus repository state at
+                                 |--cwd. Pass the worktree where the diff lives.
+                                 |
+                                 |Findings are appended as notes on the target. --synthesize adds
+                                 |a run depending on all reviewers; await it for the verdict.
+                                 |
+                                 |--roster fans out a named declarative roster (see rosters): one
+                                 |run per entry with its own precise contract and scope, always
+                                 |synthesized. The roster is the one authoritative source of
+                                 |reviewer count, harnesses, and contracts, so
+                                 |--members/--harness/--contract are rejected with it.
+                                 |
+                                 |--commit-range names the diff surface (e.g. main..HEAD): its
+                                 |changed files are expanded via git at --cwd and injected into
+                                 |every reviewer prompt so reviewers stop re-deriving the diff.
+                                 |--changed-files overrides the file list explicitly (csv).")
+                    :fails ["target not found" "no reviewers" "reviewer missing harness"
+                            "unknown roster" "--roster with --members/--harness/--contract"
+                            "commit range not expandable at --cwd"]
                     :returns {"target" "target id" "reviewers" ["run ids"] "synthesizer" "optional run id"}}
            :rosters {:group "memory-review"
                      :help-topic "strand help agent"
                      :verb "rosters"
-                     :semantics ["List named reviewer rosters registered by trusted config (defroster!)."
-                                 "Each roster entry declares name, harness, a precise single-concern contract, and optional scope; review --roster <name> fans it out over a target."
-                                 "Workflow composition: skein.spools.agents/roster-review-specs (trusted Clojure) returns the same fan-out as gate-ready specs, sharing one prompt source with the verb."]
-                     :returns [{"name" "roster name" "reviewers" [{"name" "string" "harness" "string" "contract" "string" "scope" "optional string"}] "synthesizer" "optional harness override map"}]}
+                     :semantics (fmt/fill "
+                                  |List named reviewer rosters registered by trusted config
+                                  |(defroster!).
+                                  |
+                                  |Each roster entry declares name, harness, a precise
+                                  |single-concern contract, and optional scope; review --roster
+                                  |<name> fans it out over a target.
+                                  |
+                                  |Workflow composition: skein.spools.agents/roster-review-specs
+                                  |(trusted Clojure) returns the same fan-out as gate-ready specs,
+                                  |sharing one prompt source with the verb.")
+                     :returns [{"name" "roster name"
+                                "reviewers" [{"name" "string" "harness" "string" "contract" "string" "scope" "optional string"}]
+                                "synthesizer" "optional harness override map"}]}
            :council {:group "memory-review"
                      :help-topic "strand help agent"
                      :verb "council"
-                     :semantics ["Convene a fresh-blackboard panel: seats deliberate over a shared council strand across --rounds turn-as-run barrier rows, then a synthesizer weighs the whole deliberation."
-                                 "--members spawns N identical seats on --harness. Harness has no default: a council with no resolvable harness fails loudly, mirroring delegate."
-                                 "The synthesizer runs --synthesizer or the first seat's harness."
-                                 "The CLI is scalar-only. Per-seat harness/brief (the :seats vector) is trusted-Clojure / inline-panel territory (skein.spools.agents/council! or panel!), keeping rich structured data out of shell argv."]
+                     :semantics (fmt/fill "
+                                  |Convene a fresh-blackboard panel: seats deliberate over a
+                                  |shared council strand across --rounds turn-as-run barrier rows,
+                                  |then a synthesizer weighs the whole deliberation.
+                                  |
+                                  |--members spawns N identical seats on --harness. Harness has no
+                                  |default: a council with no resolvable harness fails loudly,
+                                  |mirroring delegate.
+                                  |
+                                  |The synthesizer runs --synthesizer or the first seat's harness.
+                                  |
+                                  |The CLI is scalar-only. Per-seat harness/brief (the :seats
+                                  |vector) is trusted-Clojure / inline-panel territory
+                                  |(skein.spools.agents/council! or panel!), keeping rich
+                                  |structured data out of shell argv.")
                      :fails ["blank topic" "non-positive members or rounds" "no resolvable harness" ":members combined with :seats"]
                      :returns {"council" "shared council strand id" "turns" [["run ids per round"]] "synthesizer" "run id"}}}
    :plan-creation {:help-topic "strand pattern explain agent-plan"
@@ -224,7 +433,10 @@
                       {:step 2 :action "Weave an agent-plan; every task body is a complete contract and each delegated task has a harness."}
                       {:step 3 :action "agent delegate --ready <plan-id>; read skipped as well as delegated."}
                       {:step 4 :action "agent await --under <plan-id>, or await the returned run ids."}
-                      {:step 5 :action "Verify status=implemented tasks yourself, re-run validation in their cwd, inspect the diff, then close the task. Closing unblocks dependents."}
+                      {:step 5 :action (fmt/reflow "
+                                          |Verify status=implemented tasks yourself, re-run
+                                          |validation in their cwd, inspect the diff, then close
+                                          |the task. Closing unblocks dependents.")}
                       {:step 6 :action "For failed runs: logs, diagnose, fix task body/environment, then agent retry <task-id>."}
                       {:step 7 :action "Repeat until status shows nothing ready, running, or failed; then fan in and close the plan root."}]
    :policy {:siblings "Sibling tasks own disjoint files; never two mutators in one file scope."
@@ -394,8 +606,12 @@
         (delegate-task (active-task! task-id) flags)))))
 
 (defn- op-spawn [argv]
-  (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--prompt" :single "--title" :single "--depends-on" :multi "--for" :single "--spawned-by" :single "--cwd" :single "--max-attempts" :single
-                                                     "--interactive" :bool "--backend" :single "--reap" :single})]
+  (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--prompt" :single
+                                                     "--title" :single "--depends-on" :multi
+                                                     "--for" :single "--spawned-by" :single
+                                                     "--cwd" :single "--max-attempts" :single
+                                                     "--interactive" :bool "--backend" :single
+                                                     "--reap" :single})]
     (when (seq positional) (fail! "spawn takes only flags" {:unexpected positional}))
     ;; spawn is the raw helper/escape-hatch verb — recon reads, review helpers,
     ;; and one-off runs. It never delegates a task's own work (delegate does),
@@ -1065,7 +1281,10 @@
         ;; emit a prompt that references peer turns it cannot fetch. Multi-round
         ;; deliberation belongs on a :fresh board (peers post and read notes).
         _ (when (and (= :target blackboard) (> rounds 1))
-            (fail! "panel :blackboard :target supports a single round only: seats read a target via `show`, not peer posts via `notes`; use :blackboard :fresh for multi-round deliberation"
+            (fail! (fmt/reflow "
+                     |panel :blackboard :target supports a single round only: seats read a
+                     |target via `show`, not peer posts via `notes`; use :blackboard :fresh
+                     |for multi-round deliberation")
                    {:blackboard blackboard :rounds rounds}))
         board-ref (case blackboard
                     :target (if (non-blank? target)
@@ -1599,7 +1818,10 @@
                                       (non-blank? (attr % :harness)))
                                 tasks))
        :running (mapv :id (filter #(active-run-phases (sattr % "phase")) runs))
-       :failed (mapv (fn [r] (cond-> {:run (:id r) :error (sattr r "error")} (:for (shuttle/run-summary r)) (assoc :task (:for (shuttle/run-summary r))))) (filter #(failed-phases (sattr % "phase")) runs))
+       :failed (mapv (fn [r]
+                       (cond-> {:run (:id r) :error (sattr r "error")}
+                         (:for (shuttle/run-summary r)) (assoc :task (:for (shuttle/run-summary r)))))
+                     (filter #(failed-phases (sattr % "phase")) runs))
        :awaiting_verification (mapv :id (filter #(= "implemented" (attr % :status)) tasks))
        :blocked (mapv (fn [t] {:task (:id t) :blockers (blockers t)}) (filter #(seq (blockers %)) tasks))})))
 
@@ -1796,5 +2018,7 @@
                             ;; await blocks for arbitrarily long coordination waits
                             :deadline-class :unbounded}
                            'skein.spools.agents/agent-op)
-     :pattern (patterns/register-pattern! runtime 'agent-plan "Create a feature strand plus task/review children for agent work." 'skein.spools.agents/agent-plan ::agent-plan-input)
+     :pattern (patterns/register-pattern! runtime 'agent-plan
+                                          "Create a feature strand plus task/review children for agent work."
+                                          'skein.spools.agents/agent-plan ::agent-plan-input)
      :query (api/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "shuttle/run"] "true"] [:in [:attr "shuttle/phase"] ["failed" "exhausted"]]])}))

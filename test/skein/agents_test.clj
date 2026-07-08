@@ -1037,7 +1037,10 @@
             task (api/add rt {:title "task" :attributes {:body "body" :harness "sh"}})
             gate (api/add rt {:title "await gate"})
             _ (api/update rt (:id plan) {:edges [{:type "parent-of" :to (:id task)}]})
-            delegated {:run (select-keys (shuttle/run-summary (shuttle/spawn-run! {:harness :sh :prompt "echo first" :parent (:id task) :depends-on [(:id gate)]})) [:id :phase :harness])}]
+            delegated {:run (select-keys (shuttle/run-summary
+                                          (shuttle/spawn-run! {:harness :sh :prompt "echo first"
+                                                               :parent (:id task) :depends-on [(:id gate)]}))
+                                         [:id :phase :harness])}]
         (api/update rt (:id gate) {:state "closed"})
         (let [{:keys [timed-out runs]} (agents/agent-op {:op/argv ["await" "--under" (:id plan) "--timeout-secs" (str (test-support/await-budget-secs))]})]
           (is (false? timed-out))

@@ -12,6 +12,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
+            [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]))
 
 (defn- non-blank-string? [value]
@@ -111,8 +112,13 @@
                                                  {:params {:feature (param :required true)}}
                                                  (step :design (fn [{:keys [feature]}] (str "Design " feature)) :self)
                                                  (checkpoint :signoff "Approve design" :choices [:approved :revise])))
-                :fields {:params "Workflow-level map of keyword param names to param definitions. Param definitions support boolean :required and optional :default."}
-                :runtime {:start! "(start! run-id workflow params opts) accepts a workflow map, constructor var, or registered workflow keyword. Var/keyword starts derive :definition; absent :context defaults from JSON-safe params after keyword values are stringified."
+                :fields {:params (fmt/reflow "
+                                  |Workflow-level map of keyword param names to param definitions. Param
+                                  |definitions support boolean :required and optional :default.")}
+                :runtime {:start! (fmt/reflow "
+                                   |(start! run-id workflow params opts) accepts a workflow map, constructor var,
+                                   |or registered workflow keyword. Var/keyword starts derive :definition; absent
+                                   |:context defaults from JSON-safe params after keyword values are stringified.")
                           :next-steps "(next-steps run-id selector) filters ready views by keys such as :kind, :gate, :checkpoint, or :checkpoint-kind."
                           :next-gates "(next-gates run-id) or (next-gates run-id waiter) returns ready gate views."
                           :next-checkpoint "Returns the single ready checkpoint view, nil when none, and fails loudly when ambiguous."}
@@ -124,23 +130,47 @@
      :step {:topic :step
             :summary "A step is one unit of work owned by the driving agent itself. Do the work, then complete it."
             :contract (spec-entry ::step
-                                  "A step definition contains :id and :title plus optional fields; the step builder separately validates its required waiter against ::self-waiter, which only accepts :self. A non-:self waiter fails loudly, directing to gate."
+                                  (fmt/reflow "
+                                  |A step definition contains :id and :title plus optional fields; the step
+                                  |builder separately validates its required waiter against ::self-waiter,
+                                  |which only accepts :self. A non-:self waiter fails loudly, directing to
+                                  |gate.")
                                   '(step :implement (fn [{:keys [feature]}] (str "Implement " feature)) :self :depends-on [:design] :attributes {"skills" "clojure"}))
             :fields {:id "Stable local ref, keyword/symbol/string."
                      :title "Human-readable instruction."
-                     :waiter "Must be :self — the driving agent does the work itself. Any other value fails loudly and directs to gate. :self carries no workflow/gate attribute, so compiled output is identical to a bare step."
+                     :waiter (fmt/reflow "
+                              |Must be :self — the driving agent does the work itself. Any other value
+                              |fails loudly and directs to gate. :self carries no workflow/gate attribute,
+                              |so compiled output is identical to a bare step.")
                      :depends-on "Vector of local refs this step waits for."
                      :attributes "Plain metadata stored on the materialized strand."
                      :condition "Keyword param truthiness, or [:= :param value] / [:!= :param value]."
-                     :loop "Expansion: {:count n} (items 1..n) or {:each xs} where xs is a literal sequential, a keyword naming a param, or a fn of params. Add :chain true to make expansion i depend on expansion i-1 while expansion 0 keeps the step's declared deps. Expanded steps render against (merge params {:item item :i idx}); conditions remain params-only/uniform; a downstream :depends-on on the base loop id fans in to every expanded id."}}
+                     :loop (fmt/reflow "
+                            |Expansion: {:count n} (items 1..n) or {:each xs} where xs is a literal
+                            |sequential, a keyword naming a param, or a fn of params. Add :chain true to
+                            |make expansion i depend on expansion i-1 while expansion 0 keeps the step's
+                            |declared deps. Expanded steps render against (merge params {:item item :i
+                            |idx}); conditions remain params-only/uniform; a downstream :depends-on on the
+                            |base loop id fans in to every expanded id.")}}
      :gate {:topic :gate
             :summary "A gate is a step whose completion belongs to an external actor. Wait for the waiter; don't do the work yourself."
             :contract (spec-entry ::step
-                                  "A gate returns step data with a workflow/gate actor hint. Its required waiter is separately validated against ::external-waiter: a keyword, symbol, or non-blank string, never :self. It takes the same optional fields as a step."
+                                  (fmt/reflow "
+                                  |A gate returns step data with a workflow/gate actor hint. Its required
+                                  |waiter is separately validated against ::external-waiter: a keyword,
+                                  |symbol, or non-blank string, never :self. It takes the same optional
+                                  |fields as a step.")
                                   '(gate :ci-green "Wait for CI to pass" :ci :depends-on [:push]))
-            :fields {:waiter "Freeform actor hint (keyword/symbol/string) stored as workflow/gate, e.g. :ci, :human, :subagent; never :self. register-executor! keys a stall predicate by this same name."
+            :fields {:waiter (fmt/reflow "
+                              |Freeform actor hint (keyword/symbol/string) stored as workflow/gate, e.g.
+                              |:ci, :human, :subagent; never :self. register-executor! keys a stall
+                              |predicate by this same name.")
                      :others "Same optional fields as step: :depends-on, :attributes, :condition, :loop, :description, :state."
-                     :workflow/gate "Marks the step an external wait point, surfaced by step-view as :gate; complete! requires :by to close it. A waiter with no registered executor always needs attention; a registered executor's stall predicate decides."}}
+                     :workflow/gate (fmt/reflow "
+                                     |Marks the step an external wait point, surfaced by step-view as :gate;
+                                     |complete! requires :by to close it. A waiter with no registered
+                                     |executor always needs attention; a registered executor's stall
+                                     |predicate decides.")}}
      :call {:topic :call
             :summary "A call is a procedure-style inline reuse of another workflow, without a choice branch."
             :contract (spec-entry ::call

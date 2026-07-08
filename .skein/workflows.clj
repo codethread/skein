@@ -10,6 +10,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
             [skein.spools.agents :as agents]
@@ -156,7 +157,11 @@
                   (fn [{:keys [branch reason]}] (str "Record land abort for " branch ": " reason))
                   :self
                   :attributes {"workflow/action-ref" "land.abort.record"
-                               "workflow/instruction" "Record the abort reason on the kanban card and work root, leave a handover note, then stop. Do NOT merge or push — nothing has landed; the branch and worktree stay for follow-up."})))
+                               "workflow/instruction"
+                               (format-alpha/reflow
+                                "|Record the abort reason on the kanban card and work root, leave a
+                                 |handover note, then stop. Do NOT merge or push — nothing has landed;
+                                 |the branch and worktree stay for follow-up.")})))
 
 (defn land-workflow
   "Return the coordinator LANDING workflow for a feature branch (family \"land\").
@@ -194,7 +199,13 @@
                   :depends-on [:push-draft-pr]
                   :attributes {"workflow/action-ref" "land.ci.green"
                                "workflow/instruction"
-                               "Watch CI to green at the current branch HEAD: `gh pr checks <pr> --watch`. ALL checks must pass at HEAD. If any check is red, fix it in the worktree, commit, `git push`, and re-watch — stay in THIS step until every check is green. Completing this step asserts green CI at the current HEAD sha; record the HEAD sha (`git rev-parse HEAD`) and the check evidence in notes."})
+                               (format-alpha/reflow
+                                "|Watch CI to green at the current branch HEAD: `gh pr checks <pr> --watch`.
+                                 |ALL checks must pass at HEAD. If any check is red, fix it in the
+                                 |worktree, commit, `git push`, and re-watch — stay in THIS step until
+                                 |every check is green. Completing this step asserts green CI at the
+                                 |current HEAD sha; record the HEAD sha (`git rev-parse HEAD`) and the
+                                 |check evidence in notes.")})
    (workflow/step :signoff-review
                   (fn [{:keys [branch]}] (str "Run roster sign-off review for " branch))
                   :self
@@ -215,7 +226,11 @@
                         :kind :agent
                         :choices [{:key :approved
                                    :label "Approve"
-                                   :description "Sign-off approved on a pushed branch with green CI; continue to the local squash-merge and verification. The coordinator holds this delegated sign-off authority."}
+                                   :description
+                                   (format-alpha/reflow
+                                    "|Sign-off approved on a pushed branch with green CI; continue to the
+                                     |local squash-merge and verification. The coordinator holds this
+                                     |delegated sign-off authority.")}
                                   {:key :abort
                                    :label "Abort"
                                    :description "Stop landing intentionally; nothing merges. Records the reason and leaves the branch/worktree for follow-up."
@@ -245,7 +260,12 @@
                   :depends-on [:merge-local-verify]
                   :attributes {"workflow/action-ref" "land.main.ci-green"
                                "workflow/instruction"
-                               "Push main: `git push origin main`. Watch ALL main workflows to completion (`gh run list --branch main`, `gh run watch <run-id>`). Transient infra failures may be re-run with `gh run rerun <run-id>`. Completing this step asserts green CI on the main sha. Record the run ids in notes."})
+                               (format-alpha/reflow
+                                "|Push main: `git push origin main`. Watch ALL main workflows to
+                                 |completion (`gh run list --branch main`, `gh run watch <run-id>`).
+                                 |Transient infra failures may be re-run with `gh run rerun <run-id>`.
+                                 |Completing this step asserts green CI on the main sha. Record the run
+                                 |ids in notes.")})
    (workflow/step :cleanup
                   (fn [{:keys [branch]}] (str "Clean up " branch " and close the land run"))
                   :self
@@ -294,7 +314,13 @@
   {:operation "land about"
    :summary "Coordinator-only landing workflow: the encoded discipline a coordinator drives before a branch is considered landed."
    :coordinator-only "Worker agents never land — they stop at implemented+committed. Only a coordinator, holding delegated sign-off authority, drives a land run."
-   :discipline "Sign-off is only valid on a pushed branch with an open draft PR and green CI at HEAD — that is the point of the ordering. A merge is a squash into LOCAL main that must pass the full local verification gate (tests + go tests + fmt/lint/reflect/docs + smoke) before main is pushed; main is only landed once its own CI is green. Aborting at sign-off records a reason and leaves the branch/worktree untouched."
+   :discipline (format-alpha/reflow
+                "|Sign-off is only valid on a pushed branch with an open draft PR and
+                 |green CI at HEAD — that is the point of the ordering. A merge is a
+                 |squash into LOCAL main that must pass the full local verification gate
+                 |(tests + go tests + fmt/lint/reflect/docs + smoke) before main is
+                 |pushed; main is only landed once its own CI is green. Aborting at
+                 |sign-off records a reason and leaves the branch/worktree untouched.")
    :steps [{:step "push-draft-pr" :purpose "Push the branch and open (or reuse) a draft PR against main."}
            {:step "ci-green" :purpose "Watch CI to green at the branch HEAD; fix-push-repeat within the step."}
            {:step "signoff-review" :purpose "Run the declared roster review and drive fix rounds; every fix round re-establishes green CI."}

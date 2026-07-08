@@ -401,14 +401,58 @@
     (spit (java.io.File. lib-root "deps.edn") "{:paths [\"src\"]}\n")
     (spit (java.io.File. workspace "spools.edn") "{:spools {smoke/runtime-lib {:local/root \"spools/smoke-runtime-lib\"}}}\n")
     (spit init-path
-          (str "(ns smoke.startup\n  (:require [clojure.spec.alpha :as s]\n            [skein.api.current.alpha :as current]\n            [skein.api.runtime.alpha :as runtime]\n            [skein.api.events.alpha :as events]\n            [skein.api.graph.alpha :as graph]\n            [skein.api.hooks.alpha :as hooks]\n            [skein.api.views.alpha :as views]\n            [skein.api.weaver.alpha :as api]))\n(def runtime (current/runtime))\n(runtime/sync! runtime)\n(runtime/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/activate!})\n(api/register-query! runtime 'smoke-owned [:= [:attr :owner] \"smoke\"])\n(api/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})\n(s/def ::title string?)\n(s/def ::review-input (s/keys :req-un [::title]))\n(defn reject-blocked-owner [ctx]\n  (when (= \"blocked\" (get-in ctx [:strand/after :attributes :owner]))\n    (throw (ex-info \"smoke hook rejected blocked owner\" {:code :smoke/blocked-owner}))))\n(hooks/register! runtime :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)\n(defn review-pattern [{:keys [input]}]\n  (let [title (:title input)]\n    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n(def event-marker " (pr-str (.getCanonicalPath event-marker)) ")\n(defn record-added! [event]\n  (spit event-marker (:title (:strand event))))\n(defn smoke-owned-view [{:keys [params]}]\n  (let [runtime (current/runtime)\n        ids (graph/query-ids! runtime 'smoke-owned {})]\n    {:params params\n     :ids ids\n     :strands (graph/strands-by-ids runtime ids)}))\n(views/register-view! runtime 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n(events/register! runtime :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})\n"))
+          (str "(ns smoke.startup\n"
+               "  (:require [clojure.spec.alpha :as s]\n"
+               "            [skein.api.current.alpha :as current]\n"
+               "            [skein.api.runtime.alpha :as runtime]\n"
+               "            [skein.api.events.alpha :as events]\n"
+               "            [skein.api.graph.alpha :as graph]\n"
+               "            [skein.api.hooks.alpha :as hooks]\n"
+               "            [skein.api.views.alpha :as views]\n"
+               "            [skein.api.weaver.alpha :as api]))\n"
+               "(def runtime (current/runtime))\n"
+               "(runtime/sync! runtime)\n"
+               "(runtime/use! runtime :skein/spools-batteries\n"
+               "  {:ns 'skein.spools.batteries\n"
+               "   :call 'skein.spools.batteries/activate!})\n"
+               "(api/register-query! runtime 'smoke-owned [:= [:attr :owner] \"smoke\"])\n"
+               "(api/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})\n"
+               "(s/def ::title string?)\n"
+               "(s/def ::review-input (s/keys :req-un [::title]))\n"
+               "(defn reject-blocked-owner [ctx]\n"
+               "  (when (= \"blocked\" (get-in ctx [:strand/after :attributes :owner]))\n"
+               "    (throw (ex-info \"smoke hook rejected blocked owner\" {:code :smoke/blocked-owner}))))\n"
+               "(hooks/register! runtime :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)\n"
+               "(defn review-pattern [{:keys [input]}]\n"
+               "  (let [title (:title input)]\n"
+               "    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n"
+               "     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n"
+               "(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
+               "(def event-marker "
+               (pr-str (.getCanonicalPath event-marker))
+               ")\n"
+               "(defn record-added! [event]\n"
+               "  (spit event-marker (:title (:strand event))))\n"
+               "(defn smoke-owned-view [{:keys [params]}]\n"
+               "  (let [runtime (current/runtime)\n"
+               "        ids (graph/query-ids! runtime 'smoke-owned {})]\n"
+               "    {:params params\n"
+               "     :ids ids\n"
+               "     :strands (graph/strands-by-ids runtime ids)}))\n"
+               "(views/register-view! runtime 'smoke-owned-view 'smoke.startup/smoke-owned-view)\n"
+               "(events/register! runtime :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})\n"))
     (start-weaver-config! workspace)
     (try
       (run-mill-config! workspace "weaver" "status")
       (let [loader-state (edn/read-string
                           (run-mill-config-stdin!
                            workspace
-                           "(do\n  (require '[skein.api.current.alpha :as current]\n           '[skein.api.runtime.alpha :as runtime-alpha])\n  (let [runtime (current/runtime)]\n    {:approved (runtime-alpha/approved runtime)\n     :syncs (runtime-alpha/syncs runtime)}))\n"
+                           (str "(do\n"
+                                "  (require '[skein.api.current.alpha :as current]\n"
+                                "           '[skein.api.runtime.alpha :as runtime-alpha])\n"
+                                "  (let [runtime (current/runtime)]\n"
+                                "    {:approved (runtime-alpha/approved runtime)\n"
+                                "     :syncs (runtime-alpha/syncs runtime)}))\n")
                            "weaver" "repl" "--stdin"))]
         (assert= "spools/smoke-runtime-lib"
                  (get-in loader-state [:approved :spools 'smoke/runtime-lib :local/root])
@@ -425,7 +469,12 @@
                     (throw (ex-info "event handler did not record async add event" {})))
                   (Thread/sleep 100)
                   (recur (dec attempts))))
-            payload (edn/read-string (run-mill-config-stdin! workspace "(do (require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph] '[skein.api.views.alpha :as views]) (let [runtime (current/runtime)] {:query-ids (graph/query-ids! runtime 'smoke-owned {}) :view (views/view! runtime 'smoke-owned-view {:source \"stdin\"}) :views (views/views runtime)}))\n" "weaver" "repl" "--stdin"))]
+            payload (edn/read-string (run-mill-config-stdin! workspace (str "(do (require '[skein.api.current.alpha :as current] "
+                                                                            "'[skein.api.graph.alpha :as graph] '[skein.api.views.alpha "
+                                                                            ":as views]) (let [runtime (current/runtime)] {:query-ids "
+                                                                            "(graph/query-ids! runtime 'smoke-owned {}) :view (views/view! "
+                                                                            "runtime 'smoke-owned-view {:source \"stdin\"}) :views "
+                                                                            "(views/views runtime)}))\n") "weaver" "repl" "--stdin"))]
         (assert= [strand-id] (:query-ids payload) "startup registered query is available through graph helper")
         (assert= {:source "stdin"} (get-in payload [:view :params]) "startup view receives params")
         (assert= [strand-id] (get-in payload [:view :ids]) "startup view can call graph/query-ids!")
@@ -455,7 +504,9 @@
         (let [runtime-woven (edn/read-string
                              (run-mill-config-stdin!
                               workspace
-                              "(do\n  (defpattern! 'runtime-review 'smoke.startup/review-pattern :smoke.startup/review-input)\n  (weave! 'runtime-review {:title \"Runtime patterned smoke\"}))\n"
+                              (str "(do\n"
+                                   "  (defpattern! 'runtime-review 'smoke.startup/review-pattern :smoke.startup/review-input)\n"
+                                   "  (weave! 'runtime-review {:title \"Runtime patterned smoke\"}))\n")
                               "weaver" "repl" "--stdin"))]
           (assert= ["Runtime patterned smoke" "Review: Runtime patterned smoke"]
                    (titles (:created runtime-woven))
@@ -464,11 +515,17 @@
               (clojure.string/replace
                (slurp init-path)
                "(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
-               "(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n(api/register-pattern! runtime 'reload-review 'smoke.startup/review-pattern ::review-input)\n"))
+               (str "(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
+                    "(api/register-pattern! runtime 'reload-review 'smoke.startup/review-pattern ::review-input)\n")))
         (let [reload-payload (edn/read-string
                               (run-mill-config-stdin!
                                workspace
-                               "(do\n  (require '[skein.api.current.alpha :as current]\n           '[skein.api.runtime.alpha :as runtime-alpha])\n  (runtime-alpha/reload! (current/runtime))\n  {:patterns (patterns)\n   :woven (weave! 'reload-review {:title \"Reload patterned smoke\"})})\n"
+                               (str "(do\n"
+                                    "  (require '[skein.api.current.alpha :as current]\n"
+                                    "           '[skein.api.runtime.alpha :as runtime-alpha])\n"
+                                    "  (runtime-alpha/reload! (current/runtime))\n"
+                                    "  {:patterns (patterns)\n"
+                                    "   :woven (weave! 'reload-review {:title \"Reload patterned smoke\"})})\n")
                                "weaver" "repl" "--stdin"))]
           (assert= ["reload-review" "review-task"]
                    (mapv :name (:patterns reload-payload))

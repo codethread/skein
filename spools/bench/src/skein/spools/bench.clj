@@ -27,6 +27,7 @@
             [skein.api.weaver.alpha :as api]
             [skein.spools.bench.exec :as exec]
             [skein.spools.bench.metrics :as metrics]
+            [skein.spools.format :as fmt]
             [skein.spools.shuttle :as shuttle]
             [skein.spools.util :refer [fail! reject-unknown-keys! require-valid! attr-get]])
   (:import [java.io File]
@@ -706,7 +707,9 @@
        "- Metrics are ground truth — never re-derive or dispute them; judge quality, not arithmetic."
        "- Frame per the varying axis (model-vs-model, prompt-vs-prompt, or interaction effects); never flatten a two-axis run into one ranking."
        "- Append one note per entry to its strand id (use your strand note command) with scores and findings."
-       "- Stamp your final verdict on this judge strand (the strand you are fulfilling / your own run strand) as the bench/verdict attribute; this is the canonical, durable location bench report reads."
+       (fmt/reflow
+        "|- Stamp your final verdict on this judge strand (the strand you are fulfilling / your own run strand)
+         |as the bench/verdict attribute; this is the canonical, durable location bench report reads.")
        "- Finish with the same verdict as your result: a comparison table plus a winner / pass-fail."]
       (when contract ["" "Suite contract:" contract])))))
 
@@ -1192,15 +1195,38 @@
   from the declared `:subcommands`."
   []
   {:operation "bench about"
-   :summary "Deterministic, containerized benchmarking of coding-agent harnesses: given a pinned repo+sha, a pinned memory-file/skill surface, and a prompt, compare N agent configurations reproducibly."
-   :purpose "A bench run is a strand graph — a run root, one entry per matrix cell, and a judge strand that depends on every entry. Each entry runs its agent in a fresh container against a pristine checkout; the engine extracts metrics deterministically and closes the entry. Closing every entry unblocks the judge — a decoupled fulfilment seam that writes a comparative verdict, shipped as a shuttle run but fulfillable by anything (workflow gate, human, custom bridge). Setup and measurement are code; only judgment is a model."
-   :determinism-model {:pinned "repo sha, memory files/skills (overlay manifest), prompt text, agent argv, container image (digest recorded; pin by digest for strictness), setup/validation commands, extractor code version"
+   :summary (fmt/reflow
+             "|Deterministic, containerized benchmarking of coding-agent harnesses: given a
+              |pinned repo+sha, a pinned memory-file/skill surface, and a prompt, compare N
+              |agent configurations reproducibly.")
+   :purpose (fmt/reflow
+             "|A bench run is a strand graph — a run root, one entry per matrix cell, and a
+              |judge strand that depends on every entry. Each entry runs its agent in a fresh
+              |container against a pristine checkout; the engine extracts metrics
+              |deterministically and closes the entry. Closing every entry unblocks the judge
+              |— a decoupled fulfilment seam that writes a comparative verdict, shipped as a
+              |shuttle run but fulfillable by anything (workflow gate, human, custom bridge).
+              |Setup and measurement are code; only judgment is a model.")
+   :determinism-model {:pinned (fmt/reflow
+                                "|repo sha, memory files/skills (overlay manifest), prompt text,
+                                 |agent argv, container image (digest recorded; pin by digest for
+                                 |strictness), setup/validation commands, extractor code version")
                        :not-pinned "model behavior (what is being measured), network-fetched deps during setup (pin via lockfiles in the repo sha), API-side model versions"
                        :note "Re-running a suite yields a comparable run, not a bit-identical one; the run manifest makes any drift diagnosable."}
-   :run-lifecycle {:validate "Suite conforms, agents registered, judge harness (in :harness mode) and engine resolvable, and any :rev resolved to a sha — all before any strand is created."
-                   :pour "Create the run root (optionally under a --for parent), one entry per cell, and (unless :judge :none) the judge strand depending on every entry; write the manifest."
+   :run-lifecycle {:validate (fmt/reflow
+                              "|Suite conforms, agents registered, judge harness (in :harness mode)
+                               |and engine resolvable, and any :rev resolved to a sha — all before
+                               |any strand is created.")
+                   :pour (fmt/reflow
+                          "|Create the run root (optionally under a --for parent), one entry per
+                           |cell, and (unless :judge :none) the judge strand depending on every
+                           |entry; write the manifest.")
                    :execute "Queue entries on the bounded executor (:parallel); the judge stays pending until every entry closes."
-                   :entry-phases "pending -> preparing -> running -> done | failed. A done entry has metrics stamped and is closed. A failed entry stays active with bench/phase failed and bench/error, keeping the judge blocked until retry or abort."}
+                   :entry-phases (fmt/reflow
+                                  "|pending -> preparing -> running -> done | failed. A done entry
+                                   |has metrics stamped and is closed. A failed entry stays active
+                                   |with bench/phase failed and bench/error, keeping the judge
+                                   |blocked until retry or abort.")}
    :attributes {:run {"bench/run" "true on the run root"
                       "bench/suite" "suite name"
                       "bench/repo" "repo URL or path"
@@ -1223,12 +1249,32 @@
                         "bench/judge-prompt" "the complete built judge prompt (protocol + entry ids + data-dir paths); the one prompt source both modes share"
                         "body" "a short mechanism-agnostic fulfilment contract: read bench/judge-prompt, judge, note each entry, stamp bench/verdict, close"
                         "bench/verdict" "the canonical, durable verdict stamped by whoever fulfils the strand"}}
-   :judge-protocol {:seam "The judge strand IS a fulfilment seam. run! pours it depending on every entry and stamps bench/judge-prompt + a body contract; anything may fulfil it. bench never requires the workflow spool."
-                    :modes ":judge {:harness h} spawns a serving shuttle run (shipped default); :judge {:external true} pours the strand and stops for any external mechanism (workflow gate, human, custom bridge) to fulfil; :judge :none runs a judgeless, metrics-only suite. Exactly one of :harness/:external."
-                    :composition "skein.spools.bench/judge-spec (trusted Clojure) returns {:prompt :attrs :entry-ids} — the same source run! pours from. A workflow author maps it onto a :subagent gate (shuttle/prompt from :prompt, gate depends on :entry-ids), exactly like agents' roster-review-specs."
+   :judge-protocol {:seam (fmt/reflow
+                           "|The judge strand IS a fulfilment seam. run! pours it depending on
+                            |every entry and stamps bench/judge-prompt + a body contract; anything
+                            |may fulfil it. bench never requires the workflow spool.")
+                    :modes (fmt/reflow
+                            "|:judge {:harness h} spawns a serving shuttle run (shipped default);
+                             |:judge {:external true} pours the strand and stops for any external
+                             |mechanism (workflow gate, human, custom bridge) to fulfil; :judge
+                             |:none runs a judgeless, metrics-only suite. Exactly one of
+                             |:harness/:external.")
+                    :composition (fmt/reflow
+                                  "|skein.spools.bench/judge-spec (trusted Clojure) returns {:prompt
+                                   |:attrs :entry-ids} — the same source run! pours from. A workflow
+                                   |author maps it onto a :subagent gate (shuttle/prompt from
+                                   |:prompt, gate depends on :entry-ids), exactly like agents'
+                                   |roster-review-specs.")
                     :seat "In :harness mode the suite's :judge :harness — any shuttle harness/alias — chooses the approving model."
-                    :ground-truth "Metrics are ground truth — the judge never re-derives or disputes them; it judges quality, not arithmetic (baked into the builder, not overridable by :contract)."
-                    :verdict "The verdict lands in bench/verdict on the judge strand (canonical); a shuttle run also leaves it as shuttle/result. report/status resolve bench/verdict first, else shuttle/result, and report the verdict-source (attr|run|none)."
+                    :ground-truth (fmt/reflow
+                                   "|Metrics are ground truth — the judge never re-derives or
+                                    |disputes them; it judges quality, not arithmetic (baked into
+                                    |the builder, not overridable by :contract).")
+                    :verdict (fmt/reflow
+                              "|The verdict lands in bench/verdict on the judge strand (canonical);
+                               |a shuttle run also leaves it as shuttle/result. report/status
+                               |resolve bench/verdict first, else shuttle/result, and report the
+                               |verdict-source (attr|run|none).")
                     :output "One note appended per entry strand with scores and findings, the verdict stamped on the judge strand, then the strand closed."
                     :recovery "A failed shuttle-run judge recovers with the ordinary strand agent retry."}
    :artifact-layout {:root "<weaver state dir>/bench/<run-id>/<slug>/"

@@ -40,6 +40,7 @@
             [skein.api.weaver.alpha :as api]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
+            [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! attr-get]])
   (:import [java.lang ProcessBuilder$Redirect ProcessHandle]
            [java.nio.file Files]
@@ -368,12 +369,23 @@
                   :parse :claude-json
                   :prompt-via :stdin
                   :resume ["--resume" :shuttle/session-id]
-                  :doc "Claude Code headless. The worker prompt rides on stdin (`claude -p` reads it) so it never lands in the process argv, keeping prompts out of `ps` and out of the blast radius of any `pkill -f` pattern kill. Skips permission prompts so the run can drive the strand CLI; redefine with your own argv to tighten. :claude-json captures shuttle/session-id and :resume continues that session with `--resume <session-id>`."}
+                  :doc (fmt/reflow "
+                        |Claude Code headless. The worker prompt rides on stdin (`claude -p` reads
+                        |it) so it never lands in the process argv, keeping prompts out of `ps` and
+                        |out of the blast radius of any `pkill -f` pattern kill. Skips permission
+                        |prompts so the run can drive the strand CLI; redefine with your own argv
+                        |to tighten. :claude-json captures shuttle/session-id and :resume continues
+                        |that session with `--resume <session-id>`.")}
          :pi {:argv ["pi" "-p" "--mode" "json"]
               :parse :pi-json
               :prompt-via :stdin
               :resume ["--session" :shuttle/session-id]
-              :doc "pi headless in JSON event mode. The worker prompt rides on stdin (`pi -p` reads it) so it stays out of the process argv, `ps`, and any `pkill -f` blast radius. :pi-json captures shuttle/session-id and :resume continues that specific session with `--session <session-id>` (an existing session, not the create-if-missing --session-id)."}
+              :doc (fmt/reflow "
+                    |pi headless in JSON event mode. The worker prompt rides on stdin (`pi -p`
+                    |reads it) so it stays out of the process argv, `ps`, and any `pkill -f`
+                    |blast radius. :pi-json captures shuttle/session-id and :resume continues
+                    |that specific session with `--session <session-id>` (an existing session,
+                    |not the create-if-missing --session-id).")}
          :sh {:argv ["sh" "-c"]
               :parse :raw
               :preamble? false
@@ -1665,7 +1677,11 @@
 
 (def generic-review-contract
   "Default contract text for independent shuttle reviews."
-  "Review the target read-only. Report prioritized findings with file:line references when applicable. Do not modify files or close strands. Append your findings as a note on the target strand, then end with the same findings as your final result.")
+  (fmt/reflow "
+   |Review the target read-only. Report prioritized findings with file:line
+   |references when applicable. Do not modify files or close strands. Append
+   |your findings as a note on the target strand, then end with the same
+   |findings as your final result."))
 
 
 

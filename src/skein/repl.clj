@@ -10,6 +10,7 @@
             [nrepl.cmdline]
             [nrepl.core :as nrepl]
             [skein.core.client :as client]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.weaver.alpha :as api]
             [skein.core.terse :as terse]
             [skein.core.weaver.config :as daemon-config]
@@ -28,7 +29,10 @@
   active weaver selected by config dir."
   []
   (case @active-config-dir
-    ::no-connection (throw (ex-info "No Skein weaver world is connected. Use `mill weaver repl` for direct live evaluation, or call (connect! \"/path/to/config-dir\") before using explicit connected-client helpers."
+    ::no-connection (throw (ex-info (format-alpha/reflow
+                                     "|No Skein weaver world is connected. Use `mill weaver repl` for
+                                       |direct live evaluation, or call (connect! \"/path/to/config-dir\")
+                                       |before using explicit connected-client helpers.")
                                     {:helper 'connect!}))
     @active-config-dir))
 
