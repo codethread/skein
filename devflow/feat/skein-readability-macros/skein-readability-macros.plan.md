@@ -154,3 +154,16 @@ Append notes here. Do not rewrite earlier notes.
 - Follow-up not in scope: adding `.skein/spools/macros/src` to the `:format`/`:lint` paths (the existing `patterns.clj`/`demo.clj`
   are not in those paths either, so the new macros match that parity; the `clojure` skill and review carry code quality). Land's
   `defworkflow` fusion and a `skein.api.config-macros.alpha` promotion stay deferred per RFC-020.C4.
+
+### PLAN-Srm-001.DN1 Task 7 — `:ops` derivation falls back per R1, `:queries` derives cleanly — 2026-07-08
+
+- `:queries` derives cleanly: `config.clj`'s seven config-owned `defquery` forms are already authored in exactly the order
+  `devflow-conventions-op` lists them (`feature-active` .. `work`), so `queries/remembered-queries 'config` reproduces the
+  block byte-for-byte once each entry's `:name` (a symbol, per `defquery`'s `remember-query!`) is stringified with `str`.
+- `:ops` does not: the file's `defop` author order (`current-dags` first, `branches` last, matching each op's logical
+  section) diverges from the hand-authored listing's editorial order (`branches` leads the config block, `current-dags`
+  sits beside `carder-report`). A derivation over `ops/remembered-ops` can only preserve relative author order, so it
+  cannot reproduce this listing without either reordering the `defop` forms themselves (trading away the section grouping
+  RFC-020.Q2 explicitly weighed as a reason to keep conventions hand-authored) or reordering the derived output (which
+  MI4 rules out directly). Per MI4 and the R1 mitigation, `:ops` stays the RFC-020.Q2 hand-authored fallback, unchanged;
+  `:queries` is the only listing derived in this slice.

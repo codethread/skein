@@ -8,6 +8,7 @@
             [clojure.test :refer [deftest is testing]]
             [skein.core.db-test :as db-test]
             [skein.api.current.alpha :as current]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as daemon-config]
@@ -150,6 +151,65 @@
   (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
+
+(deftest devflow-conventions-op-lists-repo-conventions
+  ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
+  ;; :ops stays the RFC-020.Q2 hand-authored fallback (PLAN-Srm-001.DN1). This
+  ;; pins the whole payload so neither listing can silently drift.
+  (with-config-runtime
+    (fn [_rt]
+      (is (= {:operation "devflow-conventions"
+              :spools [{:namespace "skein.spools.workflow"
+                        :doc "spools/workflow.md"
+                        :purpose "Workflow engine: definitions compiled to strand molecules with checkpoints, routing, and gates."}
+                       {:namespace "skein.spools.devflow"
+                        :doc "spools/devflow.md"
+                        :purpose "Feature lifecycle (intake -> proposal -> spec-plan -> tasks/implementation) keyed by feature name."}
+                       {:namespace "skein.spools.ephemeral"
+                        :doc "spools/ephemeral.md"
+                        :purpose "Temporary parent-owned strands burned via a userland attribute."}
+                       {:namespace "skein.spools.kanban"
+                        :doc "spools/kanban.md"
+                        :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed lanes, notes, and handovers."}]
+              :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
+                    {:name "branches" :help "strand help branches"}
+                    {:name "devflow-start" :help "strand help devflow-start"}
+                    {:name "devflow-next" :help "strand help devflow-next"}
+                    {:name "devflow-choices" :help "strand help devflow-choices"}
+                    {:name "devflow-choose" :help "strand help devflow-choose"}
+                    {:name "devflow-complete" :help "strand help devflow-complete"}
+                    {:name "devflow-advance" :help "strand help devflow-advance"}
+                    {:name "devflow-describe" :help "strand help devflow-describe"}
+                    {:name "devflow-history" :help "strand help devflow-history"}
+                    {:name "devflow-archive" :help "strand help devflow-archive"}
+                    {:name "devflow-status" :help "strand help devflow-status"}
+                    {:name "workflow-runs" :help "strand help workflow-runs"}
+                    {:name "current-dags" :help "strand help current-dags"}
+                    {:name "carder-report" :help "strand help carder-report"}
+                    {:name "agent" :help "strand help agent" :manual "strand agent about"}
+                    {:name "flow-await" :help "strand help flow-await"}
+                    {:name "flow-status" :help "strand help flow-status"}
+                    {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
+                    {:name "land" :help "strand help land" :manual "strand land about"
+                     :purpose (format-alpha/reflow
+                               "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
+                                |sign-off, squash-merge to local main with full verification, then
+                                |green main CI. Registered by .skein/workflows.clj.")}]
+              :patterns [{:name "agent-plan"
+                          :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.agents."}
+                         {:name "delegate-pipeline"
+                          :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
+              :queries [{:name "kanban-cards" :usage "strand list --query kanban-cards"}
+                        {:name "kanban-unstarted" :usage "strand ready --query kanban-unstarted"}
+                        {:name "feature-active" :usage "strand list --query feature-active --param feature=<feature>"}
+                        {:name "feature-work" :usage "strand ready --query feature-work --param feature=<feature>"}
+                        {:name "feature-owner-work"
+                         :usage "strand ready --query feature-owner-work --param feature=<feature> --param owner=<owner>"}
+                        {:name "feature-run" :usage "strand list --query feature-run --param feature=<feature>"}
+                        {:name "workflow-runs" :usage "strand list --query workflow-runs"}
+                        {:name "devflow-runs" :usage "strand list --query devflow-runs"}
+                        {:name "work" :usage "strand ready --query work"}]}
+             (op! "devflow-conventions" []))))))
 
 (deftest current-dags-op-builds-self-contained-plan-task-projection
   (with-config-runtime

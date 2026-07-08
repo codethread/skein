@@ -17,7 +17,7 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [skein.macros.ops :refer [defop install-ops!]]
-            [skein.macros.queries :refer [defquery install-queries!]]
+            [skein.macros.queries :refer [defquery install-queries! remembered-queries]]
             [skein.spools.carder :as carder]
             [skein.spools.devflow :as devflow]
             [skein.spools.loom :as loom]
@@ -422,6 +422,11 @@
             {:namespace "skein.spools.kanban"
              :doc "spools/kanban.md"
              :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed lanes, notes, and handovers."}]
+   ;; The config-owned entries below stay hand-authored: their editorial grouping
+   ;; (e.g. branches leading, current-dags sitting beside carder-report) does not
+   ;; match the defop author order in this file, and reordering the defop forms
+   ;; to force a match would trade that grouping away (RFC-020.Q2 tradeoff; see
+   ;; PLAN-Srm-001.DN1). :queries has no such mismatch and derives below.
    :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
          {:name "branches" :help "strand help branches"}
          {:name "devflow-start" :help "strand help devflow-start"}
@@ -450,24 +455,12 @@
                :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.agents."}
               {:name "delegate-pipeline"
                :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
-   :queries [{:name "kanban-cards"
-              :usage "strand list --query kanban-cards"}
-             {:name "kanban-unstarted"
-              :usage "strand ready --query kanban-unstarted"}
-             {:name "feature-active"
-              :usage "strand list --query feature-active --param feature=<feature>"}
-             {:name "feature-work"
-              :usage "strand ready --query feature-work --param feature=<feature>"}
-             {:name "feature-owner-work"
-              :usage "strand ready --query feature-owner-work --param feature=<feature> --param owner=<owner>"}
-             {:name "feature-run"
-              :usage "strand list --query feature-run --param feature=<feature>"}
-             {:name "workflow-runs"
-              :usage "strand list --query workflow-runs"}
-             {:name "devflow-runs"
-              :usage "strand list --query devflow-runs"}
-             {:name "work"
-              :usage "strand ready --query work"}]})
+   :queries (into [{:name "kanban-cards"
+                    :usage "strand list --query kanban-cards"}
+                   {:name "kanban-unstarted"
+                    :usage "strand ready --query kanban-unstarted"}]
+                  (map #(update % :name str))
+                  (remembered-queries 'config))})
 
 (defn- config-attr
   "Read strand attribute k, tolerating keyword- or string-keyed maps."
