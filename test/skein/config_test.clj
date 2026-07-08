@@ -449,7 +449,7 @@
       (let [approved (op! "land" ["choose" "land-x" "approved"])]
         (is (= "land-choose" (:operation approved)))
         (is (= "land.merge.local-verify" (:action-ref (first (:ready approved)))))
-        (is (= "merge-lock" (get-in (op! "land" ["lock"]) [:lock :attributes :kind]))))
+        (is (= "merge-lock" (get-in (op! "land" ["status" "land-x"]) [:merge-lock :attributes :kind]))))
       (op! "land" ["start" "land-z" "--branch" "land-z" "--worktree" "/tmp/land-z"])
       (op! "land" ["complete" "land-z"])
       (op! "land" ["complete" "land-z"])
@@ -532,12 +532,30 @@
       (op! "land" ["choose" "land-lock-x" "approved"])
       (is (= "merge-lock" (get-in (op! "land" ["status" "land-lock-x"])
                                   [:merge-lock :attributes :kind])))
+      ;; a blank reason fails at the handler; a missing reason fails at the arg-spec
+      ;; parse layer — both are loud rejections rather than a silent break
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"reason must be a non-blank string"
                             (op! "land" ["break-lock" ""])))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required argument tail"
+                            (op! "land" ["break-lock"])))
       (let [broken (op! "land" ["break-lock" "coordinator confirmed stale lock"])]
         (is (= "land-break-lock" (:operation broken)))
         (is (= "closed" (get-in broken [:broken :state])))
+        (is (= "coordinator confirmed stale lock"
+               (get-in broken [:broken :attributes :land/broken-reason])))
         (is (nil? (:merge-lock (op! "land" ["status" "land-lock-x"]))))))))
+
+(deftest land-break-lock-refuses-to-break-when-multiple-locks-are-active
+  (with-config-runtime
+    (fn [rt]
+      ;; a healthy world holds one lock; two active merge-lock strands is a
+      ;; corrupt state break-lock must refuse rather than pick one arbitrarily.
+      (api/add rt {:title "Merge lock: land-dup-a"
+                   :attributes {:kind "merge-lock" :land/run-id "land-dup-a"}})
+      (api/add rt {:title "Merge lock: land-dup-b"
+                   :attributes {:kind "merge-lock" :land/run-id "land-dup-b"}})
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"multiple active merge locks found"
+                            (op! "land" ["break-lock" "trying to clear a corrupt state"]))))))
 
 (deftest land-start-fails-loudly-on-a-blank-card
   (with-config-runtime
@@ -559,7 +577,7 @@
       (let [help (op! "help" ["land"])
             subs (get-in help [:arg-spec :subcommands])
             by-name (into {} (map (juxt :name identity)) subs)]
-        (is (= #{"about" "start" "next" "complete" "choose" "status" "lock" "break-lock"}
+        (is (= #{"about" "start" "next" "complete" "choose" "status" "break-lock"}
                (set (map :name subs))))
         (is (str/starts-with? (get-in help [:arg-spec :doc])
                               "Drive the coordinator landing workflow"))

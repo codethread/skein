@@ -454,7 +454,6 @@
               {:verb "complete" :purpose "Close the current non-checkpoint land step, optionally with notes and a step=<id> selector."}
               {:verb "choose" :purpose "Decide the sign-off checkpoint: approved, or abort with {\"reason\":\"...\"}."}
               {:verb "status" :purpose "Show the land root, ready steps, done state, run history, and merge lock."}
-              {:verb "lock" :purpose "Inspect the active singleton merge lock."}
               {:verb "break-lock" :purpose "Explicitly break a stale merge lock with a reason."}]
    :discovery {:help "strand help land"
                :conventions "strand devflow-conventions"}})
@@ -528,7 +527,6 @@
                       :ready (workflow/next-steps feature)
                       :history (workflow/run-history feature)
                       :merge-lock (inspect-merge-lock)}))
-      "lock" {:operation "land-lock" :lock (inspect-merge-lock)}
       "break-lock" (let [reason (first tail)]
                      (when (> (count tail) 1)
                        (throw (ex-info "land break-lock accepts one reason argument"
@@ -577,7 +575,6 @@
               :positionals [{:name :feature
                              :required? true
                              :doc "Land run id."}]}
-    "lock" {:doc "Inspect the active singleton merge lock."}
     "break-lock" {:doc "Explicitly break a stale merge lock with a reason."
                   :positionals [{:name :tail
                                  :required? true
