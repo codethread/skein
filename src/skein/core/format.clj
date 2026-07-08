@@ -17,6 +17,17 @@
   (when-let [i (str/index-of line \|)]
     (subs line (inc i))))
 
+(defn- barred-lines
+  "Return the bar contents of `block`, failing loudly when no line carries a
+  bar: a bar-less block is authoring error (a dropped `|`), and returning
+  empty output would silently delete the prose it was meant to carry."
+  [block]
+  (let [lines (keep bar-content (str/split-lines block))]
+    (when (empty? lines)
+      (throw (ex-info "|-margin block has no barred lines; every content line must start with |"
+                      {:block block})))
+    lines))
+
 (defn fill
   "Reflow a `|`-margin doc block into a vector of item strings.
 
@@ -25,10 +36,11 @@
   separates items. Within an item, flush-left lines are prose soft-wrapped into
   a single line; if any line is indented past the bar the whole item is kept
   verbatim, so command samples and other intentional layout survive. Prose is
-  the zero-marker default; indentation is what supplies structure."
+  the zero-marker default; indentation is what supplies structure. Throws when
+  no line carries a bar — a bar-less block is an authoring error, not empty
+  output."
   [block]
-  (->> (str/split-lines block)
-       (keep bar-content)
+  (->> (barred-lines block)
        (partition-by str/blank?)
        (remove #(every? str/blank? %))
        (mapv (fn [lines]
@@ -40,10 +52,10 @@
   "Soft-wrap a single-paragraph `|`-margin block into one string.
 
   The single-item companion to `fill` for a lone prose value; item and verbatim
-  semantics do not apply — every barred line is trimmed and space-joined."
+  semantics do not apply — every barred line is trimmed and space-joined.
+  Throws when no line carries a bar, like `fill`."
   [block]
-  (->> (str/split-lines block)
-       (keep bar-content)
+  (->> (barred-lines block)
        (remove str/blank?)
        (map str/trim)
        (str/join " ")))

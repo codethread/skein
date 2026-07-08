@@ -144,7 +144,12 @@
     (is (= "One sentence spread over two source lines."
            (fmt/reflow "
                        |One sentence spread over
-                       |two source lines.")))))
+                       |two source lines."))))
+  (testing "a bar-less block is an authoring error, not empty output"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no barred lines"
+                          (fmt/fill "prose that lost its bars")))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no barred lines"
+                          (fmt/reflow "prose that lost its bars")))))
 
 (deftest kanban-refinement-lane-and-promote
   (with-runtime

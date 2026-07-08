@@ -12,7 +12,8 @@
 
   The bar marks column 0, a bare `|` line separates items, flush-left prose
   soft-wraps into one line per item, and any indentation past the bar keeps the
-  whole item verbatim for command samples and other intentional layout."
+  whole item verbatim for command samples and other intentional layout. Throws
+  when no line carries a bar — a bar-less block is an authoring error."
   [block]
   (format/fill block))
 
@@ -20,6 +21,7 @@
   "Soft-wrap a single-paragraph `|`-margin block into one string.
 
   The single-item companion to `fill` for a lone prose value; item and verbatim
-  semantics do not apply — every barred line is trimmed and space-joined."
+  semantics do not apply — every barred line is trimmed and space-joined.
+  Throws when no line carries a bar, like `fill`."
   [block]
   (format/reflow block))
