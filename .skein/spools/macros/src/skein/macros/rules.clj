@@ -35,12 +35,15 @@
 (defn forget-rules!
   "Forget every rule remembered for the current namespace, or for `ns-sym`.
 
-  A config namespace calls this once at the top of its load, before its
-  `defrule` forms re-register, so a targeted reload (load-file + reload!)
-  installs exactly what the current source defines. Without it the JVM-global
-  registry keeps entries for rules since renamed or deleted from source, and
-  `install-rules!` would silently re-register those stale handlers (TEN-003).
-  Returns nil."
+  A file-backed config namespace (loaded via `:file`, e.g. `attention.clj`)
+  calls this once at the top of its load, before its `defrule` forms
+  re-register, so `reload!` — which re-reads the file — installs exactly what
+  the current source defines. Without it the JVM-global registry keeps entries
+  for rules since renamed or deleted from source, and `install-rules!` would
+  silently re-register those stale handlers (TEN-003). A namespace loaded via
+  `:ns` is skipped by `reload!` once loaded, so it needs a targeted
+  `(require '<ns> :reload)` to re-run this. Tolerates an unknown `ns-sym`
+  (first-load calls it before anything is remembered). Returns nil."
   ([] (forget-rules! (ns-name *ns*)))
   ([ns-sym]
    (swap! rule-registry dissoc ns-sym)
@@ -52,13 +55,22 @@
   Registers each remembered rule through `skein.spools.chime/defrule!` in author
   order and returns a vector of the `defrule!` return maps, matching today's
   `register-chime-rules!` result shape so `attention/install!` keeps its
-  `:chime-rules` return."
+  `:chime-rules` return.
+
+  Throws if `ns-sym` has no remembered rules — a typo'd or stale quoted ns
+  literal, or a file that defined nothing, must fail loudly rather than silently
+  install nothing (TEN-003)."
   ([]
    (install-rules! (ns-name *ns*)))
   ([ns-sym]
-   (mapv (fn [{:keys [key] fn-sym :fn}]
-           (chime/defrule! key fn-sym))
-         (get @rule-registry ns-sym))))
+   (let [entries (get @rule-registry ns-sym)]
+     (when (empty? entries)
+       (throw (ex-info "install-rules! found no remembered rules for namespace"
+                       {:ns-sym ns-sym
+                        :known-namespaces (vec (keys @rule-registry))})))
+     (mapv (fn [{:keys [key] fn-sym :fn}]
+             (chime/defrule! key fn-sym))
+           entries))))
 
 (defmacro defrule
   "Define a Skein chime attention rule and remember it for install-rules!.

@@ -83,6 +83,21 @@
               (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Query not found"
                                     (api/resolve-query rt 'stale-b))))))))))
 
+(deftest install-queries-unknown-ns-fails-loudly
+  (testing "installing a namespace with no remembered queries throws rather than silently installing nothing (TEN-003)"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered queries"
+                          (queries/install-queries! 'skein.macros.queries-test.unknown))))
+  (testing "a namespace forgotten down to nothing (all queries removed from source) also throws"
+    (let [ns-key 'skein.macros.queries-test.emptied]
+      (queries/remember-query! ns-key {:name 'gone :query [:= :state "active"] :usage "u"})
+      (queries/forget-queries! ns-key)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered queries"
+                            (queries/install-queries! ns-key))))))
+
+(deftest forget-queries-unknown-ns-is-a-no-op
+  (testing "forget-queries! tolerates an unknown namespace (first-load calls it before anything is remembered)"
+    (is (nil? (queries/forget-queries! 'skein.macros.queries-test.never-remembered)))))
+
 (deftest defquery-fails-loudly-on-bad-input
   (testing "a non-symbol name throws at macroexpansion"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"name must be a symbol"

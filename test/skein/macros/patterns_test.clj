@@ -24,3 +24,18 @@
       (patterns/remember-pattern! ns-key {:name 'stale-a :fn 'ns/stale-a :input-spec ::a :doc "A"})
       (is (= ['stale-a] (keys (remembered ns-key)))
           "only the surviving pattern remains remembered; the deleted one is gone"))))
+
+(deftest install-patterns-unknown-ns-fails-loudly
+  (testing "installing a namespace with no remembered patterns throws rather than silently installing nothing (TEN-003)"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered patterns"
+                          (patterns/install-patterns! 'skein.macros.patterns-test.unknown))))
+  (testing "a namespace forgotten down to nothing (all patterns removed from source) also throws"
+    (let [ns-key 'skein.macros.patterns-test.emptied]
+      (patterns/remember-pattern! ns-key {:name 'gone :fn 'ns/gone :input-spec ::g :doc "G"})
+      (patterns/forget-patterns! ns-key)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered patterns"
+                            (patterns/install-patterns! ns-key))))))
+
+(deftest forget-patterns-unknown-ns-is-a-no-op
+  (testing "forget-patterns! tolerates an unknown namespace (first-load calls it before anything is remembered)"
+    (is (nil? (patterns/forget-patterns! 'skein.macros.patterns-test.never-remembered)))))

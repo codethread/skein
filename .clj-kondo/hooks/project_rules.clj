@@ -60,7 +60,7 @@
   {:node node})
 
 (defn defquery
-  "Analyze `defquery`/`defq` as a var definition so kondo resolves the query var.
+  "Analyze `defquery` as a var definition so kondo resolves the query var.
 
   Rewrites `(defquery name docstring opts query-def)` into a `def` of the var
   with the docstring, evaluating opts and the query definition so their symbols

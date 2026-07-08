@@ -48,12 +48,15 @@
 (defn forget-queries!
   "Forget every query remembered for the current namespace, or for `ns-sym`.
 
-  A config namespace calls this once at the top of its load, before its
-  `defquery` forms re-register, so a targeted reload (load-file + reload!)
-  installs exactly what the current source defines. Without it the JVM-global
-  registry keeps entries for queries since renamed or deleted from source, and
-  `install-queries!` would silently re-register those stale handles (TEN-003).
-  Returns nil."
+  A file-backed config namespace (loaded via `:file`, e.g. `config.clj`) calls
+  this once at the top of its load, before its `defquery` forms re-register, so
+  `reload!` — which re-reads the file — installs exactly what the current source
+  defines. Without it the JVM-global registry keeps entries for queries since
+  renamed or deleted from source, and `install-queries!` would silently
+  re-register those stale handles (TEN-003). A namespace loaded via `:ns` is
+  skipped by `reload!` once loaded, so it needs a targeted
+  `(require '<ns> :reload)` to re-run this. Tolerates an unknown `ns-sym`
+  (first-load calls it before anything is remembered). Returns nil."
   ([] (forget-queries! (ns-name *ns*)))
   ([ns-sym]
    (swap! query-registry dissoc ns-sym)
@@ -75,16 +78,24 @@
   Resolves the runtime via `skein.api.current.alpha/current`, registers each
   remembered query through `skein.api.weaver.alpha/register-query!` in author
   order, and returns a map of registered-name symbol to that call's canonical
-  return, matching today's `register-query-map!` result shape."
+  return, matching today's `register-query-map!` result shape.
+
+  Throws if `ns-sym` has no remembered queries — a typo'd or stale quoted ns
+  literal, or a file that defined nothing, must fail loudly rather than silently
+  install nothing (TEN-003)."
   ([]
    (install-queries! (ns-name *ns*)))
   ([ns-sym]
-   (let [runtime (current/runtime)
-         entries (get @query-registry ns-sym)]
-     (into {}
-           (map (fn [{:keys [name query]}]
-                  [name (api/register-query! runtime name query)]))
-           entries))))
+   (let [entries (get @query-registry ns-sym)]
+     (when (empty? entries)
+       (throw (ex-info "install-queries! found no remembered queries for namespace"
+                       {:ns-sym ns-sym
+                        :known-namespaces (vec (keys @query-registry))})))
+     (let [runtime (current/runtime)]
+       (into {}
+             (map (fn [{:keys [name query]}]
+                    [name (api/register-query! runtime name query)]))
+             entries)))))
 
 (defmacro defquery
   "Define a Skein named query and remember it for install-queries!.

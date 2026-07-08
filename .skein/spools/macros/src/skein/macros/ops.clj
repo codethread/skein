@@ -41,11 +41,15 @@
 (defn forget-ops!
   "Forget every op remembered for the current namespace, or for `ns-sym`.
 
-  A config namespace calls this once at the top of its load, before its `defop`
-  forms re-register, so a targeted reload (load-file + reload!) installs exactly
-  what the current source defines. Without it the JVM-global registry keeps
-  entries for ops since renamed or deleted from source, and `install-ops!` would
-  silently re-register those stale handlers (TEN-003). Returns nil."
+  A file-backed config namespace (loaded via `:file`, e.g. `config.clj`) calls
+  this once at the top of its load, before its `defop` forms re-register, so
+  `reload!` — which re-reads the file — installs exactly what the current source
+  defines. Without it the JVM-global registry keeps entries for ops since
+  renamed or deleted from source, and `install-ops!` would silently re-register
+  those stale handlers (TEN-003). A namespace loaded via `:ns` is skipped by
+  `reload!` once loaded, so it needs a targeted `(require '<ns> :reload)` to
+  re-run this. Tolerates an unknown `ns-sym` (first-load calls it before
+  anything is remembered). Returns nil."
   ([] (forget-ops! (ns-name *ns*)))
   ([ns-sym]
    (swap! op-registry dissoc ns-sym)
@@ -71,17 +75,25 @@
   and returns a vector of the registration entries, matching today's `install!`
   `:ops` vector shape. Registration metadata is `{:doc <arg-spec :doc>
   :arg-spec <arg-spec>}` merged with any extra remembered metadata keys (e.g.
-  `:deadline-class`); the `:convention` data is not passed to `register-op!`."
+  `:deadline-class`); the `:convention` data is not passed to `register-op!`.
+
+  Throws if `ns-sym` has no remembered ops — a typo'd or stale quoted ns
+  literal, or a file that defined nothing, must fail loudly rather than silently
+  install nothing (TEN-003)."
   ([]
    (install-ops! (ns-name *ns*)))
   ([ns-sym]
-   (let [runtime (current/runtime)
-         entries (get @op-registry ns-sym)]
-     (mapv (fn [{:keys [name arg-spec metadata] fn-sym :fn}]
-             (api/register-op! runtime name
-                               (merge {:doc (:doc arg-spec) :arg-spec arg-spec} metadata)
-                               fn-sym))
-           entries))))
+   (let [entries (get @op-registry ns-sym)]
+     (when (empty? entries)
+       (throw (ex-info "install-ops! found no remembered ops for namespace"
+                       {:ns-sym ns-sym
+                        :known-namespaces (vec (keys @op-registry))})))
+     (let [runtime (current/runtime)]
+       (mapv (fn [{:keys [name arg-spec metadata] fn-sym :fn}]
+               (api/register-op! runtime name
+                                 (merge {:doc (:doc arg-spec) :arg-spec arg-spec} metadata)
+                                 fn-sym))
+             entries)))))
 
 (defmacro defop
   "Define a Skein CLI op and remember it for install-ops!.

@@ -114,6 +114,21 @@
               (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Operation not found"
                                     (api/resolve-op rt 'stale-b))))))))))
 
+(deftest install-ops-unknown-ns-fails-loudly
+  (testing "installing a namespace with no remembered ops throws rather than silently installing nothing (TEN-003)"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered ops"
+                          (ops/install-ops! 'skein.macros.ops-test.unknown))))
+  (testing "a namespace forgotten down to nothing (all ops removed from source) also throws"
+    (let [ns-key 'skein.macros.ops-test.emptied]
+      (ops/remember-op! ns-key {:name 'gone :fn 'x/gone-op :arg-spec {} :metadata {} :convention {:name "gone"}})
+      (ops/forget-ops! ns-key)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered ops"
+                            (ops/install-ops! ns-key))))))
+
+(deftest forget-ops-unknown-ns-is-a-no-op
+  (testing "forget-ops! tolerates an unknown namespace (first-load calls it before anything is remembered)"
+    (is (nil? (ops/forget-ops! 'skein.macros.ops-test.never-remembered)))))
+
 (deftest defop-fails-loudly-on-bad-input
   (testing "a non-symbol name throws at macroexpansion"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"name must be a symbol"

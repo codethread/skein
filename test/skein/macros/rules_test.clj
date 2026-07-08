@@ -95,6 +95,21 @@
             (is (= #{:stale-a} (set (map :name (chime/rules))))
                 "the forgotten rule never reaches the chime engine")))))))
 
+(deftest install-rules-unknown-ns-fails-loudly
+  (testing "installing a namespace with no remembered rules throws rather than silently installing nothing (TEN-003)"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered rules"
+                          (rules/install-rules! 'skein.macros.rules-test.unknown))))
+  (testing "a namespace forgotten down to nothing (all rules removed from source) also throws"
+    (let [ns-key 'skein.macros.rules-test.emptied]
+      (rules/remember-rule! ns-key {:key :gone :fn 'x/gone-rule})
+      (rules/forget-rules! ns-key)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no remembered rules"
+                            (rules/install-rules! ns-key))))))
+
+(deftest forget-rules-unknown-ns-is-a-no-op
+  (testing "forget-rules! tolerates an unknown namespace (first-load calls it before anything is remembered)"
+    (is (nil? (rules/forget-rules! 'skein.macros.rules-test.never-remembered)))))
+
 (deftest defrule-fails-loudly-on-bad-input
   (testing "a non-symbol name throws at macroexpansion"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"name must be a symbol"
