@@ -9,7 +9,7 @@ Type: AFK
 Write the pilot operator section in `docs/skein.md`: how the code owner launches a
 pilot run, the four human-only points, how auto-land is granted, and how to read
 escalations and the train queue. This is human-facing prose — apply the docs-style
-skill (`.claude/skills/docs-style/SKILL.md`) and the column-180 limit.
+skill (`.agents/skills/docs-style/SKILL.md`) and the column-180 limit.
 
 Owned files: `docs/skein.md` (new pilot section). Worker discipline: record `progress`,
 `status=implemented` only on a green gate, one atomic commit of owned files (no push),
@@ -55,4 +55,4 @@ never close your strand or touch siblings, kill only by PID.
   P6; [PLAN-Pilot-001](../pilot-spool.plan.md) PH9;
   [RFC-021](../../../rfcs/2026-07-08-pilot-spool.md) REC3, REC7.
 - **TASK-Pilot-009.REF2:** `docs/skein.md` (surrounding prose and wrapping),
-  `.claude/skills/docs-style/SKILL.md` (the sweep).
+  `.agents/skills/docs-style/SKILL.md` (the sweep).

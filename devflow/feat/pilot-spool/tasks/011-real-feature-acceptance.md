@@ -26,15 +26,20 @@ user's default workspace.
   expansion guarded with `${ws:?}`). Choose a genuinely small real feature (for example
   a scoped doc or config fix) as the subject.
 - **TASK-Pilot-011.MI2 (end-to-end run, AC1):** launch the feature as one pilot run and
-  carry it intake → design → plan/tasks → AFK → review → land. The human performs brief
-  capture and scope acceptance; every other decision is a seat. Count the human touches
-  from the run record — they must be single digits against the ~40-touch baseline, and
-  only at brief capture, scope acceptance, and genuine escalations.
+  carry it intake → proposal → spec-plan → route-after-plan → task-breakdown →
+  run-afk-loop → review → land. The human performs brief capture and proposal/scope
+  sign-off; every other decision is a seat. Count the human touches from the run record
+  — they must be single digits against the order-of-magnitude baseline of dozens of
+  coordinator touches (cards w8rw0, r0x9l, o7r6j, n7aya), and only at brief capture,
+  proposal/scope sign-off, and genuine escalations.
 - **TASK-Pilot-011.MI3 (train drill, AC2):** with auto-land granted for the run, queue a
   second pilot run on the sentinel and confirm the second lands with no human merge
   command after the first releases the lock.
 - **TASK-Pilot-011.MI4 (provenance audit, AC4):** confirm every checkpoint close in the
   pilot run carries `:by`, and that no `workflow/hitl` checkpoint was closed by a seat.
+  This is the post-hoc drill for the human-authority boundary (RFC-021.REC4.INV): it
+  proves in the run's `:by` record that the classifier exclusion held, complementing the
+  classifier unit test in task 3.
 - **TASK-Pilot-011.MI5 (escalation on stall):** if the run stalls at a point the design
   did not anticipate, stop and escalate to the human with the run record and notes;
   never downgrade a human-only point or fork the stage definitions to get past it.

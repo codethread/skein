@@ -2,6 +2,36 @@
 
 Purpose: distill the current coordination machinery for the pilot-spool design. This is input, not a proposal.
 
+## Orientation (read first)
+
+New to this feature? Start here, then read this digest, then the RFC.
+
+Where things live:
+
+- `devflow/rfcs/2026-07-08-pilot-spool.md` (RFC-021) — the design decision and its options.
+- `devflow/feat/pilot-spool/proposal.md`, `pilot-spool.plan.md`, `tasks/` — the scoped proposal, the phases, and the 11 build slices.
+- This digest — the systems the design sits on, explained one at a time.
+- Build target: a new `.skein/pilot.clj` concern file plus small edits to sibling `.skein` files. No shipped-contract changes.
+
+The five systems pilot composes (all shipped, no engine changes needed):
+
+- The workflow engine — runs a feature as a strand graph of steps, gates, and checkpoints.
+- Treadle and shuttle — spawn agent runs to fulfil `:subagent` gates.
+- Chime — watches graph mutations and notifies a human; it never mutates.
+- Cron — timer jobs that may call trusted spool APIs.
+- The land family — the coordinator-only workflow that merges a branch to main under a lock.
+
+Key terms:
+
+- **molecule** — one workflow stage poured as its own cluster of strands under the run.
+- **step** — work the current driver owns; waiter `:self` means the driver must act. **gate** — work an external actor owns; the waiter
+  (`:ci`, `:subagent`, `:human`) names who. A gate with no executor surfaces as attention.
+- **checkpoint** — a step decided with `choose!`; `workflow/hitl` (`:kind :human`) marks a human-only one. A **routed choice** is a hard cutover:
+  it closes the checkpoint and pours the next stage in one transaction, so evidence must be recorded before the checkpoint.
+- **seat** — an ephemeral coordinator run spawned to decide one attention point, then exit. **lease** — the `pilot/seat` stamp that stops two seats driving one run.
+- **train** — the queue of signed-off pilot runs waiting on the single merge lock to land one at a time.
+- **dispatcher** — the cron sweep that classifies attention states and spawns one seat each; it is also the human-authority boundary (RFC-021.REC4.INV).
+
 ## Sources read
 
 - `spools/workflow.md`: workflow engine contract.
@@ -163,8 +193,8 @@ Purpose: distill the current coordination machinery for the pilot-spool design. 
 
 ## Observed coordination costs from this session
 
-- The session paid roughly forty coordinator touches across four nearby cards: repeated review rounds, manual verification, failure triage,
-  notes, retry/kill decisions, handovers, and final evidence refreshes.
+- The session paid dozens of coordinator touches across four nearby cards — w8rw0, r0x9l, o7r6j, and n7aya, whose handover and synthesis notes are
+  the durable evidence: repeated review rounds, manual verification, failure triage, notes, retry/kill decisions, handovers, and final evidence refreshes.
 - `w8rw0` was a mostly clean readability pass, but review still fanned out six notes plus synthesis.
   One issue survived review: malformed `|-margin` input could silently drop prose.
 - Resolving `w8rw0` required human/coordinator judgment on whether that fail-loud gap blocked the card and how to patch or defer it.

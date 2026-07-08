@@ -26,6 +26,13 @@ only by PID, live validation in a disposable world only.
   gate, hang-budget breach, and stage done (PROP-Pilot-001.S4, RFC-021.REC4). Hang-
   budget breach detection is refined in task 7; here, leave a seam the budget check
   plugs into.
+- **TASK-Pilot-003.MI2b (human-authority boundary):** the classifier is the boundary
+  and the only thing enforcing it, because `checkpoint-kind` is provenance-only and
+  unenforced (TEN-002; RFC-021.REC4.INV). A ready `workflow/hitl` (`:kind :human`)
+  checkpoint is NEVER a seat-spawn attention state, and the classifier NEVER targets
+  `break-lock`; both route to chime as human attention only. This exclusion is the
+  load-bearing safety property — implement it explicitly, not as a side effect of the
+  ready-agent-checkpoint filter.
 - **TASK-Pilot-003.MI3 (one seat per state):** for each attention state on a run with no
   live seat lease, spawn exactly one seat (using the task-2 seat mechanism). The lease
   is the guard against a double spawn: never spawn a second seat over a live lease.
@@ -52,7 +59,9 @@ only by PID, live validation in a disposable world only.
   lint reflect-check docs-check` reports zero findings.
 - **TASK-Pilot-003.DW2:** `test/skein/pilot_test.clj` gains cases: the sweep classifies
   each attention state from fabricated run views; the dispatcher spawns no second seat
-  when a live lease exists; a terminal-run lease is reclaimable. `flock -w 3600
+  when a live lease exists; a terminal-run lease is reclaimable; and the dedicated
+  boundary test (MI2b) — the classifier given a ready `workflow/hitl` checkpoint
+  excludes it from seat-spawn states, and never targets `break-lock`. `flock -w 3600
   /tmp/skein-test.lock env PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test`
   green.
 - **TASK-Pilot-003.DW3:** In a disposable world, run one dispatcher tick against a

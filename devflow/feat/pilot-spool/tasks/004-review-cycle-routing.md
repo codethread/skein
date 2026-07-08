@@ -65,5 +65,5 @@ in a disposable world only.
   [PLAN-Pilot-001](../pilot-spool.plan.md) PH4; [RFC-021](../../../rfcs/2026-07-08-pilot-spool.md)
   REC6, A4.
 - **TASK-Pilot-004.REF2:** `.skein/reviewers.clj` (the `change-review` roster), `strand
-  agent about` (review, delegate, :task-sizing), `spools/agents.md` (roster review and
-  synthesis).
+  agent about` (review, delegate, :task-sizing), `spools/agents/README.md` (roster
+  review and synthesis).

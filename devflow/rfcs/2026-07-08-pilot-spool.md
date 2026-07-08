@@ -1,8 +1,9 @@
 # Pilot: hands-off feature runs
 
 **Document ID:** `RFC-021`
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-07-08
+**Accepted:** 2026-07-08, coordinator note q44ji under user-delegated authority
 **Related:** [Research digest](../feat/pilot-spool/research.md), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md),
 [Treadle](../../spools/shuttle/treadle.md), [Chime cookbook](../../spools/chime.cookbook.md), [Cron cookbook](../../spools/cron.cookbook.md),
 [Weaver scheduler (RFC-009)](./2026-06-29-weaver-scheduler.md), [Shuttle-backed coordination (RFC-010)](./2026-07-02-shuttle-backed-coordination.md),
@@ -14,8 +15,9 @@ Devflow, shuttle, and treadle already automate the work inside a feature:
 stages pour as strand molecules, treadle fulfills `:subagent` gates, review
 fans out through declared rosters. What is not automated is the space between.
 A resident coordinator session still watches every run, and the
-2026-07-08 session measured that cost at roughly forty coordinator touches
-across four nearby cards: review-round driving, result verification, failure
+2026-07-08 session recorded dozens of coordinator touches across four nearby
+cards — w8rw0, r0x9l, o7r6j, and n7aya, whose handover and synthesis notes are
+the durable evidence: review-round driving, result verification, failure
 triage, retry/kill decisions, handover notes, and final evidence refreshes.
 
 Almost every touch was one bounded decision over durable state, and the same
@@ -29,9 +31,11 @@ Three structural facts shape the solution space:
 - **RFC-021.P1.1:** `:self` steps and checkpoints progress only while a driver
   is live. In today's land family even "watch CI to green" (`:ci-green`) is a
   `:self` step, so an unattended run stalls at a wait a machine could complete.
-  (The launch sketch also listed "cleanup should kanban-finish the card" as a
-  gap; the current cleanup step already instructs that for card-backed runs,
-  so CI self-completion is the remaining small gap.)
+  The gap is the missing driver, not the step shape: a seat that runs
+  `land complete <feature> step=ci-green` once CI is green drives that wait
+  exactly as a human coordinator does, leaving the land family unchanged. (The
+  land cleanup step already kanban-finishes the card for card-backed runs, so
+  that is not a gap — the only gap is the absent driver.)
 - **RFC-021.P1.2:** No contract spawns a driver on attention. `workflow/await!`
   reports `:checkpoint`, `:stalled`, `:gate`, or `:done` to a caller that must
   already exist; chime notifies humans and mutates nothing; treadle fulfills
@@ -75,7 +79,8 @@ escalation.
 
 - **RFC-021.NG1:** Do not auto-decide human checkpoints. `workflow/hitl`
   stays load-bearing; pilot never downgrades a human-only point to an agent
-  checkpoint.
+  checkpoint. The seat classifier enforces this — see the human-authority
+  boundary invariant (RFC-021.REC4.INV).
 - **RFC-021.NG2:** Do not add engine primitives in v1: no scheduler beyond
   RFC-009's, no core lease/claim feature, no contract-level event stream.
   Attributes and trusted config come first; P7 names the promotion candidates.
@@ -120,8 +125,8 @@ The design decomposes into four decisions. Options are grouped per decision.
 - **RFC-021.O4:** Resident coordinator (status quo): a live session
   `await!`-loops over the run. Works today with the lowest decision latency,
   but pays continuous context and attention for idle waits, dies with the
-  session, and the ~50-minute await ceiling forces babysitting. This is the
-  measured forty-touch cost.
+  session, and the ~50-minute await ceiling requires repeated coordinator
+  attention. This is the measured cost of dozens of touches (RFC-021.P1).
 - **RFC-021.O5:** Ephemeral seats: a seat is spawned per decision point,
   decides it, and exits. Cold resume is proven; each seat is a tracked
   shuttle run (inspectable, retryable, visible to peers); cost is
@@ -177,24 +182,53 @@ The design decomposes into four decisions. Options are grouped per decision.
   reviewable config data. Live in `.skein` policy first and promote to a
   reference spool only after one real feature lands through it, mirroring how
   treadle followed manual delegation.
-- **RFC-021.REC2:** Run shape: one run-id from intake to land. Reuse the
-  devflow stage definitions through the `skein.spools.devflow` composition
-  surface where it exposes them, and route into the existing land family as a
-  continuation rather than forking either; the exact reuse seam is Q1. Because
-  routed choices are hard cutovers, every stage must record its evidence
-  before its checkpoint.
-- **RFC-021.REC3:** Checkpoint ownership under pilot: brief capture and
-  RFC/scope acceptance-or-abort stay `:kind :human` with `workflow/hitl`.
-  Spec-plan sign-off, task-breakdown acceptance, and AFK acceptance become
-  agent checkpoints decided by seats. Agent checkpoints gain an `escalate`
-  choice (required reason, routes to a chime-notified waiting state) and never
-  an `abort` choice: aborting a feature stays human-only. This conversion is
-  itself part of what the human accepts at scope acceptance.
+- **RFC-021.REC2:** Run shape: one pilot run-id from intake to land. devflow is
+  an external git-pinned spool (`codethread/devflow` in `.skein/spools.edn`,
+  source synced by the weaver, not a repo-local file), so its composition
+  surface is discovered from the pinned artifact. Reuse the devflow stage
+  definitions through that surface where it exposes them, and route into the
+  existing land family as a continuation rather than forking either; the exact
+  reuse seam is Q1. The recorded fallback is that pilot wraps the shipped
+  devflow run as a black box — continuations around it — and never forks its
+  stage definitions. Because routed choices are hard cutovers, every stage must
+  record its evidence before its checkpoint.
+- **RFC-021.REC3:** Checkpoint ownership under pilot, mapped onto the pinned
+  devflow graph (intake, proposal, spec-plan, route-after-plan, task-breakdown,
+  and run-afk-loop or direct-implementation). Brief capture is a `:self` step
+  (`:capture-brief`), not a checkpoint; the human-only checkpoints are the
+  intake worktree checkpoint (`:create-or-confirm-worktree`), the proposal
+  sign-off (`:human-signoff-proposal`, the RFC/scope acceptance point), and
+  every abort — these stay `:kind :human` with `workflow/hitl`. devflow already
+  ships `:discuss-scope` and `:route-after-plan` as agent checkpoints, so seats
+  decide them as shipped. The spec-plan, task-breakdown, and AFK-acceptance
+  sign-offs (`:human-signoff-spec-plan`, `:human-signoff-tasks`,
+  `:human-acceptance-afk`) are the conversion targets: under pilot they become
+  agent checkpoints decided by seats, gaining an `escalate` choice (required
+  reason, routes to a chime-notified waiting state) and never an `abort` choice
+  — aborting a feature stays human-only. Whether pilot can set that checkpoint
+  kind while composing the devflow stages, or must leave those sign-offs human
+  under the black-box fallback (RFC-021.REC2), is the Q1 seam decided in slice
+  001. This conversion is itself part of what the human accepts at proposal
+  sign-off.
 - **RFC-021.REC4:** The dispatcher is a cron job over pilot run roots plus
   RFC-009 scheduler wakes for known future events. Attention states, read
   through the same lens `await!` uses: ready agent checkpoint, ready `:self`
   step, stalled gate, hang-budget breach, and stage done. For each attention
   state on a run with no live seat lease, it spawns exactly one seat.
+- **RFC-021.REC4.INV (human-authority boundary):** The seat classifier is the
+  human-authority boundary, and it is the only thing enforcing it.
+  `workflow/checkpoint-kind` is unenforced provenance (TEN-002; `workflow.md`),
+  so nothing in the engine stops a full-CLI seat from `choose!`-ing a
+  `:kind :human`/`workflow/hitl` checkpoint or running `land break-lock`. The
+  invariant is therefore policy-and-dispatcher-enforced, not engine-enforced:
+  the classifier NEVER emits a seat-spawn attention state for a `workflow/hitl`
+  (`:kind :human`) checkpoint and NEVER targets `break-lock` — both route to
+  chime as human attention only. This exclusion is the load-bearing safety
+  property of the whole hands-off design. It carries a dedicated test (the
+  classifier, given a ready hitl checkpoint, must exclude it) and a provenance
+  drill (no seat-closed hitl in the run's `:by` record) that complements
+  RFC-021.AC4, and the seat prompt policy forbids closing hitl checkpoints and
+  running `break-lock` outright.
 - **RFC-021.REC5:** Seat contract and lease: the dispatcher stamps
   `pilot/seat = <run-id>` on the pilot run root before spawning, mirroring
   treadle's gate stamp. A seat serves one attention state: it verifies its
@@ -215,11 +249,13 @@ The design decomposes into four decisions. Options are grouped per decision.
   observed on r0x9l); exhaustion escalates to a human with the full round
   history.
 - **RFC-021.REC7:** Merge train on the merge sentinel:
-  - CI waits become gates, not `:self` steps: waiter `:ci`, completed by a
-    cron poller over `gh pr checks` / `gh run list` that closes the gate with
-    `:by "pilot-ci-poller"` and a note naming the sha and check evidence.
-    This also closes the P1.1 gap for pilot runs while leaving the hands-on
-    land family alone.
+  - CI waits stay `:self` steps and the land family is untouched. A cron poller
+    over `gh pr checks` / `gh run list` acts through the land op: once checks
+    are green at the step's sha it runs `land complete <feature> step=ci-green`
+    as an unattended seat (`:by "pilot-ci-poller"`, HEAD sha and check evidence
+    in the completion note), exactly as a human coordinator drives that wait.
+    This closes the P1.1 driver gap for pilot runs while keeping the hands-on
+    land family alone; there is no `:self`→`:ci` gate conversion.
   - Auto-signoff applies O12 criteria, all machine-checkable and all at the
     same HEAD sha: branch pushed, CI green at HEAD, roster synthesis clean at
     HEAD, review rounds within bound, and no lock anomaly. Anything short of
@@ -270,6 +306,13 @@ The design decomposes into four decisions. Options are grouped per decision.
   findings are fixed and which remain. A synthesis at any older sha is
   non-evidence for sign-off.
 
+The human-authority boundary (RFC-021.REC4.INV) is not one of these recovery
+classes but shares their discipline: because `checkpoint-kind` is provenance
+only (TEN-002), the boundary is held by the classifier's exclusion of every
+`workflow/hitl` checkpoint and `break-lock`, not by the engine. A seat closing
+a hitl checkpoint is a boundary breach, not an anomaly to recover from;
+RFC-021.AC4 audits the run's `:by` record to prove it never happened.
+
 ## RFC-021.P7 Placement: policy, spool, engine
 
 Pure `.skein` policy (all of v1):
@@ -305,9 +348,12 @@ candidates if userland attributes prove insufficient:
 ## RFC-021.P8 Acceptance criteria
 
 - **RFC-021.AC1:** One real, small feature runs intake through land on this
-  repo under pilot with human touches only at brief capture, scope
-  acceptance, and genuine escalations. Touches are counted from the run
-  record; single digits against the ~40-touch baseline.
+  repo under pilot with human touches only at brief capture, proposal/scope
+  sign-off, and genuine escalations. Touches are counted from the run record;
+  single digits against the order-of-magnitude baseline of dozens of
+  coordinator touches the 2026-07-08 session recorded across cards w8rw0,
+  r0x9l, o7r6j, and n7aya (the handover and synthesis notes on those cards are
+  the durable evidence).
 - **RFC-021.AC2:** With auto-land granted, two pilot runs queue on the
   sentinel and the second lands with no human merge command after the first
   releases the lock.
@@ -326,10 +372,13 @@ candidates if userland attributes prove insufficient:
 
 ## RFC-021.P9 Open questions
 
-- **RFC-021.Q1:** The devflow reuse seam: does `skein.spools.devflow` expose
-  enough stage composition for pilot to string its stages, or does pilot
-  route devflow's shipped run into pilot continuations? Decided at spec-delta
-  time; forking stage definitions is the fallback and the worst outcome.
+- **RFC-021.Q1:** The devflow reuse seam, validated against the pinned spool's
+  actual surface early in slice 001: does `skein.spools.devflow` (read from the
+  synced spool checkout, not a repo-local source file) expose enough stage
+  composition for pilot to string its stages and set their checkpoint kinds, or
+  must pilot wrap devflow's shipped run as a black box with continuations around
+  it? Wrapping is the recorded fallback; forking stage definitions is never done
+  and is the worst outcome.
 - **RFC-021.Q2:** Seat batching: one attention state per seat is the v1 rule;
   a drain pass (one seat decides all currently-ready points on its run)
   would cut spawn churn on chatty runs but weakens the one-decision audit
