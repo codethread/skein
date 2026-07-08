@@ -13,10 +13,10 @@
 // workflow DAG (esc/h returns). Non-TTY (and --once) prints the first tab's flat
 // runs frame.
 //
-// Adding a tab is a local change: write a module under ./tabs that exports a
-// Tab — listDetailTab(...) for a plain list+detail (row type, fetch, and list
-// component in one file), or defineTab(...) for a tab that owns several views —
-// then add it to the registry below. No other file needs to change.
+// Adding a tab is a local change: write a module under ./tabs that exports a Tab
+// via defineTab(...) — composing the shared list/detail/graph reducers from ./app
+// and ./ui for a plain list+detail or a tab that owns several views — then add it
+// to the registry below. No other file needs to change.
 //
 // Usage: bun scripts/shuttle-dash/index.tsx [--interval secs] [--all] [--once] [--workspace dir]
 

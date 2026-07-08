@@ -8,7 +8,7 @@ import { appendFileSync } from "node:fs";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, render, useApp, useInput, useStdin, type Key } from "ink";
 import { editorArgv, editorFileFor, opts, workspaceRoot, type DetailRow } from "./data";
-import { DetailView, Failure, Header, TableRow, detailMaxScroll, detailPage, listPage, useTerminalSize, type Cell, type ListProps } from "./ui";
+import { Header, TableRow, useTerminalSize, type Cell } from "./ui";
 
 // ── reusable list+detail view state ──────────────────────────────────────────
 // One scrollable list with an optional attribute detail. Selection is anchored
@@ -115,73 +115,6 @@ export type Tab<V> = {
 
 export function defineTab<V>(tab: Tab<V>): Tab<unknown> {
   return tab as unknown as Tab<unknown>;
-}
-
-// ── the standard single-dataset tab ──────────────────────────────────────────
-// A plain list with an attribute detail (kanban, devflow). Supplies the whole
-// tab contract from a fetch and a list component, so the tab module stays a
-// single self-contained file that never re-implements navigation.
-
-type SimpleView<R extends DetailRow> = { rows: R[]; loaded: boolean; failure: string | null; s: ListState };
-
-export function listDetailTab<R extends DetailRow>(cfg: {
-  id: string;
-  label: string;
-  fetch: (all: boolean) => Promise<R[]>;
-  List: (props: ListProps<R>) => React.ReactElement;
-  keyOf?: (r: R) => string;
-}): Tab<unknown> {
-  const keyOf = cfg.keyOf ?? ((r: R) => r.id);
-  return defineTab<SimpleView<R>>({
-    id: cfg.id,
-    label: cfg.label,
-    init: () => ({ rows: [], loaded: false, failure: null, s: emptyListState() }),
-    fetchKey: () => "",
-    allApplies: () => true,
-    inDetail: (v) => v.s.view === "detail",
-    editTarget: (v) => v.rows[v.s.selected] ?? null,
-    refresh: async (_v, all) => {
-      try {
-        const rows = await cfg.fetch(all);
-        return (latest) => ({ rows, loaded: true, failure: null, s: followSelection(latest.s, rows, keyOf) });
-      } catch (e) {
-        const failure = e instanceof Error ? e.message : String(e);
-        return (latest) => ({ ...latest, loaded: true, failure });
-      }
-    },
-    onKey: (v, ctx) => {
-      const { input, key } = ctx;
-      if (v.s.view === "detail") {
-        const r = reduceScrollKeys(v.s.detailScroll, input, key, detailMaxScroll(v.rows[v.s.selected], ctx.cols, ctx.termRows), detailPage(ctx.termRows));
-        if (r === "back") return { ...v, s: { ...v.s, view: "list" } };
-        if (r !== null) return { ...v, s: { ...v.s, detailScroll: r } };
-        if (input === "r") ctx.refresh();
-        return v;
-      }
-      const moved = reduceListKeys(v.s, input, key, v.rows, keyOf, listPage(ctx.termRows));
-      if (moved) return { ...v, s: moved };
-      if (key.return || key.rightArrow || input === "l")
-        return v.rows[v.s.selected] ? { ...v, s: { ...v.s, view: "detail", detailScroll: 0 } } : v;
-      if (input === "r") ctx.refresh();
-      return v;
-    },
-    render: (v, ctx) => {
-      if (v.failure) return <Failure failure={v.failure} cols={ctx.cols} />;
-      if (v.s.view === "detail" && ctx.interactive)
-        return <DetailView row={v.rows[v.s.selected]} scroll={v.s.detailScroll} cols={ctx.cols} termRows={ctx.termRows} />;
-      return (
-        <cfg.List
-          rows={v.rows}
-          selected={v.s.selected}
-          interactive={ctx.interactive}
-          cols={ctx.cols}
-          termRows={ctx.termRows}
-          all={ctx.all}
-          loaded={v.loaded}
-        />
-      );
-    },
-  });
 }
 
 // ── the shell ────────────────────────────────────────────────────────────────

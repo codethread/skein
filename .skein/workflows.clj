@@ -15,7 +15,120 @@
             [skein.api.weaver.alpha :as api]
             [skein.spools.agents :as agents]
             [skein.spools.loom :as loom]
+            [skein.spools.util :refer [attr-get]]
             [skein.spools.workflow :as workflow]))
+
+(def ^:private merge-lock-kind
+  "Singleton strand kind for the repo-wide land merge sentinel."
+  "merge-lock")
+
+(def ^:private merge-lock-monitor
+  "JVM-local monitor for serialising merge-lock acquisition inside one weaver."
+  (Object.))
+
+(defn- attr-value
+  "Return strand attribute k using the shared fail-loud attribute reader."
+  [strand k]
+  (when strand
+    (attr-get strand k)))
+
+(defn- active-merge-locks
+  "Return active merge-lock strands."
+  []
+  (api/list (current/runtime) [:and [:= :state "active"] [:= [:attr "kind"] merge-lock-kind]] {}))
+
+(defn- land-root
+  "Return the active land root for feature, failing loudly when absent."
+  [feature]
+  (or (workflow/current-root feature)
+      (throw (ex-info "land run not found" {:feature feature}))))
+
+(defn- acquire-merge-lock!
+  "Acquire the singleton merge lock for a land run, or fail when another run owns it."
+  [feature]
+  (locking merge-lock-monitor
+    (let [rt (current/runtime)
+          root (land-root feature)
+          owner (:id root)
+          locks (active-merge-locks)
+          owned (some #(when (and (= owner (attr-value % :owner))
+                                  (= feature (attr-value % :land/run-id))) %) locks)]
+      (if owned
+        owned
+        (do
+          (when-let [held (first locks)]
+            (throw (ex-info "another land run holds the merge lock"
+                            {:lock (:id held)
+                             :owner (attr-value held :owner)
+                             :land/run-id (attr-value held :land/run-id)})))
+          (api/add rt {:title (str "Merge lock: " feature)
+                       :attributes {:kind merge-lock-kind
+                                    :owner owner
+                                    :land/run-id feature}}))))))
+
+(defn- release-merge-lock!
+  "Release the merge lock held by feature, if one exists."
+  [feature reason]
+  (doseq [lock (active-merge-locks)
+          :when (= feature (attr-value lock :land/run-id))]
+    (api/update (current/runtime)
+                (:id lock)
+                {:state "closed"
+                 :attributes {:land/released-reason reason}})))
+
+(defn- inspect-merge-lock
+  "Return the active merge-lock snapshot, or nil."
+  []
+  (some-> (first (active-merge-locks)) loom/summarize))
+
+(defn- break-merge-lock!
+  "Explicitly break a stale merge lock with a human-supplied reason."
+  [reason]
+  (config/require-non-blank! :reason reason)
+  (let [locks (active-merge-locks)]
+    (when (> (count locks) 1)
+      (throw (ex-info "multiple active merge locks found; inspect and repair manually"
+                      {:locks (mapv :id locks)})))
+    (if-let [lock (first locks)]
+      {:broken (loom/summarize (api/update (current/runtime)
+                                           (:id lock)
+                                           {:state "closed"
+                                            :attributes {:land/broken-reason reason}}))}
+      {:broken nil})))
+
+(defn- move-card-to-review!
+  "Move the optional land card into in_review when it is present."
+  [card]
+  (when (and (string? card) (not (str/blank? card)))
+    (let [strand (api/show (current/runtime) card)]
+      (when-not (= "true" (attr-value strand :kanban/card))
+        (throw (ex-info "land card is not a kanban card" {:card card})))
+      (case (attr-value strand :kanban/status)
+        "claimed" ((requiring-resolve 'skein.spools.kanban/request-review!) card)
+        "in_review" nil
+        (throw (ex-info "land card must be claimed before review"
+                        {:card card :status (attr-value strand :kanban/status)}))))))
+
+(defn- suppressing-rollback!
+  "Run f during error recovery, suppressing rollback failures on original."
+  [^Throwable original f]
+  (try
+    (f)
+    (catch Throwable rollback-error
+      (.addSuppressed original rollback-error))))
+
+(defn- move-card-to-rework!
+  "Move the optional land card from in_review back to claimed after abort."
+  [card]
+  (when (and (string? card) (not (str/blank? card)))
+    (let [strand (api/show (current/runtime) card)]
+      (when-not (= "true" (attr-value strand :kanban/card))
+        (throw (ex-info "land card is not a kanban card" {:card card})))
+      (case (attr-value strand :kanban/status)
+        "in_review" ((requiring-resolve 'skein.spools.kanban/rework!) card)
+        "claimed" nil
+        (throw (ex-info "land card must be in_review before abort rework"
+                        {:card card :status (attr-value strand :kanban/status)}))))))
 
 (defn- non-blank-string?
   "Return true when v is a non-blank string."
@@ -169,10 +282,12 @@
   COORDINATOR-ONLY: worker agents never land. Sequential single molecule, one
   linear DAG plus an abort cutover: push + draft PR, green CI at HEAD,
   roster sign-off (only valid on a pushed branch with green CI), a coordinator
-  sign-off checkpoint, squash-merge to LOCAL main with the full local
-  verification gate, green main CI, then cleanup. `params` carry `:feature`,
-  `:branch`, `:worktree`, and optional `:card`; step `workflow/instruction`
-  text is command-precise and fail-loud, so the discipline lives in the data."
+  sign-off checkpoint, squash-merge to LOCAL main behind the singleton merge
+  lock, green main CI, then cleanup. Card-backed runs move the card to
+  `in_review` when review starts and back to `claimed` on abort. `params` carry
+  `:feature`, `:branch`, `:worktree`, and optional `:card`; step
+  `workflow/instruction` text is command-precise and fail-loud, so the
+  discipline lives in the data."
   [_opts]
   (workflow/workflow
    (fn [{:keys [branch]}] (str "Land: " branch))
@@ -219,7 +334,8 @@
                                       " round re-pushes the branch and MUST re-establish green CI (the ci-green bar)"
                                       " before this step may complete. SIGN-OFF IS ONLY VALID WITH A PUSHED BRANCH"
                                       " AND GREEN CI — that is why this step follows CI. Record the review pass ids"
-                                      " and the final verdict in notes."))})
+                                      " and the final verdict in notes. For card-backed land runs, entering this step"
+                                      " moves the kanban card to in_review; aborting sign-off moves it back to claimed."))})
    (workflow/checkpoint :signoff
                         (fn [{:keys [branch]}] (str "Sign off landing " branch))
                         :depends-on [:signoff-review]
@@ -316,11 +432,16 @@
    :coordinator-only "Worker agents never land — they stop at implemented+committed. Only a coordinator, holding delegated sign-off authority, drives a land run."
    :discipline (format-alpha/reflow
                 "|Sign-off is only valid on a pushed branch with an open draft PR and
-                 |green CI at HEAD — that is the point of the ordering. A merge is a
-                 |squash into LOCAL main that must pass the full local verification gate
-                 |(tests + go tests + fmt/lint/reflect/docs + smoke) before main is
-                 |pushed; main is only landed once its own CI is green. Aborting at
-                 |sign-off records a reason and leaves the branch/worktree untouched.")
+                 |green CI at HEAD — that is the point of the ordering. For card-backed
+                 |runs, entering signoff-review moves the card to in_review, and aborting
+                 |sign-off moves it back to claimed. A merge is a squash into LOCAL main
+                 |guarded by a singleton merge lock. The lock is
+                 |acquired after sign-off approval, immediately before the local merge step,
+                 |so review/CI work can run concurrently but only one coordinator mutates
+                 |main. Local main must pass the full verification gate (tests + go tests +
+                 |fmt/lint/reflect/docs + smoke) before main is pushed; main is only landed
+                 |once its own CI is green. Aborting at sign-off records a reason and leaves
+                 |the branch/worktree untouched.")
    :steps [{:step "push-draft-pr" :purpose "Push the branch and open (or reuse) a draft PR against main."}
            {:step "ci-green" :purpose "Watch CI to green at the branch HEAD; fix-push-repeat within the step."}
            {:step "signoff-review" :purpose "Run the declared roster review and drive fix rounds; every fix round re-establishes green CI."}
@@ -332,7 +453,8 @@
               {:verb "next" :purpose "Show the ready land step views for a feature."}
               {:verb "complete" :purpose "Close the current non-checkpoint land step, optionally with notes and a step=<id> selector."}
               {:verb "choose" :purpose "Decide the sign-off checkpoint: approved, or abort with {\"reason\":\"...\"}."}
-              {:verb "status" :purpose "Show the land root, ready steps, done state, and run history for a feature."}]
+              {:verb "status" :purpose "Show the land root, ready steps, done state, run history, and merge lock."}
+              {:verb "break-lock" :purpose "Explicitly break a stale merge lock with a reason."}]
    :discovery {:help "strand help land"
                :conventions "strand devflow-conventions"}})
 
@@ -340,7 +462,7 @@
   "Dispatch parsed `strand land ...` subcommands over the land workflow."
   [ctx]
   (let [{:keys [subcommand feature choice tail] :as args} (:op/args ctx)]
-    (case subcommand
+    (condp = subcommand
       "about" (land-about)
       "start" (merge {:operation "land-start" :feature feature}
                      (land-start! feature (select-keys args [:branch :worktree :card])))
@@ -354,19 +476,48 @@
                    (when (> (count rest-tokens) 1)
                      (throw (ex-info "land complete accepts at most one notes argument"
                                      {:op "land complete" :help "strand help land" :extra (vec (rest rest-tokens))})))
-                   (merge {:operation "land-complete" :feature feature}
-                          (workflow/complete! feature (cond-> {}
-                                                        notes (assoc :notes notes)
-                                                        step (assoc :step step)))))
+                   (let [ready-before (workflow/next-steps feature)
+                         releasing? (some #(contains? #{"land.cleanup" "land.abort.record"} (:action-ref %)) ready-before)
+                         root (workflow/current-root feature)
+                         context (attr-value root :workflow/context)
+                         card (or (:card context) (get context "card"))
+                         reviewing? (some #(= "land.ci.green" (:action-ref %)) ready-before)]
+                     (when reviewing?
+                       (move-card-to-review! card))
+                     (try
+                       (let [result (workflow/complete! feature (cond-> {}
+                                                                  notes (assoc :notes notes)
+                                                                  step (assoc :step step)))]
+                         (when releasing?
+                           (release-merge-lock! feature "land terminal cleanup"))
+                         (merge {:operation "land-complete" :feature feature} result))
+                       (catch Throwable t
+                         (when reviewing?
+                           (suppressing-rollback! t #(move-card-to-rework! card)))
+                         (throw t)))))
       "choose" (let [[rest-tokens step] (config/pop-step-selector "land choose" tail)
                      raw-input (first rest-tokens)]
                  (config/require-non-blank! :feature feature)
                  (when (> (count rest-tokens) 1)
                    (throw (ex-info "land choose accepts at most one JSON-input argument"
                                    {:op "land choose" :help "strand help land" :extra (vec (rest rest-tokens))})))
-                 (let [input (if raw-input (config/parse-json-object-arg "land choose" raw-input) {})]
-                   (merge {:operation "land-choose" :feature feature :choice choice}
-                          (workflow/choose! feature (keyword choice) input (if step {:step step} {})))))
+                 (let [input (if raw-input (config/parse-json-object-arg "land choose" raw-input) {})
+                       context (attr-value (workflow/current-root feature) :workflow/context)
+                       card (or (:card context) (get context "card"))
+                       aborting? (= "abort" choice)
+                       lock (when (= "approved" choice)
+                              (acquire-merge-lock! feature))]
+                   (when aborting?
+                     (move-card-to-rework! card))
+                   (try
+                     (merge {:operation "land-choose" :feature feature :choice choice}
+                            (workflow/choose! feature (keyword choice) input (if step {:step step} {})))
+                     (catch Throwable t
+                       (when lock
+                         (suppressing-rollback! t #(release-merge-lock! feature "land choose failed")))
+                       (when aborting?
+                         (suppressing-rollback! t #(move-card-to-review! card)))
+                       (throw t)))))
       "status" (do (config/require-non-blank! :feature feature)
                    (let [root (workflow/current-root feature)]
                      {:operation "land-status"
@@ -374,7 +525,14 @@
                       :roots (mapv loom/summarize (if root [root] []))
                       :done (workflow/done? feature)
                       :ready (workflow/next-steps feature)
-                      :history (workflow/run-history feature)})))))
+                      :history (workflow/run-history feature)
+                      :merge-lock (inspect-merge-lock)}))
+      "break-lock" (let [reason (first tail)]
+                     (when (> (count tail) 1)
+                       (throw (ex-info "land break-lock accepts one reason argument"
+                                       {:op "land break-lock" :extra (vec (rest tail))})))
+                     (merge {:operation "land-break-lock"}
+                            (break-merge-lock! reason))))))
 
 (def ^:private land-arg-spec
   "Declared command surface for the `land` op (one level of subcommands; the
@@ -413,10 +571,15 @@
                             {:name :tail
                              :variadic? true
                              :doc "Optional JSON-object input (abort requires {\"reason\":\"...\"}) and a trailing step=<id> selector."}]}
-    "status" {:doc "Show the land root, ready steps, done state, and run history for a feature."
+    "status" {:doc "Show the land root, ready steps, done state, run history, and merge lock."
               :positionals [{:name :feature
                              :required? true
-                             :doc "Land run id."}]}}})
+                             :doc "Land run id."}]}
+    "break-lock" {:doc "Explicitly break a stale merge lock with a reason."
+                  :positionals [{:name :tail
+                                 :required? true
+                                 :variadic? true
+                                 :doc "Reason text."}]}}})
 
 (defn install!
   "Install the repo's hand-authored workflows: the delegate-pipeline pattern

@@ -17,6 +17,7 @@ Each card is one strand whose `kanban/status` places it in a board lane:
 - **refinement** — an idea or undecided direction; never actionable until a human explicitly runs `kanban promote`.
 - **pending** — the actionable queue; `kanban next` serves the highest-priority (p1 first) oldest pending feature.
 - **claimed** — work has started; the claim stamps who is driving it and where.
+- **in_review** — work is under review. Rework moves it back to `claimed`; finishing moves it to `closed`.
 - **closed** — the strand is closed and `kanban/status` records the explicit outcome (`done`, `abandoned`, ...).
 
 Every card also carries a `kanban/priority` that orders lanes and `kanban next` (oldest first within a priority):
@@ -32,7 +33,7 @@ Card state lives under the `kanban/*` attribute topic:
 | --- | --- |
 | `kanban/card` | String `"true"` for card strands. |
 | `kanban/type` | `feature` (default) or `epic` (grouping card; `parent-of` its features). |
-| `kanban/status` | `refinement`, `pending`, `claimed`, or an explicit closed outcome. |
+| `kanban/status` | `refinement`, `pending`, `claimed`, `in_review`, or an explicit closed outcome. |
 | `kanban/priority` | `p1`, `p2`, `p3` (default), or `p4`; cards without the attribute read as `p3`. |
 | `kanban/source` | Optional path or URL for design context (RFC, feature folder). |
 | `kanban/note` | `"true"` on note strands (closed `parent-of` children of a card). |
@@ -76,12 +77,14 @@ strand kanban priority <id> <p1|p2|p3|p4>
 strand kanban promote <id>
 strand kanban claim <id> --owner <name> --branch <branch> [--worktree /path]
 strand kanban note <id> <text> [--author <name>] [--handover]
+strand kanban review <id>
+strand kanban rework <id>
 strand kanban finish <id> [--outcome done|abandoned]
 ```
 
 `prime` is the agent onboarding surface: a superset of `about` that adds the working discipline (work under a claimed card, the pick-up-next flow, notes/handover contract, adjacent-work awareness, and branch visibility) so repo agent docs point at it instead of duplicating conventions that then drift from the spool. `about` stays the terse command manual.
 
-`board` returns the grouped snapshot (epics, refinement/pending/claimed lanes sorted p1-first then oldest, closed count); active cards with a status outside the known lanes surface in `unknown-status` rather than being hidden. It also returns `needs-review`: a vector aggregated across all claimed feature cards of `{:card :item}` entries (plus `:branch` from the claim stamp), one per card descendant that is active, in the engine ready frontier, and marks human review (`hitl`/`workflow/hitl` true, or `kind` `review`), sorted by card id then item id — the always-present cross-card review queue. `next` returns the highest-priority (p1 first) oldest active pending feature (epics are never served). `priority` restamps an active card's `kanban/priority` and fails loudly on unknown values or closed cards. `promote` is the explicit human command that moves a refinement card into the pending lane. `claim` fails loudly without `--owner` and `--branch` and refuses epics; `--worktree` is optional for direct work in the main checkout. `finish` closes the card with the outcome status.
+`board` returns the grouped snapshot (epics, refinement/pending/claimed/in_review lanes sorted p1-first then oldest, closed count); active cards with a status outside the known lanes surface in `unknown-status` rather than being hidden. It also returns `needs-review`: a vector aggregated across claimed and in-review feature cards of `{:card :item}` entries (plus `:branch` from the claim stamp), one per card descendant that is active, in the engine ready frontier, and marks human review (`hitl`/`workflow/hitl` true, or `kind` `review`), sorted by card id then item id — the always-present cross-card review queue. `next` returns the highest-priority (p1 first) oldest active pending feature (epics are never served). `priority` restamps an active card's `kanban/priority` and fails loudly on unknown values or closed cards. `promote` is the explicit human command that moves a refinement card into the pending lane. `claim` fails loudly without `--owner` and `--branch` and refuses epics; `--worktree` is optional for direct work in the main checkout. `review` moves a claimed card to `in_review`; `rework` moves it back to `claimed`; `finish` closes a claimed or in-review card with the outcome status.
 
 `card` returns the resume view (card, notes, latest handover, active work, ready frontier) plus `related`: a vector of `{:relation :strand}` entries for every `depends-on` edge touching the card — `depends-on` when the card is the dependent, `depended-on-by` when it is the dependency — sorted by other-endpoint id.
 
@@ -99,7 +102,7 @@ The CLI stays JSON-only (TEN-006); the human rendering lives on the REPL surface
 printf "(do (require 'skein.spools.kanban) (skein.spools.kanban/print-board!))\n" | mill weaver repl --stdin
 ```
 
-`print-board!` prints a stacked-lane ASCII board (epics, refinement, pending, claimed with owner/branch and latest handover, needs-review); `board-str` is the pure renderer over the `board` result for reuse.
+`print-board!` prints a stacked-lane ASCII board (epics, refinement, pending, claimed and in_review with owner/branch and latest handover, needs-review); `board-str` is the pure renderer over the `board` result for reuse.
 
 ## Queries
 

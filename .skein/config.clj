@@ -421,7 +421,7 @@
              :purpose "Temporary parent-owned strands burned via a userland attribute."}
             {:namespace "skein.spools.kanban"
              :doc "spools/kanban.md"
-             :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed lanes, notes, and handovers."}]
+             :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes, notes, and handovers."}]
    ;; The config-owned entries below stay hand-authored: their editorial grouping
    ;; (e.g. branches leading, current-dags sitting beside carder-report) does not
    ;; match the defop author order in this file, and reordering the defop forms

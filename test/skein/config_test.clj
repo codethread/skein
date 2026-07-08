@@ -626,7 +626,14 @@
       ;; approved is terminal-in-molecule: it continues to the local merge/verify
       (let [approved (op! "land" ["choose" "land-x" "approved"])]
         (is (= "land-choose" (:operation approved)))
-        (is (= "land.merge.local-verify" (:action-ref (first (:ready approved))))))
+        (is (= "land.merge.local-verify" (:action-ref (first (:ready approved)))))
+        (is (= "merge-lock" (get-in (op! "land" ["status" "land-x"]) [:merge-lock :attributes :kind]))))
+      (op! "land" ["start" "land-z" "--branch" "land-z" "--worktree" "/tmp/land-z"])
+      (op! "land" ["complete" "land-z"])
+      (op! "land" ["complete" "land-z"])
+      (op! "land" ["complete" "land-z"])
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"another land run holds the merge lock"
+                            (op! "land" ["choose" "land-z" "approved"])))
       (is (= "land.main.ci-green"
              (:action-ref (first (:ready (op! "land" ["complete" "land-x" "merged; gates green"]))))))
       (let [ready-cleanup (op! "land" ["complete" "land-x" "main pushed"])
@@ -643,38 +650,90 @@
         (is (= "land-status" (:operation status)))
         (is (true? (:done status)))
         (is (empty? (:ready status)))
+        (is (nil? (:merge-lock status)))
         (is (seq (:history status)))))))
 
 (deftest land-signoff-abort-routes-to-record-step
   (with-config-runtime
-    (fn [_rt]
-      (op! "land" ["start" "land-y" "--branch" "land-y" "--worktree" "/tmp/land-y" "--card" "card-1"])
+    (fn [rt]
+      (let [card-id (:id (api/add rt {:title "Abort card"
+                                      :attributes {:kanban/card "true"
+                                                   :kanban/status "claimed"
+                                                   :kanban/type "feature"}}))]
+        (op! "land" ["start" "land-y" "--branch" "land-y" "--worktree" "/tmp/land-y" "--card" card-id]))
       (op! "land" ["complete" "land-y"])           ; push-draft-pr
       (op! "land" ["complete" "land-y"])           ; ci-green
+      (let [root (workflow/current-root "land-y")
+            context (get-in root [:attributes :workflow/context])
+            card-id (or (:card context) (get context "card"))]
+        (is (= "in_review" (get-in (api/show rt card-id) [:attributes :kanban/status]))))
       (op! "land" ["complete" "land-y"])           ; signoff-review
       (let [aborted (op! "land" ["choose" "land-y" "abort" "{\"reason\":\"scope changed\"}"])]
         (is (= "land-choose" (:operation aborted)))
         ;; routing is a hard cutover to the reason-recording continuation
         (is (= "land.abort.record" (:action-ref (first (:ready aborted))))))
+      (let [root (workflow/current-root "land-y")
+            context (get-in root [:attributes :workflow/context])
+            card-id (or (:card context) (get context "card"))]
+        (is (= "claimed" (get-in (api/show rt card-id) [:attributes :kanban/status]))))
       (let [done (op! "land" ["complete" "land-y" "abort recorded"])]
         (is (true? (:done done)))
         (is (empty? (:ready done)))))))
 
 (deftest land-cleanup-instruction-interpolates-the-real-card-id
   (with-config-runtime
+    (fn [rt]
+      (let [card-id (:id (api/add rt {:title "Cleanup card"
+                                      :attributes {:kanban/card "true"
+                                                   :kanban/status "claimed"
+                                                   :kanban/type "feature"}}))]
+        (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" card-id])
+        (op! "land" ["complete" "land-w"])                          ; push-draft-pr
+        (op! "land" ["complete" "land-w"])                          ; ci-green
+        (op! "land" ["complete" "land-w"])                          ; signoff-review
+        (op! "land" ["choose" "land-w" "approved"])
+        (op! "land" ["complete" "land-w"])                          ; merge-local-verify
+        (let [ready-cleanup (op! "land" ["complete" "land-w"])      ; push-main-ci-green
+              cleanup-step (first (:ready ready-cleanup))]
+          (is (= "land.cleanup" (:action-ref cleanup-step)))
+          (is (str/includes? (:instruction cleanup-step)
+                             (str "strand kanban finish " card-id " --outcome done")))
+          (is (not (str/includes? (:instruction cleanup-step) "<card>"))))))))
+
+(deftest land-break-lock-closes-active-sentinel-with-reason
+  (with-config-runtime
     (fn [_rt]
-      (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" "card-2"])
-      (op! "land" ["complete" "land-w"])                            ; push-draft-pr
-      (op! "land" ["complete" "land-w"])                            ; ci-green
-      (op! "land" ["complete" "land-w"])                            ; signoff-review
-      (op! "land" ["choose" "land-w" "approved"])
-      (op! "land" ["complete" "land-w"])                            ; merge-local-verify
-      (let [ready-cleanup (op! "land" ["complete" "land-w"])        ; push-main-ci-green
-            cleanup-step (first (:ready ready-cleanup))]
-        (is (= "land.cleanup" (:action-ref cleanup-step)))
-        (is (str/includes? (:instruction cleanup-step)
-                           "strand kanban finish card-2 --outcome done"))
-        (is (not (str/includes? (:instruction cleanup-step) "<card>")))))))
+      (op! "land" ["start" "land-lock-x" "--branch" "land-lock-x" "--worktree" "/tmp/land-lock-x"])
+      (op! "land" ["complete" "land-lock-x"])
+      (op! "land" ["complete" "land-lock-x"])
+      (op! "land" ["complete" "land-lock-x"])
+      (op! "land" ["choose" "land-lock-x" "approved"])
+      (is (= "merge-lock" (get-in (op! "land" ["status" "land-lock-x"])
+                                  [:merge-lock :attributes :kind])))
+      ;; a blank reason fails at the handler; a missing reason fails at the arg-spec
+      ;; parse layer — both are loud rejections rather than a silent break
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"reason must be a non-blank string"
+                            (op! "land" ["break-lock" ""])))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required argument tail"
+                            (op! "land" ["break-lock"])))
+      (let [broken (op! "land" ["break-lock" "coordinator confirmed stale lock"])]
+        (is (= "land-break-lock" (:operation broken)))
+        (is (= "closed" (get-in broken [:broken :state])))
+        (is (= "coordinator confirmed stale lock"
+               (get-in broken [:broken :attributes :land/broken-reason])))
+        (is (nil? (:merge-lock (op! "land" ["status" "land-lock-x"]))))))))
+
+(deftest land-break-lock-refuses-to-break-when-multiple-locks-are-active
+  (with-config-runtime
+    (fn [rt]
+      ;; a healthy world holds one lock; two active merge-lock strands is a
+      ;; corrupt state break-lock must refuse rather than pick one arbitrarily.
+      (api/add rt {:title "Merge lock: land-dup-a"
+                   :attributes {:kind "merge-lock" :land/run-id "land-dup-a"}})
+      (api/add rt {:title "Merge lock: land-dup-b"
+                   :attributes {:kind "merge-lock" :land/run-id "land-dup-b"}})
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"multiple active merge locks found"
+                            (op! "land" ["break-lock" "trying to clear a corrupt state"]))))))
 
 (deftest land-start-fails-loudly-on-a-blank-card
   (with-config-runtime
@@ -696,7 +755,7 @@
       (let [help (op! "help" ["land"])
             subs (get-in help [:arg-spec :subcommands])
             by-name (into {} (map (juxt :name identity)) subs)]
-        (is (= #{"about" "start" "next" "complete" "choose" "status"}
+        (is (= #{"about" "start" "next" "complete" "choose" "status" "break-lock"}
                (set (map :name subs))))
         (is (str/starts-with? (get-in help [:arg-spec :doc])
                               "Drive the coordinator landing workflow"))
