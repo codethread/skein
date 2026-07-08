@@ -3,11 +3,13 @@
   harnesses.clj and workflows.clj siblings): registration surface, the
   delegate-pipeline weave pattern, the land workflow, and the devflow op
   wrappers over skein.spools.devflow."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.core.db-test :as db-test]
             [skein.api.current.alpha :as current]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as daemon-config]
@@ -121,6 +123,49 @@
   [op-name argv]
   (api/op! (current/runtime) (symbol op-name) argv))
 
+(def ^:private config-op-names
+  "The config-owned CLI ops whose generated `help <op>` the refactor must preserve.
+
+  Every op authored as a `defop` in .skein/config.clj; the surrounding spool ops
+  (kanban/agent/bench) and workflow ops (land) are untouched by the refactor and
+  are covered by their own tests, so this holistic guard scopes to config.clj."
+  ["current-dags" "branches" "carder-report" "devflow-start" "devflow-next"
+   "devflow-choices" "devflow-choose" "devflow-complete" "devflow-advance"
+   "devflow-describe" "devflow-history" "devflow-archive" "devflow-status"
+   "workflow-runs" "devflow-conventions" "flow-await" "flow-status" "hitl"])
+
+(def ^:private named-query-names
+  "The config-owned named queries whose registered definitions the refactor must
+  preserve, authored as `defquery` blocks in .skein/config.clj."
+  ["feature-active" "feature-work" "feature-owner-work" "feature-run"
+   "workflow-runs" "devflow-runs" "work"])
+
+(defn- capture-config-surface
+  "Load the config module at config-path into an isolated runtime and return its
+  registered config-owned surface as plain, EDN-round-trippable data.
+
+  The surface is `{:op-help {op -> help-detail} :queries {name -> definition}}`.
+  Only config.clj is loaded (no harnesses/workflows), so this captures exactly the
+  op/query surface the defquery/defop refactor could have perturbed; the
+  devflow-conventions payload is pinned separately by
+  `devflow-conventions-op-lists-repo-conventions`. Used both to snapshot the
+  pre-refactor baseline and to capture the current converted config for a
+  byte-identical comparison."
+  [config-path]
+  (let [db-file (db-test/temp-db-file)
+        config-dir (str "/tmp/skein-surface-" (java.util.UUID/randomUUID))]
+    (.mkdirs (java.io.File. config-dir))
+    (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
+      (try
+        (load-file config-path)
+        ((requiring-resolve 'config/install!))
+        {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
+         :queries (into {} (map (fn [q] [q (get (api/queries rt) q)])) named-query-names)}
+        (finally
+          (runtime/stop! rt)
+          (db-test/delete-sqlite-family! db-file)
+          (delete-directory! config-dir))))))
+
 (defn- assert-config-registrations
   "Assert the repo-local query/op/pattern registrations are present."
   [rt]
@@ -150,6 +195,139 @@
   (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
+
+(deftest devflow-conventions-op-lists-repo-conventions
+  ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
+  ;; :ops stays the RFC-020.Q2 hand-authored fallback (PLAN-Srm-001.DN1). This
+  ;; pins the whole payload so neither listing can silently drift.
+  (with-config-runtime
+    (fn [_rt]
+      (is (= {:operation "devflow-conventions"
+              :spools [{:namespace "skein.spools.workflow"
+                        :doc "spools/workflow.md"
+                        :purpose "Workflow engine: definitions compiled to strand molecules with checkpoints, routing, and gates."}
+                       {:namespace "skein.spools.devflow"
+                        :doc "spools/devflow.md"
+                        :purpose "Feature lifecycle (intake -> proposal -> spec-plan -> tasks/implementation) keyed by feature name."}
+                       {:namespace "skein.spools.ephemeral"
+                        :doc "spools/ephemeral.md"
+                        :purpose "Temporary parent-owned strands burned via a userland attribute."}
+                       {:namespace "skein.spools.kanban"
+                        :doc "spools/kanban.md"
+                        :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes, notes, and handovers."}]
+              :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
+                    {:name "branches" :help "strand help branches"}
+                    {:name "devflow-start" :help "strand help devflow-start"}
+                    {:name "devflow-next" :help "strand help devflow-next"}
+                    {:name "devflow-choices" :help "strand help devflow-choices"}
+                    {:name "devflow-choose" :help "strand help devflow-choose"}
+                    {:name "devflow-complete" :help "strand help devflow-complete"}
+                    {:name "devflow-advance" :help "strand help devflow-advance"}
+                    {:name "devflow-describe" :help "strand help devflow-describe"}
+                    {:name "devflow-history" :help "strand help devflow-history"}
+                    {:name "devflow-archive" :help "strand help devflow-archive"}
+                    {:name "devflow-status" :help "strand help devflow-status"}
+                    {:name "workflow-runs" :help "strand help workflow-runs"}
+                    {:name "current-dags" :help "strand help current-dags"}
+                    {:name "carder-report" :help "strand help carder-report"}
+                    {:name "agent" :help "strand help agent" :manual "strand agent about"}
+                    {:name "flow-await" :help "strand help flow-await"}
+                    {:name "flow-status" :help "strand help flow-status"}
+                    {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
+                    {:name "land" :help "strand help land" :manual "strand land about"
+                     :purpose (format-alpha/reflow
+                               "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
+                                |sign-off, squash-merge to local main with full verification, then
+                                |green main CI. Registered by .skein/workflows.clj.")}]
+              :patterns [{:name "agent-plan"
+                          :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.agents."}
+                         {:name "delegate-pipeline"
+                          :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
+              :queries [{:name "kanban-cards" :usage "strand list --query kanban-cards"}
+                        {:name "kanban-unstarted" :usage "strand ready --query kanban-unstarted"}
+                        {:name "feature-active" :usage "strand list --query feature-active --param feature=<feature>"}
+                        {:name "feature-work" :usage "strand ready --query feature-work --param feature=<feature>"}
+                        {:name "feature-owner-work"
+                         :usage "strand ready --query feature-owner-work --param feature=<feature> --param owner=<owner>"}
+                        {:name "feature-run" :usage "strand list --query feature-run --param feature=<feature>"}
+                        {:name "workflow-runs" :usage "strand list --query workflow-runs"}
+                        {:name "devflow-runs" :usage "strand list --query devflow-runs"}
+                        {:name "work" :usage "strand ready --query work"}]}
+             (op! "devflow-conventions" []))))))
+
+(deftest converted-config-surface-is-byte-identical-to-pre-refactor
+  ;; TASK-Srm-009.MI1 acceptance gate. surface_baseline.edn is the config-owned
+  ;; op-help + named-query surface captured from the pre-refactor config (base
+  ;; ad5d2eb, before the defquery/defop conversion) via capture-config-surface.
+  ;; Asserting the current converted config reproduces it byte-for-byte proves the
+  ;; refactor changed no generated `help <op>` and no registered query definition;
+  ;; the devflow-conventions payload is pinned by the test above. The golden is a
+  ;; frozen pre-refactor snapshot (committed, not git-history-dependent, so it
+  ;; survives CI's shallow checkout) and also guards the surface against later
+  ;; drift.
+  (let [golden (edn/read-string (slurp "test/skein/surface_baseline.edn"))
+        current (capture-config-surface ".skein/config.clj")]
+    (is (= (:queries golden) (:queries current))
+        "every named query definition matches the pre-refactor baseline")
+    (doseq [op config-op-names]
+      (is (= (get-in golden [:op-help op]) (get-in current [:op-help op]))
+          (str "generated help for " op " must match the pre-refactor baseline")))))
+
+(deftest named-queries-return-expected-rows-against-seeded-strands
+  ;; TASK-Srm-009.MI1: exercise each registered named query's rows against one
+  ;; deterministic seed, so a defquery `:where`/`:params` regression surfaces as a
+  ;; wrong row set rather than only a definition diff.
+  (with-config-runtime
+    (fn [rt]
+      (doseq [[title attrs] [["A1" {:feature "alpha" :kind "task" :owner "amy"}]
+                             ["A2" {:feature "alpha" :kind "review" :owner "bob"}]
+                             ["A3" {:feature "alpha" :kind "note"}]
+                             ["B1" {:feature "beta" :kind "task" :owner "amy"}]
+                             ["R1" {:workflow/run-id "alpha"}]
+                             ["M1" {:workflow/role "molecule"}]
+                             ["D1" {:workflow/role "molecule" :workflow/family "devflow"}]
+                             ["S1" {:shuttle/run "true"}]
+                             ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
+        (api/add rt {:title title :state "active" :attributes attrs}))
+      (let [rows (fn [query-name params]
+                   (set (map :title (api/list rt (get (api/queries rt) query-name) params))))]
+        (is (= #{"A1" "A2" "A3"} (rows "feature-active" {:feature "alpha"})))
+        (is (= #{"A1" "A2"} (rows "feature-work" {:feature "alpha"})))
+        (is (= #{"A1"} (rows "feature-owner-work" {:feature "alpha" :owner "amy"})))
+        (is (= #{"R1"} (rows "feature-run" {:feature "alpha"})))
+        (is (= #{"M1" "D1"} (rows "workflow-runs" {})))
+        (is (= #{"D1"} (rows "devflow-runs" {})))
+        (is (= #{"A1" "A2" "A3" "B1" "R1"} (rows "work" {})))))))
+
+(deftest chime-attention-rules-register-and-fire
+  ;; TASK-Srm-009.MI1: through the full startup fixture (which loads attention.clj
+  ;; via init.clj), assert the registered chime rule keys and that the registered
+  ;; handlers actually fire — resolving each rule's registered fn symbol and
+  ;; invoking it, so a defrule handler/registration regression is caught behavior,
+  ;; not just key, deep.
+  (with-startup-config-runtime
+    (fn [_rt]
+      (let [rules ((requiring-resolve 'skein.spools.chime/rules))
+            by-key (into {} (map (juxt :name identity)) rules)
+            fire (fn [rule-key strand]
+                   (@(requiring-resolve (:fn (get by-key rule-key)))
+                    {:strand strand :ready-ids #{}}))]
+        (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
+                :kanban-started :parked-run :treadle-error]
+               (mapv :name rules)))
+        ;; treadle-error fires on any strand stamped with a treadle error
+        (let [note (fire :treadle-error {:id "g1" :state "active" :title "Gate A"
+                                         :attributes {:treadle/error "spawn failed"}})]
+          (is (= "Treadle error: Gate A" (:title note)))
+          (is (str/includes? (:body note) "spawn failed")))
+        ;; and stays silent (no false positive) when the condition is absent
+        (is (nil? (fire :treadle-error {:id "g2" :state "active" :title "Clean gate"
+                                        :attributes {}})))
+        ;; agent-failure fires on a failed shuttle run and carries its error
+        (let [note (fire :agent-failure {:id "r1" :state "active" :title "Run"
+                                         :attributes {:shuttle/phase "failed" :shuttle/error "boom"}})]
+          (is (= "Agent run failed: Run" (:title note)))
+          (is (str/includes? (:body note) "boom")))))))
 
 (deftest current-dags-op-builds-self-contained-plan-task-projection
   (with-config-runtime

@@ -1,0 +1,46 @@
+tasks:
+  - id: 1
+    description: Wire macros spool onto test classpath
+    task_file: tasks/001-wire-macros-spool-classpath.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Author skein.macros.queries defquery
+    task_file: tasks/002-author-defquery-macro.md
+    status: complete
+    blocked_by: [1]
+  - id: 3
+    description: Author skein.macros.ops defop
+    task_file: tasks/003-author-defop-macro.md
+    status: complete
+    blocked_by: [1]
+  - id: 4
+    description: Author skein.macros.rules defrule
+    task_file: tasks/004-author-defrule-macro.md
+    status: complete
+    blocked_by: [1]
+  - id: 5
+    description: Convert config.clj queries to defquery
+    task_file: tasks/005-convert-config-queries.md
+    status: complete
+    blocked_by: [2]
+  - id: 6
+    description: Convert config.clj ops to defop
+    task_file: tasks/006-convert-config-ops.md
+    status: complete
+    blocked_by: [3, 5]
+  - id: 7
+    description: Derive devflow-conventions listings from remembered entries
+    task_file: tasks/007-derive-conventions-listings.md
+    status: complete
+    blocked_by: [6]
+  - id: 8
+    description: Convert attention.clj rules to defrule
+    task_file: tasks/008-convert-attention-rules.md
+    status: complete
+    blocked_by: [4]
+  - id: 9
+    description: Byte-identical surface verification
+    task_file: tasks/009-verify-byte-identical-surface.md
+    status: complete
+    blocked_by: [7, 8]

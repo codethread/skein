@@ -103,7 +103,7 @@
                      :required? true})
 (runtime-alpha/use! runtime :attention
                     {:file "attention.clj"
-                     :after [:skein/spools-chime :skein/spools-shuttle]
+                     :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
                      :call 'attention/install!
                      :required? true})
 (runtime-alpha/use! runtime :skein/spools-kanban
@@ -122,7 +122,7 @@
 (runtime-alpha/use! runtime :config
                     {:file "config.clj"
                      :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
-                             :skein/spools-loom :skein/spools-shuttle]
+                             :skein/spools-loom :skein/spools-shuttle :macros/patterns]
                      :call 'config/install!})
 ;; workflows.clj reuses config.clj's public CLI-tail helpers, so it loads after
 ;; the :config module.

@@ -79,17 +79,43 @@
          (fnil assoc {}) (:name entry) entry)
   entry)
 
+(defn forget-patterns!
+  "Forget every pattern remembered for the current namespace, or for `ns-sym`.
+
+  A file-backed config namespace (loaded via `:file`) calls this once at the top
+  of its load, before its `defpattern` forms re-register, so `reload!` — which
+  re-reads the file — installs exactly what the current source defines. Without
+  it the JVM-global registry keeps entries for patterns since renamed or deleted
+  from source, and `install-patterns!` would silently re-register those stale
+  handlers (TEN-003). A namespace loaded via `:ns` (like `skein.macros.demo`) is
+  skipped by `reload!` once loaded, so it needs a targeted
+  `(require '<ns> :reload)` to re-run this. Tolerates an unknown `ns-sym`
+  (first-load calls it before anything is remembered). Returns nil."
+  ([] (forget-patterns! (ns-name *ns*)))
+  ([ns-sym]
+   (swap! pattern-registry dissoc ns-sym)
+   nil))
+
 (defn install-patterns!
-  "Install all patterns remembered for the current namespace, or for `ns-sym`."
+  "Install all patterns remembered for the current namespace, or for `ns-sym`.
+
+  Throws if `ns-sym` has no remembered patterns — a typo'd or stale quoted ns
+  literal, or a file that defined nothing, must fail loudly rather than silently
+  install nothing (TEN-003)."
   ([]
    (install-patterns! (ns-name *ns*)))
   ([ns-sym]
-   (let [runtime (current/runtime)
-         entries (vals (get @pattern-registry ns-sym))]
-     (doseq [{:keys [name doc fn input-spec]} entries]
-       (patterns/register-pattern! runtime name doc fn input-spec))
-     {:installed (count entries)
-      :patterns (mapv :name entries)})))
+   (let [remembered (get @pattern-registry ns-sym)]
+     (when (empty? remembered)
+       (throw (ex-info "install-patterns! found no remembered patterns for namespace"
+                       {:ns-sym ns-sym
+                        :known-namespaces (vec (keys @pattern-registry))})))
+     (let [runtime (current/runtime)
+           entries (vals remembered)]
+       (doseq [{:keys [name doc fn input-spec]} entries]
+         (patterns/register-pattern! runtime name doc fn input-spec))
+       {:installed (count entries)
+        :patterns (mapv :name entries)}))))
 
 (defmacro defpattern
   "Define a Skein weave pattern and remember it for install-patterns!.

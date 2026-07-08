@@ -14,6 +14,7 @@
    'skein.spools.bobbin-test 'skein.spools.carder-test 'skein.spools.loom-test 'skein.spools.selvage-test 'skein.spools.text-search-test
    'skein.guild-test 'skein.agents-test 'skein.test.alpha-test 'skein.api.cli.alpha-test
    'skein.spools.batteries-test 'skein.roster-test 'skein.spools.util-test
+   'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
    ;; pure extractor unit tests over fixture files plus one unpublished
    ;; thread-bound runtime; no JVM-global or real-process state.
    'skein.bench-metrics-test])

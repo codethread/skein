@@ -8,7 +8,8 @@
         org.slf4j/slf4j-nop {:mvn/version "1.7.36"}
         com.bhauman/rebel-readline {:mvn/version "0.1.11"}}
  :aliases
- {:test {:extra-paths ["test" "spools/shuttle/src" "spools/agents/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"]
+ {:test {:extra-paths ["test" "spools/shuttle/src" "spools/agents/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"
+                       ".skein/spools/macros/src"]
          ;; devflow is a git-distributed spool. Keep this sha exactly synchronized
          ;; with .skein/spools.edn: config_test loads .skein/config.clj in-process,
          ;; while the weaver consumes the spools.edn coordinate.
