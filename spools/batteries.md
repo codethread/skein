@@ -18,9 +18,11 @@ and `pattern` — as `register-op!` ops whose `:arg-spec` is parsed by the bless
 argv parser `skein.api.cli.alpha` (see [cli.md](../devflow/specs/cli.md) and
 [repl-api.md](../devflow/specs/repl-api.md)).
 
-Each op delegates to exactly the `skein.api.weaver.alpha` call the old JSON
-socket dispatch used, and returns the same JSON-safe shape, so the ops are
-drop-in reachable through `strand <op> …` (RFC-019). The namespace owns no
+Each op delegates to exactly the `skein.api.*.alpha` call the old JSON socket
+dispatch used — strand lifecycle in `skein.api.weaver.alpha`, queries and
+traversal in `skein.api.graph.alpha`, weave in `skein.api.patterns.alpha` — and
+returns the same JSON-safe shape, so the ops are drop-in reachable through
+`strand <op> …` (RFC-019). The namespace owns no
 module-level state: handlers read the runtime from their invocation context
 (`:op/runtime`) and never touch the published ambient singleton.
 
