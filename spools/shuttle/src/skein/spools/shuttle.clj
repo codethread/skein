@@ -37,6 +37,7 @@
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
@@ -1462,7 +1463,7 @@
 (defn- parent-of-sources
   "Return strand ids with a parent-of edge to `run-id`, via one indexed fetch."
   [run-id]
-  (->> (api/incoming-edges (rt) [run-id] "parent-of")
+  (->> (graph/incoming-edges (rt) [run-id] "parent-of")
        (map :from_strand_id)
        distinct
        vec))
@@ -1474,7 +1475,7 @@
   (reduce (fn [m {:keys [from_strand_id to_strand_id]}]
             (update m to_strand_id (fnil conj []) from_strand_id))
           {}
-          (api/incoming-edges (rt) (vec run-ids) "parent-of")))
+          (graph/incoming-edges (rt) (vec run-ids) "parent-of")))
 
 (defn- run-for-target
   "Return the delegated target for `run` given its parent-of source ids,
@@ -1548,7 +1549,7 @@
          ;; already-loaded run strands) rather than summarising every run.
          run-strands (if for
                        (let [children (set (map :to_strand_id
-                                                (api/outgoing-edges (rt) [for] "parent-of")))]
+                                                (graph/outgoing-edges (rt) [for] "parent-of")))]
                          (filterv (fn [run]
                                     (or (children (:id run))
                                         (= for (attr run :treadle/gate))))
@@ -1573,7 +1574,7 @@
   ([ids {:keys [timeout-secs] :or {timeout-secs 300}}]
    (let [deadline (+ (System/currentTimeMillis) (* 1000 (long timeout-secs)))]
      (loop [i 1]
-       (let [strands (api/strands-by-ids (rt) (vec ids))]
+       (let [strands (graph/strands-by-ids (rt) (vec ids))]
          (cond
            (every? terminal? strands) {:timed-out false :runs (mapv run-summary strands)}
            (>= (System/currentTimeMillis) deadline) {:timed-out true :runs (mapv run-summary strands)}

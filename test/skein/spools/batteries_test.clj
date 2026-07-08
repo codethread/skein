@@ -8,6 +8,7 @@
             [clojure.test :refer [deftest is testing]]
             [matcher-combinators.matchers :as m]
             [matcher-combinators.test :refer [match?]]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.core.specs :as specs]
             [skein.spools.batteries :as batteries]
@@ -92,7 +93,7 @@
     (fn [rt]
       (let [target (api/add rt {:title "Target" :attributes {}})
             added (api/op! rt 'add ["Source" "--edge" (str "depends-on:" (:id target))])
-            edges (:edges (api/subgraph rt [(:id added)] {:type "depends-on"}))]
+            edges (:edges (graph/subgraph rt [(:id added)] {:type "depends-on"}))]
         (is (match? (m/embeds [{:from_strand_id (:id added)
                                 :to_strand_id (:id target)
                                 :edge_type "depends-on"}])
@@ -161,8 +162,8 @@
 (deftest list-and-ready-named-queries
   (with-batteries
     (fn [rt]
-      (api/register-query! rt 'owned {:params [:who]
-                                      :where [:= [:attr :owner] [:param :who]]})
+      (graph/register-query! rt 'owned {:params [:who]
+                                        :where [:= [:attr :owner] [:param :who]]})
       (let [mine (api/add rt {:title "Mine" :attributes {:owner "agent"}})
             _theirs (api/add rt {:title "Theirs" :attributes {:owner "other"}})]
         (testing "list --query with --param"
@@ -205,8 +206,8 @@
 (deftest list-ready-and-named-queries-lean-project-large-attributes-only
   (with-batteries
     (fn [rt]
-      (api/register-query! rt 'owned {:params [:who]
-                                      :where [:= [:attr :owner] [:param :who]]})
+      (graph/register-query! rt 'owned {:params [:who]
+                                        :where [:= [:attr :owner] [:param :who]]})
       (let [at-floor (str/join (repeat 1022 "a"))
             over-floor (str/join (repeat 1023 "b"))
             non-ascii-at-floor (str/join (repeat 511 "é"))
@@ -298,8 +299,8 @@
 (deftest query-list-and-explain-shapes
   (with-batteries
     (fn [rt]
-      (api/register-query! rt 'owned {:params [:who]
-                                      :where [:= [:attr :owner] [:param :who]]})
+      (graph/register-query! rt 'owned {:params [:who]
+                                        :where [:= [:attr :owner] [:param :who]]})
       (testing "query list returns JSON-safe metadata for the registered query"
         (let [entries (api/op! rt 'query ["list"])
               owned (some #(when (= "owned" (get % "name")) %) entries)]

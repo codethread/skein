@@ -1086,7 +1086,7 @@
     (fn [rt config-dir]
       (write-module-file! config-dir "modules/stale.clj" "(ns demo.stale)\n(defn handler [_] :ok)\n")
       (is (= :loaded (:status (runtime-alpha/use! rt :stale {:file "modules/stale.clj"}))))
-      (api/register-query rt 'stale [:= [:attr :owner] "stale"])
+      (graph/register-query rt 'stale [:= [:attr :owner] "stale"])
       (views/register-view! rt 'stale-view 'demo.stale/view)
       (reset! reload-deliveries [])
       (events/register! rt :stale #{:strand/added} 'demo.stale/handler {})
@@ -1098,14 +1098,14 @@
       (Thread/sleep 250)
       (is (seq (events/recent-failures rt)))
       (spit (io/file config-dir "init.clj")
-            (str "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api] '[skein.api.events.alpha :as events])\n"
+            (str "(require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph] '[skein.api.events.alpha :as events])\n"
                  "(let [rt (current/runtime)]\n"
-                 "  (api/register-query rt 'fresh [:= [:attr :owner] \"fresh\"])\n"
+                 "  (graph/register-query rt 'fresh [:= [:attr :owner] \"fresh\"])\n"
                  "  (events/register! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n"))
       (is (= :loaded (:status (runtime-alpha/reload! rt))))
       (is (nil? (runtime-alpha/use rt :stale)))
-      (is (nil? (get (api/queries rt) "stale")))
-      (is (= [:= [:attr :owner] "fresh"] (get (api/queries rt) "fresh")))
+      (is (nil? (get (graph/queries rt) "stale")))
+      (is (= [:= [:attr :owner] "fresh"] (get (graph/queries rt) "fresh")))
       (is (= [] (views/views rt)))
       (is (= [:fresh] (mapv :key (events/handlers rt))))
       (is (= [] (events/recent-failures rt)))

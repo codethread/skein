@@ -716,72 +716,6 @@
   [runtime key]
   (get @(module-use-state runtime) key))
 
-(defn- validated-query-entry [[query-name query-def]]
-  [(query/canonical-query-name query-name)
-   (query/validate-query-def! query-def)])
-
-(defn register-query
-  "Register a named query definition in the runtime query registry."
-  [runtime query-name query-def]
-  (let [entry (validated-query-entry [query-name query-def])]
-    (swap! (query-registry runtime) conj entry)
-    (into {} [entry])))
-
-(defn load-queries
-  "Merge validated named query definitions into the runtime query registry."
-  [runtime query-defs]
-  (let [validated-query-defs (into {} (map validated-query-entry) query-defs)]
-    (swap! (query-registry runtime) merge validated-query-defs)
-    validated-query-defs))
-
-(defn register-query!
-  "Register a named query definition and return its canonical API shape."
-  [runtime query-name query-def]
-  (register-query runtime query-name query-def))
-
-(defn load-queries!
-  "Load multiple named query definitions and return their canonical API shape."
-  [runtime query-defs]
-  (load-queries runtime query-defs))
-
-(defn queries
-  "Return registered query definitions keyed by canonical string name."
-  [runtime]
-  (into (sorted-map) @(query-registry runtime)))
-
-(defn resolve-query
-  "Return the registered query definition for a simple symbol or keyword name."
-  [runtime query-name]
-  (query/query-def @(query-registry runtime) query-name))
-
-(defn- query-where [query-def]
-  (if (map? query-def)
-    (:where query-def)
-    query-def))
-
-(defn- query-metadata-entry [[name query-def]]
-  {:name name
-   :params (if (map? query-def) (vec (:params query-def)) [])
-   :referenced-params (query/referenced-params (query-where query-def))})
-
-(defn query-metadata
-  "Return registered query caller metadata ordered by canonical name."
-  [runtime]
-  (mapv query-metadata-entry (queries runtime)))
-
-(defn query-explain
-  "Describe a registered query definition and how CLI callers invoke it."
-  [runtime query-name]
-  (let [query-def (resolve-query runtime query-name)
-        name (query/query-lookup-name query-name)
-        where (query-where query-def)]
-    (assoc (query-metadata-entry [name query-def])
-           :where where
-           :definition query-def
-           :where-form (pr-str where)
-           :definition-form (pr-str query-def)
-           :summary "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` and pass runtime values with repeated `--param key=value` arguments.")))
-
 (defn init
   "Initialize the runtime database schema."
   [runtime]
@@ -818,83 +752,6 @@
                                        :strand/id (:id created)
                                        :strand created))
      created)))
-
-(defn- strand-patch-for-ref [payload ref]
-  (some (fn [strand]
-          (when (= ref (:ref strand))
-            (dissoc strand :ref)))
-        (:strands payload)))
-
-(defn- enqueue-batch-fanout! [runtime batch-id payload result]
-  (doseq [created (:created result)]
-    (dispatch/enqueue! runtime (assoc (event-base :strand/added)
-                                      :batch/id batch-id
-                                      :strand/id (:id created)
-                                      :strand created)))
-  (doseq [{:keys [ref id before after]} (:updated result)]
-    (dispatch/enqueue! runtime (assoc (event-base :strand/updated)
-                                      :batch/id batch-id
-                                      :strand/id id
-                                      :strand/patch (strand-patch-for-ref payload ref)
-                                      :strand/before before
-                                      :strand/after after)))
-  (when (seq (:burned result))
-    (dispatch/enqueue! runtime (assoc (event-base :strand/burned)
-                                      :batch/id batch-id
-                                      :strand/requested-ids (mapv :id (:burned result))
-                                      :strand/burned-ids (mapv :id (:burned result))
-                                      :strand/before (mapv :before (:burned result))))))
-
-(defn- normalize-batch-strand-attributes [runtime req-ctx payload]
-  (clojure.core/update payload :strands
-                       (fn [strands]
-                         (mapv (fn [{:keys [ref attributes] :as strand}]
-                                 (if (nil? attributes)
-                                   strand
-                                   (assoc strand :attributes
-                                          (run-transform-hooks runtime
-                                                               :attributes/normalize
-                                                               (merge req-ctx
-                                                                      {:hook/value attributes
-                                                                       :mutation/operation :batch/apply
-                                                                       :batch/ref ref
-                                                                       :strand/patch strand})))))
-                               strands))))
-
-(defn- batch-apply-context [req-ctx payload result]
-  (merge req-ctx
-         {:mutation/operation :batch/apply
-          :batch/source :apply
-          :batch/payload payload
-          :batch/refs (:refs result)
-          :batch/created (:created result)
-          :batch/updated (:updated result)
-          :batch/burned (:burned result)
-          :batch/edge-ops (:edges result)}))
-
-(defn apply-batch
-  "Apply a graph batch atomically and enqueue batch plus strand fanout events."
-  ([runtime payload]
-   (apply-batch runtime payload (request-context :apply-batch)))
-  ([runtime payload req-ctx]
-   (let [submitted-payload payload
-         normalized-payload (normalize-batch-strand-attributes runtime req-ctx (db/normalize-batch-payload! payload))
-         result (jdbc/with-transaction [tx (ds runtime)]
-                  (let [result (normalize (db/apply-batch-in-transaction! tx normalized-payload))]
-                    (run-validation-hooks! runtime
-                                           :batch/apply-before-commit
-                                           (batch-apply-context req-ctx submitted-payload result))
-                    result))
-         batch-id (str (UUID/randomUUID))]
-     (dispatch/enqueue! runtime (assoc (event-base :batch/applied)
-                                       :batch/id batch-id
-                                       :batch/refs (:refs result)
-                                       :batch/created (:created result)
-                                       :batch/updated (:updated result)
-                                       :batch/burned (:burned result)
-                                       :batch/edges (:edges result)))
-     (enqueue-batch-fanout! runtime batch-id normalized-payload result)
-     result)))
 
 (defn- apply-edges! [tx id edges]
   (doseq [{:keys [to type attributes]} edges]
@@ -1037,35 +894,6 @@
   [runtime id]
   (normalize (db/get-strand (ds runtime) id)))
 
-(defn burn-by-ids
-  "Delete strands by id and enqueue burn events for removed rows."
-  ([runtime ids]
-   (burn-by-ids runtime ids (request-context :burn)))
-  ([runtime ids req-ctx]
-   (let [requested-ids (vec ids)
-         {:keys [before result]} (jdbc/with-transaction [tx (ds runtime)]
-                                   (let [before (normalize (db/strands-by-ids tx requested-ids))]
-                                     (run-validation-hooks! runtime
-                                                            :strand/burn-before-commit
-                                                            (merge req-ctx
-                                                                   {:mutation/operation :strand/burn
-                                                                    :strand/requested-ids requested-ids
-                                                                    :strand/before before}))
-                                     {:before before
-                                      :result (db/burn-by-ids! tx requested-ids)}))]
-     (dispatch/enqueue! runtime (assoc (event-base :strand/burned)
-                                       :strand/requested-ids requested-ids
-                                       :strand/burned-ids (:burned result)
-                                       :strand/before before))
-     result)))
-
-(defn burn-by-id
-  "Delete one strand by id and return burn metadata."
-  ([runtime id]
-   (burn-by-ids runtime [id]))
-  ([runtime id req-ctx]
-   (burn-by-ids runtime [id] req-ctx)))
-
 (defn list
   "Return strands visible to `runtime`, optionally filtered by a query definition."
   ([runtime]
@@ -1088,7 +916,7 @@
 (defn list-query
   "Return strands matching a registered query definition."
   [runtime query-name params]
-  (list runtime (resolve-query runtime query-name) params))
+  (list runtime (query/query-def @(query-registry runtime) query-name) params))
 
 (defn ready
   "Return ready strands for `runtime`, optionally filtered by a query definition."
@@ -1112,54 +940,7 @@
 (defn ready-query
   "Return ready strands from the result set of a registered query definition."
   [runtime query-name params]
-  (ready runtime (resolve-query runtime query-name) params))
-
-(defn query-ids
-  "Return strand ids matching a query expression or registered query definition."
-  [runtime query-or-name params]
-  (let [query-def (if (or (vector? query-or-name) (map? query-or-name))
-                    query-or-name
-                    (resolve-query runtime query-or-name))]
-    (db/query-strand-ids (ds runtime) query-def params)))
-
-(defn strands-by-ids
-  "Return normalized strands for ids, preserving first-seen input order."
-  [runtime ids]
-  (normalize (db/strands-by-ids (ds runtime) ids)))
-
-(defn ancestor-root-ids
-  "Return ancestor root ids reachable from `seed-ids`."
-  ([runtime seed-ids]
-   (ancestor-root-ids runtime seed-ids {}))
-  ([runtime seed-ids opts]
-   (db/ancestor-root-ids (ds runtime) seed-ids opts)))
-
-(defn subgraph
-  "Return a normalized strand subgraph rooted at `root-ids`."
-  ([runtime root-ids]
-   (subgraph runtime root-ids {}))
-  ([runtime root-ids opts]
-   (let [{:keys [strands edges] :as result} (db/subgraph (ds runtime) root-ids opts)]
-     (assoc result
-            :strands (normalize strands)
-            :edges (normalize edges)))))
-
-(defn incoming-edges
-  "Return normalized `edge-type` edges whose target is one of `to-ids`.
-
-  One indexed lookup for a strand's parents/annotators; no graph traversal.
-  Adjacency is lenient: an id absent from storage yields no rows rather than a
-  missing-id error (unlike subgraph/ancestor-root-ids seeds)."
-  [runtime to-ids edge-type]
-  (normalize (db/incoming-edges (ds runtime) to-ids edge-type)))
-
-(defn outgoing-edges
-  "Return normalized `edge-type` edges whose source is one of `from-ids`.
-
-  One indexed lookup for a strand's children; no graph traversal. Lenient
-  adjacency: an absent id yields no rows rather than a missing-id error."
-  [runtime from-ids edge-type]
-  (normalize (db/outgoing-edges (ds runtime) from-ids edge-type)))
+  (ready runtime (query/query-def @(query-registry runtime) query-name) params))
 
 (defn- validate-pattern-fn-symbol! [fn-sym]
   (validate-fn-symbol! "Pattern" fn-sym))

@@ -5,6 +5,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.runtime.alpha :as runtime-alpha]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.kanban :as kanban]
@@ -224,7 +225,7 @@
       (let [epic-id (get-in (op! rt "add" "Big theme" "--type" "epic") [:card :id])
             feat-id (get-in (op! rt "add" "First slice" "--epic" epic-id) [:card :id])]
         (testing "epic features are linked with parent-of and shown on the board"
-          (let [edges (:edges (api/subgraph rt [epic-id] {:type "parent-of"}))]
+          (let [edges (:edges (graph/subgraph rt [epic-id] {:type "parent-of"}))]
             (is (some #(and (= epic-id (:from_strand_id %))
                             (= feat-id (:to_strand_id %))) edges)))
           (let [board (op! rt "board")]
@@ -389,7 +390,7 @@
             design (api/show rt design-id)
             docs (api/show rt docs-id)
             edge-set (set (map (juxt :from_strand_id :to_strand_id :edge_type)
-                               (:edges (api/subgraph rt [docs-id] {:type "depends-on"}))))]
+                               (:edges (graph/subgraph rt [docs-id] {:type "depends-on"}))))]
         (is (= "Design batch" (:title design)))
         (is (= "Design body" (get-in design [:attributes :body])))
         (is (= "p2" (get-in design [:attributes :kanban/priority])))

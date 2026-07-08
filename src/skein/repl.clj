@@ -11,6 +11,7 @@
             [nrepl.core :as nrepl]
             [skein.core.client :as client]
             [skein.api.format.alpha :as format-alpha]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.core.terse :as terse]
             [skein.core.weaver.config :as daemon-config]
@@ -95,12 +96,12 @@
     :show (apply api/show rt args)
     :declare-acyclic-relation! (apply api/declare-acyclic-relation! rt args)
     :acyclic-relations (api/acyclic-relations rt)
-    :burn-by-id (apply api/burn-by-id rt args)
-    :burn-by-ids (apply api/burn-by-ids rt args)
-    :register-query (apply api/register-query rt args)
-    :load-queries (apply api/load-queries rt args)
-    :queries (api/queries rt)
-    :query-explain (apply api/query-explain rt args)
+    :burn-by-id (apply graph/burn-by-id! rt args)
+    :burn-by-ids (apply graph/burn-by-ids! rt args)
+    :register-query (apply graph/register-query rt args)
+    :load-queries (apply graph/load-queries rt args)
+    :queries (graph/queries rt)
+    :query-explain (apply graph/query-explain rt args)
     :list (if (seq args) (apply api/list rt args) (api/list rt))
     :list-query (apply api/list-query rt args)
     :ready (if (seq args) (apply api/ready rt args) (api/ready rt))

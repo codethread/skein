@@ -10,6 +10,7 @@
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
@@ -269,7 +270,7 @@
     ;; exists. `stamp-run-on-gate!` marks superseded runs `treadle/superseded-by`,
     ;; so excluding those keeps the edge-scoped query in lockstep with the
     ;; current-stamp `gate-stalled?` predicate through the clear-and-respawn flow.
-    (api/register-query! runtime 'stalled-gates
+    (graph/register-query! runtime 'stalled-gates
                          [:and [:= :state "active"]
                           [:= [:attr "workflow/gate"] "subagent"]
                           [:or
@@ -278,7 +279,7 @@
                            [:edge/out "delegates"
                             [:and [:missing [:attr "treadle/superseded-by"]]
                              [:in [:attr "shuttle/phase"] stalled-run-phases]]]]])
-    (api/register-query! runtime 'blocked-deliveries
+    (graph/register-query! runtime 'blocked-deliveries
                          [:and [:= :state "closed"]
                           [:exists [:attr "treadle/delivery-blocked"]]
                           [:missing [:attr "treadle/delivered"]]])

@@ -5,6 +5,7 @@
   notified in gitignored init.local.clj with (chime/set-notifier! {:argv [...]})."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.macros.rules :refer [defrule forget-rules! install-rules!]]
             [skein.spools.shuttle :as shuttle]))
@@ -76,7 +77,7 @@
 (defn- active-descendants
   "Return active strands below a kanban card over parent-of, including the card."
   [rt root-id]
-  (->> (:strands (api/subgraph rt [root-id] {:type "parent-of"}))
+  (->> (:strands (graph/subgraph rt [root-id] {:type "parent-of"}))
        (filter #(= "active" (:state %)))
        vec))
 
@@ -85,7 +86,7 @@
   [rt root-id]
   (let [work (active-descendants rt root-id)
         work-ids (set (map :id work))
-        blocker-ids (->> (:edges (api/subgraph rt (vec work-ids) {:type "depends-on"}))
+        blocker-ids (->> (:edges (graph/subgraph rt (vec work-ids) {:type "depends-on"}))
                          (filter #(contains? work-ids (:from_strand_id %)))
                          (map :to_strand_id)
                          distinct)]

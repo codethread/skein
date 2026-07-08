@@ -11,6 +11,7 @@
             [skein.api.events.alpha :as events]
             [skein.api.hooks.alpha :as hooks]
             [skein.api.views.alpha :as views]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
@@ -139,12 +140,12 @@
              (= "closed" (get-in event [:strand/after :state])))
     (let [rt (current/runtime)
           root-id (:strand/id event)
-          children (remove #(= root-id (:id %)) (:strands (api/subgraph rt [root-id])))
+          children (remove #(= root-id (:id %)) (:strands (graph/subgraph rt [root-id])))
           temporary-child-ids (->> children
                                    (filter #(= "true" (get-in % [:attributes :temporary])))
                                    (mapv :id))]
       (when (seq temporary-child-ids)
-        (api/burn-by-ids rt temporary-child-ids))
+        (graph/burn-by-ids! rt temporary-child-ids))
       (swap! cleanup-events conj {:root root-id :burned temporary-child-ids}))))
 
 (defn wait-for-events [n]
@@ -455,8 +456,8 @@
     (try
       (api/init rt-a)
       (api/init rt-b)
-      (api/register-query rt-a 'mine [:= [:attr :owner] "a"])
-      (api/register-query rt-b 'mine [:= [:attr :owner] "b"])
+      (graph/register-query rt-a 'mine [:= [:attr :owner] "a"])
+      (graph/register-query rt-b 'mine [:= [:attr :owner] "b"])
       (let [a (api/add rt-a {:title "A" :attributes {:owner "a"}})
             b (api/add rt-b {:title "B" :attributes {:owner "b"}})]
         (is (= [(:id a)] (mapv :id (api/list-query rt-a 'mine {}))))
@@ -646,16 +647,16 @@
   (with-runtime
     (fn [rt _]
       (let [workspace (get-in rt [:metadata :config-dir])]
-        (api/register-query rt 'prior [:= [:attr :owner] "prior"])
+        (graph/register-query rt 'prior [:= [:attr :owner] "prior"])
         (reset! delivered-events [])
         (events/register! rt :prior #{:strand/added} 'skein.weaver-test/capture-event {})
         (hooks/register! rt :prior #{:payload/received} 'skein.weaver-test/capture-hook {})
         (spit (io/file workspace "init.clj")
               (str "(require '[skein.api.current.alpha :as current]\n"
-                   "         '[skein.api.weaver.alpha :as api]\n"
+                   "         '[skein.api.graph.alpha :as graph]\n"
                    "         '[skein.api.events.alpha :as events])\n"
                    "(let [rt (current/runtime)]\n"
-                   "  (api/register-query rt 'shared [:= [:attr :owner] \"shared\"])\n"
+                   "  (graph/register-query rt 'shared [:= [:attr :owner] \"shared\"])\n"
                    "  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n"
                    "  (events/enqueue! rt {:event/type :strand/added :event/id \"shared-only\" "
                    ":event/at \"2026-06-29T00:00:00Z\" :event/source :test}))\n"))
@@ -669,7 +670,7 @@
                    (:file (ex-data e))))))
         ;; pre-reload registrations were wiped by the initial clear, but the
         ;; registrations init.clj made before init.local.clj threw survive.
-        (is (= #{"shared"} (set (keys (api/queries rt)))))
+        (is (= #{"shared"} (set (keys (graph/queries rt)))))
         (is (= [:shared] (mapv :key (events/handlers rt))))
         (is (= [] (hooks/hooks rt)))
         ;; built-in ops stay registered, so the world is never left op-less.
@@ -907,7 +908,7 @@
             (is (= edge-patch (:strand/patch update-event)))))
         (reset! delivered-events [])
         (let [pre-burn (api/show rt (:id added))
-              burn-result (api/burn-by-id rt (:id added))
+              burn-result (graph/burn-by-id! rt (:id added))
               burn-event (first (wait-for-events 1))]
           (is (= {:burned [(:id added)] :count 1} burn-result))
           (is (= :strand/burned (:event/type burn-event)))
@@ -1001,26 +1002,26 @@
         (reset! delivered-events [])
         (events/register! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
                           'skein.weaver-test/capture-event {})
-        (let [result (api/apply-batch rt {:refs {:existing-b (:id existing-b)
-                                                 :existing-a (:id existing-a)
-                                                 :burned (:id burned)}
-                                          :strands [{:ref :existing-b
-                                                     :state "closed"
-                                                     :attributes {:phase "done-b"}}
-                                                    {:ref :created-z
-                                                     :title "Created Z"
-                                                     :attributes {:kind "z"}}
-                                                    {:ref :existing-a
-                                                     :attributes {:phase "done-a"}}
-                                                    {:ref :created-a
-                                                     :title "Created A"
-                                                     :attributes {:kind "a"}}]
-                                          :edges [{:op :upsert
-                                                   :from :created-z
-                                                   :to :existing-b
-                                                   :type "depends-on"
-                                                   :attributes {:reason "test"}}]
-                                          :burn [:burned]})
+        (let [result (batch/apply! rt {:refs {:existing-b (:id existing-b)
+                                              :existing-a (:id existing-a)
+                                              :burned (:id burned)}
+                                       :strands [{:ref :existing-b
+                                                  :state "closed"
+                                                  :attributes {:phase "done-b"}}
+                                                 {:ref :created-z
+                                                  :title "Created Z"
+                                                  :attributes {:kind "z"}}
+                                                 {:ref :existing-a
+                                                  :attributes {:phase "done-a"}}
+                                                 {:ref :created-a
+                                                  :title "Created A"
+                                                  :attributes {:kind "a"}}]
+                                       :edges [{:op :upsert
+                                                :from :created-z
+                                                :to :existing-b
+                                                :type "depends-on"
+                                                :attributes {:reason "test"}}]
+                                       :burn [:burned]})
               events (wait-for-events 6)
               [batch-event add-z-event add-a-event update-b-event update-a-event burn-event] events
               batch-id (:batch/id batch-event)
@@ -1070,8 +1071,8 @@
         (events/register! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
                           'skein.weaver-test/capture-event {})
         (hooks/register! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
-        (let [result (api/apply-batch rt {:refs {:from (:id from) :to (:id to)}
-                                          :edges [{:op :upsert :from :from :to :to :type "related-to"}]})
+        (let [result (batch/apply! rt {:refs {:from (:id from) :to (:id to)}
+                                       :edges [{:op :upsert :from :from :to :to :type "related-to"}]})
               events (wait-for-events 1)
               batch-event (first (filter #(= :batch/applied (:event/type %)) events))
               context (last @hook-contexts)]
@@ -1131,11 +1132,11 @@
           (drain-events! rt)
           (reset! delivered-events [])
           (try
-            (api/apply-batch rt {:refs {:keep (:id keep) :burn (:id burn-reject)}
-                                 :strands [{:ref :keep :attributes {"storyPoints" "8"}}
-                                           {:ref :created :title "Rejected create" :attributes {"storyPoints" "13"}}]
-                                 :edges [{:op :upsert :from :created :to :keep :type "depends-on"}]
-                                 :burn [:burn]})
+            (batch/apply! rt {:refs {:keep (:id keep) :burn (:id burn-reject)}
+                              :strands [{:ref :keep :attributes {"storyPoints" "8"}}
+                                        {:ref :created :title "Rejected create" :attributes {"storyPoints" "13"}}]
+                              :edges [{:op :upsert :from :created :to :keep :type "depends-on"}]
+                              :burn [:burn]})
             (is false "expected batch hook rejection")
             (catch clojure.lang.ExceptionInfo e
               (is (= "hook/failed" (:code (ex-data e))))
@@ -1155,7 +1156,7 @@
       (let [a (api/add rt {:title "A"})
             b (api/add rt {:title "B"})
             requested [(:id b) (:id a) (:id b)]
-            result (api/burn-by-ids rt requested)
+            result (graph/burn-by-ids! rt requested)
             burn-event (first (wait-for-events 1))]
         (is (= {:burned [(:id b) (:id a)] :count 2} result))
         (is (= requested (:strand/requested-ids burn-event)))
@@ -1395,7 +1396,7 @@
         (reset! delivered-events [])
         (hooks/register! rt :capture-burn #{:strand/burn-before-commit} 'skein.weaver-test/capture-hook {})
         (let [requested [(:id created) (:id created)]
-              burn-result (api/burn-by-ids rt requested)
+              burn-result (graph/burn-by-ids! rt requested)
               burn-event (first (wait-for-events 1))
               burn-context (first @hook-contexts)]
           (is (= {:burned [(:id created)] :count 1} burn-result))
@@ -1415,7 +1416,7 @@
             (reset! delivered-events [])
             (hooks/register! rt :reject-burn #{:strand/burn-before-commit} 'skein.weaver-test/rejecting-hook {})
             (try
-              (api/burn-by-ids rt [(:id burn-target)])
+              (graph/burn-by-ids! rt [(:id burn-target)])
               (is false "expected burn hook rejection")
               (catch clojure.lang.ExceptionInfo e
                 (is (= "hook/failed" (:code (ex-data e))))
@@ -1436,13 +1437,13 @@
       (let [open-query [:= :state "active"]
             owner-query {:params [:owner]
                          :where [:= [:attr :owner] [:param :owner]]}]
-        (is (= {"mine" owner-query} (api/register-query rt 'mine owner-query)))
-        (is (= owner-query (api/resolve-query rt :mine)))
-        (is (= {"mine" owner-query} (api/queries rt)))
-        (is (= {"open" open-query} (api/load-queries rt {:open open-query})))
+        (is (= {"mine" owner-query} (graph/register-query rt 'mine owner-query)))
+        (is (= owner-query (graph/resolve-query rt :mine)))
+        (is (= {"mine" owner-query} (graph/queries rt)))
+        (is (= {"open" open-query} (graph/load-queries rt {:open open-query})))
         (is (= {"mine" owner-query
                 "open" open-query}
-               (api/queries rt)))))))
+               (graph/queries rt)))))))
 
 (deftest weaver-query-registry-accepts-parameterized-in-queries
   (with-runtime
@@ -1452,7 +1453,7 @@
             human (api/add rt {:title "Human" :attributes {:owner "human"}})
             owners-query {:params [:owners]
                           :where [:in [:attr :owner] [:param :owners]]}]
-        (is (= {"owners" owners-query} (api/register-query rt 'owners owners-query)))
+        (is (= {"owners" owners-query} (graph/register-query rt 'owners owners-query)))
         (is (= [(:id agent)] (mapv :id (api/list-query rt :owners {:owners ["agent"]}))))
         (is (= #{(:id agent) (:id human)}
                (set (map :id (api/list-query rt :owners {:owners ["agent" "human"]})))))
@@ -1472,13 +1473,13 @@
             edge-query {:params [:relation]
                         :where [:edge/out [:param :relation] [:= :state "active"]]}]
         (api/update rt (:id blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
-        (is (= {"blocked" edge-query} (api/register-query rt 'blocked edge-query)))
+        (is (= {"blocked" edge-query} (graph/register-query rt 'blocked edge-query)))
         (is (= [(:id blocked)] (mapv :id (api/list-query rt :blocked {:relation "depends-on"}))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"nested edge predicates"
-                              (api/register-query rt 'bad-edge
-                                                  [:edge/out "depends-on"
-                                                   [:edge/in "depends-on" [:= :state "active"]]])))
-        (is (= {"blocked" edge-query} (api/queries rt)))))))
+                              (graph/register-query rt 'bad-edge
+                                                    [:edge/out "depends-on"
+                                                     [:edge/in "depends-on" [:= :state "active"]]])))
+        (is (= {"blocked" edge-query} (graph/queries rt)))))))
 
 (deftest weaver-query-introspection-api-describes-registered-definitions
   (with-runtime
@@ -1496,19 +1497,19 @@
                                     [:and
                                      [:= [:attr :owner] [:param :owner]]
                                      [:= :state "active"]]]}]
-        (api/load-queries rt {:open open-query
-                              :mine owner-query
-                              :declared-unused declared-unused-query
-                              :owners owners-query
-                              :literal literal-query
-                              :blocked relation-query})
+        (graph/load-queries rt {:open open-query
+                                :mine owner-query
+                                :declared-unused declared-unused-query
+                                :owners owners-query
+                                :literal literal-query
+                                :blocked relation-query})
         (is (= [{:name "blocked" :params [:relation :owner] :referenced-params [:relation :owner]}
                 {:name "declared-unused" :params [:owner :unused] :referenced-params [:owner]}
                 {:name "literal" :params [] :referenced-params []}
                 {:name "mine" :params [:owner] :referenced-params [:owner]}
                 {:name "open" :params [] :referenced-params []}
                 {:name "owners" :params [:owners] :referenced-params [:owners]}]
-               (api/query-metadata rt)))
+               (graph/query-metadata rt)))
 
         (is (= {:name "mine"
                 :params [:owner]
@@ -1519,10 +1520,10 @@
                 :definition-form (pr-str owner-query)
                 :summary (str "Invoke this query with `strand list --query <name>` or `strand ready --query <name>` "
                               "and pass runtime values with repeated `--param key=value` arguments.")}
-               (api/query-explain rt :mine)))
+               (graph/query-explain rt :mine)))
 
         (try
-          (api/query-explain rt :missing)
+          (graph/query-explain rt :missing)
           (is false "expected query explain missing query failure")
           (catch clojure.lang.ExceptionInfo e
             (is (= "Query not found" (ex-message e)))
@@ -1548,15 +1549,15 @@
             feature (api/add rt {:title "Feature" :attributes {:kind "feature"}})]
         (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id agent)}
                                               {:type "parent-of" :to (:id human)}]})
-        (api/register-query rt 'agent-owned {:params [:owner]
-                                             :where [:= [:attr :owner] [:param :owner]]})
-        (is (= [(:id agent)] (api/query-ids rt 'agent-owned {:owner "agent"})))
-        (is (= [(:id human)] (api/query-ids rt [:= [:attr :owner] "human"] {})))
+        (graph/register-query rt 'agent-owned {:params [:owner]
+                                               :where [:= [:attr :owner] [:param :owner]]})
+        (is (= [(:id agent)] (graph/query-ids! rt 'agent-owned {:owner "agent"})))
+        (is (= [(:id human)] (graph/query-ids! rt [:= [:attr :owner] "human"] {})))
         (is (= [(:id human) (:id agent)]
-               (mapv :id (api/strands-by-ids rt [(:id human) (:id agent) (:id human)]))))
-        (is (= [(:id feature)] (api/ancestor-root-ids rt [(:id agent)])))
+               (mapv :id (graph/strands-by-ids rt [(:id human) (:id agent) (:id human)]))))
+        (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id agent)])))
         (is (= #{(:id feature) (:id agent) (:id human)}
-               (set (map :id (:strands (api/subgraph rt [(:id feature)]))))))))))
+               (set (map :id (:strands (graph/subgraph rt [(:id feature)]))))))))))
 
 (deftest weaver-view-registry-operations
   (with-runtime
@@ -2286,30 +2287,30 @@
     (fn [rt _]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Query not found"
-                            (api/resolve-query rt 'missing)))
+                            (graph/resolve-query rt 'missing)))
       (try
-        (api/resolve-query rt 'missing)
+        (graph/resolve-query rt 'missing)
         (is false "expected missing query error")
         (catch clojure.lang.ExceptionInfo e
           (is (= 'missing (:query (ex-data e))))
           (is (= "missing" (:canonical-query (ex-data e))))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (api/register-query rt 'user/mine [:= :state "active"])))
+                            (graph/register-query rt 'user/mine [:= :state "active"])))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (api/load-queries rt {"mine" [:= :state "active"]})))
+                            (graph/load-queries rt {"mine" [:= :state "active"]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"simple symbols or keywords"
-                            (api/load-queries rt {'user/mine [:= :state "active"]})))
+                            (graph/load-queries rt {'user/mine [:= :state "active"]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Unknown query operator"
-                            (api/register-query rt :broken [:unknown :state "active"])))
-      (api/register-query rt :ok [:= :state "active"])
+                            (graph/register-query rt :broken [:unknown :state "active"])))
+      (graph/register-query rt :ok [:= :state "active"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Unknown query operator"
-                            (api/load-queries rt {:bad [:unknown :state "active"]})))
-      (is (= {"ok" [:= :state "active"]} (api/queries rt))))))
+                            (graph/load-queries rt {:bad [:unknown :state "active"]})))
+      (is (= {"ok" [:= :state "active"]} (graph/queries rt))))))
 
 (deftest weaver-api-update-preserves-domain-errors-and-rolls-back
   (with-runtime
@@ -2345,10 +2346,10 @@
   (let [world (temp-world)
         init (io/file (:config-dir world) "init.clj")]
     (try
-      (spit init "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api]) (api/register-query (current/runtime) 'trusted [:= :state \"active\"])")
+      (spit init "(require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph]) (graph/register-query (current/runtime) 'trusted [:= :state \"active\"])")
       (let [rt (runtime/start! nil {:world world :publish? false})]
         (try
-          (is (= {"trusted" [:= :state "active"]} (api/queries rt)))
+          (is (= {"trusted" [:= :state "active"]} (graph/queries rt)))
           (finally
             (runtime/stop! rt))))
       (finally

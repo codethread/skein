@@ -21,6 +21,7 @@
             [clojure.string :as str]
             [clojure.walk :as walk]
             [skein.api.current.alpha :as current]
+            [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime-api]
             [skein.api.weaver.alpha :as api]
             [skein.core.query :as query]
@@ -184,7 +185,7 @@
   "Resolve a named query, validate params, overlay an optional state filter, and
   invoke the runtime list/ready fn exactly as the socket dispatch does."
   [rt query-fn query-name raw-params state limit]
-  (let [query-def (api/resolve-query rt (handle-name query-name))
+  (let [query-def (graph/resolve-query rt (handle-name query-name))
         params (validate-query-params query-def raw-params)
         query-def (if state
                     [:and (query/query-expr query-def params) [:= :state state]]
@@ -192,7 +193,7 @@
     (query-fn rt lean-attribute-byte-floor query-def params limit)))
 
 (defn- run-named-ready-query-lean [rt query-name raw-params limit]
-  (let [query-def (api/resolve-query rt (handle-name query-name))
+  (let [query-def (graph/resolve-query rt (handle-name query-name))
         params (validate-query-params query-def raw-params)]
     (api/ready-lean rt lean-attribute-byte-floor query-def params limit)))
 
@@ -241,7 +242,7 @@
 (defn burn-op
   "Physically delete one strand by id and return the burn summary."
   [ctx]
-  (api/burn-by-ids (:op/runtime ctx) [(:id (:op/args ctx))] (request-context :burn)))
+  (graph/burn-by-ids! (:op/runtime ctx) [(:id (:op/args ctx))] (request-context :burn)))
 
 (defn list-op
   "List lean-projected strands, optionally filtered by lifecycle state and/or a named query."
@@ -279,8 +280,8 @@
   [ctx]
   (let [{:keys [root-id relation]} (:op/args ctx)
         {:keys [root-ids strands edges]}
-        (api/subgraph (:op/runtime ctx) [root-id]
-                      (cond-> {} relation (assoc :type relation)))]
+        (graph/subgraph (:op/runtime ctx) [root-id]
+                        (cond-> {} relation (assoc :type relation)))]
     {"root_ids" root-ids
      "strands" strands
      "edges" edges}))
@@ -301,10 +302,10 @@
   (let [rt (:op/runtime ctx)
         {:keys [subcommand] nm :name} (:op/args ctx)]
     (case subcommand
-      "list" (json-safe-value (api/query-metadata rt))
+      "list" (json-safe-value (graph/query-metadata rt))
       "explain" (do (when (str/blank? nm)
                       (throw (ex-info "query explain requires a query name" {})))
-                    (json-safe-value (api/query-explain rt (handle-name nm)))))))
+                    (json-safe-value (graph/query-explain rt (handle-name nm)))))))
 
 (defn pattern-op
   "Introspect registered weave patterns: list all metadata or explain one."

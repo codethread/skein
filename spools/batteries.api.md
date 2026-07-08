@@ -51,7 +51,7 @@ Register the batteries core strand ops into a weaver runtime.
 
   The no-arg arity registers into the active runtime for `use!`-style
   installation; the explicit-runtime arity is for tests and trusted callers.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L440-L455">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L441-L456">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/add-op">`add-op`</a>
 ``` clojure
@@ -60,7 +60,7 @@ Register the batteries core strand ops into a weaver runtime.
 Function.
 
 Create a strand with merged attributes, optional state, and outgoing edges.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L201-L213">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L202-L214">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/burn-op">`burn-op`</a>
 ``` clojure
@@ -69,7 +69,7 @@ Create a strand with merged attributes, optional state, and outgoing edges.
 Function.
 
 Physically delete one strand by id and return the burn summary.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L241-L244">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L242-L245">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/list-op">`list-op`</a>
 ``` clojure
@@ -78,7 +78,7 @@ Physically delete one strand by id and return the burn summary.
 Function.
 
 List lean-projected strands, optionally filtered by lifecycle state and/or a named query.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L246-L260">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L247-L261">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/pattern-op">`pattern-op`</a>
 ``` clojure
@@ -87,7 +87,7 @@ List lean-projected strands, optionally filtered by lifecycle state and/or a nam
 Function.
 
 Introspect registered weave patterns: list all metadata or explain one.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L309-L318">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L310-L319">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/query-op">`query-op`</a>
 ``` clojure
@@ -96,7 +96,7 @@ Introspect registered weave patterns: list all metadata or explain one.
 Function.
 
 Introspect registered named queries: list all metadata or explain one.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L298-L307">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L299-L308">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/read-limit">`read-limit`</a>
 ``` clojure
@@ -105,7 +105,7 @@ Introspect registered named queries: list all metadata or explain one.
 Function.
 
 Return the runtime's batteries read-result cap for CLI list/ready ops.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L62-L65">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L63-L66">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/ready-op">`ready-op`</a>
 ``` clojure
@@ -114,7 +114,7 @@ Return the runtime's batteries read-result cap for CLI list/ready ops.
 Function.
 
 List lean-projected ready strands, optionally from the result set of a named query.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L262-L275">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L263-L276">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/set-read-limit!">`set-read-limit!`</a>
 ``` clojure
@@ -126,7 +126,7 @@ Set the runtime's batteries read-result cap for CLI list/ready ops.
 
   Intended for trusted workspace config. Invalid values fail loudly instead of
   falling back to the default cap.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L67-L75">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L68-L76">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/show-op">`show-op`</a>
 ``` clojure
@@ -135,7 +135,7 @@ Set the runtime's batteries read-result cap for CLI list/ready ops.
 Function.
 
 Return one normalized strand by id.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L230-L233">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L231-L234">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/subgraph-op">`subgraph-op`</a>
 ``` clojure
@@ -144,7 +144,7 @@ Return one normalized strand by id.
 Function.
 
 Return a relation-scoped subgraph rooted at one strand.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L277-L286">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L278-L287">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/supersede-op">`supersede-op`</a>
 ``` clojure
@@ -153,7 +153,7 @@ Return a relation-scoped subgraph rooted at one strand.
 Function.
 
 Replace one strand with another and return the supersession result.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L235-L239">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L236-L240">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/update-op">`update-op`</a>
 ``` clojure
@@ -162,7 +162,7 @@ Replace one strand with another and return the supersession result.
 Function.
 
 Patch one strand's title, state, attributes, and outgoing edges.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L215-L228">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L216-L229">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/weave-op">`weave-op`</a>
 ``` clojure
@@ -171,4 +171,4 @@ Patch one strand's title, state, attributes, and outgoing edges.
 Function.
 
 Apply a registered create-only weave pattern to one JSON input value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L288-L296">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L289-L297">Source</a></sub></p>

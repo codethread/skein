@@ -86,7 +86,7 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 
 - **SPEC-004.C29:** Core weaver startup works without a user init file.
 - **SPEC-004.C30:** The weaver loads selected workspace startup files in order: `init.clj`, then `init.local.clj`. Missing startup files are skipped. Load errors in present files fail startup loudly with file context and publish no ready metadata.
-- **SPEC-004.C31:** Trusted init code runs after weaver memory/socket state exists and before runtime metadata is published, so it may initialize weaver-owned runtime state through startup helpers such as `skein.api.weaver.alpha/register-query!` after capturing the runtime explicitly (for example via `skein.api.current.alpha/runtime`).
+- **SPEC-004.C31:** Trusted init code runs after weaver memory/socket state exists and before runtime metadata is published, so it may initialize weaver-owned runtime state through startup helpers such as `skein.api.graph.alpha/register-query!` after capturing the runtime explicitly (for example via `skein.api.current.alpha/runtime`).
 - **SPEC-004.C32:** Sandboxing, SCI execution, untrusted plugin isolation, remote weaver access, authentication, multi-user authorization, and daemon startup hooks for storage customization are outside the current runtime contract.
 
 ## SPEC-004.P8 Named query registry

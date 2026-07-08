@@ -17,6 +17,7 @@
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [attr-get fail! reject-unknown-keys! require-valid!]]))
@@ -67,7 +68,7 @@
   includes the root and its active parent-of descendants and `:parent-of` is the
   active-internal edge set."
   [rt active-ids root-id]
-  (let [{:keys [strands edges]} (api/subgraph rt [root-id] {:type "parent-of"})
+  (let [{:keys [strands edges]} (graph/subgraph rt [root-id] {:type "parent-of"})
         active-strand-ids (set (keep (fn [{:keys [id state]}]
                                        (when (= "active" state) id))
                                      strands))
@@ -86,7 +87,7 @@
   Subgraph expansion walks outward to external blockers, so edges are filtered
   against the DAG-local id set to keep the projection self-contained."
   [rt strand-ids]
-  (let [{:keys [edges]} (api/subgraph rt strand-ids {:type "depends-on"})]
+  (let [{:keys [edges]} (graph/subgraph rt strand-ids {:type "depends-on"})]
     (internal-active-edges (set strand-ids) edges)))
 
 (defn work-dags
@@ -98,7 +99,7 @@
   [rt]
   (let [active (active-by-id rt)
         active-ids (set (keys active))
-        parent-edges (->> (:edges (api/subgraph rt (sort active-ids) {:type "parent-of"}))
+        parent-edges (->> (:edges (graph/subgraph rt (sort active-ids) {:type "parent-of"}))
                           (internal-active-edges active-ids))
         roots (parent-root-ids active-ids parent-edges)
         dags (mapv (fn [root-id]
@@ -122,7 +123,7 @@
   itself; `:ready` is the subset of the root and its descendants present in
   `ready-ids`."
   [rt active-ids ready-ids root]
-  (let [{:keys [strands]} (api/subgraph rt [(:id root)] {:type "parent-of"})
+  (let [{:keys [strands]} (graph/subgraph rt [(:id root)] {:type "parent-of"})
         descendants (->> strands
                          (filter #(and (contains? active-ids (:id %))
                                        (not= (:id root) (:id %))))
@@ -166,7 +167,7 @@
       (require-valid! ::branch branch "loom/branch-views :branch must be a string"))
     (let [active (active-by-id rt)
           active-ids (set (keys active))
-          parent-edges (->> (:edges (api/subgraph rt (sort active-ids) {:type "parent-of"}))
+          parent-edges (->> (:edges (graph/subgraph rt (sort active-ids) {:type "parent-of"}))
                             (internal-active-edges active-ids))
           child-ids (set (map :to_strand_id parent-edges))
           roots (->> (vals active)
@@ -223,7 +224,7 @@
   [rt history]
   (->> history
        (mapcat (fn [{:keys [root]}]
-                 (:strands (api/subgraph rt [(:id root)] {:type "parent-of"}))))
+                 (:strands (graph/subgraph rt [(:id root)] {:type "parent-of"}))))
        (filter #(= "subagent" (attr-get % :workflow/gate)))
        (sort-by :created_at)
        vec))

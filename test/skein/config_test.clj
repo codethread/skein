@@ -11,6 +11,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.runtime.alpha :as runtime-alpha]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.runtime :as runtime]
@@ -160,7 +161,7 @@
         (load-file config-path)
         ((requiring-resolve 'config/install!))
         {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
-         :queries (into {} (map (fn [q] [q (get (api/queries rt) q)])) named-query-names)}
+         :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}
         (finally
           (runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -171,8 +172,8 @@
   [rt]
   (doseq [query-name ["kanban-cards" "kanban-unstarted" "feature-active" "feature-work"
                       "feature-owner-work" "feature-run" "workflow-runs" "devflow-runs" "work"]]
-    (is (contains? (api/queries rt) query-name)))
-  (is (contains? (api/queries rt) "bench-runs"))
+    (is (contains? (graph/queries rt) query-name)))
+  (is (contains? (graph/queries rt) "bench-runs"))
   (doseq [op-name ["kanban" "branches" "current-dags" "devflow-start" "devflow-next" "devflow-choices"
                    "devflow-choose" "devflow-complete" "devflow-advance"
                    "devflow-describe" "devflow-history" "devflow-archive"
@@ -290,7 +291,7 @@
                              ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
         (api/add rt {:title title :state "active" :attributes attrs}))
       (let [rows (fn [query-name params]
-                   (set (map :title (api/list rt (get (api/queries rt) query-name) params))))]
+                   (set (map :title (api/list rt (get (graph/queries rt) query-name) params))))]
         (is (= #{"A1" "A2" "A3"} (rows "feature-active" {:feature "alpha"})))
         (is (= #{"A1" "A2"} (rows "feature-work" {:feature "alpha"})))
         (is (= #{"A1"} (rows "feature-owner-work" {:feature "alpha" :owner "amy"})))
@@ -349,7 +350,7 @@
         (api/update rt (:id review) {:edges [{:type "depends-on" :to (:id impl)}]})
         (let [strands (api/list rt (var-get (requiring-resolve 'config/feature-active-query))
                                 {:feature "plan-feature"})
-              children (:edges (api/subgraph rt [(:id plan)] {:type "parent-of"}))
+              children (:edges (graph/subgraph rt [(:id plan)] {:type "parent-of"}))
               ready (api/ready rt (var-get (requiring-resolve 'config/feature-work-query))
                                {:feature "plan-feature"})]
           (is (= 3 (count strands)))

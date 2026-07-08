@@ -34,6 +34,7 @@
   ergonomics layer is for workspace-local config, tests, and glue only."
   (:require [skein.api.current.alpha :as current]
             [skein.api.batch.alpha :as batch]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.core.terse :as terse]))
 
@@ -138,9 +139,9 @@
 
   Missing ids fail loudly. Returns the weaver burn summary."
   ([id]
-   (api/burn-by-id (resolve-runtime) id))
+   (graph/burn-by-id! (resolve-runtime) id))
   ([id & ids]
-   (api/burn-by-ids (resolve-runtime) (vec (cons id ids)))))
+   (graph/burn-by-ids! (resolve-runtime) (vec (cons id ids)))))
 
 (defn declare-acyclic-relation!
   "Declare `relation` as a durable acyclic structural relation (idempotent)."
@@ -155,7 +156,7 @@
 (defn defquery!
   "Register `query-name` to `query-def` in the resolved runtime query registry."
   [query-name query-def]
-  (api/register-query (resolve-runtime) query-name query-def))
+  (graph/register-query (resolve-runtime) query-name query-def))
 
 (defn load-queries!
   "Merge one EDN map of named query definitions into the resolved runtime.
@@ -163,19 +164,19 @@
   Deliberately diverges from `skein.repl/load-queries!`, which takes a file
   path and reads EDN from disk: trusted in-process code owns its own I/O."
   [registry]
-  (api/load-queries (resolve-runtime) registry))
+  (graph/load-queries (resolve-runtime) registry))
 
 (defn queries
   "Return the resolved runtime's in-memory named query registry."
   []
-  (api/queries (resolve-runtime)))
+  (graph/queries (resolve-runtime)))
 
 (defn query-explain
   "Return caller guidance for the registered query `query-name`.
 
   Missing queries fail loudly with the weaver's query-not-found data."
   [query-name]
-  (api/query-explain (resolve-runtime) query-name))
+  (graph/query-explain (resolve-runtime) query-name))
 
 (defn query
   "Return strands matching an ad hoc query definition or named query.

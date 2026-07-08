@@ -28,10 +28,10 @@ branch, which query feeds the ready frontier, and the op registration glue.
 wrappers over this spool.
 
 Every function is **read-only** and composes the public
-`skein.api.weaver.alpha` / `skein.spools.workflow` surfaces. Because it reads
-edges via `api/subgraph`/`api/list`, it requires an **in-process weaver
-runtime** — trusted startup config, the weaver's own nREPL, or an in-process
-test runtime. Callers pass the runtime explicitly.
+`skein.api.graph.alpha` / `skein.api.weaver.alpha` / `skein.spools.workflow`
+surfaces. Because it reads edges via `graph/subgraph`/`api/list`, it requires
+an **in-process weaver runtime** — trusted startup config, the weaver's own
+nREPL, or an in-process test runtime. Callers pass the runtime explicitly.
 
 ## 2. Usage
 

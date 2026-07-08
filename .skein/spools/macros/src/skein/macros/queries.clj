@@ -12,7 +12,7 @@
   without the suffix registers under itself."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.graph.alpha :as graph]))
 
 (defonce ^:private query-registry (atom {}))
 
@@ -76,7 +76,7 @@
   "Install all queries remembered for the current namespace, or for `ns-sym`.
 
   Resolves the runtime via `skein.api.current.alpha/current`, registers each
-  remembered query through `skein.api.weaver.alpha/register-query!` in author
+  remembered query through `skein.api.graph.alpha/register-query!` in author
   order, and returns a map of registered-name symbol to that call's canonical
   return, matching today's `register-query-map!` result shape.
 
@@ -94,7 +94,7 @@
      (let [runtime (current/runtime)]
        (into {}
              (map (fn [{:keys [name query]}]
-                    [name (api/register-query! runtime name query)]))
+                    [name (graph/register-query! runtime name query)]))
              entries)))))
 
 (defmacro defquery

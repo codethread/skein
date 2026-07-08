@@ -17,24 +17,24 @@
    :add 'skein.api.weaver.alpha/add
    :update 'skein.api.weaver.alpha/update
    :show 'skein.api.weaver.alpha/show
-   :burn-by-id 'skein.api.weaver.alpha/burn-by-id
-   :burn-by-ids 'skein.api.weaver.alpha/burn-by-ids
+   :burn-by-id 'skein.api.graph.alpha/burn-by-id!
+   :burn-by-ids 'skein.api.graph.alpha/burn-by-ids!
    :list 'skein.api.weaver.alpha/list
    :ready 'skein.api.weaver.alpha/ready
    :supersede 'skein.api.weaver.alpha/supersede
    :declare-acyclic-relation! 'skein.api.weaver.alpha/declare-acyclic-relation!
    :acyclic-relations 'skein.api.weaver.alpha/acyclic-relations
-   :register-query 'skein.api.weaver.alpha/register-query
-   :load-queries 'skein.api.weaver.alpha/load-queries
-   :queries 'skein.api.weaver.alpha/queries
-   :query-explain 'skein.api.weaver.alpha/query-explain
-   :resolve-query 'skein.api.weaver.alpha/resolve-query
+   :register-query 'skein.api.graph.alpha/register-query
+   :load-queries 'skein.api.graph.alpha/load-queries
+   :queries 'skein.api.graph.alpha/queries
+   :query-explain 'skein.api.graph.alpha/query-explain
+   :resolve-query 'skein.api.graph.alpha/resolve-query
    :list-query 'skein.api.weaver.alpha/list-query
    :ready-query 'skein.api.weaver.alpha/ready-query
-   :query-ids 'skein.api.weaver.alpha/query-ids
-   :strands-by-ids 'skein.api.weaver.alpha/strands-by-ids
-   :ancestor-root-ids 'skein.api.weaver.alpha/ancestor-root-ids
-   :subgraph 'skein.api.weaver.alpha/subgraph
+   :query-ids 'skein.api.graph.alpha/query-ids!
+   :strands-by-ids 'skein.api.graph.alpha/strands-by-ids
+   :ancestor-root-ids 'skein.api.graph.alpha/ancestor-root-ids
+   :subgraph 'skein.api.graph.alpha/subgraph
    :register-view! 'skein.api.views.alpha/register-view!
    :view! 'skein.api.views.alpha/view!
    :views 'skein.api.views.alpha/views
@@ -55,7 +55,7 @@
    :resolve-pattern 'skein.api.weaver.alpha/resolve-pattern
    :pattern-explain 'skein.api.weaver.alpha/pattern-explain
    :weave! 'skein.api.weaver.alpha/weave!
-   :apply-batch 'skein.api.weaver.alpha/apply-batch
+   :apply-batch 'skein.api.batch.alpha/apply!
    :approved-spools 'skein.api.weaver.alpha/approved-spools
    :sync-approved-spools 'skein.api.weaver.alpha/sync-approved-spools
    :approved-spool-syncs 'skein.api.weaver.alpha/approved-spool-syncs

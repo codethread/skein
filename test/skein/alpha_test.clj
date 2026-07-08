@@ -60,7 +60,7 @@
       (let [feature (api/add rt {:title "Feature" :attributes {:kind "feature"}})
             task (api/add rt {:title "Task" :attributes {:owner "agent"}})]
         (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
-        (api/register-query rt 'agent-owned [:= [:attr :owner] "agent"])
+        (graph/register-query rt 'agent-owned [:= [:attr :owner] "agent"])
         (is (= [(:id task)] (graph/query-ids! rt 'agent-owned {})))
         (is (= [(:id task)] (mapv :id (graph/strands-by-ids rt [(:id task) (:id task)]))))
         (is (= {:strand-id (:id task)
