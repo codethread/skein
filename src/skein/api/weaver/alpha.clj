@@ -9,88 +9,22 @@
             [skein.api.cli.alpha :as cli]
             [skein.api.format.alpha :as format-alpha]
             [skein.core.db :as db]
+            [skein.core.weaver.access :refer [ds normalize query-registry view-registry
+                                              pattern-registry op-registry hook-registry
+                                              approved-spool-sync-state module-use-state event-system
+                                              with-spool-classloader config-dir spools-file
+                                              canonical-root cache-base validate-fn-symbol!]]
+            [skein.core.weaver.lifecycle :refer [event-base request-context
+                                                 run-validation-hooks! run-transform-hooks]]
             [skein.core.weaver.runtime :as runtime]
             [skein.core.weaver.scheduler :as scheduler]
             [skein.core.query :as query]
             [skein.core.specs :as specs])
-  (:import [java.time Instant]
-           [java.util UUID]
+  (:import [java.util UUID]
            [java.nio.file FileSystemException FileVisitResult Files LinkOption SimpleFileVisitor StandardCopyOption]
            [java.nio.file.attribute FileAttribute]))
 
-(defn- normalize-row
-  "Decode JSON-backed row fields returned by persistence."
-  [row]
-  (cond-> row
-    (string? (:attributes row)) (clojure.core/update :attributes db/<-json)))
-
-(defn- normalize
-  "Recursively decode persistence-shaped rows into Clojure data."
-  [result]
-  (cond
-    (map? result) (into {} (map (fn [[k v]] [k (normalize v)])) (normalize-row result))
-    (sequential? result) (mapv normalize result)
-    :else result))
-
 (declare enqueue-event! register-built-in-ops! apply-edges! op-detail)
-
-(defn- ds [runtime]
-  (:datasource runtime))
-
-(defn- query-registry [runtime]
-  (:query-registry runtime))
-
-(defn- view-registry [runtime]
-  (:view-registry runtime))
-
-(defn- pattern-registry [runtime]
-  (:pattern-registry runtime))
-
-(defn- op-registry [runtime]
-  (:op-registry runtime))
-
-(defn- hook-registry [runtime]
-  (:hook-registry runtime))
-
-(defn- approved-spool-sync-state [runtime]
-  (:approved-spool-sync-state runtime))
-
-(defn- module-use-state [runtime]
-  (:module-use-state runtime))
-
-(defn- event-system [runtime]
-  (:event-system runtime))
-
-(defn- with-spool-classloader [runtime f]
-  (runtime/with-runtime-and-spool-classloader runtime f))
-
-(defn- config-dir [runtime]
-  (get-in runtime [:metadata :config-dir]))
-
-(defn- spools-file ^java.io.File [runtime name]
-  (io/file (config-dir runtime) name))
-
-(defn- expand-user-home [path]
-  (cond
-    (= "~" path) (System/getProperty "user.home")
-    (str/starts-with? path "~/") (str (System/getProperty "user.home") (subs path 1))
-    :else path))
-
-(defn- canonical-root [runtime path]
-  (let [expanded-path (expand-user-home path)
-        file (io/file expanded-path)
-        resolved (if (.isAbsolute file)
-                   file
-                   (io/file (config-dir runtime) expanded-path))]
-    (.getCanonicalPath resolved)))
-
-(defn- cache-base
-  "Return Skein's cache base for git-backed spool materialization."
-  []
-  (io/file (let [xdg-cache-home (System/getenv "XDG_CACHE_HOME")]
-             (if (and (string? xdg-cache-home) (not (str/blank? xdg-cache-home)))
-               xdg-cache-home
-               (str (System/getProperty "user.home") java.io.File/separator ".cache")))))
 
 (def ^:private local-spool-keys #{:local/root})
 (def ^:private git-spool-keys #{:git/url :git/sha :git/tag :deps/root})
@@ -853,97 +787,6 @@
   (db/init! (ds runtime))
   {:database "initialized"})
 
-(defn- event-base [type]
-  {:event/type type
-   :event/id (str (UUID/randomUUID))
-   :event/at (str (Instant/now))
-   :event/source :skein.api.weaver.alpha})
-
-(defn- hooks-for-type [runtime hook-type]
-  (filter #(contains? (:types %) hook-type)
-          (sort-by (juxt :order (comp pr-str :key)) (vals @(hook-registry runtime)))))
-
-(defn- cause-code [throwable]
-  (loop [t throwable]
-    (when t
-      (let [data (ex-data t)]
-        (or (:code data)
-            (recur (ex-cause t)))))))
-
-;; :fn is renamed on destructure: a local named `fn` shadows the fn macro.
-(defn- hook-failure-data [hook-type {:keys [key] fn-sym :fn} throwable]
-  (let [data (ex-data throwable)
-        code (cause-code throwable)]
-    (cond-> {:code "hook/failed"
-             :hook/type hook-type
-             :hook/key key
-             :hook/fn fn-sym
-             :exception/class (str (class throwable))
-             :exception/message (ex-message throwable)}
-      data (assoc :exception/data data)
-      code (assoc :hook/cause-code code))))
-
-(defn- hook-context [hook-type hook ctx]
-  (assoc ctx
-         :hook/type hook-type
-         :hook/key (:key hook)
-         :hook/fn (:fn hook)))
-
-(defn- invoke-hook! [runtime hook-type hook ctx]
-  (try
-    (with-spool-classloader runtime #((:fn-value hook) ctx))
-    (catch Throwable t
-      (throw (ex-info "Lifecycle hook failed"
-                      (hook-failure-data hook-type hook t)
-                      t)))))
-
-(defn- run-validation-hooks! [runtime hook-type ctx]
-  (doseq [hook (hooks-for-type runtime hook-type)]
-    (invoke-hook! runtime hook-type hook (hook-context hook-type hook ctx)))
-  nil)
-
-(defn run-payload-received-hooks!
-  "Run validation-only hooks for a decoded JSON socket request payload."
-  [runtime ctx]
-  (run-validation-hooks! runtime :payload/received ctx))
-
-(defn- require-transform-wrapper! [hook-type hook result]
-  (when-not (and (map? result) (contains? result :hook/value))
-    (throw (ex-info "Transform hook must return {:hook/value replacement}"
-                    {:code "hook/invalid-return"
-                     :hook/type hook-type
-                     :hook/key (:key hook)
-                     :hook/fn (:fn hook)
-                     :hook/return result})))
-  result)
-
-(defn- require-json-attributes! [attrs]
-  (db/->json attrs)
-  attrs)
-
-(defn- invoke-transform-hook! [runtime hook-type hook ctx]
-  (try
-    (require-json-attributes!
-     (:hook/value
-      (require-transform-wrapper!
-       hook-type
-       hook
-       (with-spool-classloader runtime #((:fn-value hook) ctx)))))
-    (catch Throwable t
-      (throw (ex-info "Lifecycle hook failed"
-                      (hook-failure-data hook-type hook t)
-                      t)))))
-
-(defn- run-transform-hooks [runtime hook-type ctx]
-  (reduce (fn [value hook]
-            (invoke-transform-hook! runtime hook-type hook (assoc (hook-context hook-type hook ctx) :hook/value value)))
-          (require-json-attributes! (:hook/value ctx))
-          (hooks-for-type runtime hook-type)))
-
-(defn- request-context [operation]
-  {:request/source :weaver-api
-   :request/operation operation})
-
 (defn add
   "Create a strand, enqueue a creation event, and return the normalized strand."
   ([runtime strand]
@@ -1319,11 +1162,6 @@
 
 (defn- canonical-view-name [view-name]
   (query/canonical-query-name view-name))
-
-(defn- validate-fn-symbol! [label fn-sym]
-  (when-not (and (symbol? fn-sym) (namespace fn-sym))
-    (throw (ex-info (str label " function must be a fully qualified symbol") {:fn fn-sym})))
-  fn-sym)
 
 (defn- validate-view-fn-symbol! [fn-sym]
   (validate-fn-symbol! "View" fn-sym))

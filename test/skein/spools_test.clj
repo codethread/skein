@@ -7,6 +7,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.core.client :as client]
+            [skein.core.weaver.access :as access]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.spools.ephemeral :as ephemeral]
@@ -56,12 +57,12 @@
    :file (.getPath (io/file (.getCanonicalPath config-dir) "spools.local.edn"))})
 
 (defn- with-cache-base [cache-dir f]
-  (let [original @#'api/cache-base]
+  (let [original @#'access/cache-base]
     (try
-      (alter-var-root #'api/cache-base (constantly (fn [] cache-dir)))
+      (alter-var-root #'access/cache-base (constantly (fn [] cache-dir)))
       (f)
       (finally
-        (alter-var-root #'api/cache-base (constantly original))))))
+        (alter-var-root #'access/cache-base (constantly original))))))
 
 (defn- write-local-lib! [config-dir lib-name ns-sym]
   (let [root (io/file config-dir "spools" lib-name)
