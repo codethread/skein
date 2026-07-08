@@ -361,12 +361,12 @@
         original-spools "{:spools {}}\n;; user comment\n"
         original-init "(require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime-alpha]
-         '[skein.api.weaver.alpha :as api])
+         '[skein.api.graph.alpha :as graph])
 (def runtime (current/runtime))
 (runtime-alpha/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
-(api/register-query! runtime 'dirty [:= [:attr :owner] \"dirty\"])
+(graph/register-query! runtime 'dirty [:= [:attr :owner] \"dirty\"])
 "]
     (delete-tree! (smoke-workspace (str db-file ".bootstrap-dirty")))
     (.mkdirs (java.io.File. workspace))
@@ -409,14 +409,14 @@
                "            [skein.api.graph.alpha :as graph]\n"
                "            [skein.api.hooks.alpha :as hooks]\n"
                "            [skein.api.views.alpha :as views]\n"
-               "            [skein.api.weaver.alpha :as api]))\n"
+               "            [skein.api.patterns.alpha :as patterns]))\n"
                "(def runtime (current/runtime))\n"
                "(runtime/sync! runtime)\n"
                "(runtime/use! runtime :skein/spools-batteries\n"
                "  {:ns 'skein.spools.batteries\n"
                "   :call 'skein.spools.batteries/activate!})\n"
-               "(api/register-query! runtime 'smoke-owned [:= [:attr :owner] \"smoke\"])\n"
-               "(api/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})\n"
+               "(graph/register-query! runtime 'smoke-owned [:= [:attr :owner] \"smoke\"])\n"
+               "(graph/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})\n"
                "(s/def ::title string?)\n"
                "(s/def ::review-input (s/keys :req-un [::title]))\n"
                "(defn reject-blocked-owner [ctx]\n"
@@ -427,7 +427,7 @@
                "  (let [title (:title input)]\n"
                "    [{:ref 'impl :title title :attributes {:owner \"smoke\"}}\n"
                "     {:ref 'review :title (str \"Review: \" title) :attributes {:kind \"review\"} :edges [{:type \"depends-on\" :to 'impl}]}]))\n"
-               "(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
+               "(patterns/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
                "(def event-marker "
                (pr-str (.getCanonicalPath event-marker))
                ")\n"
@@ -435,7 +435,7 @@
                "  (spit event-marker (:title (:strand event))))\n"
                "(defn smoke-owned-view [{:keys [params]}]\n"
                "  (let [runtime (current/runtime)\n"
-               "        ids (graph/query-ids! runtime 'smoke-owned {})]\n"
+               "        ids (graph/query-ids runtime 'smoke-owned {})]\n"
                "    {:params params\n"
                "     :ids ids\n"
                "     :strands (graph/strands-by-ids runtime ids)}))\n"
@@ -472,12 +472,12 @@
             payload (edn/read-string (run-mill-config-stdin! workspace (str "(do (require '[skein.api.current.alpha :as current] "
                                                                             "'[skein.api.graph.alpha :as graph] '[skein.api.views.alpha "
                                                                             ":as views]) (let [runtime (current/runtime)] {:query-ids "
-                                                                            "(graph/query-ids! runtime 'smoke-owned {}) :view (views/view! "
+                                                                            "(graph/query-ids runtime 'smoke-owned {}) :view (views/view! "
                                                                             "runtime 'smoke-owned-view {:source \"stdin\"}) :views "
                                                                             "(views/views runtime)}))\n") "weaver" "repl" "--stdin"))]
         (assert= [strand-id] (:query-ids payload) "startup registered query is available through graph helper")
         (assert= {:source "stdin"} (get-in payload [:view :params]) "startup view receives params")
-        (assert= [strand-id] (get-in payload [:view :ids]) "startup view can call graph/query-ids!")
+        (assert= [strand-id] (get-in payload [:view :ids]) "startup view can call graph/query-ids")
         (assert= ["Startup transformed strand"] (titles (get-in payload [:view :strands])) "startup view can hydrate graph strands")
         (assert= [{:name "smoke-owned-view" :fn 'smoke.startup/smoke-owned-view}]
                  (:views payload)
@@ -514,9 +514,9 @@
         (spit init-path
               (clojure.string/replace
                (slurp init-path)
-               "(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
-               (str "(api/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
-                    "(api/register-pattern! runtime 'reload-review 'smoke.startup/review-pattern ::review-input)\n")))
+               "(patterns/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
+               (str "(patterns/register-pattern! runtime 'review-task 'smoke.startup/review-pattern ::review-input)\n"
+                    "(patterns/register-pattern! runtime 'reload-review 'smoke.startup/review-pattern ::review-input)\n")))
         (let [reload-payload (edn/read-string
                               (run-mill-config-stdin!
                                workspace

@@ -415,8 +415,8 @@ queries and patterns, load approved spools, and install your own conventions. To
 make the `mine` query above permanent, add its registration to `init.clj`:
 
 ```clojure
-(require '[skein.api.weaver.alpha :as api])
-(api/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
+(require '[skein.api.graph.alpha :as graph])
+(graph/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
 ```
 
 Two kinds of code can extend the weaver:

@@ -31,7 +31,7 @@ Fulfil workflow `:shell` gates by running their command off the event thread.
 
 
 Runtime captured for asynchronous reed worker threads.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L43-L45">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L45-L47">Source</a></sub></p>
 
 ## <a name="skein.spools.reed/gate-stalled?">`gate-stalled?`</a>
 ``` clojure
@@ -43,7 +43,7 @@ Return durable stall detail for a ready `:shell` gate view, or nil.
 
   The failure detail lives on the gate itself (`shell/error`), so — unlike
   treadle — there is no `delegates`-edge join back to a separate run row.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L290-L298">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L292-L300">Source</a></sub></p>
 
 ## <a name="skein.spools.reed/install!">`install!`</a>
 ``` clojure
@@ -53,7 +53,7 @@ Function.
 
 Install the reed event handler, register the `:shell` executor and the
   `stalled-shell-gates` coordinator query, and perform an initial scan.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L300-L318">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L302-L320">Source</a></sub></p>
 
 ## <a name="skein.spools.reed/on-event">`on-event`</a>
 ``` clojure
@@ -62,7 +62,7 @@ Install the reed event handler, register the `:shell` executor and the
 Function.
 
 Weaver event handler: graph changes may make a `:shell` gate ready.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L285-L288">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L287-L290">Source</a></sub></p>
 
 ## <a name="skein.spools.reed/scan!">`scan!`</a>
 ``` clojure
@@ -74,4 +74,4 @@ Dispatch every ready `:shell` gate not already claimed or errored.
 
   Enumerates ready gates purely through the workflow surface and serializes on a
   runtime-owned monitor so concurrent scans cannot double-launch a gate.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L266-L283">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/reed.clj#L268-L285">Source</a></sub></p>

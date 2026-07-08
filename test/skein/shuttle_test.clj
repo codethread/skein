@@ -11,6 +11,7 @@
             [next.jdbc :as jdbc]
             [skein.core.db-test :as db-test]
             [skein.spools.shuttle :as shuttle]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.runtime :as runtime]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
@@ -168,7 +169,7 @@
         (is (= (:id parent)
                (get-in (api/show rt (:id child)) [:attributes :shuttle/spawned-by])))
         (is (some #(and (= (:id child) (:to_strand_id %)) (= "parent-of" (:edge_type %)))
-                  (:edges (api/subgraph rt [(:id parent)]))))
+                  (:edges (graph/subgraph rt [(:id parent)]))))
         (is (= (:id parent) (:spawned-by (shuttle/run-summary (api/show rt (:id child))))))
         (is (nil? (:for (shuttle/run-summary (api/show rt (:id child))))))))))
 
@@ -213,14 +214,14 @@
         (dotimes [i 150] (api/add rt {:title (str "noise-" i)}))
         (let [subgraph-calls (atom 0)
               incoming-calls (atom 0)
-              real-subgraph api/subgraph
-              real-incoming api/incoming-edges]
-          (with-redefs [api/subgraph (fn [& args]
-                                       (swap! subgraph-calls inc)
-                                       (apply real-subgraph args))
-                        api/incoming-edges (fn [& args]
-                                             (swap! incoming-calls inc)
-                                             (apply real-incoming args))]
+              real-subgraph graph/subgraph
+              real-incoming graph/incoming-edges]
+          (with-redefs [graph/subgraph (fn [& args]
+                                         (swap! subgraph-calls inc)
+                                         (apply real-subgraph args))
+                        graph/incoming-edges (fn [& args]
+                                               (swap! incoming-calls inc)
+                                               (apply real-incoming args))]
             (let [summaries (shuttle/runs)]
               (is (= (:id target)
                      (:for (first (filter #(= (:id run) (:id %)) summaries)))))

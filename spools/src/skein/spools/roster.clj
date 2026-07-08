@@ -27,6 +27,7 @@
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! reject-unknown-keys! attr-key->str attr-get poll-until-deadline!]])
@@ -474,7 +475,7 @@
   "True when `id` has no incoming `parent-of` edge, i.e. it is a work-tree root
   rather than a descendant that happens to carry feature/owner attributes."
   [runtime id]
-  (= [id] (api/ancestor-root-ids runtime [id])))
+  (= [id] (graph/ancestor-root-ids runtime [id])))
 
 (defn- changed-attr-keys
   "String-named attribute keys whose value differs between `before` and `after`."
@@ -505,7 +506,7 @@
   `parent-of` ancestry (including `id` itself). No-op when nothing in the
   ancestry is a tracked roster entry (SPEC-RosterSpool-001.C14)."
   [runtime id]
-  (doseq [root-id (api/ancestor-root-ids runtime [id] {:where active-roster-entry-query})]
+  (doseq [root-id (graph/ancestor-root-ids runtime [id] {:where active-roster-entry-query})]
     ;; Best-effort auto-heartbeat: an entry can finish between the active-entry
     ;; query above and this write. `heartbeat!` stays strict for direct callers
     ;; (it refuses on a closed entry), so here we swallow only that benign race
@@ -769,7 +770,7 @@
                               ;; await-quiet blocks for arbitrarily long coordination waits (SPEC-RosterSpool-001.C10)
                               :deadline-class :unbounded}
                              'skein.spools.roster/roster-op)]
-     :queries [(api/register-query! rt 'roster
-                                    [:and
-                                     [:= :state "active"]
-                                     [:= [:attr "roster/entry"] "true"]])]}))
+     :queries [(graph/register-query! rt 'roster
+                                      [:and
+                                       [:= :state "active"]
+                                       [:= [:attr "roster/entry"] "true"]])]}))

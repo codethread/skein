@@ -19,6 +19,7 @@
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.patterns.alpha :as patterns]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [attr-get]]))
@@ -397,7 +398,7 @@
   to the card visible, both directions, any strand, any state."
   [rt card-id]
   (let [all-ids (mapv :id (api/list rt))
-        {:keys [strands edges]} (api/subgraph rt all-ids {:type "depends-on"})
+        {:keys [strands edges]} (graph/subgraph rt all-ids {:type "depends-on"})
         by-id (into {} (map (juxt :id identity)) strands)]
     (->> edges
          (keep (fn [{:keys [from_strand_id to_strand_id]}]
@@ -412,7 +413,7 @@
 (defn- card-subtree
   "Return the card's parent-of subgraph split into notes and work strands."
   [rt card]
-  (let [{:keys [strands edges]} (api/subgraph rt [(:id card)] {:type "parent-of"})
+  (let [{:keys [strands edges]} (graph/subgraph rt [(:id card)] {:type "parent-of"})
         child-ids (->> edges
                        (filter #(= (:id card) (:from_strand_id %)))
                        (map :to_strand_id)
@@ -484,7 +485,7 @@
   [rt epics]
   (into {}
         (mapcat (fn [epic]
-                  (let [{:keys [edges]} (api/subgraph rt [(:id epic)] {:type "parent-of"})]
+                  (let [{:keys [edges]} (graph/subgraph rt [(:id epic)] {:type "parent-of"})]
                     (->> edges
                          (filter #(= (:id epic) (:from_strand_id %)))
                          (map (fn [edge] [(:to_strand_id edge) (:id epic)]))))))
@@ -870,8 +871,8 @@
                                           "Create pending feature cards with bodies and depends-on edges."
                                           'skein.spools.kanban/kanban-batch
                                           ::kanban-batch-input)
-     :queries [(api/register-query! rt 'kanban-cards [:= [:attr "kanban/card"] "true"])
-               (api/register-query! rt 'kanban-unstarted
+     :queries [(graph/register-query! rt 'kanban-cards [:= [:attr "kanban/card"] "true"])
+               (graph/register-query! rt 'kanban-unstarted
                                     [:and
                                      [:= :state "active"]
                                      [:= [:attr "kanban/card"] "true"]

@@ -7,6 +7,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.shuttle :as shuttle]
@@ -463,11 +464,11 @@
       {:positional pos :flags flags})))
 
 (defn- parent-descendants [root-id]
-  (let [{:keys [strands]} (api/subgraph (rt) [root-id] {:type "parent-of"})]
+  (let [{:keys [strands]} (graph/subgraph (rt) [root-id] {:type "parent-of"})]
     (remove #(= root-id (:id %)) strands)))
 
 (defn- children-ids [id]
-  (->> (:edges (api/subgraph (rt) [id] {:type "parent-of"}))
+  (->> (:edges (graph/subgraph (rt) [id] {:type "parent-of"}))
        (filter #(= id (:from_strand_id %)))
        (mapv :to_strand_id)))
 
@@ -1758,7 +1759,7 @@
         (let [summary (shuttle/run-summary run)
               task (when task-id (api/show (rt) task-id))
               served-target (or task-id (:for summary))
-              deps (->> (:edges (api/subgraph (rt) [(:id run)] {:type "depends-on"}))
+              deps (->> (:edges (graph/subgraph (rt) [(:id run)] {:type "depends-on"}))
                         (filter #(= (:id run) (:from_strand_id %)))
                         (mapv :to_strand_id))
               interactive? (= "interactive" (sattr run "mode"))
@@ -1793,7 +1794,7 @@
             task-id (assoc :task task-id)))))))
 
 (defn- blockers [task]
-  (->> (:edges (api/subgraph (rt) [(:id task)] {:type "depends-on"}))
+  (->> (:edges (graph/subgraph (rt) [(:id task)] {:type "depends-on"}))
        (filter #(and (= (:id task) (:from_strand_id %)) (not= "closed" (:state (api/show (rt) (:to_strand_id %))))))
        (mapv :to_strand_id)))
 
@@ -2028,4 +2029,4 @@
      :pattern (patterns/register-pattern! runtime 'agent-plan
                                           "Create a feature strand plus task/review children for agent work."
                                           'skein.spools.agents/agent-plan ::agent-plan-input)
-     :query (api/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "shuttle/run"] "true"] [:in [:attr "shuttle/phase"] ["failed" "exhausted"]]])}))
+     :query (graph/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "shuttle/run"] "true"] [:in [:attr "shuttle/phase"] ["failed" "exhausted"]]])}))

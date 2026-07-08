@@ -24,6 +24,7 @@
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime-alpha]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.bench.exec :as exec]
             [skein.spools.bench.metrics :as metrics]
@@ -902,7 +903,7 @@
 ;; retry! / abort! / gc!
 
 (defn- root-of [runtime entry-id]
-  (some-> (api/incoming-edges runtime [entry-id] "parent-of") first :from_strand_id))
+  (some-> (graph/incoming-edges runtime [entry-id] "parent-of") first :from_strand_id))
 
 (defn- rebuild-ctx
   "Reconstruct a run context for `root` from its registered suite (suites are
@@ -945,9 +946,9 @@
       {:retried entry-id :attempt (inc attempt)})))
 
 (defn- run-entries [runtime run-id]
-  (->> (api/outgoing-edges runtime [run-id] "parent-of")
+  (->> (graph/outgoing-edges runtime [run-id] "parent-of")
        (map :to_strand_id)
-       (api/strands-by-ids runtime)
+       (graph/strands-by-ids runtime)
        (filter #(= "true" (str (attr-get % "bench/entry"))))))
 
 (defn abort!
@@ -979,9 +980,9 @@
                            (if marked? (conj acc slug) acc)))
                        []
                        entries)
-        judge (->> (api/outgoing-edges runtime [run-id] "parent-of")
+        judge (->> (graph/outgoing-edges runtime [run-id] "parent-of")
                    (map :to_strand_id)
-                   (api/strands-by-ids runtime)
+                   (graph/strands-by-ids runtime)
                    (filter #(= "true" (str (attr-get % "bench/judge"))))
                    first)]
     (when judge
@@ -1023,9 +1024,9 @@
 (defn- run-children
   "Return the strands the run root `run-id` parents (entries and judge)."
   [runtime run-id]
-  (->> (api/outgoing-edges runtime [run-id] "parent-of")
+  (->> (graph/outgoing-edges runtime [run-id] "parent-of")
        (map :to_strand_id)
-       (api/strands-by-ids runtime)))
+       (graph/strands-by-ids runtime)))
 
 (defn- entry-strands [children]
   (filter #(= "true" (str (attr-get % "bench/entry"))) children))
@@ -1419,5 +1420,5 @@
                               :deadline-class :unbounded
                               :hook-class :mutating}
                              'skein.spools.bench/bench-op)
-       :query (api/register-query! runtime 'bench-runs
+       :query (graph/register-query! runtime 'bench-runs
                                    [:and [:= :state "active"] [:= [:attr "bench/run"] "true"]])})))

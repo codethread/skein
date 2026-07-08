@@ -34,6 +34,8 @@
   ergonomics layer is for workspace-local config, tests, and glue only."
   (:require [skein.api.current.alpha :as current]
             [skein.api.batch.alpha :as batch]
+            [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns-api]
             [skein.api.weaver.alpha :as api]
             [skein.core.terse :as terse]))
 
@@ -138,9 +140,9 @@
 
   Missing ids fail loudly. Returns the weaver burn summary."
   ([id]
-   (api/burn-by-id (resolve-runtime) id))
+   (graph/burn-by-id! (resolve-runtime) id))
   ([id & ids]
-   (api/burn-by-ids (resolve-runtime) (vec (cons id ids)))))
+   (graph/burn-by-ids! (resolve-runtime) (vec (cons id ids)))))
 
 (defn declare-acyclic-relation!
   "Declare `relation` as a durable acyclic structural relation (idempotent)."
@@ -155,7 +157,7 @@
 (defn defquery!
   "Register `query-name` to `query-def` in the resolved runtime query registry."
   [query-name query-def]
-  (api/register-query (resolve-runtime) query-name query-def))
+  (graph/register-query! (resolve-runtime) query-name query-def))
 
 (defn load-queries!
   "Merge one EDN map of named query definitions into the resolved runtime.
@@ -163,19 +165,19 @@
   Deliberately diverges from `skein.repl/load-queries!`, which takes a file
   path and reads EDN from disk: trusted in-process code owns its own I/O."
   [registry]
-  (api/load-queries (resolve-runtime) registry))
+  (graph/load-queries! (resolve-runtime) registry))
 
 (defn queries
   "Return the resolved runtime's in-memory named query registry."
   []
-  (api/queries (resolve-runtime)))
+  (graph/queries (resolve-runtime)))
 
 (defn query-explain
   "Return caller guidance for the registered query `query-name`.
 
   Missing queries fail loudly with the weaver's query-not-found data."
   [query-name]
-  (api/query-explain (resolve-runtime) query-name))
+  (graph/query-explain (resolve-runtime) query-name))
 
 (defn query
   "Return strands matching an ad hoc query definition or named query.
@@ -223,29 +225,29 @@
   Accepts a pattern name, optional non-blank doc string, fully qualified function
   symbol, and input spec name. Duplicate names replace prior entries."
   ([pattern-name fn-sym input-spec]
-   (api/register-pattern! (resolve-runtime) pattern-name fn-sym input-spec))
+   (patterns-api/register-pattern! (resolve-runtime) pattern-name fn-sym input-spec))
   ([pattern-name doc fn-sym input-spec]
-   (api/register-pattern! (resolve-runtime) pattern-name doc fn-sym input-spec)))
+   (patterns-api/register-pattern! (resolve-runtime) pattern-name doc fn-sym input-spec)))
 
 (defn patterns
   "Return the resolved runtime's in-memory pattern registry."
   []
-  (api/patterns (resolve-runtime)))
+  (patterns-api/patterns (resolve-runtime)))
 
 (defn pattern
   "Return the registered pattern named `pattern-name`. Missing patterns fail loudly."
   [pattern-name]
-  (api/resolve-pattern (resolve-runtime) pattern-name))
+  (patterns-api/pattern (resolve-runtime) pattern-name))
 
 (defn pattern-explain
   "Return serializable input guidance for the registered pattern `pattern-name`."
   [pattern-name]
-  (api/pattern-explain (resolve-runtime) pattern-name))
+  (patterns-api/explain (resolve-runtime) pattern-name))
 
 (defn weave!
   "Invoke the registered pattern `pattern-name` with `input` and create its batch."
   [pattern-name input]
-  (api/weave! (resolve-runtime) pattern-name input))
+  (patterns-api/weave! (resolve-runtime) pattern-name input))
 
 (defn apply!
   "Apply one transactional batch graph mutation `payload` to the resolved runtime."

@@ -173,13 +173,13 @@
   not transform, so a throw here surfaces as a domain error before dispatch."
   [runtime entry request-id args options]
   (when (= :mutating (:hook-class entry))
-    ((api 'run-payload-received-hooks!) runtime
-                                        {:request/source :json-socket
-                                         :request/operation :invoke
-                                         :request/id request-id
-                                         :request/args args
-                                         :request/options options
-                                         :op/name (:name entry)})))
+    ((requiring-resolve 'skein.core.weaver.lifecycle/run-payload-received-hooks!)
+     runtime {:request/source :json-socket
+              :request/operation :invoke
+              :request/id request-id
+              :request/args args
+              :request/options options
+              :op/name (:name entry)})))
 
 (defn- effective-deadline-ms
   "Effective deadline for a single-result invoke (SPEC-004-D003.C5).

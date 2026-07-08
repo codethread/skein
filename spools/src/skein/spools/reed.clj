@@ -15,6 +15,8 @@
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
             [skein.api.weaver.alpha :as api]
+            [skein.api.graph.alpha :as graph]
+            [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime])
   (:import [java.lang ProcessHandle]
@@ -302,17 +304,17 @@
   `stalled-shell-gates` coordinator query, and perform an initial scan."
   []
   (let [runtime (rt)]
-    (api/register-event-handler! runtime :reed/engine event-types
-                                 'skein.spools.reed/on-event
-                                 {:spool "reed"})
+    (events/register! runtime :reed/engine event-types
+                      'skein.spools.reed/on-event
+                      {:spool "reed"})
     (workflow/register-executor! :shell gate-stalled?)
     ;; The coordinator attention surface for stuck shell gates: an active `:shell`
     ;; gate carrying `shell/error`. No delegates-edge join is needed because the
     ;; failure detail lives on the gate itself.
-    (api/register-query! runtime 'stalled-shell-gates
-                         [:and [:= :state "active"]
-                          [:= [:attr "workflow/gate"] "shell"]
-                          [:exists [:attr "shell/error"]]])
+    (graph/register-query! runtime 'stalled-shell-gates
+                           [:and [:= :state "active"]
+                            [:= [:attr "workflow/gate"] "shell"]
+                            [:exists [:attr "shell/error"]]])
     (scan!)
     {:installed true
      :namespace 'skein.spools.reed}))

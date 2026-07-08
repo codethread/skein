@@ -10,7 +10,9 @@
             [skein.spools.shuttle :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
+            [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]))
 
@@ -254,12 +256,12 @@
   the shuttle engine in this weaver runtime."
   []
   (let [runtime (rt)
-        handlers (set (map :key (api/event-handlers runtime)))]
+        handlers (set (map :key (events/handlers runtime)))]
     (when-not (contains? handlers :shuttle/engine)
       (fail! "Treadle requires the shuttle engine to be installed first" {:handlers handlers}))
-    (api/register-event-handler! runtime :treadle/engine event-types
-                                 'skein.spools.treadle/on-event
-                                 {:spool "treadle"})
+    (events/register! runtime :treadle/engine event-types
+                      'skein.spools.treadle/on-event
+                      {:spool "treadle"})
     (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates: an active subagent gate whose
     ;; spawn errored, or whose current delegated run is dead in a terminal phase.
@@ -268,7 +270,7 @@
     ;; exists. `stamp-run-on-gate!` marks superseded runs `treadle/superseded-by`,
     ;; so excluding those keeps the edge-scoped query in lockstep with the
     ;; current-stamp `gate-stalled?` predicate through the clear-and-respawn flow.
-    (api/register-query! runtime 'stalled-gates
+    (graph/register-query! runtime 'stalled-gates
                          [:and [:= :state "active"]
                           [:= [:attr "workflow/gate"] "subagent"]
                           [:or
@@ -277,7 +279,7 @@
                            [:edge/out "delegates"
                             [:and [:missing [:attr "treadle/superseded-by"]]
                              [:in [:attr "shuttle/phase"] stalled-run-phases]]]]])
-    (api/register-query! runtime 'blocked-deliveries
+    (graph/register-query! runtime 'blocked-deliveries
                          [:and [:= :state "closed"]
                           [:exists [:attr "treadle/delivery-blocked"]]
                           [:missing [:attr "treadle/delivered"]]])

@@ -12,6 +12,7 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.bench :as bench]
             [skein.spools.bench.exec :as exec]
@@ -296,7 +297,7 @@ esac
               (is (str/includes? calls "AGENT"))
               (is (str/includes? calls "VALIDATE-OK"))))
           (testing "judge depends on every entry and runs once they close"
-            (is (= #{entry-id} (set (map :to_strand_id (api/outgoing-edges rt [judge] "depends-on")))))
+            (is (= #{entry-id} (set (map :to_strand_id (graph/outgoing-edges rt [judge] "depends-on")))))
             (is (= "true" (get-in (api/show rt judge) [:attributes :bench/judge])))
             (let [judged (test-support/await-phase rt judge #{"done"})]
               (is (= "verdict" (get-in judged [:attributes :shuttle/result]))))))))))
@@ -625,7 +626,7 @@ esac
   (with-bench
     (fn [rt _]
       (is (some #(= "bench" (:name %)) (api/ops rt)) "install! registered the op")
-      (is (contains? (api/queries rt) "bench-runs") "install! registered the query")
+      (is (contains? (graph/queries rt) "bench-runs") "install! registered the query")
       (testing "the help alias projects the declared verb surface"
         (let [detail (bench-op! rt "help")
               verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
@@ -703,7 +704,7 @@ esac
               (is (= [run] (mapv :run listed)))
               (is (= 1 (:entries (first listed))))
               (is (= {"done" 1} (:phases (first listed)))))
-            (is (= [run] (mapv :id (api/list rt (api/resolve-query rt 'bench-runs) {})))))
+            (is (= [run] (mapv :id (api/list rt (graph/resolve-query rt 'bench-runs) {})))))
           (testing "gc removes only the artifact dir; the run strand survives"
             (let [dir (entry-dir rt run slug)]
               (is (.exists dir))
@@ -825,7 +826,7 @@ esac
             (is (nil? (get-in js [:attributes :shuttle/run])) "external mode spawns no shuttle run")
             (is (str/includes? (get-in js [:attributes :bench/judge-prompt]) entry-id))
             (is (str/includes? (get-in js [:attributes :body]) "bench/verdict"))
-            (is (= #{entry-id} (set (map :to_strand_id (api/outgoing-edges rt [judge] "depends-on"))))))
+            (is (= #{entry-id} (set (map :to_strand_id (graph/outgoing-edges rt [judge] "depends-on"))))))
           (testing "judge-spec is the single pour source (no drift)"
             (let [spec (bench/judge-spec rt :ext
                                          {:run-id run :sha sha

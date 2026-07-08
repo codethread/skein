@@ -29,7 +29,8 @@
   branch rather than an error."
   []
   (or (runtime-or-nil)
-      (throw (ex-info "No active Skein weaver runtime" {}))))
+      (throw (ex-info "No active Skein weaver runtime; scope one with (with-runtime rt ...) or with-runtime*, or run inside a started or published weaver."
+                      {:skein/runtime :absent}))))
 
 (defn with-runtime*
   "Call `thunk` with `runtime` bound as the thread-local ambient runtime.

@@ -9,7 +9,7 @@
   real weaver runtime and its shared event worker."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.runtime.alpha :as runtime-alpha]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as runtime]
@@ -346,7 +346,7 @@
       (is (await-fire) "the overdue wake fires once")
       (is (await-completed (:datasource rt) "past"))
       ;; A config reload re-arms the scheduler; a completed wake must not return.
-      (api/reload-config! rt)
+      (runtime-alpha/reload! rt)
       (is (= 1 @fire-count) "a completed wake is not re-fired on reload"))))
 
 (deftest stop-closes-scheduler-executor-thread

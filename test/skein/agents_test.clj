@@ -6,6 +6,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.agents :as agents]
             [skein.spools.shuttle :as shuttle]
@@ -96,7 +97,7 @@
             run (agents/agent-op {:op/argv ["spawn" "--harness" "sh" "--prompt" "echo ok" "--for" (:id task)]})]
         (is (= (:id task) (:for run)))
         (is (some #(and (= "parent-of" (:edge_type %)) (= (:id run) (:to_strand_id %)))
-                  (:edges (api/subgraph rt [(:id task)]))))))))
+                  (:edges (graph/subgraph rt [(:id task)]))))))))
 
 (deftest agent-logs-read-output-and-error-files
   (with-agents
@@ -228,7 +229,7 @@
           (is (not (str/includes? (get-in synth [:attributes :shuttle/prompt])
                                   "Flag sleeps and arbitrary timeouts")))
           (is (= (set (:reviewers review))
-                 (->> (:edges (api/subgraph rt [(:id synth)] {:type "depends-on"}))
+                 (->> (:edges (graph/subgraph rt [(:id synth)] {:type "depends-on"}))
                       (filter #(= (:id synth) (:from_strand_id %)))
                       (map :to_strand_id)
                       set))))
@@ -556,7 +557,7 @@
             board (api/show rt (:blackboard result))
             [row1 row2] (:turns result)
             deps-of (fn [id]
-                      (->> (:edges (api/subgraph rt [id] {:type "depends-on"}))
+                      (->> (:edges (graph/subgraph rt [id] {:type "depends-on"}))
                            (filter #(= id (:from_strand_id %)))
                            (map :to_strand_id) set))]
         (testing "a fresh blackboard strand is minted"
@@ -688,7 +689,7 @@
   (with-agents
     (fn [rt]
       (let [deps-of (fn [id]
-                      (->> (:edges (api/subgraph rt [id] {:type "depends-on"}))
+                      (->> (:edges (graph/subgraph rt [id] {:type "depends-on"}))
                            (filter #(= id (:from_strand_id %)))
                            (map :to_strand_id) set))]
         (testing "scalar members expand to identical seats across turn-as-run rows"
@@ -701,7 +702,7 @@
             (is (= [2 2] [(count row1) (count row2)]))
             (testing "the council strand parents every run"
               (is (= (set (concat row1 row2 [synthesizer]))
-                     (set (map :to_strand_id (:edges (api/subgraph rt [council])))))))
+                     (set (map :to_strand_id (:edges (graph/subgraph rt [council])))))))
             (testing "the poll-loop choreography is gone; the topic remains"
               (doseq [run-id (concat row1 row2 [synthesizer])]
                 (let [p (get-in (api/show rt run-id) [:attributes :shuttle/prompt])]
@@ -906,7 +907,7 @@
               new-id (get-in retried [:run :id])
               new-run (api/show rt new-id)
               summary (shuttle/run-summary new-run)
-              dep-edges (:edges (api/subgraph rt [new-id] {:type "depends-on"}))]
+              dep-edges (:edges (graph/subgraph rt [new-id] {:type "depends-on"}))]
           (is (= (:id task) (:for summary)))
           (is (= (:id spawner) (:spawned-by summary)))
           (is (= "/tmp/retry-cwd" (get-in new-run [:attributes :shuttle/cwd])))

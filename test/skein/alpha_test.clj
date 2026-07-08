@@ -1,6 +1,7 @@
 (ns skein.alpha-test
   "Tests for the blessed skein.api.*.alpha surfaces (batch, graph, hooks, views)."
   (:require [skein.api.batch.alpha :as batch]
+            [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.hooks.alpha :as hooks]
             [skein.api.views.alpha :as views]
@@ -60,8 +61,8 @@
       (let [feature (api/add rt {:title "Feature" :attributes {:kind "feature"}})
             task (api/add rt {:title "Task" :attributes {:owner "agent"}})]
         (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
-        (api/register-query rt 'agent-owned [:= [:attr :owner] "agent"])
-        (is (= [(:id task)] (graph/query-ids! rt 'agent-owned {})))
+        (graph/register-query! rt 'agent-owned [:= [:attr :owner] "agent"])
+        (is (= [(:id task)] (graph/query-ids rt 'agent-owned {})))
         (is (= [(:id task)] (mapv :id (graph/strands-by-ids rt [(:id task) (:id task)]))))
         (is (= {:strand-id (:id task)
                 :keys ["owner"]
@@ -149,3 +150,17 @@
                                          {:state-dir "/tmp/skein-state-world"}
                                          :strands-by-ids
                                          ["a" "b"])))))
+
+(deftest current-runtime-fails-loudly-without-ambient-runtime
+  ;; Isolate from any weaver a sibling test may have published so the fail-loud
+  ;; path is exercised deterministically.
+  (binding [runtime/*runtime* nil]
+    (with-redefs [runtime/current-runtime (atom nil)]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"No active Skein weaver runtime"
+                            (current/runtime))))))
+
+(deftest current-with-runtime*-rejects-nil-runtime
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"Cannot scope a nil Skein runtime"
+                        (current/with-runtime* nil (constantly :never)))))

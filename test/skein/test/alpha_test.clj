@@ -5,7 +5,7 @@
             [skein.test.alpha :as t]))
 
 (def ^:private require-api
-  "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api])")
+  "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api] '[skein.api.graph.alpha :as graph])")
 
 (deftest with-weaver-world-runs-file-backed-world-and-cleans-up
   (let [captured (atom nil)
@@ -28,13 +28,13 @@
   (t/with-weaver-world [ctx {:config-json "{}\n"
                              :spools-edn {:spools {}}
                              :init (str require-api
-                                        " (api/register-query (current/runtime) 'from-init [:= :state \"active\"])")
+                                        " (graph/register-query! (current/runtime) 'from-init [:= :state \"active\"])")
                              :files {"modules/demo.clj" "(ns demo)\n"}}]
     (is (= "{}\n" (slurp (io/file (:config-dir ctx) "config.json"))))
     (is (= "{:spools {}}" (slurp (io/file (:config-dir ctx) "spools.edn"))))
     (is (= "(ns demo)\n" (slurp (io/file (:config-dir ctx) "modules/demo.clj"))))
     (testing "init.clj ran inside the weaver runtime"
-      (is (contains? (t/repl! ctx (str "(do " require-api " (api/queries (current/runtime)))"))
+      (is (contains? (t/repl! ctx (str "(do " require-api " (graph/queries (current/runtime)))"))
                      "from-init")))))
 
 (deftest weaver-world-fixture-binds-memory-storage-context

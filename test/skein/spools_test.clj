@@ -7,13 +7,15 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.core.client :as client]
+            [skein.core.weaver.access :as access]
+            [skein.core.weaver.spool-sync :as spool-sync]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.spools.ephemeral :as ephemeral]
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
             [skein.repl :as repl]
             [skein.api.runtime.alpha :as runtime-alpha]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.views.alpha :as views]
             [skein.test.alpha :as t]))
 
 (defn- delete-recursive [file]
@@ -56,12 +58,12 @@
    :file (.getPath (io/file (.getCanonicalPath config-dir) "spools.local.edn"))})
 
 (defn- with-cache-base [cache-dir f]
-  (let [original @#'api/cache-base]
+  (let [original @#'access/cache-base]
     (try
-      (alter-var-root #'api/cache-base (constantly (fn [] cache-dir)))
+      (alter-var-root #'access/cache-base (constantly (fn [] cache-dir)))
       (f)
       (finally
-        (alter-var-root #'api/cache-base (constantly original))))))
+        (alter-var-root #'access/cache-base (constantly original))))))
 
 (defn- write-local-lib! [config-dir lib-name ns-sym]
   (let [root (io/file config-dir "spools" lib-name)
@@ -668,7 +670,7 @@
             sha (str/trim (run-git! repo "rev-parse" "HEAD"))
             url (file-url repo)
             lib 'demo/git-refetch
-            original-run-git @#'api/run-git
+            original-run-git @#'spool-sync/run-git
             exact-sha-fetches (atom 0)]
         (with-cache-base
           cache-dir
@@ -676,7 +678,7 @@
             (write-spools! config-dir (pr-str {:spools {lib {:git/url url :git/sha sha}}}))
             (try
               (alter-var-root
-               #'api/run-git
+               #'spool-sync/run-git
                (constantly
                 (fn [dir & args]
                   (if (and (= "fetch" (first args))
@@ -690,7 +692,7 @@
                 (is (= 2 @exact-sha-fetches))
                 (is (.isFile (io/file cache-dir "skein" "spools" sha "after-initial-cache.txt"))))
               (finally
-                (alter-var-root #'api/run-git (constantly original-run-git))))))))))
+                (alter-var-root #'spool-sync/run-git (constantly original-run-git))))))))))
 
 (deftest sync-git-unreachable-sha-names-cache-path-and-remote
   (with-runtime
@@ -725,10 +727,10 @@
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url url :git/sha sha}}}))
             (let [cache-root (io/file cache-dir "skein" "spools" sha)
-                  original-checkout @#'api/checkout-git-spool!]
+                  original-checkout @#'spool-sync/checkout-git-spool!]
               (try
                 (alter-var-root
-                 #'api/checkout-git-spool!
+                 #'spool-sync/checkout-git-spool!
                  (constantly
                   (fn [_entry tmp _cache-root]
                     ;; The pre-check in materialize-git-spool! has already
@@ -743,7 +745,7 @@
                   (is (= :cached (:fetch result)))
                   (is (= :loaded (:status (runtime-alpha/use! rt :race/winner {:ns ns-sym :spools [lib]})))))
                 (finally
-                  (alter-var-root #'api/checkout-git-spool! (constantly original-checkout)))))))))))
+                  (alter-var-root #'spool-sync/checkout-git-spool! (constantly original-checkout)))))))))))
 
 (deftest sync-rejects-deps-edn-paths-escaping-the-spool-root
   (with-runtime
@@ -914,7 +916,7 @@
        (.toPath (io/file tree "link-out"))
        (.toPath outside)
        (make-array java.nio.file.attribute.FileAttribute 0))
-      (#'api/delete-tree! tree)
+      (#'spool-sync/delete-tree! tree)
       (is (false? (.exists tree)))
       (is (true? (.exists outside-file)))
       (finally
@@ -1084,33 +1086,33 @@
     (fn [rt config-dir]
       (write-module-file! config-dir "modules/stale.clj" "(ns demo.stale)\n(defn handler [_] :ok)\n")
       (is (= :loaded (:status (runtime-alpha/use! rt :stale {:file "modules/stale.clj"}))))
-      (api/register-query rt 'stale [:= [:attr :owner] "stale"])
-      (api/register-view! rt 'stale-view 'demo.stale/view)
+      (graph/register-query! rt 'stale [:= [:attr :owner] "stale"])
+      (views/register-view! rt 'stale-view 'demo.stale/view)
       (reset! reload-deliveries [])
-      (api/register-event-handler! rt :stale #{:strand/added} 'demo.stale/handler {})
-      (api/register-event-handler! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
-      (api/enqueue-event! rt {:event/type :strand/added
-                              :event/id "before-reload"
-                              :event/at "2026-06-27T00:00:00Z"
-                              :event/source :test})
+      (events/register! rt :stale #{:strand/added} 'demo.stale/handler {})
+      (events/register! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
+      (events/enqueue! rt {:event/type :strand/added
+                           :event/id "before-reload"
+                           :event/at "2026-06-27T00:00:00Z"
+                           :event/source :test})
       (Thread/sleep 250)
-      (is (seq (api/recent-event-failures rt)))
+      (is (seq (events/recent-failures rt)))
       (spit (io/file config-dir "init.clj")
-            (str "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api])\n"
+            (str "(require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph] '[skein.api.events.alpha :as events])\n"
                  "(let [rt (current/runtime)]\n"
-                 "  (api/register-query rt 'fresh [:= [:attr :owner] \"fresh\"])\n"
-                 "  (api/register-event-handler! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n"))
+                 "  (graph/register-query! rt 'fresh [:= [:attr :owner] \"fresh\"])\n"
+                 "  (events/register! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n"))
       (is (= :loaded (:status (runtime-alpha/reload! rt))))
       (is (nil? (runtime-alpha/use rt :stale)))
-      (is (nil? (get (api/queries rt) "stale")))
-      (is (= [:= [:attr :owner] "fresh"] (get (api/queries rt) "fresh")))
-      (is (= [] (api/views rt)))
-      (is (= [:fresh] (mapv :key (api/event-handlers rt))))
-      (is (= [] (api/recent-event-failures rt)))
-      (api/enqueue-event! rt {:event/type :strand/added
-                              :event/id "after-reload"
-                              :event/at "2026-06-27T00:00:00Z"
-                              :event/source :test})
+      (is (nil? (get (graph/queries rt) "stale")))
+      (is (= [:= [:attr :owner] "fresh"] (get (graph/queries rt) "fresh")))
+      (is (= [] (views/views rt)))
+      (is (= [:fresh] (mapv :key (events/handlers rt))))
+      (is (= [] (events/recent-failures rt)))
+      (events/enqueue! rt {:event/type :strand/added
+                           :event/id "after-reload"
+                           :event/at "2026-06-27T00:00:00Z"
+                           :event/source :test})
       (Thread/sleep 250)
       (is (= ["after-reload"] @reload-deliveries)))))
 

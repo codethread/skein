@@ -5,42 +5,160 @@
   argument. Use `skein.api.current.alpha/runtime` only at trusted in-process entry
   points that need to capture the active runtime."
   (:refer-clojure :exclude [sync use])
-  (:require [skein.api.weaver.alpha :as api]))
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
+            [skein.core.weaver.access :refer [approved-spool-sync-state module-use-state
+                                              with-spool-classloader]]
+            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]))
 
 (defn approved
   "Return the normalized approved spool roots for `runtime`'s config dir."
   [runtime]
-  (api/approved-spools runtime))
+  (spool-sync/approved-spools runtime))
 
 (defn sync!
   "Load approved local roots into `runtime`."
   [runtime]
-  (api/sync-approved-spools runtime))
+  (spool-sync/sync-approved-spools runtime))
 
 (defn syncs
   "Return `runtime`'s most recent approved-root sync state."
   [runtime]
-  (api/approved-spool-syncs runtime))
+  (spool-sync/approved-spool-syncs runtime))
 
 (defn reload!
   "Reload startup files from `runtime`'s config dir after clearing registries."
   [runtime]
-  (api/reload-config! runtime))
+  (runtime/reload-config! runtime))
+
+(def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
+
+(defn- validate-use-opts! [key opts]
+  (when-not (keyword? key)
+    (throw (ex-info "Module use key must be a keyword" {:key key})))
+  (when-not (map? opts)
+    (throw (ex-info "Module use opts must be a map" {:key key :opts opts})))
+  (when-let [unknown (seq (remove allowed-use-keys (keys opts)))]
+    (throw (ex-info "Module use opts contain unknown keys" {:key key :keys (vec unknown)})))
+  (when (= (contains? opts :ns) (contains? opts :file))
+    (throw (ex-info "Module use opts require exactly one of :ns or :file" {:key key :opts opts})))
+  (when (and (contains? opts :ns) (not (symbol? (:ns opts))))
+    (throw (ex-info "Module use :ns must be a symbol" {:key key :ns (:ns opts)})))
+  (when (and (contains? opts :file) (not (and (string? (:file opts)) (not (str/blank? (:file opts))))))
+    (throw (ex-info "Module use :file must be a non-blank string" {:key key :file (:file opts)})))
+  (when (and (contains? opts :file) (.isAbsolute (io/file (:file opts))))
+    (throw (ex-info "Module use :file must be relative to selected config-dir" {:key key :file (:file opts)})))
+  (when (and (contains? opts :spools)
+             (not (or (vector? (:spools opts)) (set? (:spools opts)))))
+    (throw (ex-info "Module use :spools must be a vector or set of symbols" {:key key :spools (:spools opts)})))
+  (doseq [lib (:spools opts)]
+    (when-not (symbol? lib)
+      (throw (ex-info "Module use :spools entries must be symbols" {:key key :lib lib}))))
+  (when (and (contains? opts :after) (not (vector? (:after opts))))
+    (throw (ex-info "Module use :after must be a vector" {:key key :after (:after opts)})))
+  (doseq [after (:after opts)]
+    (when-not (keyword? after)
+      (throw (ex-info "Module use :after entries must be keywords" {:key key :after after}))))
+  (when (and (contains? opts :call) (not (symbol? (:call opts))))
+    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
+  (when (and (symbol? (:call opts)) (nil? (namespace (:call opts))))
+    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
+  (when (and (contains? opts :required?) (not (boolean? (:required? opts))))
+    (throw (ex-info "Module use :required? must be boolean" {:key key :required? (:required? opts)}))))
+
+(defn- record-use! [runtime key result]
+  (swap! (module-use-state runtime) assoc key result)
+  result)
+
+(defn- skip-use [runtime key opts reason data]
+  (let [result (record-use! runtime key (merge {:key key :opts opts :status :skipped :reason reason} data))]
+    (when (and (:required? opts) (#{:not-approved :not-synced :sync-failed} reason))
+      (throw (ex-info "Required module use was skipped" result)))
+    result))
+
+(defn- use-spool-skip [runtime opts]
+  (let [approved (spool-sync/approved-spools runtime)
+        syncs @(approved-spool-sync-state runtime)]
+    (some (fn [lib]
+            (let [sync (get syncs lib)]
+              (cond
+                (not (contains? (:spools approved) lib))
+                [:not-approved {:lib lib}]
+
+                (not (contains? syncs lib))
+                [:not-synced {:lib lib}]
+
+                (= :failed (:status sync))
+                [:sync-failed {:lib lib :sync sync}]
+
+                :else
+                nil)))
+          (:spools opts))))
+
+(defn- use-after-skip [runtime opts]
+  (let [uses @(module-use-state runtime)]
+    (some (fn [after]
+            (when-not (= :loaded (:status (get uses after)))
+              [:missing-after {:after after :use (get uses after)}]))
+          (:after opts))))
+
+(defn- exception-data [t]
+  {:message (ex-message t)
+   :class (str (class t))
+   :data (ex-data t)})
 
 (defn use!
-  "Activate a weaver-side module in `runtime` and record its use state."
+  "Load a runtime module and record its module-use state under keyword key.
+
+  Opts load either a synced namespace via `:ns` or a file via `:file`, and may
+  include `:call` to invoke a no-arg function after load. Returns a registry
+  entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
+  rethrow after recording failure metadata."
   [runtime key opts]
-  (api/use! runtime key opts))
+  (validate-use-opts! key opts)
+  (when-let [file (:file opts)]
+    (spool-sync/module-file runtime file))
+  (if-let [[reason data] (use-spool-skip runtime opts)]
+    (skip-use runtime key opts reason data)
+    (if-let [[reason data] (use-after-skip runtime opts)]
+      (skip-use runtime key opts reason data)
+      (try
+        (let [load-result (with-spool-classloader
+                            runtime
+                            #(if-let [ns-sym (:ns opts)]
+                               (spool-sync/load-synced-namespace! runtime ns-sym)
+                               (let [file (spool-sync/module-file runtime (:file opts))]
+                                 (load-file file)
+                                 {:file file})))
+              call-result (when-let [call-sym (:call opts)]
+                            (with-spool-classloader
+                              runtime
+                              #((requiring-resolve call-sym))))]
+          (record-use! runtime key (cond-> {:key key
+                                            :opts opts
+                                            :status :loaded
+                                            :loaded load-result}
+                                     (contains? opts :call) (assoc :call {:fn (:call opts)
+                                                                          :return call-result}))))
+        (catch Exception t
+          (let [result (record-use! runtime key {:key key
+                                                 :opts opts
+                                                 :status :failed
+                                                 :error (exception-data t)})]
+            (when (:required? opts)
+              (throw t))
+            result))))))
 
 (defn uses
   "Return `runtime`'s module-use registry as data-first maps."
   [runtime]
-  (api/uses runtime))
+  (into (sorted-map) @(module-use-state runtime)))
 
 (defn use
   "Return one module-use registry entry from `runtime` by key."
   [runtime key]
-  (api/use runtime key))
+  (get @(module-use-state runtime) key))
 
 (defn- warn!
   "Emit a loud-but-non-fatal runtime warning to the weaver's stderr log.

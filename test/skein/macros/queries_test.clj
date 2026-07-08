@@ -1,7 +1,7 @@
 (ns skein.macros.queries-test
   "Tests for the skein.macros.queries defquery macro and its remember/install flow."
   (:require [clojure.test :refer [deftest is testing]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.graph.alpha :as graph]
             [skein.macros.queries :as queries :refer [defquery]]
             [skein.spools.test-support :refer [with-runtime]]))
 
@@ -50,9 +50,9 @@
                                            :where [:= [:attr :feature] [:param :feature]]}}}
                  result)))
         (testing "the registered query definitions round-trip through the runtime registry"
-          (is (= [:= :state "active"] (api/resolve-query rt 'test-alpha)))
+          (is (= [:= :state "active"] (graph/resolve-query rt 'test-alpha)))
           (is (= {:params [:feature] :where [:= [:attr :feature] [:param :feature]]}
-                 (api/resolve-query rt 'test-beta))))))))
+                 (graph/resolve-query rt 'test-beta))))))))
 
 (deftest remember-query-replaces-same-name-in-place
   (testing "re-remembering a name replaces its entry, preserving author order (reload-friendly)"
@@ -78,10 +78,10 @@
         (fn [rt _]
           (let [result (queries/install-queries! ns-key)]
             (is (= ['stale-a] (keys result)) "install registers only the surviving query")
-            (is (= [:= :state "active"] (api/resolve-query rt 'stale-a)))
+            (is (= [:= :state "active"] (graph/resolve-query rt 'stale-a)))
             (testing "the forgotten query never reaches the runtime and resolving it fails loudly"
               (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Query not found"
-                                    (api/resolve-query rt 'stale-b))))))))))
+                                    (graph/resolve-query rt 'stale-b))))))))))
 
 (deftest install-queries-unknown-ns-fails-loudly
   (testing "installing a namespace with no remembered queries throws rather than silently installing nothing (TEN-003)"
