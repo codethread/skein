@@ -1,7 +1,7 @@
 # Readability macros for the .skein config surface
 
 **Document ID:** `RFC-020`
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-07-08
 **Related:** [Workflow ergonomics RFC-012](../archive/26-07-02__workflow-ergonomics/rfcs/2026-07-02-workflow-authoring-ergonomics.md)
 (deferred `defworkflow`), [`.skein/spools/macros`](../../.skein/spools/macros) (`defpattern` precedent),
@@ -187,7 +187,12 @@ Each `install!` calls `install-queries!`/`install-ops!`/`install-rules!` for its
 
 ## RFC-020.P9 Outcome
 
-- **RFC-020.OUT1:** Draft; awaiting coordinator decision on the devflow run `skein-readability-macros`. If
-  accepted: REC1-REC2 land as the feature; O5 promotion and land's `defworkflow` fusion remain deferred
-  follow-ups. If the macro indirection is judged too costly against TEN-001, O4 is the data-first fallback that
-  still removes the registration boilerplate without macroexpansion opacity.
+- **RFC-020.OUT1:** Accepted 2026-07-08 on the devflow run `skein-readability-macros` (coordinator, delegated
+  authority). O2 with REC1-REC4 lands as the feature; O5 promotion and land's `defworkflow` fusion remain deferred
+  follow-ups. Three open questions resolved at acceptance: **Q1** — `defop` accepts both a named arg-spec var and an
+  inline arg-spec map, mirroring `defpattern`'s `:spec`/`:input`. **Q2** — `install-ops!`/`install-queries!` derive the
+  mechanical `:ops`/`:queries` name listings in `devflow-conventions` from the remembered entries, while hand-authored
+  conventions prose stays authored. **Q3** — remembering is per-namespace, matching the `defpattern` precedent. If the
+  macro indirection is later judged too costly against TEN-001, O4 is the recorded data-first fallback that still removes
+  the registration boilerplate without macroexpansion opacity. Feature proposal:
+  [PROP-SkeinReadabilityMacros-001](../feat/skein-readability-macros/proposal.md).
