@@ -56,9 +56,9 @@
    :pattern-explain 'skein.api.patterns.alpha/explain
    :weave! 'skein.api.patterns.alpha/weave!
    :apply-batch 'skein.api.batch.alpha/apply!
-   :approved-spools 'skein.api.weaver.alpha/approved-spools
-   :sync-approved-spools 'skein.api.weaver.alpha/sync-approved-spools
-   :approved-spool-syncs 'skein.api.weaver.alpha/approved-spool-syncs
+   :approved-spools 'skein.api.runtime.alpha/approved
+   :sync-approved-spools 'skein.api.runtime.alpha/sync!
+   :approved-spool-syncs 'skein.api.runtime.alpha/syncs
    :reload-config! 'skein.api.weaver.alpha/reload-config!
    :use! 'skein.api.weaver.alpha/use!
    :uses 'skein.api.weaver.alpha/uses

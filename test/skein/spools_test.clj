@@ -8,6 +8,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.core.client :as client]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.spool-sync :as spool-sync]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.spools.ephemeral :as ephemeral]
@@ -15,7 +16,6 @@
             [skein.repl :as repl]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.views.alpha :as views]
-            [skein.api.weaver.alpha :as api]
             [skein.test.alpha :as t]))
 
 (defn- delete-recursive [file]
@@ -670,7 +670,7 @@
             sha (str/trim (run-git! repo "rev-parse" "HEAD"))
             url (file-url repo)
             lib 'demo/git-refetch
-            original-run-git @#'api/run-git
+            original-run-git @#'spool-sync/run-git
             exact-sha-fetches (atom 0)]
         (with-cache-base
           cache-dir
@@ -678,7 +678,7 @@
             (write-spools! config-dir (pr-str {:spools {lib {:git/url url :git/sha sha}}}))
             (try
               (alter-var-root
-               #'api/run-git
+               #'spool-sync/run-git
                (constantly
                 (fn [dir & args]
                   (if (and (= "fetch" (first args))
@@ -692,7 +692,7 @@
                 (is (= 2 @exact-sha-fetches))
                 (is (.isFile (io/file cache-dir "skein" "spools" sha "after-initial-cache.txt"))))
               (finally
-                (alter-var-root #'api/run-git (constantly original-run-git))))))))))
+                (alter-var-root #'spool-sync/run-git (constantly original-run-git))))))))))
 
 (deftest sync-git-unreachable-sha-names-cache-path-and-remote
   (with-runtime
@@ -727,10 +727,10 @@
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url url :git/sha sha}}}))
             (let [cache-root (io/file cache-dir "skein" "spools" sha)
-                  original-checkout @#'api/checkout-git-spool!]
+                  original-checkout @#'spool-sync/checkout-git-spool!]
               (try
                 (alter-var-root
-                 #'api/checkout-git-spool!
+                 #'spool-sync/checkout-git-spool!
                  (constantly
                   (fn [_entry tmp _cache-root]
                     ;; The pre-check in materialize-git-spool! has already
@@ -745,7 +745,7 @@
                   (is (= :cached (:fetch result)))
                   (is (= :loaded (:status (runtime-alpha/use! rt :race/winner {:ns ns-sym :spools [lib]})))))
                 (finally
-                  (alter-var-root #'api/checkout-git-spool! (constantly original-checkout)))))))))))
+                  (alter-var-root #'spool-sync/checkout-git-spool! (constantly original-checkout)))))))))))
 
 (deftest sync-rejects-deps-edn-paths-escaping-the-spool-root
   (with-runtime
@@ -916,7 +916,7 @@
        (.toPath (io/file tree "link-out"))
        (.toPath outside)
        (make-array java.nio.file.attribute.FileAttribute 0))
-      (#'api/delete-tree! tree)
+      (#'spool-sync/delete-tree! tree)
       (is (false? (.exists tree)))
       (is (true? (.exists outside-file)))
       (finally

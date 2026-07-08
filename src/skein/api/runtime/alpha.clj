@@ -5,22 +5,23 @@
   argument. Use `skein.api.current.alpha/runtime` only at trusted in-process entry
   points that need to capture the active runtime."
   (:refer-clojure :exclude [sync use])
-  (:require [skein.api.weaver.alpha :as api]))
+  (:require [skein.api.weaver.alpha :as api]
+            [skein.core.weaver.spool-sync :as spool-sync]))
 
 (defn approved
   "Return the normalized approved spool roots for `runtime`'s config dir."
   [runtime]
-  (api/approved-spools runtime))
+  (spool-sync/approved-spools runtime))
 
 (defn sync!
   "Load approved local roots into `runtime`."
   [runtime]
-  (api/sync-approved-spools runtime))
+  (spool-sync/sync-approved-spools runtime))
 
 (defn syncs
   "Return `runtime`'s most recent approved-root sync state."
   [runtime]
-  (api/approved-spool-syncs runtime))
+  (spool-sync/approved-spool-syncs runtime))
 
 (defn reload!
   "Reload startup files from `runtime`'s config dir after clearing registries."
