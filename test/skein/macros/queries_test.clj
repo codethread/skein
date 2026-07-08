@@ -63,6 +63,26 @@
       (is (= [{:name 'a :usage "usage-a2"} {:name 'b :usage "usage-b"}]
              (queries/remembered-queries ns-key))))))
 
+(deftest forget-queries-drops-stale-entries-across-reload
+  (testing "forget-queries! clears the namespace so a reload registers only current source (TEN-003)"
+    (let [ns-key 'skein.macros.queries-test.reload]
+      ;; first load: source defined A and B
+      (queries/remember-query! ns-key {:name 'stale-a :query [:= :state "active"] :usage "u-a"})
+      (queries/remember-query! ns-key {:name 'stale-b :query [:= :state "closed"] :usage "u-b"})
+      ;; reload where B was deleted from source: forget, then re-remember only A
+      (queries/forget-queries! ns-key)
+      (queries/remember-query! ns-key {:name 'stale-a :query [:= :state "active"] :usage "u-a"})
+      (is (= [{:name 'stale-a :usage "u-a"}] (queries/remembered-queries ns-key))
+          "only the surviving query remains remembered")
+      (with-runtime
+        (fn [rt _]
+          (let [result (queries/install-queries! ns-key)]
+            (is (= ['stale-a] (keys result)) "install registers only the surviving query")
+            (is (= [:= :state "active"] (api/resolve-query rt 'stale-a)))
+            (testing "the forgotten query never reaches the runtime and resolving it fails loudly"
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Query not found"
+                                    (api/resolve-query rt 'stale-b))))))))))
+
 (deftest defquery-fails-loudly-on-bad-input
   (testing "a non-symbol name throws at macroexpansion"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"name must be a symbol"

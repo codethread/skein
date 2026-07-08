@@ -16,8 +16,8 @@
   in nvd_scan.clj, and reviewer rosters in reviewers.clj."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [skein.macros.ops :refer [defop install-ops!]]
-            [skein.macros.queries :refer [defquery install-queries! remembered-queries]]
+            [skein.macros.ops :refer [defop forget-ops! install-ops!]]
+            [skein.macros.queries :refer [defquery forget-queries! install-queries! remembered-queries]]
             [skein.spools.carder :as carder]
             [skein.spools.devflow :as devflow]
             [skein.spools.loom :as loom]
@@ -26,6 +26,13 @@
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.weaver.alpha :as api]))
+
+;; Reload correctness: clear this namespace's remembered ops/queries before the
+;; def forms below re-register them, so a targeted reload (load-file + reload!)
+;; installs exactly what this file's current source defines rather than also
+;; re-registering ops/queries since renamed or removed (TEN-003).
+(forget-queries! 'config)
+(forget-ops! 'config)
 
 ;; ---------------------------------------------------------------------------
 ;; Named queries

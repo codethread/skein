@@ -45,6 +45,20 @@
                (conj entries entry)))))
   entry)
 
+(defn forget-queries!
+  "Forget every query remembered for the current namespace, or for `ns-sym`.
+
+  A config namespace calls this once at the top of its load, before its
+  `defquery` forms re-register, so a targeted reload (load-file + reload!)
+  installs exactly what the current source defines. Without it the JVM-global
+  registry keeps entries for queries since renamed or deleted from source, and
+  `install-queries!` would silently re-register those stale handles (TEN-003).
+  Returns nil."
+  ([] (forget-queries! (ns-name *ns*)))
+  ([ns-sym]
+   (swap! query-registry dissoc ns-sym)
+   nil))
+
 (defn remembered-queries
   "Return ordered `{:name :usage}` entries remembered for the current namespace,
   or for `ns-sym`.
@@ -105,8 +119,3 @@
                          :usage ~(:usage opts)
                          :doc ~docstring})
        (var ~name))))
-
-(defmacro defq
-  "Short alias for defquery."
-  [& args]
-  `(defquery ~@args))

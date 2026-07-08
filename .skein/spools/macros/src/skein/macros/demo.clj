@@ -1,6 +1,12 @@
 (ns skein.macros.demo
   "Demonstrates the macros.patterns defp helper in this workspace."
-  (:require [skein.macros.patterns :refer [defp install-patterns!]]))
+  (:require [skein.macros.patterns :refer [defp forget-patterns! install-patterns!]]))
+
+;; Reload correctness: clear this namespace's remembered patterns before the
+;; defp form below re-registers, so a targeted reload (load-file + reload!)
+;; installs exactly what this file's current source defines rather than also
+;; re-registering patterns since renamed or removed (TEN-003).
+(forget-patterns! 'skein.macros.demo)
 
 (defp macros-demo
   "Create a tiny two-step dependency chain to prove defp-backed patterns load."

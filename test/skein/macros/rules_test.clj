@@ -77,6 +77,24 @@
       (is (= [{:key :a :fn 'ns/a2-rule} {:key :b :fn 'ns/b-rule}]
              (remembered ns-key))))))
 
+(deftest forget-rules-drops-stale-entries-across-reload
+  (testing "forget-rules! clears the namespace so a reload registers only current source (TEN-003)"
+    (let [ns-key 'skein.macros.rules-test.reload]
+      ;; first load: source defined A and B
+      (rules/remember-rule! ns-key {:key :stale-a :fn 'skein.macros.rules-test/test-alpha-rule})
+      (rules/remember-rule! ns-key {:key :stale-b :fn 'skein.macros.rules-test/test-beta-rule})
+      ;; reload where B was deleted from source: forget, then re-remember only A
+      (rules/forget-rules! ns-key)
+      (rules/remember-rule! ns-key {:key :stale-a :fn 'skein.macros.rules-test/test-alpha-rule})
+      (is (= [{:key :stale-a :fn 'skein.macros.rules-test/test-alpha-rule}] (remembered ns-key))
+          "only the surviving rule remains remembered")
+      (with-chime
+        (fn [_rt _dir]
+          (let [result (rules/install-rules! ns-key)]
+            (is (= [:stale-a] (mapv :rule result)) "install registers only the surviving rule")
+            (is (= #{:stale-a} (set (map :name (chime/rules))))
+                "the forgotten rule never reaches the chime engine")))))))
+
 (deftest defrule-fails-loudly-on-bad-input
   (testing "a non-symbol name throws at macroexpansion"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"name must be a symbol"

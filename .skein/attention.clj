@@ -6,8 +6,14 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as api]
-            [skein.macros.rules :refer [defrule install-rules!]]
+            [skein.macros.rules :refer [defrule forget-rules! install-rules!]]
             [skein.spools.shuttle :as shuttle]))
+
+;; Reload correctness: clear this namespace's remembered rules before the
+;; defrule forms below re-register them, so a targeted reload (load-file +
+;; reload!) installs exactly what this file's current source defines rather than
+;; also re-registering rules since renamed or removed (TEN-003).
+(forget-rules! 'attention)
 
 (defn- config-attr
   "Read strand attribute k, tolerating keyword- or string-keyed maps."

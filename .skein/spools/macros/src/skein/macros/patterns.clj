@@ -79,6 +79,20 @@
          (fnil assoc {}) (:name entry) entry)
   entry)
 
+(defn forget-patterns!
+  "Forget every pattern remembered for the current namespace, or for `ns-sym`.
+
+  A config namespace calls this once at the top of its load, before its
+  `defpattern` forms re-register, so a targeted reload (load-file + reload!)
+  installs exactly what the current source defines. Without it the JVM-global
+  registry keeps entries for patterns since renamed or deleted from source, and
+  `install-patterns!` would silently re-register those stale handlers (TEN-003).
+  Returns nil."
+  ([] (forget-patterns! (ns-name *ns*)))
+  ([ns-sym]
+   (swap! pattern-registry dissoc ns-sym)
+   nil))
+
 (defn install-patterns!
   "Install all patterns remembered for the current namespace, or for `ns-sym`."
   ([]

@@ -53,7 +53,7 @@
   (testing "remembered conventions carry the derived {:name :help} plus authored fields, in author order"
     (is (= [{:name "test-alpha" :help "strand help test-alpha" :manual "strand test-alpha about"}
             {:name "test-beta" :help "strand help test-beta"}]
-           (ops/remembered-ops this-ns)))))
+           (#'ops/remembered-ops this-ns)))))
 
 (deftest install-ops-registers-into-runtime
   (with-runtime
@@ -88,7 +88,31 @@
       (ops/remember-op! ns-key {:name 'b :fn 'x/b-op :arg-spec {} :metadata {} :convention {:name "b" :help "strand help b"}})
       (ops/remember-op! ns-key {:name 'a :fn 'x/a-op :arg-spec {} :metadata {} :convention {:name "a" :help "strand help a" :purpose "second"}})
       (is (= [{:name "a" :help "strand help a" :purpose "second"} {:name "b" :help "strand help b"}]
-             (ops/remembered-ops ns-key))))))
+             (#'ops/remembered-ops ns-key))))))
+
+(deftest forget-ops-drops-stale-entries-across-reload
+  (testing "forget-ops! clears the namespace so a reload registers only current source (TEN-003)"
+    (let [ns-key 'skein.macros.ops-test.reload
+          arg-spec {:op "stale-a" :doc "d"}]
+      ;; first load: source defined A and B
+      (ops/remember-op! ns-key {:name 'stale-a :fn 'skein.macros.ops-test/test-alpha-op
+                                :arg-spec arg-spec :metadata {} :convention {:name "stale-a"}})
+      (ops/remember-op! ns-key {:name 'stale-b :fn 'skein.macros.ops-test/test-beta-op
+                                :arg-spec {:op "stale-b" :doc "d"} :metadata {} :convention {:name "stale-b"}})
+      ;; reload where B was deleted from source: forget, then re-remember only A
+      (ops/forget-ops! ns-key)
+      (ops/remember-op! ns-key {:name 'stale-a :fn 'skein.macros.ops-test/test-alpha-op
+                                :arg-spec arg-spec :metadata {} :convention {:name "stale-a"}})
+      (is (= [{:name "stale-a"}] (#'ops/remembered-ops ns-key))
+          "only the surviving op remains remembered")
+      (with-runtime
+        (fn [rt _]
+          (let [result (ops/install-ops! ns-key)]
+            (is (= ["stale-a"] (mapv :name result)) "install registers only the surviving op")
+            (is (= 'skein.macros.ops-test/test-alpha-op (:fn (api/resolve-op rt 'stale-a))))
+            (testing "the forgotten op never reaches the runtime and resolving it fails loudly"
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Operation not found"
+                                    (api/resolve-op rt 'stale-b))))))))))
 
 (deftest defop-fails-loudly-on-bad-input
   (testing "a non-symbol name throws at macroexpansion"

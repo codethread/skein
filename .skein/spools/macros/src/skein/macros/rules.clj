@@ -32,6 +32,20 @@
                (conj entries entry)))))
   entry)
 
+(defn forget-rules!
+  "Forget every rule remembered for the current namespace, or for `ns-sym`.
+
+  A config namespace calls this once at the top of its load, before its
+  `defrule` forms re-register, so a targeted reload (load-file + reload!)
+  installs exactly what the current source defines. Without it the JVM-global
+  registry keeps entries for rules since renamed or deleted from source, and
+  `install-rules!` would silently re-register those stale handlers (TEN-003).
+  Returns nil."
+  ([] (forget-rules! (ns-name *ns*)))
+  ([ns-sym]
+   (swap! rule-registry dissoc ns-sym)
+   nil))
+
 (defn install-rules!
   "Install all rules remembered for the current namespace, or for `ns-sym`.
 

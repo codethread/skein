@@ -38,13 +38,27 @@
                (conj entries entry)))))
   entry)
 
-(defn remembered-ops
+(defn forget-ops!
+  "Forget every op remembered for the current namespace, or for `ns-sym`.
+
+  A config namespace calls this once at the top of its load, before its `defop`
+  forms re-register, so a targeted reload (load-file + reload!) installs exactly
+  what the current source defines. Without it the JVM-global registry keeps
+  entries for ops since renamed or deleted from source, and `install-ops!` would
+  silently re-register those stale handlers (TEN-003). Returns nil."
+  ([] (forget-ops! (ns-name *ns*)))
+  ([ns-sym]
+   (swap! op-registry dissoc ns-sym)
+   nil))
+
+(defn- remembered-ops
   "Return ordered `:convention` maps remembered for the current namespace, or for
   `ns-sym`.
 
-  The accessor task 7 uses to derive the `devflow-conventions` `:ops` listing
-  without re-reading source; each map carries at least `{:name :help}` plus any
-  authored extra fields, in author order."
+  Test-only accessor over the remembered `:convention` maps; each carries at
+  least `{:name :help}` plus any authored extra fields, in author order. The
+  shipped `devflow-conventions` `:ops` listing stays hand-authored, so nothing in
+  production derives from this."
   ([] (remembered-ops (ns-name *ns*)))
   ([ns-sym]
    (mapv :convention (get @op-registry ns-sym))))
