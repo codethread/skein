@@ -16,6 +16,7 @@
   in nvd_scan.clj, and reviewer rosters in reviewers.clj."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
+            [skein.macros.queries :refer [defquery install-queries!]]
             [skein.spools.carder :as carder]
             [skein.spools.devflow :as devflow]
             [skein.spools.loom :as loom]
@@ -29,23 +30,26 @@
 ;; Named queries
 ;; ---------------------------------------------------------------------------
 
-(def feature-active-query
+(defquery feature-active-query
   "Parameterized query for all active strands carrying a feature attribute."
+  {:usage "strand list --query feature-active --param feature=<feature>"}
   {:params [:feature]
    :where [:and
            [:= :state "active"]
            [:= [:attr :feature] [:param :feature]]]})
 
-(def feature-work-query
+(defquery feature-work-query
   "Parameterized query for active task/review strands in a feature."
+  {:usage "strand ready --query feature-work --param feature=<feature>"}
   {:params [:feature]
    :where [:and
            [:= :state "active"]
            [:= [:attr :feature] [:param :feature]]
            [:in [:attr :kind] ["task" "review"]]]})
 
-(def feature-owner-work-query
+(defquery feature-owner-work-query
   "Parameterized query for active task/review strands in a feature owned by one actor."
+  {:usage "strand ready --query feature-owner-work --param feature=<feature> --param owner=<owner>"}
   {:params [:feature :owner]
    :where [:and
            [:= :state "active"]
@@ -53,28 +57,32 @@
            [:= [:attr :owner] [:param :owner]]
            [:in [:attr :kind] ["task" "review"]]]})
 
-(def workflow-runs-query
-  "Query for active workflow molecule roots (any family)."
-  [:and
-   [:= :state "active"]
-   [:= [:attr "workflow/role"] "molecule"]])
-
-(def devflow-runs-query
-  "Query for active devflow lifecycle roots."
-  [:and
-   [:= :state "active"]
-   [:= [:attr "workflow/role"] "molecule"]
-   [:= [:attr "workflow/family"] "devflow"]])
-
-(def feature-run-query
+(defquery feature-run-query
   "Parameterized query for the active strands of one workflow run/feature."
+  {:usage "strand list --query feature-run --param feature=<feature>"}
   {:params [:feature]
    :where [:and
            [:= :state "active"]
            [:= [:attr "workflow/run-id"] [:param :feature]]]})
 
-(def work-query
+(defquery workflow-runs-query
+  "Query for active workflow molecule roots (any family)."
+  {:usage "strand list --query workflow-runs"}
+  [:and
+   [:= :state "active"]
+   [:= [:attr "workflow/role"] "molecule"]])
+
+(defquery devflow-runs-query
+  "Query for active devflow lifecycle roots."
+  {:usage "strand list --query devflow-runs"}
+  [:and
+   [:= :state "active"]
+   [:= [:attr "workflow/role"] "molecule"]
+   [:= [:attr "workflow/family"] "devflow"]])
+
+(defquery work-query
   "Query for active actionable work, excluding workflow plumbing, shuttle run records, and inert kanban refinement cards."
+  {:usage "strand ready --query work"}
   [:and
    [:= :state "active"]
    [:or [:missing [:attr "shuttle/run"]]
@@ -711,27 +719,13 @@
 ;; install!
 ;; ---------------------------------------------------------------------------
 
-(defn- register-query-map!
-  "Register repo-local named queries and return registration metadata."
-  [rt]
-  (into {}
-        (map (fn [[query-name query-def]]
-               [query-name (api/register-query! rt query-name query-def)]))
-        {'feature-active feature-active-query
-         'feature-work feature-work-query
-         'feature-owner-work feature-owner-work-query
-         'feature-run feature-run-query
-         'workflow-runs workflow-runs-query
-         'devflow-runs devflow-runs-query
-         'work work-query}))
-
 (defn install!
   "Install the repo-local named queries and CLI op surface."
   []
   (let [runtime (current/runtime)]
     {:installed true
      :namespace 'config
-     :queries (register-query-map! runtime)
+     :queries (install-queries! 'config)
      :ops [(api/register-op!
             runtime
             'current-dags
