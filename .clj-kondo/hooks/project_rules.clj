@@ -58,3 +58,16 @@
                    :type :project/no-fn-keys-destructure
                    :message "Do not :keys-destructure :fn; bind it explicitly, e.g. {fn-sym :fn}."}))
   {:node node})
+
+(defn defquery
+  "Analyze `defquery`/`defq` as a var definition so kondo resolves the query var.
+
+  Rewrites `(defquery name docstring opts query-def)` into a `def` of the var
+  with the docstring, evaluating opts and the query definition so their symbols
+  are still checked, mirroring the macro's real `(def name docstring query-def)`
+  expansion."
+  [{:keys [node]}]
+  (let [[_ name-node docstring-node opts-node query-node] (:children node)
+        used (api/list-node (list (api/token-node 'do) opts-node query-node))
+        def-node (api/list-node (list (api/token-node 'def) name-node docstring-node used))]
+    {:node (with-meta def-node (meta node))}))
