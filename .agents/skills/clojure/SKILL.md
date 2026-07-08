@@ -82,10 +82,30 @@ Example:
   ...)
 ```
 
+### Long strings and prose blocks
+
+Hard limit: no docstring or string literal line may extend past column 180. Long lines break IDE viewports and diff review. This is a reportable conformity issue wherever it appears — source, tests, config.
+
+When a value is prose (op payloads, `about` surfaces, rule descriptions, delegation bodies), do not build it from `(str ...)` fragments or one long literal. Author it as a `|`-margin block and reflow it with the shipped helpers:
+
+- `skein.api.format.alpha` — the blessed surface for any tier: trusted config (`.skein/`), userland, core.
+- `skein.spools.format` — the same `fill`/`reflow` under the documented spool-authoring names; prefer it inside `skein.spools.*`.
+
+`(fill block)` returns a vector of item strings (bare `|` line separates items; indented-past-the-bar lines keep an item verbatim for command samples). `(reflow block)` soft-wraps one paragraph into one string. Contract: `docs/writing-shared-spools.md`.
+
+```clojure
+(format-alpha/reflow
+ "|One rule sentence that would otherwise be an unreadable
+  |single source line, soft-wrapped at authoring time.")
+```
+
+Docstrings cannot use runtime helpers: wrap them by hand well short of the limit (match the surrounding namespace, usually ~80).
+
 ### Audit red flags
 
 When scanning Clojure conformity, actively look for and report these before listing positives:
 
+- Any docstring or string literal line past column 180, or long prose built from `(str ...)` fragments instead of a `|`-margin block through `skein.api.format.alpha` / `skein.spools.format`.
 - Public namespace lacks an `ns` docstring and has a non-trivial public role.
 - Public `defn`, `defmacro`, protocol, record/type, or important public `def` lacks a useful docstring.
 - Boundary data is validated only ad hoc when a reusable spec would clarify the shipped contract or enable generated checks.
@@ -244,6 +264,7 @@ Entry state: CLASSIFY_CHANGE
 ## Constraints
 
 - Do not spec every function by default.
+- Do not let any docstring or string literal line pass column 180; author long prose as `|`-margin blocks via `skein.api.format.alpha` (or `skein.spools.format` in spools).
 - Do not omit public docstrings for public Clojure API without a good local reason.
 - Do not leave implementation vars public by accident; make them private or document them as supported API.
 - Do not add weak property tests that only exercise trivial/generated happy paths.
@@ -256,6 +277,7 @@ Entry state: CLASSIFY_CHANGE
 Before reporting success on Clojure code changes, verify as applicable:
 
 - [ ] Public vars added or changed have useful docstrings.
+- [ ] No docstring or string literal line passes column 180; prose values use the `|`-margin format helpers.
 - [ ] Boundary data shapes have specs when useful.
 - [ ] `s/fdef` is used selectively for public contracts or property-testable pure functions.
 - [ ] Property tests assert real invariants, especially via `:fn` or explicit property assertions.

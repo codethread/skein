@@ -156,6 +156,10 @@ or long rule descriptions:
 (require '[skein.spools.format :as spool-format])
 ```
 
+The same two helpers are also blessed as `skein.api.format.alpha` for code
+outside the spool layer (trusted config, userland, core); both names share one
+implementation and one contract.
+
 Both helpers read `|`-margin strings. The first `|` on each source line marks
 column 0, so the surrounding Clojure form may be indented freely.
 

@@ -58,6 +58,12 @@ Warm, plain, confident. Short sentences over clever ones. State facts directly (
 
 No single tell proves anything — one em dash is fine. Flag prose when tells cluster: three or more distinct tell types in one section is a rewrite signal, not an edit signal.
 
+### Line length and prose that lives in code
+
+No line of prose may pass column 180 — long lines break IDE viewports. Markdown in this repo is mostly wrapped much narrower; match the file you are editing.
+
+Prose that ships as data inside Clojure source (op payloads, `about` surfaces, rule descriptions) is still human-facing and gets this skill's sweep, but its authoring format is the `|`-margin block reflowed through `skein.api.format.alpha` (or `skein.spools.format` inside spools) — never one long string literal or `(str ...)` fragments. See `docs/writing-shared-spools.md` for the block contract.
+
 ## Procedures
 
 1. Grep the changed docs for the word tells and structure tells above (case-insensitive; `--`/`—` count, "not just", "serves as", "isn't just").
@@ -79,3 +85,4 @@ No single tell proves anything — one em dash is fine. Flag prose when tells cl
 - [ ] At most occasional em dashes, none load-bearing for sentence structure
 - [ ] Headings are sentence case; no emoji bullets; bold only where it earns its place
 - [ ] A spot-read of two sections sounds like a person explaining, not a model summarising
+- [ ] No prose line passes column 180; prose embedded in Clojure uses the `|`-margin format helpers
