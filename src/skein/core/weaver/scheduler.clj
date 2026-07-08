@@ -10,7 +10,7 @@
   Lifecycle:
   - `rearm!` is the post-config entry point. `skein.core.weaver.runtime/start!`
     calls it after selected startup files finish loading, and
-    `skein.api.weaver.alpha/reload-config!` calls it after config reload, so
+    `skein.core.weaver.runtime/reload-config!` calls it after config reload, so
     handlers supplied by approved spools/config are resolvable before any timer
     arms. `rearm!` cancels the in-memory timer, discards stale in-flight claims,
     and rebuilds from durable pending rows.

@@ -13,6 +13,7 @@
             [skein.api.views.alpha :as views]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
+            [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
@@ -634,7 +635,7 @@
                          :file (.getCanonicalPath (io/file workspace "init.local.clj"))
                          :return :local}]
                 :returns [:shared :local]}
-               (api/reload-config! rt)))
+               (runtime-alpha/reload! rt)))
         (is (= [:shared :local] (read-string (slurp order-file))))))))
 
 (deftest reload-failure-preserves-earlier-registrations-and-fails-loudly
@@ -664,7 +665,7 @@
         (spit (io/file workspace "init.local.clj")
               "(throw (ex-info \"local boom\" {:source :local}))\n")
         (try
-          (api/reload-config! rt)
+          (runtime-alpha/reload! rt)
           (is false "expected reload failure")
           (catch clojure.lang.ExceptionInfo e
             (is (= (.getCanonicalPath (io/file workspace "init.local.clj"))
@@ -705,7 +706,7 @@
                    "(let [rt (current/runtime)]\n"
                    "  (events/register! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)\n"
                    "  (hooks/register! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))\n"))
-        (api/reload-config! rt)
+        (runtime-alpha/reload! rt)
         (is (= #{:shared :local} (set (mapv :key (events/handlers rt)))))
         (is (= #{:shared :local} (set (mapv :key (hooks/hooks rt)))))
         (is (= [] (events/recent-failures rt)))))))
@@ -982,7 +983,7 @@
                         "         '[skein.api.events.alpha :as events])\n"
                         "(let [rt (current/runtime)]\n"
                         "  (events/register! rt :after-reload #{:x} 'skein.weaver-test/capture-event))\n"))
-        (api/reload-config! rt)
+        (runtime-alpha/reload! rt)
         (deliver @handler-release true)
         (is (= [:after-reload] (mapv :key (events/handlers rt))))
         (is (= [] (events/recent-failures rt)))
@@ -1222,7 +1223,7 @@
                         "         '[skein.api.hooks.alpha :as hooks])\n"
                         "(let [rt (current/runtime)]\n"
                         "  (hooks/register! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))\n"))
-        (api/reload-config! rt)
+        (runtime-alpha/reload! rt)
         (is (= [{:key :fresh
                  :types #{:payload/received}
                  :fn 'skein.weaver-test/capture-hook
@@ -1776,7 +1777,7 @@
       (is (= ["help"] (mapv :name (api/ops rt))))
       ;; reload clears the registry before re-running init, so the built-in
       ;; help op re-registers without tripping the collision check.
-      (api/reload-config! rt)
+      (runtime-alpha/reload! rt)
       (is (= ["help"] (mapv :name (api/ops rt)))))))
 
 (deftest weaver-op-parser-integration
@@ -2064,7 +2065,7 @@
         (spit init-file "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime-alpha])\n(runtime-alpha/sync! (current/runtime))\n")
         (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
         (is (= 1 (count (patterns/patterns rt))))
-        (api/reload-config! rt)
+        (runtime-alpha/reload! rt)
         (is (empty? (patterns/patterns rt)))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Pattern not found"

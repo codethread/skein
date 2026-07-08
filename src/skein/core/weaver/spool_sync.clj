@@ -4,9 +4,12 @@
   Reads and validates the `spools.edn`/`spools.local.edn` allowlist, materializes
   git-pinned spool roots into the content-addressed cache, vets each root's
   Maven dependencies, and loads approved roots into a runtime's spool classloader
-  while recording per-spool sync outcomes. Internal tier: the trusted
-  `skein.api.runtime.alpha` surface delegates its `approved`/`sync!`/`syncs`
-  publics here and owns the blessed contract (SPEC-004, SPEC-005.C5)."
+  while recording per-spool sync outcomes. Also resolves and loads module-use
+  targets — `:file` paths confined to the config-dir and `:ns` sources located
+  under synced roots — for `skein.api.runtime.alpha/use!`. Internal tier: the
+  trusted `skein.api.runtime.alpha` surface delegates its
+  `approved`/`sync!`/`syncs` publics and its module loading here and owns the
+  blessed contract (SPEC-004, SPEC-005.C5)."
   (:require [clojure.java.io :as io]
             [clojure.repl.deps :as repl-deps]
             [clojure.string :as str]
@@ -493,3 +496,70 @@
   "Return the most recent approved spool sync results."
   [runtime]
   {:spools (into (sorted-map) @(approved-spool-sync-state runtime))})
+
+(defn module-file
+  "Resolve module-use `path` against `runtime`'s config-dir, failing on escape.
+
+  Module-use `:file` targets are approved only within the selected config-dir, so
+  a path resolving outside it (via `..` or a symlink) would load code the
+  operator never consented to and fails loudly."
+  [runtime path]
+  (let [base (.getCanonicalFile (io/file (config-dir runtime)))
+        file (.getCanonicalFile (io/file base path))
+        base-path (.getPath base)
+        file-path (.getPath file)]
+    (when-not (or (= base-path file-path)
+                  (str/starts-with? file-path (str base-path java.io.File/separator)))
+      (throw (ex-info "Module use :file must stay within selected config-dir"
+                      {:file path
+                       :config-dir base-path
+                       :resolved file-path})))
+    file-path))
+
+(defn- ns-relative-path [ns-sym]
+  (str (-> (name ns-sym)
+           (str/replace "-" "_")
+           (str/replace "." java.io.File/separator))
+       ".clj"))
+
+(defn- synced-root-paths [runtime]
+  (mapcat (fn [[_ {:keys [root status]}]]
+            (when (#{:loaded :already-available} status)
+              (root-paths root)))
+          @(approved-spool-sync-state runtime)))
+
+(defn- locate-synced-namespace-file [runtime ns-sym]
+  (let [relative (ns-relative-path ns-sym)
+        roots (vec (synced-root-paths runtime))
+        file (some (fn [root]
+                     (let [candidate (io/file root relative)]
+                       (when (.isFile candidate)
+                         (.getCanonicalPath candidate))))
+                   roots)]
+    {:file file
+     :relative-path relative
+     :searched-roots (mapv #(.getCanonicalPath ^java.io.File %) roots)}))
+
+(defn load-synced-namespace!
+  "Load `ns-sym` from `runtime`'s synced spool roots, or fall back to `require`.
+
+  An already-loaded namespace is a no-op. Otherwise the source is located under
+  the synced approved roots and `load-file`d; when no root holds it a plain
+  `require` is the last resort, and a genuinely missing namespace fails loudly
+  with the roots that were searched."
+  [runtime ns-sym]
+  (if (find-ns ns-sym)
+    {:ns ns-sym}
+    (let [{:keys [file relative-path searched-roots]} (locate-synced-namespace-file runtime ns-sym)]
+      (if file
+        (do
+          (load-file file)
+          {:ns ns-sym :file file})
+        (try
+          (require ns-sym)
+          {:ns ns-sym}
+          (catch java.io.FileNotFoundException _
+            (throw (ex-info "Could not locate namespace source in synced spool roots"
+                            {:ns ns-sym
+                             :relative-path relative-path
+                             :searched-roots searched-roots}))))))))

@@ -832,7 +832,7 @@
   initial gate scan, so config.clj's harness aliases must already exist or a
   durable ready gate would be stamped treadle/error on every cold start."
   [rt]
-  (let [use (get (api/uses rt) :skein/spools-treadle)]
+  (let [use (get (runtime-alpha/uses rt) :skein/spools-treadle)]
     (is (= :loaded (:status use)))
     (is (some #{:config} (get-in use [:opts :after])))))
 

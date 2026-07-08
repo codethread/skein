@@ -179,6 +179,58 @@
                                   t)))))
             (startup-files world)))))
 
+(defn install-built-in-ops!
+  "Install Skein's built-in CLI ops, resolving the api-tier registrar dynamically.
+
+  The op registry and its built-ins are owned by `skein.api.weaver.alpha`, above
+  this core namespace; `requiring-resolve` keeps the require graph pointing
+  downward while startup and reload share one install path."
+  [runtime]
+  (with-runtime-binding runtime #((requiring-resolve 'skein.api.weaver.alpha/register-built-in-ops!) runtime)))
+
+(defn- clear-reload-state! [runtime]
+  (reset! (:approved-spool-sync-state runtime) {})
+  (reset! (:module-use-state runtime) {})
+  (reset! (:query-registry runtime) {})
+  (reset! (:view-registry runtime) {})
+  (reset! (:pattern-registry runtime) {})
+  (reset! (:op-registry runtime) {})
+  (reset! (:hook-registry runtime) {})
+  (clear-event-system-for-reload! runtime)
+  (install-built-in-ops! runtime))
+
+(defn reload-config!
+  "Reload selected config-dir startup files after clearing runtime registries.
+
+  Clears every weaver-lifetime registry and the event system, reinstalls the
+  built-in ops, then reloads `init.clj`/`init.local.clj` and re-arms the
+  scheduler so handlers newly supplied by reloaded spools/config resolve before
+  any durable pending wake fires. This is `skein.api.runtime.alpha/reload!`'s
+  implementation."
+  [runtime]
+  (try
+    (clear-reload-state! runtime)
+    (let [world {:config-dir (get-in runtime [:metadata :config-dir])}
+          files (load-startup-files! runtime world)]
+      (resume-event-system! runtime)
+      ;; Re-arm after config reload so handlers newly supplied by reloaded
+      ;; spools/config resolve; rearm! also discards fire envelopes the reload
+      ;; flushed from the event queue (DELTA-weaver-scheduler-runtime-001.CC5).
+      (scheduler/rearm! runtime)
+      {:status :loaded
+       :files files
+       :returns (mapv :return files)})
+    (catch Throwable t
+      ;; Do not re-clear on failure. The initial clear-reload-state! already
+      ;; reinstalled the built-in ops, and startup files register userland ops
+      ;; incrementally, so a spool install that throws midway would otherwise
+      ;; take every already-registered op down with it — the "zero useful ops
+      ;; until a manual atom reset" cliff. Leave whatever loaded so the world
+      ;; stays operable, resume dispatch, and rethrow the failure loudly.
+      (resume-event-system! runtime)
+      (scheduler/rearm! runtime)
+      (throw t))))
+
 (defn- with-spool-classloader [runtime f]
   (let [thread (Thread/currentThread)
         previous-loader (.getContextClassLoader thread)]
@@ -313,7 +365,7 @@
            (swap! nrepl-port-runtimes assoc port runtime)
            (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
              (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
-           (with-runtime-binding runtime #((requiring-resolve 'skein.api.weaver.alpha/register-built-in-ops!) runtime))
+           (install-built-in-ops! runtime)
            (load-startup-files! runtime world)
            ;; Arm the scheduler only after startup files finish loading, so
            ;; handlers supplied by approved spools/config resolve before any

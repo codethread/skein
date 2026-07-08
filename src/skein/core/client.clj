@@ -59,10 +59,10 @@
    :approved-spools 'skein.api.runtime.alpha/approved
    :sync-approved-spools 'skein.api.runtime.alpha/sync!
    :approved-spool-syncs 'skein.api.runtime.alpha/syncs
-   :reload-config! 'skein.api.weaver.alpha/reload-config!
-   :use! 'skein.api.weaver.alpha/use!
-   :uses 'skein.api.weaver.alpha/uses
-   :use 'skein.api.weaver.alpha/use})
+   :reload-config! 'skein.api.runtime.alpha/reload!
+   :use! 'skein.api.runtime.alpha/use!
+   :uses 'skein.api.runtime.alpha/uses
+   :use 'skein.api.runtime.alpha/use})
 
 (defn- fail
   "Throw an ExceptionInfo with message and structured client error data."
