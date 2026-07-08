@@ -44,9 +44,9 @@ proof for these flows.
 of pending features; you need to take the right one, make the work discoverable
 to everyone else, and leave it resumable if you're interrupted.
 
-**Composition.** The full working loop is five verbs: `next` picks the card,
-`claim` stamps it as yours, you hang the actual work beneath it with `parent-of`,
-`note --handover` records where you got to, and `finish` closes it out.
+**Composition.** The usual loop is `next`, `claim`, work under `parent-of`, and
+`note --handover`. When the work is ready for review, run `review`. If review asks
+for changes, run `rework`; when the work has landed, `finish` closes it out.
 
 ```sh
 # 1. Take the highest-priority (p1 first) oldest pending feature.
@@ -63,7 +63,12 @@ strand kanban note "$card" "Chose lane names over statuses because X" --author c
 strand kanban note "$card" --author claude --handover \
   "Done: impl + tests. Next: docs. Validation: clojure -M:test green. Gotcha: reload the weaver after merge."
 
-# 5. Close it once the work has landed.
+# 5. Move it through review. Rework returns it to claimed when needed.
+strand kanban review "$card"
+strand kanban rework "$card"
+strand kanban review "$card"
+
+# 6. Close it once the work has landed.
 strand kanban finish "$card" --outcome done
 ```
 
@@ -86,6 +91,9 @@ strand kanban finish "$card" --outcome done
 - **The handover is the interruption contract.** A crash, a context limit, or a
   handoff to another agent all resolve the same way: whoever picks up reads the
   latest handover. Writing it *before* you stop, not after, is the whole point.
+- **`review` and `rework` keep review visible.** `review` moves the card to
+  `in_review`, so board readers can see work waiting on review. `rework` moves it
+  back to `claimed` when the branch needs changes.
 - **`finish` records an explicit outcome.** `done` and `abandoned` both close the
   card, but the `kanban/status` outcome stays on the strand, so the closed lane
   keeps an honest history rather than a wall of indistinguishable "closed".
@@ -267,13 +275,14 @@ Honest source: the `note!`/`card-view` source, the spool `prime`
 
 ## Recipe: Watch the cross-card review queue
 
-**Situation.** Several cards are claimed and in flight, each spawning review work.
+**Situation.** Several cards are claimed or in review, each spawning review work.
 A coordinator (or a human) needs one queue of what's ready to review right now,
 without opening every card.
 
 **Composition.** Read `board` and use its `needs-review` list. It aggregates,
-across every claimed feature card, the descendants that are active, in the ready
-frontier, and marked for human review — each tagged with its card and branch.
+across claimed and in-review feature cards, the descendants that are active, in
+the ready frontier, and marked for human review — each tagged with its card and
+branch.
 
 ```sh
 strand kanban board | jq '.needs-review'

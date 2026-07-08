@@ -5,7 +5,7 @@
   `feature` card (occasionally grouped under an `epic`), and every agent
   working directly with a user works under a claimed card. All card state
   lives under `kanban/*` attributes; `kanban/status` is the board lane
-  (`refinement` -> `pending` -> `claimed` -> explicit closed outcome) and
+  (`refinement` -> `pending` -> `claimed` -> `in_review` -> explicit closed outcome) and
   `kanban/priority` (p1 immediate blocker .. p4 someday, default p3) orders
   lanes and `kanban next`.
 
@@ -31,6 +31,7 @@
 (def ^:private handover-attr :kanban/handover)
 
 (def ^:private addable-statuses #{"pending" "refinement"})
+(def ^:private active-lanes #{"refinement" "pending" "claimed" "in_review"})
 (def ^:private card-types #{"feature" "epic"})
 (def ^:private card-priorities #{"p1" "p2" "p3" "p4"})
 (def ^:private default-priority "p3")
@@ -285,14 +286,33 @@
       {:operation "kanban claim"
        :card (select-keys updated [:id :title :state :attributes])})))
 
+(defn request-review!
+  "Move a claimed kanban card into the in_review lane."
+  [id]
+  (let [strand (require-status! "mark in_review" (card-strand (require-non-blank! :id id)) "claimed")
+        updated (update-card! strand {status-attr "in_review"} nil)]
+    {:operation "kanban review"
+     :card (select-keys updated [:id :title :state :attributes])}))
+
+(defn rework!
+  "Move an in_review kanban card back to claimed for rework."
+  [id]
+  (let [strand (require-status! "rework" (card-strand (require-non-blank! :id id)) "in_review")
+        updated (update-card! strand {status-attr "claimed"} nil)]
+    {:operation "kanban rework"
+     :card (select-keys updated [:id :title :state :attributes])}))
+
 (defn finish!
-  "Close a kanban card with an explicit outcome status."
+  "Close a claimed or in_review kanban card with an explicit outcome status."
   [id flags]
   (let [id (require-non-blank! :id id)
         strand (card-strand id)
         outcome (or (get flags "--outcome") "done")]
     (when-not (= "active" (:state strand))
       (throw (ex-info "Kanban card must be active to finish" {:id id :state (:state strand)})))
+    (when-not (contains? #{"claimed" "in_review"} (attr-value strand status-attr))
+      (throw (ex-info "Kanban card must be claimed or in_review to finish"
+                      {:id id :status (attr-value strand status-attr)})))
     (let [updated (update-card! strand {status-attr outcome} "closed")]
       {:operation "kanban finish"
        :card (select-keys updated [:id :title :state :attributes])})))
@@ -479,13 +499,14 @@
            compact-note))
 
 (defn- needs-review-entries
-  "Return review-frontier entries across claimed feature cards.
+  "Return review-frontier entries across review-relevant feature cards.
 
-  An entry qualifies when a card descendant is active, in the engine ready
-  frontier, and marks human review. Sorted by card id then item id."
-  [rt claimed-features]
+  An entry qualifies when a claimed or in-review card descendant is active, in
+  the engine ready frontier, and marks human review. Sorted by card id then item
+  id."
+  [rt review-relevant-features]
   (let [ready-ids (set (map :id (api/ready rt)))]
-    (->> claimed-features
+    (->> review-relevant-features
          (mapcat (fn [card]
                    (let [{:keys [work]} (card-subtree rt card)
                          branch (attr-value card :branch)]
@@ -504,7 +525,8 @@
 
   Claimed cards carry their latest handover so a cold agent can see in one
   call who is working where and how to pick up interrupted work.
-  `:needs-review` aggregates the human-review frontier across claimed cards."
+  `:needs-review` aggregates the human-review frontier across claimed and
+  in-review cards."
   []
   (let [rt (current/runtime)
         all (cards)
@@ -512,6 +534,7 @@
         epics (filterv #(= "epic" (card-type %)) active)
         features (remove #(= "epic" (card-type %)) active)
         claimed-features (filter #(= "claimed" (attr-value % status-attr)) features)
+        review-features (filter #(= "in_review" (attr-value % status-attr)) features)
         membership (epic-membership rt epics)
         with-epic (fn [card]
                     (cond-> (compact-card card)
@@ -521,7 +544,7 @@
                     (filter #(= status (attr-value % status-attr)))
                     by-priority
                     (mapv with-epic)))
-        known-lanes #{"refinement" "pending" "claimed"}
+        known-lanes active-lanes
         unknown (->> features
                      (remove #(contains? known-lanes (attr-value % status-attr)))
                      by-created
@@ -535,7 +558,12 @@
                                 (latest-handover-for rt card)
                                 (assoc :latest-handover (latest-handover-for rt card))))
                             (by-priority claimed-features))
-             :needs-review (needs-review-entries rt claimed-features)
+             :in_review (mapv (fn [card]
+                                (cond-> (with-epic card)
+                                  (latest-handover-for rt card)
+                                  (assoc :latest-handover (latest-handover-for rt card))))
+                              (by-priority review-features))
+             :needs-review (needs-review-entries rt (concat claimed-features review-features))
              :closed {:count (count (filter #(= "closed" (:state %)) all))}}
       ;; active cards outside the known lanes are drift; surface them loudly
       (seq unknown) (assoc :unknown-status unknown))))
@@ -587,7 +615,7 @@
 
 (defn board-str
   "Render a `board` result map as a stacked-lane ASCII board string."
-  [{:keys [epics refinement pending claimed needs-review closed unknown-status]}]
+  [{:keys [epics refinement pending claimed in_review needs-review closed unknown-status]}]
   (let [rule (apply str (repeat board-width \=))]
     (->> (concat
           [(str "KANBAN BOARD  (closed: " (:count closed) ")") rule]
@@ -598,6 +626,12 @@
           (lane-lines "PENDING" pending card-line)
           [""]
           (lane-lines "CLAIMED / WIP" claimed
+                      (fn [card]
+                        (if-let [handover (handover-line card)]
+                          (str (card-line card) "\n" handover)
+                          (card-line card))))
+          [""]
+          (lane-lines "IN REVIEW" in_review
                       (fn [card]
                         (if-let [handover (handover-line card)]
                           (str (card-line card) "\n" handover)
@@ -621,6 +655,7 @@
    :lanes {:refinement "not actionable until an explicit human `kanban promote`"
            :pending "actionable queue; `kanban next` serves the highest-priority (p1 first) oldest feature"
            :claimed "work started; owner/branch (and worktree) stamped at claim"
+           :in_review "work is under review; rework returns it to claimed, finish closes it"
            :closed "finished with kanban/status recording the outcome (done, abandoned, ...)"}
    :priorities {:p1 "immediate blocker; must be done first — e.g. anything requiring a mill/weaver restart or a breaking change"
                 :p2 "high value bug fixes or high leverage features"
@@ -628,7 +663,7 @@
                 :p4 "maybe one day — the never-ending someday list"}
    :attributes {card-attr "true"
                 type-attr "feature (default) | epic (grouping; parent-of its features)"
-                status-attr "refinement|pending|claimed|<outcome>"
+                status-attr "refinement|pending|claimed|in_review|<outcome>"
                 priority-attr "p1|p2|p3|p4 (default p3); orders lanes and `kanban next`"
                 note-attr "true on note strands (closed parent-of children of a card)"
                 handover-attr "true on handover notes"
@@ -658,6 +693,8 @@
               {:verb "promote" :purpose "Move a refinement card into the pending lane."}
               {:verb "claim" :purpose "Move a card into claimed and stamp owner/branch/worktree."}
               {:verb "note" :purpose "Append an immutable card note, optionally marked as handover."}
+              {:verb "review" :purpose "Move a claimed card into in_review."}
+              {:verb "rework" :purpose "Move an in_review card back to claimed."}
               {:verb "finish" :purpose "Close a card with an explicit outcome."}
               {:repl "skein.spools.kanban/print-board!" :purpose "ASCII board from mill weaver repl; CLI output stays JSON-only."}]
    :patterns [{:name "kanban-batch"
@@ -705,7 +742,7 @@
                |Create feature plans, devflow runs, or task DAGs under the card via `parent-of`.
                |The card is the parent/audit root; child strands are the executable work.
                |
-               |`kanban finish <id> [--outcome done|abandoned]` after merge, archive, or
+               |`kanban review <id>` when work enters review, `kanban rework <id>` when it needs changes, and `kanban finish <id> [--outcome done|abandoned]` after merge, archive, or
                |explicit abandonment.")
          :notes-and-handovers
          (fmt/fill "
@@ -716,13 +753,14 @@
                |covering: what is done, what is next, validation state, gotchas, and where the
                |work lives (branch/worktree).
                |
-               |Crash recovery is self-discovering: `kanban board` shows claimed cards with their
-               |latest handover; `kanban card <id>` returns the card, notes, active work, and
-               |ready frontier.")
+               |Crash recovery is self-discovering: `kanban board` shows claimed and in-review
+               |cards with their latest handover; `kanban card <id>` returns the card, notes,
+               |active work, and ready frontier.")
          :staying-aware
          (fmt/fill "
                |`kanban board` returns `needs-review`: the human-review frontier aggregated
-               |across claimed cards (ready hitl/review work grouped by card and branch).
+               |across claimed and in-review cards (ready hitl/review work grouped by card and
+               |branch).
                |
                |Inside a feature branch, `strand branches \"$(git branch --show-current)\"`
                |shows the feature cards worked on there and their substrands.
@@ -779,7 +817,11 @@
                            :required? true
                            :variadic? true
                            :doc "Note text words."}]}
-    "finish" {:doc "Close a kanban card with an explicit outcome status."
+    "review" {:doc "Move a claimed card into the in_review lane."
+              :positionals [{:name :id :required? true :doc "Kanban card id."}]}
+    "rework" {:doc "Move an in_review card back to claimed for rework."
+              :positionals [{:name :id :required? true :doc "Kanban card id."}]}
+    "finish" {:doc "Close a claimed or in_review kanban card with an explicit outcome status."
               :flags {:outcome {:doc "Closed outcome status; defaults to done."}}
               :positionals [{:name :id :required? true :doc "Kanban card id."}]}}})
 
@@ -808,6 +850,8 @@
       "priority" (set-priority! (:id args) (:priority args))
       "promote" (promote! (:id args))
       "claim" (claim! (:id args) flags)
+      "review" (request-review! (:id args))
+      "rework" (rework! (:id args))
       "note" (note! (:id args) (str/join " " (:text args)) flags)
       "finish" (finish! (:id args) flags))))
 

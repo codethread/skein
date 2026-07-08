@@ -75,7 +75,13 @@
               (is (nil? (:next (op! rt "next"))))
               (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be pending"
                                     (op! rt "claim" id "--owner" "other" "--branch" "b")))))
-          (testing "finish closes the card with an outcome status"
+          (testing "review, rework, and finish enforce the review lane"
+            (let [reviewing (op! rt "review" id)]
+              (is (= "in_review" (get-in reviewing [:card :attributes :kanban/status])))
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be claimed"
+                                    (op! rt "review" id)))
+              (is (= "claimed" (get-in (op! rt "rework" id) [:card :attributes :kanban/status])))
+              (is (= "in_review" (get-in (op! rt "review" id) [:card :attributes :kanban/status]))))
             (let [finished (op! rt "finish" id)]
               (is (= "closed" (get-in finished [:card :state])))
               (is (= "done" (get-in finished [:card :attributes :kanban/status]))))))))))
@@ -89,7 +95,7 @@
               alias (op! rt "help")
               verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
           (is (= detail alias))
-          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote"] verbs))
+          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote" "review" "rework"] verbs))
           (is (some #(= "about" (:name %)) (get-in alias [:arg-spec :subcommands])))))
       (testing "missing and unknown verbs fail during parser routing with available names"
         (let [missing (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing subcommand"
@@ -98,7 +104,7 @@
                                             (op! rt "bogus")))]
           (is (= :missing-subcommand (:reason (ex-data missing))))
           (is (= :unknown-subcommand (:reason (ex-data unknown))))
-          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote"]
+          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote" "review" "rework"]
                  (:available-subcommands (ex-data missing))))
           (is (= (:available-subcommands (ex-data missing))
                  (:available-subcommands (ex-data unknown)))))))))
@@ -204,6 +210,7 @@
                               [:card :attributes :kanban/priority])))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"p1, p2, p3, p4"
                                 (op! rt "priority" someday "p9")))
+          (op! rt "claim" blocker "--owner" "agent" "--branch" "priority-x")
           (op! rt "finish" blocker)
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be active"
                                 (op! rt "priority" blocker "p1"))))
@@ -279,13 +286,18 @@
       (let [idea-id (get-in (op! rt "add" "Idea" "--status" "refinement") [:card :id])
             queued-id (get-in (op! rt "add" "Queued") [:card :id])
             working-id (get-in (op! rt "add" "Working") [:card :id])
+            review-id (get-in (op! rt "add" "Reviewing") [:card :id])
             done-id (get-in (op! rt "add" "Done already") [:card :id])]
         (op! rt "claim" working-id "--owner" "agent" "--branch" "feature-x")
+        (op! rt "claim" review-id "--owner" "reviewer" "--branch" "feature-y")
+        (op! rt "review" review-id)
+        (op! rt "claim" done-id "--owner" "agent" "--branch" "done-x")
         (op! rt "finish" done-id "--outcome" "abandoned")
         (let [board (op! rt "board")]
           (is (= [idea-id] (mapv :id (:refinement board))))
           (is (= [queued-id] (mapv :id (:pending board))))
           (is (= [working-id] (mapv :id (:claimed board))))
+          (is (= [review-id] (mapv :id (:in_review board))))
           (is (= "feature-x" (:branch (first (:claimed board)))))
           (is (= 1 (get-in board [:closed :count])))
           (is (not (contains? board :unknown-status))))
@@ -352,6 +364,7 @@
           (is (str/includes? rendered "REFINEMENT (1)"))
           (is (str/includes? rendered "PENDING (0)"))
           (is (str/includes? rendered "CLAIMED / WIP (1)"))
+          (is (str/includes? rendered "IN REVIEW (0)"))
           (is (str/includes? rendered "[p3 @feature-x agent-a] Working card"))
           (is (str/includes? rendered "Done: half. Next: rest."))
           (is (str/includes? rendered "NEEDS REVIEW (0)"))
