@@ -1,5 +1,5 @@
 (ns skein.nvd-scan-test
-  "Tests for the scheduled NVD deep-scan job defined in .skein/config.clj.
+  "Tests for the scheduled NVD deep-scan job defined in .skein/nvd_scan.clj.
 
   Covers the pure seed-delay/jitter computation and the injected-seam lock flow
   (skip when locked / fail loud without a key / clean scan / findings raise a
@@ -10,20 +10,20 @@
   (:import [java.time Instant]
            [java.util Random]))
 
-;; config.clj is a .skein weaver file (ns `config`), not a classpath namespace,
-;; so load it once exactly as config_test does and resolve its (public and
-;; private) vars by symbol. Loading it defines vars only; it never calls
-;; install! or seeds against gh.
+;; nvd_scan.clj is a .skein weaver file (ns `nvd-scan`), not a classpath
+;; namespace, so load it once exactly as config_test does and resolve its
+;; (public and private) vars by symbol. Loading it defines vars only; it never
+;; calls install! or seeds against gh.
 (defn- load-config-once [f]
-  (load-file ".skein/config.clj")
+  (load-file ".skein/nvd_scan.clj")
   (f))
 
 (use-fixtures :once load-config-once)
 
 (defn- cfn
-  "Resolve a var in the loaded `config` namespace by unqualified name."
+  "Resolve a var in the loaded `nvd-scan` namespace by unqualified name."
   [name]
-  (requiring-resolve (symbol "config" name)))
+  (requiring-resolve (symbol "nvd-scan" name)))
 
 (def ^:private interval-ms (* 6 24 60 60 1000))
 (def ^:private jitter-ms (* 60 60 1000))

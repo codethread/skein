@@ -1,7 +1,8 @@
 (ns skein.config-test
-  "Tests for the repo-local .skein config: registration surface, the
-  delegate-pipeline weave pattern, and the devflow op wrappers over
-  skein.spools.devflow."
+  "Tests for the repo-local .skein config modules (config.clj plus the
+  harnesses.clj and workflows.clj siblings): registration surface, the
+  delegate-pipeline weave pattern, the land workflow, and the devflow op
+  wrappers over skein.spools.devflow."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -30,19 +31,29 @@
                        (str config-dir "/data")))
 
 (defn- with-config-runtime
-  "Run f with an isolated runtime and the repo-local .skein config loaded."
+  "Run f with an isolated runtime and the repo-local .skein config loaded.
+
+  Loads the split config modules the way init.clj orders them: config.clj
+  first (workflows.clj references its public CLI-tail helpers at load time),
+  then harnesses.clj and workflows.clj. attention.clj and nvd_scan.clj are
+  deliberately not loaded here — chime rules are asserted through the full
+  startup fixture, and the NVD job must never register from a direct load."
   [f]
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-config-test-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
     (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
       (try
-        ;; config.clj's pi-main alias layers over the shipped :pi harness,
+        ;; harnesses.clj's pi-main alias layers over the shipped :pi harness,
         ;; which shuttle/install! registers in real startups; this fixture
-        ;; loads config.clj alone, so register the defaults here.
+        ;; loads the config files alone, so register the defaults here.
         ((requiring-resolve 'skein.spools.shuttle/register-default-harnesses!))
         (load-file ".skein/config.clj")
+        (load-file ".skein/harnesses.clj")
+        (load-file ".skein/workflows.clj")
         ((requiring-resolve 'config/install!))
+        ((requiring-resolve 'harnesses/install!))
+        ((requiring-resolve 'workflows/install!))
         (f rt)
         (finally
           (runtime/stop! rt)
@@ -53,7 +64,8 @@
   "Copy the repo-local config files into a temporary config dir."
   [target]
   (.mkdirs (io/file target))
-  (doseq [name ["init.clj" "config.clj" "reviewers.clj" "spools.edn"]]
+  (doseq [name ["init.clj" "config.clj" "workflows.clj" "harnesses.clj"
+                "attention.clj" "nvd_scan.clj" "reviewers.clj" "spools.edn"]]
     (io/copy (io/file ".skein" name) (io/file target name)))
   ;; The shipped spools.edn approves local roots relative to the config dir,
   ;; which does not resolve from a copy. Rewrite it to the repo's canonical

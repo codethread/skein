@@ -71,24 +71,40 @@
                      :after [:skein/spools-shuttle]
                      :call 'skein.spools.bench/install!
                      :required? true})
+;; Repo policy modules, split by use case (each file is one concern):
+;; harnesses.clj — model seats + routing policy; workflows.clj — hand-authored
+;; land workflow + delegate-pipeline pattern; attention.clj — chime rules;
+;; nvd_scan.clj — the scheduled NVD deep-scan cron job; reviewers.clj — the
+;; declarative reviewer roster; config.clj — named queries + the CLI op surface.
+(runtime-alpha/use! runtime :harnesses
+                    {:file "harnesses.clj"
+                     :after [:skein/spools-agents]
+                     :call 'harnesses/install!
+                     :required? true})
 ;; The declarative reviewer roster lives in its own file so the "who reviews
 ;; a change here" policy stays a small git-reviewable data document. Roster
-;; harness aliases resolve at review time, not registration time, so loading
-;; before config.clj registers the aliases is safe.
+;; harness aliases resolve at review time, not registration time, so load
+;; order relative to harnesses.clj is not load-bearing.
 (runtime-alpha/use! runtime :reviewers
                     {:file "reviewers.clj"
                      :after [:skein/spools-agents]
                      :call 'reviewers/install!
                      :required? true})
 ;; Chime is a vocabulary-agnostic notification engine: it installs bare here,
-;; config.clj registers this repo's attention rules (HITL checkpoints, agent
-;; failures, treadle errors), and each developer binds how they are notified
-;; in gitignored init.local.clj (loaded after this file on startup and
-;; reload). Unbound chime records loud notifier-missing failures.
+;; attention.clj registers this repo's attention rules (HITL checkpoints, agent
+;; failures, treadle errors, kanban lifecycle, parked runs), and each developer
+;; binds how they are notified in gitignored init.local.clj (loaded after this
+;; file on startup and reload). Unbound chime records loud notifier-missing
+;; failures.
 (runtime-alpha/use! runtime :skein/spools-chime
                     {:ns 'skein.spools.chime
                      :spools ['skein.spools/chime]
                      :call 'skein.spools.chime/install!
+                     :required? true})
+(runtime-alpha/use! runtime :attention
+                    {:file "attention.clj"
+                     :after [:skein/spools-chime :skein/spools-shuttle]
+                     :call 'attention/install!
                      :required? true})
 (runtime-alpha/use! runtime :skein/spools-kanban
                     {:ns 'skein.spools.kanban
@@ -96,8 +112,8 @@
                      :call 'skein.spools.kanban/install!
                      :required? true})
 ;; Cron is a generic weaver timer engine; install! only creates its scheduled
-;; executor. config.clj requires it (for the nvd-scan job's seed/jitter fns),
-;; so it must be synced before config loads.
+;; executor. nvd_scan.clj requires it (for the job's seed/jitter fns), so it
+;; must be synced before that module loads.
 (runtime-alpha/use! runtime :skein/spools-cron
                     {:ns 'skein.spools.cron
                      :spools ['skein.spools/cron]
@@ -106,21 +122,28 @@
 (runtime-alpha/use! runtime :config
                     {:file "config.clj"
                      :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
-                             :skein/spools-loom :skein/spools-shuttle :skein/spools-agents :skein/spools-bench
-                             :skein/spools-chime :skein/spools-cron]
+                             :skein/spools-loom :skein/spools-shuttle]
                      :call 'config/install!})
-;; Register the scheduled NVD deep-scan cron job here rather than in
-;; config/install! so config_test (which loads config.clj and calls install!
-;; directly) never triggers the job's startup gh seed against the real repo.
-;; The job's run!/seed fns live in config.clj beside the other repo policy;
-;; re-run on reload it re-seeds and re-registers idempotently.
-((requiring-resolve 'config/register-nvd-scan-job!))
+;; workflows.clj reuses config.clj's public CLI-tail helpers, so it loads after
+;; the :config module.
+(runtime-alpha/use! runtime :workflows
+                    {:file "workflows.clj"
+                     :after [:skein/spools-workflow :skein/spools-agents :config]
+                     :call 'workflows/install!
+                     :required? true})
+;; The NVD scan job is its own module (not part of config.clj) so config_test's
+;; direct config.clj load never registers the job or seeds against real gh.
+(runtime-alpha/use! runtime :nvd-scan
+                    {:file "nvd_scan.clj"
+                     :after [:skein/spools-cron :skein/spools-kanban]
+                     :call 'nvd-scan/install!
+                     :required? true})
 ;; Treadle installs last: its install! runs an initial gate scan, so every
-;; harness alias config.clj registers (e.g. pi-main) must already exist or a
+;; harness alias harnesses.clj registers (e.g. pi-main) must already exist or a
 ;; durable ready gate would be stamped treadle/error on every cold start.
 (runtime-alpha/use! runtime :skein/spools-treadle
                     {:ns 'skein.spools.treadle
                      :spools ['skein.spools/shuttle]
-                     :after [:skein/spools-shuttle :skein/spools-workflow :config]
+                     :after [:skein/spools-shuttle :skein/spools-workflow :harnesses :config :workflows]
                      :call 'skein.spools.treadle/install!
                      :required? true})

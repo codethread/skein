@@ -68,8 +68,9 @@
    ;; Shuttle-first within this JVM; runtime-deps intentionally poisons the basis, so it is last.
    "B" ['skein.shuttle-test 'skein.chime-sync-test 'skein.runtime-deps-test]
    ;; Medium add-libs suites share one JVM to amortize boot without exceeding shard A.
-   ;; nvd-scan-test load-files .skein/config.clj (the full devflow/spool stack)
-   ;; just as config-test does, so it shares this shard's boot.
+   ;; nvd-scan-test load-files .skein/nvd_scan.clj (which requires the cron
+   ;; spool root via add-libs) just as config-test does, so it shares this
+   ;; shard's boot.
    "C" ['skein.config-test 'skein.kanban-test 'skein.nvd-scan-test]})
 
 (def shard-timeout-minutes 5)

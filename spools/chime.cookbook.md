@@ -140,7 +140,7 @@ strand's attributes and matches only the transition you care about.
   You write the plain predicate; the engine handles "only once."
 
 Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
-in [`.skein/config.clj`](../.skein/config.clj), registered together in
+in [`.skein/attention.clj`](../.skein/attention.clj), registered together in
 `register-chime-rules!`; the fire-once-per-transition behaviour is pinned by
 `registered-rules-fire-end-to-end` and `dedup-and-reset-seen` in
 [`test/skein/chime_test.clj`](../test/skein/chime_test.clj).
@@ -253,7 +253,7 @@ with the strand's own attributes and age to catch a stuck condition.
   is the failure mode a mutation-only trigger would miss entirely.
 
 Honest source: this repo's `hitl-checkpoint-ready-rule` and `parked-run-rule` in
-[`.skein/config.clj`](../.skein/config.clj); readiness firing on both born-ready
+[`.skein/attention.clj`](../.skein/attention.clj); readiness firing on both born-ready
 and later-unblocked strands is covered by
 `ready-rule-fires-born-ready-and-when-unblocked` in
 [`test/skein/chime_test.clj`](../test/skein/chime_test.clj).

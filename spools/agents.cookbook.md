@@ -264,7 +264,7 @@ ride the control surface.
 Honest source: the panel composition layer in
 [`agents/README.md` §6](./agents/README.md#6-panels-presets-and-the-composition-layer),
 `council!` in [`agents.api.md`](./agents.api.md), this repo's cross-vendor GPT
-seats declared in [`.skein/config.clj`](../.skein/config.clj) (`review-gpt`,
+seats declared in [`.skein/harnesses.clj`](../.skein/harnesses.clj) (`review-gpt`,
 `hard-gpt`), and the same synthesizer-must-be-cross-vendor rule live in
 [`.skein/reviewers.clj`](../.skein/reviewers.clj).
 

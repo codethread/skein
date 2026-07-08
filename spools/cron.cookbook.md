@@ -149,64 +149,71 @@ external read, so the seed is unit-testable without I/O.
   thin wrapper that only supplies the real clock and read.
 
 Honest source: this repo's `nvd-seed-delay-ms` / `nvd-seed-delay` in
-[`.skein/config.clj`](../.skein/config.clj), seeded from the most recent
+[`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj), seeded from the most recent
 `scan-lock running` GitHub issue's creation time; the pure calculation's cases
 are pinned by `seed-delay-computes-first-fire` in
 [`test/skein/nvd_scan_test.clj`](../test/skein/nvd_scan_test.clj).
 
 ---
 
-## Recipe: Register the job from init.clj, not install!
+## Recipe: Give the job its own startup module, out of test-loaded config
 
 **Situation.** Your job's first act is a real side effect — a `gh` call, a network
-read to seed the schedule. But the spool's `install!` also runs under test, and
-you do not want a config-loading unit test to fire that side effect against the
-real world.
+read to seed the schedule. But your main config file's `install!` also runs under
+test, and you do not want a config-loading unit test to fire that side effect
+against the real world.
 
-**Composition.** Split the two registrations. Cron's own `install!` (a module
-`:call` in startup config) only creates the executor and registers no jobs. Put
-your `register!` call in `init.clj` as an explicit top-level form, *not* inside
-your config's `install!`. A test that loads the config namespace and calls
-`install!` directly then never touches the timer.
+**Composition.** Give the job a dedicated startup-file module. Cron's own
+`install!` (a module `:call` in startup config) only creates the executor and
+registers no jobs. The job file holds the `run!`/seed fns *and* an `install!`
+that performs the `register!` call; `init.clj` wires it as its own module. A
+test that loads your main config file and calls its `install!` never touches
+the timer, and a test of the job's logic loads the job file alone — loading
+defines vars only.
 
 ```clojure
-;; config.clj — the job's run!/seed fns live here beside the other repo policy,
-;; but registration does NOT happen in install!:
-(defn register-report-job! []
+;; report_job.clj (ns report-job) — the job's run!/seed fns and its
+;; registration live together in one dedicated module:
+(defn- register-report-job! []
   (cron/register! (current/runtime)
     {:id :nightly-report
      :interval-ms (* 24 60 60 1000)
      :jitter-ms   (* 60 60 1000)
-     :run!  'config/report-tick
-     :initial-delay-fn 'config/report-seed}))
+     :run!  'report-job/report-tick
+     :initial-delay-fn 'report-job/report-seed}))
 
-;; init.clj — startup wiring. Cron is synced (its install! builds the executor)
-;; before config loads, and the job is registered here as a top-level form:
+(defn install! [] {:jobs (register-report-job!)})
+
+;; init.clj — cron is synced (its install! builds the executor) before the
+;; job module loads; the module's install! performs the registration:
 (runtime-alpha/use! runtime :skein/spools-cron
   {:ns 'skein.spools.cron :spools ['skein.spools/cron]
    :call 'skein.spools.cron/install! :required? true})
-;; ... config module loads here ...
-((requiring-resolve 'config/register-report-job!))
+(runtime-alpha/use! runtime :report-job
+  {:file "report_job.clj" :after [:skein/spools-cron]
+   :call 'report-job/install! :required? true})
 ```
 
 **Why this shape.**
 
-- **`install!` is a test entry point; a startup file is not.** The config test
-  loads `config.clj` and calls `install!` to check registration wiring. If the
-  cron `register!` lived in `install!`, that test would fire the job's startup
-  seed — a real `gh` call — against the live repo. Keeping registration in
-  `init.clj` draws the line exactly where the test stops.
-- **The `:run!`/seed fns still live in config, beside the rest of the policy.**
-  Only the *registration call* moves to `init.clj`. The job's behaviour stays with
-  the other repo conventions, so there is one place to read what the job does.
-- **It stays idempotent on reload.** `init.clj` re-runs on reload, and
-  re-registering the same `:id` cancels the prior pending fire, so the top-level
-  registration form re-seeds and re-registers cleanly every time.
+- **Your main config's `install!` is a test entry point; the job module is not.**
+  The config test loads `config.clj` and calls `install!` to check registration
+  wiring. If the cron `register!` lived there, that test would fire the job's
+  startup seed — a real `gh` call — against the live repo. A dedicated module
+  draws the line exactly where the test stops.
+- **The `:run!`/seed fns and the registration stay together.** One file holds
+  what the job does *and* when it runs, instead of splitting behaviour and
+  wiring across files.
+- **It stays idempotent on reload.** Startup modules re-run on reload, and
+  re-registering the same `:id` cancels the prior pending fire, so the module's
+  `install!` re-seeds and re-registers cleanly every time.
 
-Honest source: this repo's `register-nvd-scan-job!` in
-[`.skein/config.clj`](../.skein/config.clj), called as a top-level form in
-[`.skein/init.clj`](../.skein/init.clj) with the explicit comment that it is kept
-out of `config/install!` so `config_test` never triggers the startup `gh` seed.
+Honest source: this repo's [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj)
+(`register-nvd-scan-job!` wrapped by its `install!`), wired as the `:nvd-scan`
+module in [`.skein/init.clj`](../.skein/init.clj) with the explicit comment that
+it is kept out of `config.clj` so `config_test` never triggers the startup `gh`
+seed; [`test/skein/nvd_scan_test.clj`](../test/skein/nvd_scan_test.clj) loads
+the job file alone to test the pure fns.
 
 ---
 
@@ -277,7 +284,7 @@ call, so a later failure can't drop the alert.
 
 Honest source: this repo's `:nvd-scan` job — `run-nvd-scan!`, `nvd-scan-tick`,
 the `scan-lock running` issue lock, and the p1-card raise — in
-[`.skein/config.clj`](../.skein/config.clj); the skip-when-locked, fail-without-key,
+[`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj); the skip-when-locked, fail-without-key,
 and findings-raise-a-card branches are covered by `run-skips-when-open-lock-held`,
 `run-fails-loudly-without-key`, and `run-findings-raise-p1-card-and-still-close`
 in [`test/skein/nvd_scan_test.clj`](../test/skein/nvd_scan_test.clj).
@@ -299,7 +306,7 @@ oldest first.
 ```clojure
 (cron/jobs runtime)
 ;; => [{:id :nvd-scan :interval-ms 518400000 :jitter-ms 3600000
-;;      :run! config/nvd-scan-tick :next-fire-at "..." :last-outcome {...}}]
+;;      :run! nvd-scan/nvd-scan-tick :next-fire-at "..." :last-outcome {...}}]
 
 (cron/failures runtime)
 ;; => [{:kind :run :job :nvd-scan :message "..." :at "..."}]

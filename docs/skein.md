@@ -81,13 +81,15 @@ User-facing Skein documentation lives in the source checkout under `docs/`; the 
 
 When working in this repository, also read the "Repo coordination workspace (.skein)" section of the root [`AGENTS.md`](../AGENTS.md).
 This repo-local guidance documents the installed runtime surface loaded from
-`.skein/init.clj` and `.skein/config.clj`: the classpath `skein.spools.workflow`
-spool, the git-distributed `skein.spools.devflow` spool (approved via a
-`.skein/spools.edn` git coordinate), the `devflow-*` CLI ops that drive the
-feature lifecycle, feature-scoped queries, and the `agent-plan` pattern for
-lightweight work DAGs.
+`.skein/init.clj` and its per-concern config modules (`config.clj` for queries
+and the CLI op surface, `workflows.clj` for hand-authored workflows,
+`harnesses.clj`, `attention.clj`, `nvd_scan.clj`, `reviewers.clj`): the
+classpath `skein.spools.workflow` spool, the git-distributed
+`skein.spools.devflow` spool (approved via a `.skein/spools.edn` git
+coordinate), the `devflow-*` CLI ops that drive the feature lifecycle,
+feature-scoped queries, and the `agent-plan` pattern for lightweight work DAGs.
 
-The same config registers the **landing workflow** (family `land`) behind the
+`.skein/workflows.clj` registers the **landing workflow** (family `land`) behind the
 `land` op — the coordinator-only discipline for taking a finished branch to
 landed. It is a single sequential `skein.spools.workflow` molecule whose ordering
 is the enforcement: push the branch and open a draft PR, drive CI green at HEAD,

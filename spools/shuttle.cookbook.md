@@ -105,7 +105,7 @@ Honest source: the registry tests `harness-registry-validates-and-resolves-alias
 and `stdin-prompt-stays-off-argv` in
 [`test/skein/shuttle_test.clj`](../test/skein/shuttle_test.clj). This repo applies
 the same shape in its own harness roster
-([`.skein/config.clj`](../.skein/config.clj), `register-harness-aliases!`) — one
+([`.skein/harnesses.clj`](../.skein/harnesses.clj), `register-harness-aliases!`) — one
 concrete harness plus named tiers over it.
 
 ---
@@ -163,7 +163,7 @@ with `:resume <predecessor-run-id>` then continues that predecessor's session.
 Honest source: `defharness-validates-resume-splice` and
 `resume-continues-a-captured-session` (with the `session-echo` fake harness) in
 [`test/skein/shuttle_test.clj`](../test/skein/shuttle_test.clj), and the
-`:codex` resume note in [`.skein/config.clj`](../.skein/config.clj).
+`:codex` resume note in [`.skein/harnesses.clj`](../.skein/harnesses.clj).
 
 ---
 

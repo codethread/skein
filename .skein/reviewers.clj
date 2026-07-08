@@ -21,7 +21,7 @@
 
   Entry shape (validated loudly by skein.spools.agents/defroster!):
     :name     unique reviewer name; becomes the run's review focus
-    :harness  harness alias from config.clj (resolved at review time)
+    :harness  harness alias from harnesses.clj (resolved at review time)
     :contract the reviewer's single concern - precise, judgmental, actionable
     :scope    optional prompt-level confinement (guidance text only). The
               changed-file list and commit range are supplied separately as
