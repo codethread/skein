@@ -37,7 +37,7 @@ tasks:
   - id: 8
     description: Convert attention.clj rules to defrule
     task_file: tasks/008-convert-attention-rules.md
-    status: pending
+    status: complete
     blocked_by: [4]
   - id: 9
     description: Byte-identical surface verification
