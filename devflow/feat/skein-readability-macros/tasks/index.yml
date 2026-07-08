@@ -32,7 +32,7 @@ tasks:
   - id: 7
     description: Derive devflow-conventions listings from remembered entries
     task_file: tasks/007-derive-conventions-listings.md
-    status: pending
+    status: complete
     blocked_by: [6]
   - id: 8
     description: Convert attention.clj rules to defrule
