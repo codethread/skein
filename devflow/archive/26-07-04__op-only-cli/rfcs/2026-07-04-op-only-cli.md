@@ -1,9 +1,6 @@
 # Op-only CLI: root-level op dispatch, batteries spool, invoke envelope
 
-**Document ID:** `RFC-019`
-**Status:** Open
-**Date:** 2026-07-04
-**Related:** [CLI Surface](../specs/cli.md) (SPEC-002), [REPL API](../specs/repl-api.md), [Weaver Runtime](../specs/daemon-runtime.md), [TENETS](../TENETS.md) (TEN-000/001/003/004/006), [PHILOSOPHY](../PHILOSOPHY.md), `src/skein/core/weaver/socket.clj` (allowlist + dispatch case), `src/skein/api/weaver/alpha.clj` (`register-op!`, `register-built-in-ops!`)
+**Document ID:** `RFC-019` **Status:** Open **Date:** 2026-07-04 **Related:** [CLI Surface](../specs/cli.md) (SPEC-002), [REPL API](../specs/repl-api.md), [Weaver Runtime](../specs/daemon-runtime.md), [TENETS](../TENETS.md) (TEN-000/001/003/004/006), [PHILOSOPHY](../PHILOSOPHY.md), `src/skein/core/weaver/socket.clj` (allowlist + dispatch case), `src/skein/api/weaver/alpha.clj` (`register-op!`, `register-built-in-ops!`)
 
 ## RFC-019.P1 Problem
 

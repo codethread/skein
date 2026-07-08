@@ -6,10 +6,7 @@
 
 Type: AFK
 
-Add `skein.macros.queries` beside `skein.macros.patterns`: a `defquery` macro that fuses a named query's var, docstring, its
-conventions usage string, and its `:where`/params data into one block, remembering it per-namespace for an `install-queries!`
-that registers it through the blessed query API. Mirror the `defpattern` remember-then-install shape exactly. Do not convert any
-config file — that is task 5.
+Add `skein.macros.queries` beside `skein.macros.patterns`: a `defquery` macro that fuses a named query's var, docstring, its conventions usage string, and its `:where`/params data into one block, remembering it per-namespace for an `install-queries!` that registers it through the blessed query API. Mirror the `defpattern` remember-then-install shape exactly. Do not convert any config file — that is task 5.
 
 ## TASK-Srm-002.P2 Must implement exactly
 

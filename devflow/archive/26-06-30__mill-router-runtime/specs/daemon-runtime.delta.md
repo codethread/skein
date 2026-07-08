@@ -1,10 +1,6 @@
 # Weaver Runtime delta for mill router runtime
 
-**Document ID:** `DELTA-MillRouterRuntime-DaemonRuntime-001`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-30
+**Document ID:** `DELTA-MillRouterRuntime-DaemonRuntime-001` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-30
 
 ## DELTA-MillRouterRuntime-DaemonRuntime-001.P1 Summary
 

@@ -1,23 +1,12 @@
 # Alpha Surface delta for workflow-shell-gates
 
-**Document ID:** `DELTA-ShellGates-001`
-**Root spec:** [alpha-surface.md](../../../specs/alpha-surface.md) (`SPEC-005`)
-**Feature:** [../proposal.md](../proposal.md) (`PROP-ShellGates-001`)
-**Status:** Merged
-**Last Updated:** 2026-07-07
+**Document ID:** `DELTA-ShellGates-001` **Root spec:** [alpha-surface.md](../../../specs/alpha-surface.md) (`SPEC-005`) **Feature:** [../proposal.md](../proposal.md) (`PROP-ShellGates-001`) **Status:** Merged **Last Updated:** 2026-07-07
 
 ## DELTA-ShellGates-001.P1 Summary
 
-This feature adds one new classpath-shipped reference spool, `skein.spools.reed`,
-that fulfils workflow gates whose waiter is `:shell` by running the gate's command
-directly and closing (or loudly stamping) the gate. It ships with a hand-authored
-contract doc `spools/reed.md` (plus `reed.cookbook.md` and generated `reed.api.md`).
+This feature adds one new classpath-shipped reference spool, `skein.spools.reed`, that fulfils workflow gates whose waiter is `:shell` by running the gate's command directly and closing (or loudly stamping) the gate. It ships with a hand-authored contract doc `spools/reed.md` (plus `reed.cookbook.md` and generated `reed.api.md`).
 
-The only alpha-surface change is a **contract-index** change: `reed` joins the
-in-contract classpath spool list. There is **no** behavioral change to the four root
-specs (`SPEC-001`..`SPEC-004`) and no change to the blessed `skein.api.*.alpha`
-surface — this is spool-layer behaviour over the existing gate primitive and the
-existing `workflow/register-executor!` registry, both already in-contract.
+The only alpha-surface change is a **contract-index** change: `reed` joins the in-contract classpath spool list. There is **no** behavioral change to the four root specs (`SPEC-001`..`SPEC-004`) and no change to the blessed `skein.api.*.alpha` surface — this is spool-layer behaviour over the existing gate primitive and the existing `workflow/register-executor!` registry, both already in-contract.
 
 ## DELTA-ShellGates-001.P2 Contract changes — SPEC-005.C3 (classpath reference spools)
 

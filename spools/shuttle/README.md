@@ -152,10 +152,7 @@ An interactive run's completion signal is graph state, not process exit:
 - **reap policy**: `auto` (default) captures the transcript (see [§4.1](#41-transcript-capture); path recorded in `shuttle/log`) and stops the session on completion; `manual` marks the run done but leaves the session to the human. Teardown failure is recorded loudly in `shuttle/teardown-error` but never blocks completion.
 - **dead sessions**: a session that dies before its work completes (user closes the pane, agent crashes) marks the run `failed` loudly. There is no auto-respawn — restarting an interactive session would silently discard a human conversation; recovery is a deliberate retry.
 
-If you want the human notified as soon as a session is ready to attach, keep that
-in userland: chime can register a rule matching `shuttle/mode=interactive` and
-`shuttle/phase=running` and include the same attach hint shown by `strand agent
-ps`. See [Chime cookbook: Notify when an interactive session is waiting](../chime.cookbook.md#recipe-notify-when-an-interactive-session-is-waiting).
+If you want the human notified as soon as a session is ready to attach, keep that in userland: chime can register a rule matching `shuttle/mode=interactive` and `shuttle/phase=running` and include the same attach hint shown by `strand agent ps`. See [Chime cookbook: Notify when an interactive session is waiting](../chime.cookbook.md#recipe-notify-when-an-interactive-session-is-waiting).
 
 ### 5.2 Crash reconciliation
 

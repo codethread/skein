@@ -1,10 +1,6 @@
 # REPL API Delta: Daemon Runtime
 
-**Document ID:** `SPEC-003-D001`
-**Status:** Merged
-**Last Updated:** 2026-06-25
-**Root spec:** [REPL API](../../../specs/repl-api.md)
-**Feature spec:** [Daemon Runtime](./daemon-runtime.md)
+**Document ID:** `SPEC-003-D001` **Status:** Merged **Last Updated:** 2026-06-25 **Root spec:** [REPL API](../../../specs/repl-api.md) **Feature spec:** [Daemon Runtime](./daemon-runtime.md)
 
 ## SPEC-003-D001.P1 Changed purpose
 

@@ -1,13 +1,6 @@
 # Daemon Runtime Plan
 
-**Document ID:** `PLAN-001`
-**Feature:** `daemon-runtime`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md)
-**Root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Task Model](../../specs/strand-model.md)
-**Feature specs:** [Daemon Runtime](./specs/daemon-runtime.md), [CLI delta](./specs/cli.delta.md), [REPL delta](./specs/repl-api.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-25
+**Document ID:** `PLAN-001` **Feature:** `daemon-runtime` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) **Root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Task Model](../../specs/strand-model.md) **Feature specs:** [Daemon Runtime](./specs/daemon-runtime.md), [CLI delta](./specs/cli.delta.md), [REPL delta](./specs/repl-api.delta.md) **Status:** Shipped **Last Updated:** 2026-06-25
 
 ## PLAN-001.P1 Goal and scope
 

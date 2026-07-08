@@ -1,32 +1,14 @@
 # Feature Tracking Registry
 
-**Document ID:** `RFC-014`
-**Status:** Implemented
-**Date:** 2026-07-02
-**Related:** [RFC-011](../archive/26-07-02__attention-surface/rfcs/2026-07-02-coordination-attention-surface.md) (attention surface for workflow runs), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), [weaver-guild proposal](../archive/26-07-02__weaver-guild/proposal.md) (cross-weaver tie-in), [discovery tiers](../../docs/skein.md#discovery-tiers-help-about-prime)
+**Document ID:** `RFC-014` **Status:** Implemented **Date:** 2026-07-02 **Related:** [RFC-011](../archive/26-07-02__attention-surface/rfcs/2026-07-02-coordination-attention-surface.md) (attention surface for workflow runs), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), [weaver-guild proposal](../archive/26-07-02__weaver-guild/proposal.md) (cross-weaver tie-in), [discovery tiers](../../docs/skein.md#discovery-tiers-help-about-prime)
 
 ## RFC-014.P1 Problem
 
-"What is in flight in this repo right now?" has no single answer. The strand
-graph answers it only for work that happens to be strand-tracked — devflow
-molecules, `agent-plan` DAGs, delegate pipelines. Work driven by other
-implementations is invisible: file-based AFK task queues
-(`devflow/feat/*/tasks/index.yml`), ad hoc agent sessions, and humans editing
-directly.
+"What is in flight in this repo right now?" has no single answer. The strand graph answers it only for work that happens to be strand-tracked — devflow molecules, `agent-plan` DAGs, delegate pipelines. Work driven by other implementations is invisible: file-based AFK task queues (`devflow/feat/*/tasks/index.yml`), ad hoc agent sessions, and humans editing directly.
 
-Concrete incident (2026-07-02): two agent sessions shared this checkout. One
-had to fall back to polling `git status` and file mtimes to detect that the
-other was mid-flight on the namespace-tier docs sweep, because that session
-had no strand presence — `strand ready --query work`, `workflow-runs`, and
-`flow-await` could say nothing about it. Meanwhile the weaver-guild AFK loop
-(file-based queue in a worktree) was equally invisible to everyone else until
-a marker strand was hand-authored after the fact. The coordination surface
-exists (RFC-011: `flow-await`, `flow-status`, `stalled-gates`) but only for
-runs that live in the graph.
+Concrete incident (2026-07-02): two agent sessions shared this checkout. One had to fall back to polling `git status` and file mtimes to detect that the other was mid-flight on the namespace-tier docs sweep, because that session had no strand presence — `strand ready --query work`, `workflow-runs`, and `flow-await` could say nothing about it. Meanwhile the weaver-guild AFK loop (file-based queue in a worktree) was equally invisible to everyone else until a marker strand was hand-authored after the fact. The coordination surface exists (RFC-011: `flow-await`, `flow-status`, `stalled-gates`) but only for runs that live in the graph.
 
-The cost is real: sessions can't gate merges on each other, can't discover
-each other's worktrees/branches, and re-derive state from filesystem
-side effects.
+The cost is real: sessions can't gate merges on each other, can't discover each other's worktrees/branches, and re-derive state from filesystem side effects.
 
 ## RFC-014.P2 Goals
 
@@ -56,11 +38,7 @@ side effects.
 
 ### RFC-014.O1 Convention only
 
-Document a marker-strand convention in the strand skill and `AGENTS.md`:
-every session/feature creates one strand
-(`feature=<slug>`, `owner`, `worktree`, `branch`, body describing the work)
-and closes it on merge/abandon. The existing `feature-active`/`work` queries
-already surface it.
+Document a marker-strand convention in the strand skill and `AGENTS.md`: every session/feature creates one strand (`feature=<slug>`, `owner`, `worktree`, `branch`, body describing the work) and closes it on merge/abandon. The existing `feature-active`/`work` queries already surface it.
 
 - Pros: zero code; works today (the weaver-guild marker strand `y9z8t` is
   exactly this).
@@ -70,9 +48,7 @@ already surface it.
 
 ### RFC-014.O2 Repo-local init.clj ops
 
-Extend this repo's `.skein/init.clj` conventions (the `devflow-*`/`flow-*`
-op family) with `feature-track`, `feature-finish`, a `features` query, and a
-`feature-await` op wrapping the marker-strand convention.
+Extend this repo's `.skein/init.clj` conventions (the `devflow-*`/`flow-*` op family) with `feature-track`, `feature-finish`, a `features` query, and a `feature-await` op wrapping the marker-strand convention.
 
 - Pros: fits the existing repo-conventions surface (`devflow-conventions`
   already indexes ops/queries); scriptable from any harness.
@@ -81,19 +57,7 @@ op family) with `feature-track`, `feature-finish`, a `features` query, and a
 
 ### RFC-014.O3 Shared roster spool
 
-Ship a small `skein.spools.roster` on the classpath beside
-workflow/devflow: a tiny attribute vocabulary (`roster/feature`,
-`roster/owner`, `roster/worktree`, `roster/branch`, `roster/engine`,
-`roster/heartbeat`) plus helpers — `track!`, `finish!`,
-`roster` (query), `await-quiet!` (block until no active, non-stale entries
-for a scope). An event-handler adapter stamps roster attributes onto
-workflow/devflow roots from their existing `family`/`feature` attributes, so
-strand-tracked flows register for free; file-based loops and ad hoc sessions
-make one `track!` call (or `strand <op>` equivalent registered by the spool).
-Liveness is derived, not manually maintained: any graph mutation by the
-tracked driver counts as a heartbeat, and an explicit `heartbeat!` exists
-only for engines that never touch the graph between registration and finish
-(the honest cost for those engines is periodic touches, acknowledged in C1).
+Ship a small `skein.spools.roster` on the classpath beside workflow/devflow: a tiny attribute vocabulary (`roster/feature`, `roster/owner`, `roster/worktree`, `roster/branch`, `roster/engine`, `roster/heartbeat`) plus helpers — `track!`, `finish!`, `roster` (query), `await-quiet!` (block until no active, non-stale entries for a scope). An event-handler adapter stamps roster attributes onto workflow/devflow roots from their existing `family`/`feature` attributes, so strand-tracked flows register for free; file-based loops and ad hoc sessions make one `track!` call (or `strand <op>` equivalent registered by the spool). Liveness is derived, not manually maintained: any graph mutation by the tracked driver counts as a heartbeat, and an explicit `heartbeat!` exists only for engines that never touch the graph between registration and finish (the honest cost for those engines is periodic touches, acknowledged in C1).
 
 - Pros: consistent vocabulary everywhere; awaitable (G2); free for
   strand-tracked flows (G3); staleness explicit via heartbeat (G4); and the

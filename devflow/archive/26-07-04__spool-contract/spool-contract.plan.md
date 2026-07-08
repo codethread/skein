@@ -1,13 +1,6 @@
 # Spool contract Plan
 
-**Document ID:** `SC-PLAN-001`
-**Feature:** `spool-contract`
-**Proposal:** [proposal.md](./proposal.md)
-**Related RFCs:** [Registry-free git distribution for spools](../../archive/26-07-03__spool-git-distribution/rfcs/2026-07-03-spool-git-distribution.md) (RFC-017), [Spool `:needs` targeting skein-shipped namespaces](../../rfcs/2026-07-03-spool-needs-shipped-namespaces.md) (RFC-018)
-**Root specs:** [repl-api.md](../../specs/repl-api.md), [daemon-runtime.md](../../specs/daemon-runtime.md)
-**Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-04
+**Document ID:** `SC-PLAN-001` **Feature:** `spool-contract` **Proposal:** [proposal.md](./proposal.md) **Related RFCs:** [Registry-free git distribution for spools](../../archive/26-07-03__spool-git-distribution/rfcs/2026-07-03-spool-git-distribution.md) (RFC-017), [Spool `:needs` targeting skein-shipped namespaces](../../rfcs/2026-07-03-spool-needs-shipped-namespaces.md) (RFC-018) **Root specs:** [repl-api.md](../../specs/repl-api.md), [daemon-runtime.md](../../specs/daemon-runtime.md) **Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) **Status:** Shipped **Last Updated:** 2026-07-04
 
 ## SC-PLAN-001.P1 Goal and scope
 

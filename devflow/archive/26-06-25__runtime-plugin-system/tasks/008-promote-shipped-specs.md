@@ -1,9 +1,6 @@
 # Promote Shipped Specs
 
-**Document ID:** `RPS-TASK-008`
-**Status:** Complete
-**Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md)
-**Specs:** [daemon-runtime.delta.md](../specs/daemon-runtime.delta.md), [repl-api.delta.md](../specs/repl-api.delta.md), [cli.delta.md](../specs/cli.delta.md)
+**Document ID:** `RPS-TASK-008` **Status:** Complete **Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md) **Specs:** [daemon-runtime.delta.md](../specs/daemon-runtime.delta.md), [repl-api.delta.md](../specs/repl-api.delta.md), [cli.delta.md](../specs/cli.delta.md)
 
 ## RPS-TASK-008.P1 Scope
 

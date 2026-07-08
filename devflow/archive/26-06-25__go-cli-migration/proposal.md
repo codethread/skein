@@ -1,10 +1,6 @@
 # Go CLI Migration Proposal
 
-**Document ID:** `GOCLI-PROP-001`
-**Status:** Shipped
-**Last Updated:** 2026-06-25
-**Related RFCs:** [RFC-003 Fast JSON Socket CLI](./rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](./rfcs/2026-06-25-go-cli-migration.md)
-**Related root specs:** [CLI Surface](../../specs/cli.md), [Daemon Runtime](../../specs/daemon-runtime.md), [Project Tenets](../../TENETS.md)
+**Document ID:** `GOCLI-PROP-001` **Status:** Shipped **Last Updated:** 2026-06-25 **Related RFCs:** [RFC-003 Fast JSON Socket CLI](./rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](./rfcs/2026-06-25-go-cli-migration.md) **Related root specs:** [CLI Surface](../../specs/cli.md), [Daemon Runtime](../../specs/daemon-runtime.md), [Project Tenets](../../TENETS.md)
 
 ## GOCLI-PROP-001.P1 Problem
 

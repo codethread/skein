@@ -1,9 +1,6 @@
 # Route CLI Through Daemon
 
-**Document ID:** `TASK-003`
-**Feature:** `daemon-runtime`
-**Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md)
-**Specs:** [../specs/cli.delta.md](../specs/cli.delta.md), [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
+**Document ID:** `TASK-003` **Feature:** `daemon-runtime` **Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md) **Specs:** [../specs/cli.delta.md](../specs/cli.delta.md), [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
 
 ## TASK-003.P1 Scope
 

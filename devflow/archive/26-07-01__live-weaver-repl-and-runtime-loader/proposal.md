@@ -1,9 +1,6 @@
 # Live Weaver REPL And Runtime Loader Proposal
 
-**Document ID:** `LWRL-PROP-001`
-**Last Updated:** 2026-06-30
-**Related RFCs:** None
-**Related root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md)
+**Document ID:** `LWRL-PROP-001` **Last Updated:** 2026-06-30 **Related RFCs:** None **Related root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md)
 
 ## LWRL-PROP-001.P1 Problem
 

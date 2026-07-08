@@ -1,10 +1,6 @@
 # Runtime Transformations PRD delta for skein-rename
 
-**Document ID:** `SR-DELTA-005`
-**Root document:** [runtime-transformations.md](../../../prd/runtime-transformations.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-26
+**Document ID:** `SR-DELTA-005` **Root document:** [runtime-transformations.md](../../../prd/runtime-transformations.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-26
 
 ## SR-DELTA-005.P1 Summary
 

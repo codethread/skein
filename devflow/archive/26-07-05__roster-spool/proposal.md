@@ -1,9 +1,6 @@
 # Roster Spool Proposal
 
-**Document ID:** `PROP-RosterSpool-001`
-**Last Updated:** 2026-07-05
-**Related RFCs:** [RFC-014 Feature Tracking Registry](../../rfcs/2026-07-02-feature-tracking-registry.md)
-**Related root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md), [Strand Model](../../specs/strand-model.md)
+**Document ID:** `PROP-RosterSpool-001` **Last Updated:** 2026-07-05 **Related RFCs:** [RFC-014 Feature Tracking Registry](../../rfcs/2026-07-02-feature-tracking-registry.md) **Related root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md), [Strand Model](../../specs/strand-model.md)
 
 ## PROP-RosterSpool-001.P1 Problem
 

@@ -6,9 +6,7 @@
 
 Type: AFK
 
-Implement DELTA-Werg-001 items D1.7–D1.8 in the engine and rewire
-`skein.spools.devflow` (D2.1–D2.3) to use them, removing the per-stage
-revision-wrapper boilerplate.
+Implement DELTA-Werg-001 items D1.7–D1.8 in the engine and rewire `skein.spools.devflow` (D2.1–D2.3) to use them, removing the per-stage revision-wrapper boilerplate.
 
 ## TASK-Werg-002.P2 Must implement exactly
 

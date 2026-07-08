@@ -1,10 +1,6 @@
 # CLI Surface delta for library author testing support
 
-**Document ID:** `LAT-DELTA-003`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-03
+**Document ID:** `LAT-DELTA-003` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-03
 
 ## LAT-DELTA-003.P1 Summary
 

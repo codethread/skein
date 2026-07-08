@@ -1,9 +1,6 @@
 # REPL API
 
-**Document ID:** `SPEC-003`
-**Status:** Implemented
-**Last Updated:** 2026-07-05
-**Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`, `src/skein/userland/alpha.clj`, `src/skein/test`
+**Document ID:** `SPEC-003` **Status:** Implemented **Last Updated:** 2026-07-05 **Code:** `src/skein/repl.clj`, `src/skein/api/*.alpha`, `src/skein/userland/alpha.clj`, `src/skein/test`
 
 ## SPEC-003.P1 Purpose
 
@@ -136,12 +133,7 @@ Maven dependencies declared in an approved spool root's top-level `deps.edn :dep
 
 ## SPEC-003.P5a Userland ergonomics module
 
-`skein.userland.alpha` is a blessed but **userland-only** terse ergonomics layer
-over the explicit-runtime API. It lets trusted userland config (`init.clj`),
-local glue, and tooling hold one weaver runtime and make terse calls
-(`(ready)`, `(strand! "title")`) instead of threading the runtime through every
-`skein.api.*.alpha` call. Ergonomics at the cost of hidden ambient resolution is
-a trade users are allowed to make; skein namespaces are not.
+`skein.userland.alpha` is a blessed but **userland-only** terse ergonomics layer over the explicit-runtime API. It lets trusted userland config (`init.clj`), local glue, and tooling hold one weaver runtime and make terse calls (`(ready)`, `(strand! "title")`) instead of threading the runtime through every `skein.api.*.alpha` call. Ergonomics at the cost of hidden ambient resolution is a trade users are allowed to make; skein namespaces are not.
 
 - **SPEC-003.C24:** `skein.userland.alpha` is a strict downstream consumer tier.
   No `skein.*` namespace — engine, blessed API, shipped spool, or `skein.repl` —

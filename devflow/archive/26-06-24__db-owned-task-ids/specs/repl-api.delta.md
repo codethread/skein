@@ -1,11 +1,6 @@
 # REPL API Delta: DB-owned Task IDs
 
-**Document ID:** `DELTA-003`
-**Status:** Merged
-**Target root spec:** [REPL API](../../../specs/repl-api.md)
-**Feature:** `db-owned-task-ids`
-**Last Updated:** 2026-06-24
-**Configuration identification:** `DELTA-003` is the REPL API delta for `db-owned-task-ids`. Every nested point ID is prefixed with `DELTA-003`.
+**Document ID:** `DELTA-003` **Status:** Merged **Target root spec:** [REPL API](../../../specs/repl-api.md) **Feature:** `db-owned-task-ids` **Last Updated:** 2026-06-24 **Configuration identification:** `DELTA-003` is the REPL API delta for `db-owned-task-ids`. Every nested point ID is prefixed with `DELTA-003`.
 
 ## DELTA-003.P1 Summary
 

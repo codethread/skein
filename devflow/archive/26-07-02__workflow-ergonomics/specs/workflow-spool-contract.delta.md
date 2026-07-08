@@ -1,13 +1,8 @@
 # Workflow/Devflow Spool Contract Delta
 
-**Document ID:** `DELTA-Werg-001`
-**Last Updated:** 2026-07-02
-**Status:** Merged
-**Target contracts:** [`src/skein/spools/workflow.md`](../../../../src/skein/spools/workflow.md), [`src/skein/spools/devflow.md`](../../../../src/skein/spools/devflow.md), repo-local [`.skein/AGENTS.md`](../../../../.skein/AGENTS.md)
+**Document ID:** `DELTA-Werg-001` **Last Updated:** 2026-07-02 **Status:** Merged **Target contracts:** [`src/skein/spools/workflow.md`](../../../../src/skein/spools/workflow.md), [`src/skein/spools/devflow.md`](../../../../src/skein/spools/devflow.md), repo-local [`.skein/AGENTS.md`](../../../../.skein/AGENTS.md)
 
-The spool contract docs live beside their code and are updated in the same
-change as the implementation; this delta enumerates the contract-visible
-changes so plan/tasks stay honest and finish/archive can verify them.
+The spool contract docs live beside their code and are updated in the same change as the implementation; this delta enumerates the contract-visible changes so plan/tasks stay honest and finish/archive can verify them.
 
 ## DELTA-Werg-001.D1 Engine (`skein.spools.workflow`)
 

@@ -1,19 +1,10 @@
 # Workflow Ergonomics Plan
 
-**Document ID:** `PLAN-Werg-001`
-**Feature:** `workflow-ergonomics`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none
-**Root specs:** none directly; spool contracts are [workflow.md](../../../src/skein/spools/workflow.md) / [devflow.md](../../../src/skein/spools/devflow.md)
-**Feature specs:** [specs/workflow-spool-contract.delta.md](./specs/workflow-spool-contract.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-02
+**Document ID:** `PLAN-Werg-001` **Feature:** `workflow-ergonomics` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** none directly; spool contracts are [workflow.md](../../../src/skein/spools/workflow.md) / [devflow.md](../../../src/skein/spools/devflow.md) **Feature specs:** [specs/workflow-spool-contract.delta.md](./specs/workflow-spool-contract.delta.md) **Status:** Shipped **Last Updated:** 2026-07-02
 
 ## PLAN-Werg-001.P1 Goal and scope
 
-Deliver the ergonomics fixes enumerated in [PROP-Werg-001](./proposal.md) across
-the workflow engine, the devflow spool, and the repo `.skein` surface, with the
-contract-visible changes tracked in [DELTA-Werg-001](./specs/workflow-spool-contract.delta.md).
+Deliver the ergonomics fixes enumerated in [PROP-Werg-001](./proposal.md) across the workflow engine, the devflow spool, and the repo `.skein` surface, with the contract-visible changes tracked in [DELTA-Werg-001](./specs/workflow-spool-contract.delta.md).
 
 ## PLAN-Werg-001.P2 Approach
 

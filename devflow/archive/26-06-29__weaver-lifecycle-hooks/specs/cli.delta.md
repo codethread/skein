@@ -1,10 +1,6 @@
 # CLI Surface delta for weaver lifecycle hooks
 
-**Document ID:** `WLH-DELTA-003`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-29
+**Document ID:** `WLH-DELTA-003` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-29
 
 ## WLH-DELTA-003.P1 Summary
 

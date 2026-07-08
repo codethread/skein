@@ -1,13 +1,6 @@
 # Go CLI Migration Plan
 
-**Document ID:** `GOCLI-PLAN-001`
-**Feature:** `go-cli-migration`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-003 Fast JSON Socket CLI](./rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](./rfcs/2026-06-25-go-cli-migration.md)
-**Root specs:** [CLI Surface `SPEC-002`](../../specs/cli.md), [Daemon Runtime `SPEC-004`](../../specs/daemon-runtime.md), [Project Tenets](../../TENETS.md)
-**Feature specs:** [CLI delta `SPEC-002-D003`](./specs/cli.delta.md), [Daemon Runtime delta `SPEC-004-D002`](./specs/daemon-runtime.delta.md), [JSON Socket Protocol `GOCLI-PROTO-001`](./specs/json-socket-protocol.md), [Tenets delta `TEN-D001`](./specs/tenets.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-25
+**Document ID:** `GOCLI-PLAN-001` **Feature:** `go-cli-migration` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-003 Fast JSON Socket CLI](./rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](./rfcs/2026-06-25-go-cli-migration.md) **Root specs:** [CLI Surface `SPEC-002`](../../specs/cli.md), [Daemon Runtime `SPEC-004`](../../specs/daemon-runtime.md), [Project Tenets](../../TENETS.md) **Feature specs:** [CLI delta `SPEC-002-D003`](./specs/cli.delta.md), [Daemon Runtime delta `SPEC-004-D002`](./specs/daemon-runtime.delta.md), [JSON Socket Protocol `GOCLI-PROTO-001`](./specs/json-socket-protocol.md), [Tenets delta `TEN-D001`](./specs/tenets.delta.md) **Status:** Shipped **Last Updated:** 2026-06-25
 
 ## GOCLI-PLAN-001.P1 Goal and scope
 

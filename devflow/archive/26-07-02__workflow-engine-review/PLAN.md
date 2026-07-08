@@ -4,43 +4,19 @@
 > `skein.libs.*` / `src/skein/libs/` / `test/skein/libs/` below now live at
 > `skein.spools.*` / `src/skein/spools/` / `test/skein/spools/`.
 
-Handover document for a fresh session with zero context. Read this whole file,
-then `CLAUDE.md`, `devflow/TENETS.md`, `devflow/PHILOSOPHY.md`, and
-`src/skein/libs/workflow.md` before writing code.
+Handover document for a fresh session with zero context. Read this whole file, then `CLAUDE.md`, `devflow/TENETS.md`, `devflow/PHILOSOPHY.md`, and `src/skein/libs/workflow.md` before writing code.
 
 ## Status: EXECUTED (2026-07-02, same session that wrote this plan)
 
-All tasks landed; this file is now a record. Outcome: test
-`workflow-pr-flow-rebinds-forge-without-lib-changes` in
-`test/skein/libs/workflow_test.clj` proves GitHub-reference and
-GitLab-partial-override runs of identical definitions, including binding
-survival across a routed loop round. Zero new lib surface was needed (task 4
-gate: the `bind-attrs` helper was written once, no friction). Convention
-documented in `workflow.md` ("Tool bindings" section).
+All tasks landed; this file is now a record. Outcome: test `workflow-pr-flow-rebinds-forge-without-lib-changes` in `test/skein/libs/workflow_test.clj` proves GitHub-reference and GitLab-partial-override runs of identical definitions, including binding survival across a routed loop round. Zero new lib surface was needed (task 4 gate: the `bind-attrs` helper was written once, no friction). Convention documented in `workflow.md` ("Tool bindings" section).
 
-One deviation from the task text below: binding maps must use **simple,
-non-namespaced keyword keys** (`:pr.ci.wait`, `:instruction`), not the
-string-keyed shape sketched in task 1. The build surfaced why: the JSON
-layer keywordizes map keys on read AND writes namespaced keyword keys via
-`name`, silently dropping the namespace — so `"workflow/instruction"`-style
-keys inside round-tripping data degrade after one context round-trip. The
-definition maps simple binding keys onto canonical string attribute keys
-instead. That silent namespace drop in `skein.db`'s JSON encoding is itself
-a fail-loudly (TEN-003) hazard worth a separate look — flagged, not fixed
-here (out of scope: engine changes).
+One deviation from the task text below: binding maps must use **simple, non-namespaced keyword keys** (`:pr.ci.wait`, `:instruction`), not the string-keyed shape sketched in task 1. The build surfaced why: the JSON layer keywordizes map keys on read AND writes namespaced keyword keys via `name`, silently dropping the namespace — so `"workflow/instruction"`-style keys inside round-tripping data degrade after one context round-trip. The definition maps simple binding keys onto canonical string attribute keys instead. That silent namespace drop in `skein.db`'s JSON encoding is itself a fail-loudly (TEN-003) hazard worth a separate look — flagged, not fixed here (out of scope: engine changes).
 
-Post-review hardening (same day): the plan's "plain map merge / no fixed
-field names" sketch (layer 1 below) was tightened after code review. User
-overrides deep-merge over the reference (`merge-with merge`), proven by a
-two-field binding (`:pr.ci.wait` carries `:instruction` + `:skills`) where
-only `:instruction` is rebound and `:skills` survives. `bind-attrs` now
-owns a fixed binding-key vocabulary and fails loudly (TEN-003) on unbound
-actions or unknown keys instead of emitting silently bare steps.
+Post-review hardening (same day): the plan's "plain map merge / no fixed field names" sketch (layer 1 below) was tightened after code review. User overrides deep-merge over the reference (`merge-with merge`), proven by a two-field binding (`:pr.ci.wait` carries `:instruction` + `:skills`) where only `:instruction` is rebound and `:skills` survives. `bind-attrs` now owns a fixed binding-key vocabulary and fails loudly (TEN-003) on unbound actions or unknown keys instead of emitting silently bare steps.
 
 ## Why this work exists (the user's own justification)
 
-This use case is **the reason the strands tool was built at all**, instead of
-relying on beads (`~/dev/vendor/beads`):
+This use case is **the reason the strands tool was built at all**, instead of relying on beads (`~/dev/vendor/beads`):
 
 > In beads, the api has gates but hardcodes github for ci — there's no gitlab;
 > the only way to add gitlab is to extend beads itself. Now this is trivial,
@@ -107,9 +83,7 @@ Full reasoning lives in the prior session; the pinned conclusions:
 
 ## Current state of the tree
 
-Prior session's work may still be **uncommitted** (check `git status`). It
-includes, all validated green (`clojure -M:test`, `clojure -M:smoke`,
-`cd cli && go test ./...`):
+Prior session's work may still be **uncommitted** (check `git status`). It includes, all validated green (`clojure -M:test`, `clojure -M:smoke`, `cd cli && go test ./...`):
 
 - `vars`→`params` rename across the workflow lib (`param` builder, `:params`
   declaration key).

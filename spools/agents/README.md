@@ -2,10 +2,7 @@
 
 `skein.spools.agents` is the cross-harness subagent surface. It composes the [shuttle run engine](../shuttle/README.md) and owns the whole agent-facing vocabulary: the `strand agent ...` verbs, the `agent-plan` weave pattern, delegation and recovery, and both the worker contract and the coordinator guidance.
 
-This README is the contract — what each verb promises. For the *shapes* real
-coordination takes — the plan/delegate/await/verify/close loop, contract-first
-recovery, roster review, cross-vendor panels — see the composition recipes in
-[`agents.cookbook.md`](../agents.cookbook.md).
+This README is the contract — what each verb promises. For the *shapes* real coordination takes — the plan/delegate/await/verify/close loop, contract-first recovery, roster review, cross-vendor panels — see the composition recipes in [`agents.cookbook.md`](../agents.cookbook.md).
 
 ---
 
@@ -111,33 +108,27 @@ agent spawn --harness <name> --prompt "..." [--title t] [--depends-on <strand-id
             [--for <strand-id>] [--spawned-by <run-id>] [--cwd <dir>] [--max-attempts n]
             [--interactive --backend <name> [--reap auto|manual]]
 ```
-Raw run creation, no task contract. Async; the run starts when ready. `--for` attaches the run under a strand (a `parent-of` edge). **`spawn` is the raw helper verb: its runs are non-serving** (`shuttle/serves=false`), so a `spawn --for` a task is a recon/one-off helper that never gates that task's later `delegate` — delegating a task's own work is `delegate`'s job. `--spawned-by` = *your* run id when you are an agent spawning a helper (provenance only). Helpers usually pass only `--spawned-by`. `--interactive` launches the harness into a multiplexer session via `--backend`: with `--for` the run completes when that strand closes, without it when the run strand itself is closed; `--reap manual` leaves the finished session open for the human (default `auto` tears it down, capturing scrollback first when the backend supports it).
-→ `{"id","title","state","phase","harness", …}` (run summary)
+Raw run creation, no task contract. Async; the run starts when ready. `--for` attaches the run under a strand (a `parent-of` edge). **`spawn` is the raw helper verb: its runs are non-serving** (`shuttle/serves=false`), so a `spawn --for` a task is a recon/one-off helper that never gates that task's later `delegate` — delegating a task's own work is `delegate`'s job. `--spawned-by` = *your* run id when you are an agent spawning a helper (provenance only). Helpers usually pass only `--spawned-by`. `--interactive` launches the harness into a multiplexer session via `--backend`: with `--for` the run completes when that strand closes, without it when the run strand itself is closed; `--reap manual` leaves the finished session open for the human (default `auto` tears it down, capturing scrollback first when the backend supports it). → `{"id","title","state","phase","harness", …}` (run summary)
 
 ```
 agent ps [--active] [--for <strand-id>]
 ```
-List run summaries. Listing doubles as an interactive liveness check: a dead session is failed here. Interactive summaries add `mode`, `backend`, `session`, and the `attach` command to hand the human.
-→ `[{"id","title","state","phase","harness","for"?,"spawned-by"?,"attempt"?,"result"?,"error"?,"mode"?,"backend"?,"session"?,"attach"?}]`
+List run summaries. Listing doubles as an interactive liveness check: a dead session is failed here. Interactive summaries add `mode`, `backend`, `session`, and the `attach` command to hand the human. → `[{"id","title","state","phase","harness","for"?,"spawned-by"?,"attempt"?,"result"?,"error"?,"mode"?,"backend"?,"session"?,"attach"?}]`
 
 ```
 agent await <run-id>... [--under <root-id>] [--timeout-secs n]
 ```
-Block until every listed run is terminal (closed, failed, or exhausted); default timeout 300s. `--under <root-id>` instead awaits every **non-terminal** run (pending or running) in the delegation tree beneath root (a plan or task id). Run ids and `--under` are mutually exclusive; passing both fails loudly.
-→ `{"timed-out":false,"runs":[<ps summary shape, including result/error>]}`
-A finished helper's findings are in `result` right here — you rarely need logs for success cases.
+Block until every listed run is terminal (closed, failed, or exhausted); default timeout 300s. `--under <root-id>` instead awaits every **non-terminal** run (pending or running) in the delegation tree beneath root (a plan or task id). Run ids and `--under` are mutually exclusive; passing both fails loudly. → `{"timed-out":false,"runs":[<ps summary shape, including result/error>]}` A finished helper's findings are in `result` right here — you rarely need logs for success cases.
 
 ```
 agent logs <run-id> [--tail n]
 ```
-The harness process's captured stdout/stderr (debugging, failure forensics). For a **running interactive** run, logs captures the session transcript fresh (harness `:capture` when configured, else backend scrollback) — a coordinator peek without attaching; finished interactive runs return the transcript persisted at teardown, and `err` is omitted.
-→ `{"id","out":{"path","text"},"err":{"path","text"}?}`
+The harness process's captured stdout/stderr (debugging, failure forensics). For a **running interactive** run, logs captures the session transcript fresh (harness `:capture` when configured, else backend scrollback) — a coordinator peek without attaching; finished interactive runs return the transcript persisted at teardown, and `err` is omitted. → `{"id","out":{"path","text"},"err":{"path","text"}?}`
 
 ```
 agent kill <run-id>
 ```
-Kill a **running** run's live process or interactive session and mark the run failed. Fails loudly on a run with no live process/session — for a run that already failed, use `retry`.
-→ `{"killed":"<run-id>"}`
+Kill a **running** run's live process or interactive session and mark the run failed. Fails loudly on a run with no live process/session — for a run that already failed, use `retry`. → `{"killed":"<run-id>"}`
 
 ```
 agent harnesses
@@ -147,8 +138,7 @@ agent harnesses
 ```
 agent backends
 ```
-List configured interactive session backends (terminal multiplexers registered with `defbackend!` in trusted config; see the [shuttle backend registry](../shuttle/README.md#4-backend-registry-interactive-sessions)).
-→ `[{"name","ops":["start","alive","stop",...],"doc"?}]`
+List configured interactive session backends (terminal multiplexers registered with `defbackend!` in trusted config; see the [shuttle backend registry](../shuttle/README.md#4-backend-registry-interactive-sessions)). → `[{"name","ops":["start","alive","stop",...],"doc"?}]`
 
 ### Delegation verbs (the task-contract layer)
 
@@ -166,8 +156,7 @@ Delegate one **active** task strand: builds the worker prompt from the task's cu
 ```
 agent delegate --ready <plan-id> [--cwd dir]
 ```
-Fan-out: delegate every **ready** task under the plan (all blockers closed) that has no active or successful **serving** run and is not `hitl` — non-serving helper runs (recon/review) are ignored, so a reconned or reviewed task is still delegated. Every task is classified exactly once against pre-spawn state, so a task delegated this pass is never also reported in `skipped`. Harness comes from **each task's** `harness` attribute (this is how mixed-harness fan-out works); fails loudly up front, delegating nothing, if any ready task lacks one. Idempotent: re-invoke after verifying + closing finished tasks to pick up newly-unblocked work. `--interactive` is deliberately rejected here — live sessions are delegated one task at a time so the human is never swamped.
-→ `{"plan":"<plan-id>","delegated":[{"task","run":{"id","phase","harness"}}],"skipped":[{"task","reason":"hitl|has-active-run|failed-needs-retry|already-succeeded"}]}`
+Fan-out: delegate every **ready** task under the plan (all blockers closed) that has no active or successful **serving** run and is not `hitl` — non-serving helper runs (recon/review) are ignored, so a reconned or reviewed task is still delegated. Every task is classified exactly once against pre-spawn state, so a task delegated this pass is never also reported in `skipped`. Harness comes from **each task's** `harness` attribute (this is how mixed-harness fan-out works); fails loudly up front, delegating nothing, if any ready task lacks one. Idempotent: re-invoke after verifying + closing finished tasks to pick up newly-unblocked work. `--interactive` is deliberately rejected here — live sessions are delegated one task at a time so the human is never swamped. → `{"plan":"<plan-id>","delegated":[{"task","run":{"id","phase","harness"}}],"skipped":[{"task","reason":"hitl|has-active-run|failed-needs-retry|already-succeeded"}]}`
 
 ```
 agent retry <task-or-run-id> [--fresh] [--harness h] [--cwd dir] [--prompt <extra>]
@@ -179,8 +168,7 @@ agent retry <task-or-run-id> [--fresh] [--harness h] [--cwd dir] [--prompt <extr
 ```
 agent status [root-id]
 ```
-The coordinator dashboard. `root-id` is a plan or task id; no root = every active delegation in the workspace. Delegation tree (active tasks → their runs → nested sub-spawns via `spawned-by`) plus flat triage lists.
-→
+The coordinator dashboard. `root-id` is a plan or task id; no root = every active delegation in the workspace. Delegation tree (active tasks → their runs → nested sub-spawns via `spawned-by`) plus flat triage lists. →
 ```
 {"tree":[{"id","title","kind":"task|run","phase"?,"status"?,"children":[...]}],
  "ready":["<task-id>"...],                  active tasks delegable right now
@@ -195,8 +183,7 @@ The coordinator dashboard. `root-id` is a plan or task id; no root = every activ
 ```
 agent note <strand-id> "text" [--by <run-id>] [--round n]
 ```
-Append an immutable note to any strand's memory (`--round` only matters inside councils). Notes are append-only memory, not mutation: a worker may note any strand, including parents, without violating its contract.
-→ `{"id":"<note-id>","note-for":"<strand-id>"}`
+Append an immutable note to any strand's memory (`--round` only matters inside councils). Notes are append-only memory, not mutation: a worker may note any strand, including parents, without violating its contract. → `{"id":"<note-id>","note-for":"<strand-id>"}`
 
 ```
 agent notes <strand-id> [--round n]
@@ -208,16 +195,12 @@ agent review <target-id> [--roster name | --members n --harness a,b --contract t
                          [--cwd dir] [--commit-range range] [--changed-files a,b]
                          [--synthesize] [--spawned-by <run-id>]
 ```
-Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature. Reviewer and synthesizer runs are **non-serving helpers** (`shuttle/serves=false`): they hang under the target but never gate a later `delegate` of it, so a target can be reviewed before or after it is delegated. Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target. `--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract. `--synthesize` adds a synthesizer run that depends on all reviewers; its `result` is the verdict (await it), with raw findings in the target's notes.
-`--commit-range <range>` (e.g. `main..HEAD`) names the **diff surface**: its changed files are expanded via `git -C <cwd> diff --name-only <range>` and injected into every reviewer prompt as the authoritative diff surface, so reviewers stop re-deriving the diff. `--changed-files a,b` overrides the file list explicitly (csv). A `--commit-range` with no `--cwd` to expand it, or one git cannot expand at `--cwd`, fails loudly — a range is never injected without its resolved file list. The synthesizer never receives the change context — it weighs notes, not the diff.
-`--roster <name>` fans out a **named declarative roster** instead (see [Reviewer rosters](#reviewer-rosters) below): one run per declared entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so combining `--roster` with `--members`, `--harness`, or `--contract` fails loudly; unknown roster names fail loudly with the available names.
-→ `{"target","reviewers":["<run-id>"...],"synthesizer":"<run-id>"?}`
+Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature. Reviewer and synthesizer runs are **non-serving helpers** (`shuttle/serves=false`): they hang under the target but never gate a later `delegate` of it, so a target can be reviewed before or after it is delegated. Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target. `--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract. `--synthesize` adds a synthesizer run that depends on all reviewers; its `result` is the verdict (await it), with raw findings in the target's notes. `--commit-range <range>` (e.g. `main..HEAD`) names the **diff surface**: its changed files are expanded via `git -C <cwd> diff --name-only <range>` and injected into every reviewer prompt as the authoritative diff surface, so reviewers stop re-deriving the diff. `--changed-files a,b` overrides the file list explicitly (csv). A `--commit-range` with no `--cwd` to expand it, or one git cannot expand at `--cwd`, fails loudly — a range is never injected without its resolved file list. The synthesizer never receives the change context — it weighs notes, not the diff. `--roster <name>` fans out a **named declarative roster** instead (see [Reviewer rosters](#reviewer-rosters) below): one run per declared entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so combining `--roster` with `--members`, `--harness`, or `--contract` fails loudly; unknown roster names fail loudly with the available names. → `{"target","reviewers":["<run-id>"...],"synthesizer":"<run-id>"?}`
 
 ```
 agent rosters
 ```
-List the reviewer rosters registered by trusted config as full plain data.
-→ `[{"name","reviewers":[{"name","harness","contract","scope"?}],"synthesizer":{"harness"}?}]`
+List the reviewer rosters registered by trusted config as full plain data. → `[{"name","reviewers":[{"name","harness","contract","scope"?}],"synthesizer":{"harness"}?}]`
 
 #### Reviewer rosters
 
@@ -260,8 +243,7 @@ Each specs call mints a `:review-pass` tag (override with `:review-id`): reviewe
 agent council --topic "..." [--members n] [--rounds n] [--harness name] [--synthesizer name]
                             [--cwd dir] [--spawned-by <run-id>]
 ```
-Convene a fresh-blackboard **panel** (see [§6](#6-panels-presets-and-the-composition-layer)): `--members n` seats N identical agents on `--harness`, they deliberate over one shared council strand across `--rounds` turn-as-run barrier rows (default 2), then a synthesizer weighs the whole deliberation — await it for the verdict. Harness has **no default**: a council with no resolvable harness fails loudly, mirroring `delegate`. The synthesizer runs `--synthesizer` or the first seat's harness. The CLI is scalar-only; per-seat harness/brief (the `:seats` vector — e.g. a cross-vendor panel) is trusted-Clojure `council!`/`panel!` territory (TEN-006: rich data does not ride the control surface).
-→ `{"council":"<strand-id>","turns":[["<run-id>"...]...],"synthesizer":"<run-id>"}`
+Convene a fresh-blackboard **panel** (see [§6](#6-panels-presets-and-the-composition-layer)): `--members n` seats N identical agents on `--harness`, they deliberate over one shared council strand across `--rounds` turn-as-run barrier rows (default 2), then a synthesizer weighs the whole deliberation — await it for the verdict. Harness has **no default**: a council with no resolvable harness fails loudly, mirroring `delegate`. The synthesizer runs `--synthesizer` or the first seat's harness. The CLI is scalar-only; per-seat harness/brief (the `:seats` vector — e.g. a cross-vendor panel) is trusted-Clojure `council!`/`panel!` territory (TEN-006: rich data does not ride the control surface). → `{"council":"<strand-id>","turns":[["<run-id>"...]...],"synthesizer":"<run-id>"}`
 
 ### Plan creation (weave pattern, not an agent verb)
 

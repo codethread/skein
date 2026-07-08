@@ -1,9 +1,6 @@
 # REPL API spool-contract delta
 
-**Document ID:** `DELTA-repl-api-spool-contract-001`
-**Status:** Merged
-**Target root spec:** [REPL API](../../../specs/repl-api.md) (`SPEC-003`)
-**Feature:** spool-contract
+**Document ID:** `DELTA-repl-api-spool-contract-001` **Status:** Merged **Target root spec:** [REPL API](../../../specs/repl-api.md) (`SPEC-003`) **Feature:** spool-contract
 
 ## DELTA-repl-api-spool-contract-001.P1 Purpose
 

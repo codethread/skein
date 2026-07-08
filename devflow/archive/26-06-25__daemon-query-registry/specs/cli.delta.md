@@ -1,9 +1,6 @@
 # CLI Surface Delta: Daemon Query Registry
 
-**Document ID:** `SPEC-002-D002`
-**Status:** Merged
-**Base Spec:** [CLI Surface](../../../specs/cli.md)
-**Last Updated:** 2026-06-25
+**Document ID:** `SPEC-002-D002` **Status:** Merged **Base Spec:** [CLI Surface](../../../specs/cli.md) **Last Updated:** 2026-06-25
 
 ## SPEC-002-D002.P1 Changed contracts
 

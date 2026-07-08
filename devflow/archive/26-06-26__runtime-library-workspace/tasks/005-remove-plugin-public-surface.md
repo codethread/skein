@@ -1,8 +1,6 @@
 # Remove Plugin Public Surface
 
-**Document ID:** `RLW-TASK-005`
-**Status:** Pending
-**Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
+**Document ID:** `RLW-TASK-005` **Status:** Pending **Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
 
 ## RLW-TASK-005.P1 Scope
 

@@ -1,9 +1,6 @@
 # Local Plugin Loader
 
-**Document ID:** `RPS-TASK-004`
-**Status:** Complete
-**Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md)
-**Specs:** [daemon-runtime.delta.md](../specs/daemon-runtime.delta.md), [repl-api.delta.md](../specs/repl-api.delta.md)
+**Document ID:** `RPS-TASK-004` **Status:** Complete **Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md) **Specs:** [daemon-runtime.delta.md](../specs/daemon-runtime.delta.md), [repl-api.delta.md](../specs/repl-api.delta.md)
 
 ## RPS-TASK-004.P1 Scope
 

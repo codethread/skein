@@ -1,9 +1,6 @@
 # Sync Approved Local Roots
 
-**Document ID:** `RLW-TASK-003`
-**Status:** Pending
-**Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
-**Spec delta:** [../specs/daemon-runtime.delta.md](../specs/daemon-runtime.delta.md)
+**Document ID:** `RLW-TASK-003` **Status:** Pending **Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md) **Spec delta:** [../specs/daemon-runtime.delta.md](../specs/daemon-runtime.delta.md)
 
 ## RLW-TASK-003.P1 Scope
 

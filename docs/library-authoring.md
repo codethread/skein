@@ -1,14 +1,8 @@
 # Library authoring: testing against a Skein checkout
 
-This guide is for authors of Skein spools and libraries: normal trusted
-Clojure libraries approved through `spools.edn`, synced into a weaver, and
-activated from `init.clj` or a connected REPL. It covers repo shape, putting a
-selected Skein checkout on your test classpath, the three testing tiers, and
-weaver-world integration tests with `skein.test.alpha`.
+This guide is for authors of Skein spools and libraries: normal trusted Clojure libraries approved through `spools.edn`, synced into a weaver, and activated from `init.clj` or a connected REPL. It covers repo shape, putting a selected Skein checkout on your test classpath, the three testing tiers, and weaver-world integration tests with `skein.test.alpha`.
 
-For how to structure a spool others will run, read
-[writing-shared-spools](./writing-shared-spools.md). For the runtime/spool
-model itself, read [skein](./skein.md).
+For how to structure a spool others will run, read [writing-shared-spools](./writing-shared-spools.md). For the runtime/spool model itself, read [skein](./skein.md).
 
 ## Repo shape
 
@@ -23,14 +17,11 @@ my-spool/
     my/spool_test.clj
 ```
 
-There is no package registry, installer, or lockfile. You publish by pushing
-Git commits/tags; consumers select a version by checking out your repo (or
-vendoring it) and approving its local root in their `spools.edn`.
+There is no package registry, installer, or lockfile. You publish by pushing Git commits/tags; consumers select a version by checking out your repo (or vendoring it) and approving its local root in their `spools.edn`.
 
 ## deps.edn: Skein as a local-root test dependency
 
-Skein is not on a package repository. Put a selected checkout on your test
-classpath with a tools.deps `:local/root` alias:
+Skein is not on a package repository. Put a selected checkout on your test classpath with a tools.deps `:local/root` alias:
 
 ```clojure
 {:paths ["src"]
@@ -46,33 +37,23 @@ Run tests with your preferred runner, e.g.:
 clojure -M:test -m my.test-runner
 ```
 
-The dependency name is arbitrary; `:local/root` is what matters. Keep the
-checkout path out of `src` paths — Skein is a dev/test dependency for your
-library code, and a runtime host for your spool.
+The dependency name is arbitrary; `:local/root` is what matters. Keep the checkout path out of `src` paths — Skein is a dev/test dependency for your library code, and a runtime host for your spool.
 
 ## Testing tiers
 
-Three tiers, cheapest first. Do not start a weaver for code that does not need
-one.
+Three tiers, cheapest first. Do not start a weaver for code that does not need one.
 
 ### 1. Pure tests
 
-Most spool logic should be plain functions tested with ordinary
-`clojure.test`. No Skein dependency is needed at all for these.
+Most spool logic should be plain functions tested with ordinary `clojure.test`. No Skein dependency is needed at all for these.
 
 ### 2. Skein-namespace tests in your test JVM
 
-With the local-root alias, your test JVM can require Skein namespaces
-directly — useful for exercising pure helpers like query compilation or your
-own code that composes `skein.api.*.alpha` functions against an explicit
-runtime value.
+With the local-root alias, your test JVM can require Skein namespaces directly — useful for exercising pure helpers like query compilation or your own code that composes `skein.api.*.alpha` functions against an explicit runtime value.
 
 ### 3. Weaver-world integration tests with `skein.test.alpha`
 
-For behavior that only exists inside a running weaver — approved-spool sync,
-`use!` activation, init.clj startup behavior, event handlers, ops — use
-`skein.test.alpha`. It starts a real, disposable, isolated weaver world in
-your test JVM and routes forms through the weaver's real nREPL transport:
+For behavior that only exists inside a running weaver — approved-spool sync, `use!` activation, init.clj startup behavior, event handlers, ops — use `skein.test.alpha`. It starts a real, disposable, isolated weaver world in your test JVM and routes forms through the weaver's real nREPL transport:
 
 ```clojure
 (ns my.spool-test
@@ -88,8 +69,7 @@ your test JVM and routes forms through the weaver's real nREPL transport:
              (api/add (current/runtime) {:title \"Sketch model\"})"))))))
 ```
 
-`weaver-world-fixture` provides the same lifecycle for `use-fixtures`, binding
-`skein.test.alpha/*weaver-world*`:
+`weaver-world-fixture` provides the same lifecycle for `use-fixtures`, binding `skein.test.alpha/*weaver-world*`:
 
 ```clojure
 (use-fixtures :each (t/weaver-world-fixture {:storage :sqlite-memory}))
@@ -100,16 +80,11 @@ your test JVM and routes forms through the weaver's real nREPL transport:
     (api/list (current/runtime))"))))
 ```
 
-The context map contains orchestration facts only: `:config-dir`,
-`:state-dir`, `:data-dir`, `:db-path` (file storage only), `:storage`,
-`:source` (the Skein checkout on your classpath), `:runtime`, `:metadata`, and
-`:timeout-ms`. There are deliberately no strand/query wrappers, assertion
-helpers, or CLI subprocess helpers — exercise the real API forms.
+The context map contains orchestration facts only: `:config-dir`, `:state-dir`, `:data-dir`, `:db-path` (file storage only), `:storage`, `:source` (the Skein checkout on your classpath), `:runtime`, `:metadata`, and `:timeout-ms`. There are deliberately no strand/query wrappers, assertion helpers, or CLI subprocess helpers — exercise the real API forms.
 
 ## The classpath boundary
 
-Two evaluation contexts exist even though the test weaver runs in your test
-JVM process:
+Two evaluation contexts exist even though the test weaver runs in your test JVM process:
 
 - **Direct `require` in test code** uses your test JVM classpath (your library
   plus the Skein checkout). This never proves the weaver can load your spool.
@@ -117,14 +92,11 @@ JVM process:
   Spool code becomes visible there only through the real workflow: approve the
   root in `spools.edn`, `skein.api.runtime.alpha/sync!`, then `use!`.
 
-A spool that passes tier-2 tests can still fail tier 3 — missing `deps.edn`
-paths in the spool root, load-order problems in `install!`, or reliance on
-your test JVM classpath. Tier 3 exists to catch exactly that.
+A spool that passes tier-2 tests can still fail tier 3 — missing `deps.edn` paths in the spool root, load-order problems in `install!`, or reliance on your test JVM classpath. Tier 3 exists to catch exactly that.
 
 ## Testing the real spool workflow
 
-Write the spool fixture and approval into the generated world, sync it from
-`init.clj` (or from `repl!`), then activate and assert:
+Write the spool fixture and approval into the generated world, sync it from `init.clj` (or from `repl!`), then activate and assert:
 
 ```clojure
 (deftest spool-syncs-and-activates
@@ -145,12 +117,7 @@ Write the spool fixture and approval into the generated world, sync it from
                    [:status])))))
 ```
 
-To test your actual library instead of an inline fixture, point the approved
-`:local/root` at your library checkout (an absolute path works in
-`:spools-edn` data). When the checkout comes from the test classpath rather
-than a fixed local path, `skein.test.alpha/spool-checkout-root` resolves the
-root from one of the spool's source resources and fails loudly if that resource
-is absent.
+To test your actual library instead of an inline fixture, point the approved `:local/root` at your library checkout (an absolute path works in `:spools-edn` data). When the checkout comes from the test classpath rather than a fixed local path, `skein.test.alpha/spool-checkout-root` resolves the root from one of the spool's source resources and fails loudly if that resource is absent.
 
 Two constraints from tools.deps to know about:
 
@@ -173,17 +140,11 @@ Two constraints from tools.deps to know about:
   database. A single held connection serializes writes, which is fine at test
   scale but is not production-like pooled storage.
 
-Both run the same schema and SQL code. Metadata/status report storage
-explicitly: file worlds have a `database_path`, memory worlds report
-`database_kind "sqlite-memory"` with a null path.
+Both run the same schema and SQL code. Metadata/status report storage explicitly: file worlds have a `database_path`, memory worlds report `database_kind "sqlite-memory"` with a null path.
 
 ## Temp paths and Unix sockets
 
-Each weaver world serves a Unix domain socket, and socket paths have a small
-platform limit (about 104 bytes on macOS). The helper generates its worlds
-under a short `/tmp` root for this reason. If you pass an explicit `:root`,
-keep it short — deeply nested `target/...` build paths can make socket
-creation fail.
+Each weaver world serves a Unix domain socket, and socket paths have a small platform limit (about 104 bytes on macOS). The helper generates its worlds under a short `/tmp` root for this reason. If you pass an explicit `:root`, keep it short — deeply nested `target/...` build paths can make socket creation fail.
 
 ## CI
 
@@ -200,10 +161,7 @@ steps:
   - run: clojure -M:test -m my.test-runner
 ```
 
-Have the `:local/root` in `deps.edn` reference the checkout path used in CI
-(a relative `:local/root "skein-src"` next to your repo keeps local and CI
-layouts identical). Treat Skein version bumps like any dependency bump: update
-the pinned ref, run the suite.
+Have the `:local/root` in `deps.edn` reference the checkout path used in CI (a relative `:local/root "skein-src"` next to your repo keeps local and CI layouts identical). Treat Skein version bumps like any dependency bump: update the pinned ref, run the suite.
 
 ## What the helper will not do
 

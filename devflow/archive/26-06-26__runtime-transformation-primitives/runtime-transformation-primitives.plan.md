@@ -1,12 +1,6 @@
 # Runtime Transformation Primitives Plan
 
-**Document ID:** `RTP-PLAN-001`
-**Status:** Shipped
-**Last Updated:** 2026-06-26
-**Proposal:** [proposal.md](./proposal.md)
-**PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md)
-**Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md)
-**Prerequisite shipped:** [Runtime Library Workspace](../../archive/26-06-26__runtime-library-workspace/)
+**Document ID:** `RTP-PLAN-001` **Status:** Shipped **Last Updated:** 2026-06-26 **Proposal:** [proposal.md](./proposal.md) **PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md) **Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md) **Prerequisite shipped:** [Runtime Library Workspace](../../archive/26-06-26__runtime-library-workspace/)
 
 ## RTP-PLAN-001.P1 Goal and scope
 

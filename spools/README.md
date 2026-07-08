@@ -1,23 +1,14 @@
 # Shipped reference spools
 
-Spools are trusted, authorable Clojure loaded into the weaver. The
-`skein.spools.*` namespace family is reserved for exactly this kind of code
-(see the [REPL API spec](../devflow/specs/repl-api.md)); the spools in
-this directory ship with Skein as working references — use them directly,
-copy them as starting points, or study them to author your own.
+Spools are trusted, authorable Clojure loaded into the weaver. The `skein.spools.*` namespace family is reserved for exactly this kind of code (see the [REPL API spec](../devflow/specs/repl-api.md)); the spools in this directory ship with Skein as working references — use them directly, copy them as starting points, or study them to author your own.
 
-Because they ship on the weaver classpath, no `spools.edn` approval is
-needed — `require` them from `init.clj`, an activated spool, or a live
-`mill weaver repl`:
+Because they ship on the weaver classpath, no `spools.edn` approval is needed — `require` them from `init.clj`, an activated spool, or a live `mill weaver repl`:
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
 ```
 
-Blessed alpha helpers such as `skein.api.peers.alpha` are also explicit-require
-userland APIs for trusted config and REPL workflows. Use that namespace's
-`peers`, `peer`, and `call!` helpers when a shipped spool or repo config needs
-to discover and invoke same-machine sibling weavers.
+Blessed alpha helpers such as `skein.api.peers.alpha` are also explicit-require userland APIs for trusted config and REPL workflows. Use that namespace's `peers`, `peer`, and `call!` helpers when a shipped spool or repo config needs to discover and invoke same-machine sibling weavers.
 
 ## Doc triad
 
@@ -33,8 +24,7 @@ Each shipped spool's docs follow a three-file convention:
   signature, arity, and docstring, produced from source. Never hand-edit these;
   regenerate with `make api-docs`.
 
-Signatures live only in the generated API doc; contracts and cookbooks link to
-them rather than restating them.
+Signatures live only in the generated API doc; contracts and cookbooks link to them rather than restating them.
 
 ## Index
 
@@ -54,37 +44,17 @@ them rather than restating them.
 
 ## External git-distributed spools
 
-Some reference spools no longer ship on the weaver classpath and are consumed by
-git coordinate instead — the worked example of publishing a spool for others
-(RFC-017, [Writing shared spools](../docs/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution)).
-Unlike the classpath spools above, these require explicit `spools.edn` approval
-of a pinned commit before the weaver will fetch or activate them.
+Some reference spools no longer ship on the weaver classpath and are consumed by git coordinate instead — the worked example of publishing a spool for others (RFC-017, [Writing shared spools](../docs/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution)). Unlike the classpath spools above, these require explicit `spools.edn` approval of a pinned commit before the weaver will fetch or activate them.
 
 | Spool | Source | Contract doc | Purpose |
 |---|---|---|---|
 | `skein.spools.devflow` | [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) | [devflow.md](https://github.com/codethread/devflow.spool/blob/6c0f8c7e20a7f6de4cf81c98f4d7a33388663592/devflow.md) | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
 
-This repo consumes devflow via a sha-pinned `:git/url`+`:git/sha` coordinate in
-`.skein/spools.edn`, activates it with `:required? true` in `.skein/init.clj`,
-and pins the same sha as a tools.deps git dep for the test JVM; developers
-override the coordinate with a gitignored `spools.local.edn` local root to work
-against a checkout. See the devflow.spool repo contract doc for the full consumption
-recipe.
+This repo consumes devflow via a sha-pinned `:git/url`+`:git/sha` coordinate in `.skein/spools.edn`, activates it with `:required? true` in `.skein/init.clj`, and pins the same sha as a tools.deps git dep for the test JVM; developers override the coordinate with a gitignored `spools.local.edn` local root to work against a checkout. See the devflow.spool repo contract doc for the full consumption recipe.
 
 ## Approved local-root examples
 
-These live beside this index in the repo-root [`spools/`](./) directory, **off**
-the shipped classpath, and load only through the approved-local-root flow
-(`spools.edn` → explicit-runtime `sync!` → explicit-runtime `use!`). The placement rule: pure graph vocabulary
-that other code builds on ships on the classpath above; a spool that
-**escalates capability** (the shuttle spawns harness processes with the
-user's authority) or exists to exercise the userland distribution path sits
-here, behind the workspace's explicit `spools.edn` consent. They also serve
-as the worked example of authoring your own spool
-([docs/skein.md](../docs/skein.md#authoring-your-own-spool-code)). For
-publishing a spool for others by git coordinate, SHA-pinned approval,
-README Dependency information / Activation snippets, Maven-only spool-root
-dependencies, and local development overrides, see [Writing shared spools](../docs/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution).
+These live beside this index in the repo-root [`spools/`](./) directory, **off** the shipped classpath, and load only through the approved-local-root flow (`spools.edn` → explicit-runtime `sync!` → explicit-runtime `use!`). The placement rule: pure graph vocabulary that other code builds on ships on the classpath above; a spool that **escalates capability** (the shuttle spawns harness processes with the user's authority) or exists to exercise the userland distribution path sits here, behind the workspace's explicit `spools.edn` consent. They also serve as the worked example of authoring your own spool ([docs/skein.md](../docs/skein.md#authoring-your-own-spool-code)). For publishing a spool for others by git coordinate, SHA-pinned approval, README Dependency information / Activation snippets, Maven-only spool-root dependencies, and local development overrides, see [Writing shared spools](../docs/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution).
 
 | Spool | Contract doc | API reference | Purpose |
 |---|---|---|---|

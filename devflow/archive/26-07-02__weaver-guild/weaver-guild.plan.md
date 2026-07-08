@@ -1,23 +1,10 @@
 # Weaver Guild Plan
 
-**Document ID:** `PLAN-Guild-001`
-**Feature:** `weaver-guild`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none
-**Root specs:** [daemon-runtime.md](../../specs/daemon-runtime.md), [cli.md](../../specs/cli.md), [repl-api.md](../../specs/repl-api.md)
-**Feature specs:** [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/cli.delta.md](./specs/cli.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-02
+**Document ID:** `PLAN-Guild-001` **Feature:** `weaver-guild` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** [daemon-runtime.md](../../specs/daemon-runtime.md), [cli.md](../../specs/cli.md), [repl-api.md](../../specs/repl-api.md) **Feature specs:** [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/cli.delta.md](./specs/cli.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md) **Status:** Shipped **Last Updated:** 2026-07-02
 
 ## PLAN-Guild-001.P1 Goal and scope
 
-Ship local weaver peering per the proposal: portable config-declared weaver
-names resolved by mill at launch, a blessed `skein.api.peers.alpha` namespace for
-discovering running sibling weavers and calling their public JSON socket
-operations from Clojure, and a shipped `skein.spools.guild` reference spool
-for declaring a versioned public weaver op API with loud structured
-deprecation. The gate-adapter spool is deferred (PROP-Guild-001.S5/Q3). No
-new CLI commands, no new socket operations, no remote access.
+Ship local weaver peering per the proposal: portable config-declared weaver names resolved by mill at launch, a blessed `skein.api.peers.alpha` namespace for discovering running sibling weavers and calling their public JSON socket operations from Clojure, and a shipped `skein.spools.guild` reference spool for declaring a versioned public weaver op API with loud structured deprecation. The gate-adapter spool is deferred (PROP-Guild-001.S5/Q3). No new CLI commands, no new socket operations, no remote access.
 
 ## PLAN-Guild-001.P2 Approach
 
@@ -80,34 +67,23 @@ new CLI commands, no new socket operations, no remote access.
 
 ### PLAN-Guild-001.PH1 Portable naming (Go)
 
-Outcome: a workspace with `"name"` in `config.json` (or `config.local.json`
-override) publishes that name in `weaver.json` metadata after `weaver start`
-with no `--name`; explicit `--name` still wins; bootstrap `.gitignore` no
-longer hides `config.json`.
+Outcome: a workspace with `"name"` in `config.json` (or `config.local.json` override) publishes that name in `weaver.json` metadata after `weaver start` with no `--name`; explicit `--name` still wins; bootstrap `.gitignore` no longer hides `config.json`.
 
 ### PLAN-Guild-001.PH2 Peer discovery: peers and peer
 
-Outcome: from any process with the Skein classpath, `(peers)` lists sibling
-weaver metadata rows with staleness and `(peer name-or-workspace)` resolves
-exactly one running weaver, failing loudly on unknown, stale, or ambiguous
-input.
+Outcome: from any process with the Skein classpath, `(peers)` lists sibling weaver metadata rows with staleness and `(peer name-or-workspace)` resolves exactly one running weaver, failing loudly on unknown, stale, or ambiguous input.
 
 ### PLAN-Guild-001.PH3 Peer invocation (`call!`)
 
-Outcome: `(call! peer op args)` executes an allowlisted public JSON socket
-operation on a resolved peer with protocol/identity verification and
-domain-error propagation, proven weaver-to-weaver in tests.
+Outcome: `(call! peer op args)` executes an allowlisted public JSON socket operation on a resolved peer with protocol/identity verification and domain-error propagation, proven weaver-to-weaver in tests.
 
 ### PLAN-Guild-001.PH4 Guild spool
 
-Outcome: `skein.spools.guild` lets a repo's `init.clj` declare a versioned
-public op API (`defop!`, `deprecate!`, built-in `guild.describe`), with
-spec-validated inputs and loud structured deprecation.
+Outcome: `skein.spools.guild` lets a repo's `init.clj` declare a versioned public op API (`defop!`, `deprecate!`, built-in `guild.describe`), with spec-validated inputs and loud structured deprecation.
 
 ### PLAN-Guild-001.PH5 Docs and cross-references
 
-Outcome: `spools/guild.md` contract doc, spools README index row, CLAUDE.md
-spool list sync, and validation suite green.
+Outcome: `spools/guild.md` contract doc, spools README index row, CLAUDE.md spool list sync, and validation suite green.
 
 ## PLAN-Guild-001.P6 Validation strategy
 

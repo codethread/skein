@@ -1,8 +1,6 @@
 # Strand workflow
 
-Use the `strand` CLI to plan and track multi-step work as a small explicit DAG
-of strands. Run `mill skein prime` first for the wider Skein orientation and the
-paths to the full docs.
+Use the `strand` CLI to plan and track multi-step work as a small explicit DAG of strands. Run `mill skein prime` first for the wider Skein orientation and the paths to the full docs.
 
 ## When to use strands
 
@@ -14,42 +12,31 @@ paths to the full docs.
 
 ## Start from a feature worktree
 
-For feature work, create or switch to a dedicated worktree before creating the
-strand plan. Skip only for tiny local edits or when the user explicitly says to
-work in the current tree.
+For feature work, create or switch to a dedicated worktree before creating the strand plan. Skip only for tiny local edits or when the user explicitly says to work in the current tree.
 
 ```sh
 wktree add --branch <feature-slug> --json
 wktree path --branch <feature-slug>
 ```
 
-If `wktree add --json` returns a `post_create_script_path`, run that script with
-`bash` before treating the worktree as ready.
+If `wktree add --json` returns a `post_create_script_path`, run that script with `bash` before treating the worktree as ready.
 
-Once the branch exists, make the work discoverable: exactly one active root
-strand carries `branch` (plus `owner`, and `worktree` when one exists) and all
-execution strands hang beneath it via `parent-of`. `strand kanban claim` does
-the stamping for kanban cards; stamp ad hoc roots with
-`strand update <root-id> --attr branch=<branch> --attr owner=<name>`. Check
-in-flight branch work with `strand branches [branch]`.
+Once the branch exists, make the work discoverable: exactly one active root strand carries `branch` (plus `owner`, and `worktree` when one exists) and all execution strands hang beneath it via `parent-of`. `strand kanban claim` does the stamping for kanban cards; stamp ad hoc roots with `strand update <root-id> --attr branch=<branch> --attr owner=<name>`. Check in-flight branch work with `strand branches [branch]`.
 
 ## Discover patterns first
 
-Before creating a multi-step plan, inspect available weaver patterns and prefer a
-self-descriptive pattern over hand-authored `add`/`update` commands:
+Before creating a multi-step plan, inspect available weaver patterns and prefer a self-descriptive pattern over hand-authored `add`/`update` commands:
 
 ```sh
 strand pattern list
 strand pattern explain <pattern-name>
 ```
 
-Use raw strand commands only when no registered pattern fits or when editing an
-existing graph.
+Use raw strand commands only when no registered pattern fits or when editing an existing graph.
 
 ## Body attribute convention
 
-Use `body` for useful issue-style context: problem, scope, acceptance criteria,
-constraints, relevant files, and validation expectations.
+Use `body` for useful issue-style context: problem, scope, acceptance criteria, constraints, relevant files, and validation expectations.
 
 - Titles alone are acceptable for personal/ephemeral to-do tracking.
 - Any strand delegated to another agent must include a clear descriptive `body`.
@@ -107,8 +94,7 @@ printf '(ready)\n' | mill weaver repl --stdin
 printf '(strands)\n' | mill weaver repl --stdin
 ```
 
-Hot-reload selected config after config/library edits (never restart the weaver
-for this):
+Hot-reload selected config after config/library edits (never restart the weaver for this):
 
 ```sh
 printf "(do (require '[skein.api.runtime.alpha :as runtime]) (runtime/reload!))\n" \
@@ -126,11 +112,7 @@ strand ready --query agent-owned
 
 ## Delegation
 
-When a repo ships the agents spool, the full delegated-worker contract (read
-your strand and notes first, record progress, set `status=implemented` only when
-validation is green, never close your own strand, never mutate siblings/parents
-unless told, commit only if told) ships in-band and is injected into every
-delegated run's preamble. Read the live manual rather than hand-rolling JSON:
+When a repo ships the agents spool, the full delegated-worker contract (read your strand and notes first, record progress, set `status=implemented` only when validation is green, never close your own strand, never mutate siblings/parents unless told, commit only if told) ships in-band and is injected into every delegated run's preamble. Read the live manual rather than hand-rolling JSON:
 
 ```sh
 strand agent about
@@ -147,7 +129,4 @@ Before reporting success:
   strands; dependencies reflect actual blocking relationships.
 - Relevant checks pass.
 
-Repo-specific runtime surface (curated ready queries, the kanban board, the
-devflow lifecycle, delegation, branch visibility) is documented in that repo's
-`AGENTS.md`; see `mill skein prime` for the path to the source docs under
-`{{.Source}}`.
+Repo-specific runtime surface (curated ready queries, the kanban board, the devflow lifecycle, delegation, branch visibility) is documented in that repo's `AGENTS.md`; see `mill skein prime` for the path to the source docs under `{{.Source}}`.

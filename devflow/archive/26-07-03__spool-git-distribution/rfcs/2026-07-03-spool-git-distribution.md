@@ -1,9 +1,6 @@
 # Registry-free git distribution for spools
 
-**Document ID:** `RFC-017`
-**Status:** Accepted
-**Date:** 2026-07-03
-**Related:** [REPL API](../specs/repl-api.md) (SPEC-003), [Weaver Runtime](../specs/daemon-runtime.md) (SPEC-004.C41–C43), [Writing shared spools](../../docs/writing-shared-spools.md), feature folder [spool-git-distribution](../feat/spool-git-distribution/)
+**Document ID:** `RFC-017` **Status:** Accepted **Date:** 2026-07-03 **Related:** [REPL API](../specs/repl-api.md) (SPEC-003), [Weaver Runtime](../specs/daemon-runtime.md) (SPEC-004.C41–C43), [Writing shared spools](../../docs/writing-shared-spools.md), feature folder [spool-git-distribution](../feat/spool-git-distribution/)
 
 ## RFC-017.P1 Problem
 

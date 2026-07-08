@@ -1,8 +1,6 @@
 # Confirm User Daemon Home Shipped
 
-**Document ID:** `RPS-TASK-001`
-**Status:** Complete
-**Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md)
+**Document ID:** `RPS-TASK-001` **Status:** Complete **Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md)
 
 ## RPS-TASK-001.P1 Scope
 

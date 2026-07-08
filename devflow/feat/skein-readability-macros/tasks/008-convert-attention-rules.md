@@ -6,10 +6,7 @@
 
 Type: AFK
 
-Rewrite `attention.clj`'s chime attention rules as `defrule` blocks and register them through `install-rules!`, deleting
-`register-chime-rules!`. This is a data-preserving refactor: the registered chime rule keys, their handler functions, and their
-firing behaviour stay identical. `attention.clj` is disjoint from the config-file chain, so this slice depends only on the
-`defrule` macro (task 4).
+Rewrite `attention.clj`'s chime attention rules as `defrule` blocks and register them through `install-rules!`, deleting `register-chime-rules!`. This is a data-preserving refactor: the registered chime rule keys, their handler functions, and their firing behaviour stay identical. `attention.clj` is disjoint from the config-file chain, so this slice depends only on the `defrule` macro (task 4).
 
 ## TASK-Srm-008.P2 Must implement exactly
 

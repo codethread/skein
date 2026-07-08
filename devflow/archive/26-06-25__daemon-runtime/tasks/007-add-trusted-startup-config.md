@@ -1,9 +1,6 @@
 # Add Trusted Startup Config
 
-**Document ID:** `TASK-007`
-**Feature:** `daemon-runtime`
-**Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md)
-**Specs:** [../specs/daemon-runtime.md](../specs/daemon-runtime.md), [../specs/cli.delta.md](../specs/cli.delta.md)
+**Document ID:** `TASK-007` **Feature:** `daemon-runtime` **Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md) **Specs:** [../specs/daemon-runtime.md](../specs/daemon-runtime.md), [../specs/cli.delta.md](../specs/cli.delta.md)
 
 ## TASK-007.P1 Scope
 

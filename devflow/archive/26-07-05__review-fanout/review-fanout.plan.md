@@ -1,13 +1,6 @@
 # Declarative Review Fan-out Plan
 
-**Document ID:** `PLAN-Rfo-001`
-**Feature:** `review-fanout`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none (phase 2 dynamic selection deferred to its own RFC)
-**Root specs:** none affected (see proposal spec-delta rationale in the devflow run notes)
-**Feature specs:** none
-**Status:** Shipped
-**Last Updated:** 2026-07-05
+**Document ID:** `PLAN-Rfo-001` **Feature:** `review-fanout` **Proposal:** [proposal.md](./proposal.md) **RFC:** none (phase 2 dynamic selection deferred to its own RFC) **Root specs:** none affected (see proposal spec-delta rationale in the devflow run notes) **Feature specs:** none **Status:** Shipped **Last Updated:** 2026-07-05
 
 ## PLAN-Rfo-001.P1 Goal and scope
 

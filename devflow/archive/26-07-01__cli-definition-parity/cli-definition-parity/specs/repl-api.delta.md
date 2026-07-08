@@ -1,10 +1,6 @@
 # REPL API delta for CLI definition parity
 
-**Document ID:** `CDP-DELTA-002`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-01
+**Document ID:** `CDP-DELTA-002` **Root spec:** [repl-api.md](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-01
 
 ## CDP-DELTA-002.P1 Summary
 

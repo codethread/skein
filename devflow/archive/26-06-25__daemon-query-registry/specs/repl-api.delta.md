@@ -1,9 +1,6 @@
 # REPL API Delta: Daemon Query Registry
 
-**Document ID:** `SPEC-003-D002`
-**Status:** Merged
-**Base Spec:** [REPL API](../../../specs/repl-api.md)
-**Last Updated:** 2026-06-25
+**Document ID:** `SPEC-003-D002` **Status:** Merged **Base Spec:** [REPL API](../../../specs/repl-api.md) **Last Updated:** 2026-06-25
 
 ## SPEC-003-D002.P1 Changed contracts
 

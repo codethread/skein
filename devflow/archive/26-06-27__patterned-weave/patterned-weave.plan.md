@@ -1,13 +1,6 @@
 # Patterned Weave Plan
 
-**Document ID:** `PLAN-001`
-**Feature:** `patterned-weave`
-**Proposal:** [proposal.md](./proposal.md)
-**Related RFCs:** None
-**Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md)
-**Feature specs:** [CLI delta](./specs/cli.delta.md), [REPL API delta](./specs/repl-api.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-27
+**Document ID:** `PLAN-001` **Feature:** `patterned-weave` **Proposal:** [proposal.md](./proposal.md) **Related RFCs:** None **Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md) **Feature specs:** [CLI delta](./specs/cli.delta.md), [REPL API delta](./specs/repl-api.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md) **Status:** Shipped **Last Updated:** 2026-06-27
 
 ## PLAN-001.P1 Goal and scope
 

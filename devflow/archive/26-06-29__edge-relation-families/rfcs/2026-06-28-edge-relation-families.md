@@ -1,10 +1,6 @@
 # Edge Relation Families, Strand State, and Supersession
 
-**Document ID:** `RFC-007`
-**Status:** Implemented
-**Created:** 2026-06-28
-**Related specs:** [Strand Model](../specs/strand-model.md), [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md)
-**Related tenets:** TEN-000 (alpha software), TEN-004 (Less is More), TEN-005 (Task graphs are DAGs)
+**Document ID:** `RFC-007` **Status:** Implemented **Created:** 2026-06-28 **Related specs:** [Strand Model](../specs/strand-model.md), [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md) **Related tenets:** TEN-000 (alpha software), TEN-004 (Less is More), TEN-005 (Task graphs are DAGs)
 
 ## RFC-007.P1 Problem
 

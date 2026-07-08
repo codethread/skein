@@ -10,20 +10,11 @@
 
 ## 1. Overview
 
-`skein.spools.selvage` is a reference spool for opt-in attribute vocabulary
-linting. Skein intentionally keeps strand attributes loose and userland-owned;
-Selvage lets a workspace register the attribute invariants it cares about and
-check them on demand or after mutations.
+`skein.spools.selvage` is a reference spool for opt-in attribute vocabulary linting. Skein intentionally keeps strand attributes loose and userland-owned; Selvage lets a workspace register the attribute invariants it cares about and check them on demand or after mutations.
 
-It is deliberately userland convention, not an engine schema. Vocabularies are
-weaver-lifetime data, checks are ordinary maps, and violations are returned as
-data. Invalid vocabulary specs fail loudly at registration time.
+It is deliberately userland convention, not an engine schema. Vocabularies are weaver-lifetime data, checks are ordinary maps, and violations are returned as data. Invalid vocabulary specs fail loudly at registration time.
 
-Watch mode is post-hoc **detection**, not rejection. It uses asynchronous
-`skein.api.events.alpha` handlers on `:strand/added` and `:strand/updated`, so a
-bad mutation has already committed by the time a violation is recorded. Skein
-also exposes synchronous lifecycle hooks, but this spool ships only the minimal
-lint/detection surface.
+Watch mode is post-hoc **detection**, not rejection. It uses asynchronous `skein.api.events.alpha` handlers on `:strand/added` and `:strand/updated`, so a bad mutation has already committed by the time a violation is recorded. Skein also exposes synchronous lifecycle hooks, but this spool ships only the minimal lint/detection surface.
 
 ## 2. Usage
 
@@ -98,9 +89,7 @@ Supported check forms:
 | `{:attr s :kind k}` | If attribute `s` is present, its value must match `k`, one of `:string`, `:number`, `:boolean`, `:map`, or `:int-string`. |
 | `{:attr s :required-with t}` | If attribute `t` is present, attribute `s` must also be present. |
 
-Attributes are addressed by string names like `"shuttle/phase"`, matching how
-JSON-backed attributes appear at the CLI boundary. In Clojure strand maps these
-are keyword keys such as `:shuttle/phase`.
+Attributes are addressed by string names like `"shuttle/phase"`, matching how JSON-backed attributes appear at the CLI boundary. In Clojure strand maps these are keyword keys such as `:shuttle/phase`.
 
 ## 5. See also
 

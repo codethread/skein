@@ -1,17 +1,12 @@
 # Task 003: L0b hot-key registry, literal-path compilation, invariant gate (ASSN-PLAN-001.PH3)
 
-Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree
-`/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 002.**
+Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree `/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 002.**
 
-Read first: `attr-scaling-ship-now.plan.md` (ASSN-PLAN-001 `PH3`, `A3`, `A4`,
-`A5`, `AA1`, `AA2`, `AA3`, `AA4`, `AA7`, `TC4`, `TC7`, `R2`) and the deltas:
-`strand-model.delta.md` (ASSN-DELTA-001.CC9–CC14, `D4`, `D5`),
-`daemon-runtime.delta.md` (ASSN-DELTA-003.CC2–CC5, `D1`).
+Read first: `attr-scaling-ship-now.plan.md` (ASSN-PLAN-001 `PH3`, `A3`, `A4`, `A5`, `AA1`, `AA2`, `AA3`, `AA4`, `AA7`, `TC4`, `TC7`, `R2`) and the deltas: `strand-model.delta.md` (ASSN-DELTA-001.CC9–CC14, `D4`, `D5`), `daemon-runtime.delta.md` (ASSN-DELTA-003.CC2–CC5, `D1`).
 
 ## Scope
 
-L0b declared hot-key registry, the shared key spec, literal-path compilation for
-declared keys, and the blocking undeclared-key gate.
+L0b declared hot-key registry, the shared key spec, literal-path compilation for declared keys, and the blocking undeclared-key gate.
 
 - `src/skein/core/specs.clj` (`AA2`): add `::indexed-attr-key` — one owned spec
   pinning the declared-key character class to the existing safe
@@ -53,18 +48,14 @@ declared keys, and the blocking undeclared-key gate.
 
 ## Hard acceptance bar — undeclared-key invariant (blocking, structural)
 
-**An undeclared attribute key is never slower or less capable than today.** Ship
-a **blocking, structural** regression gate in `clojure -M:test` (not a timing
-benchmark — `TC7`, ASSN-DELTA-001.CC14, `D2`) asserting for an undeclared key:
+**An undeclared attribute key is never slower or less capable than today.** Ship a **blocking, structural** regression gate in `clojure -M:test` (not a timing benchmark — `TC7`, ASSN-DELTA-001.CC14, `D2`) asserting for an undeclared key:
 
 - Compiled SQL is **byte-identical** to today's bound-parameter form.
 - Full predicate-type capability is preserved across `:=`, `:!=`, `:<`, `:<=`,
   `:>`, `:>=`, `:in`, `:exists`, `:missing`, and logical composition
   (ASSN-DELTA-001.CC13).
 
-Declaration adds capability to declared keys; it must never remove capability
-from any key. A metacharacter-bearing declared key must be rejected fail-loud at
-both the declaration op and `compile-field` with the canonical ex-data.
+Declaration adds capability to declared keys; it must never remove capability from any key. A metacharacter-bearing declared key must be rejected fail-loud at both the declaration op and `compile-field` with the canonical ex-data.
 
 ## Validation
 

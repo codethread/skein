@@ -1,10 +1,6 @@
 # CLI Surface delta for Go CLI Migration
 
-**Document ID:** `SPEC-002-D003`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-25
+**Document ID:** `SPEC-002-D003` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-25
 
 ## SPEC-002-D003.P1 Summary
 

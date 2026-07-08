@@ -1,16 +1,10 @@
 # Treadle: shuttle-backed fulfillment of workflow subagent gates
 
-**Status:** Implemented (2026-07-02) — shipped as `skein.spools.treadle`, contract in [`spools/shuttle/treadle.md`](../../../spools/shuttle/treadle.md)
-**Related:** [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (REC8, Q2, Q7),
-[Workflow spool](../../../src/skein/spools/workflow.md) (§3 Gates, §7 vocabulary),
-[Shuttle spool](../../../spools/shuttle/src/skein/spools/shuttle.clj)
+**Status:** Implemented (2026-07-02) — shipped as `skein.spools.treadle`, contract in [`spools/shuttle/treadle.md`](../../../spools/shuttle/treadle.md) **Related:** [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (REC8, Q2, Q7), [Workflow spool](../../../src/skein/spools/workflow.md) (§3 Gates, §7 vocabulary), [Shuttle spool](../../../spools/shuttle/src/skein/spools/shuttle.clj)
 
 ## Summary
 
-`skein.spools.treadle` is a small event-driven adapter that fulfills workflow
-**gate** steps whose waiter is `subagent` by spawning shuttle runs and, on
-success, completing the gate through the ordinary workflow surface. It is the
-RFC-010.REC8 "workflow gate bridge", built so that:
+`skein.spools.treadle` is a small event-driven adapter that fulfills workflow **gate** steps whose waiter is `subagent` by spawning shuttle runs and, on success, completing the gate through the ordinary workflow surface. It is the RFC-010.REC8 "workflow gate bridge", built so that:
 
 - `skein.spools.workflow` needs **zero changes** — the existing `gate`
   primitive plus caller-supplied attributes are the whole declarative
@@ -23,8 +17,7 @@ RFC-010.REC8 "workflow gate bridge", built so that:
   function without it; workflow's vocabulary is the stable contract and the
   binding lives with the tool, mirroring workflow.md §3 tool bindings.
 
-Name: the treadle is the loom pedal that opens the shed so the shuttle can
-pass — it is what makes the loom advance.
+Name: the treadle is the loom pedal that opens the shed so the shuttle can pass — it is what makes the loom advance.
 
 ## Declarative contract (what a workflow author writes)
 
@@ -48,29 +41,15 @@ Request attributes read from the gate step (all plain data, TEN-001):
 
 ## Engine behavior
 
-`install!` registers one weaver event handler `:treadle/engine` on the same
-event types shuttle listens to (`:strand/added :strand/updated :batch/applied
-:strand/burned :strand/superseded`), then runs one initial `scan!`. It **fails
-loudly** if the shuttle is not installed (no `:shuttle/engine` in
-`api/event-handlers`) — the treadle without a shuttle would create runs
-nothing spawns. No new op, no CLI surface (TEN-004, RFC-010.G8): inspection is
-`strand show`, `strand op agent ps`, and the workflow surface.
+`install!` registers one weaver event handler `:treadle/engine` on the same event types shuttle listens to (`:strand/added :strand/updated :batch/applied :strand/burned :strand/superseded`), then runs one initial `scan!`. It **fails loudly** if the shuttle is not installed (no `:shuttle/engine` in `api/event-handlers`) — the treadle without a shuttle would create runs nothing spawns. No new op, no CLI surface (TEN-004, RFC-010.G8): inspection is `strand show`, `strand op agent ps`, and the workflow surface.
 
-Every event triggers `scan!`, which does two phases. Handlers run serially on
-the weaver event-worker thread, but `install!`'s initial scan runs on the
-installing thread, so `scan!` body is wrapped in `locking` on a private
-monitor.
+Every event triggers `scan!`, which does two phases. Handlers run serially on the weaver event-worker thread, but `install!`'s initial scan runs on the installing thread, so `scan!` body is wrapped in `locking` on a private monitor.
 
-Both phases guard **per item** with try/catch and record failures as durable
-attributes instead of throwing the scan away (mirroring shuttle's per-run
-`mark-failed!` style). For an asynchronous engine the durable attribute *is*
-the loud failure channel (TEN-003); unexpected errors additionally surface in
-`api/recent-event-failures` if they escape.
+Both phases guard **per item** with try/catch and record failures as durable attributes instead of throwing the scan away (mirroring shuttle's per-run `mark-failed!` style). For an asynchronous engine the durable attribute *is* the loud failure channel (TEN-003); unexpected errors additionally surface in `api/recent-event-failures` if they escape.
 
 ### Phase 1 — deliver finished runs
 
-Query: closed strands with `[:exists [:attr "treadle/gate"]]` and
-`[:missing [:attr "treadle/delivered"]]`.
+Query: closed strands with `[:exists [:attr "treadle/gate"]]` and `[:missing [:attr "treadle/delivered"]]`.
 
 For each such run:
 
@@ -92,11 +71,7 @@ For each such run:
 
 ### Phase 2 — spawn ready gates
 
-Enumerate via the **workflow surface**, not raw core readiness: for each
-`workflow/active-runs` root, take its `workflow/run-id` and filter
-`workflow/next-steps` views for `:gate "subagent"`. (Core `api/ready` would
-wrongly surface gates inside bond-blocked runs; `next-steps` owns those
-semantics.)
+Enumerate via the **workflow surface**, not raw core readiness: for each `workflow/active-runs` root, take its `workflow/run-id` and filter `workflow/next-steps` views for `:gate "subagent"`. (Core `api/ready` would wrongly surface gates inside bond-blocked runs; `next-steps` owns those semantics.)
 
 For each ready subagent gate, reading the full gate strand for attributes:
 
@@ -146,9 +121,7 @@ For each ready subagent gate, reading the full gate strand for attributes:
 | `treadle/delivered` | run strand | `"true"`, `"gate-closed"`, or `"error: …"` — delivery outcome; presence excludes the run from Phase 1. |
 | `treadle/delivery-blocked` | run strand | Write-once, non-terminal signal that the gate was active but unready at delivery time; the run stays in Phase 1's query and delivers when the gate is ready again. |
 
-On the closed gate the ordinary workflow vocabulary carries the outcome:
-`workflow/outcome-by` = run strand id, `workflow/notes` = the run's
-`shuttle/result`.
+On the closed gate the ordinary workflow vocabulary carries the outcome: `workflow/outcome-by` = run strand id, `workflow/notes` = the run's `shuttle/result`.
 
 ## Deliverables
 
@@ -180,9 +153,7 @@ On the closed gate the ordinary workflow vocabulary carries the outcome:
    and a brief mention in `src/skein/spools/workflow.md` §3 "Gates" and §9
    see-also that a shipped adapter exists for `:subagent` gates.
 
-Out of scope: devflow stage changes (a later feature may pour AFK task steps
-as subagent gates), retry policy beyond the manual paths above, any new CLI
-command, weaver-side action registry.
+Out of scope: devflow stage changes (a later feature may pour AFK task steps as subagent gates), retry policy beyond the manual paths above, any new CLI command, weaver-side action registry.
 
 ## Validation
 
@@ -190,5 +161,4 @@ command, weaver-side action registry.
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test
 ```
 
-All existing tests must stay green; `git status --short` must show no
-generated SQLite or runtime metadata artifacts.
+All existing tests must stay green; `git status --short` must show no generated SQLite or runtime metadata artifacts.

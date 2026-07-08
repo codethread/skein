@@ -1,9 +1,6 @@
 # Stripped Task API
 
-**Document ID:** `PROP-001`
-**Status:** Shipped
-**Created:** 2026-06-24
-**Shipped:** 2026-06-24
+**Document ID:** `PROP-001` **Status:** Shipped **Created:** 2026-06-24 **Shipped:** 2026-06-24
 
 ## Problem
 

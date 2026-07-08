@@ -1,13 +1,6 @@
 # Weaver Lifecycle Hooks Plan
 
-**Document ID:** `WLH-PLAN-001`
-**Feature:** `weaver-lifecycle-hooks`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-008 Weaver Lifecycle Hooks](rfcs/2026-06-29-weaver-lifecycle-hooks.md)
-**Root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [Strand Model](../../specs/strand-model.md)
-**Feature specs:** [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-29
+**Document ID:** `WLH-PLAN-001` **Feature:** `weaver-lifecycle-hooks` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-008 Weaver Lifecycle Hooks](rfcs/2026-06-29-weaver-lifecycle-hooks.md) **Root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [Strand Model](../../specs/strand-model.md) **Feature specs:** [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md) **Status:** Shipped **Last Updated:** 2026-06-29
 
 ## WLH-PLAN-001.P1 Goal and scope
 

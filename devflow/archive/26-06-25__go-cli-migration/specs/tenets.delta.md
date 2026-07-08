@@ -1,10 +1,6 @@
 # Project Tenets delta for Go CLI Migration
 
-**Document ID:** `TEN-D001`
-**Root document:** [TENETS.md](../../../TENETS.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-25
+**Document ID:** `TEN-D001` **Root document:** [TENETS.md](../../../TENETS.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-25
 
 ## TEN-D001.P1 Summary
 

@@ -1,10 +1,6 @@
 # REPL API delta for skein-rename
 
-**Document ID:** `SR-DELTA-003`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-26
+**Document ID:** `SR-DELTA-003` **Root spec:** [repl-api.md](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-26
 
 ## SR-DELTA-003.P1 Summary
 

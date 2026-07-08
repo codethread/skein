@@ -1,20 +1,10 @@
 # Coordination Attention Surface
 
-**Document ID:** `RFC-011`
-**Status:** Implemented
-**Date:** 2026-07-02
-**Related:** [RFC-010](./2026-07-02-shuttle-backed-coordination.md) (Q6, G4), [Shuttle spool](../../spools/shuttle/README.md), [Treadle spool](../../spools/shuttle/treadle.md), [Workflow spool](../../src/skein/spools/workflow.md), [agent-delegate feature](../feat/agent-delegate/proposal.md), [afk-gates feature](../feat/afk-gates/proposal.md)
+**Document ID:** `RFC-011` **Status:** Implemented **Date:** 2026-07-02 **Related:** [RFC-010](./2026-07-02-shuttle-backed-coordination.md) (Q6, G4), [Shuttle spool](../../spools/shuttle/README.md), [Treadle spool](../../spools/shuttle/treadle.md), [Workflow spool](../../src/skein/spools/workflow.md), [agent-delegate feature](../feat/agent-delegate/proposal.md), [afk-gates feature](../feat/afk-gates/proposal.md)
 
 ## RFC-011.P1 Problem
 
-RFC-010's substrate is now real: on 2026-07-02 the treadle spool, the
-`agent-delegate` op, and delegated devflow AFK gates were all built *through*
-shuttle-delegated agent runs coordinated over strands (five implementer/fixer
-runs, four reviewer runs, two live workflow demos in one session). That
-dogfooding produced a consistent observation: **execution is now durable and
-graph-native, but a coordinator's *attention* is still hand-rolled.** The
-coordinator (human or agent) spends its loop discovering *when it is needed*
-rather than deciding *what to do*.
+RFC-010's substrate is now real: on 2026-07-02 the treadle spool, the `agent-delegate` op, and delegated devflow AFK gates were all built *through* shuttle-delegated agent runs coordinated over strands (five implementer/fixer runs, four reviewer runs, two live workflow demos in one session). That dogfooding produced a consistent observation: **execution is now durable and graph-native, but a coordinator's *attention* is still hand-rolled.** The coordinator (human or agent) spends its loop discovering *when it is needed* rather than deciding *what to do*.
 
 Concrete friction from the session:
 
@@ -30,12 +20,7 @@ Concrete friction from the session:
     | strand weaver repl --stdin
   ```
 
-  The coordinator does not actually care about individual shuttle runs — it
-  cares about the workflow's frontier. `agent await` blocks at the wrong
-  level of abstraction, and `workflow/next-steps` answers the right question
-  but cannot block. The same cycle appeared again for the two-task AFK demo
-  (`afk-live-demo`): await gate one's run, re-poll, await gate two's run,
-  re-poll, then finally discover the HITL checkpoint.
+The coordinator does not actually care about individual shuttle runs — it cares about the workflow's frontier. `agent await` blocks at the wrong level of abstraction, and `workflow/next-steps` answers the right question but cannot block. The same cycle appeared again for the two-task AFK demo (`afk-live-demo`): await gate one's run, re-poll, await gate two's run, re-poll, then finally discover the HITL checkpoint.
 
 - **RFC-011.P1.2: Failure is durable but not discoverable.** Treadle and
   shuttle fail loudly *onto attributes* (`shuttle/phase "failed"`,

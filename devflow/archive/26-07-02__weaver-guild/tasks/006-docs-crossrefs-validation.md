@@ -6,8 +6,7 @@
 
 Type: AFK
 
-Write the guild spool contract doc, wire up index/cross-references, sync
-CLAUDE.md, and run the full validation suite for the feature.
+Write the guild spool contract doc, wire up index/cross-references, sync CLAUDE.md, and run the full validation suite for the feature.
 
 ## TASK-Guild-006.P2 Must implement exactly
 

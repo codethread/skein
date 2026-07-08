@@ -2,24 +2,13 @@
 
 ## Overview
 
-`skein.spools.chime` is a local notification engine for Skein graph events.
-It watches strand mutations, evaluates small user-registered rules, and sends
-matching notices through a user-bound local notifier command.
+`skein.spools.chime` is a local notification engine for Skein graph events. It watches strand mutations, evaluates small user-registered rules, and sends matching notices through a user-bound local notifier command.
 
-Chime knows nothing about any particular workflow or attribute vocabulary: it
-ships **no rules and no notifier**. A workspace's trusted config decides what
-deserves attention (rules) and each developer decides how to be told
-(notifier). It owns only runtime-local weaver-lifetime state: the notifier
-binding, rules, deduplication memory, batch scan memory, and recent failures are
-kept on the active runtime and isolated from other runtimes in the same JVM.
+Chime knows nothing about any particular workflow or attribute vocabulary: it ships **no rules and no notifier**. A workspace's trusted config decides what deserves attention (rules) and each developer decides how to be told (notifier). It owns only runtime-local weaver-lifetime state: the notifier binding, rules, deduplication memory, batch scan memory, and recent failures are kept on the active runtime and isolated from other runtimes in the same JVM.
 
-Chime spawns a user-configured local process with the user's authority, so it
-is an approved local-root spool like shuttle rather than a shipped classpath
-spool.
+Chime spawns a user-configured local process with the user's authority, so it is an approved local-root spool like shuttle rather than a shipped classpath spool.
 
-For composition recipes — binding a notifier, writing rules that fire on an
-attribute transition or on readiness, and debugging when the notifications go
-quiet — see the [cookbook](../chime.cookbook.md).
+For composition recipes — binding a notifier, writing rules that fire on an attribute transition or on readiness, and debugging when the notifications go quiet — see the [cookbook](../chime.cookbook.md).
 
 ## Loading
 
@@ -44,8 +33,7 @@ Activate it from trusted startup config after syncing approved roots:
    :required? true})
 ```
 
-`install!` registers only the graph-event handler. A useful setup then layers
-two things on top:
+`install!` registers only the graph-event handler. A useful setup then layers two things on top:
 
 - shared config (`init.clj` / a workspace spool) registers the workspace's
   rules with `defrule!`, so the repo decides what needs attention;
@@ -64,14 +52,9 @@ Bind the notifier with plain data:
 (chime/notifier)
 ```
 
-For each notification, chime spawns `:argv` with the title appended as the
-final argument and the body written to stdin — any command with the shape
-`my-notify <title>` (body on stdin) works, including a small wrapper script
-around whatever your platform uses.
+For each notification, chime spawns `:argv` with the title appended as the final argument and the body written to stdin — any command with the shape `my-notify <title>` (body on stdin) works, including a small wrapper script around whatever your platform uses.
 
-Notifier state is weaver-lifetime: re-bind on every startup/reload (which
-`init.local.clj` does naturally). With no notifier bound, a fired rule records
-a loud failure in `(chime/failures)` instead of silently dropping the event.
+Notifier state is weaver-lifetime: re-bind on every startup/reload (which `init.local.clj` does naturally). With no notifier bound, a fired rule records a loud failure in `(chime/failures)` instead of silently dropping the event.
 
 Manual sends use the same path:
 
@@ -81,20 +64,14 @@ Manual sends use the same path:
 
 ## Rules
 
-A rule is a named function registered by fully qualified symbol. On every
-graph mutation chime scans current strands and calls each rule with a context
-map containing at least:
+A rule is a named function registered by fully qualified symbol. On every graph mutation chime scans current strands and calls each rule with a context map containing at least:
 
 - `:strand` — the candidate strand being evaluated;
 - `:event` — the triggering graph event;
 - `:ready-ids` — the set of ready strand ids, computed once per scan, so
   readiness rules need no extra queries.
 
-The rule returns nil for no notification or `{:title "..." :body "..."}` to
-send one. Scans are whole-graph on purpose — the strand worth notifying about
-is often not the strand that changed (closing one strand is what makes another
-ready). Batch events and their per-strand fanout share a `:batch/id` and
-trigger only one scan.
+The rule returns nil for no notification or `{:title "..." :body "..."}` to send one. Scans are whole-graph on purpose — the strand worth notifying about is often not the strand that changed (closing one strand is what makes another ready). Batch events and their per-strand fanout share a `:batch/id` and trigger only one scan.
 
 Worked example — notify when a strand that parents other work is closed:
 
@@ -118,14 +95,9 @@ Worked example — notify when a strand that parents other work is closed:
 (chime/remove-rule! :parent-completed)
 ```
 
-Chime deduplicates notifications per `[rule strand]` while the rule keeps
-matching: a strand is marked seen only after the notifier process starts, so a
-missing or failing notifier does not swallow the alert, and the mark clears
-when the rule stops matching so a recurrence notifies again. Use
-`(chime/reset-seen!)` from tests or config to clear that memory.
+Chime deduplicates notifications per `[rule strand]` while the rule keeps matching: a strand is marked seen only after the notifier process starts, so a missing or failing notifier does not swallow the alert, and the mark clears when the rule stops matching so a recurrence notifies again. Use `(chime/reset-seen!)` from tests or config to clear that memory.
 
-Rule, notifier, and process failures are recorded by `(chime/failures)` and
-event handler failures remain visible through the Skein event failure surface.
+Rule, notifier, and process failures are recorded by `(chime/failures)` and event handler failures remain visible through the Skein event failure surface.
 
 ## See also
 

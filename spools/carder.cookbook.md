@@ -1,7 +1,6 @@
 # Skein Carder Spool — Cookbook
 
-Composition recipes for `skein.spools.carder`: how to build a periodic graph
-hygiene loop out of the read-only reports, and *why* each shape is the right one.
+Composition recipes for `skein.spools.carder`: how to build a periodic graph hygiene loop out of the read-only reports, and *why* each shape is the right one.
 
 This is the **how/why** half of the carder docs. The other two halves are:
 
@@ -11,15 +10,11 @@ This is the **how/why** half of the carder docs. The other two halves are:
 - [`carder.api.md`](./carder.api.md) — the **generated reference**: every public
   fn's signature, arities, and docstring, produced from the source.
 
-Division of truth: signatures, row shapes, and the option table live in the
-contract and the generated API doc; the recipes here never restate them — they
-link. When a recipe needs an exact option, follow the link to [carder.md
-§3](./carder.md#3-surface).
+Division of truth: signatures, row shapes, and the option table live in the contract and the generated API doc; the recipes here never restate them — they link. When a recipe needs an exact option, follow the link to [carder.md §3](./carder.md#3-surface).
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which reports combine, and how you act on them.
@@ -28,26 +23,17 @@ your situation and lift the snippet:
 4. **Why this shape** — the reasoning: why this report, what its exclusions buy
    you, and what pairs with it.
 
-Each recipe cites the honest source it was distilled from — this repo's config,
-the shipped ops, or the test suite — so you can read the load-bearing version.
+Each recipe cites the honest source it was distilled from — this repo's config, the shipped ops, or the test suite — so you can read the load-bearing version.
 
-Carder mutates nothing; every recipe is a *read* that hands you rows to act on
-with other tools. The reports that walk edges (`orphans`, `blocked-by-failure`,
-`report`) need an in-process weaver runtime — trusted config, the weaver's REPL,
-or a test runtime — and fail loudly without one ([carder.md
-§1](./carder.md#1-overview)).
+Carder mutates nothing; every recipe is a *read* that hands you rows to act on with other tools. The reports that walk edges (`orphans`, `blocked-by-failure`, `report`) need an in-process weaver runtime — trusted config, the weaver's REPL, or a test runtime — and fail loudly without one ([carder.md §1](./carder.md#1-overview)).
 
 ---
 
 ## Recipe: Triage stale active work
 
-**Situation.** A long-lived weaver accumulates active strands that stopped moving
-— a spike someone walked away from, a task whose owner never closed it. You want
-a weekly "what has gone quiet?" pass so nothing rots silently in the active set.
+**Situation.** A long-lived weaver accumulates active strands that stopped moving — a spike someone walked away from, a task whose owner never closed it. You want a weekly "what has gone quiet?" pass so nothing rots silently in the active set.
 
-**Composition.** `stale` with a `:days` threshold. Each row is a compact strand
-summary plus `:days-stale`, already sorted oldest-first, so the top of the list
-is your triage queue.
+**Composition.** `stale` with a `:days` threshold. Each row is a compact strand summary plus `:days-stale`, already sorted oldest-first, so the top of the list is your triage queue.
 
 ```clojure
 (require '[skein.spools.carder :as carder])
@@ -75,25 +61,15 @@ is your triage queue.
   carry the age and arrive oldest-first, you triage from the top and stop when
   the ages stop alarming you.
 
-Honest source: `stale-detects-doctored-updated-at-and-validates-options` in
-[`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj),
-which back-dates a strand's `updated_at`, asserts it surfaces with a positive
-`:days-stale`, and asserts a fresh strand does not.
+Honest source: `stale-detects-doctored-updated-at-and-validates-options` in [`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj), which back-dates a strand's `updated_at`, asserts it surfaces with a positive `:days-stale`, and asserts a fresh strand does not.
 
 ---
 
 ## Recipe: Orphan sweep before archiving a feature
 
-**Situation.** You're about to archive a feature or tidy a branch, and you want
-to catch active strands that fell out of the graph — created, never wired to a
-parent or dependency, now floating. But your board legitimately has some
-edge-free roots (a fresh kanban card has no children yet), and you don't want
-those flagged every sweep.
+**Situation.** You're about to archive a feature or tidy a branch, and you want to catch active strands that fell out of the graph — created, never wired to a parent or dependency, now floating. But your board legitimately has some edge-free roots (a fresh kanban card has no children yet), and you don't want those flagged every sweep.
 
-**Composition.** `orphans` returns active strands with zero edges in any relation
-and no `workflow/*` attributes. Wrap it with a small predicate that removes the
-roots you *expect* to be edge-free, so the report shows only genuine strays —
-exactly what this repo's `carder-report` op does for its kanban card roots.
+**Composition.** `orphans` returns active strands with zero edges in any relation and no `workflow/*` attributes. Wrap it with a small predicate that removes the roots you *expect* to be edge-free, so the report shows only genuine strays — exactly what this repo's `carder-report` op does for its kanban card roots.
 
 ```clojure
 (require '[skein.spools.carder :as carder])
@@ -130,27 +106,15 @@ exactly what this repo's `carder-report` op does for its kanban card roots.
   boundary — closing a feature — because that is when a floating strand is about
   to be lost from view for good.
 
-Honest source: `suppress-expected-carder-orphans` / `kanban-card-orphan?` and the
-`carder-report-op` wrapper in this repo's
-[`.skein/config.clj`](../.skein/config.clj), which strips unstarted kanban card
-roots from the orphan section; and
-`orphans-require-no-edges-and-no-workflow-attributes` in
-[`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj).
+Honest source: `suppress-expected-carder-orphans` / `kanban-card-orphan?` and the `carder-report-op` wrapper in this repo's [`.skein/config.clj`](../.skein/config.clj), which strips unstarted kanban card roots from the orphan section; and `orphans-require-no-edges-and-no-workflow-attributes` in [`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj).
 
 ---
 
 ## Recipe: Find work blocked behind a failed run, then retry it
 
-**Situation.** A delegated agent run failed and stayed active (failures are loud
-and visible on purpose). Downstream strands that `depends-on` it are now stuck —
-ready-looking but still blocked on the failed run. You want to find that stuck
-work and route it back into recovery.
+**Situation.** A delegated agent run failed and stayed active (failures are loud and visible on purpose). Downstream strands that `depends-on` it are now stuck — ready-looking but still blocked on the failed run. You want to find that stuck work and route it back into recovery.
 
-**Composition.** `blocked-by-failure` returns each active strand that has an
-active `depends-on` blocker whose `shuttle/phase` is `"failed"` or
-`"exhausted"`, with a `:blockers` vector carrying each blocker's id, phase, and
-`shuttle/error`. Feed those blocker ids to `strand agent retry`, the recovery
-verb.
+**Composition.** `blocked-by-failure` returns each active strand that has an active `depends-on` blocker whose `shuttle/phase` is `"failed"` or `"exhausted"`, with a `:blockers` vector carrying each blocker's id, phase, and `shuttle/error`. Feed those blocker ids to `strand agent retry`, the recovery verb.
 
 ```clojure
 (require '[skein.spools.carder :as carder])
@@ -183,25 +147,15 @@ strand agent retry impl-run
   current body ([agents README §3](./agents/README.md)). The two compose:
   one reports, the other mutates.
 
-Honest source: `blocked-by-failure-reports-failed-blocker-details` in
-[`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj),
-which wires a strand to `failed` and `exhausted` blockers and asserts the row
-carries both blocker ids and the `shuttle/error`; the retry contract is in the
-[agents spool README](./agents/README.md).
+Honest source: `blocked-by-failure-reports-failed-blocker-details` in [`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj), which wires a strand to `failed` and `exhausted` blockers and asserts the row carries both blocker ids and the `shuttle/error`; the retry contract is in the [agents spool README](./agents/README.md).
 
 ---
 
 ## Recipe: Wrap the hygiene report in your own op or scheduled sweep
 
-**Situation.** A one-off `stale` or `orphans` call is easy to forget. You want
-the whole hygiene picture — stale, orphaned, failure-blocked — available on
-demand as a first-class command, or fired on a schedule so drift surfaces without
-anyone remembering to look.
+**Situation.** A one-off `stale` or `orphans` call is easy to forget. You want the whole hygiene picture — stale, orphaned, failure-blocked — available on demand as a first-class command, or fired on a schedule so drift surfaces without anyone remembering to look.
 
-**Composition.** `report` rolls all three sections into one JSON-compatible map,
-each with a `:count` and `:rows`. Wrap that one call behind whatever surface your
-workspace already uses — a registered op for on-demand runs, or a scheduled job
-for a standing sweep — and keep any policy in the wrapper, not the spool.
+**Composition.** `report` rolls all three sections into one JSON-compatible map, each with a `:count` and `:rows`. Wrap that one call behind whatever surface your workspace already uses — a registered op for on-demand runs, or a scheduled job for a standing sweep — and keep any policy in the wrapper, not the spool.
 
 ```clojure
 (require '[skein.spools.carder :as carder])
@@ -213,10 +167,7 @@ for a standing sweep — and keep any policy in the wrapper, not the spool.
 ;;     :blocked-by-failure {:count 1 :rows [...]}}
 ```
 
-Registered as an op, the report becomes a command with typed flags. Keep the op
-body a thin unpack over `report` and put workspace policy — the default
-threshold, your own orphan suppression (the `expected-orphan?` predicate from the
-orphan recipe above) — in the wrapper:
+Registered as an op, the report becomes a command with typed flags. Keep the op body a thin unpack over `report` and put workspace policy — the default threshold, your own orphan suppression (the `expected-orphan?` predicate from the orphan recipe above) — in the wrapper:
 
 ```clojure
 ;; op body: a thin read-only wrapper over report, plus your own orphan policy
@@ -230,11 +181,7 @@ orphan recipe above) — in the wrapper:
     (update result :orphans assoc :rows kept :count (count kept))))
 ```
 
-A scheduled job is the same call on a timer: run `report` on an interval and
-raise a card (or post a note) whenever a section is non-empty. This repo wires
-exactly this shape — a read-only report op — in
-[`.skein/config.clj`](../.skein/config.clj); treat that as one worked example, not
-the required form.
+A scheduled job is the same call on a timer: run `report` on an interval and raise a card (or post a note) whenever a section is non-empty. This repo wires exactly this shape — a read-only report op — in [`.skein/config.clj`](../.skein/config.clj); treat that as one worked example, not the required form.
 
 **Why this shape.**
 
@@ -251,10 +198,7 @@ the required form.
   when a section is non-empty. Pick the cadence; the report doesn't care who
   calls it.
 
-Honest source: the `(report opts)` contract in
-[carder.md §3](./carder.md#3-surface), and this repo's own read-only report op in
-[`.skein/config.clj`](../.skein/config.clj) as one worked example of the wrapper
-shape.
+Honest source: the `(report opts)` contract in [carder.md §3](./carder.md#3-surface), and this repo's own read-only report op in [`.skein/config.clj`](../.skein/config.clj) as one worked example of the wrapper shape.
 
 ---
 

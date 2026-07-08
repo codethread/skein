@@ -1,9 +1,6 @@
 # Spool `:needs` targeting skein-shipped namespaces
 
-**Document ID:** `RFC-018`
-**Status:** Rejected
-**Date:** 2026-07-03
-**Related:** [REPL API](../specs/repl-api.md) (SPEC-003.C24–C29, manifest grammar at line 99), [Weaver Runtime](../specs/daemon-runtime.md) (SPEC-004.C40/C50/C93/C94), [Registry-free git distribution for spools](../archive/26-07-03__spool-git-distribution/rfcs/2026-07-03-spool-git-distribution.md) (RFC-017), [Spool git distribution proposal](../archive/26-07-03__spool-git-distribution/proposal.md) (SGD-PROP-001.Q1), [Writing shared spools](../../docs/writing-shared-spools.md)
+**Document ID:** `RFC-018` **Status:** Rejected **Date:** 2026-07-03 **Related:** [REPL API](../specs/repl-api.md) (SPEC-003.C24–C29, manifest grammar at line 99), [Weaver Runtime](../specs/daemon-runtime.md) (SPEC-004.C40/C50/C93/C94), [Registry-free git distribution for spools](../archive/26-07-03__spool-git-distribution/rfcs/2026-07-03-spool-git-distribution.md) (RFC-017), [Spool git distribution proposal](../archive/26-07-03__spool-git-distribution/proposal.md) (SGD-PROP-001.Q1), [Writing shared spools](../../docs/writing-shared-spools.md)
 
 ## RFC-018.P1 Problem
 

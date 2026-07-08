@@ -1,19 +1,10 @@
 # Test Concurrency and Multi-Runtime JVM Support
 
-**Document ID:** `RFC-016`
-**Status:** Implemented
-**Date:** 2026-07-03
-**Related:** [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [Library Author Testing RFC](../archive/26-07-03__library-author-testing-support/rfcs/2026-06-26-library-author-testing.md), [Library Author Testing feature](../archive/26-07-03__library-author-testing-support/proposal.md), [Shuttle spool](../../spools/shuttle/README.md), [Chime spool](../../spools/chime/README.md)
+**Document ID:** `RFC-016` **Status:** Implemented **Date:** 2026-07-03 **Related:** [Weaver Runtime](../specs/daemon-runtime.md), [REPL API](../specs/repl-api.md), [Library Author Testing RFC](../archive/26-07-03__library-author-testing-support/rfcs/2026-06-26-library-author-testing.md), [Library Author Testing feature](../archive/26-07-03__library-author-testing-support/proposal.md), [Shuttle spool](../../spools/shuttle/README.md), [Chime spool](../../spools/chime/README.md)
 
 ## RFC-016.P1 Problem
 
-`clojure -M:test` runs 333 tests / 1796 assertions strictly sequentially
-(~34s wall on the reference machine, ~131% CPU). Every weaver-backed test pays
-full runtime start/stop serially. This slows all validation loops (agent
-delegation gates included), and the underlying constraint — **one weaver
-runtime per JVM** — also blocks `library-author-testing-support`: a
-`skein.test.alpha/with-weaver-world` helper cannot be safely nested or
-parallelized while `runtime/start!` throws when any runtime is already active.
+`clojure -M:test` runs 333 tests / 1796 assertions strictly sequentially (~34s wall on the reference machine, ~131% CPU). Every weaver-backed test pays full runtime start/stop serially. This slows all validation loops (agent delegation gates included), and the underlying constraint — **one weaver runtime per JVM** — also blocks `library-author-testing-support`: a `skein.test.alpha/with-weaver-world` helper cannot be safely nested or parallelized while `runtime/start!` throws when any runtime is already active.
 
 Verified current state (2026-07-03):
 
@@ -164,18 +155,11 @@ Three features, strictly sequenced:
    decisions; updates spool contract docs.
 3. `parallel-test-runner` (D3) — depends on D1+D2; runner + test hygiene.
 
-Success criteria: full suite green under the concurrent runner with a
-meaningful wall-clock reduction from the 34s baseline; `-M:smoke` unchanged;
-a follow-up LAT task can start two weaver worlds in one test JVM.
+Success criteria: full suite green under the concurrent runner with a meaningful wall-clock reduction from the 34s baseline; `-M:smoke` unchanged; a follow-up LAT task can start two weaver worlds in one test JVM.
 
 ## RFC-016.P7 Observed pre-existing flakes (2026-07-03 session evidence)
 
-A 2026-07-03 session surfaced three tests that pass solo and on rerun but flap
-under full-suite parallel load. These are not regressions from this RFC's work;
-they were reproduced on unmodified `main`, and they matter here because the
-concurrent runner (D3) turns latent async-timing assumptions into real races.
-The parallel runner **must not** be declared green while these still flap.
-Line numbers drifted since first observation, so tests are cited by name.
+A 2026-07-03 session surfaced three tests that pass solo and on rerun but flap under full-suite parallel load. These are not regressions from this RFC's work; they were reproduced on unmodified `main`, and they matter here because the concurrent runner (D3) turns latent async-timing assumptions into real races. The parallel runner **must not** be declared green while these still flap. Line numbers drifted since first observation, so tests are cited by name.
 
 - **RFC-016.P7.1 — `chime-test/notifier-binding-and-manual-notify`
   (`test/skein/chime_test.clj`).** The `notify!` assertions await only the

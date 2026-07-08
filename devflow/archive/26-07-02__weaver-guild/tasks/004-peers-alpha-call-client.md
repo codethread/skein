@@ -6,9 +6,7 @@
 
 Type: AFK
 
-Add the invocation half of `skein.api.peers.alpha`: `(call! peer op args)`
-executes one allowlisted public JSON socket operation on a resolved peer
-over the existing wire protocol, per DELTA-DaemonRuntime-002.CC4.
+Add the invocation half of `skein.api.peers.alpha`: `(call! peer op args)` executes one allowlisted public JSON socket operation on a resolved peer over the existing wire protocol, per DELTA-DaemonRuntime-002.CC4.
 
 ## TASK-Guild-004.P2 Must implement exactly
 

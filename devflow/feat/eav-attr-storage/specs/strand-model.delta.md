@@ -1,10 +1,6 @@
 # Strand Model delta for eav-attr-storage
 
-**Document ID:** `EAS-DELTA-001`
-**Root spec:** [strand-model.md](../../../specs/strand-model.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-07
+**Document ID:** `EAS-DELTA-001` **Root spec:** [strand-model.md](../../../specs/strand-model.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-07
 
 ## EAS-DELTA-001.P1 Summary
 

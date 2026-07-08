@@ -6,10 +6,7 @@
 
 Type: AFK
 
-Ship `skein.spools.guild`, the classpath reference spool that lets a repo's
-trusted config declare a versioned public weaver op API over the existing
-CLI operation registry, with introspection and loud structured deprecation,
-per DELTA-DaemonRuntime-002.D1/D4 and PROP-Guild-001.G4.
+Ship `skein.spools.guild`, the classpath reference spool that lets a repo's trusted config declare a versioned public weaver op API over the existing CLI operation registry, with introspection and loud structured deprecation, per DELTA-DaemonRuntime-002.D1/D4 and PROP-Guild-001.G4.
 
 ## TASK-Guild-005.P2 Must implement exactly
 

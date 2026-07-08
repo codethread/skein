@@ -1,22 +1,10 @@
 # Readability macros for the .skein config Plan
 
-**Document ID:** `PLAN-Srm-001`
-**Feature:** `skein-readability-macros`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-020 Readability macros for the .skein config surface](../../rfcs/2026-07-08-skein-readability-macros.md)
-**Root specs:** none (this feature ships no shipped-tree contract; it refactors workspace-local `.skein` config only)
-**Feature specs:** none
-**Status:** Reviewed
-**Last Updated:** 2026-07-08
+**Document ID:** `PLAN-Srm-001` **Feature:** `skein-readability-macros` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-020 Readability macros for the .skein config surface](../../rfcs/2026-07-08-skein-readability-macros.md) **Root specs:** none (this feature ships no shipped-tree contract; it refactors workspace-local `.skein` config only) **Feature specs:** none **Status:** Reviewed **Last Updated:** 2026-07-08
 
 ## PLAN-Srm-001.P1 Goal and scope
 
-Deliver RFC-020: extend the proven `skein.macros.patterns/defpattern` grouping shape to the `.skein` config concerns that
-drift. Ship three workspace-local macros — `defquery`, `defop`, `defrule` — and rewrite `config.clj`'s queries and ops and
-`attention.clj`'s rules so a reader scans one contiguous block per construct. This is a data-preserving refactor: the live
-coordination weaver loads these files, so no registered query, op, rule, alias, or generated `help`/`about`/`devflow-conventions`
-string may change (RFC-020.G2, PROP-SkeinReadabilityMacros-001.NG1). Rationale and options live in the RFC and proposal; this
-plan owns the build strategy, the load/classpath wiring the refactor needs, and the identity invariants each slice must hold.
+Deliver RFC-020: extend the proven `skein.macros.patterns/defpattern` grouping shape to the `.skein` config concerns that drift. Ship three workspace-local macros — `defquery`, `defop`, `defrule` — and rewrite `config.clj`'s queries and ops and `attention.clj`'s rules so a reader scans one contiguous block per construct. This is a data-preserving refactor: the live coordination weaver loads these files, so no registered query, op, rule, alias, or generated `help`/`about`/`devflow-conventions` string may change (RFC-020.G2, PROP-SkeinReadabilityMacros-001.NG1). Rationale and options live in the RFC and proposal; this plan owns the build strategy, the load/classpath wiring the refactor needs, and the identity invariants each slice must hold.
 
 ## PLAN-Srm-001.P2 Approach
 
@@ -68,31 +56,23 @@ plan owns the build strategy, the load/classpath wiring the refactor needs, and 
 
 ### PLAN-Srm-001.PH1 Classpath and load wiring
 
-Outcome: `.skein/spools/macros/src` is on the `:test` classpath and the `:config`/`:attention` init
-modules order after `:macros/patterns`. `clojure -M:test` and `make reflect-check` stay green with no behavioural change.
+Outcome: `.skein/spools/macros/src` is on the `:test` classpath and the `:config`/`:attention` init modules order after `:macros/patterns`. `clojure -M:test` and `make reflect-check` stay green with no behavioural change.
 
 ### PLAN-Srm-001.PH2 The three grouping macros
 
-Outcome: `skein.macros.queries/defquery`, `skein.macros.ops/defop`, and `skein.macros.rules/defrule` each expand to a real
-`def`/`defn` plus a per-namespace remember, expose an `install-*!` that registers remembered entries, fail loudly at the named
-construct on a malformed block, and are covered by unit tests. No config file uses them yet.
+Outcome: `skein.macros.queries/defquery`, `skein.macros.ops/defop`, and `skein.macros.rules/defrule` each expand to a real `def`/`defn` plus a per-namespace remember, expose an `install-*!` that registers remembered entries, fail loudly at the named construct on a malformed block, and are covered by unit tests. No config file uses them yet.
 
 ### PLAN-Srm-001.PH3 Config queries and ops conversion
 
-Outcome: `config.clj` authors its seven queries and its full op family as `defquery`/`defop` blocks; `register-query-map!`, the
-`install!` op vector, and `op-metadata` are gone; `devflow-conventions-op` derives its config `:ops`/`:queries` listings from the
-remembered entries. The registered query/op surface, generated `help <op>`, and `devflow-conventions` output are byte-identical.
+Outcome: `config.clj` authors its seven queries and its full op family as `defquery`/`defop` blocks; `register-query-map!`, the `install!` op vector, and `op-metadata` are gone; `devflow-conventions-op` derives its config `:ops`/`:queries` listings from the remembered entries. The registered query/op surface, generated `help <op>`, and `devflow-conventions` output are byte-identical.
 
 ### PLAN-Srm-001.PH4 Attention rules conversion
 
-Outcome: `attention.clj` authors its rules as `defrule` blocks and `install!` calls `install-rules!`; `register-chime-rules!` is
-gone. The registered chime rules and their firing behaviour are unchanged.
+Outcome: `attention.clj` authors its rules as `defrule` blocks and `install!` calls `install-rules!`; `register-chime-rules!` is gone. The registered chime rules and their firing behaviour are unchanged.
 
 ### PLAN-Srm-001.PH5 Byte-identical surface verification
 
-Outcome: the RFC-020.C1 before/after surface check passes — `help`, `help <op>` for every op, each named query's rows, a chime
-rule firing, and `devflow-conventions` are byte-identical between the status-quo and converted config. `clojure -M:test`,
-`clojure -M:smoke`, and `make fmt-check lint reflect-check docs-check` are green.
+Outcome: the RFC-020.C1 before/after surface check passes — `help`, `help <op>` for every op, each named query's rows, a chime rule firing, and `devflow-conventions` are byte-identical between the status-quo and converted config. `clojure -M:test`, `clojure -M:smoke`, and `make fmt-check lint reflect-check docs-check` are green.
 
 ## PLAN-Srm-001.P6 Validation strategy
 

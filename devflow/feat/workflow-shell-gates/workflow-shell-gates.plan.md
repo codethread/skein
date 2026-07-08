@@ -1,22 +1,10 @@
 # Shell Gates Plan
 
-**Document ID:** `PLAN-ShellGates-001`
-**Feature:** `workflow-shell-gates`
-**Proposal:** [proposal.md](./proposal.md) (`PROP-ShellGates-001`)
-**RFC:** None owns this. Sibling to [RFC-010 Shuttle-backed Coordination](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (treadle, the precedent executor); adjacent [RFC-009 Weaver Scheduler](../../rfcs/2026-06-29-weaver-scheduler.md) (the async substrate an off-event-thread executor runs on — no conflict).
-**Root specs:** [Alpha Surface](../../specs/alpha-surface.md) (`SPEC-005`, contract-index only). Strand Model / CLI / REPL API / Weaver Runtime are untouched.
-**Feature specs:** [Alpha Surface delta](./specs/alpha-surface.delta.md) (`DELTA-ShellGates-001`).
-**Status:** Reviewed
-**Last Updated:** 2026-07-07
+**Document ID:** `PLAN-ShellGates-001` **Feature:** `workflow-shell-gates` **Proposal:** [proposal.md](./proposal.md) (`PROP-ShellGates-001`) **RFC:** None owns this. Sibling to [RFC-010 Shuttle-backed Coordination](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (treadle, the precedent executor); adjacent [RFC-009 Weaver Scheduler](../../rfcs/2026-06-29-weaver-scheduler.md) (the async substrate an off-event-thread executor runs on — no conflict). **Root specs:** [Alpha Surface](../../specs/alpha-surface.md) (`SPEC-005`, contract-index only). Strand Model / CLI / REPL API / Weaver Runtime are untouched. **Feature specs:** [Alpha Surface delta](./specs/alpha-surface.delta.md) (`DELTA-ShellGates-001`). **Status:** Reviewed **Last Updated:** 2026-07-07
 
 ## PLAN-ShellGates-001.P1 Goal and scope
 
-Ship a mechanical, durable, re-runnable check of a workflow *artifact* — a machine
-done-signal independent of run exit status — by adding a `:shell` gate waiter and a
-classpath executor spool that fulfils it (proposal `G1`–`G4`). The workflow engine
-does not change: the executor is a treadle sibling that knows both the workflow gate
-vocabulary and process execution, and closes the gate through the ordinary
-`workflow/complete!` surface.
+Ship a mechanical, durable, re-runnable check of a workflow *artifact* — a machine done-signal independent of run exit status — by adding a `:shell` gate waiter and a classpath executor spool that fulfils it (proposal `G1`–`G4`). The workflow engine does not change: the executor is a treadle sibling that knows both the workflow gate vocabulary and process execution, and closes the gate through the ordinary `workflow/complete!` surface.
 
 Resolved decisions binding this plan:
 
@@ -34,23 +22,13 @@ Resolved decisions binding this plan:
   trusted definition code with params supplying data only; no implicit shell; no
   `:ci` family; the treadle/`sh` collision fix stays out of scope.
 
-In scope: the `reed` spool and its `shell/*` gate vocabulary; the `:shell` executor
-registration + stall predicate + `stalled-shell-gates` query; the contract-doc triad;
-the doc-index/spec-index updates; optional live activation in this repo's `.skein`;
-the tested behaviour contract.
+In scope: the `reed` spool and its `shell/*` gate vocabulary; the `:shell` executor registration + stall predicate + `stalled-shell-gates` query; the contract-doc triad; the doc-index/spec-index updates; optional live activation in this repo's `.skein`; the tested behaviour contract.
 
-Out of scope (proposal non-goals, carried verbatim): option B / `workflow/validate`
-close-time hook (`NG1`); a `:ci` waiter or general external-check family (`NG2`); a
-named-command argv registry (`NG3`); implicit shell wrapping (`NG4`); unbounded output
-capture / the `<gate-id>.shell.log` file escape hatch (`NG5`); the treadle/`sh`
-preamble collision fix and blessing `sh` `:subagent` gates (`NG6`). The pattern-layer
-restoration of the agent-plan `validation` ergonomic (a trailing `:shell` gate per
-task) is an explicit follow-up, not this feature (`NG1`, proposal §Rejected B).
+Out of scope (proposal non-goals, carried verbatim): option B / `workflow/validate` close-time hook (`NG1`); a `:ci` waiter or general external-check family (`NG2`); a named-command argv registry (`NG3`); implicit shell wrapping (`NG4`); unbounded output capture / the `<gate-id>.shell.log` file escape hatch (`NG5`); the treadle/`sh` preamble collision fix and blessing `sh` `:subagent` gates (`NG6`). The pattern-layer restoration of the agent-plan `validation` ergonomic (a trailing `:shell` gate per task) is an explicit follow-up, not this feature (`NG1`, proposal §Rejected B).
 
 ## PLAN-ShellGates-001.P2 Approach
 
-The executor is a direct treadle analogue (`spools/shuttle/src/skein/spools/treadle.clj`
-is the reference implementation), minus everything shuttle-specific.
+The executor is a direct treadle analogue (`spools/shuttle/src/skein/spools/treadle.clj` is the reference implementation), minus everything shuttle-specific.
 
 - **PLAN-ShellGates-001.A1 (event-driven + scan reconciliation):** `install!`
   registers one weaver event handler on the graph-mutation event types
@@ -95,11 +73,7 @@ is the reference implementation), minus everything shuttle-specific.
   | `shell/output` | gate (recorded) | — | Bounded stdout+stderr **tail** (last N KB, one fixed bound), for audit. Bounded on purpose (`NG5`; large attribute payloads are a known cost per the attr-scaling work). |
   | `shell/error` | gate (recorded) | — | Durable failure detail (non-zero exit, timeout, spawn error, or invalid argv). Its presence makes the gate a coordinator-visible stalled state and causes reed to **skip** the gate on later scans until cleared. |
 
-  The **pass** outcome rides the ordinary workflow vocabulary only: reed closes the
-  gate with `workflow/complete!` `:by "shell"` and `:notes` = a short result summary
-  (surfacing as `workflow/outcome-by "shell"` / `workflow/notes`, mirroring treadle
-  putting `shuttle/result` in `workflow/notes`). **No new `workflow/*` attribute is
-  introduced** (`PROP-ShellGates-001.S3`).
+The **pass** outcome rides the ordinary workflow vocabulary only: reed closes the gate with `workflow/complete!` `:by "shell"` and `:notes` = a short result summary (surfacing as `workflow/outcome-by "shell"` / `workflow/notes`, mirroring treadle putting `shuttle/result` in `workflow/notes`). **No new `workflow/*` attribute is introduced** (`PROP-ShellGates-001.S3`).
 - **PLAN-ShellGates-001.A5 (loud, distinct failure — `G3`/`S4`):** a failed check does
   **not** close the gate and does **not** masquerade as a failed shuttle run. reed
   stamps `shell/error` (with `shell/exit-code` and bounded `shell/output` where a
@@ -164,29 +138,15 @@ Each phase is an independently reviewable increment that lands green.
 
 ### PLAN-ShellGates-001.PH1 Executor spool + tested contract
 
-Outcome: `spools/src/skein/spools/reed.clj` exists and its full behaviour contract is
-green under a disposable weaver world — the `:shell` waiter is fulfilled off the event
-thread, passes close the gate, failures stamp a distinct loud state, and recovery
-re-runs the check. `test/skein/spools/reed_test.clj` covers the P5 matrix. No docs or
-repo activation yet; the spool is loadable and tested in isolation.
+Outcome: `spools/src/skein/spools/reed.clj` exists and its full behaviour contract is green under a disposable weaver world — the `:shell` waiter is fulfilled off the event thread, passes close the gate, failures stamp a distinct loud state, and recovery re-runs the check. `test/skein/spools/reed_test.clj` covers the P5 matrix. No docs or repo activation yet; the spool is loadable and tested in isolation.
 
 ### PLAN-ShellGates-001.PH2 Contract docs + indexes + generated api
 
-Outcome: `spools/reed.md`, `spools/reed.cookbook.md`, and generated `spools/reed.api.md`
-ship; `spools/workflow.md` §3/§9 note the `:shell` executor; `spools/README.md` gains
-the classpath row; `DELTA-ShellGates-001.D1` is merged into
-`devflow/specs/alpha-surface.md`. `make docs-check` (api-docs drift + site build) is
-green.
+Outcome: `spools/reed.md`, `spools/reed.cookbook.md`, and generated `spools/reed.api.md` ship; `spools/workflow.md` §3/§9 note the `:shell` executor; `spools/README.md` gains the classpath row; `DELTA-ShellGates-001.D1` is merged into `devflow/specs/alpha-surface.md`. `make docs-check` (api-docs drift + site build) is green.
 
 ### PLAN-ShellGates-001.PH3 Repo-live activation (optional) + smoke
 
-Outcome: if the repo runs reed live, `.skein/init.clj` activates it (ordered after the
-workflow spool) and the `CLAUDE.md`/`AGENTS.md` spool lists gain a reed entry; the
-smoke demo optionally exercises a trivial `:shell` gate end to end. If the repo defers
-live activation, this phase records that decision and ships nothing but the note. This
-phase touches the canonical world's **config file only** — never a running weaver;
-pickup is a selected-workspace `runtime-alpha/reload!`, not a restart (see Task
-context).
+Outcome: if the repo runs reed live, `.skein/init.clj` activates it (ordered after the workflow spool) and the `CLAUDE.md`/`AGENTS.md` spool lists gain a reed entry; the smoke demo optionally exercises a trivial `:shell` gate end to end. If the repo defers live activation, this phase records that decision and ships nothing but the note. This phase touches the canonical world's **config file only** — never a running weaver; pickup is a selected-workspace `runtime-alpha/reload!`, not a restart (see Task context).
 
 ## PLAN-ShellGates-001.P6 Validation strategy
 
@@ -308,18 +268,7 @@ For an AFK implementer picking this up cold:
 - **Task-queue slicing (recorded 2026-07-07 by the task-breakdown run).** The queue
   is three sequential AFK tasks, one per phase: `TASK-ShellGates-001` (PH1 — reed.clj
   + full `reed_test.clj` matrix), `TASK-ShellGates-002` (PH2 — `reed.md`/cookbook/
-  generated `reed.api.md`, workflow.md/README indexes, `DELTA-ShellGates-001` merge),
-  `TASK-ShellGates-003` (PH3 — `.skein/init.clj` activation + `CLAUDE.md`/`AGENTS.md`
-  entries + full validation sweep). The suggested reed-core / failure-semantics split
-  (slices 1+2) was **deliberately merged** into `TASK-ShellGates-001`: the loud,
-  distinct failure path (`A5`/`A6`, the feature's whole point per `G3`/`S4`) and the
-  claim/skip predicate are load-bearing to the executor's core, so a happy-path-only
-  reed is not an independently shippable increment — matching treadle's shape
-  (scan/execute/error is one coherent namespace) and this plan's own single-increment
-  framing of PH1. `TASK-ShellGates-002` also has the implementer register reed in
-  `scripts/generate_api_docs.clj`'s explicit `spool-docs` list (the api-doc generator
-  enumerates spools by name, so `reed.api.md` is invisible to `make api-docs` until
-  listed).
+generated `reed.api.md`, workflow.md/README indexes, `DELTA-ShellGates-001` merge), `TASK-ShellGates-003` (PH3 — `.skein/init.clj` activation + `CLAUDE.md`/`AGENTS.md` entries + full validation sweep). The suggested reed-core / failure-semantics split (slices 1+2) was **deliberately merged** into `TASK-ShellGates-001`: the loud, distinct failure path (`A5`/`A6`, the feature's whole point per `G3`/`S4`) and the claim/skip predicate are load-bearing to the executor's core, so a happy-path-only reed is not an independently shippable increment — matching treadle's shape (scan/execute/error is one coherent namespace) and this plan's own single-increment framing of PH1. `TASK-ShellGates-002` also has the implementer register reed in `scripts/generate_api_docs.clj`'s explicit `spool-docs` list (the api-doc generator enumerates spools by name, so `reed.api.md` is invisible to `make api-docs` until listed).
 
 ## PLAN-ShellGates-001.P9 Developer Notes
 

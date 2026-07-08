@@ -1,10 +1,6 @@
 # REPL API Delta: Op help convention
 
-**Document ID:** `SPEC-003-D005`
-**Status:** Merged
-**Base Spec:** [REPL API](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Last Updated:** 2026-07-05
+**Document ID:** `SPEC-003-D005` **Status:** Merged **Base Spec:** [REPL API](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Last Updated:** 2026-07-05
 
 ## SPEC-003-D005.P1 Changed contracts
 

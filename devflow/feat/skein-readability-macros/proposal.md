@@ -1,25 +1,12 @@
 # Readability macros for the .skein config Proposal
 
-**Document ID:** `PROP-SkeinReadabilityMacros-001`
-**Last Updated:** 2026-07-08
-**Related RFCs:** [RFC-020 Readability macros for the .skein config surface](../../rfcs/2026-07-08-skein-readability-macros.md) (Accepted)
-**Related root specs:** None (this feature ships no shipped-tree contract; it refactors workspace-local `.skein` config only)
+**Document ID:** `PROP-SkeinReadabilityMacros-001` **Last Updated:** 2026-07-08 **Related RFCs:** [RFC-020 Readability macros for the .skein config surface](../../rfcs/2026-07-08-skein-readability-macros.md) (Accepted) **Related root specs:** None (this feature ships no shipped-tree contract; it refactors workspace-local `.skein` config only)
 
 ## PROP-SkeinReadabilityMacros-001.P1 Problem
 
-The `.skein` world is a scan-first surface. A returning human or a cold agent reads its config files to learn how this
-repo coordinates work, so their readability is the point: trusted startup config is where runtime customization lives,
-and it should read like a document (PHILOSOPHY; TEN-001). Today each construct is split across its file. A query's data,
-its `register-query-map!` entry, and its `devflow-conventions` doc sit in three places. An op's handler `defn`, its
-arg-spec, its `register-op!` call, and its conventions entry sit in four, with the op name spelled three to four times
-and free to drift. An attention rule's `defn` and its `register-chime-rules!` registration sit at opposite ends of
-`attention.clj`. A reader cannot scan one block per concern; they cross-reference. This is the exact registration-triple
-drift hazard RFC-012 cited, now visible in the config surface itself.
+The `.skein` world is a scan-first surface. A returning human or a cold agent reads its config files to learn how this repo coordinates work, so their readability is the point: trusted startup config is where runtime customization lives, and it should read like a document (PHILOSOPHY; TEN-001). Today each construct is split across its file. A query's data, its `register-query-map!` entry, and its `devflow-conventions` doc sit in three places. An op's handler `defn`, its arg-spec, its `register-op!` call, and its conventions entry sit in four, with the op name spelled three to four times and free to drift. An attention rule's `defn` and its `register-chime-rules!` registration sit at opposite ends of `attention.clj`. A reader cannot scan one block per concern; they cross-reference. This is the exact registration-triple drift hazard RFC-012 cited, now visible in the config surface itself.
 
-The decision of whether a scan-first config surface earns grouping macros — normally dispreferred in data-first Clojure —
-was taken to RFC-020 and accepted. `.skein` already ships one such macro: `skein.macros.patterns/defpattern` fuses a
-pattern's `defn`, docstring, and input schema into one remembered block installed from its module's `install!`. This
-feature extends that proven shape to the config concerns that actually drift.
+The decision of whether a scan-first config surface earns grouping macros — normally dispreferred in data-first Clojure — was taken to RFC-020 and accepted. `.skein` already ships one such macro: `skein.macros.patterns/defpattern` fuses a pattern's `defn`, docstring, and input schema into one remembered block installed from its module's `install!`. This feature extends that proven shape to the config concerns that actually drift.
 
 ## PROP-SkeinReadabilityMacros-001.P2 Goals
 

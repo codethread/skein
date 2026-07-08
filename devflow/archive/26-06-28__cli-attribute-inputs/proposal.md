@@ -1,9 +1,6 @@
 # CLI Attribute Inputs Proposal
 
-**Document ID:** `PROP-002`
-**Status:** Proposed
-**Related RFCs:** None
-**Related specs:** [CLI Surface](../../specs/cli.md)
+**Document ID:** `PROP-002` **Status:** Proposed **Related RFCs:** None **Related specs:** [CLI Surface](../../specs/cli.md)
 
 ## PROP-002.P1 Problem
 

@@ -1,7 +1,6 @@
 # Task 3: Add agent REPL helpers
 
-**Document ID:** `TASK-003`
-**Configuration identification:** `TASK-003` is the third task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-003`.
+**Document ID:** `TASK-003` **Configuration identification:** `TASK-003` is the third task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-003`.
 
 ## TASK-003.P1 Scope
 

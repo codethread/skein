@@ -1,7 +1,6 @@
 # Skein Ephemeral Spool — Cookbook
 
-Composition recipes for `skein.spools.ephemeral`: how to shape real temporary
-state out of the primitives, and *why* each shape is the right one.
+Composition recipes for `skein.spools.ephemeral`: how to shape real temporary state out of the primitives, and *why* each shape is the right one.
 
 This is the **how/why** half of the ephemeral docs. The other two halves are:
 
@@ -10,20 +9,13 @@ This is the **how/why** half of the ephemeral docs. The other two halves are:
 - [`ephemeral.api.md`](./ephemeral.api.md) — the **generated reference**: every
   public fn's signature, arities, and docstring, produced from the source.
 
-Division of truth: signatures and the attribute vocabulary live in the contract
-and the generated API doc; narrative and composition live here. This cookbook
-never restates a fn signature or the attribute table — it links to them.
+Division of truth: signatures and the attribute vocabulary live in the contract and the generated API doc; narrative and composition live here. This cookbook never restates a fn signature or the attribute table — it links to them.
 
-The whole spool is one attribute convention: a strand carrying `ephemeral "true"`
-with a `parent-of` edge from its owner. That is small on purpose, so the recipes
-here are less about the four functions and more about *when* a throwaway strand
-earns its place, how to burn the right ones, and how to reach the same convention
-from the shell.
+The whole spool is one attribute convention: a strand carrying `ephemeral "true"` with a `parent-of` edge from its owner. That is small on purpose, so the recipes here are less about the four functions and more about *when* a throwaway strand earns its place, how to burn the right ones, and how to reach the same convention from the shell.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which primitives combine, and how.
@@ -35,13 +27,9 @@ your situation and lift the snippet:
 
 ## Recipe: Scratch strands under a task root, burned at the boundary
 
-**Situation.** You are working a long task and want a few throwaway strands
-tracked *while* you work — a running list of failing cases, a scratch note about
-an API you're reverse-engineering — that should not outlive the task.
+**Situation.** You are working a long task and want a few throwaway strands tracked *while* you work — a running list of failing cases, a scratch note about an API you're reverse-engineering — that should not outlive the task.
 
-**Composition.** Create each scratch strand with `ephemeral!` under the task
-root, so it carries the `ephemeral "true"` attribute and a `parent-of` edge from
-the root. When the task is done, call `burn-ephemeral!` once to clear them.
+**Composition.** Create each scratch strand with `ephemeral!` under the task root, so it carries the `ephemeral "true"` attribute and a `parent-of` edge from the root. When the task is done, call `burn-ephemeral!` once to clear them.
 
 ```clojure
 (require '[skein.repl :as repl]
@@ -75,21 +63,15 @@ the root. When the task is done, call `burn-ephemeral!` once to clear them.
   you clear the round's scratch with a single `burn-ephemeral!` instead of
   tracking and closing each id by hand.
 
-Honest source: the `ephemeral!` / `ephemeral-ids` / `burn-ephemeral!` round-trip
-verified against a live weaver, mirroring the ephemeral case in
-[`test/skein/spools_test.clj`](../test/skein/spools_test.clj)
-(`ephemeral-spool-composes-public-helper-surfaces`).
+Honest source: the `ephemeral!` / `ephemeral-ids` / `burn-ephemeral!` round-trip verified against a live weaver, mirroring the ephemeral case in [`test/skein/spools_test.clj`](../test/skein/spools_test.clj) (`ephemeral-spool-composes-public-helper-surfaces`).
 
 ---
 
 ## Recipe: Burn only one parent's scratch
 
-**Situation.** Two tasks are running scratch strands at once and you want to
-clear just one task's when it finishes, without touching the other's.
+**Situation.** Two tasks are running scratch strands at once and you want to clear just one task's when it finishes, without touching the other's.
 
-**Composition.** `burn-ephemeral!` is workspace-wide by design, so scope it
-yourself: AND the reusable `ephemeral-query` together with a `parent-of` edge
-filter for the parent you're finishing, then burn exactly those ids.
+**Composition.** `burn-ephemeral!` is workspace-wide by design, so scope it yourself: AND the reusable `ephemeral-query` together with a `parent-of` edge filter for the parent you're finishing, then burn exactly those ids.
 
 ```clojure
 (require '[skein.repl :as repl]
@@ -136,22 +118,15 @@ filter for the parent you're finishing, then burn exactly those ids.
   compute; `burn-by-ids!` does the same closing work `burn-ephemeral!` does under
   the hood, so there is no second code path to trust.
 
-Honest source: the scoped-burn composition verified against a live weaver, built
-from `ephemeral-query` plus the `graph/query-ids` / `graph/burn-by-ids!` helpers
-the spool itself composes.
+Honest source: the scoped-burn composition verified against a live weaver, built from `ephemeral-query` plus the `graph/query-ids` / `graph/burn-by-ids!` helpers the spool itself composes.
 
 ---
 
 ## Recipe: Reach the same convention from the shell
 
-**Situation.** You're driving from the CLI, not a REPL, and want the same
-throwaway-strand behaviour — create scratch under a task, list it, burn it —
-without dropping into Clojure.
+**Situation.** You're driving from the CLI, not a REPL, and want the same throwaway-strand behaviour — create scratch under a task, list it, burn it — without dropping into Clojure.
 
-**Composition.** The spool is a thin helper over an attribute convention, so the
-shipped `strand` ops reach the same shape directly: `add` with `--attr
-ephemeral=true`, an `update --edge parent-of:<id>` to home it, and a **named
-query** registered once so `list` and `burn` can find the class.
+**Composition.** The spool is a thin helper over an attribute convention, so the shipped `strand` ops reach the same shape directly: `add` with `--attr ephemeral=true`, an `update --edge parent-of:<id>` to home it, and a **named query** registered once so `list` and `burn` can find the class.
 
 ```sh
 # create a scratch strand carrying the convention, and home it under the task
@@ -160,8 +135,7 @@ cid=$(printf '%s' "$child" | jq -r .id)
 strand update "$task_id" --edge parent-of:"$cid"
 ```
 
-`strand list --query` takes a **registered** query name, so register
-`ephemeral-query` under a name once from trusted config or a live REPL:
+`strand list --query` takes a **registered** query name, so register `ephemeral-query` under a name once from trusted config or a live REPL:
 
 ```clojure
 (require '[skein.spools.ephemeral :as ephemeral]
@@ -169,9 +143,7 @@ strand update "$task_id" --edge parent-of:"$cid"
 (repl/defquery! 'ephemeral ephemeral/ephemeral-query)
 ```
 
-`strand burn` is id-only — it never takes a query. So from the shell you list via
-the named query and burn the ids it hands back; for a query-shaped bulk burn, drop
-into the REPL and call `graph/burn-by-ids!` on the ids `query-ids` computes.
+`strand burn` is id-only — it never takes a query. So from the shell you list via the named query and burn the ids it hands back; for a query-shaped bulk burn, drop into the REPL and call `graph/burn-by-ids!` on the ids `query-ids` computes.
 
 ```sh
 strand list --query ephemeral        # the active ephemeral strands
@@ -194,21 +166,15 @@ strand burn "$cid"                   # burn one by id when you're done with it
   `--attr ephemeral=true` is burned by `burn-ephemeral!`. Pick whichever surface
   you're already in.
 
-Honest source: verified end to end against a live weaver — `strand add --attr` /
-`update --edge`, `repl/defquery!`, then `strand list --query ephemeral` and
-`strand burn`.
+Honest source: verified end to end against a live weaver — `strand add --attr` / `update --edge`, `repl/defquery!`, then `strand list --query ephemeral` and `strand burn`.
 
 ---
 
 ## Recipe: Knowing when *not* to reach for ephemeral
 
-**Situation.** You have a result in hand — a decision you made, a summary of what
-a run produced, a handover for the next agent — and you're tempted to jot it as
-an ephemeral strand because it's quick.
+**Situation.** You have a result in hand — a decision you made, a summary of what a run produced, a handover for the next agent — and you're tempted to jot it as an ephemeral strand because it's quick.
 
-**Composition.** Don't. A durable outcome is an ordinary strand (or a note on the
-strand it belongs to). Reserve `ephemeral!` for state that is worthless once the
-current run ends.
+**Composition.** Don't. A durable outcome is an ordinary strand (or a note on the strand it belongs to). Reserve `ephemeral!` for state that is worthless once the current run ends.
 
 ```clojure
 ;; WRONG: a decision you'll want tomorrow, marked to be burned tonight
@@ -233,9 +199,7 @@ current run ends.
   and ordinary descendants, not burned scratch (see
   [`bobbin.cookbook.md`](./bobbin.cookbook.md)).
 
-Honest source: the workspace-wide burn semantics documented in the contract
-([§3](./ephemeral.md#3-surface)) and the spool's stated scope as a throwaway
-convention, not a durable-state store ([§1](./ephemeral.md#1-overview)).
+Honest source: the workspace-wide burn semantics documented in the contract ([§3](./ephemeral.md#3-surface)) and the spool's stated scope as a throwaway convention, not a durable-state store ([§1](./ephemeral.md#1-overview)).
 
 ---
 

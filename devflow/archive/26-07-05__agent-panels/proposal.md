@@ -1,9 +1,6 @@
 # Agent Panels Proposal
 
-**Document ID:** `PROP-Pnl-001`
-**Last Updated:** 2026-07-04
-**Related RFCs:** None — the design deep-dive is recorded in this proposal, the plan, and notes on kanban card `d5af5`; phase-2 items below name their own future RFCs.
-**Related root specs:** None changed. Userland contracts affected: [`spools/shuttle/README.md`](../../../spools/shuttle/README.md), [`spools/agents/README.md`](../../../spools/agents/README.md).
+**Document ID:** `PROP-Pnl-001` **Last Updated:** 2026-07-04 **Related RFCs:** None — the design deep-dive is recorded in this proposal, the plan, and notes on kanban card `d5af5`; phase-2 items below name their own future RFCs. **Related root specs:** None changed. Userland contracts affected: [`spools/shuttle/README.md`](../../../spools/shuttle/README.md), [`spools/agents/README.md`](../../../spools/agents/README.md).
 
 ## PROP-Pnl-001.P1 Problem
 

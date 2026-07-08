@@ -1,9 +1,6 @@
 # CLI Definition Parity Proposal
 
-**Document ID:** `CDP-PROP-001`
-**Last Updated:** 2026-07-01
-**Related RFCs:** None (direction from in-session review; no RFC required per CDP-PROP-001.D4)
-**Related root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
+**Document ID:** `CDP-PROP-001` **Last Updated:** 2026-07-01 **Related RFCs:** None (direction from in-session review; no RFC required per CDP-PROP-001.D4) **Related root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
 
 ## CDP-PROP-001.P1 Problem
 

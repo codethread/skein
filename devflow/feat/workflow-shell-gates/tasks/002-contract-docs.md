@@ -1,22 +1,12 @@
 # Task 002: Contract docs, indexes, generated api, delta merge
 
-**Document ID:** `TASK-ShellGates-002`
-**Feature:** `workflow-shell-gates` (branch `workflow-shell-gates`, worktree
-`/Users/ct/dev/projects/skein-src__workflow-shell-gates`)
-**Plan:** `PLAN-ShellGates-001` — this task is `PLAN-ShellGates-001.PH2`.
-**Blocked by:** Task 001 (reed.clj must exist and be green).
+**Document ID:** `TASK-ShellGates-002` **Feature:** `workflow-shell-gates` (branch `workflow-shell-gates`, worktree `/Users/ct/dev/projects/skein-src__workflow-shell-gates`) **Plan:** `PLAN-ShellGates-001` — this task is `PLAN-ShellGates-001.PH2`. **Blocked by:** Task 001 (reed.clj must exist and be green).
 
 ## P1 Scope
 
 Type: AFK
 
-Ship reed's contract-doc triad and wire it into every index, then generate its
-api doc and merge the alpha-surface delta. No code behaviour changes here — this
-task documents the spool Task 001 shipped and registers it in the doc/spec
-indexes so `make docs-check` stays green (`PLAN-ShellGates-001.PH2`, `.AA2`–
-`.AA7`). Human-facing prose must read plainly: sweep `reed.md`/`reed.cookbook.md`
-against the checklist at `.claude/skills/docs-style/SKILL.md` (in this worktree)
-before committing; the generated `reed.api.md` is exempt.
+Ship reed's contract-doc triad and wire it into every index, then generate its api doc and merge the alpha-surface delta. No code behaviour changes here — this task documents the spool Task 001 shipped and registers it in the doc/spec indexes so `make docs-check` stays green (`PLAN-ShellGates-001.PH2`, `.AA2`– `.AA7`). Human-facing prose must read plainly: sweep `reed.md`/`reed.cookbook.md` against the checklist at `.claude/skills/docs-style/SKILL.md` (in this worktree) before committing; the generated `reed.api.md` is exempt.
 
 ## P2 Must implement exactly
 

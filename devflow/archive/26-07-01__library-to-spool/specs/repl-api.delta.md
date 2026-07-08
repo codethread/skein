@@ -1,8 +1,6 @@
 # REPL API Delta: Runtime Spool Helpers
 
-**Document ID:** `LTS-SPEC-003-DELTA-001`
-**Status:** Merged
-**Target root spec:** `devflow/specs/repl-api.md`
+**Document ID:** `LTS-SPEC-003-DELTA-001` **Status:** Merged **Target root spec:** `devflow/specs/repl-api.md`
 
 ## Delta
 

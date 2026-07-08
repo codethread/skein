@@ -1,10 +1,6 @@
 # Roster Spool Spec
 
-**Document ID:** `SPEC-RosterSpool-001`
-**Status:** Implemented
-**Last Updated:** 2026-07-05
-**Related RFCs:** [RFC-014 Feature Tracking Registry](../../../rfcs/2026-07-02-feature-tracking-registry.md)
-**Code:** `spools/src/skein/spools`, `src/skein/api/*.alpha`, `src/skein/core/weaver`
+**Document ID:** `SPEC-RosterSpool-001` **Status:** Implemented **Last Updated:** 2026-07-05 **Related RFCs:** [RFC-014 Feature Tracking Registry](../../../rfcs/2026-07-02-feature-tracking-registry.md) **Code:** `spools/src/skein/spools`, `src/skein/api/*.alpha`, `src/skein/core/weaver`
 
 ## SPEC-RosterSpool-001.P1 Purpose
 

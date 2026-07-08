@@ -1,18 +1,12 @@
 # Task 002: L1 lean reads, descriptor spec, boundary guard (ASSN-PLAN-001.PH2)
 
-Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree
-`/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 001.**
+Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree `/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 001.**
 
-Read first: `attr-scaling-ship-now.plan.md` (ASSN-PLAN-001 `PH2`, `A1`, `A2`,
-`AA2`, `AA4`, `AA5`, `AA6`, `AA7`, `TC2`, `TC3`, `R1`) and the deltas:
-`strand-model.delta.md` (ASSN-DELTA-001.CC1–CC7, `D1`, `D3`), `cli.delta.md`
-(ASSN-DELTA-002.CC1–CC4, `D1`), `daemon-runtime.delta.md`
-(ASSN-DELTA-003.CC6, CC7).
+Read first: `attr-scaling-ship-now.plan.md` (ASSN-PLAN-001 `PH2`, `A1`, `A2`, `AA2`, `AA4`, `AA5`, `AA6`, `AA7`, `TC2`, `TC3`, `R1`) and the deltas: `strand-model.delta.md` (ASSN-DELTA-001.CC1–CC7, `D1`, `D3`), `cli.delta.md` (ASSN-DELTA-002.CC1–CC4, `D1`), `daemon-runtime.delta.md` (ASSN-DELTA-003.CC6, CC7).
 
 ## Scope
 
-L1 lean-by-default list reads at the CLI/agent op boundary, the single owned
-descriptor spec, and the fail-loud trusted-reader guard.
+L1 lean-by-default list reads at the CLI/agent op boundary, the single owned descriptor spec, and the fail-loud trusted-reader guard.
 
 - `src/skein/core/specs.clj` (`AA2`): add `:skein/omitted` (`#{true}`), `::bytes`
   (`nat-int?`), `::omitted-attribute-descriptor`
@@ -54,8 +48,7 @@ descriptor spec, and the fail-loud trusted-reader guard.
 
 ## Hard acceptance bar — undeclared-key invariant (blocking)
 
-**An undeclared attribute key is never slower or less capable than today.** For
-L1 that means:
+**An undeclared attribute key is never slower or less capable than today.** For L1 that means:
 
 - Every value at or below the 1 KiB floor — i.e. all small metadata/filter keys
   — passes through **verbatim**; only over-floor values become descriptors

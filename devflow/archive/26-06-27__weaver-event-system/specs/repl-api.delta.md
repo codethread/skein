@@ -1,9 +1,6 @@
 # REPL API Delta: Event Helpers
 
-**Document ID:** `SPEC-003-DELTA-001`
-**Status:** Merged
-**Last Updated:** 2026-06-27
-**Extends:** [REPL API](../../../specs/repl-api.md)
+**Document ID:** `SPEC-003-DELTA-001` **Status:** Merged **Last Updated:** 2026-06-27 **Extends:** [REPL API](../../../specs/repl-api.md)
 
 ## SPEC-003-DELTA-001.P1 Blessed helper namespace
 

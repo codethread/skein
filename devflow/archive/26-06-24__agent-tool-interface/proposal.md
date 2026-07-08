@@ -1,10 +1,6 @@
 # Agent Tool Interface Proposal
 
-**Document ID:** `PROP-001`
-**Last Updated:** 2026-06-24
-**Related RFCs:** None
-**Related root specs:** None yet
-**Configuration identification:** `PROP-001` is the first proposal in this repository. Every nested point ID is prefixed with `PROP-001`.
+**Document ID:** `PROP-001` **Last Updated:** 2026-06-24 **Related RFCs:** None **Related root specs:** None yet **Configuration identification:** `PROP-001` is the first proposal in this repository. Every nested point ID is prefixed with `PROP-001`.
 
 ## PROP-001.P1 Problem
 

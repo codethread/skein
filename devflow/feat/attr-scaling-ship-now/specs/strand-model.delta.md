@@ -1,10 +1,6 @@
 # Strand Model delta for attr-scaling-ship-now
 
-**Document ID:** `ASSN-DELTA-001`
-**Root spec:** [strand-model.md](../../../specs/strand-model.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
-**Last Updated:** 2026-07-06
+**Document ID:** `ASSN-DELTA-001` **Root spec:** [strand-model.md](../../../specs/strand-model.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Draft **Last Updated:** 2026-07-06
 
 ## ASSN-DELTA-001.P1 Summary
 

@@ -1,15 +1,6 @@
 # EAV Attribute Storage Plan
 
-**Document ID:** `EAS-PLAN-001`
-**Feature:** `eav-attr-storage`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** None (no RFC covers attribute storage representation; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language this re-implements over rows without changing its surface)
-**Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Alpha Surface](../../specs/alpha-surface.md)
-**Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [CLI Surface delta](./specs/cli.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md)
-**Evidence base:** `/tmp/claude/attr-scaling-ship-now-brief/` (`SYNTHESIS.md` §5 side-table measurements bound the benchmark envelope; `DESIGN.md` semantics; `RESULTS-*.md` harness methodology)
-**Builds on:** `attr-scaling-ship-now`, merged at `5595fe7`; this branch is rebased onto that baseline (L0a pragmas, L1 lean reads, and the L0b registry are canonical and in scope for preservation or removal per the deltas).
-**Status:** Shipped
-**Last Updated:** 2026-07-07
+**Document ID:** `EAS-PLAN-001` **Feature:** `eav-attr-storage` **Proposal:** [proposal.md](./proposal.md) **RFC:** None (no RFC covers attribute storage representation; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language this re-implements over rows without changing its surface) **Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Alpha Surface](../../specs/alpha-surface.md) **Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [CLI Surface delta](./specs/cli.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md) **Evidence base:** `/tmp/claude/attr-scaling-ship-now-brief/` (`SYNTHESIS.md` §5 side-table measurements bound the benchmark envelope; `DESIGN.md` semantics; `RESULTS-*.md` harness methodology) **Builds on:** `attr-scaling-ship-now`, merged at `5595fe7`; this branch is rebased onto that baseline (L0a pragmas, L1 lean reads, and the L0b registry are canonical and in scope for preservation or removal per the deltas). **Status:** Shipped **Last Updated:** 2026-07-07
 
 ## EAS-PLAN-001.P1 Goal and scope
 

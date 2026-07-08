@@ -1,9 +1,6 @@
 # Arg-spec subcommands Proposal
 
-**Document ID:** `PROP-ArgspecSub-001`
-**Last Updated:** 2026-07-05
-**Related RFCs:** None
-**Related root specs:** [SPEC-003.P5b Blessed op argv parser](../../specs/repl-api.md), [SPEC-002.C39 help op](../../specs/cli.md), [SPEC-004.C63a-c op registry](../../specs/daemon-runtime.md)
+**Document ID:** `PROP-ArgspecSub-001` **Last Updated:** 2026-07-05 **Related RFCs:** None **Related root specs:** [SPEC-003.P5b Blessed op argv parser](../../specs/repl-api.md), [SPEC-002.C39 help op](../../specs/cli.md), [SPEC-004.C63a-c op registry](../../specs/daemon-runtime.md)
 
 ## PROP-ArgspecSub-001.P1 Problem
 

@@ -1,8 +1,6 @@
 # Docs and Smoke Workflow
 
-**Document ID:** `RLW-TASK-006`
-**Status:** Pending
-**Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
+**Document ID:** `RLW-TASK-006` **Status:** Pending **Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
 
 ## RLW-TASK-006.P1 Scope
 

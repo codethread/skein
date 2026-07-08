@@ -1,12 +1,6 @@
 # Daemon Query Registry Plan
 
-**Document ID:** `PLAN-001`
-**Status:** Shipped
-**Last Updated:** 2026-06-25
-**Proposal:** [proposal.md](./proposal.md)
-**Specs:** [CLI delta](./specs/cli.delta.md), [REPL delta](./specs/repl-api.delta.md), [Daemon delta](./specs/daemon-runtime.delta.md)
-**RFC:** [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md)
-**Philosophy:** [Devflow Philosophy](../../PHILOSOPHY.md)
+**Document ID:** `PLAN-001` **Status:** Shipped **Last Updated:** 2026-06-25 **Proposal:** [proposal.md](./proposal.md) **Specs:** [CLI delta](./specs/cli.delta.md), [REPL delta](./specs/repl-api.delta.md), [Daemon delta](./specs/daemon-runtime.delta.md) **RFC:** [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) **Philosophy:** [Devflow Philosophy](../../PHILOSOPHY.md)
 
 ## PLAN-001.P1 Goal and scope
 

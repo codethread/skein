@@ -1,7 +1,6 @@
 # Task 2: Fixed daemon socket protocol
 
-**Document ID:** `TASK-002`
-**Configuration identification:** `TASK-002` is the second task for `user-daemon-home`. Prefix every nested point ID with `TASK-002`.
+**Document ID:** `TASK-002` **Configuration identification:** `TASK-002` is the second task for `user-daemon-home`. Prefix every nested point ID with `TASK-002`.
 
 ## TASK-002.P1 Scope
 

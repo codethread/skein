@@ -1,8 +1,6 @@
 # Skein Guild Spool — Cookbook
 
-Composition recipes for `skein.spools.guild`: how to publish a stable operation
-API from one weaver, discover it from another, and evolve it without breaking
-callers — and *why* each shape is the right one.
+Composition recipes for `skein.spools.guild`: how to publish a stable operation API from one weaver, discover it from another, and evolve it without breaking callers — and *why* each shape is the right one.
 
 This is the **how/why** half of the guild docs. The other two are:
 
@@ -13,17 +11,9 @@ This is the **how/why** half of the guild docs. The other two are:
 - [`guild.api.md`](./guild.api.md) — the **generated reference**: every public
   fn's signature and docstring, produced from source.
 
-Division of truth: signatures and the argument tables live in the contract and
-generated API doc; narrative and composition live here. This cookbook never
-restates a signature — it links to them.
+Division of truth: signatures and the argument tables live in the contract and generated API doc; narrative and composition live here. This cookbook never restates a signature — it links to them.
 
-Guild adds no new protocol, server, or permission system: guild ops are ordinary
-weaver registry entries with a naming convention and a `guild.describe`
-introspection op. The agreement surface is userland — a repo publishes its API
-by registering ops from its checked-in `.skein/init.clj`, which is effectively a
-public API file. Recipes assume
-`(require '[skein.spools.guild :as guild])` in trusted config or a live weaver
-REPL.
+Guild adds no new protocol, server, or permission system: guild ops are ordinary weaver registry entries with a naming convention and a `guild.describe` introspection op. The agreement surface is userland — a repo publishes its API by registering ops from its checked-in `.skein/init.clj`, which is effectively a public API file. Recipes assume `(require '[skein.spools.guild :as guild])` in trusted config or a live weaver REPL.
 
 ## How to read a recipe
 
@@ -34,23 +24,15 @@ Every recipe has the same four parts:
 3. **Snippet** — a runnable declaration or call.
 4. **Why this shape** — the reasoning, and what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — the spool's own
-contract, its test suite, or the blessed peering helpers.
+Each recipe cites the honest source it was distilled from — the spool's own contract, its test suite, or the blessed peering helpers.
 
 ---
 
 ## Recipe: Publish a versioned public op for a sibling weaver
 
-**Situation.** Another local weaver needs to ask yours a stable question —
-"is this gate satisfied?", "accept this release" — and you want it calling a
-named, intentional entry point, not reaching into your repo-private REPL
-helpers. You also want bad input rejected before your handler ever runs.
+**Situation.** Another local weaver needs to ask yours a stable question — "is this gate satisfied?", "accept this release" — and you want it calling a named, intentional entry point, not reaching into your repo-private REPL helpers. You also want bad input rejected before your handler ever runs.
 
-**Composition.** `install!` once to seat `guild.describe` and reset declaration
-state, then `defop!` each public op under a dotted, version-suffixed handle. A
-`:spec` validates the parsed JSON input, and the handler receives the ordinary
-op context plus that input at `:guild/input` — so the public contract lives at
-the fn boundary while the implementation stays private.
+**Composition.** `install!` once to seat `guild.describe` and reset declaration state, then `defop!` each public op under a dotted, version-suffixed handle. A `:spec` validates the parsed JSON input, and the handler receives the ordinary op context plus that input at `:guild/input` — so the public contract lives at the fn boundary while the implementation stays private.
 
 ```clojure
 (ns user
@@ -71,9 +53,7 @@ the fn boundary while the implementation stays private.
   'user/gate-status)
 ```
 
-A caller invokes it over the ordinary op socket, passing one JSON argument;
-input that fails the spec is rejected loudly with structured data before the
-handler runs:
+A caller invokes it over the ordinary op socket, passing one JSON argument; input that fails the spec is rejected loudly with structured data before the handler runs:
 
 ```clojure
 ;; valid → handler runs with parsed :guild/input
@@ -99,24 +79,15 @@ handler runs:
   weaver JVM and re-seats `guild.describe`, so a trusted-config reload
   re-declares your API cleanly rather than stacking stale ops.
 
-Honest source: the worked two-repo example in [`guild.md`](./guild.md), and
-`defop-registers-and-invokes-through-op-registry` /
-`spec-invalid-input-fails-loudly-with-structured-data` in
-[`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
+Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `defop-registers-and-invokes-through-op-registry` / `spec-invalid-input-fails-loudly-with-structured-data` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
 
 ---
 
 ## Recipe: Discover before you call
 
-**Situation.** Your weaver wants to call a peer's guild op, but you shouldn't
-hard-code the assumption that a given version still exists. You want to resolve
-the peer by its portable name, read what it currently offers, and only then
-invoke.
+**Situation.** Your weaver wants to call a peer's guild op, but you shouldn't hard-code the assumption that a given version still exists. You want to resolve the peer by its portable name, read what it currently offers, and only then invoke.
 
-**Composition.** The blessed `skein.api.peers.alpha` helpers resolve same-machine
-peers from mill metadata; `guild.describe` is the discovery call. Ask the peer
-what's `:active` and `:deprecated`, then invoke the version you confirmed with
-`call!`, handing the JSON input through `:argv`.
+**Composition.** The blessed `skein.api.peers.alpha` helpers resolve same-machine peers from mill metadata; `guild.describe` is the discovery call. Ask the peer what's `:active` and `:deprecated`, then invoke the version you confirmed with `call!`, handing the JSON input through `:argv`.
 
 ```clojure
 (require '[clojure.data.json :as json]
@@ -151,28 +122,15 @@ what's `:active` and `:deprecated`, then invoke the version you confirmed with
   stream-class op all throw. That is the right default for coordination — a
   missing peer should stop you, not be papered over.
 
-Honest source: the peer-side of the worked example in [`guild.md`](./guild.md)
-(`peers/peer`, `peers/call!`, and the `guild.describe` payload) and the
-`skein.api.peers.alpha` helper listing in the
-[REPL API spec](../devflow/specs/repl-api.md); the `guild.describe` `:active` /
-`:deprecated` shape is pinned by `describe-lists-active-and-deprecated-ops` in
-[`test/skein/guild_test.clj`](../test/skein/guild_test.clj). (The two-weaver
-call is distilled from the contract's worked example and the describe test
-rather than run live here.)
+Honest source: the peer-side of the worked example in [`guild.md`](./guild.md) (`peers/peer`, `peers/call!`, and the `guild.describe` payload) and the `skein.api.peers.alpha` helper listing in the [REPL API spec](../devflow/specs/repl-api.md); the `guild.describe` `:active` / `:deprecated` shape is pinned by `describe-lists-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj). (The two-weaver call is distilled from the contract's worked example and the describe test rather than run live here.)
 
 ---
 
 ## Recipe: Evolve an op with a loud stub, never a silent noop
 
-**Situation.** `gate.status.v1`'s input or semantics need to change in a way an
-existing caller can't safely assume. You must not just repoint the old handle,
-and you must never leave behind a compatibility stub that *pretends* to succeed —
-for a coordination op, a false success can corrupt a peer's state.
+**Situation.** `gate.status.v1`'s input or semantics need to change in a way an existing caller can't safely assume. You must not just repoint the old handle, and you must never leave behind a compatibility stub that *pretends* to succeed — for a coordination op, a false success can corrupt a peer's state.
 
-**Composition.** Add the new version alongside the old with a second `defop!`,
-let callers migrate while both are registered, then `deprecate!` the old handle.
-Deprecation replaces it with a stub that always throws structured data — it can
-explain or redirect, but it can never report success.
+**Composition.** Add the new version alongside the old with a second `defop!`, let callers migrate while both are registered, then `deprecate!` the old handle. Deprecation replaces it with a stub that always throws structured data — it can explain or redirect, but it can never report success.
 
 ```clojure
 ;; 1. add the new version; keep v1 registered while callers migrate
@@ -201,11 +159,7 @@ explain or redirect, but it can never report success.
   `:since` also surface through `guild.describe`, so the migration path is
   readable from the peer itself rather than buried in a changelog.
 
-Honest source: the naming/evolution conventions and the "never install a noop
-compatibility stub" rule in [`guild.md`](./guild.md), with the deprecated-op
-behaviour pinned by `deprecated-op-throws-structured-error-and-never-succeeds`
-and the describe output by `describe-lists-active-and-deprecated-ops` in
-[`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
+Honest source: the naming/evolution conventions and the "never install a noop compatibility stub" rule in [`guild.md`](./guild.md), with the deprecated-op behaviour pinned by `deprecated-op-throws-structured-error-and-never-succeeds` and the describe output by `describe-lists-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
 
 ---
 

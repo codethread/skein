@@ -127,12 +127,6 @@ Roster ships on the classpath, so activation is a `require` plus an `install!` c
 
 ## Examples
 
-The worked, compositional examples live in
-[`roster.cookbook.md`](./roster.cookbook.md): tracking a long-running job with
-`track!`/`heartbeat!`/`finish!`, using `await-quiet!` as a fan-in barrier before
-landing, and letting workflow/devflow roots track themselves. Each recipe pairs
-a runnable snippet with the reasoning behind its shape.
+The worked, compositional examples live in [`roster.cookbook.md`](./roster.cookbook.md): tracking a long-running job with `track!`/`heartbeat!`/`finish!`, using `await-quiet!` as a fan-in barrier before landing, and letting workflow/devflow roots track themselves. Each recipe pairs a runnable snippet with the reasoning behind its shape.
 
-The spool's behavior is driven end-to-end against a real weaver runtime by
-[`test/skein/roster_test.clj`](../test/skein/roster_test.clj),
-which doubles as an executable reference for every documented behavior.
+The spool's behavior is driven end-to-end against a real weaver runtime by [`test/skein/roster_test.clj`](../test/skein/roster_test.clj), which doubles as an executable reference for every documented behavior.

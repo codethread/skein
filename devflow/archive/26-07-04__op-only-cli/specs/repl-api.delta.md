@@ -1,10 +1,6 @@
 # REPL API Delta: Op-only CLI
 
-**Document ID:** `SPEC-003-D003`
-**Status:** Merged
-**Base Spec:** [REPL API](../../../specs/repl-api.md)
-**Related RFC:** [RFC-019 Op-only CLI](../../../rfcs/2026-07-04-op-only-cli.md)
-**Last Updated:** 2026-07-04
+**Document ID:** `SPEC-003-D003` **Status:** Merged **Base Spec:** [REPL API](../../../specs/repl-api.md) **Related RFC:** [RFC-019 Op-only CLI](../../../rfcs/2026-07-04-op-only-cli.md) **Last Updated:** 2026-07-04
 
 ## SPEC-003-D003.P1 Changed contracts
 

@@ -1,8 +1,6 @@
 # Skein Agents Spool — Cookbook
 
-Composition recipes for `skein.spools.agents`: the shapes real delegation takes
-as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape
-holds up.
+Composition recipes for `skein.spools.agents`: the shapes real delegation takes as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape holds up.
 
 This is the **how/why** half of the agents docs. The other two halves are:
 
@@ -13,16 +11,11 @@ This is the **how/why** half of the agents docs. The other two halves are:
 - [`agents.api.md`](./agents.api.md) — the **generated reference**: every public
   fn's signature, arity, and docstring, produced from source.
 
-Division of truth: verb shapes and fn signatures live in the README and the
-generated API doc; the coordination *shapes* live here. This cookbook never
-restates a verb's flags or a fn's arity — it links to them, and to
-`strand agent about`, the always-current in-band manual a delegated agent reads.
-When a recipe needs an exact flag, follow the link.
+Division of truth: verb shapes and fn signatures live in the README and the generated API doc; the coordination *shapes* live here. This cookbook never restates a verb's flags or a fn's arity — it links to them, and to `strand agent about`, the always-current in-band manual a delegated agent reads. When a recipe needs an exact flag, follow the link.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which verbs combine, and in what order.
@@ -32,23 +25,15 @@ your situation and lift the snippet:
 4. **Why this shape** — the reasoning: what the readiness graph buys you, which
    guard you're leaning on, and what the sloppy version would cost.
 
-Each recipe cites the honest source it was distilled from — the README contract,
-this repo's reviewer roster and config, or the executable coverage in
-[`agents_test.clj`](../test/skein/agents_test.clj) — so you can read the
-load-bearing version.
+Each recipe cites the honest source it was distilled from — the README contract, this repo's reviewer roster and config, or the executable coverage in [`agents_test.clj`](../test/skein/agents_test.clj) — so you can read the load-bearing version.
 
 ---
 
 ## Recipe: The coordinator loop, end to end
 
-**Situation.** You have a feature that decomposes into a few tasks with
-dependencies, and you want agents to do the work while you stay the one who
-decides it's actually done.
+**Situation.** You have a feature that decomposes into a few tasks with dependencies, and you want agents to do the work while you stay the one who decides it's actually done.
 
-**Composition.** Weave an `agent-plan` whose task bodies *are* the worker
-contracts, `delegate --ready` the whole frontier, `await --under` the plan, then
-verify each finished task yourself and close it — closing is the only event that
-unblocks the next frontier. Loop until nothing is ready, running, or failed.
+**Composition.** Weave an `agent-plan` whose task bodies *are* the worker contracts, `delegate --ready` the whole frontier, `await --under` the plan, then verify each finished task yourself and close it — closing is the only event that unblocks the next frontier. Loop until nothing is ready, running, or failed.
 
 ```sh
 # 1. Weave the plan. Every body is the complete contract the worker will read;
@@ -101,23 +86,15 @@ strand update <core> --state closed # closing is what makes :docs ready
   is the worker's claim; re-running validation in the task's cwd is your proof.
   The two are different events on purpose.
 
-Honest source: the coordinator loop in
-[`agents/README.md` §5](./agents/README.md#5-worker-contract-and-coordinator-loop),
-the `agent-plan` weave pattern (§3), and the delegate/await/status coverage in
-[`agents_test.clj`](../test/skein/agents_test.clj).
+Honest source: the coordinator loop in [`agents/README.md` §5](./agents/README.md#5-worker-contract-and-coordinator-loop), the `agent-plan` weave pattern (§3), and the delegate/await/status coverage in [`agents_test.clj`](../test/skein/agents_test.clj).
 
 ---
 
 ## Recipe: Recover a failed task by fixing the contract first
 
-**Situation.** A delegated run failed. The reflex is to re-run it. Usually the run
-didn't fail because the agent was unlucky — it failed because the task body told
-it to do the wrong thing, or left out a constraint it needed.
+**Situation.** A delegated run failed. The reflex is to re-run it. Usually the run didn't fail because the agent was unlucky — it failed because the task body told it to do the wrong thing, or left out a constraint it needed.
 
-**Composition.** Read the failure, diagnose from the logs, **edit the task body
-first**, then `retry` — which rebuilds the prompt from the *current* body and
-supersedes the dead run. Reach for `retry --fresh` only when the failure was a
-lost session, not a bad contract.
+**Composition.** Read the failure, diagnose from the logs, **edit the task body first**, then `retry` — which rebuilds the prompt from the *current* body and supersedes the dead run. Reach for `retry --fresh` only when the failure was a lost session, not a bad contract.
 
 ```sh
 strand agent status <plan>          # failed:[{task:"<core>",run:"<run>",error:"..."}]
@@ -150,23 +127,15 @@ strand agent retry <core>
   Use `--fresh` when the session is gone; fix the body when the *instructions*
   were the problem. They are different failures.
 
-Honest source: the retry semantics in
-[`agents/README.md` §3](./agents/README.md#delegation-verbs-the-task-contract-layer)
-and the retry/supersede coverage in
-[`agents_test.clj`](../test/skein/agents_test.clj).
+Honest source: the retry semantics in [`agents/README.md` §3](./agents/README.md#delegation-verbs-the-task-contract-layer) and the retry/supersede coverage in [`agents_test.clj`](../test/skein/agents_test.clj).
 
 ---
 
 ## Recipe: One-concern review fan-out — roster vs. ad hoc pass
 
-**Situation.** A change needs reviewing. Two generalist reviewers reading the
-whole diff miss things and repeat each other; you want many small reviewers, each
-hunting one class of defect, fanned in to a single verdict.
+**Situation.** A change needs reviewing. Two generalist reviewers reading the whole diff miss things and repeat each other; you want many small reviewers, each hunting one class of defect, fanned in to a single verdict.
 
-**Composition.** For the review policy your workspace runs on every change, use a
-declared **roster** — one authoritative document naming the reviewers, their
-harnesses, and their single-concern contracts. For a one-off concern the roster
-doesn't cover, use an ad hoc `--members`/`--harness` pass instead.
+**Composition.** For the review policy your workspace runs on every change, use a declared **roster** — one authoritative document naming the reviewers, their harnesses, and their single-concern contracts. For a one-off concern the roster doesn't cover, use an ad hoc `--members`/`--harness` pass instead.
 
 ```sh
 # The workspace roster: one run per declared reviewer, always synthesized.
@@ -205,24 +174,15 @@ strand agent review <target> --members 2 --harness claude,review-gpt --synthesiz
   Prefer the merge-base, or another range whose changed files match the review
   surface you mean.
 
-Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj)
-`change-review` roster (six single-concern reviewers, `review-gpt` synthesizer),
-and the review verb and roster semantics in
-[`agents/README.md` §3](./agents/README.md#reviewer-rosters).
+Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `change-review` roster (six single-concern reviewers, `review-gpt` synthesizer), and the review verb and roster semantics in [`agents/README.md` §3](./agents/README.md#reviewer-rosters).
 
 ---
 
 ## Recipe: Cross-vendor deliberation with a per-seat panel
 
-**Situation.** A hard call — an architecture choice, a contentious review — wants
-more than one frontier model weighing in, so no single vendor's blind spot
-decides it. The shell verbs seat *identical* agents; you need *different*
-harnesses per seat.
+**Situation.** A hard call — an architecture choice, a contentious review — wants more than one frontier model weighing in, so no single vendor's blind spot decides it. The shell verbs seat *identical* agents; you need *different* harnesses per seat.
 
-**Composition.** Drop to trusted Clojure. `council!` (and the underlying `panel!`)
-take a `:seats` vector where each seat names its own harness, so one deliberation
-spans vendors. The CLI stays scalar-only on purpose — rich per-seat data doesn't
-ride the control surface.
+**Composition.** Drop to trusted Clojure. `council!` (and the underlying `panel!`) take a `:seats` vector where each seat names its own harness, so one deliberation spans vendors. The CLI stays scalar-only on purpose — rich per-seat data doesn't ride the control surface.
 
 ```clojure
 (require '[skein.spools.agents :as agents])
@@ -261,25 +221,15 @@ ride the control surface.
   function — a typoed key fails at runtime, not against a named spec. Copy the
   shape from the API doc rather than from memory.
 
-Honest source: the panel composition layer in
-[`agents/README.md` §6](./agents/README.md#6-panels-presets-and-the-composition-layer),
-`council!` in [`agents.api.md`](./agents.api.md), this repo's cross-vendor GPT
-seats declared in [`.skein/harnesses.clj`](../.skein/harnesses.clj) (`review-gpt`,
-`hard-gpt`), and the same synthesizer-must-be-cross-vendor rule live in
-[`.skein/reviewers.clj`](../.skein/reviewers.clj).
+Honest source: the panel composition layer in [`agents/README.md` §6](./agents/README.md#6-panels-presets-and-the-composition-layer), `council!` in [`agents.api.md`](./agents.api.md), this repo's cross-vendor GPT seats declared in [`.skein/harnesses.clj`](../.skein/harnesses.clj) (`review-gpt`, `hard-gpt`), and the same synthesizer-must-be-cross-vendor rule live in [`.skein/reviewers.clj`](../.skein/reviewers.clj).
 
 ---
 
 ## Recipe: Read-only recon that never gates the work
 
-**Situation.** You're a worker mid-task and you need to know where something lives
-before you touch it. You want a cheap fan-out helper — but you must not let it
-count as "the task already has a run" and block your own later delegation, and
-you must not spawn a second thing that writes your files.
+**Situation.** You're a worker mid-task and you need to know where something lives before you touch it. You want a cheap fan-out helper — but you must not let it count as "the task already has a run" and block your own later delegation, and you must not spawn a second thing that writes your files.
 
-**Composition.** `spawn` a read-only helper on a cheap harness, tagged with your
-own run id via `--spawned-by`, and `await` its result. Its findings come back in
-`result`; you rarely need logs for a success.
+**Composition.** `spawn` a read-only helper on a cheap harness, tagged with your own run id via `--spawned-by`, and `await` its result. Its findings come back in `result`; you rarely need logs for a success.
 
 ```sh
 # From inside a running worker (a1fx9 is *your* run id):
@@ -306,24 +256,15 @@ strand agent await "$helper"   # => {"runs":[{"result":"...file:line list..."}]}
   file scope. Recon fans out; writing stays single-owner. Delegation stays
   shallow.
 
-Honest source: the `spawn` verb and serving/non-serving model in
-[`agents/README.md` §3](./agents/README.md#engine-verbs), the worker contract's
-"spawn read-only helpers freely" rule (§5), and the spawn coverage in
-[`agents_test.clj`](../test/skein/agents_test.clj).
+Honest source: the `spawn` verb and serving/non-serving model in [`agents/README.md` §3](./agents/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in [`agents_test.clj`](../test/skein/agents_test.clj).
 
 ---
 
 ## Recipe: A human-in-the-loop task as a plan node
 
-**Situation.** One task in the plan genuinely needs a person — a design call, a
-pairing session, a judgment only the user can make. A headless run can't do it,
-and you don't want it to silently stall the plan either.
+**Situation.** One task in the plan genuinely needs a person — a design call, a pairing session, a judgment only the user can make. A headless run can't do it, and you don't want it to silently stall the plan either.
 
-**Composition.** Mark the task `hitl` in the plan. Headless `delegate` refuses it;
-`delegate --interactive` opens it as a live multiplexer session instead. The agent
-pairs *with* the user, and when they agree it's done the agent records the outcome
-and **closes the tracking strand itself** — which tears the session down and
-unblocks dependents, exactly like any other task.
+**Composition.** Mark the task `hitl` in the plan. Headless `delegate` refuses it; `delegate --interactive` opens it as a live multiplexer session instead. The agent pairs *with* the user, and when they agree it's done the agent records the outcome and **closes the tracking strand itself** — which tears the session down and unblocks dependents, exactly like any other task.
 
 ```sh
 # The task was woven with "hitl":true, so headless delegate refuses it:
@@ -353,11 +294,7 @@ strand agent ps --for <task>    # carries the attach command to hand the user
   `--interactive`: live sessions are delegated one at a time so the human is
   paired with, not swamped by, a wall of terminals.
 
-Honest source: the interactive delegation model in
-[`agents/README.md` §1 and §3](./agents/README.md#delegation-verbs-the-task-contract-layer),
-and this repo's `strand hitl` coordinator convention (a tracking strand under the
-parent, an interactive `hitl-build` session, and the self-terminating
-record-outcome-then-close contract) documented in the root `CLAUDE.md`.
+Honest source: the interactive delegation model in [`agents/README.md` §1 and §3](./agents/README.md#delegation-verbs-the-task-contract-layer), and this repo's `strand hitl` coordinator convention (a tracking strand under the parent, an interactive `hitl-build` session, and the self-terminating record-outcome-then-close contract) documented in the root `CLAUDE.md`.
 
 ---
 

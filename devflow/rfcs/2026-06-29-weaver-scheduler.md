@@ -1,11 +1,6 @@
 # Weaver Scheduler Primitive
 
-**Document ID:** `RFC-009`
-**Status:** Implemented
-**Date:** 2026-06-29
-**Related specs:** [Weaver Runtime](../specs/daemon-runtime.md), [Strand Model](../specs/strand-model.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md)
-**Related code:** `src/skein/core/weaver/runtime.clj`, `src/skein/api/weaver/alpha.clj`, `src/skein/api/events/alpha.clj`, `src/skein/api/views/alpha.clj`, `src/skein/core/db.clj`
-**Related tenets:** TEN-000 (alpha), TEN-002 (trusted agents), TEN-003 (FAIL LOUDLY), TEN-004 (Less is More), TEN-006 (CLI is a thin JSON control surface)
+**Document ID:** `RFC-009` **Status:** Implemented **Date:** 2026-06-29 **Related specs:** [Weaver Runtime](../specs/daemon-runtime.md), [Strand Model](../specs/strand-model.md), [REPL API](../specs/repl-api.md), [CLI Surface](../specs/cli.md) **Related code:** `src/skein/core/weaver/runtime.clj`, `src/skein/api/weaver/alpha.clj`, `src/skein/api/events/alpha.clj`, `src/skein/api/views/alpha.clj`, `src/skein/core/db.clj` **Related tenets:** TEN-000 (alpha), TEN-002 (trusted agents), TEN-003 (FAIL LOUDLY), TEN-004 (Less is More), TEN-006 (CLI is a thin JSON control surface)
 
 ## RFC-009.P1 Problem
 
@@ -74,7 +69,7 @@ The decision: should skein bless a weaver-owned scheduler so libraries share one
   (sched/recent-failures)  ;; bounded, like events
   ```
 
-  Whether the durable record is a strand (with a scheduler attribute convention) or dedicated runtime storage is left to the proposal/spec (see RFC-009.Q1).
+Whether the durable record is a strand (with a scheduler attribute convention) or dedicated runtime storage is left to the proposal/spec (see RFC-009.Q1).
 
 ## RFC-009.P7 Consequences
 

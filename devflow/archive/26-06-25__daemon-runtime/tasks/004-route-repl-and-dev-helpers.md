@@ -1,9 +1,6 @@
 # Route REPL and Dev Helpers
 
-**Document ID:** `TASK-004`
-**Feature:** `daemon-runtime`
-**Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md)
-**Specs:** [../specs/repl-api.delta.md](../specs/repl-api.delta.md), [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
+**Document ID:** `TASK-004` **Feature:** `daemon-runtime` **Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md) **Specs:** [../specs/repl-api.delta.md](../specs/repl-api.delta.md), [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
 
 ## TASK-004.P1 Scope
 

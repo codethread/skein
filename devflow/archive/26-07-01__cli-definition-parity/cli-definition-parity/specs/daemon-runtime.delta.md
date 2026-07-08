@@ -1,10 +1,6 @@
 # Weaver Runtime delta for CLI definition parity
 
-**Document ID:** `CDP-DELTA-003`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-01
+**Document ID:** `CDP-DELTA-003` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-01
 
 ## CDP-DELTA-003.P1 Summary
 

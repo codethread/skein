@@ -1,12 +1,10 @@
 # Namespace tiers and a root spool home
 
-**Status:** Implemented
-**Related:** [repl-api spec](../../specs/repl-api.md), [daemon-runtime spec](../../specs/daemon-runtime.md), [spools index](../../../spools/README.md), TEN-000/TEN-004
+**Status:** Implemented **Related:** [repl-api spec](../../specs/repl-api.md), [daemon-runtime spec](../../specs/daemon-runtime.md), [spools index](../../../spools/README.md), TEN-000/TEN-004
 
 ## Summary
 
-Two structural changes that make the repo tree and the namespace map tell the
-same story a reader can reconstruct without asking:
+Two structural changes that make the repo tree and the namespace map tell the same story a reader can reconstruct without asking:
 
 1. **All spool code moves to a repo-root `spools/` home.** `src/skein/`
    becomes the shipped engine only. Spool *namespaces* stay `skein.spools.*`
@@ -47,13 +45,7 @@ same story a reader can reconstruct without asking:
 | `skein.repl` | unchanged | interactive surface; documented exception |
 | `skein.spools.{workflow,devflow,ephemeral,shuttle,treadle}` | unchanged | directories move; names stay |
 
-**New API surface required by the tiering:** spools and repo config currently
-deref `skein.weaver.runtime/current-runtime` directly (shuttle, treadle,
-`.skein/config.clj`). That is core under the new rule, so
-`skein.api.runtime.alpha` gains a blessed accessor (e.g. `(current-runtime)`
-returning the active runtime, failing loudly when absent) and every spool and
-config consumer migrates to it. Tests may keep requiring core namespaces — tests
-test internals.
+**New API surface required by the tiering:** spools and repo config currently deref `skein.weaver.runtime/current-runtime` directly (shuttle, treadle, `.skein/config.clj`). That is core under the new rule, so `skein.api.runtime.alpha` gains a blessed accessor (e.g. `(current-runtime)` returning the active runtime, failing loudly when absent) and every spool and config consumer migrates to it. Tests may keep requiring core namespaces — tests test internals.
 
 ## Directory moves
 
@@ -122,6 +114,4 @@ PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
 make install   # then mill + weaver restart, live sanity via strand ops
 ```
 
-Out of scope: renaming the loom metaphors, splitting `skein.api.weaver.alpha`
-into finer modules (accrete later), any beta subnamespaces, migration shims
-(TEN-000: none).
+Out of scope: renaming the loom metaphors, splitting `skein.api.weaver.alpha` into finer modules (accrete later), any beta subnamespaces, migration shims (TEN-000: none).

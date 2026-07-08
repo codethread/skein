@@ -1,13 +1,6 @@
 # Mill-Owned Source and Repository-Scoped Weaver Plan
 
-**Document ID:** `PLAN-MOS-001`
-**Feature:** `mill-owned-source`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** None
-**Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md)
-**Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-30
+**Document ID:** `PLAN-MOS-001` **Feature:** `mill-owned-source` **Proposal:** [proposal.md](./proposal.md) **RFC:** None **Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md) **Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) **Status:** Shipped **Last Updated:** 2026-06-30
 
 ## PLAN-MOS-001.P1 Goal and scope
 

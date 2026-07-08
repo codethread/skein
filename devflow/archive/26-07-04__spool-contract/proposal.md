@@ -1,11 +1,6 @@
 # Spool contract Proposal
 
-**Document ID:** `SC-PROP-001`
-**Status:** Draft
-**Date:** 2026-07-04
-**Related RFCs:** [Registry-free git distribution for spools](../../archive/26-07-03__spool-git-distribution/rfcs/2026-07-03-spool-git-distribution.md) (RFC-017, shipped), [Spool `:needs` targeting skein-shipped namespaces](../../rfcs/2026-07-03-spool-needs-shipped-namespaces.md) (RFC-018, to reject/moot)
-**Related root specs:** [REPL API](../../specs/repl-api.md) (SPEC-003), [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004)
-**Related docs:** [Writing shared spools](../../../docs/writing-shared-spools.md), [Runtime library workspace proposal](../../archive/26-06-26__runtime-library-workspace/proposal.md), [Runtime library workspace plan](../../archive/26-06-26__runtime-library-workspace/runtime-library-workspace.plan.md)
+**Document ID:** `SC-PROP-001` **Status:** Draft **Date:** 2026-07-04 **Related RFCs:** [Registry-free git distribution for spools](../../archive/26-07-03__spool-git-distribution/rfcs/2026-07-03-spool-git-distribution.md) (RFC-017, shipped), [Spool `:needs` targeting skein-shipped namespaces](../../rfcs/2026-07-03-spool-needs-shipped-namespaces.md) (RFC-018, to reject/moot) **Related root specs:** [REPL API](../../specs/repl-api.md) (SPEC-003), [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004) **Related docs:** [Writing shared spools](../../../docs/writing-shared-spools.md), [Runtime library workspace proposal](../../archive/26-06-26__runtime-library-workspace/proposal.md), [Runtime library workspace plan](../../archive/26-06-26__runtime-library-workspace/runtime-library-workspace.plan.md)
 
 ## SC-PROP-001.P1 Problem
 

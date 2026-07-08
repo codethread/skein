@@ -1,26 +1,12 @@
 # AFK task execution as treadle-fulfilled subagent gates
 
-**Status:** Implemented (2026-07-02) — shipped in `skein.spools.devflow`, contract in [devflow.md](../../../src/skein/spools/devflow.md) §4
-**Related:** [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (REC8 follow-up, C4, C7),
-[Devflow spool](../../../src/skein/spools/devflow.md) (§2 stage map),
-[Workflow spool](../../../src/skein/spools/workflow.md) (§3 Gates),
-[Treadle spool](../../../spools/shuttle/treadle.md)
+**Status:** Implemented (2026-07-02) — shipped in `skein.spools.devflow`, contract in [devflow.md](../../../src/skein/spools/devflow.md) §4 **Related:** [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (REC8 follow-up, C4, C7), [Devflow spool](../../../src/skein/spools/devflow.md) (§2 stage map), [Workflow spool](../../../src/skein/spools/workflow.md) (§3 Gates), [Treadle spool](../../../spools/shuttle/treadle.md)
 
 ## Summary
 
-Devflow's `run-afk-loop` stage currently pours one manual step ("run or hand
-off the AFK task loop") — the approved task queue executes inside a
-coordinator's private session, exactly the RFC-010.P1 pain. This feature makes
-the stage pour the approved tasks as a **sequential chain of `:subagent`
-gates** so the treadle executes them as durable shuttle runs, followed by a
-human acceptance checkpoint. Delegation is **opt-in per run**: with no task
-data the stage pours today's single manual step unchanged.
+Devflow's `run-afk-loop` stage currently pours one manual step ("run or hand off the AFK task loop") — the approved task queue executes inside a coordinator's private session, exactly the RFC-010.P1 pain. This feature makes the stage pour the approved tasks as a **sequential chain of `:subagent` gates** so the treadle executes them as durable shuttle runs, followed by a human acceptance checkpoint. Delegation is **opt-in per run**: with no task data the stage pours today's single manual step unchanged.
 
-Devflow gains no shuttle/treadle dependency: it emits only the generic gate
-vocabulary (`workflow/gate "subagent"` + `shuttle/*` request attributes as
-plain data), exactly like any workflow author (treadle.md). If the treadle is
-not installed, the gates are ordinary wait-points a coordinator can drive
-manually — same contract, degraded gracefully by design, not by accident.
+Devflow gains no shuttle/treadle dependency: it emits only the generic gate vocabulary (`workflow/gate "subagent"` + `shuttle/*` request attributes as plain data), exactly like any workflow author (treadle.md). If the treadle is not installed, the gates are ordinary wait-points a coordinator can drive manually — same contract, degraded gracefully by design, not by accident.
 
 ## Contract
 
@@ -49,9 +35,7 @@ These arrive by either route the engine already supports:
   (workflow.md §5). The `:approved` choice declares an optional `:input`
   entry for `:tasks` so `choice-details` advertises it.
 
-Note: keyword-vs-string keys. Choice input round-trips through JSON, so task
-maps may arrive string-keyed; the constructor must read both (the engine's
-context round-trip note, workflow.md §3).
+Note: keyword-vs-string keys. Choice input round-trips through JSON, so task maps may arrive string-keyed; the constructor must read both (the engine's context round-trip note, workflow.md §3).
 
 ### Poured shape (delegated mode)
 
@@ -103,9 +87,7 @@ For tasks `[a b c]`:
 4. `.skein/AGENTS.md` — one line in the devflow section: approve tasks with
    task data to delegate the AFK loop through the treadle.
 
-Out of scope: parallel task execution (needs worktree-per-task policy),
-automatic verification/closure policy beyond the HITL acceptance checkpoint
-(RFC-010.NG6), any treadle/shuttle change.
+Out of scope: parallel task execution (needs worktree-per-task policy), automatic verification/closure policy beyond the HITL acceptance checkpoint (RFC-010.NG6), any treadle/shuttle change.
 
 ## Validation
 

@@ -1,7 +1,6 @@
 # Skein Workflow Spool — Cookbook
 
-Composition recipes for `skein.spools.workflow`: how to shape real workflows out
-of the primitives, and *why* each shape is the right one.
+Composition recipes for `skein.spools.workflow`: how to shape real workflows out of the primitives, and *why* each shape is the right one.
 
 This is the **how/why** half of the workflow docs. The other two halves are:
 
@@ -11,15 +10,11 @@ This is the **how/why** half of the workflow docs. The other two halves are:
 - [`workflow.api.md`](./workflow.api.md) — the **generated reference**: every
   public fn's signature, arities, and docstring, produced from the source.
 
-Division of truth: signatures and argument lists live in the generated API doc;
-narrative and composition live here and in the contract. This cookbook never
-restates a fn signature or the attribute table — it links to them. When a recipe
-needs an exact arity, follow the link.
+Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature or the attribute table — it links to them. When a recipe needs an exact arity, follow the link.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which primitives combine, and how.
@@ -28,21 +23,15 @@ your situation and lift the snippet:
 4. **Why this shape** — the reasoning: why these primitives, what the attribute
    conventions buy you, and what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — a shipped spool, the
-repo's own config, or the test suite — so you can read the load-bearing version.
+Each recipe cites the honest source it was distilled from — a shipped spool, the repo's own config, or the test suite — so you can read the load-bearing version.
 
 ---
 
 ## Recipe: A linear stage with human sign-off and a revise loop
 
-**Situation.** You have a short run of work that a human approves at the end —
-and when they don't approve, the stage should re-run without repeating the
-one-time orientation it opened with.
+**Situation.** You have a short run of work that a human approves at the end — and when they don't approve, the stage should re-run without repeating the one-time orientation it opened with.
 
-**Composition.** Ordinary `step`s chained by `:depends-on`, terminated by a
-`checkpoint` whose choices are an approve (dead-ends the run) and a `:revise`
-(re-pours this same definition). A `:condition [:!= :revision true]` marks the
-steps that must not repeat on a revise round.
+**Composition.** Ordinary `step`s chained by `:depends-on`, terminated by a `checkpoint` whose choices are an approve (dead-ends the run) and a `:revise` (re-pours this same definition). A `:condition [:!= :revision true]` marks the steps that must not repeat on a revise round.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -119,21 +108,15 @@ steps that must not repeat on a revise round.
   round pours a new molecule under the same `run-id`, so the whole loop history
   stays in the graph, inspectable via `run-history` and squashable later.
 
-Honest source: adapted from the end-to-end example that formerly lived in
-`workflow.md`, and mirrored by `skein.spools.devflow`'s
-`human-signoff-proposal` revise loop.
+Honest source: adapted from the end-to-end example that formerly lived in `workflow.md`, and mirrored by `skein.spools.devflow`'s `human-signoff-proposal` revise loop.
 
 ---
 
 ## Recipe: Routing a multi-stage lifecycle through named stages
 
-**Situation.** Your process is several stages long — propose, then spec+plan,
-then implement — and each stage ends with a decision that hands off to the *next*
-stage rather than looping. You want the stages to be independently reloadable.
+**Situation.** Your process is several stages long — propose, then spec+plan, then implement — and each stage ends with a decision that hands off to the *next* stage rather than looping. You want the stages to be independently reloadable.
 
-**Composition.** Register each stage constructor under a stable keyword with
-`register-workflow!`, then route forward from a checkpoint with `:next
-:that-keyword`. The registry is the indirection layer.
+**Composition.** Register each stage constructor under a stable keyword with `register-workflow!`, then route forward from a checkpoint with `:next :that-keyword`. The registry is the indirection layer.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -196,21 +179,15 @@ stage rather than looping. You want the stages to be independently reloadable.
   routed hand-off is visible in-band: the continuation's ready frontier comes
   straight back from `choose!`.
 
-Honest source: `skein.spools.devflow`'s `stage-workflows` registry and
-`proposal-workflow` (proposal → `:spec-plan` forward route, self `:revise` loop,
-`:abort` with declared reason input).
+Honest source: `skein.spools.devflow`'s `stage-workflows` registry and `proposal-workflow` (proposal → `:spec-plan` forward route, self `:revise` loop, `:abort` with declared reason input).
 
 ---
 
 ## Recipe: Reusing a sub-flow with `call`
 
-**Situation.** The same sub-procedure — a review pass, a CI round, a quality
-check — needs to run inside several different stages, and you don't want to
-copy its steps into each one.
+**Situation.** The same sub-procedure — a review pass, a CI round, a quality check — needs to run inside several different stages, and you don't want to copy its steps into each one.
 
-**Composition.** Define the sub-flow as an ordinary workflow constructor, then
-splice it into a parent with `call`. Each `call` inlines the sub-flow's steps and
-adds a `procedure`-role join that downstream steps depend on.
+**Composition.** Define the sub-flow as an ordinary workflow constructor, then splice it into a parent with `call`. Each `call` inlines the sub-flow's steps and adds a `procedure`-role join that downstream steps depend on.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -250,23 +227,15 @@ adds a `procedure`-role join that downstream steps depend on.
   params; a CI-round sub-flow can be recomposed by every stage that pushes
   commits. That is the point of `call` over duplication.
 
-Honest source: the `call` inlining test in
-`test/skein/spools/workflow_test.clj` (`workflow-spool-inlines-procedure-calls`),
-the toastie demo's `:quality` call, and `skein.spools.devflow`'s
-`:agent-review-proposal` call.
+Honest source: the `call` inlining test in `test/skein/spools/workflow_test.clj` (`workflow-spool-inlines-procedure-calls`), the toastie demo's `:quality` call, and `skein.spools.devflow`'s `:agent-review-proposal` call.
 
 ---
 
 ## Recipe: External wait points with gates
 
-**Situation.** Some steps aren't the driving agent's to *do* — they're waits: CI
-must go green, a sub-agent must finish, a human must weigh in. The agent should
-be told to poll or hand off, not to try the work itself.
+**Situation.** Some steps aren't the driving agent's to *do* — they're waits: CI must go green, a sub-agent must finish, a human must weigh in. The agent should be told to poll or hand off, not to try the work itself.
 
-**Composition.** Model each wait as a `gate` with a freeform waiter hint (`:ci`,
-`:subagent`, `:human`). The external actor closes it via `complete!` with a
-mandatory `:by`. Optionally register an executor for a waiter class so `await!`
-stays quiet while an adapter is healthy.
+**Composition.** Model each wait as a `gate` with a freeform waiter hint (`:ci`, `:subagent`, `:human`). The external actor closes it via `complete!` with a mandatory `:by`. Optionally register an executor for a waiter class so `await!` stays quiet while an adapter is healthy.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -312,23 +281,15 @@ stays quiet while an adapter is healthy.
   verdict) into a route. Parallelism falls out of edge absence; branching lives
   in checkpoint choices.
 
-Honest source: the forge-agnostic PR flow in
-`test/skein/spools/workflow_test.clj`
-(`workflow-models-pull-request-flow-without-conditional-edges`) and the
-`:subagent` gate that `skein.spools.treadle` fulfills.
+Honest source: the forge-agnostic PR flow in `test/skein/spools/workflow_test.clj` (`workflow-models-pull-request-flow-without-conditional-edges`) and the `:subagent` gate that `skein.spools.treadle` fulfills.
 
 ---
 
 ## Recipe: Forge-agnostic tool bindings
 
-**Situation.** A workflow touches an external tool — a git forge, CI, a deploy
-target — but you want the *same* definition to run against GitHub for one user
-and GitLab for another, with no edit to the workflow.
+**Situation.** A workflow touches an external tool — a git forge, CI, a deploy target — but you want the *same* definition to run against GitHub for one user and GitLab for another, with no edit to the workflow.
 
-**Composition.** Steps name only a semantic `workflow/action-ref`
-(`"pr.ci.wait"`). The concrete command arrives through a **bindings map**
-(action-ref → attribute map) passed as pure data. Ship one forge's bindings as
-the default; a user deep-merges an override from trusted config.
+**Composition.** Steps name only a semantic `workflow/action-ref` (`"pr.ci.wait"`). The concrete command arrives through a **bindings map** (action-ref → attribute map) passed as pure data. Ship one forge's bindings as the default; a user deep-merges an override from trusted config.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -386,23 +347,15 @@ the default; a user deep-merges an override from trusted config.
   (`"workflow/instruction"`) at build time keeps them faithful across the JSON
   layer (contract [§3, "Tool bindings"](./workflow.md#3-definition-layer)).
 
-Honest source: the `github-pr-bindings` / `bind-attrs` reference in
-`test/skein/spools/workflow_test.clj`
-(`workflow-pr-flow-rebinds-forge-without-spool-changes`), GitHub shipped as
-default, GitLab swapped in as a partial override.
+Honest source: the `github-pr-bindings` / `bind-attrs` reference in `test/skein/spools/workflow_test.clj` (`workflow-pr-flow-rebinds-forge-without-spool-changes`), GitHub shipped as default, GitLab swapped in as a partial override.
 
 ---
 
 ## Recipe: Fan-out over a collection with a chained loop
 
-**Situation.** You have N items — delegated tasks, target hosts, files — and want
-one step per item, run in sequence, with per-item instructions computed from the
-item. A downstream step should wait for the whole batch.
+**Situation.** You have N items — delegated tasks, target hosts, files — and want one step per item, run in sequence, with per-item instructions computed from the item. A downstream step should wait for the whole batch.
 
-**Composition.** One `step` or `gate` with `:loop {:each :items :chain true}`.
-Fn-valued `:attributes` render per iteration against the item; `:chain true`
-serializes the expansions; a later step depending on the *base* loop id fans in
-over all expansions.
+**Composition.** One `step` or `gate` with `:loop {:each :items :chain true}`. Fn-valued `:attributes` render per iteration against the item; `:chain true` serializes the expansions; a later step depending on the *base* loop id fans in over all expansions.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -451,9 +404,7 @@ over all expansions.
   fulfill it by spawning a shuttle run and closing the gate with the result — the
   workflow definition never names the shuttle.
 
-Honest source: the `delegate-pipeline` weave pattern in this repo's
-[`.skein/config.clj`](../.skein/config.clj) (chained `:subagent` gate loop with
-fn-valued `shuttle/*` attributes and a base-id fan-in to the accept checkpoint).
+Honest source: the `delegate-pipeline` weave pattern in this repo's [`.skein/config.clj`](../.skein/config.clj) (chained `:subagent` gate loop with fn-valued `shuttle/*` attributes and a base-id fan-in to the accept checkpoint).
 
 ---
 

@@ -1,8 +1,6 @@
 # Skein Loom Spool — Cookbook
 
-Composition recipes for `skein.spools.loom`: how to turn its read-only
-projections into a branch dashboard, a live workflow feed, or a rendered gate
-chain, and *why* each shape is the right one.
+Composition recipes for `skein.spools.loom`: how to turn its read-only projections into a branch dashboard, a live workflow feed, or a rendered gate chain, and *why* each shape is the right one.
 
 This is the **how/why** half of the loom docs. The other two are:
 
@@ -12,18 +10,9 @@ This is the **how/why** half of the loom docs. The other two are:
 - [`loom.api.md`](./loom.api.md) — the **generated reference**: every public
   fn's signature and docstring, produced from source.
 
-Division of truth: signatures and the payload/option tables live in the
-contract and generated API doc; narrative and composition live here. This
-cookbook never restates a signature — it links to them. When a recipe needs an
-exact arity, follow the link.
+Division of truth: signatures and the payload/option tables live in the contract and generated API doc; narrative and composition live here. This cookbook never restates a signature — it links to them. When a recipe needs an exact arity, follow the link.
 
-Loom mutates nothing. Its graph projections — `work-dags`, `branch-views`, and
-`flow-status` — resolve no ambient runtime and take the active runtime as their
-first argument, so these recipes assume you already hold one —
-`(require '[skein.spools.loom :as loom] '[skein.api.current.alpha :as current])`
-and `(def rt (current/runtime))` inside trusted config or a live weaver REPL. The
-pure helpers `summarize` and `gate-chain-mermaid` take plain data instead and need
-no runtime.
+Loom mutates nothing. Its graph projections — `work-dags`, `branch-views`, and `flow-status` — resolve no ambient runtime and take the active runtime as their first argument, so these recipes assume you already hold one — `(require '[skein.spools.loom :as loom] '[skein.api.current.alpha :as current])` and `(def rt (current/runtime))` inside trusted config or a live weaver REPL. The pure helpers `summarize` and `gate-chain-mermaid` take plain data instead and need no runtime.
 
 ## How to read a recipe
 
@@ -34,26 +23,15 @@ Every recipe has the same four parts:
 3. **Snippet** — a runnable form, or the shell/JSON a renderer consumes.
 4. **Why this shape** — the reasoning, and what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — the spool itself,
-its test suite, this repo's `.skein` config, or the shipped dashboard that
-already renders it.
+Each recipe cites the honest source it was distilled from — the spool itself, its test suite, this repo's `.skein` config, or the shipped dashboard that already renders it.
 
 ---
 
 ## Recipe: A per-branch dashboard with repo-defined policy
 
-**Situation.** You want a "what's happening on each feature branch" view: one
-row per branch, each showing its work root, the active work hanging beneath it,
-and which of that work is ready to pick up right now. But *your* repo decides
-what counts as a branch and what counts as ready — the projection shouldn't bake
-that in.
+**Situation.** You want a "what's happening on each feature branch" view: one row per branch, each showing its work root, the active work hanging beneath it, and which of that work is ready to pick up right now. But *your* repo decides what counts as a branch and what counts as ready — the projection shouldn't bake that in.
 
-**Composition.** `branch-views` splits cleanly into **policy** (yours) and
-**projection** (loom's). You pass two policy knobs — `:branch-attr`, the
-attribute that names a branch, and `:ready-query`, an inline query whose ready
-frontier defines "pickable" — and loom groups the active branch-stamped roots,
-hangs each root's active `parent-of` descendants beneath it, and marks the ones
-on your ready frontier.
+**Composition.** `branch-views` splits cleanly into **policy** (yours) and **projection** (loom's). You pass two policy knobs — `:branch-attr`, the attribute that names a branch, and `:ready-query`, an inline query whose ready frontier defines "pickable" — and loom groups the active branch-stamped roots, hangs each root's active `parent-of` descendants beneath it, and marks the ones on your ready frontier.
 
 ```clojure
 ;; the repo's own "ready work" definition: active work, minus shuttle run records
@@ -79,8 +57,7 @@ on your ready frontier.
 (loom/branch-views rt {:branch-attr :branch :ready-query work-query :branch "feat-x"})
 ```
 
-From the shell the same projection is one JSON call — the repo's `branches` op
-is a thin wrapper that supplies exactly the policy above:
+From the shell the same projection is one JSON call — the repo's `branches` op is a thin wrapper that supplies exactly the policy above:
 
 ```sh
 strand branches            # every branch-stamped root, grouped
@@ -105,25 +82,15 @@ strand branches feat-x     # scoped to one branch
   descendant of its parent. That is why a dashboard shows one row per feature,
   not one per strand that mentions the branch.
 
-Honest source: this repo's `branches` op in
-[`.skein/config.clj`](../.skein/config.clj) (it passes `:branch-attr :branch`
-and the `work` query as `:ready-query`, then fails loudly on an unstamped
-branch), and the grouping/root rules exercised by
-`branch-views-group-stamped-roots-and-join-ready-frontier` in
-[`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
+Honest source: this repo's `branches` op in [`.skein/config.clj`](../.skein/config.clj) (it passes `:branch-attr :branch` and the `work` query as `:ready-query`, then fails loudly on an unstamped branch), and the grouping/root rules exercised by `branch-views-group-stamped-roots-and-join-ready-frontier` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
 
 ---
 
 ## Recipe: The whole active work graph in one payload
 
-**Situation.** The flat CLI query surface hands you strand *rows*. A graph view
-— an indented tree, a boxart DAG — needs the *edges* too: who parents whom, and
-which strands block which. You don't want to re-walk the graph in the renderer.
+**Situation.** The flat CLI query surface hands you strand *rows*. A graph view — an indented tree, a boxart DAG — needs the *edges* too: who parents whom, and which strands block which. You don't want to re-walk the graph in the renderer.
 
-**Composition.** `work-dags` does the walk once and returns every active
-`parent-of` root already joined to its hierarchy edges, its internal
-`depends-on` edges, and compact strand rows — one JSON-compatible `{:roots
-:dags}` structure a renderer can lay out directly.
+**Composition.** `work-dags` does the walk once and returns every active `parent-of` root already joined to its hierarchy edges, its internal `depends-on` edges, and compact strand rows — one JSON-compatible `{:roots :dags}` structure a renderer can lay out directly.
 
 ```clojure
 (loom/work-dags rt)
@@ -154,26 +121,15 @@ strand current-dags        # the same projection, as JSON, for a renderer or a h
   `summarize` shape appears across loom's projections, so a renderer's node
   formatter is written once.
 
-Honest source: `work-dags` and its `{:roots :dags}` contract in
-[`loom.clj`](./src/skein/spools/loom.clj), the repo's `current-dags` op in
-[`.skein/config.clj`](../.skein/config.clj), and
-`work-dags-projects-parent-of-roots-with-dependency-edges` in
-[`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
+Honest source: `work-dags` and its `{:roots :dags}` contract in [`loom.clj`](./src/skein/spools/loom.clj), the repo's `current-dags` op in [`.skein/config.clj`](../.skein/config.clj), and `work-dags-projects-parent-of-roots-with-dependency-edges` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
 
 ---
 
 ## Recipe: `flow-status` as a live TUI's data feed
 
-**Situation.** You're rendering a dashboard row per workflow run: its actionable
-frontier, whether any delegated agent failed, whether any gate stalled. You poll
-it on a timer. When the status call itself fails for a live run, the row must go
-*loud* — never show a healthy-looking empty frontier that hides a real problem.
+**Situation.** You're rendering a dashboard row per workflow run: its actionable frontier, whether any delegated agent failed, whether any gate stalled. You poll it on a timer. When the status call itself fails for a live run, the row must go *loud* — never show a healthy-looking empty frontier that hides a real problem.
 
-**Composition.** `flow-status` is the single read-only join a renderer needs: it
-returns the run's `:history`, `:frontier`, and `:done`, plus `:gates` joined to
-their delegated runs, and `:stalled-gates` / `:agent-failures` scoped to *this
-run's own* work. The renderer polls it, counts the failure summaries to pick a
-row colour, and treats an exception from the call as its own red state.
+**Composition.** `flow-status` is the single read-only join a renderer needs: it returns the run's `:history`, `:frontier`, and `:done`, plus `:gates` joined to their delegated runs, and `:stalled-gates` / `:agent-failures` scoped to *this run's own* work. The renderer polls it, counts the failure summaries to pick a row colour, and treats an exception from the call as its own red state.
 
 ```ts
 // one active run → one enriched row (polled on a timer)
@@ -209,25 +165,15 @@ const stateLabel = status.done ? "done"
   fail (an unknown run-id throws), the honest renderer catches it into a visible
   "error" row. A zero frontier and a failed call must not look the same.
 
-Honest source: the shuttle dashboard's devflow tab
-[`scripts/shuttle-dash/tabs/devflow.tsx`](../scripts/shuttle-dash/tabs/devflow.tsx)
-(`fetchDevflow` enriches each active run via `flow-status`, derives the
-error/attention/active/done state, and renders a loud error row on failure), and
-the `flow-status` payload contract in [`loom.md`](./loom.md).
+Honest source: the shuttle dashboard's devflow tab [`scripts/shuttle-dash/tabs/devflow.tsx`](../scripts/shuttle-dash/tabs/devflow.tsx) (`fetchDevflow` enriches each active run via `flow-status`, derives the error/attention/active/done state, and renders a loud error row on failure), and the `flow-status` payload contract in [`loom.md`](./loom.md).
 
 ---
 
 ## Recipe: The gate chain as one shared render helper
 
-**Situation.** Several places want to draw the same picture — a run's subagent
-gates as a left-to-right chain, each marked ready, stalled, closed, or still
-open. You do not want the marker logic (which colour, which label) to drift
-between a Mermaid render and a boxart one.
+**Situation.** Several places want to draw the same picture — a run's subagent gates as a left-to-right chain, each marked ready, stalled, closed, or still open. You do not want the marker logic (which colour, which label) to drift between a Mermaid render and a boxart one.
 
-**Composition.** `gate-chain-mermaid` is the *single* place that turns compact
-gate projections plus a ready-id set into node/marker/link text. `flow-status`
-already calls it and embeds the result as `:dev/mermaid`, so a consumer either
-lifts that field or calls the helper directly with its own gate list.
+**Composition.** `gate-chain-mermaid` is the *single* place that turns compact gate projections plus a ready-id set into node/marker/link text. `flow-status` already calls it and embeds the result as `:dev/mermaid`, so a consumer either lifts that field or calls the helper directly with its own gate list.
 
 ```clojure
 ;; flow-status embeds the chain for you …
@@ -263,11 +209,7 @@ lifts that field or calls the helper directly with its own gate list.
   so a consumer that wants boxart, an SVG, or a different layout can feed it the
   same `:gates` and ready-ids rather than re-implementing the marker rules.
 
-Honest source: `gate-chain-mermaid` and its use inside `flow-status`
-(`:dev/mermaid`) in [`loom.clj`](./src/skein/spools/loom.clj), with the exact
-marker/precedence output pinned by
-`gate-chain-mermaid-marks-ready-stalled-and-closed` in
-[`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
+Honest source: `gate-chain-mermaid` and its use inside `flow-status` (`:dev/mermaid`) in [`loom.clj`](./src/skein/spools/loom.clj), with the exact marker/precedence output pinned by `gate-chain-mermaid-marks-ready-stalled-and-closed` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
 
 ---
 

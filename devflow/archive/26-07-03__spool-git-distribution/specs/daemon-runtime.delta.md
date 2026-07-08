@@ -1,9 +1,6 @@
 # Weaver Runtime delta — spool git distribution
 
-**Document ID:** `SGD-SPEC-DR-001`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (SPEC-004, amends C42/C43 area)
-**Status:** Merged
-**Last Updated:** 2026-07-03
+**Document ID:** `SGD-SPEC-DR-001` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (SPEC-004, amends C42/C43 area) **Status:** Merged **Last Updated:** 2026-07-03
 
 Changes relative to SPEC-004 on ship. Decision history: [RFC-017](../../../rfcs/2026-07-03-spool-git-distribution.md).
 

@@ -1,17 +1,10 @@
 # agent-delegate: repo-local task delegation op
 
-**Status:** Implemented (2026-07-02) — registered from `.skein/config.clj`
-**Related:** [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (REC3, REC5, Q1, C2, C5),
-[Shuttle spool](../../../spools/shuttle/README.md), [`.skein/AGENTS.md`](../../../.skein/AGENTS.md)
+**Status:** Implemented (2026-07-02) — registered from `.skein/config.clj` **Related:** [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (REC3, REC5, Q1, C2, C5), [Shuttle spool](../../../spools/shuttle/README.md), [`.skein/AGENTS.md`](../../../.skein/AGENTS.md)
 
 ## Summary
 
-`strand op agent-delegate` turns an existing coordination task strand into a
-shuttle run carrying this repo's standard delegated-agent contract, so a
-coordinator stops hand-writing spawn prompts and parent wiring. It is a
-repo-local **op** (RFC-010.Q1: an op, not a pattern, because it derives the
-prompt from current strand state and returns a run summary), registered from
-`.skein/config.clj` alongside the devflow ops. No core or spool changes.
+`strand op agent-delegate` turns an existing coordination task strand into a shuttle run carrying this repo's standard delegated-agent contract, so a coordinator stops hand-writing spawn prompts and parent wiring. It is a repo-local **op** (RFC-010.Q1: an op, not a pattern, because it derives the prompt from current strand state and returns a run summary), registered from `.skein/config.clj` alongside the devflow ops. No core or spool changes.
 
 ## CLI contract
 
@@ -32,16 +25,11 @@ strand op agent-delegate <task-id> [--harness <name>] [--prompt <extra>] \
 - `--max-attempts`: integer; fails loudly otherwise.
 - `--spawned-by`: provenance run id, passed through to `spawn-run!`.
 
-Output: the `spawn-run!` run summary (JSON via the op surface). The run is
-created with `:parent <task-id>` (a parent-of edge — correct for plain task
-strands per RFC-010.REC2; the treadle's `delegates`-edge deviation applies
-only inside workflow molecules).
+Output: the `spawn-run!` run summary (JSON via the op surface). The run is created with `:parent <task-id>` (a parent-of edge — correct for plain task strands per RFC-010.REC2; the treadle's `delegates`-edge deviation applies only inside workflow molecules).
 
 ## Prompt construction (RFC-010.REC5)
 
-Fails loudly when the task has no non-blank `body` attribute **and** no
-`--prompt` was given — a delegation without context is a bug, not a default.
-The generated prompt contains, in order:
+Fails loudly when the task has no non-blank `body` attribute **and** no `--prompt` was given — a delegation without context is a bug, not a default. The generated prompt contains, in order:
 
 1. Identity: "You are the delegated implementer for strand `<id>` (`<title>`)
    in the skein-src repo." plus an instruction to read the assigned strand
@@ -56,9 +44,7 @@ The generated prompt contains, in order:
    the body says so; do not commit unless the body says so.
 4. The `--prompt` extra text, when given.
 
-Shuttle's own run preamble (pinned `strand` invocation, notes/spawn/await
-usage, "never touch mills/weavers/config") is prepended automatically by the
-engine and is not this op's concern.
+Shuttle's own run preamble (pinned `strand` invocation, notes/spawn/await usage, "never touch mills/weavers/config") is prepended automatically by the engine and is not this op's concern.
 
 ## Deliverables
 
@@ -85,8 +71,7 @@ engine and is not this op's concern.
    registrations list with `agent-delegate` as the default delegation path
    (raw spawn stays the escape hatch), with one usage example.
 
-Out of scope: auto-delegation from `agent-plan` input (RFC-010.REC4), task
-status automation (Q5 stays coordinator-owned), any core/spool change.
+Out of scope: auto-delegation from `agent-plan` input (RFC-010.REC4), task status automation (Q5 stays coordinator-owned), any core/spool change.
 
 ## Validation
 

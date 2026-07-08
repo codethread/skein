@@ -1,13 +1,6 @@
 # Library Author Testing Support Plan
 
-**Document ID:** `LAT-PLAN-001`
-**Feature:** `library-author-testing-support`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-005 Library Author Testing Support](./rfcs/2026-06-26-library-author-testing.md)
-**Root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
-**Feature specs:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-03
+**Document ID:** `LAT-PLAN-001` **Feature:** `library-author-testing-support` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-005 Library Author Testing Support](./rfcs/2026-06-26-library-author-testing.md) **Root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md) **Feature specs:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md) **Status:** Shipped **Last Updated:** 2026-07-03
 
 ## LAT-PLAN-001.P1 Goal and scope
 

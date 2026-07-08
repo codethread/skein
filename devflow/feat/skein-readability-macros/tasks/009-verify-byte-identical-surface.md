@@ -6,10 +6,7 @@
 
 Type: AFK
 
-Prove the whole refactor changed no runtime identity: the registered ops, queries, chime rules, generated `help`, and
-`devflow-conventions` output are identical to the status-quo config. This is the feature's acceptance gate (RFC-020.C1,
-PROP-SkeinReadabilityMacros-001.S4). Run the deterministic in-process verification here; run the live disposable-world CLI diff
-too when this harness may start a weaver, and otherwise hand it to the coordinator with a recorded reason (PLAN-Srm-001.R3).
+Prove the whole refactor changed no runtime identity: the registered ops, queries, chime rules, generated `help`, and `devflow-conventions` output are identical to the status-quo config. This is the feature's acceptance gate (RFC-020.C1, PROP-SkeinReadabilityMacros-001.S4). Run the deterministic in-process verification here; run the live disposable-world CLI diff too when this harness may start a weaver, and otherwise hand it to the coordinator with a recorded reason (PLAN-Srm-001.R3).
 
 ## TASK-Srm-009.P2 Must implement exactly
 

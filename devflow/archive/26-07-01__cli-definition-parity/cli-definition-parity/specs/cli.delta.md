@@ -1,10 +1,6 @@
 # CLI Surface delta for CLI definition parity
 
-**Document ID:** `CDP-DELTA-001`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-01
+**Document ID:** `CDP-DELTA-001` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-01
 
 ## CDP-DELTA-001.P1 Summary
 

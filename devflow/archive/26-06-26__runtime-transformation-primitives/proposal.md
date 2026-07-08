@@ -1,11 +1,6 @@
 # Runtime Transformation Primitives Proposal
 
-**Document ID:** `RTP-PROP-001`
-**Status:** Draft
-**Date:** 2026-06-26
-**Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md)
-**Relevant root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md), [Task Model](../../specs/strand-model.md)
-**Prerequisite shipped:** [Runtime Library Workspace](../../archive/26-06-26__runtime-library-workspace/) — config-dir libraries, `libs.edn`, daemon-side `atom.libs.alpha/sync!` and `use!`
+**Document ID:** `RTP-PROP-001` **Status:** Draft **Date:** 2026-06-26 **Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md) **Relevant root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md), [Task Model](../../specs/strand-model.md) **Prerequisite shipped:** [Runtime Library Workspace](../../archive/26-06-26__runtime-library-workspace/) — config-dir libraries, `libs.edn`, daemon-side `atom.libs.alpha/sync!` and `use!`
 
 ## RTP-PROP-001.P1 Problem
 

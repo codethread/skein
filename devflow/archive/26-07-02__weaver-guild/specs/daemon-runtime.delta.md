@@ -1,21 +1,10 @@
 # Weaver Runtime delta for weaver-guild
 
-**Document ID:** `DELTA-DaemonRuntime-002`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-02
+**Document ID:** `DELTA-DaemonRuntime-002` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-02
 
 ## DELTA-DaemonRuntime-002.P1 Summary
 
-Adds a local weaver peering contract to SPEC-004: a new section (proposed
-`SPEC-004.P12 Local weaver peering`) covering portable weaver naming declared
-in trusted startup files, discovery of running sibling weavers from published
-runtime metadata, and a blessed Clojure peer client for the existing JSON
-socket protocol. Amends SPEC-004.C12 (friendly-name sources). Adds no new
-socket operations, no protocol fields, and no CLI surface; mill gains only
-effective-name resolution from selected workspace config at launch
-(companion [cli delta](./cli.delta.md)).
+Adds a local weaver peering contract to SPEC-004: a new section (proposed `SPEC-004.P12 Local weaver peering`) covering portable weaver naming declared in trusted startup files, discovery of running sibling weavers from published runtime metadata, and a blessed Clojure peer client for the existing JSON socket protocol. Amends SPEC-004.C12 (friendly-name sources). Adds no new socket operations, no protocol fields, and no CLI surface; mill gains only effective-name resolution from selected workspace config at launch (companion [cli delta](./cli.delta.md)).
 
 ## DELTA-DaemonRuntime-002.P2 Contract changes
 

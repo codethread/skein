@@ -1,10 +1,6 @@
 # Weaver Runtime Delta: Live Weaver REPL And Runtime Loader
 
-**Document ID:** `LWRL-DELTA-RUNTIME-001`
-**Status:** Merged
-**Last Updated:** 2026-07-01
-**Updates:** [Weaver Runtime](../../../specs/daemon-runtime.md)
-**Feature:** [live-weaver-repl-and-runtime-loader](../proposal.md)
+**Document ID:** `LWRL-DELTA-RUNTIME-001` **Status:** Merged **Last Updated:** 2026-07-01 **Updates:** [Weaver Runtime](../../../specs/daemon-runtime.md) **Feature:** [live-weaver-repl-and-runtime-loader](../proposal.md)
 
 ## LWRL-DELTA-RUNTIME-001.P1 Summary
 

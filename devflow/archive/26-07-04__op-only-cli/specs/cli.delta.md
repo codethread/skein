@@ -1,10 +1,6 @@
 # CLI Surface Delta: Op-only CLI
 
-**Document ID:** `SPEC-002-D004`
-**Status:** Merged
-**Base Spec:** [CLI Surface](../../../specs/cli.md)
-**Related RFC:** [RFC-019 Op-only CLI](../../../rfcs/2026-07-04-op-only-cli.md)
-**Last Updated:** 2026-07-04
+**Document ID:** `SPEC-002-D004` **Status:** Merged **Base Spec:** [CLI Surface](../../../specs/cli.md) **Related RFC:** [RFC-019 Op-only CLI](../../../rfcs/2026-07-04-op-only-cli.md) **Last Updated:** 2026-07-04
 
 This delta replaces the strand command surface wholesale (TEN-000, RFC-019). SPEC-002 is rewritten on merge: the dispatcher and mill contracts below replace SPEC-002.P2/P3; per-command behavior contracts (SPEC-002.C6–C13 families) move to the batteries spool contract at `spools/batteries.md`.
 

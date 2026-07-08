@@ -1,11 +1,6 @@
 # Weaver Lifecycle Hooks
 
-**Document ID:** `RFC-008`
-**Status:** Implemented
-**Created:** 2026-06-29
-**Related specs:** [Weaver Runtime](../specs/daemon-runtime.md), [CLI Surface](../specs/cli.md), [Strand Model](../specs/strand-model.md), [REPL API](../specs/repl-api.md)
-**Related code:** `src/skein/weaver/api.clj`, `src/skein/weaver/runtime.clj`, `src/skein/events/alpha.clj`, `src/skein/db.clj`, `cli/`
-**Related tenets:** TEN-002 (trusted agents), TEN-003 (FAIL LOUDLY), TEN-006 (CLI is a thin JSON control surface)
+**Document ID:** `RFC-008` **Status:** Implemented **Created:** 2026-06-29 **Related specs:** [Weaver Runtime](../specs/daemon-runtime.md), [CLI Surface](../specs/cli.md), [Strand Model](../specs/strand-model.md), [REPL API](../specs/repl-api.md) **Related code:** `src/skein/weaver/api.clj`, `src/skein/weaver/runtime.clj`, `src/skein/events/alpha.clj`, `src/skein/db.clj`, `cli/` **Related tenets:** TEN-002 (trusted agents), TEN-003 (FAIL LOUDLY), TEN-006 (CLI is a thin JSON control surface)
 
 ## RFC-008.P1 Problem
 

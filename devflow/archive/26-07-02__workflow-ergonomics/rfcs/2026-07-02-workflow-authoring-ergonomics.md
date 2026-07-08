@@ -1,17 +1,10 @@
 # Workflow Authoring Ergonomics
 
-**Document ID:** `RFC-012`
-**Status:** Implemented
-**Date:** 2026-07-02
-**Related:** [Workflow spool](../../src/skein/spools/workflow.md) (§3 loops, §4 run lifecycle, §5 routing), [Devflow spool](../../src/skein/spools/devflow.md), [afk-gates feature](../feat/afk-gates/proposal.md), [RFC-011](./2026-07-02-coordination-attention-surface.md)
+**Document ID:** `RFC-012` **Status:** Implemented **Date:** 2026-07-02 **Related:** [Workflow spool](../../src/skein/spools/workflow.md) (§3 loops, §4 run lifecycle, §5 routing), [Devflow spool](../../src/skein/spools/devflow.md), [afk-gates feature](../feat/afk-gates/proposal.md), [RFC-011](./2026-07-02-coordination-attention-surface.md)
 
 ## RFC-012.P1 Problem
 
-Building three treadle-era features on 2026-07-02 exercised the workflow
-engine as both a library consumer (devflow's new delegated AFK stage) and a
-direct driver (two hand-poured coordination workflows). The engine's
-semantics held up without modification — the gaps are all *authoring
-ergonomics*: things every author re-derives, re-types, or hand-rolls.
+Building three treadle-era features on 2026-07-02 exercised the workflow engine as both a library consumer (devflow's new delegated AFK stage) and a direct driver (two hand-poured coordination workflows). The engine's semantics held up without modification — the gaps are all *authoring ergonomics*: things every author re-derives, re-types, or hand-rolls.
 
 - **RFC-012.P1.1: Sequential pipelines over data cannot be expressed with
   `:loop`.** The delegated AFK stage needed "one gate per approved task,
@@ -28,10 +21,7 @@ ergonomics*: things every author re-derives, re-types, or hand-rolls.
       steps))
   ```
 
-  This is the exact shape `:loop` exists to remove, and any future pipeline
-  author (RFC-013's `delegate-pipeline` pattern, a build/deploy chain, a
-  multi-round review) will write the same loop again. Fan-*out* is free in
-  the engine; fan-*through* is not.
+This is the exact shape `:loop` exists to remove, and any future pipeline author (RFC-013's `delegate-pipeline` pattern, a build/deploy chain, a multi-round review) will write the same loop again. Fan-*out* is free in the engine; fan-*through* is not.
 
 - **RFC-012.P1.2: `start!`'s durability opts are boilerplate with a delayed
   failure mode.** A revisable run must be started as:
@@ -41,12 +31,7 @@ ergonomics*: things every author re-derives, re-types, or hand-rolls.
                    {:definition 'my.ns/flow :context params-as-strings})
   ```
 
-  Three of the four arguments repeat the same information. Forgetting
-  `:definition` is silent at start and **fails only when a `:revise` choice
-  is taken**, far from the mistake (workflow.md §5 documents the constraint
-  but cannot enforce it early). Both live demos in the session had to get
-  this incantation right by hand; devflow wraps it away for its own stages
-  but every ad-hoc workflow author faces it raw.
+Three of the four arguments repeat the same information. Forgetting `:definition` is silent at start and **fails only when a `:revise` choice is taken**, far from the mistake (workflow.md §5 documents the constraint but cannot enforce it early). Both live demos in the session had to get this incantation right by hand; devflow wraps it away for its own stages but every ad-hoc workflow author faces it raw.
 
 - **RFC-012.P1.3: Frontier selection is a re-typed filter.** The coordinator
   and the treadle both constantly need "the ready subagent gates" or "the
@@ -57,9 +42,7 @@ ergonomics*: things every author re-derives, re-types, or hand-rolls.
   (first (filter #(= "subagent" (:gate %)) (workflow/next-steps run-id)))
   ```
 
-  `next-step` throws on any parallelism, so authors fall back to this. The
-  step views already carry everything needed (`:gate`, `:kind`,
-  `:checkpoint`); only the selector is missing.
+`next-step` throws on any parallelism, so authors fall back to this. The step views already carry everything needed (`:gate`, `:kind`, `:checkpoint`); only the selector is missing.
 
 - **RFC-012.P1.4: Registration and definition are separate, drift-prone
   acts.** A routable/revisable workflow needs (a) a constructor fn, (b)
@@ -141,8 +124,7 @@ ergonomics*: things every author re-derives, re-types, or hand-rolls.
     scope** here; if ever added, chain re-linking through excluded middle
     items becomes their acceptance test (see Q5);
   - `:chain true` with `:count` works identically (items 1..n).
-  Then rewrite `devflow`'s hand-rolled AFK chain on top of it, as the
-  proving consumer.
+Then rewrite `devflow`'s hand-rolled AFK chain on top of it, as the proving consumer.
 - **RFC-012.REC2:** Adopt **O3**: `start!` (and `describe`) accept a var or
   registered keyword; derive `:definition` (var → symbol; keyword → registry
   lookup, failing loudly on unknown names *at start time*); default

@@ -1,11 +1,6 @@
 # CLI Surface Delta: DB-owned Task IDs
 
-**Document ID:** `DELTA-002`
-**Status:** Merged
-**Target root spec:** [CLI Surface](../../../specs/cli.md)
-**Feature:** `db-owned-task-ids`
-**Last Updated:** 2026-06-24
-**Configuration identification:** `DELTA-002` is the CLI delta for `db-owned-task-ids`. Every nested point ID is prefixed with `DELTA-002`.
+**Document ID:** `DELTA-002` **Status:** Merged **Target root spec:** [CLI Surface](../../../specs/cli.md) **Feature:** `db-owned-task-ids` **Last Updated:** 2026-06-24 **Configuration identification:** `DELTA-002` is the CLI delta for `db-owned-task-ids`. Every nested point ID is prefixed with `DELTA-002`.
 
 ## DELTA-002.P1 Summary
 

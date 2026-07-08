@@ -1,13 +1,6 @@
 # Arg-spec subcommands Plan
 
-**Document ID:** `PLAN-ArgspecSub-001`
-**Feature:** `argspec-subcommands`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none
-**Root specs:** [repl-api.md](../../specs/repl-api.md), [daemon-runtime.md](../../specs/daemon-runtime.md), [cli.md](../../specs/cli.md)
-**Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/cli.delta.md](./specs/cli.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-05
+**Document ID:** `PLAN-ArgspecSub-001` **Feature:** `argspec-subcommands` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** [repl-api.md](../../specs/repl-api.md), [daemon-runtime.md](../../specs/daemon-runtime.md), [cli.md](../../specs/cli.md) **Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/cli.delta.md](./specs/cli.delta.md) **Status:** Shipped **Last Updated:** 2026-07-05
 
 ## PLAN-ArgspecSub-001.P1 Goal and scope
 

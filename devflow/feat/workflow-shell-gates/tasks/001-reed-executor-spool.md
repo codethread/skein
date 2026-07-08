@@ -1,27 +1,14 @@
 # Task 001: Reed executor spool + full tested contract
 
-**Document ID:** `TASK-ShellGates-001`
-**Feature:** `workflow-shell-gates` (branch `workflow-shell-gates`, worktree
-`/Users/ct/dev/projects/skein-src__workflow-shell-gates`)
-**Plan:** `PLAN-ShellGates-001` — this task is `PLAN-ShellGates-001.PH1`.
+**Document ID:** `TASK-ShellGates-001` **Feature:** `workflow-shell-gates` (branch `workflow-shell-gates`, worktree `/Users/ct/dev/projects/skein-src__workflow-shell-gates`) **Plan:** `PLAN-ShellGates-001` — this task is `PLAN-ShellGates-001.PH1`.
 
 ## P1 Scope
 
 Type: AFK
 
-Ship the classpath executor spool `skein.spools.reed` and its full behaviour
-contract test. The spool fulfils workflow gates whose waiter is `:shell` by
-running the gate's `shell/argv` directly off the weaver event thread, closes the
-gate on a zero exit through `skein.spools.workflow/complete!`, and stamps a loud,
-distinct `shell/error` on any failure. It is a treadle sibling minus everything
-shuttle-specific (`PLAN-ShellGates-001.P2`, `.P8` "What is shuttle-specific").
-This task is code + tests only — **no** docs, indexes, or repo activation.
+Ship the classpath executor spool `skein.spools.reed` and its full behaviour contract test. The spool fulfils workflow gates whose waiter is `:shell` by running the gate's `shell/argv` directly off the weaver event thread, closes the gate on a zero exit through `skein.spools.workflow/complete!`, and stamps a loud, distinct `shell/error` on any failure. It is a treadle sibling minus everything shuttle-specific (`PLAN-ShellGates-001.P2`, `.P8` "What is shuttle-specific"). This task is code + tests only — **no** docs, indexes, or repo activation.
 
-Reference implementation to mirror: `spools/shuttle/src/skein/spools/treadle.clj`
-(event handler, `scan!`, idempotent claim, `complete!`-on-success,
-`gate-stalled?`, `register-executor!`, `register-query!`, runtime-owned versioned
-`spool-state`, scan monitor). Rationale for every decision below is in the plan
-sections cited — do not re-derive design here.
+Reference implementation to mirror: `spools/shuttle/src/skein/spools/treadle.clj` (event handler, `scan!`, idempotent claim, `complete!`-on-success, `gate-stalled?`, `register-executor!`, `register-query!`, runtime-owned versioned `spool-state`, scan monitor). Rationale for every decision below is in the plan sections cited — do not re-derive design here.
 
 ## P2 Must implement exactly
 

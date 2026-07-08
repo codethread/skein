@@ -1,9 +1,6 @@
 # Op help convention Proposal
 
-**Document ID:** `PROP-OpHelp-001`
-**Last Updated:** 2026-07-05
-**Related RFCs:** None
-**Related root specs:** [SPEC-003.P5b Blessed op argv parser](../../specs/repl-api.md), [SPEC-002 CLI Surface](../../specs/cli.md), [SPEC-004.C63a-d op registry](../../specs/daemon-runtime.md)
+**Document ID:** `PROP-OpHelp-001` **Last Updated:** 2026-07-05 **Related RFCs:** None **Related root specs:** [SPEC-003.P5b Blessed op argv parser](../../specs/repl-api.md), [SPEC-002 CLI Surface](../../specs/cli.md), [SPEC-004.C63a-d op registry](../../specs/daemon-runtime.md)
 
 ## PROP-OpHelp-001.P1 Problem
 

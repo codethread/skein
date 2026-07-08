@@ -1,10 +1,6 @@
 # Daemon Runtime Delta — Runtime Plugin System
 
-**Document ID:** `RPS-DELTA-001`
-**Status:** Merged
-**Date:** 2026-06-25
-**Prerequisite:** `user-daemon-home` shipped in `devflow/archive/26-06-25__user-daemon-home`
-**Updates:** [Daemon Runtime](../../../specs/daemon-runtime.md)
+**Document ID:** `RPS-DELTA-001` **Status:** Merged **Date:** 2026-06-25 **Prerequisite:** `user-daemon-home` shipped in `devflow/archive/26-06-25__user-daemon-home` **Updates:** [Daemon Runtime](../../../specs/daemon-runtime.md)
 
 ## RPS-DELTA-001.P1 Summary
 

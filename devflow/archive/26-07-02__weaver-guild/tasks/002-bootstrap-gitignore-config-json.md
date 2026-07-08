@@ -6,11 +6,7 @@
 
 Type: AFK
 
-Fix the stale gitignore contract per DELTA-Cli-002.CC3: bootstrap-generated
-`.skein/.gitignore` stops ignoring `config.json` (a leftover from when it
-stored the machine-local source checkout path, pre-mill) and ignores
-`config.local.json` instead. Apply the same fix to this repo's own
-`.skein/.gitignore`.
+Fix the stale gitignore contract per DELTA-Cli-002.CC3: bootstrap-generated `.skein/.gitignore` stops ignoring `config.json` (a leftover from when it stored the machine-local source checkout path, pre-mill) and ignores `config.local.json` instead. Apply the same fix to this repo's own `.skein/.gitignore`.
 
 ## TASK-Guild-002.P2 Must implement exactly
 

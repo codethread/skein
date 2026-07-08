@@ -1,10 +1,6 @@
 # REPL API delta for library author testing support
 
-**Document ID:** `LAT-DELTA-002`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-03
+**Document ID:** `LAT-DELTA-002` **Root spec:** [repl-api.md](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-03
 
 ## LAT-DELTA-002.P1 Summary
 

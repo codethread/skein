@@ -1,17 +1,10 @@
 # REPL API delta for weaver-guild
 
-**Document ID:** `DELTA-ReplApi-002`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-02
+**Document ID:** `DELTA-ReplApi-002` **Root spec:** [repl-api.md](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-02
 
 ## DELTA-ReplApi-002.P1 Summary
 
-Adds the blessed peering namespace `skein.api.peers.alpha`
-(PROP-Guild-001.Q1) to SPEC-003's blessed helper-namespace listing. Contract
-substance lives in [daemon-runtime.delta.md](./daemon-runtime.delta.md); this
-delta only registers the interactive surface.
+Adds the blessed peering namespace `skein.api.peers.alpha` (PROP-Guild-001.Q1) to SPEC-003's blessed helper-namespace listing. Contract substance lives in [daemon-runtime.delta.md](./daemon-runtime.delta.md); this delta only registers the interactive surface.
 
 ## DELTA-ReplApi-002.P2 Contract changes
 

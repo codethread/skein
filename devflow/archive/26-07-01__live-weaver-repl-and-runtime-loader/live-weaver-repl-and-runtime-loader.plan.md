@@ -1,13 +1,6 @@
 # Live Weaver REPL And Runtime Loader Plan
 
-**Document ID:** `LWRL-PLAN-001`
-**Feature:** `live-weaver-repl-and-runtime-loader`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** None
-**Root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md)
-**Feature specs:** [repl-api.delta.md](./specs/repl-api.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [cli.delta.md](./specs/cli.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-01
+**Document ID:** `LWRL-PLAN-001` **Feature:** `live-weaver-repl-and-runtime-loader` **Proposal:** [proposal.md](./proposal.md) **RFC:** None **Root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md) **Feature specs:** [repl-api.delta.md](./specs/repl-api.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [cli.delta.md](./specs/cli.delta.md) **Status:** Shipped **Last Updated:** 2026-07-01
 
 ## LWRL-PLAN-001.P1 Goal and scope
 

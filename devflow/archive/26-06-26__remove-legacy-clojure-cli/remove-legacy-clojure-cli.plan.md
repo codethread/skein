@@ -1,11 +1,6 @@
 # Remove legacy Clojure CLI Plan
 
-**Document ID:** `RCLC-PLAN-001`
-**Feature:** `remove-legacy-clojure-cli`
-**Proposal:** [proposal.md](./proposal.md)
-**Root specs:** [CLI Surface](../../specs/cli.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-26
+**Document ID:** `RCLC-PLAN-001` **Feature:** `remove-legacy-clojure-cli` **Proposal:** [proposal.md](./proposal.md) **Root specs:** [CLI Surface](../../specs/cli.md) **Status:** Shipped **Last Updated:** 2026-06-26
 
 ## Scope
 

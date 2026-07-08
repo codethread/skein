@@ -1,9 +1,6 @@
 # Library Author Testing Support
 
-**Document ID:** `RFC-005`
-**Status:** Implemented
-**Date:** 2026-06-26
-**Related:** [Daemon Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), [CLI Surface](../../../specs/cli.md), [Runtime Library Workspace](../../26-06-26__runtime-library-workspace/), [Spikes](../spikes/)
+**Document ID:** `RFC-005` **Status:** Implemented **Date:** 2026-06-26 **Related:** [Daemon Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), [CLI Surface](../../../specs/cli.md), [Runtime Library Workspace](../../26-06-26__runtime-library-workspace/), [Spikes](../spikes/)
 
 ## RFC-005.P1 Problem
 

@@ -1,8 +1,6 @@
 # Add Trusted Event Helpers
 
-**Document ID:** `TASK-003`
-**Status:** Pending
-**Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
+**Document ID:** `TASK-003` **Status:** Pending **Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
 
 ## TASK-003.P1 Scope
 

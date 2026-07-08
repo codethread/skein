@@ -1,14 +1,6 @@
 # Agent Tool Interface Plan
 
-**Document ID:** `PLAN-001`
-**Feature:** `agent-tool-interface`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** None
-**Root specs:** None yet
-**Feature specs:** None
-**Status:** Shipped
-**Last Updated:** 2026-06-24
-**Configuration identification:** `PLAN-001` is the first plan in this repository. Every nested point ID is prefixed with `PLAN-001`.
+**Document ID:** `PLAN-001` **Feature:** `agent-tool-interface` **Proposal:** [proposal.md](./proposal.md) **RFC:** None **Root specs:** None yet **Feature specs:** None **Status:** Shipped **Last Updated:** 2026-06-24 **Configuration identification:** `PLAN-001` is the first plan in this repository. Every nested point ID is prefixed with `PLAN-001`.
 
 ## PLAN-001.P1 Goal and scope
 

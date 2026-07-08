@@ -1,7 +1,6 @@
 # Skein Kanban Spool — Cookbook
 
-Composition recipes for `skein.spools.kanban`: how to run real user↔agent work
-through the board, and *why* each stamp, edge, and note is where it is.
+Composition recipes for `skein.spools.kanban`: how to run real user↔agent work through the board, and *why* each stamp, edge, and note is where it is.
 
 This is the **how/why** half of the kanban docs. The other two halves are:
 
@@ -11,19 +10,13 @@ This is the **how/why** half of the kanban docs. The other two halves are:
 - [`kanban.api.md`](./kanban.api.md) — the **generated reference**: every public
   fn's signature, arity, and docstring, produced from the source.
 
-Division of truth: signatures and the attribute table live in the contract and
-the generated API doc; narrative and composition live here. This cookbook never
-restates a signature or the lane/attribute table — it links to them.
+Division of truth: signatures and the attribute table live in the contract and the generated API doc; narrative and composition live here. This cookbook never restates a signature or the lane/attribute table — it links to them.
 
-The kanban CLI is JSON-only, so every recipe below is a `strand kanban …` shell
-flow. The REPL fns behind each verb (and the ASCII `print-board!` human view)
-are in the API doc; run `strand kanban prime` for the live, spool-authored
-working discipline these recipes distil.
+The kanban CLI is JSON-only, so every recipe below is a `strand kanban …` shell flow. The REPL fns behind each verb (and the ASCII `print-board!` human view) are in the API doc; run `strand kanban prime` for the live, spool-authored working discipline these recipes distil.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which verbs combine, and how.
@@ -31,22 +24,15 @@ your situation and lift the snippet:
 4. **Why this shape** — the reasoning: why each stamp is there, what it buys a
    later agent, and what skipping it would cost.
 
-Each recipe cites the honest source it was distilled from — the spool source,
-this repo's own conventions, or `test/skein/kanban_test.clj`, which drives every
-documented behaviour against a real weaver runtime and doubles as the executable
-proof for these flows.
+Each recipe cites the honest source it was distilled from — the spool source, this repo's own conventions, or `test/skein/kanban_test.clj`, which drives every documented behaviour against a real weaver runtime and doubles as the executable proof for these flows.
 
 ---
 
 ## Recipe: Pick up the next card and carry it end to end
 
-**Situation.** You're an agent sitting down to work with a user. There's a queue
-of pending features; you need to take the right one, make the work discoverable
-to everyone else, and leave it resumable if you're interrupted.
+**Situation.** You're an agent sitting down to work with a user. There's a queue of pending features; you need to take the right one, make the work discoverable to everyone else, and leave it resumable if you're interrupted.
 
-**Composition.** The usual loop is `next`, `claim`, work under `parent-of`, and
-`note --handover`. When the work is ready for review, run `review`. If review asks
-for changes, run `rework`; when the work has landed, `finish` closes it out.
+**Composition.** The usual loop is `next`, `claim`, work under `parent-of`, and `note --handover`. When the work is ready for review, run `review`. If review asks for changes, run `rework`; when the work has landed, `finish` closes it out.
 
 ```sh
 # 1. Take the highest-priority (p1 first) oldest pending feature.
@@ -98,22 +84,15 @@ strand kanban finish "$card" --outcome done
   card, but the `kanban/status` outcome stays on the strand, so the closed lane
   keeps an honest history rather than a wall of indistinguishable "closed".
 
-Honest source: the pick-up flow authored in the spool's own
-`prime` payload (`:pick-up-next-card`, `:working-agreement`) and this repo's
-`CLAUDE.md` kanban convention, proven end to end by
-`kanban-add-next-claim-and-finish-round-trip`.
+Honest source: the pick-up flow authored in the spool's own `prime` payload (`:pick-up-next-card`, `:working-agreement`) and this repo's `CLAUDE.md` kanban convention, proven end to end by `kanban-add-next-claim-and-finish-round-trip`.
 
 ---
 
 ## Recipe: Stock the backlog in one weave
 
-**Situation.** A user hands you a list of features at once — often with
-dependencies between them ("docs after the design lands") — and you want them all
-as pending cards in a single atomic step, with the blockers already wired.
+**Situation.** A user hands you a list of features at once — often with dependencies between them ("docs after the design lands") — and you want them all as pending cards in a single atomic step, with the blockers already wired.
 
-**Composition.** One `kanban-batch` weave. Each item is a card; `deps` values
-that match a sibling `key` become batch-local `depends-on` edges, and any other
-`deps` value is treated as an existing strand id.
+**Composition.** One `kanban-batch` weave. Each item is a card; `deps` values that match a sibling `key` become batch-local `depends-on` edges, and any other `deps` value is treated as an existing strand id.
 
 ```sh
 strand weave --pattern kanban-batch --input '{
@@ -145,19 +124,15 @@ strand weave --pattern kanban-batch --input '{
   refinement card (via plain `kanban add --status refinement`) only when an idea
   isn't ready to be worked.
 
-Honest source: the `kanban-batch` pattern in the spool source and its two test
-cases, plus the bulk-authoring section of the contract doc.
+Honest source: the `kanban-batch` pattern in the spool source and its two test cases, plus the bulk-authoring section of the contract doc.
 
 ---
 
 ## Recipe: Group a multi-card initiative under an epic
 
-**Situation.** A single theme spans several features — a subsystem rewrite, a
-release. You want them grouped so the board shows them together, but each feature
-still claimed and worked on its own.
+**Situation.** A single theme spans several features — a subsystem rewrite, a release. You want them grouped so the board shows them together, but each feature still claimed and worked on its own.
 
-**Composition.** Create one `epic` card, then add each feature with `--epic
-<id>`. The epic is `parent-of` its features; it is a grouping card, never work.
+**Composition.** Create one `epic` card, then add each feature with `--epic <id>`. The epic is `parent-of` its features; it is a grouping card, never work.
 
 ```sh
 epic=$(strand kanban add "Board rewrite" --type epic | jq -r '.card.id')
@@ -180,20 +155,15 @@ strand kanban add "Port the old cards" --epic "$epic" --priority p2
   `--epic` must point at an actual epic — both are rejected at `add` time, so the
   grouping can't quietly go two levels deep or hang a feature off a non-epic.
 
-Honest source: `add!`'s `--type`/`--epic` handling and
-`kanban-epics-group-features`.
+Honest source: `add!`'s `--type`/`--epic` handling and `kanban-epics-group-features`.
 
 ---
 
 ## Recipe: Hang a devflow run or agent plan under a card
 
-**Situation.** The user's request is approved and it's real work — a devflow
-lifecycle, or an `agent-plan` task DAG. You don't want two competing trackers
-fighting over the same feature.
+**Situation.** The user's request is approved and it's real work — a devflow lifecycle, or an `agent-plan` task DAG. You don't want two competing trackers fighting over the same feature.
 
-**Composition.** Claim the card, build the plan or run as usual, then connect its
-root to the card with a `parent-of` edge. The card becomes the audit root; the
-plan's strands are the executable work beneath it.
+**Composition.** Claim the card, build the plan or run as usual, then connect its root to the card with a `parent-of` edge. The card becomes the audit root; the plan's strands are the executable work beneath it.
 
 ```sh
 strand kanban claim "$card" --owner claude --branch board-rewrite
@@ -229,20 +199,15 @@ strand update "$card" --edge parent-of:"$plan"
   re-stamp each task. That's the same active-work-root convention `strand
   branches` relies on (spool `prime` `:branch-visibility`).
 
-Honest source: the spool `prime` working-agreement and branch-visibility blocks,
-this repo's `CLAUDE.md` (plans and runs hang beneath cards via `parent-of`), and
-the card-view test that hangs a task and a review under a claimed card.
+Honest source: the spool `prime` working-agreement and branch-visibility blocks, this repo's `CLAUDE.md` (plans and runs hang beneath cards via `parent-of`), and the card-view test that hangs a task and a review under a claimed card.
 
 ---
 
 ## Recipe: Resume interrupted work from a cold start
 
-**Situation.** You wake up with no context. A previous agent hit a context limit,
-crashed, or handed off mid-card, and you need to continue without them.
+**Situation.** You wake up with no context. A previous agent hit a context limit, crashed, or handed off mid-card, and you need to continue without them.
 
-**Composition.** Two reads, top-down. `board` shows the claimed lane with each
-card's latest handover; `card <id>` is the full resume view — notes newest-first,
-the latest handover, active work, the ready frontier, and related cards.
+**Composition.** Two reads, top-down. `board` shows the claimed lane with each card's latest handover; `card <id>` is the full resume view — notes newest-first, the latest handover, active work, the ready frontier, and related cards.
 
 ```sh
 strand kanban board                 # claimed cards show owner, branch, and latest handover
@@ -267,30 +232,22 @@ strand kanban card "$card"          # notes, latest handover, active work, ready
   before you start down a dead end (`card-view`;
   `kanban-notes-handover-and-card-view`, `kanban-card-related-both-directions`).
 
-Honest source: the `note!`/`card-view` source, the spool `prime`
-`:notes-and-handovers` block, and the card-view and board handover assertions in
-`kanban_test.clj`.
+Honest source: the `note!`/`card-view` source, the spool `prime` `:notes-and-handovers` block, and the card-view and board handover assertions in `kanban_test.clj`.
 
 ---
 
 ## Recipe: Watch the cross-card review queue
 
-**Situation.** Several cards are claimed or in review, each spawning review work.
-A coordinator (or a human) needs one queue of what's ready to review right now,
-without opening every card.
+**Situation.** Several cards are claimed or in review, each spawning review work. A coordinator (or a human) needs one queue of what's ready to review right now, without opening every card.
 
-**Composition.** Read `board` and use its `needs-review` list. It aggregates,
-across claimed and in-review feature cards, the descendants that are active, in
-the ready frontier, and marked for human review — each tagged with its card and
-branch.
+**Composition.** Read `board` and use its `needs-review` list. It aggregates, across claimed and in-review feature cards, the descendants that are active, in the ready frontier, and marked for human review — each tagged with its card and branch.
 
 ```sh
 strand kanban board | jq '.needs-review'
 # => [{"card": "...", "branch": "board-rewrite", "item": {"id": "...", "title": "Review the ops"}}]
 ```
 
-To feed that queue, mark review work as such when you build the subtree — a
-`kind: review` strand, or one flagged `hitl` / `workflow/hitl`:
+To feed that queue, mark review work as such when you build the subtree — a `kind: review` strand, or one flagged `hitl` / `workflow/hitl`:
 
 ```sh
 review=$(strand add "Review the ops" --attr kind=review | jq -r '.id')
@@ -317,8 +274,7 @@ strand update "$review" --edge depends-on:"$impl"   # stays out of the queue unt
   review strands both show up in the same queue without kanban knowing about
   either (`review-item?`; spool `prime` `:staying-aware`).
 
-Honest source: `needs-review-entries` / `board` in the spool source, the
-`:staying-aware` prime block, and `kanban-board-needs-review-frontier`.
+Honest source: `needs-review-entries` / `board` in the spool source, the `:staying-aware` prime block, and `kanban-board-needs-review-frontier`.
 
 ---
 

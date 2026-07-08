@@ -1,26 +1,14 @@
 # Task 003: Repo-live activation + full validation sweep
 
-**Document ID:** `TASK-ShellGates-003`
-**Feature:** `workflow-shell-gates` (branch `workflow-shell-gates`, worktree
-`/Users/ct/dev/projects/skein-src__workflow-shell-gates`)
-**Plan:** `PLAN-ShellGates-001` — this task is `PLAN-ShellGates-001.PH3`.
-**Blocked by:** Task 002 (docs + indexes must be in place).
+**Document ID:** `TASK-ShellGates-003` **Feature:** `workflow-shell-gates` (branch `workflow-shell-gates`, worktree `/Users/ct/dev/projects/skein-src__workflow-shell-gates`) **Plan:** `PLAN-ShellGates-001` — this task is `PLAN-ShellGates-001.PH3`. **Blocked by:** Task 002 (docs + indexes must be in place).
 
 ## P1 Scope
 
 Type: AFK
 
-Activate reed live in this repo's canonical `.skein` config **file**, add the
-reed entry to the `CLAUDE.md`/`AGENTS.md` spool lists, and run the full
-validation sweep across the whole feature (`PLAN-ShellGates-001.PH3`, `.AA9`,
-`.P6`). This edits config text only.
+Activate reed live in this repo's canonical `.skein` config **file**, add the reed entry to the `CLAUDE.md`/`AGENTS.md` spool lists, and run the full validation sweep across the whole feature (`PLAN-ShellGates-001.PH3`, `.AA9`, `.P6`). This edits config text only.
 
-**Load-bearing rule, carried verbatim from the plan/coordinator:** the canonical
-weaver is **NEVER** reloaded or restarted to pick this up. The activation lands
-**dormant** in the config file and takes effect at the user's next natural weaver
-start. Do not run `runtime-alpha/reload!` against the canonical world, do not
-`mill weaver stop`/`start`, do not poke the running weaver in any way
-(`PLAN-ShellGates-001.PH3` last sentence, `.P8` last bullet).
+**Load-bearing rule, carried verbatim from the plan/coordinator:** the canonical weaver is **NEVER** reloaded or restarted to pick this up. The activation lands **dormant** in the config file and takes effect at the user's next natural weaver start. Do not run `runtime-alpha/reload!` against the canonical world, do not `mill weaver stop`/`start`, do not poke the running weaver in any way (`PLAN-ShellGates-001.PH3` last sentence, `.P8` last bullet).
 
 ## P2 Must implement exactly
 

@@ -1,7 +1,6 @@
 # Task 5: Connected daemon repl
 
-**Document ID:** `TASK-005`
-**Configuration identification:** `TASK-005` is the fifth task for `user-daemon-home`. Prefix every nested point ID with `TASK-005`.
+**Document ID:** `TASK-005` **Configuration identification:** `TASK-005` is the fifth task for `user-daemon-home`. Prefix every nested point ID with `TASK-005`.
 
 ## TASK-005.P1 Scope
 

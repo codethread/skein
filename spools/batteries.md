@@ -10,29 +10,13 @@
 
 ## 1. Overview
 
-`skein.spools.batteries` is the shipped *core strand command surface*, expressed
-as registered weaver ops. It registers the everyday strand operations —
-`add`, `update`, `show`, `supersede`, `burn`, `list`, `ready`, `subgraph`, the
-create-only `weave` op, and the read-only registry-introspection ops `query`
-and `pattern` — as `register-op!` ops whose `:arg-spec` is parsed by the blessed
-argv parser `skein.api.cli.alpha` (see [cli.md](../devflow/specs/cli.md) and
-[repl-api.md](../devflow/specs/repl-api.md)).
+`skein.spools.batteries` is the shipped *core strand command surface*, expressed as registered weaver ops. It registers the everyday strand operations — `add`, `update`, `show`, `supersede`, `burn`, `list`, `ready`, `subgraph`, the create-only `weave` op, and the read-only registry-introspection ops `query` and `pattern` — as `register-op!` ops whose `:arg-spec` is parsed by the blessed argv parser `skein.api.cli.alpha` (see [cli.md](../devflow/specs/cli.md) and [repl-api.md](../devflow/specs/repl-api.md)).
 
-Each op delegates to exactly the `skein.api.*.alpha` call the old JSON socket
-dispatch used — strand lifecycle in `skein.api.weaver.alpha`, queries and
-traversal in `skein.api.graph.alpha`, weave in `skein.api.patterns.alpha` — and
-returns the same JSON-safe shape, so the ops are drop-in reachable through
-`strand <op> …` (RFC-019). The namespace owns no
-module-level state: handlers read the runtime from their invocation context
-(`:op/runtime`) and never touch the published ambient singleton.
+Each op delegates to exactly the `skein.api.*.alpha` call the old JSON socket dispatch used — strand lifecycle in `skein.api.weaver.alpha`, queries and traversal in `skein.api.graph.alpha`, weave in `skein.api.patterns.alpha` — and returns the same JSON-safe shape, so the ops are drop-in reachable through `strand <op> …` (RFC-019). The namespace owns no module-level state: handlers read the runtime from their invocation context (`:op/runtime`) and never touch the published ambient singleton.
 
-This doc is the standing contract. It is written against the old public-CLI
-clauses in [`devflow/specs/cli.md`](../devflow/specs/cli.md) §SPEC-002.C6–C13 so
-behavior equivalences and deliberate differences are explicit; §5 is the
-clause-by-clause map. Stable ids here use the `BAT-` prefix.
+This doc is the standing contract. It is written against the old public-CLI clauses in [`devflow/specs/cli.md`](../devflow/specs/cli.md) §SPEC-002.C6–C13 so behavior equivalences and deliberate differences are explicit; §5 is the clause-by-clause map. Stable ids here use the `BAT-` prefix.
 
-Because batteries ships on the weaver classpath (under `spools/src`), it needs
-no `spools.edn` approval — `require` it and call `activate!`:
+Because batteries ships on the weaver classpath (under `spools/src`), it needs no `spools.edn` approval — `require` it and call `activate!`:
 
 ```clojure
 (require '[skein.spools.batteries :as batteries])
@@ -40,11 +24,7 @@ no `spools.edn` approval — `require` it and call `activate!`:
 (batteries/activate! runtime)  ; explicit runtime, for tests/trusted callers
 ```
 
-`activate!` registers every op below and returns
-`{:installed true :namespace 'skein.spools.batteries :ops [<register-op! result> ...]}`.
-Each op carries `{:doc … :arg-spec … :hook-class …}` metadata; re-running
-`activate!` against a live runtime collides loudly under the accretion registry
-(use `reload!`, which clears registries first).
+`activate!` registers every op below and returns `{:installed true :namespace 'skein.spools.batteries :ops [<register-op! result> ...]}`. Each op carries `{:doc … :arg-spec … :hook-class …}` metadata; re-running `activate!` against a live runtime collides loudly under the accretion registry (use `reload!`, which clears registries first).
 
 ## 2. Invocation and payloads
 
@@ -64,9 +44,7 @@ Each op carries `{:doc … :arg-spec … :hook-class …}` metadata; re-running
     `--attributes-stdin`: the referenced payload is parsed as one JSON object
     of typed bulk attributes.
   - `weave --input :stdin` replaces reading raw stdin for `weave`.
-  Loud rules (SPEC-003-D003.C2): a reference naming no attached payload fails
-  `:missing-payload`; an attached payload that no reference consumed fails
-  `:unused-payloads`.
+Loud rules (SPEC-003-D003.C2): a reference naming no attached payload fails `:missing-payload`; an attached payload that no reference consumed fails `:unused-payloads`.
 - **BAT-C3 (hook classes):** Each op declares a `:hook-class` used for
   metadata-driven gating (SPEC-004-D003): `:mutating` for `add`, `update`,
   `supersede`, `burn`, `weave`; `:read` for `show`, `list`, `ready`,
@@ -89,14 +67,7 @@ strand add <title> [--state active|closed] [--attr key=value]… \
   [--attributes <json-object-ref>] [--edge edge-type:to-id]…
 ```
 
-Creates a strand with generated id, lifecycle state, timestamps, and merged
-attributes. Precedence: `--attr` (highest, repeatable string map) over
-`--attributes` (lowest, a JSON object of typed values). `--state` defaults to
-`active` and accepts `active|closed` (`replaced` is reserved for supersession
-and rejected). `--edge edge-type:to-id` adds an outgoing edge; repeatable.
-Duplicate keys **within** `--attr` fail loudly (old C6e); a blank `--attributes`
-key fails loudly; a malformed `--edge` (no/edge-terminal `:`) fails loudly.
-Returns the normalized strand `{:id :title :state :attributes …}`.
+Creates a strand with generated id, lifecycle state, timestamps, and merged attributes. Precedence: `--attr` (highest, repeatable string map) over `--attributes` (lowest, a JSON object of typed values). `--state` defaults to `active` and accepts `active|closed` (`replaced` is reserved for supersession and rejected). `--edge edge-type:to-id` adds an outgoing edge; repeatable. Duplicate keys **within** `--attr` fail loudly (old C6e); a blank `--attributes` key fails loudly; a malformed `--edge` (no/edge-terminal `:`) fails loudly. Returns the normalized strand `{:id :title :state :attributes …}`.
 
 #### `update` — BAT-C6
 
@@ -105,18 +76,7 @@ strand update <id> [--title t] [--state active|closed] [--attr key=value]… \
   [--edge edge-type:to-id]…
 ```
 
-Patches title, lifecycle state, attributes, and outgoing edges of one existing
-strand. `--attr` **merges** into the existing attribute map — it does not replace
-it. The weaver applies the patch with SQLite `json_patch`
-(`skein.core.db/update-strand!`), so keys you pass are added or overwritten and
-keys you omit are left untouched. Because `--attr` values are always strings,
-`update` has no way to *remove* an attribute key: `--attr key=null` stores the
-literal string `"null"`, and `update` accepts no `--attributes` flag to carry a
-typed JSON `null` (the merge-patch value that would delete a key). Removing a key
-is a trusted-path operation — `skein.api.weaver.alpha/update` with
-`{:attributes {"key" nil}}`. Duplicate keys within one `--attr` set fail loudly,
-as on `add`. `--attributes` is not accepted here (it is `add`-only, old C7).
-Accepts `active|closed`; cannot set `replaced`. Returns the normalized strand.
+Patches title, lifecycle state, attributes, and outgoing edges of one existing strand. `--attr` **merges** into the existing attribute map — it does not replace it. The weaver applies the patch with SQLite `json_patch` (`skein.core.db/update-strand!`), so keys you pass are added or overwritten and keys you omit are left untouched. Because `--attr` values are always strings, `update` has no way to *remove* an attribute key: `--attr key=null` stores the literal string `"null"`, and `update` accepts no `--attributes` flag to carry a typed JSON `null` (the merge-patch value that would delete a key). Removing a key is a trusted-path operation — `skein.api.weaver.alpha/update` with `{:attributes {"key" nil}}`. Duplicate keys within one `--attr` set fail loudly, as on `add`. `--attributes` is not accepted here (it is `add`-only, old C7). Accepts `active|closed`; cannot set `replaced`. Returns the normalized strand.
 
 #### `supersede` — BAT-C7
 
@@ -124,10 +84,7 @@ Accepts `active|closed`; cannot set `replaced`. Returns the normalized strand.
 strand supersede <old-id> <replacement-id>
 ```
 
-Delegates to the weaver supersession transaction: stores
-`replacement --supersedes--> old`, marks the old strand `replaced`, rewires
-incoming `depends-on` edges, and returns the normalized supersession result
-(old C9a).
+Delegates to the weaver supersession transaction: stores `replacement --supersedes--> old`, marks the old strand `replaced`, rewires incoming `depends-on` edges, and returns the normalized supersession result (old C9a).
 
 #### `burn` — BAT-C8
 
@@ -135,8 +92,7 @@ incoming `depends-on` edges, and returns the normalized supersession result
 strand burn <id>
 ```
 
-Physically deletes one strand and its incident edges. Returns
-`{:burned [<id>] :count 1}`-shaped JSON (old C9b).
+Physically deletes one strand and its incident edges. Returns `{:burned [<id>] :count 1}`-shaped JSON (old C9b).
 
 #### `weave` — BAT-C9
 
@@ -144,15 +100,7 @@ Physically deletes one strand and its incident edges. Returns
 strand weave --pattern <name> --input <json-value-ref>
 ```
 
-Applies an already-registered create-only weaver pattern to exactly one JSON
-input value and returns the pattern-created batch (`{:created [row…] :refs {…}}`,
-old C13a). Both flags are required. `--input` resolves a payload reference (or
-inline literal JSON) and is parsed **strictly** in the handler: empty,
-malformed, and trailing-value input all fail loudly with
-`{:code "pattern/input-invalid"}` before any mutation. A missing/blank
-`--pattern` fails in the parser; an unknown pattern fails `Pattern not found`
-carrying available names. The parsed object is keywordized before dispatch,
-matching the socket `weave` case.
+Applies an already-registered create-only weaver pattern to exactly one JSON input value and returns the pattern-created batch (`{:created [row…] :refs {…}}`, old C13a). Both flags are required. `--input` resolves a payload reference (or inline literal JSON) and is parsed **strictly** in the handler: empty, malformed, and trailing-value input all fail loudly with `{:code "pattern/input-invalid"}` before any mutation. A missing/blank `--pattern` fails in the parser; an unknown pattern fails `Pattern not found` carrying available names. The parsed object is keywordized before dispatch, matching the socket `weave` case.
 
 > **Divergence (recorded):** old C13a specifies `weave --input` as `:parse
 > :json`, but the parser's `:parse :json` uses `clojure.data.json/read-str`,
@@ -178,26 +126,9 @@ Returns one normalized strand by id, or JSON `null` when absent. `show` is the f
 strand list [--state active|closed|replaced] [--query name [--param key=value]…] [--limit N]
 ```
 
-Lists strands. Optional `--state` filters lifecycle (`active|closed|replaced`;
-callers who care must pass it explicitly — old C11). Optional `--query`
-resolves a weaver-registered named query with repeatable string-valued
-`--param key=value`; `--state` overlays the query as an additional
-`[:= :state …]` clause. `--param` without `--query`, a blank `--query`, and
-unknown query params all fail loudly. Returns a JSON array of normalized
-strands. The result uses the lean read tier by default: any attribute value
-whose JSON-encoded UTF-8 length is above the fixed 1 KiB floor is replaced with
-`{"skein/omitted": true, "bytes": N}`; values at or below the floor pass through
-unchanged.
+Lists strands. Optional `--state` filters lifecycle (`active|closed|replaced`; callers who care must pass it explicitly — old C11). Optional `--query` resolves a weaver-registered named query with repeatable string-valued `--param key=value`; `--state` overlays the query as an additional `[:= :state …]` clause. `--param` without `--query`, a blank `--query`, and unknown query params all fail loudly. Returns a JSON array of normalized strands. The result uses the lean read tier by default: any attribute value whose JSON-encoded UTF-8 length is above the fixed 1 KiB floor is replaced with `{"skein/omitted": true, "bytes": N}`; values at or below the floor pass through unchanged.
 
-`list` is result-capped before attribute assembly. The default cap is 500 rows;
-trusted workspace config may set another cap with
-`skein.spools.batteries/set-read-limit!`, and one call may override it with
-`--limit N`. If more rows match, `list` fails with `read-limit-exceeded`, naming
-the total, the cap, and the remedies: narrow with `--query`/`--param`/`--state`,
-or pass explicit `--limit N`. Set `--limit` above the reported total for an
-intentional full read. Successful results are never truncated, and batteries
-has no pagination surface. There is no hydration flag; use `show <id>` to fetch
-a full row.
+`list` is result-capped before attribute assembly. The default cap is 500 rows; trusted workspace config may set another cap with `skein.spools.batteries/set-read-limit!`, and one call may override it with `--limit N`. If more rows match, `list` fails with `read-limit-exceeded`, naming the total, the cap, and the remedies: narrow with `--query`/`--param`/`--state`, or pass explicit `--limit N`. Set `--limit` above the reported total for an intentional full read. Successful results are never truncated, and batteries has no pagination surface. There is no hydration flag; use `show <id>` to fetch a full row.
 
 #### `ready` — BAT-C12
 
@@ -205,13 +136,7 @@ a full row.
 strand ready [--query name [--param key=value]…] [--limit N]
 ```
 
-Returns strands with `state="active"` and no active `depends-on` blocker (old
-C10), optionally scoped to a named query's result set exactly as `list`.
-`ready` takes no `--state`. Like `list`, `ready` uses the lean read tier by
-default for large attribute values above the fixed 1 KiB floor and has no
-hydration flag; use `show <id>` for full fidelity. It uses the same default cap,
-trusted config override, `--limit N` call override, and loud
-`read-limit-exceeded` behavior as `list`.
+Returns strands with `state="active"` and no active `depends-on` blocker (old C10), optionally scoped to a named query's result set exactly as `list`. `ready` takes no `--state`. Like `list`, `ready` uses the lean read tier by default for large attribute values above the fixed 1 KiB floor and has no hydration flag; use `show <id>` for full fidelity. It uses the same default cap, trusted config override, `--limit N` call override, and loud `read-limit-exceeded` behavior as `list`.
 
 #### `subgraph` — BAT-C13
 
@@ -219,10 +144,7 @@ trusted config override, `--limit N` call override, and loud
 strand subgraph <root-id> [--relation type]
 ```
 
-Returns a relation-scoped graph traversed downward from the root over the
-declared acyclic relation named by `--relation` (weaver default `parent-of`
-when omitted — old C11a). Result is the string-keyed
-`{"root_ids" […] "strands" […] "edges" […]}` shape verbatim from the socket op.
+Returns a relation-scoped graph traversed downward from the root over the declared acyclic relation named by `--relation` (weaver default `parent-of` when omitted — old C11a). Result is the string-keyed `{"root_ids" […] "strands" […] "edges" […]}` shape verbatim from the socket op.
 
 #### `query` — BAT-C14 (registry introspection)
 
@@ -231,18 +153,7 @@ strand query list
 strand query explain <name>
 ```
 
-Read-only introspection of registered named queries (old C13aa/C13ab), moved
-from the deleted builtin to a batteries op (SPEC-002-D004.C12). `query`
-declares `list` and `explain` as parser-owned subcommands, so `strand help
-query` renders both verbs and missing/unknown subcommands fail in the parser
-with the available names before the handler runs. `list` takes no arguments and
-returns a JSON array of metadata entries (`name`, `params`,
-`referenced-params`) ordered by canonical name. `explain <name>` returns caller
-guidance for one query (`name`, `params`, `referenced-params`, `where`,
-`definition`, `where-form`, `definition-form`, `summary`). Both are projected
-JSON-safe (`json-safe-value`: keywords → names, symbols → strings, sets →
-sorted vectors), matching the old `query-list`/`query-explain` payloads. A
-missing/blank name on `explain` and unknown query names fail loudly.
+Read-only introspection of registered named queries (old C13aa/C13ab), moved from the deleted builtin to a batteries op (SPEC-002-D004.C12). `query` declares `list` and `explain` as parser-owned subcommands, so `strand help query` renders both verbs and missing/unknown subcommands fail in the parser with the available names before the handler runs. `list` takes no arguments and returns a JSON array of metadata entries (`name`, `params`, `referenced-params`) ordered by canonical name. `explain <name>` returns caller guidance for one query (`name`, `params`, `referenced-params`, `where`, `definition`, `where-form`, `definition-form`, `summary`). Both are projected JSON-safe (`json-safe-value`: keywords → names, symbols → strings, sets → sorted vectors), matching the old `query-list`/`query-explain` payloads. A missing/blank name on `explain` and unknown query names fail loudly.
 
 #### `pattern` — BAT-C15 (registry introspection)
 
@@ -251,16 +162,7 @@ strand pattern list
 strand pattern explain <name>
 ```
 
-Read-only introspection of registered weave patterns (old C13b). `pattern`
-declares `list` and `explain` as parser-owned subcommands, so help rendering and
-missing/unknown-subcommand failures are handled by the blessed arg-spec parser.
-`list` takes no arguments and returns registered pattern metadata ordered by
-name. `explain <name>` returns input-spec guidance (`name`, `fn`, `input-spec`,
-`spec-form`, `summary`, and expanded `required`/`optional` key specs for a
-`clojure.spec.alpha/keys` input spec, plus optional `doc`). Registry names are
-canonical strings (e.g. `"task"`). A missing/blank name on `explain` and unknown
-pattern names fail loudly. Pattern *registration* stays a trusted config/REPL
-workflow — never exposed here.
+Read-only introspection of registered weave patterns (old C13b). `pattern` declares `list` and `explain` as parser-owned subcommands, so help rendering and missing/unknown-subcommand failures are handled by the blessed arg-spec parser. `list` takes no arguments and returns registered pattern metadata ordered by name. `explain <name>` returns input-spec guidance (`name`, `fn`, `input-spec`, `spec-form`, `summary`, and expanded `required`/`optional` key specs for a `clojure.spec.alpha/keys` input spec, plus optional `doc`). Registry names are canonical strings (e.g. `"task"`). A missing/blank name on `explain` and unknown pattern names fail loudly. Pattern *registration* stays a trusted config/REPL workflow — never exposed here.
 
 ## 4. Attribute and edge flag semantics
 
@@ -302,8 +204,7 @@ Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
 | SPEC-002.C13ab `query explain` | BAT-C14 | Equivalent payload; unknown-name loudness handler-side. |
 | SPEC-002.C13b `pattern list`/`explain` | BAT-C15 | Equivalent payload; now a registered read op. |
 
-Not part of batteries (out of scope here): `op help` → the core `help` op
-(SPEC-002-D004.C12), and `init` / `weaver *` → mill (SPEC-002-D004.C9).
+Not part of batteries (out of scope here): `op help` → the core `help` op (SPEC-002-D004.C12), and `init` / `weaver *` → mill (SPEC-002-D004.C9).
 
 ## 6. See also
 

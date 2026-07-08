@@ -1,12 +1,6 @@
 # Weaver Scheduler Plan
 
-**Document ID:** `PLAN-weaver-scheduler-001`
-**Status:** Reviewed
-**Feature:** `weaver-scheduler`
-**Last Updated:** 2026-07-05
-**Proposal:** [`PROP-weaver-scheduler-001`](./proposal.md)
-**Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../rfcs/2026-06-29-weaver-scheduler.md)
-**Related specs:** [`DELTA-weaver-scheduler-runtime-001`](./specs/daemon-runtime.delta.md), [`DELTA-weaver-scheduler-repl-001`](./specs/repl-api.delta.md), [`SPEC-004 Weaver Runtime`](../../specs/daemon-runtime.md), [`SPEC-003 REPL API`](../../specs/repl-api.md)
+**Document ID:** `PLAN-weaver-scheduler-001` **Status:** Reviewed **Feature:** `weaver-scheduler` **Last Updated:** 2026-07-05 **Proposal:** [`PROP-weaver-scheduler-001`](./proposal.md) **Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../rfcs/2026-06-29-weaver-scheduler.md) **Related specs:** [`DELTA-weaver-scheduler-runtime-001`](./specs/daemon-runtime.delta.md), [`DELTA-weaver-scheduler-repl-001`](./specs/repl-api.delta.md), [`SPEC-004 Weaver Runtime`](../../specs/daemon-runtime.md), [`SPEC-003 REPL API`](../../specs/repl-api.md)
 
 ## PLAN-weaver-scheduler-001.P1 Goal and scope
 

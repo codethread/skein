@@ -1,10 +1,6 @@
 # REPL API delta for patterned weave
 
-**Document ID:** `DELTA-002`
-**Root spec:** [REPL API](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-27
+**Document ID:** `DELTA-002` **Root spec:** [REPL API](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-27
 
 ## DELTA-002.P1 Summary
 

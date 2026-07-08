@@ -1,13 +1,6 @@
 # Spool git distribution Plan
 
-**Document ID:** `SGD-PLAN-001`
-**Feature:** `spool-git-distribution`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [Registry-free git distribution for spools](../../rfcs/2026-07-03-spool-git-distribution.md)
-**Root specs:** [repl-api.md](../../specs/repl-api.md), [daemon-runtime.md](../../specs/daemon-runtime.md)
-**Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-03
+**Document ID:** `SGD-PLAN-001` **Feature:** `spool-git-distribution` **Proposal:** [proposal.md](./proposal.md) **RFC:** [Registry-free git distribution for spools](../../rfcs/2026-07-03-spool-git-distribution.md) **Root specs:** [repl-api.md](../../specs/repl-api.md), [daemon-runtime.md](../../specs/daemon-runtime.md) **Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) **Status:** Shipped **Last Updated:** 2026-07-03
 
 ## SGD-PLAN-001.P1 Goal and scope
 

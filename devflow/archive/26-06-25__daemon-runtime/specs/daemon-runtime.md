@@ -1,10 +1,6 @@
 # Daemon Runtime
 
-**Document ID:** `SPEC-004`
-**Status:** Implemented
-**Last Updated:** 2026-06-25
-**Related RFCs:** [RFC-002 Task Query DSL](../../../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../../../rfcs/2026-06-25-fast-json-socket-cli.md)
-**Code:** `src/todo/daemon`, `src/todo/client`
+**Document ID:** `SPEC-004` **Status:** Implemented **Last Updated:** 2026-06-25 **Related RFCs:** [RFC-002 Task Query DSL](../../../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../../../rfcs/2026-06-25-fast-json-socket-cli.md) **Code:** `src/todo/daemon`, `src/todo/client`
 
 ## SPEC-004.P1 Purpose
 

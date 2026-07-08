@@ -1,11 +1,6 @@
 # Task Model delta for batch task refs
 
-**Document ID:** `DELTA-002`
-**Root spec:** [task-model.md](../../../specs/strand-model.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-24
-**Configuration identification:** `DELTA-002` is the task-model delta for this feature. Every nested point ID is prefixed with `DELTA-002`.
+**Document ID:** `DELTA-002` **Root spec:** [task-model.md](../../../specs/strand-model.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-24 **Configuration identification:** `DELTA-002` is the task-model delta for this feature. Every nested point ID is prefixed with `DELTA-002`.
 
 ## DELTA-002.P1 Summary
 

@@ -1,9 +1,6 @@
 # Verify Daemon via tmux
 
-**Document ID:** `TASK-006`
-**Feature:** `daemon-runtime`
-**Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md)
-**Specs:** [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
+**Document ID:** `TASK-006` **Feature:** `daemon-runtime` **Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md) **Specs:** [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
 
 ## TASK-006.P1 Scope
 

@@ -1,8 +1,6 @@
 # Skein Selvage Spool — Cookbook
 
-Composition recipes for `skein.spools.selvage`: how to grow and enforce a
-workspace attribute vocabulary out of the primitives, and *why* each shape is the
-right one.
+Composition recipes for `skein.spools.selvage`: how to grow and enforce a workspace attribute vocabulary out of the primitives, and *why* each shape is the right one.
 
 This is the **how/why** half of the selvage docs. The other two halves are:
 
@@ -12,15 +10,11 @@ This is the **how/why** half of the selvage docs. The other two halves are:
 - [`selvage.api.md`](./selvage.api.md) — the **generated reference**: every
   public fn's signature, arities, and docstring, produced from the source.
 
-Division of truth: signatures and the check-form table live in the contract and
-the generated API doc; the recipes here never restate them — they link. When a
-recipe needs an exact check form, follow the link to [selvage.md
-§4](./selvage.md#4-vocabulary-checks).
+Division of truth: signatures and the check-form table live in the contract and the generated API doc; the recipes here never restate them — they link. When a recipe needs an exact check form, follow the link to [selvage.md §4](./selvage.md#4-vocabulary-checks).
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which primitives combine, and how.
@@ -29,25 +23,15 @@ your situation and lift the snippet:
 4. **Why this shape** — the reasoning: why these primitives, what the vocabulary
    buys you, and what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — a shipped attribute
-table, this repo's config, or the test suite — so you can read the load-bearing
-version.
+Each recipe cites the honest source it was distilled from — a shipped attribute table, this repo's config, or the test suite — so you can read the load-bearing version.
 
 ---
 
 ## Recipe: Harden an attribute table you already wrote down
 
-**Situation.** A spool's contract doc already lists the attributes its work
-carries and the values each one allows — this repo's kanban board has a
-`kanban/status` lane set, a `kanban/priority` scale, a `kanban/type`. The table
-is a promise on paper, but nothing stops a strand from carrying
-`kanban/status "in-progress"` when the lanes are `pending`/`claimed`/…. You want
-that table enforced, not just documented.
+**Situation.** A spool's contract doc already lists the attributes its work carries and the values each one allows — this repo's kanban board has a `kanban/status` lane set, a `kanban/priority` scale, a `kanban/type`. The table is a promise on paper, but nothing stops a strand from carrying `kanban/status "in-progress"` when the lanes are `pending`/`claimed`/…. You want that table enforced, not just documented.
 
-**Composition.** Translate each row of the attribute table into one `:enum` or
-`:kind` check and register them as a single named vocabulary with `defvocab!`.
-The vocabulary name mirrors the attribute namespace, so a reader knows exactly
-which convention it guards.
+**Composition.** Translate each row of the attribute table into one `:enum` or `:kind` check and register them as a single named vocabulary with `defvocab!`. The vocabulary name mirrors the attribute namespace, so a reader knows exactly which convention it guards.
 
 ```clojure
 (require '[skein.repl :as repl]
@@ -94,29 +78,15 @@ which convention it guards.
   vocabulary is a convention you *check*, not a schema the engine enforces. That
   is the whole reason this lives in a spool and not in the core.
 
-Honest source: the `kanban/*` attribute table in
-[`kanban.md`](./kanban.md), which fixes `kanban/status` to
-`refinement`/`pending`/`claimed` or an explicit closed outcome (`done`,
-`abandoned`, …) — so the outcome values above are a workspace choice, not a
-spool-fixed enum — and the `shuttle` vocabulary in
-[selvage.md §2](./selvage.md#2-usage).
-The same shape hardens the `roster/*` table
-([`roster.md`](./roster.md)) or the `workflow/role` enum
-([`workflow.md`](./workflow.md#7-attribute-vocabulary)).
+Honest source: the `kanban/*` attribute table in [`kanban.md`](./kanban.md), which fixes `kanban/status` to `refinement`/`pending`/`claimed` or an explicit closed outcome (`done`, `abandoned`, …) — so the outcome values above are a workspace choice, not a spool-fixed enum — and the `shuttle` vocabulary in [selvage.md §2](./selvage.md#2-usage). The same shape hardens the `roster/*` table ([`roster.md`](./roster.md)) or the `workflow/role` enum ([`workflow.md`](./workflow.md#7-attribute-vocabulary)).
 
 ---
 
 ## Recipe: A pre-merge hygiene pass, scoped to the work that matters
 
-**Situation.** Before you archive a feature or land a branch, you want to know
-that every strand it touched honours the vocabulary — but you don't want the
-async watcher running the whole time, and you don't want to hand-list strand ids.
-You want a one-shot sweep, and often you want it scoped to just this feature's
-work rather than the entire graph.
+**Situation.** Before you archive a feature or land a branch, you want to know that every strand it touched honours the vocabulary — but you don't want the async watcher running the whole time, and you don't want to hand-list strand ids. You want a one-shot sweep, and often you want it scoped to just this feature's work rather than the entire graph.
 
-**Composition.** Call `check-all` with no arguments for a full sweep, or hand it
-a predicate DSL query form to scope the sweep to a slice of active work. It
-returns the flat violation vector across every matched strand.
+**Composition.** Call `check-all` with no arguments for a full sweep, or hand it a predicate DSL query form to scope the sweep to a slice of active work. It returns the flat violation vector across every matched strand.
 
 ```clojure
 (require '[skein.spools.selvage :as selvage])
@@ -154,24 +124,15 @@ returns the flat violation vector across every matched strand.
   test; the violation maps carry `:strand-id`, `:attr`, and `:message` so the
   failure report points at exactly what to fix.
 
-Honest source: `check-all-can-be-scoped-by-query-form` in
-[`test/skein/spools/selvage_test.clj`](../test/skein/spools/selvage_test.clj),
-which registers a vocabulary and asserts a query form narrows the sweep to the
-in-scope strands.
+Honest source: `check-all-can-be-scoped-by-query-form` in [`test/skein/spools/selvage_test.clj`](../test/skein/spools/selvage_test.clj), which registers a vocabulary and asserts a query form narrows the sweep to the in-scope strands.
 
 ---
 
 ## Recipe: Watch mode — catch violations as they land, then review the catch
 
-**Situation.** You want standing detection: as agents and workflows mutate the
-graph all day, you want a record of every strand that drifted from the
-vocabulary, to review at the end of a session rather than block anyone in the
-moment.
+**Situation.** You want standing detection: as agents and workflows mutate the graph all day, you want a record of every strand that drifted from the vocabulary, to review at the end of a session rather than block anyone in the moment.
 
-**Composition.** `install!` (which calls `watch!`) registers an asynchronous
-handler on `:strand/added` and `:strand/updated`. Violations accrue in a log you
-read with `violations` and reset with `clear-violations!`. Clear once at the
-start of the window you care about, work, then read the log.
+**Composition.** `install!` (which calls `watch!`) registers an asynchronous handler on `:strand/added` and `:strand/updated`. Violations accrue in a log you read with `violations` and reset with `clear-violations!`. Clear once at the start of the window you care about, work, then read the log.
 
 ```clojure
 (require '[skein.repl :as repl]
@@ -209,23 +170,15 @@ start of the window you care about, work, then read the log.
   there for that reason, not for show. In a long-running coordinator you just
   read the log later and never notice.
 
-Honest source: `watch-records-and-clears-violations` in
-[`test/skein/spools/selvage_test.clj`](../test/skein/spools/selvage_test.clj),
-which installs the watcher, mutates a strand to a disallowed enum value, and
-asserts the recorded violation then the clean slate after `clear-violations!`.
+Honest source: `watch-records-and-clears-violations` in [`test/skein/spools/selvage_test.clj`](../test/skein/spools/selvage_test.clj), which installs the watcher, mutates a strand to a disallowed enum value, and asserts the recorded violation then the clean slate after `clear-violations!`.
 
 ---
 
 ## Recipe: Tighten a vocabulary as the convention evolves
 
-**Situation.** Your convention changed — a lane was renamed, a value retired, a
-new required pairing agreed. You want to move the whole workspace to the new
-vocabulary without carrying a second "v2" registration, and you want existing
-strands re-judged against the new rules immediately.
+**Situation.** Your convention changed — a lane was renamed, a value retired, a new required pairing agreed. You want to move the whole workspace to the new vocabulary without carrying a second "v2" registration, and you want existing strands re-judged against the new rules immediately.
 
-**Composition.** Call `defvocab!` again with the same name. It replaces the
-prior registration for that name wholesale; the next `check`/`check-all` judges
-every strand against the new spec. `remove-vocab!` retires a convention entirely.
+**Composition.** Call `defvocab!` again with the same name. It replaces the prior registration for that name wholesale; the next `check`/`check-all` judges every strand against the new spec. `remove-vocab!` retires a convention entirely.
 
 ```clojure
 (require '[skein.repl :as repl]
@@ -262,10 +215,7 @@ every strand against the new spec. `remove-vocab!` retires a convention entirely
   `remove-vocab!` throws on a name that was never registered — so a typo in the
   evolution surfaces at once instead of silently doing nothing.
 
-Honest source: `defvocab-replaces-existing-vocabulary` in
-[`test/skein/spools/selvage_test.clj`](../test/skein/spools/selvage_test.clj),
-which re-registers a name to change its allowed enum, then removes it and asserts
-the second removal fails loudly.
+Honest source: `defvocab-replaces-existing-vocabulary` in [`test/skein/spools/selvage_test.clj`](../test/skein/spools/selvage_test.clj), which re-registers a name to change its allowed enum, then removes it and asserts the second removal fails loudly.
 
 ---
 

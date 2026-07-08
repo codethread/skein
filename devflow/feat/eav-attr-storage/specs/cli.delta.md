@@ -1,10 +1,6 @@
 # CLI Surface delta for eav-attr-storage
 
-**Document ID:** `EAS-DELTA-002`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-06
+**Document ID:** `EAS-DELTA-002` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-06
 
 ## EAS-DELTA-002.P1 Summary
 

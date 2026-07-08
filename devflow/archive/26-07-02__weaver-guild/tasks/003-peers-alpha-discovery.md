@@ -6,11 +6,7 @@
 
 Type: AFK
 
-Create the blessed `skein.api.peers.alpha` namespace with the discovery half
-of the peering contract: `(peers)` enumerates sibling weaver metadata under
-the mill state root and `(peer name-or-workspace)` resolves exactly one
-running weaver, per DELTA-DaemonRuntime-002.CC1/CC2/CC3 and
-DELTA-ReplApi-002.
+Create the blessed `skein.api.peers.alpha` namespace with the discovery half of the peering contract: `(peers)` enumerates sibling weaver metadata under the mill state root and `(peer name-or-workspace)` resolves exactly one running weaver, per DELTA-DaemonRuntime-002.CC1/CC2/CC3 and DELTA-ReplApi-002.
 
 ## TASK-Guild-003.P2 Must implement exactly
 

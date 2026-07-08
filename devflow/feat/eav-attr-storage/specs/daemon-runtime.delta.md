@@ -1,10 +1,6 @@
 # Weaver Runtime delta for eav-attr-storage
 
-**Document ID:** `EAS-DELTA-003`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-07
+**Document ID:** `EAS-DELTA-003` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-07
 
 ## EAS-DELTA-003.P1 Summary
 

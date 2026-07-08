@@ -11,27 +11,13 @@
 
 ## Overview
 
-`skein.spools.reed` is the shipped **classpath** executor for workflow gates
-whose waiter is `:shell`. It watches ready workflow gates, runs the gate's
-`shell/argv` command directly on a spool-owned worker pool, and closes the gate
-through `skein.spools.workflow/complete!` on a zero exit. A non-zero exit, a
-timeout, a spawn error, or an invalid argv stamps a loud, distinct `shell/error`
-and leaves the gate ready and stamped rather than masquerading as a completed
-run.
+`skein.spools.reed` is the shipped **classpath** executor for workflow gates whose waiter is `:shell`. It watches ready workflow gates, runs the gate's `shell/argv` command directly on a spool-owned worker pool, and closes the gate through `skein.spools.workflow/complete!` on a zero exit. A non-zero exit, a timeout, a spawn error, or an invalid argv stamps a loud, distinct `shell/error` and leaves the gate ready and stamped rather than masquerading as a completed run.
 
-Reed is a treadle sibling minus everything shuttle-specific. The workflow engine
-stays executor-agnostic: authors declare an ordinary
-`(workflow/gate ... :shell ...)` with `shell/*` attributes, and reed is the small
-adapter that knows both the gate contract and process execution. Because the
-failure detail lives on the gate itself, there is no separate run strand, no
-`delegates` edge, and no session or harness vocabulary — the whole outcome is on
-the gate.
+Reed is a treadle sibling minus everything shuttle-specific. The workflow engine stays executor-agnostic: authors declare an ordinary `(workflow/gate ... :shell ...)` with `shell/*` attributes, and reed is the small adapter that knows both the gate contract and process execution. Because the failure detail lives on the gate itself, there is no separate run strand, no `delegates` edge, and no session or harness vocabulary — the whole outcome is on the gate.
 
 ## Loading
 
-Reed ships on the weaver classpath, so it needs no `spools.edn` approval. Its
-`install!` registers the `:shell` executor with the workflow engine, so load the
-workflow spool first:
+Reed ships on the weaver classpath, so it needs no `spools.edn` approval. Its `install!` registers the `:shell` executor with the workflow engine, so load the workflow spool first:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -46,16 +32,11 @@ workflow spool first:
    :call 'skein.spools.reed/install!})
 ```
 
-`install!` runs an initial gate scan, so any durable ready `:shell` gate is
-dispatched at load time. Gate scans serialize on a runtime-owned monitor:
-independent weaver runtimes in one JVM scan independently and never block each
-other.
+`install!` runs an initial gate scan, so any durable ready `:shell` gate is dispatched at load time. Gate scans serialize on a runtime-owned monitor: independent weaver runtimes in one JVM scan independently and never block each other.
 
 ## Gate request attributes
 
-All `shell/*` values are plain JSON `TEXT` on the gate strand, authored in the
-trusted workflow definition (pour-time params supply only the data the definition
-interpolates).
+All `shell/*` values are plain JSON `TEXT` on the gate strand, authored in the trusted workflow definition (pour-time params supply only the data the definition interpolates).
 
 | Attribute | Required | Meaning |
 |---|---|---|
@@ -75,13 +56,7 @@ Reed records the outcome on the gate itself.
 | `shell/output` | gate step | Bounded combined stdout+stderr **tail** (the last 16 KB), for audit. Bounded on purpose so a runaway child cannot exhaust weaver heap; the whole stream is never buffered. Absent where no process ran. |
 | `shell/error` | gate step | Durable failure detail (non-zero exit, timeout, spawn error, or invalid argv). Its presence makes the gate a coordinator-visible stalled state and causes reed to **skip** the gate on later scans until it is cleared. |
 
-The **pass** outcome rides the ordinary workflow vocabulary only: reed closes the
-gate with `workflow/complete!` `:by "shell"` and `:notes` = a short result
-summary (surfacing as `workflow/outcome-by "shell"` and `workflow/notes`,
-mirroring treadle putting its run result in `workflow/notes`). Reed introduces
-**no** new `workflow/*` attribute. Clearing `shell/running` and stamping the exit
-code and output happen in the same `complete!` batch, so no observer ever sees a
-closed gate without its `shell/exit-code` / `shell/output`.
+The **pass** outcome rides the ordinary workflow vocabulary only: reed closes the gate with `workflow/complete!` `:by "shell"` and `:notes` = a short result summary (surfacing as `workflow/outcome-by "shell"` and `workflow/notes`, mirroring treadle putting its run result in `workflow/notes`). Reed introduces **no** new `workflow/*` attribute. Clearing `shell/running` and stamping the exit code and output happen in the same `complete!` batch, so no observer ever sees a closed gate without its `shell/exit-code` / `shell/output`.
 
 ## Worked example
 
@@ -110,12 +85,7 @@ closed gate without its `shell/exit-code` / `shell/output`.
 
 ## Failure and recovery
 
-A check that does not exit 0 never closes the gate and never masquerades as a
-completed run. Reed stamps `shell/error` (with `shell/exit-code` and the bounded
-`shell/output` where a process ran) and leaves the gate **ready and stamped** — a
-signal unmistakably distinct from a completed step, because it lives on the gate
-as a shell error rather than advancing the workflow. The distinct error strings
-are:
+A check that does not exit 0 never closes the gate and never masquerades as a completed run. Reed stamps `shell/error` (with `shell/exit-code` and the bounded `shell/output` where a process ran) and leaves the gate **ready and stamped** — a signal unmistakably distinct from a completed step, because it lives on the gate as a shell error rather than advancing the workflow. The distinct error strings are:
 
 - non-zero exit → `shell command exited <n>` (with exit code and output);
 - timeout → `shell command timed out after <n>s` (with exit code and output —
@@ -124,37 +94,15 @@ are:
 - invalid argv, invalid cwd, or a spawn error → the underlying error message (no
   exit code or output, because no process ran).
 
-Because the check is deterministic, a gate stamped `shell/error` — or one still
-carrying a live `shell/running` claim — is **skipped** on every later scan, so an
-expensive command runs once per deliberate request, not on every graph mutation.
-Recovery mirrors treadle's clear-to-retry: a coordinator fixes the underlying
-problem (repairs the artifact, or rewrites `shell/argv` / `shell/cwd`) and clears
-`shell/error`; the next scan finds a ready, un-errored, un-claimed `:shell` gate
-and re-runs the check, closing the gate on pass.
+Because the check is deterministic, a gate stamped `shell/error` — or one still carrying a live `shell/running` claim — is **skipped** on every later scan, so an expensive command runs once per deliberate request, not on every graph mutation. Recovery mirrors treadle's clear-to-retry: a coordinator fixes the underlying problem (repairs the artifact, or rewrites `shell/argv` / `shell/cwd`) and clears `shell/error`; the next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the check, closing the gate on pass.
 
-Crash-window recovery is strictly simpler than treadle's, because there is no
-separate run strand to reconcile. A weaver crash between claim and outcome leaves
-a gate stamped `shell/running` with no live process; the same clear-to-retry path
-recovers it — clearing `shell/running` lets the next scan re-run the
-deterministic, idempotent check. `shell/running` (claimed) and `shell/error`
-(failed) are distinct markers, so a crashed-mid-run gate is never confused with a
-failed one.
+Crash-window recovery is strictly simpler than treadle's, because there is no separate run strand to reconcile. A weaver crash between claim and outcome leaves a gate stamped `shell/running` with no live process; the same clear-to-retry path recovers it — clearing `shell/running` lets the next scan re-run the deterministic, idempotent check. `shell/running` (claimed) and `shell/error` (failed) are distinct markers, so a crashed-mid-run gate is never confused with a failed one.
 
 ## Coordination attention
 
-`install!` calls `(workflow/register-executor! :shell gate-stalled?)`, registering
-reed as the executor for every gate whose `waiter` is `:shell`. Because an
-executor is registered, `await!` stays silent (`:waiting`) on a healthy `:shell`
-gate instead of surfacing it immediately as unattended; `gate-stalled?` reports a
-ready `:shell` gate as stalled (returning `{:gate id :error detail}`) when the
-gate carries `shell/error`, else it reports nothing. No wall-clock hang policy is
-applied — a stall is a graph fact.
+`install!` calls `(workflow/register-executor! :shell gate-stalled?)`, registering reed as the executor for every gate whose `waiter` is `:shell`. Because an executor is registered, `await!` stays silent (`:waiting`) on a healthy `:shell` gate instead of surfacing it immediately as unattended; `gate-stalled?` reports a ready `:shell` gate as stalled (returning `{:gate id :error detail}`) when the gate carries `shell/error`, else it reports nothing. No wall-clock hang policy is applied — a stall is a graph fact.
 
-The spool also registers the `stalled-shell-gates` named query for coordinator
-inspection: active gates with `workflow/gate` = `"shell"` that carry a
-`shell/error`. It is the SQL-side mirror of the stall predicate, and — unlike
-treadle's `stalled-gates` — it needs no `delegates`-edge join back to a run row,
-because the failure detail lives on the gate itself.
+The spool also registers the `stalled-shell-gates` named query for coordinator inspection: active gates with `workflow/gate` = `"shell"` that carry a `shell/error`. It is the SQL-side mirror of the stall predicate, and — unlike treadle's `stalled-gates` — it needs no `delegates`-edge join back to a run row, because the failure detail lives on the gate itself.
 
 ## See also
 

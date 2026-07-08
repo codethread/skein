@@ -1,8 +1,6 @@
 # Weaver Runtime Delta: Runtime Spool Workspace
 
-**Document ID:** `LTS-SPEC-004-DELTA-001`
-**Status:** Merged
-**Target root spec:** `devflow/specs/daemon-runtime.md`
+**Document ID:** `LTS-SPEC-004-DELTA-001` **Status:** Merged **Target root spec:** `devflow/specs/daemon-runtime.md`
 
 ## Delta
 

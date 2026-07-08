@@ -1,7 +1,6 @@
 # Task 7: Promote shipped specs
 
-**Document ID:** `TASK-007`
-**Configuration identification:** `TASK-007` is the seventh task for `user-daemon-home`. Prefix every nested point ID with `TASK-007`.
+**Document ID:** `TASK-007` **Configuration identification:** `TASK-007` is the seventh task for `user-daemon-home`. Prefix every nested point ID with `TASK-007`.
 
 ## TASK-007.P1 Scope
 

@@ -1,7 +1,6 @@
 # Task 6: Smoke docs and validation
 
-**Document ID:** `TASK-006`
-**Configuration identification:** `TASK-006` is the sixth task for `user-daemon-home`. Prefix every nested point ID with `TASK-006`.
+**Document ID:** `TASK-006` **Configuration identification:** `TASK-006` is the sixth task for `user-daemon-home`. Prefix every nested point ID with `TASK-006`.
 
 ## TASK-006.P1 Scope
 

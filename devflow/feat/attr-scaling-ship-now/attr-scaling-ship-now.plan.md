@@ -1,14 +1,6 @@
 # Attr-Scaling Ship-Now Plan
 
-**Document ID:** `ASSN-PLAN-001`
-**Feature:** `attr-scaling-ship-now`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** None (no RFC covers attribute storage/query indexing; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language this touches without conflict)
-**Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md)
-**Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [CLI Surface delta](./specs/cli.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md)
-**Evidence base:** `/tmp/claude/attr-scaling-ship-now-brief/` (`SYNTHESIS.md` §8 adopted; `DESIGN.md` semantics; `FACTCHECK.md` corrections)
-**Status:** Draft
-**Last Updated:** 2026-07-06
+**Document ID:** `ASSN-PLAN-001` **Feature:** `attr-scaling-ship-now` **Proposal:** [proposal.md](./proposal.md) **RFC:** None (no RFC covers attribute storage/query indexing; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language this touches without conflict) **Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md) **Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [CLI Surface delta](./specs/cli.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md) **Evidence base:** `/tmp/claude/attr-scaling-ship-now-brief/` (`SYNTHESIS.md` §8 adopted; `DESIGN.md` semantics; `FACTCHECK.md` corrections) **Status:** Draft **Last Updated:** 2026-07-06
 
 ## ASSN-PLAN-001.P1 Goal and scope
 

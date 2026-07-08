@@ -1,9 +1,6 @@
 # REPL API Delta — User Daemon Home
 
-**Document ID:** `UDH-DELTA-003`
-**Status:** Merged into root spec
-**Date:** 2026-06-25
-**Updates:** [REPL API](../../../specs/repl-api.md)
+**Document ID:** `UDH-DELTA-003` **Status:** Merged into root spec **Date:** 2026-06-25 **Updates:** [REPL API](../../../specs/repl-api.md)
 
 ## UDH-DELTA-003.P1 Summary
 

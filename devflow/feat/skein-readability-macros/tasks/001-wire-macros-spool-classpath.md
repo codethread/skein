@@ -6,12 +6,7 @@
 
 Type: AFK
 
-Prepare the load paths so later slices can `require` the new `skein.macros.{queries,ops,rules}` namespaces from `.skein/config.clj`
-and `.skein/attention.clj` on every path that loads those files. The live weaver already has the `skein.macros/macros` spool on
-its classpath through the `:macros/patterns` init module, but `test/skein/config_test.clj` loads the config files in-process
-off `deps.edn`, and the spool's `src` is not on the `:test` classpath (`reflect-check` compiles only `src` plus shipped spool
-roots and needs no change). This slice adds the path and orders the init modules; it makes
-no behavioural change and adds no macro yet.
+Prepare the load paths so later slices can `require` the new `skein.macros.{queries,ops,rules}` namespaces from `.skein/config.clj` and `.skein/attention.clj` on every path that loads those files. The live weaver already has the `skein.macros/macros` spool on its classpath through the `:macros/patterns` init module, but `test/skein/config_test.clj` loads the config files in-process off `deps.edn`, and the spool's `src` is not on the `:test` classpath (`reflect-check` compiles only `src` plus shipped spool roots and needs no change). This slice adds the path and orders the init modules; it makes no behavioural change and adds no macro yet.
 
 ## TASK-Srm-001.P2 Must implement exactly
 

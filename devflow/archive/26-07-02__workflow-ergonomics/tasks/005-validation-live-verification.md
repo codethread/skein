@@ -6,8 +6,7 @@
 
 Type: HITL (coordinator-owned)
 
-Full-suite validation, deep review, live weaver verification of PLAN-Werg-001.V2,
-and feature finish.
+Full-suite validation, deep review, live weaver verification of PLAN-Werg-001.V2, and feature finish.
 
 ## TASK-Werg-005.P2 Must implement exactly
 

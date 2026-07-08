@@ -1,11 +1,6 @@
 # CLI Surface delta for batch task refs
 
-**Document ID:** `DELTA-001`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-24
-**Configuration identification:** `DELTA-001` is the CLI delta for this feature. Every nested point ID is prefixed with `DELTA-001`.
+**Document ID:** `DELTA-001` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-24 **Configuration identification:** `DELTA-001` is the CLI delta for this feature. Every nested point ID is prefixed with `DELTA-001`.
 
 ## DELTA-001.P1 Summary
 

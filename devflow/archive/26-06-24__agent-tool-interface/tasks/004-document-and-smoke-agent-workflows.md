@@ -1,7 +1,6 @@
 # Task 4: Document and smoke agent workflows
 
-**Document ID:** `TASK-004`
-**Configuration identification:** `TASK-004` is the fourth task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-004`.
+**Document ID:** `TASK-004` **Configuration identification:** `TASK-004` is the fourth task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-004`.
 
 ## TASK-004.P1 Scope
 

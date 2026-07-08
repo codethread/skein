@@ -1,11 +1,6 @@
 # Runtime Library Workspace Plan
 
-**Document ID:** `RLW-PLAN-001`
-**Status:** Shipped
-**Last Updated:** 2026-06-26
-**Proposal:** [proposal.md](./proposal.md)
-**Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md)
-**Related RFCs:** None
+**Document ID:** `RLW-PLAN-001` **Status:** Shipped **Last Updated:** 2026-06-26 **Proposal:** [proposal.md](./proposal.md) **Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md) **Related RFCs:** None
 
 ## RLW-PLAN-001.P1 Goal and scope
 

@@ -1,9 +1,6 @@
 # Strand Model
 
-**Document ID:** `SPEC-001`
-**Status:** Implemented
-**Last Updated:** 2026-07-07
-**Code:** `src/skein/core/db.clj`
+**Document ID:** `SPEC-001` **Status:** Implemented **Last Updated:** 2026-07-07 **Code:** `src/skein/core/db.clj`
 
 ## SPEC-001.P1 Purpose
 

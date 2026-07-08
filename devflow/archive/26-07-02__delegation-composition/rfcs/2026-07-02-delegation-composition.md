@@ -1,18 +1,10 @@
 # Delegation Composition and Reuse
 
-**Document ID:** `RFC-013`
-**Status:** Implemented
-**Date:** 2026-07-02
-**Related:** [RFC-010](./2026-07-02-shuttle-backed-coordination.md) (REC4, REC5, Q3), [RFC-011](./2026-07-02-coordination-attention-surface.md), [RFC-012](./2026-07-02-workflow-authoring-ergonomics.md), [Shuttle spool](../../spools/shuttle/README.md) (`council!`), [Treadle spool](../../spools/shuttle/treadle.md), [agent-delegate feature](../feat/agent-delegate/proposal.md), [afk-gates feature](../feat/afk-gates/proposal.md), [`.skein/AGENTS.md`](../../.skein/AGENTS.md)
+**Document ID:** `RFC-013` **Status:** Implemented **Date:** 2026-07-02 **Related:** [RFC-010](./2026-07-02-shuttle-backed-coordination.md) (REC4, REC5, Q3), [RFC-011](./2026-07-02-coordination-attention-surface.md), [RFC-012](./2026-07-02-workflow-authoring-ergonomics.md), [Shuttle spool](../../spools/shuttle/README.md) (`council!`), [Treadle spool](../../spools/shuttle/treadle.md), [agent-delegate feature](../feat/agent-delegate/proposal.md), [afk-gates feature](../feat/afk-gates/proposal.md), [`.skein/AGENTS.md`](../../.skein/AGENTS.md)
 
 ## RFC-013.P1 Problem
 
-The delegation substrate now has four entry points — raw
-`strand op agent spawn`, `strand op agent-delegate <task-id>`, treadle
-`:subagent` gates, and devflow's delegated AFK stage. One day of building
-with all four exposed where they **duplicate each other's composition logic**
-and where recurring coordination *shapes* still have to be assembled by hand
-each time.
+The delegation substrate now has four entry points — raw `strand op agent spawn`, `strand op agent-delegate <task-id>`, treadle `:subagent` gates, and devflow's delegated AFK stage. One day of building with all four exposed where they **duplicate each other's composition logic** and where recurring coordination *shapes* still have to be assembled by hand each time.
 
 - **RFC-013.P1.1: The review fan-out is a hand-built shape, rebuilt every
   time.** In one session the "have independent agents review this, then act

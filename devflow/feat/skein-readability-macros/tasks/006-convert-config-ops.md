@@ -6,10 +6,7 @@
 
 Type: AFK
 
-Rewrite `config.clj`'s CLI op family as `defop` blocks and register them through `install-ops!`, deleting the `install!` op vector
-and the `op-metadata` helper. This is the largest readability gap and a data-preserving refactor: every registered op name,
-handler symbol, op metadata, and generated `help <op>` stays byte-identical. The `devflow-conventions` `:ops` listing stays
-hand-authored in this slice; task 7 derives it.
+Rewrite `config.clj`'s CLI op family as `defop` blocks and register them through `install-ops!`, deleting the `install!` op vector and the `op-metadata` helper. This is the largest readability gap and a data-preserving refactor: every registered op name, handler symbol, op metadata, and generated `help <op>` stays byte-identical. The `devflow-conventions` `:ops` listing stays hand-authored in this slice; task 7 derives it.
 
 ## TASK-Srm-006.P2 Must implement exactly
 

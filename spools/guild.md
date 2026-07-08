@@ -10,23 +10,13 @@
 
 ## Overview
 
-`skein.spools.guild` is a small reference spool for publishing a weaver's
-trusted operation API to sibling weavers. It does not add a new protocol,
-server operation, package manager, or permission system. Guild ops are ordinary
-weaver `op` registry entries with a documented naming/versioning convention and
-a built-in `guild.describe` operation for discovery.
+`skein.spools.guild` is a small reference spool for publishing a weaver's trusted operation API to sibling weavers. It does not add a new protocol, server operation, package manager, or permission system. Guild ops are ordinary weaver `op` registry entries with a documented naming/versioning convention and a built-in `guild.describe` operation for discovery.
 
-Use it when a repo wants other local weavers to call stable, intentional entry
-points such as `gate.status.v1` or `release.request.v1` instead of reaching into
-repo-private REPL helpers. The agreement surface is userland: a repo opts in by
-registering ops from trusted config, usually its checked-in `.skein/init.clj`.
-For a peering repo, that checked-in `init.clj` is effectively a published API
-file. Treat its guild declarations like public contract code.
+Use it when a repo wants other local weavers to call stable, intentional entry points such as `gate.status.v1` or `release.request.v1` instead of reaching into repo-private REPL helpers. The agreement surface is userland: a repo opts in by registering ops from trusted config, usually its checked-in `.skein/init.clj`. For a peering repo, that checked-in `init.clj` is effectively a published API file. Treat its guild declarations like public contract code.
 
 ## Loading
 
-Because `skein.spools.guild` ships on the weaver classpath, no `spools.edn`
-approval is needed:
+Because `skein.spools.guild` ships on the weaver classpath, no `spools.edn` approval is needed:
 
 ```clojure
 (require '[skein.spools.guild :as guild])
@@ -34,17 +24,13 @@ approval is needed:
 (guild/install!)
 ```
 
-`install!` registers the built-in `guild.describe` op and resets the spool's
-runtime-local weaver-lifetime declaration state for reload-friendly startup. The
-declaration state is isolated from other runtimes in the same JVM. It may also take
-a non-blank fallback guild name for contexts without runtime metadata:
+`install!` registers the built-in `guild.describe` op and resets the spool's runtime-local weaver-lifetime declaration state for reload-friendly startup. The declaration state is isolated from other runtimes in the same JVM. It may also take a non-blank fallback guild name for contexts without runtime metadata:
 
 ```clojure
 (guild/install! "backend")
 ```
 
-At invocation time, `guild.describe` prefers the runtime metadata name published
-by the running weaver.
+At invocation time, `guild.describe` prefers the runtime metadata name published by the running weaver.
 
 ## Operation declaration surface
 
@@ -65,10 +51,7 @@ by the running weaver.
 | `opts` | Map supporting `:doc` and optional `:spec`. Unknown keys fail loudly. |
 | `handler-fn-sym` | Fully qualified symbol resolving to the handler function in the weaver JVM. |
 
-Guild op invocation accepts zero arguments or one JSON input argument. The spool
-parses that JSON to `:guild/input`, validates it against `:spec` when supplied,
-and then calls the resolved handler with the ordinary op context plus
-`:guild/input`.
+Guild op invocation accepts zero arguments or one JSON input argument. The spool parses that JSON to `:guild/input`, validates it against `:spec` when supplied, and then calls the resolved handler with the ordinary op context plus `:guild/input`.
 
 ### `deprecate!`
 
@@ -78,10 +61,7 @@ and then calls the resolved handler with the ordinary op context plus
    :since "2026-07-02"})
 ```
 
-`deprecate!` replaces a registered guild op with a stub that always fails
-loudly. A deprecated stub may explain, redirect, or refuse — it must never
-pretend to succeed. The thrown data includes `{:code :op/deprecated}` plus the
-op name and replacement guidance.
+`deprecate!` replaces a registered guild op with a stub that always fails loudly. A deprecated stub may explain, redirect, or refuse — it must never pretend to succeed. The thrown data includes `{:code :op/deprecated}` plus the op name and replacement guidance.
 
 ### `install!`
 
@@ -90,14 +70,11 @@ op name and replacement guidance.
 (guild/install! "frontend")
 ```
 
-`install!` registers `guild.describe`, clears previous guild declarations in the
-current weaver JVM, and records an optional fallback name. Re-run it during
-trusted config reload before re-declaring ops.
+`install!` registers `guild.describe`, clears previous guild declarations in the current weaver JVM, and records an optional fallback name. Re-run it during trusted config reload before re-declaring ops.
 
 ### `guild.describe`
 
-Peers call `guild.describe` through the ordinary `op` socket operation. It
-returns JSON-safe metadata:
+Peers call `guild.describe` through the ordinary `op` socket operation. It returns JSON-safe metadata:
 
 ```clojure
 {:guild "backend"
@@ -121,8 +98,7 @@ returns JSON-safe metadata:
 
 ## Worked two-repo example
 
-Assume two repos, `frontend` and `backend`, each with a checked-in portable
-weaver name in `.skein/config.json`:
+Assume two repos, `frontend` and `backend`, each with a checked-in portable weaver name in `.skein/config.json`:
 
 ```json
 {
@@ -131,8 +107,7 @@ weaver name in `.skein/config.json`:
 }
 ```
 
-A machine with two clones can disambiguate locally with `.skein/config.local.json`
-when needed; the local overlay is not committed.
+A machine with two clones can disambiguate locally with `.skein/config.local.json` when needed; the local overlay is not committed.
 
 In the backend repo's checked-in `.skein/init.clj`, publish a guild API:
 
@@ -156,9 +131,7 @@ In the backend repo's checked-in `.skein/init.clj`, publish a guild API:
   'user/gate-status)
 ```
 
-From the frontend weaver (or a manager weaver), discover the backend by its
-portable name with the blessed alpha peering helpers and call the guild op over
-the existing JSON socket protocol:
+From the frontend weaver (or a manager weaver), discover the backend by its portable name with the blessed alpha peering helpers and call the guild op over the existing JSON socket protocol:
 
 ```clojure
 (require '[clojure.data.json :as json]
@@ -174,13 +147,7 @@ the existing JSON socket protocol:
 ;; => {"gate" "api-ready", "satisfied" false}
 ```
 
-`skein.api.peers.alpha` is explicit-require userland API: `(peers/peers)`
-enumerates running sibling weavers from mill metadata, `(peers/peer
-name-or-workspace)` resolves exactly one running peer, and `(peers/call! peer op
-args)` invokes one named op on the peer over the invoke envelope (optional
-`:argv`/`:payloads` in `args`); unknown ops and the peer's payload hooks reject
-receiving-side, and stream-class ops fail loudly as unsupported. It does not
-auto-start peers or add retries; unavailable peers fail loudly.
+`skein.api.peers.alpha` is explicit-require userland API: `(peers/peers)` enumerates running sibling weavers from mill metadata, `(peers/peer name-or-workspace)` resolves exactly one running peer, and `(peers/call! peer op args)` invokes one named op on the peer over the invoke envelope (optional `:argv`/`:payloads` in `args`); unknown ops and the peer's payload hooks reject receiving-side, and stream-class ops fail loudly as unsupported. It does not auto-start peers or add retries; unavailable peers fail loudly.
 
 ## See also
 

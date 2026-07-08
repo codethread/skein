@@ -1,15 +1,12 @@
 # Task 005: Full validation sweep + smoke (ASSN-PLAN-001.PH4 / P6)
 
-Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree
-`/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 004.**
+Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree `/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 004.**
 
-Read first: `attr-scaling-ship-now.plan.md` (ASSN-PLAN-001 `PH4`, `P6` V1–V7,
-`R3`). This is the pre-merge green gate for the whole feature.
+Read first: `attr-scaling-ship-now.plan.md` (ASSN-PLAN-001 `PH4`, `P6` V1–V7, `R3`). This is the pre-merge green gate for the whole feature.
 
 ## Scope
 
-Run every blocking gate and the smoke demo; fix only what the gates surface (no
-new feature scope). Confirm the WAL sidecars and runtime artifacts are cleaned.
+Run every blocking gate and the smoke demo; fix only what the gates surface (no new feature scope). Confirm the WAL sidecars and runtime artifacts are cleaned.
 
 - `dev/skein/smoke.clj` (`AA7`): ensure smoke exercises **lean `list` + full
   `show`** (ASSN-DELTA-002.CC1/CC2) and cleans `-wal`/`-shm`/`.sqlite` state

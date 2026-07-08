@@ -1,9 +1,6 @@
 # Agents Spool Proposal
 
-**Document ID:** `PROP-AgentsSpool-001`
-**Last Updated:** 2026-07-03
-**Related RFCs:** [RFC-015](./rfcs/2026-07-03-agents-spool.md) (Implemented), companion [op manual draft](./rfcs/2026-07-03-agents-spool.op-manual.md), [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (Implemented)
-**Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
+**Document ID:** `PROP-AgentsSpool-001` **Last Updated:** 2026-07-03 **Related RFCs:** [RFC-015](./rfcs/2026-07-03-agents-spool.md) (Implemented), companion [op manual draft](./rfcs/2026-07-03-agents-spool.op-manual.md), [RFC-010](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (Implemented) **Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
 
 ## PROP-AgentsSpool-001.P1 Problem
 

@@ -1,7 +1,6 @@
 # Task 2: Add scriptable agent CLI
 
-**Document ID:** `TASK-002`
-**Configuration identification:** `TASK-002` is the second task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-002`.
+**Document ID:** `TASK-002` **Configuration identification:** `TASK-002` is the second task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-002`.
 
 ## TASK-002.P1 Scope
 

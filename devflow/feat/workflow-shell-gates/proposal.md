@@ -1,39 +1,16 @@
 # Shell Gates Proposal
 
-**Document ID:** `PROP-ShellGates-001`
-**Last Updated:** 2026-07-07
-**Related RFCs:** [RFC-010 Shuttle-backed Agent Coordination](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (the treadle `:subagent` gate executor this feature is a sibling to); adjacent [RFC-009 Weaver Scheduler Primitive](../../rfcs/2026-06-29-weaver-scheduler.md) (the weaver async-runtime substrate an off-event-thread executor runs on — adjacent, no conflict)
-**Related root specs:** No behavioral root-spec change (strand-model / cli / repl-api / daemon-runtime are untouched; this is spool-layer behaviour over the existing gate primitive). [Alpha Surface](../../specs/alpha-surface.md) gains a spool-index entry for the new contract doc (S6).
-**Related contracts:** [Workflow spool](../../../spools/workflow.md) (§3 Gates, §4 executor registry / awaiting attention, §7 vocabulary), [Treadle spool](../../../spools/shuttle/treadle.md) (the precedent gate executor), [Shuttle spool](../../../spools/shuttle/README.md) (§3 harnesses, §5 run/result semantics), [Agents spool](../../../spools/agents/README.md) (the agent-plan `validation` field)
-**Source:** problem statement authored in the `notes` workspace (`.skein/proposals/2026-07-07-workflow-shell-gates.md` there) — an external workspace not shipped with this repo and not required reading; all load-bearing evidence is restated below.
+**Document ID:** `PROP-ShellGates-001` **Last Updated:** 2026-07-07 **Related RFCs:** [RFC-010 Shuttle-backed Agent Coordination](../../rfcs/2026-07-02-shuttle-backed-coordination.md) (the treadle `:subagent` gate executor this feature is a sibling to); adjacent [RFC-009 Weaver Scheduler Primitive](../../rfcs/2026-06-29-weaver-scheduler.md) (the weaver async-runtime substrate an off-event-thread executor runs on — adjacent, no conflict) **Related root specs:** No behavioral root-spec change (strand-model / cli / repl-api / daemon-runtime are untouched; this is spool-layer behaviour over the existing gate primitive). [Alpha Surface](../../specs/alpha-surface.md) gains a spool-index entry for the new contract doc (S6). **Related contracts:** [Workflow spool](../../../spools/workflow.md) (§3 Gates, §4 executor registry / awaiting attention, §7 vocabulary), [Treadle spool](../../../spools/shuttle/treadle.md) (the precedent gate executor), [Shuttle spool](../../../spools/shuttle/README.md) (§3 harnesses, §5 run/result semantics), [Agents spool](../../../spools/agents/README.md) (the agent-plan `validation` field) **Source:** problem statement authored in the `notes` workspace (`.skein/proposals/2026-07-07-workflow-shell-gates.md` there) — an external workspace not shipped with this repo and not required reading; all load-bearing evidence is restated below.
 
 ## PROP-ShellGates-001.P1 Problem
 
-Workflows have no mechanical done-signal. Every close of a poured workflow step
-is either a **human/agent assertion** — a `:self` step the driving agent
-completes, or a checkpoint choice — or a **subagent run's success**, which
-treadle records when its shuttle run closes with a non-blank result. Neither is
-a machine check of the *artifact*. There is no workflow equivalent of the CI
-primitive "run `test -s <file>` (or `make test`, or a schema check) and fail the
-run loudly if it fails."
+Workflows have no mechanical done-signal. Every close of a poured workflow step is either a **human/agent assertion** — a `:self` step the driving agent completes, or a checkpoint choice — or a **subagent run's success**, which treadle records when its shuttle run closes with a non-blank result. Neither is a machine check of the *artifact*. There is no workflow equivalent of the CI primitive "run `test -s <file>` (or `make test`, or a schema check) and fail the run loudly if it fails."
 
-This is a regression. The agents spool's plan-creation pattern accepts a
-per-task `validation` field — "list of commands that **prove** it," explicitly
-contrasted with `harness` which picks *who does the work* (agents README §3, §5).
-When a pipeline is expressed as an `agent-plan` graph, every task can carry its
-proof command. When the same pipeline is converted to a workflow, that line has
-nowhere to go: a gate's fields (`shuttle/harness`, `shuttle/prompt`, and the
-optional `shuttle/cwd`/`shuttle/max-attempts`) all describe the agent run — none
-carries a validation command — so the check gets demoted to **instruction prose
-on a human checkpoint**
-("before presenting to the human, open every output file — never trust worker
-status alone, a gate can close on a hollow run"). The mechanical, durable,
-re-runnable check becomes a paragraph asking a person to look.
+This is a regression. The agents spool's plan-creation pattern accepts a per-task `validation` field — "list of commands that **prove** it," explicitly contrasted with `harness` which picks *who does the work* (agents README §3, §5). When a pipeline is expressed as an `agent-plan` graph, every task can carry its proof command. When the same pipeline is converted to a workflow, that line has nowhere to go: a gate's fields (`shuttle/harness`, `shuttle/prompt`, and the optional `shuttle/cwd`/`shuttle/max-attempts`) all describe the agent run — none carries a validation command — so the check gets demoted to **instruction prose on a human checkpoint** ("before presenting to the human, open every output file — never trust worker status alone, a gate can close on a hollow run"). The mechanical, durable, re-runnable check becomes a paragraph asking a person to look.
 
 ### Evidence
 
-Two failure modes, both observed in the source workspace's research pipeline
-retro, motivate a check independent of run exit status:
+Two failure modes, both observed in the source workspace's research pipeline retro, motivate a check independent of run exit status:
 
 - **Hollow success.** A worker reports done and its gate closes, but the
   artifact is missing or empty. Workers intermittently lost their `strand` CLI
@@ -48,8 +25,7 @@ retro, motivate a check independent of run exit status:
 
 ### The seam this slots into
 
-Two facts about the current code shape the recommendation and make a new gate
-executor the natural fit — the workflow engine itself needs zero changes.
+Two facts about the current code shape the recommendation and make a new gate executor the natural fit — the workflow engine itself needs zero changes.
 
 - **Gate `waiter` is a freeform actor hint with a pluggable executor registry.**
   `(gate id title waiter …)` stamps `workflow/gate <waiter>`; the docs give

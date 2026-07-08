@@ -1,10 +1,6 @@
 # REPL API delta for repo-first config
 
-**Document ID:** `DELTA-ReplApi-001`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-29
+**Document ID:** `DELTA-ReplApi-001` **Root spec:** [repl-api.md](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-29
 
 ## DELTA-ReplApi-001.P1 Summary
 

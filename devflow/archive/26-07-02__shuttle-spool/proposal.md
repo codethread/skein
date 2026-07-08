@@ -1,10 +1,6 @@
 # Shuttle Spool Proposal
 
-**Document ID:** `SHU-PROP-001`
-**Status:** Shipped
-**Last Updated:** 2026-07-02
-**Related RFCs:** None
-**Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
+**Document ID:** `SHU-PROP-001` **Status:** Shipped **Last Updated:** 2026-07-02 **Related RFCs:** None **Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
 
 ## SHU-PROP-001.P1 Problem
 

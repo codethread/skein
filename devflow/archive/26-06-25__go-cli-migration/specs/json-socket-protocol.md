@@ -1,10 +1,6 @@
 # Go CLI JSON Socket Protocol
 
-**Document ID:** `GOCLI-PROTO-001`
-**Feature:** [Go CLI Migration](../proposal.md)
-**Status:** Implemented
-**Last Updated:** 2026-06-25
-**Related specs:** [`SPEC-004-D002`](./daemon-runtime.delta.md), [`SPEC-002-D003`](./cli.delta.md)
+**Document ID:** `GOCLI-PROTO-001` **Feature:** [Go CLI Migration](../proposal.md) **Status:** Implemented **Last Updated:** 2026-06-25 **Related specs:** [`SPEC-004-D002`](./daemon-runtime.delta.md), [`SPEC-002-D003`](./cli.delta.md)
 
 ## GOCLI-PROTO-001.P1 Purpose
 

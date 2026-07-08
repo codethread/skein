@@ -1,18 +1,10 @@
 # Workflow Ergonomics Proposal
 
-**Document ID:** `PROP-Werg-001`
-**Last Updated:** 2026-07-02
-**Related RFCs:** None
-**Related root specs:** [REPL API](../../specs/repl-api.md) (spool namespace reservation only); primary contracts are the spool docs [workflow.md](../../../src/skein/spools/workflow.md) and [devflow.md](../../../src/skein/spools/devflow.md)
+**Document ID:** `PROP-Werg-001` **Last Updated:** 2026-07-02 **Related RFCs:** None **Related root specs:** [REPL API](../../specs/repl-api.md) (spool namespace reservation only); primary contracts are the spool docs [workflow.md](../../../src/skein/spools/workflow.md) and [devflow.md](../../../src/skein/spools/devflow.md)
 
 ## PROP-Werg-001.P1 Problem
 
-Dogfooding the shipped workflow/devflow spools end-to-end (driving a real
-feature through every stage from the CLI) surfaced friction for all three
-personas: users cannot see where a run is or what a workflow looks like
-without reading source; workflow authors repeat boilerplate and rely on
-fragile stringly routing; driving agents hit invisible input requirements,
-ambiguous empty results, silent stage cutovers, and redundant ceremony.
+Dogfooding the shipped workflow/devflow spools end-to-end (driving a real feature through every stage from the CLI) surfaced friction for all three personas: users cannot see where a run is or what a workflow looks like without reading source; workflow authors repeat boilerplate and rely on fragile stringly routing; driving agents hit invisible input requirements, ambiguous empty results, silent stage cutovers, and redundant ceremony.
 
 ## PROP-Werg-001.P2 Goals
 

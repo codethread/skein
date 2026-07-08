@@ -1,9 +1,6 @@
 # Skein Roster Spool — Cookbook
 
-Composition recipes for `skein.spools.roster`: how to keep "what work is active
-in this weaver?" honest — tracking a long-running job, waiting for a scope to go
-quiet before you land, and letting workflow/devflow roots track themselves — and
-*why* each shape is the right one.
+Composition recipes for `skein.spools.roster`: how to keep "what work is active in this weaver?" honest — tracking a long-running job, waiting for a scope to go quiet before you land, and letting workflow/devflow roots track themselves — and *why* each shape is the right one.
 
 This is the **how/why** half of the roster docs. The other two are:
 
@@ -13,18 +10,9 @@ This is the **how/why** half of the roster docs. The other two are:
 - [`roster.api.md`](./roster.api.md) — the **generated reference**: every public
   fn's signature and docstring, produced from source.
 
-Division of truth: the attribute table and fn signatures live in the contract
-and generated API doc; narrative and composition live here. This cookbook never
-restates the `roster/*` table or a signature — it links to them.
+Division of truth: the attribute table and fn signatures live in the contract and generated API doc; narrative and composition live here. This cookbook never restates the `roster/*` table or a signature — it links to them.
 
-The runtime-touching helpers used here — `track!`, `heartbeat!`, `finish!`,
-`roster`, and `await-quiet!` — take `runtime` as their first argument and never
-resolve the ambient runtime themselves, so these recipes assume you already hold
-one —
-`(require '[skein.spools.roster :as roster] '[skein.api.current.alpha :as current])`
-and `(def rt (current/runtime))` in trusted config or a live weaver REPL. (The
-discovery helpers `about` and `prime` take no runtime.) From the shell the same
-surface is `strand roster …`.
+The runtime-touching helpers used here — `track!`, `heartbeat!`, `finish!`, `roster`, and `await-quiet!` — take `runtime` as their first argument and never resolve the ambient runtime themselves, so these recipes assume you already hold one — `(require '[skein.spools.roster :as roster] '[skein.api.current.alpha :as current])` and `(def rt (current/runtime))` in trusted config or a live weaver REPL. (The discovery helpers `about` and `prime` take no runtime.) From the shell the same surface is `strand roster …`.
 
 ## How to read a recipe
 
@@ -35,24 +23,15 @@ Every recipe has the same four parts:
 3. **Snippet** — a runnable form or the equivalent shell.
 4. **Why this shape** — the reasoning, and what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — the spool's own
-contract, its test suite, or the feature spec.
+Each recipe cites the honest source it was distilled from — the spool's own contract, its test suite, or the feature spec.
 
 ---
 
 ## Recipe: Track a long-running job the graph can't see
 
-**Situation.** You're running something the weaver can't infer from graph
-activity — an AFK loop, an ad hoc build session, an agent whose root carries no
-feature slug or owner. You want it to show up in "what's active right now",
-heartbeat as it makes progress, and drop out of the active surface when it's
-done, without inventing a whole tracking scheme.
+**Situation.** You're running something the weaver can't infer from graph activity — an AFK loop, an ad hoc build session, an agent whose root carries no feature slug or owner. You want it to show up in "what's active right now", heartbeat as it makes progress, and drop out of the active surface when it's done, without inventing a whole tracking scheme.
 
-**Composition.** The explicit lifecycle is three calls: `track!` once at the
-start (it creates a new entry or restamps an existing strand in place),
-`heartbeat!` once per visible unit of progress, and `finish!` at the end with a
-final status and optional result. Nothing here locks or gates — it only makes
-the work *visible*.
+**Composition.** The explicit lifecycle is three calls: `track!` once at the start (it creates a new entry or restamps an existing strand in place), `heartbeat!` once per visible unit of progress, and `finish!` at the end with a final status and optional result. Nothing here locks or gates — it only makes the work *visible*.
 
 ```clojure
 ;; start: one entry, feature + owner required, optional branch/engine/body
@@ -96,27 +75,15 @@ strand roster finish <entry-id> --status finished --result done
   concurrent `finish!` can only touch the timestamp on an already-closed entry —
   it can never resurrect `roster/status` to active.
 
-Honest source: the AFK example in [`roster.md`](./roster.md) and the lifecycle
-behaviour pinned by `track!-creates-a-new-active-entry`,
-`heartbeat!-updates-heartbeat-at-on-an-active-entry`,
-`finish!-closes-the-entry-with-status-result-and-finished-at`, and
-`heartbeat-vs-finish-cannot-produce-contradictory-entries` in
-[`test/skein/roster_test.clj`](../test/skein/roster_test.clj).
+Honest source: the AFK example in [`roster.md`](./roster.md) and the lifecycle behaviour pinned by `track!-creates-a-new-active-entry`, `heartbeat!-updates-heartbeat-at-on-an-active-entry`, `finish!-closes-the-entry-with-status-result-and-finished-at`, and `heartbeat-vs-finish-cannot-produce-contradictory-entries` in [`test/skein/roster_test.clj`](../test/skein/roster_test.clj).
 
 ---
 
 ## Recipe: `await-quiet!` as a fan-in barrier before you land
 
-**Situation.** A coordinator has fanned work out across a feature and wants to
-wait until all of it has gone quiet before landing — but it must not block
-forever on a run that has silently stalled, and it must not confuse "nothing
-active" with "something is wedged".
+**Situation.** A coordinator has fanned work out across a feature and wants to wait until all of it has gone quiet before landing — but it must not block forever on a run that has silently stalled, and it must not confuse "nothing active" with "something is wedged".
 
-**Composition.** `await-quiet!` blocks on a scope (`:feature`, `:branch`, or
-`:worktree`) and returns a tagged reason: `:quiet` when the scope has no active
-entries, `:stale` the moment any selected entry crosses the stale threshold, or
-`:timeout` at the deadline. The `:stale` short-circuit is the safety valve — it
-fires *ahead* of declaring quiet, so a wedged run surfaces instead of hiding.
+**Composition.** `await-quiet!` blocks on a scope (`:feature`, `:branch`, or `:worktree`) and returns a tagged reason: `:quiet` when the scope has no active entries, `:stale` the moment any selected entry crosses the stale threshold, or `:timeout` at the deadline. The `:stale` short-circuit is the safety valve — it fires *ahead* of declaring quiet, so a wedged run surfaces instead of hiding.
 
 ```clojure
 (let [{:keys [reason entries]}
@@ -150,33 +117,17 @@ strand roster await-quiet --feature roster-spool --timeout-ms 60000
   entry, it returns `:timeout` (default thirty minutes, matching `workflow/await!`)
   rather than blocking indefinitely, so a coordinator always gets control back.
 
-Honest source: the await semantics in [`roster.md`](./roster.md) (Staleness and
-awaiting; `SPEC-RosterSpool-001.C5`), pinned by
-`await-quiet!-returns-quiet-immediately-with-no-active-entries-in-scope`,
-`await-quiet!-short-circuits-on-stale-entries-without-waiting-for-timeout`,
-`await-quiet!-returns-quiet-once-the-active-entry-finishes`, and
-`await-quiet!-times-out-when-scope-stays-active-and-fresh` in
-[`test/skein/roster_test.clj`](../test/skein/roster_test.clj).
+Honest source: the await semantics in [`roster.md`](./roster.md) (Staleness and awaiting; `SPEC-RosterSpool-001.C5`), pinned by `await-quiet!-returns-quiet-immediately-with-no-active-entries-in-scope`, `await-quiet!-short-circuits-on-stale-entries-without-waiting-for-timeout`, `await-quiet!-returns-quiet-once-the-active-entry-finishes`, and `await-quiet!-times-out-when-scope-stays-active-and-fresh` in [`test/skein/roster_test.clj`](../test/skein/roster_test.clj).
 
 ---
 
 ## Recipe: Let workflow and devflow roots track themselves
 
-**Situation.** You're driving a workflow or devflow run and don't want to
-hand-track it — but you *do* want it in the active roster, staying fresh as work
-proceeds beneath it. And you need to know the one case where the roster stays
-silent and you must still `track!` yourself.
+**Situation.** You're driving a workflow or devflow run and don't want to hand-track it — but you *do* want it in the active roster, staying fresh as work proceeds beneath it. And you need to know the one case where the roster stays silent and you must still `track!` yourself.
 
-**Composition.** `install!` registers one async graph-integration handler. For
-every strand add/update it either **auto-stamps** a sufficient, unstamped graph
-root into a roster entry, or **refreshes the heartbeat** of the active entry that
-roots the touched strand's `parent-of` ancestry. You compose *nothing* — you
-just make the root sufficient by giving it a discoverable feature slug and owner.
+**Composition.** `install!` registers one async graph-integration handler. For every strand add/update it either **auto-stamps** a sufficient, unstamped graph root into a roster entry, or **refreshes the heartbeat** of the active entry that roots the touched strand's `parent-of` ancestry. You compose *nothing* — you just make the root sufficient by giving it a discoverable feature slug and owner.
 
-A root is auto-stamped when it is active, is not workflow plumbing, is a graph
-root, and carries both a feature slug and an owner (each resolved in a priority
-order the contract lists — e.g. `workflow/run-id` or `devflow/feature` for the
-slug, `owner` or `workflow/actor` for the owner):
+A root is auto-stamped when it is active, is not workflow plumbing, is a graph root, and carries both a feature slug and an owner (each resolved in a priority order the contract lists — e.g. `workflow/run-id` or `devflow/feature` for the slug, `owner` or `workflow/actor` for the owner):
 
 ```clojure
 ;; an active workflow/devflow root that already carries a slug + owner …
@@ -209,13 +160,7 @@ slug, `owner` or `workflow/actor` for the owner):
   boundary between "auto-tracked" and "you must track" is a property of the root,
   not a guess.
 
-Honest source: the automatic workflow/devflow integration section of
-[`roster.md`](./roster.md) (`SPEC-RosterSpool-001.C11–C15`), pinned by
-`auto-stamps-active-non-plumbing-roots-carrying-feature-and-owner`,
-`auto-stamp-carries-branch-and-worktree-into-the-roster-entry`,
-`graph-mutations-refresh-the-tracked-root-heartbeat`, and
-`does-not-auto-stamp-roots-missing-identity-or-marked-plumbing` in
-[`test/skein/roster_test.clj`](../test/skein/roster_test.clj).
+Honest source: the automatic workflow/devflow integration section of [`roster.md`](./roster.md) (`SPEC-RosterSpool-001.C11–C15`), pinned by `auto-stamps-active-non-plumbing-roots-carrying-feature-and-owner`, `auto-stamp-carries-branch-and-worktree-into-the-roster-entry`, `graph-mutations-refresh-the-tracked-root-heartbeat`, and `does-not-auto-stamp-roots-missing-identity-or-marked-plumbing` in [`test/skein/roster_test.clj`](../test/skein/roster_test.clj).
 
 ---
 

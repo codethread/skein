@@ -1,11 +1,6 @@
 # Scheduler REPL/API Delta
 
-**Document ID:** `DELTA-weaver-scheduler-repl-001`
-**Status:** Promoted (into `SPEC-003.P4a`, `SPEC-003.C58`, `SPEC-003.C59a`–`C59d`)
-**Feature:** `weaver-scheduler`
-**Root spec:** [`SPEC-003 REPL API`](../../../specs/repl-api.md)
-**Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../../rfcs/2026-06-29-weaver-scheduler.md)
-**Related proposal:** [`PROP-weaver-scheduler-001`](../proposal.md)
+**Document ID:** `DELTA-weaver-scheduler-repl-001` **Status:** Promoted (into `SPEC-003.P4a`, `SPEC-003.C58`, `SPEC-003.C59a`–`C59d`) **Feature:** `weaver-scheduler` **Root spec:** [`SPEC-003 REPL API`](../../../specs/repl-api.md) **Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../../rfcs/2026-06-29-weaver-scheduler.md) **Related proposal:** [`PROP-weaver-scheduler-001`](../proposal.md)
 
 ## DELTA-weaver-scheduler-repl-001.P1 Summary
 

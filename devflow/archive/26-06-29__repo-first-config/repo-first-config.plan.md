@@ -1,13 +1,6 @@
 # Repo-first Config Plan
 
-**Document ID:** `PLAN-RepoFirstConfig-001`
-**Feature:** `repo-first-config`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none
-**Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
-**Feature specs:** [cli.delta.md](./specs/cli.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-29
+**Document ID:** `PLAN-RepoFirstConfig-001` **Feature:** `repo-first-config` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md) **Feature specs:** [cli.delta.md](./specs/cli.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md) **Status:** Shipped **Last Updated:** 2026-06-29
 
 ## PLAN-RepoFirstConfig-001.P1 Goal and scope
 

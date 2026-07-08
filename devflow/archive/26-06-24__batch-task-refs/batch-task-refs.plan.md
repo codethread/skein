@@ -1,14 +1,6 @@
 # Batch Task Refs Plan
 
-**Document ID:** `PLAN-001`
-**Feature:** `batch-task-refs`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-001 Batch task refs](../../rfcs/2026-06-24-batch-task-refs.md)
-**Root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md)
-**Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/task-model.delta.md](./specs/task-model.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-24
-**Configuration identification:** `PLAN-001` is the implementation plan for this feature. Every nested point ID is prefixed with `PLAN-001`.
+**Document ID:** `PLAN-001` **Feature:** `batch-task-refs` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-001 Batch task refs](../../rfcs/2026-06-24-batch-task-refs.md) **Root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md) **Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/task-model.delta.md](./specs/task-model.delta.md) **Status:** Shipped **Last Updated:** 2026-06-24 **Configuration identification:** `PLAN-001` is the implementation plan for this feature. Every nested point ID is prefixed with `PLAN-001`.
 
 ## PLAN-001.P1 Goal and scope
 

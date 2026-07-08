@@ -1,7 +1,6 @@
 # Task 4: Task commands use daemon world
 
-**Document ID:** `TASK-004`
-**Configuration identification:** `TASK-004` is the fourth task for `user-daemon-home`. Prefix every nested point ID with `TASK-004`.
+**Document ID:** `TASK-004` **Configuration identification:** `TASK-004` is the fourth task for `user-daemon-home`. Prefix every nested point ID with `TASK-004`.
 
 ## TASK-004.P1 Scope
 

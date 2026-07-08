@@ -1,10 +1,6 @@
 # Weaver Runtime delta for attr-scaling-ship-now
 
-**Document ID:** `ASSN-DELTA-003`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
-**Last Updated:** 2026-07-06
+**Document ID:** `ASSN-DELTA-003` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Draft **Last Updated:** 2026-07-06
 
 ## ASSN-DELTA-003.P1 Summary
 

@@ -1,11 +1,6 @@
 # CLI Attribute Inputs Plan
 
-**Document ID:** `PLAN-002`
-**Status:** Shipped
-**Last Updated:** 2026-06-28
-**Proposal:** [proposal.md](./proposal.md)
-**Related RFCs:** None
-**Feature specs:** [CLI delta](./specs/cli.delta.md)
+**Document ID:** `PLAN-002` **Status:** Shipped **Last Updated:** 2026-06-28 **Proposal:** [proposal.md](./proposal.md) **Related RFCs:** None **Feature specs:** [CLI delta](./specs/cli.delta.md)
 
 ## PLAN-002.P1 Goal and scope
 

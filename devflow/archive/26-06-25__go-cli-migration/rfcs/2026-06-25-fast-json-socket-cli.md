@@ -1,9 +1,6 @@
 # Fast JSON Socket CLI
 
-**Document ID:** `RFC-003`
-**Status:** Accepted
-**Date:** 2026-06-25
-**Related:** [Daemon Runtime feature](../../26-06-25__daemon-runtime/daemon-runtime.plan.md), [CLI Surface](../../../specs/cli.md), [REPL API](../../../specs/repl-api.md)
+**Document ID:** `RFC-003` **Status:** Accepted **Date:** 2026-06-25 **Related:** [Daemon Runtime feature](../../26-06-25__daemon-runtime/daemon-runtime.plan.md), [CLI Surface](../../../specs/cli.md), [REPL API](../../../specs/repl-api.md)
 
 ## RFC-003.P1 Problem
 

@@ -1,28 +1,17 @@
 # Writing shared spools
 
-This guide is for authors of spools that **other people** will run — reusable,
-distributable spools, not the throwaway glue in your own workspace. Its one rule:
+This guide is for authors of spools that **other people** will run — reusable, distributable spools, not the throwaway glue in your own workspace. Its one rule:
 
 > **Composability over ergonomics.** A shared spool must work in any weaver
 > runtime, including unpublished runtimes that coexist with others in a single
 > JVM (tests, embedded tooling, `:publish? false`). It earns that by taking the
 > runtime **explicitly** and never reaching for ambient/singleton state.
 
-If you are only writing your own workspace `init.clj` or local helpers, you do
-not need this discipline — layer the terse
-[`skein.userland.alpha`](#layering-ergonomics-in-your-own-config) ergonomics
-module on top and enjoy. This guide is about the code you ship to others.
+If you are only writing your own workspace `init.clj` or local helpers, you do not need this discipline — layer the terse [`skein.userland.alpha`](#layering-ergonomics-in-your-own-config) ergonomics module on top and enjoy. This guide is about the code you ship to others.
 
 ## Why explicit runtime
 
-RFC-016 made the weaver runtime an explicit first argument throughout
-`skein.api.*.alpha`, and split "a runtime exists" from "this process's published
-ambient runtime". Multiple independent runtimes can now run in one JVM, each with
-its own storage, registries, transports, and events. A shared spool that reads
-the published singleton (`skein.api.current.alpha/runtime` with no scope, or the
-raw `skein.core.weaver.runtime/current-runtime` atom) silently breaks the moment
-it runs inside an unpublished runtime or alongside a second runtime: it mutates
-the wrong world or throws.
+RFC-016 made the weaver runtime an explicit first argument throughout `skein.api.*.alpha`, and split "a runtime exists" from "this process's published ambient runtime". Multiple independent runtimes can now run in one JVM, each with its own storage, registries, transports, and events. A shared spool that reads the published singleton (`skein.api.current.alpha/runtime` with no scope, or the raw `skein.core.weaver.runtime/current-runtime` atom) silently breaks the moment it runs inside an unpublished runtime or alongside a second runtime: it mutates the wrong world or throws.
 
 ## The rules for shared spools
 
@@ -110,14 +99,11 @@ the wrong world or throws.
 
 ## Shared helper namespaces
 
-The shipped reference spools share two small helper namespaces. They are part of
-the spool-authoring contract only where this guide documents them. Prefer these
-helpers over local copies when writing a shared spool.
+The shipped reference spools share two small helper namespaces. They are part of the spool-authoring contract only where this guide documents them. Prefer these helpers over local copies when writing a shared spool.
 
 ### `skein.spools.util`
 
-Require it from spool code when you need fail-loud validation, attribute-key
-normalisation, or a caller-owned polling loop:
+Require it from spool code when you need fail-loud validation, attribute-key normalisation, or a caller-owned polling loop:
 
 ```clojure
 (require '[skein.spools.util :as spool-util])
@@ -149,19 +135,15 @@ normalisation, or a caller-owned polling loop:
 
 ### `skein.spools.format`
 
-Require it when a spool needs to publish prose as data, such as `about` payloads
-or long rule descriptions:
+Require it when a spool needs to publish prose as data, such as `about` payloads or long rule descriptions:
 
 ```clojure
 (require '[skein.spools.format :as spool-format])
 ```
 
-The same two helpers are also blessed as `skein.api.format.alpha` for code
-outside the spool layer (trusted config, userland, core); both names share one
-implementation and one contract.
+The same two helpers are also blessed as `skein.api.format.alpha` for code outside the spool layer (trusted config, userland, core); both names share one implementation and one contract.
 
-Both helpers read `|`-margin strings. The first `|` on each source line marks
-column 0, so the surrounding Clojure form may be indented freely.
+Both helpers read `|`-margin strings. The first `|` on each source line marks column 0, so the surrounding Clojure form may be indented freely.
 
 - `(fill block)` returns a vector of item strings. A bare `|` line separates
   items. Flush-left prose lines inside an item are trimmed and joined with
@@ -192,10 +174,7 @@ Skein's discovery convention has three tiers — generated `help`, authored `abo
 
 ## Publishing a shared spool with git distribution
 
-A shared spool can be published as an ordinary git repository and consumed from a
-workspace `spools.edn` by explicit approval of a pinned commit. The approving
-workspace chooses the coordinate symbol; that symbol is the consent handle used
-by `sync!`, `use!`, and local overrides.
+A shared spool can be published as an ordinary git repository and consumed from a workspace `spools.edn` by explicit approval of a pinned commit. The approving workspace chooses the coordinate symbol; that symbol is the consent handle used by `sync!`, `use!`, and local overrides.
 
 > **Worked example.** Skein's own devflow lifecycle is distributed exactly this
 > way: its source lives in [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool),
@@ -231,15 +210,9 @@ A consumer pins the exact source content they consent to run:
 
 ### README dependency information
 
-Do not put composition metadata in machine-readable spool files. A shared spool's
-metadata, prerequisites, suggested pins, and activation order belong in its
-README, where an agent or human can copy the complete approval and activation
-recipe and still make an explicit consent decision for every source root.
+Do not put composition metadata in machine-readable spool files. A shared spool's metadata, prerequisites, suggested pins, and activation order belong in its README, where an agent or human can copy the complete approval and activation recipe and still make an explicit consent decision for every source root.
 
-Include a **Dependency information** section with a complete `spools.edn` snippet
-for this spool and every spool prerequisite. Use author-suggested URLs and pins
-inline; consumers may choose newer pins, local overrides, or no approval at all.
-No prerequisite is fetched transitively.
+Include a **Dependency information** section with a complete `spools.edn` snippet for this spool and every spool prerequisite. Use author-suggested URLs and pins inline; consumers may choose newer pins, local overrides, or no approval at all. No prerequisite is fetched transitively.
 
 ```clojure
 ;; spools.edn
@@ -255,16 +228,11 @@ No prerequisite is fetched transitively.
    :git/tag "v0.1.0"}}}
 ```
 
-If a prerequisite is shipped on Skein's own classpath, document the namespace and
-why it is required, but do not invent a coordinate for it. Shipped namespaces are
-already trusted as part of the selected Skein checkout.
+If a prerequisite is shipped on Skein's own classpath, document the namespace and why it is required, but do not invent a coordinate for it. Shipped namespaces are already trusted as part of the selected Skein checkout.
 
 ### README activation snippet
 
-Include an **Activation** section with the complete trusted `init.clj` snippet.
-The consumer owns the runtime, calls `sync!`, and activates modules explicitly
-with `use!`. Use `:spools` guards for every approved spool whose sync state is a
-prerequisite and `:after` when one activation depends on another.
+Include an **Activation** section with the complete trusted `init.clj` snippet. The consumer owns the runtime, calls `sync!`, and activates modules explicitly with `use!`. Use `:spools` guards for every approved spool whose sync state is a prerequisite and `:after` when one activation depends on another.
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -285,18 +253,11 @@ prerequisite and `:after` when one activation depends on another.
    :required? true})
 ```
 
-`use!` is the blessed early prerequisite check. Under `:required? true`, missing,
-unsynced, or failed spool approvals throw for the surviving `:spools` skip
-reasons. Namespace load and `:call` failures also fail loudly through the normal
-activation path.
+`use!` is the blessed early prerequisite check. Under `:required? true`, missing, unsynced, or failed spool approvals throw for the surviving `:spools` skip reasons. Namespace load and `:call` failures also fail loudly through the normal activation path.
 
 ### Maven dependencies in a spool root
 
-A spool root may declare ordinary JVM library dependencies in its top-level
-`deps.edn :deps`. Those dependencies are loaded into the live weaver during
-`sync!` with the same runtime dependency path used for spool roots. Runtime
-loading is weaver-wide: there is no per-spool dependency isolation and no unload
-semantics.
+A spool root may declare ordinary JVM library dependencies in its top-level `deps.edn :deps`. Those dependencies are loaded into the live weaver during `sync!` with the same runtime dependency path used for spool roots. Runtime loading is weaver-wide: there is no per-spool dependency isolation and no unload semantics.
 
 The policy is intentionally narrow:
 
@@ -324,9 +285,7 @@ Example:
 
 ## Local development overrides
 
-Use the same coordinate in shared `spools.edn` and gitignored
-`spools.local.edn` to develop against a checkout while other users stay pinned
-to the git sha. Local entries overlay shared entries by coordinate.
+Use the same coordinate in shared `spools.edn` and gitignored `spools.local.edn` to develop against a checkout while other users stay pinned to the git sha. Local entries overlay shared entries by coordinate.
 
 Shared `spools.edn`:
 
@@ -346,9 +305,7 @@ Developer-only `spools.local.edn`:
   {:local/root "~/dev/projects/skein-priority-spool"}}}
 ```
 
-The effective root is whichever entry wins the overlay. `:deps/root` is git-only
-because a local root can already point directly at any subdirectory you want to
-use. The Maven-only dependency policy still applies to local override roots.
+The effective root is whichever entry wins the overlay. `:deps/root` is git-only because a local root can already point directly at any subdirectory you want to use. The Maven-only dependency policy still applies to local override roots.
 
 ## The pattern pair
 
@@ -378,13 +335,11 @@ use. The Maven-only dependency policy still applies to local override roots.
   @(promotions runtime))
 ```
 
-Everything takes `runtime`. It runs correctly in a published daemon, an
-unpublished test runtime, or two runtimes side by side — no cross-talk.
+Everything takes `runtime`. It runs correctly in a published daemon, an unpublished test runtime, or two runtimes side by side — no cross-talk.
 
 ### Layering ergonomics in your own config
 
-In your **own** workspace `init.clj`, capture the runtime once and hold it, then
-call both the blessed API and the shared spool through terse wrappers:
+In your **own** workspace `init.clj`, capture the runtime once and hold it, then call both the blessed API and the shared spool through terse wrappers:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -402,10 +357,7 @@ call both the blessed API and the shared spool through terse wrappers:
 (priority/promote! (u/runtime) some-id)
 ```
 
-The ergonomics live entirely on **your** side of the boundary. The shared spool
-never learns that `skein.userland.alpha` exists. That asymmetry is the whole
-point: users may trade explicitness for terseness in their own config; shared
-code may not.
+The ergonomics live entirely on **your** side of the boundary. The shared spool never learns that `skein.userland.alpha` exists. That asymmetry is the whole point: users may trade explicitness for terseness in their own config; shared code may not.
 
 ## Namespace tiers (why this split exists)
 
@@ -422,31 +374,13 @@ See [AGENTS.md](../AGENTS.md) and [SPEC-003](../devflow/specs/repl-api.md#spec-0
 
 ## Enforcement
 
-The invariant "no `skein.*` (engine, blessed API, REPL, or shipped spool) source
-requires `skein.userland.alpha`" is guarded by a test
-(`skein.userland-test/no-skein-source-requires-the-userland-module`). That test
-covers repo-owned `skein.*` and shipped-spool sources. Local and third-party
-shared spools are held to the same rule by review and this guide. If abuse of
-the ergonomics layer by distributed spools ever shows up in practice, the
-sanctioned next step is a lint over approved spool roots at
-`skein.api.runtime.alpha/sync!` time that rejects a spool whose source requires
-`skein.userland.alpha`.
+The invariant "no `skein.*` (engine, blessed API, REPL, or shipped spool) source requires `skein.userland.alpha`" is guarded by a test (`skein.userland-test/no-skein-source-requires-the-userland-module`). That test covers repo-owned `skein.*` and shipped-spool sources. Local and third-party shared spools are held to the same rule by review and this guide. If abuse of the ergonomics layer by distributed spools ever shows up in practice, the sanctioned next step is a lint over approved spool roots at `skein.api.runtime.alpha/sync!` time that rejects a spool whose source requires `skein.userland.alpha`.
 
 ## Unsafe spools
 
-Every rule above says: build on `skein.api.*.alpha`, never on `skein.core.*`.
-Sometimes a genuinely useful capability lives on the wrong side of that line —
-the blessed surface deliberately doesn't expose it, and won't. When you reach
-past the contract anyway, do it in the open, like a Rust `unsafe` block: the
-capability stays available, the danger stays visible, and the next reader knows
-exactly what they're trusting.
+Every rule above says: build on `skein.api.*.alpha`, never on `skein.core.*`. Sometimes a genuinely useful capability lives on the wrong side of that line — the blessed surface deliberately doesn't expose it, and won't. When you reach past the contract anyway, do it in the open, like a Rust `unsafe` block: the capability stays available, the danger stays visible, and the next reader knows exactly what they're trusting.
 
-The worked reference is
-[`skein.spools.text-search`](../spools/text-search.md): it requires
-`skein.core.db` and runs SQL against the physical tables to search titles and
-attribute values, including archived rows the query language cannot see. It is a
-maintained example of rule-breaking, not a blessed path. If you must write one,
-follow the same three markers so the break is never silent:
+The worked reference is [`skein.spools.text-search`](../spools/text-search.md): it requires `skein.core.db` and runs SQL against the physical tables to search titles and attribute values, including archived rows the query language cannot see. It is a maintained example of rule-breaking, not a blessed path. If you must write one, follow the same three markers so the break is never silent:
 
 1. **`UNSAFE:` docstring prefix.** The namespace docstring's first line begins
    with `UNSAFE:` and names the internal namespaces it requires. A reader
@@ -462,6 +396,4 @@ follow the same three markers so the break is never silent:
    internals that will move and owns its own breakage — say so, and don't
    distribute one.
 
-This convention is enforced by review today. The enforcement direction — a
-`register!`-level `:unsafe` flag and a lint spool that surfaces
-`skein.core.*`-requiring spool sources — lives on kanban card `mubro`.
+This convention is enforced by review today. The enforcement direction — a `register!`-level `:unsafe` flag and a lint spool that surfaces `skein.core.*`-requiring spool sources — lives on kanban card `mubro`.

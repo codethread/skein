@@ -1,8 +1,6 @@
 # Emit Strand Mutation Events
 
-**Document ID:** `TASK-002`
-**Status:** Pending
-**Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
+**Document ID:** `TASK-002` **Status:** Pending **Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
 
 ## TASK-002.P1 Scope
 

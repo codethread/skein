@@ -1,34 +1,14 @@
 # Readability macros for the .skein config surface
 
-**Document ID:** `RFC-020`
-**Status:** Accepted
-**Date:** 2026-07-08
-**Related:** [Workflow ergonomics RFC-012](../archive/26-07-02__workflow-ergonomics/rfcs/2026-07-02-workflow-authoring-ergonomics.md)
-(deferred `defworkflow`), [`.skein/spools/macros`](../../.skein/spools/macros) (`defpattern` precedent),
-[TENETS](../TENETS.md), [PHILOSOPHY](../PHILOSOPHY.md), [writing shared spools](../../docs/writing-shared-spools.md)
+**Document ID:** `RFC-020` **Status:** Accepted **Date:** 2026-07-08 **Related:** [Workflow ergonomics RFC-012](../archive/26-07-02__workflow-ergonomics/rfcs/2026-07-02-workflow-authoring-ergonomics.md) (deferred `defworkflow`), [`.skein/spools/macros`](../../.skein/spools/macros) (`defpattern` precedent), [TENETS](../TENETS.md), [PHILOSOPHY](../PHILOSOPHY.md), [writing shared spools](../../docs/writing-shared-spools.md)
 
 ## RFC-020.P1 Problem
 
-The `.skein` world is a scan-first surface. A returning human or a cold agent reads these seven files to
-learn how this repo coordinates work, so their readability is the point (PHILOSOPHY: trusted startup config
-is where runtime customization lives; it should read like a document). Today each construct is split across
-its file: a query's data, its registration, and its usage doc sit in three places; an op's handler,
-arg-spec, `register-op!` call, and `devflow-conventions` entry sit in four; an attention rule's function and
-its `defrule!` sit at opposite ends of the file. A reader cannot scan one block per concern — they
-cross-reference.
+The `.skein` world is a scan-first surface. A returning human or a cold agent reads these seven files to learn how this repo coordinates work, so their readability is the point (PHILOSOPHY: trusted startup config is where runtime customization lives; it should read like a document). Today each construct is split across its file: a query's data, its registration, and its usage doc sit in three places; an op's handler, arg-spec, `register-op!` call, and `devflow-conventions` entry sit in four; an attention rule's function and its `defrule!` sit at opposite ends of the file. A reader cannot scan one block per concern — they cross-reference.
 
-Macros are dispreferred in idiomatic Clojure, and data-first authoring is this product's character
-(TEN-001: raw informative structure over layout; RFC-012 rejected a builder DSL on exactly this ground). So
-the question is whether a *scan-first config surface* is the case that earns grouping macros, and if so,
-where the surface lives and how far it reaches. This is a real tradeoff — debuggability and grep-ability
-against a tighter read — worth deciding before code.
+Macros are dispreferred in idiomatic Clojure, and data-first authoring is this product's character (TEN-001: raw informative structure over layout; RFC-012 rejected a builder DSL on exactly this ground). So the question is whether a *scan-first config surface* is the case that earns grouping macros, and if so, where the surface lives and how far it reaches. This is a real tradeoff — debuggability and grep-ability against a tighter read — worth deciding before code.
 
-One fact reframes the decision: `.skein` **already ships a grouping macro**. `skein.macros.patterns/defpattern`
-fuses a pattern's `defn`, docstring, and input schema into one block and remembers it for an
-`install-patterns!` called from the module's `install!` (`.skein/spools/macros/src/skein/macros/patterns.clj`;
-used by `.skein/spools/macros/src/skein/macros/demo.clj`, activated in `init.clj` under `:macros/*`). The
-precedent, its tier, and its remember-then-install shape are settled. This RFC decides whether to extend that
-proven shape to the other config concerns.
+One fact reframes the decision: `.skein` **already ships a grouping macro**. `skein.macros.patterns/defpattern` fuses a pattern's `defn`, docstring, and input schema into one block and remembers it for an `install-patterns!` called from the module's `install!` (`.skein/spools/macros/src/skein/macros/patterns.clj`; used by `.skein/spools/macros/src/skein/macros/demo.clj`, activated in `init.clj` under `:macros/*`). The precedent, its tier, and its remember-then-install shape are settled. This RFC decides whether to extend that proven shape to the other config concerns.
 
 ## RFC-020.P2 Goals
 
@@ -59,8 +39,7 @@ proven shape to the other config concerns.
 
 ## RFC-020.P4 Current state (for grounding)
 
-Boilerplate that separates a construct from its usage today, from the worktree files (line numbers circa
-2026-07-08; cited by name where they will drift):
+Boilerplate that separates a construct from its usage today, from the worktree files (line numbers circa 2026-07-08; cited by name where they will drift):
 
 - **Ops (`config.clj`).** `install!`'s op vector is ~15 near-identical `(api/register-op! runtime 'name
   (op-metadata name-arg-spec) 'config/name-op)` calls (circa lines 735-824). The op name is spelled three
@@ -84,10 +63,7 @@ Boilerplate that separates a construct from its usage today, from the worktree f
   `skein.macros` spool and is exercised only by `demo.clj` today. Migrating `delegate-pipeline` onto it is
   optional cleanup, not a driver of this RFC.
 
-Load-order constraints any macro layer must respect (from `init.clj` and the recon): registration side effects
-happen only inside `install!`, after `:after` dependencies load; treadle installs last and needs every harness
-alias to already exist; `config` loads before `workflows` (which reuses its helpers); generated arg-specs remain
-the source of `help`. The remember-then-install shape already honours all of this.
+Load-order constraints any macro layer must respect (from `init.clj` and the recon): registration side effects happen only inside `install!`, after `:after` dependencies load; treadle installs last and needs every harness alias to already exist; `config` loads before `workflows` (which reuses its helpers); generated arg-specs remain the source of `help`. The remember-then-install shape already honours all of this.
 
 ## RFC-020.P5 Options
 
@@ -152,8 +128,7 @@ the source of `help`. The remember-then-install shape already honours all of thi
   ...)
 ```
 
-Each `install!` calls `install-queries!`/`install-ops!`/`install-rules!` for its own namespace, so the
-`init.clj` `:after` ordering and treadle-installs-last constraint are untouched.
+Each `install!` calls `install-queries!`/`install-ops!`/`install-rules!` for its own namespace, so the `init.clj` `:after` ordering and treadle-installs-last constraint are untouched.
 
 ## RFC-020.P7 Consequences
 

@@ -1,18 +1,12 @@
 # Task 001: L0a storage pragmas (ASSN-PLAN-001.PH1)
 
-Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree
-`/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`.
+Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree `/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`.
 
-Read first: `devflow/feat/attr-scaling-ship-now/attr-scaling-ship-now.plan.md`
-(ASSN-PLAN-001, esp. `PH1`, `A6`, `AA1` pragma portion, `CM1`, `R3`) and
-`devflow/feat/attr-scaling-ship-now/specs/daemon-runtime.delta.md`
-(ASSN-DELTA-003.CC1, `D2`) and `strand-model.delta.md` (ASSN-DELTA-001.CC8).
+Read first: `devflow/feat/attr-scaling-ship-now/attr-scaling-ship-now.plan.md` (ASSN-PLAN-001, esp. `PH1`, `A6`, `AA1` pragma portion, `CM1`, `R3`) and `devflow/feat/attr-scaling-ship-now/specs/daemon-runtime.delta.md` (ASSN-DELTA-003.CC1, `D2`) and `strand-model.delta.md` (ASSN-DELTA-001.CC8).
 
 ## Scope
 
-L0a only — WAL/mmap/cache pragmas on the weaver datasource. **No** schema,
-contract, or read-shape change. This is `AA1`'s pragma portion; the
-`indexed_attr_keys` registry is Task 003, not here.
+L0a only — WAL/mmap/cache pragmas on the weaver datasource. **No** schema, contract, or read-shape change. This is `AA1`'s pragma portion; the `indexed_attr_keys` registry is Task 003, not here.
 
 - `src/skein/core/db.clj`: the `datasource` open path opens every SQLite
   database with `journal_mode=WAL`, a non-zero `mmap_size`, and an enlarged

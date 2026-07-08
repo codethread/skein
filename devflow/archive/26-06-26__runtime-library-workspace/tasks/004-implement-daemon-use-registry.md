@@ -1,9 +1,6 @@
 # Implement Daemon Use Registry
 
-**Document ID:** `RLW-TASK-004`
-**Status:** Pending
-**Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
-**Spec delta:** [../specs/repl-api.delta.md](../specs/repl-api.delta.md)
+**Document ID:** `RLW-TASK-004` **Status:** Pending **Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md) **Spec delta:** [../specs/repl-api.delta.md](../specs/repl-api.delta.md)
 
 ## RLW-TASK-004.P1 Scope
 

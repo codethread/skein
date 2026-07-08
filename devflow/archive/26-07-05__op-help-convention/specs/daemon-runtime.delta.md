@@ -1,10 +1,6 @@
 # Weaver Runtime Delta: Op help convention
 
-**Document ID:** `SPEC-004-D005`
-**Status:** Merged
-**Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Last Updated:** 2026-07-05
+**Document ID:** `SPEC-004-D005` **Status:** Merged **Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Last Updated:** 2026-07-05
 
 ## SPEC-004-D005.P1 Changed contracts
 

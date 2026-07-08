@@ -1,10 +1,6 @@
 # CLI Surface delta for mill-owned source
 
-**Document ID:** `DELTA-MOS-CLI-001`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-30
+**Document ID:** `DELTA-MOS-CLI-001` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-30
 
 ## DELTA-MOS-CLI-001.P1 Summary
 

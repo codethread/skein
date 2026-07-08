@@ -6,8 +6,7 @@
 
 Type: AFK
 
-Implement DELTA-Werg-001 items D1.1–D1.6 in `src/skein/spools/workflow.clj`,
-with `src/skein/spools/workflow.md` and tests updated in the same change.
+Implement DELTA-Werg-001 items D1.1–D1.6 in `src/skein/spools/workflow.clj`, with `src/skein/spools/workflow.md` and tests updated in the same change.
 
 ## TASK-Werg-001.P2 Must implement exactly
 

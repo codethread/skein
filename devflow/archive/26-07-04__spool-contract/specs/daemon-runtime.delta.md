@@ -1,9 +1,6 @@
 # Weaver Runtime spool-contract delta
 
-**Document ID:** `DELTA-daemon-runtime-spool-contract-001`
-**Status:** Merged
-**Target root spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) (`SPEC-004`)
-**Feature:** spool-contract
+**Document ID:** `DELTA-daemon-runtime-spool-contract-001` **Status:** Merged **Target root spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) (`SPEC-004`) **Feature:** spool-contract
 
 ## DELTA-daemon-runtime-spool-contract-001.P1 Purpose
 

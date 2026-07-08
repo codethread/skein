@@ -1,13 +1,6 @@
 # Batch Graph Upsert Plan
 
-**Document ID:** `BGU-PLAN-001`
-**Feature:** `batch-graph-upsert`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** None
-**Root specs:** [Strand Model](../../specs/strand-model.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
-**Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md), [REPL API delta](./specs/repl-api.delta.md), [CLI Surface delta](./specs/cli.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-28
+**Document ID:** `BGU-PLAN-001` **Feature:** `batch-graph-upsert` **Proposal:** [proposal.md](./proposal.md) **RFC:** None **Root specs:** [Strand Model](../../specs/strand-model.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md) **Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md), [REPL API delta](./specs/repl-api.delta.md), [CLI Surface delta](./specs/cli.delta.md) **Status:** Shipped **Last Updated:** 2026-06-28
 
 ## BGU-PLAN-001.P1 Goal and scope
 

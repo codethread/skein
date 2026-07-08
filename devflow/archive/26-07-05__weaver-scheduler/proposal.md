@@ -1,11 +1,6 @@
 # Weaver Scheduler Proposal
 
-**Document ID:** `PROP-weaver-scheduler-001`
-**Status:** Draft
-**Feature:** `weaver-scheduler`
-**Card:** `d0cbq`
-**Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../rfcs/2026-06-29-weaver-scheduler.md)
-**Related specs:** [`SPEC-004 Weaver Runtime`](../../specs/daemon-runtime.md), [`SPEC-002 CLI Surface`](../../specs/cli.md), [`SPEC-003 REPL API`](../../specs/repl-api.md)
+**Document ID:** `PROP-weaver-scheduler-001` **Status:** Draft **Feature:** `weaver-scheduler` **Card:** `d0cbq` **Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../rfcs/2026-06-29-weaver-scheduler.md) **Related specs:** [`SPEC-004 Weaver Runtime`](../../specs/daemon-runtime.md), [`SPEC-002 CLI Surface`](../../specs/cli.md), [`SPEC-003 REPL API`](../../specs/repl-api.md)
 
 ## PROP-weaver-scheduler-001.P1 Problem
 

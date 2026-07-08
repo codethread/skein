@@ -1,14 +1,6 @@
 # Runtime Plugin System Plan
 
-**Document ID:** `RPS-PLAN-001`
-**Status:** Shipped
-**Last Updated:** 2026-06-25
-**Prerequisite shipped:** [`devflow/archive/26-06-25__user-daemon-home`](../../archive/26-06-25__user-daemon-home/) — config-dir daemon worlds, default `init.clj`, `connect!`, and connected `todo daemon repl --stdin`
-**Proposal:** [proposal.md](./proposal.md)
-**Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md)
-**Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md)
-**Research:** `straight.el` docs/source; vendored at `~/dev/vendor/straight.el`
-**Related RFCs:** None
+**Document ID:** `RPS-PLAN-001` **Status:** Shipped **Last Updated:** 2026-06-25 **Prerequisite shipped:** [`devflow/archive/26-06-25__user-daemon-home`](../../archive/26-06-25__user-daemon-home/) — config-dir daemon worlds, default `init.clj`, `connect!`, and connected `todo daemon repl --stdin` **Proposal:** [proposal.md](./proposal.md) **Spec deltas:** [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [cli.delta.md](./specs/cli.delta.md) **Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md) **Research:** `straight.el` docs/source; vendored at `~/dev/vendor/straight.el` **Related RFCs:** None
 
 ## RPS-PLAN-001.P1 Goal and scope
 

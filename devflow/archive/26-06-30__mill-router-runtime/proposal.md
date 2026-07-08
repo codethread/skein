@@ -1,10 +1,6 @@
 # Mill Router Runtime Proposal
 
-**Document ID:** `PROP-MillRouterRuntime-001`
-**Related RFCs:** None
-**Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-30
+**Document ID:** `PROP-MillRouterRuntime-001` **Related RFCs:** None **Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md) **Status:** Shipped **Last Updated:** 2026-06-30
 
 ## PROP-MillRouterRuntime-001.P1 Problem
 

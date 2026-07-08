@@ -6,9 +6,7 @@
 
 Type: AFK
 
-Rewrite `config.clj`'s seven named queries as `defquery` blocks and register them through `install-queries!`, deleting
-`register-query-map!`. This is a data-preserving refactor: the registered query names, definitions, and the `devflow-conventions`
-`:queries` output stay byte-identical. The conventions `:queries` listing stays hand-authored in this slice; task 7 derives it.
+Rewrite `config.clj`'s seven named queries as `defquery` blocks and register them through `install-queries!`, deleting `register-query-map!`. This is a data-preserving refactor: the registered query names, definitions, and the `devflow-conventions` `:queries` output stay byte-identical. The conventions `:queries` listing stays hand-authored in this slice; task 7 derives it.
 
 ## TASK-Srm-005.P2 Must implement exactly
 

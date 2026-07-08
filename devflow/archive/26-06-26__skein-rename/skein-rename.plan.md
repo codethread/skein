@@ -1,13 +1,6 @@
 # Skein Rename Plan
 
-**Document ID:** `SR-PLAN-001`
-**Feature:** `skein-rename`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-006 Rename to Skein](./rfcs/2026-06-26-skein-rename.md)
-**Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Runtime Transformations PRD](../../prd/runtime-transformations.md)
-**Feature specs:** [strand-model.delta.md](./specs/strand-model.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [runtime-transformations.delta.md](./specs/runtime-transformations.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-26
+**Document ID:** `SR-PLAN-001` **Feature:** `skein-rename` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-006 Rename to Skein](./rfcs/2026-06-26-skein-rename.md) **Root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [Runtime Transformations PRD](../../prd/runtime-transformations.md) **Feature specs:** [strand-model.delta.md](./specs/strand-model.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [runtime-transformations.delta.md](./specs/runtime-transformations.delta.md) **Status:** Shipped **Last Updated:** 2026-06-26
 
 ## SR-PLAN-001.P1 Goal and scope
 

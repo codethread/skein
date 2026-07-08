@@ -1,9 +1,6 @@
 # Declarative Review Fan-out Proposal
 
-**Document ID:** `PROP-Rfo-001`
-**Last Updated:** 2026-07-04
-**Related RFCs:** None (phase 2 — file-change-driven reviewer selection — will need its own RFC)
-**Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md) (runtime registries, trusted config), [CLI Surface](../../specs/cli.md) (op dispatch); userland contracts: [`spools/agents/README.md`](../../../spools/agents/README.md), [`spools/shuttle/README.md`](../../../spools/shuttle/README.md)
+**Document ID:** `PROP-Rfo-001` **Last Updated:** 2026-07-04 **Related RFCs:** None (phase 2 — file-change-driven reviewer selection — will need its own RFC) **Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md) (runtime registries, trusted config), [CLI Surface](../../specs/cli.md) (op dispatch); userland contracts: [`spools/agents/README.md`](../../../spools/agents/README.md), [`spools/shuttle/README.md`](../../../spools/shuttle/README.md)
 
 ## PROP-Rfo-001.P1 Problem
 

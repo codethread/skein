@@ -1,10 +1,6 @@
 # User Daemon Home Proposal
 
-**Document ID:** `UDH-PROP-001`
-**Status:** Draft
-**Date:** 2026-06-25
-**Related RFCs:** None
-**Relevant root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md)
+**Document ID:** `UDH-PROP-001` **Status:** Draft **Date:** 2026-06-25 **Related RFCs:** None **Relevant root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md)
 
 ## UDH-PROP-001.P1 Problem
 

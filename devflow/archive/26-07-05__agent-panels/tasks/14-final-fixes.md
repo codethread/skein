@@ -1,7 +1,6 @@
 Action the final review. FILE SCOPE: whatever the findings require within this feature's files (agents.clj, shuttle.clj, tests, config.clj, reviewers.clj, the three docs) — you are the last mutator in the pipeline, so the one-mutator rule is trivially satisfied.
 
-FIRST: apply the FINDINGS INPUT PROTOCOL below for tag [agent-panels/final review]. If the verdict was "merge-ready" with no [P1]/[P2] entries: verify that claim cheaply (run the agents-test and config-test namespaces with the -Sdeps recipe), set status=implemented, and finish with "nothing to fix".
-Otherwise: action every [P1] and [P2]; [P3] entries marked as backlog-card material should be SKIPPED and listed in your final message for the coordinator to card (do not create cards yourself).
+FIRST: apply the FINDINGS INPUT PROTOCOL below for tag [agent-panels/final review]. If the verdict was "merge-ready" with no [P1]/[P2] entries: verify that claim cheaply (run the agents-test and config-test namespaces with the -Sdeps recipe), set status=implemented, and finish with "nothing to fix". Otherwise: action every [P1] and [P2]; [P3] entries marked as backlog-card material should be SKIPPED and listed in your final message for the coordinator to card (do not create cards yourself).
 
 After any code change: affected namespaces green via the -Sdeps recipe, and if you touched shuttle.clj or config.clj, ALSO re-run the frozen-floor command from task 12-ph7-validation step 5. Your final message: per-finding actioned/skipped table + test results.
 

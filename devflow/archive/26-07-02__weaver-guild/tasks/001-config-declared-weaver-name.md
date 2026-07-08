@@ -6,10 +6,7 @@
 
 Type: AFK
 
-Extend the Go alpha config format with an optional portable weaver `"name"`
-and a machine-local `config.local.json` overlay, and make mill resolve the
-effective friendly name from them at weaver launch, per
-DELTA-Cli-002.CC1/CC2/CC4 and DELTA-DaemonRuntime-002.CC5/CC6.
+Extend the Go alpha config format with an optional portable weaver `"name"` and a machine-local `config.local.json` overlay, and make mill resolve the effective friendly name from them at weaver launch, per DELTA-Cli-002.CC1/CC2/CC4 and DELTA-DaemonRuntime-002.CC5/CC6.
 
 ## TASK-Guild-001.P2 Must implement exactly
 

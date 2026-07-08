@@ -1,9 +1,6 @@
 # Library to Spool Proposal
 
-**Document ID:** `LTS-PROP-001`
-**Last Updated:** 2026-07-01
-**Related RFCs:** None (direction accepted from in-session naming review; no blocking alternatives remain)
-**Related root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md)
+**Document ID:** `LTS-PROP-001` **Last Updated:** 2026-07-01 **Related RFCs:** None (direction accepted from in-session naming review; no blocking alternatives remain) **Related root specs:** [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md)
 
 ## LTS-PROP-001.P1 Problem
 

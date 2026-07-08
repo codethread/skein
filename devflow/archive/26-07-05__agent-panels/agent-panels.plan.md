@@ -1,13 +1,6 @@
 # Agent Panels Plan
 
-**Document ID:** `PLAN-Pnl-001`
-**Feature:** `agent-panels`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none (design deep-dive recorded here, in the proposal, and in notes on card `d5af5`)
-**Root specs:** none affected
-**Feature specs:** none
-**Status:** Shipped
-**Last Updated:** 2026-07-05
+**Document ID:** `PLAN-Pnl-001` **Feature:** `agent-panels` **Proposal:** [proposal.md](./proposal.md) **RFC:** none (design deep-dive recorded here, in the proposal, and in notes on card `d5af5`) **Root specs:** none affected **Feature specs:** none **Status:** Shipped **Last Updated:** 2026-07-05
 
 ## PLAN-Pnl-001.P1 Goal and scope
 

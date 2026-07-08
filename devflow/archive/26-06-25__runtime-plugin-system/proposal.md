@@ -1,13 +1,6 @@
 # Runtime Plugin System Proposal
 
-**Document ID:** `RPS-PROP-001`
-**Status:** Shipped
-**Date:** 2026-06-25
-**Prerequisite shipped:** [`devflow/archive/26-06-25__user-daemon-home`](../../archive/26-06-25__user-daemon-home/) — config-dir daemon worlds, default `init.clj`, and connected REPL workflows
-**Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md)
-**Research:** [`straight.el`](https://github.com/radian-software/straight.el), vendored for study at `~/dev/vendor/straight.el`
-**Related RFCs:** None
-**Relevant root specs:** [Daemon Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
+**Document ID:** `RPS-PROP-001` **Status:** Shipped **Date:** 2026-06-25 **Prerequisite shipped:** [`devflow/archive/26-06-25__user-daemon-home`](../../archive/26-06-25__user-daemon-home/) — config-dir daemon worlds, default `init.clj`, and connected REPL workflows **Related PRD:** [Runtime Transformations PRD](../../prd/runtime-transformations.md) **Research:** [`straight.el`](https://github.com/radian-software/straight.el), vendored for study at `~/dev/vendor/straight.el` **Related RFCs:** None **Relevant root specs:** [Daemon Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
 
 ## RPS-PROP-001.P1 Problem
 

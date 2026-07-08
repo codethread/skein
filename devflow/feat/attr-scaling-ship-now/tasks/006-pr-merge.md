@@ -1,14 +1,10 @@
 # Task 006: Draft PR, green CI, squash-merge to main (ASSN-PLAN-001.PH4 close)
 
-Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree
-`/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 005.**
-`hitl=false` — but this task's completion is gated on **green CI**, not on the
-merge happening no matter what.
+Feature `attr-scaling-ship-now`, branch `attr-scaling-ship-now`, worktree `/Users/ct/dev/projects/skein-src__attr-scaling-ship-now`. **Depends on Task 005.** `hitl=false` — but this task's completion is gated on **green CI**, not on the merge happening no matter what.
 
 ## Scope
 
-Ship the feature branch to `main` through GitHub, honoring repo landing rules.
-Remote is `git@github.com:codethread/skein.git`.
+Ship the feature branch to `main` through GitHub, honoring repo landing rules. Remote is `git@github.com:codethread/skein.git`.
 
 1. Push `attr-scaling-ship-now` and open a **draft** PR first: base `main`, head
    `attr-scaling-ship-now`. Title/body summarize the *why* (attr-scaling

@@ -1,11 +1,6 @@
 # Weaver Event System Plan
 
-**Document ID:** `PLAN-001`
-**Status:** Shipped
-**Last Updated:** 2026-06-27
-**Proposal:** [Weaver Event System Proposal](./proposal.md)
-**Feature Specs:** [Weaver Runtime Delta](./specs/daemon-runtime.delta.md), [REPL API Delta](./specs/repl-api.delta.md)
-**Root Specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [Strand Model](../../specs/strand-model.md)
+**Document ID:** `PLAN-001` **Status:** Shipped **Last Updated:** 2026-06-27 **Proposal:** [Weaver Event System Proposal](./proposal.md) **Feature Specs:** [Weaver Runtime Delta](./specs/daemon-runtime.delta.md), [REPL API Delta](./specs/repl-api.delta.md) **Root Specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [Strand Model](../../specs/strand-model.md)
 
 ## PLAN-001.P1 Goal and scope
 

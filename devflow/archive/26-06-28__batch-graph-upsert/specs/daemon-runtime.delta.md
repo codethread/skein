@@ -1,10 +1,6 @@
 # Weaver Runtime delta for batch graph upsert
 
-**Document ID:** `BGU-DELTA-002`
-**Root spec:** [daemon-runtime.md](../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-28
+**Document ID:** `BGU-DELTA-002` **Root spec:** [daemon-runtime.md](../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-28
 
 ## BGU-DELTA-002.P1 Summary
 

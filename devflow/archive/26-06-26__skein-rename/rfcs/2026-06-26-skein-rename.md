@@ -1,9 +1,6 @@
 # Rename to Skein: textile-metaphor vocabulary and namespace move
 
-**Document ID:** `RFC-006`
-**Status:** Accepted
-**Date:** 2026-06-26
-**Related:** [PHILOSOPHY](../PHILOSOPHY.md), [TENETS](../TENETS.md), [SPEC-001 Strand Model](../specs/strand-model.md), [SPEC-002 CLI](../specs/cli.md), [SPEC-003 REPL API](../specs/repl-api.md), [SPEC-004 Weaver Runtime](../specs/daemon-runtime.md), [PRD-001 Runtime Transformations](../prd/runtime-transformations.md)
+**Document ID:** `RFC-006` **Status:** Accepted **Date:** 2026-06-26 **Related:** [PHILOSOPHY](../PHILOSOPHY.md), [TENETS](../TENETS.md), [SPEC-001 Strand Model](../specs/strand-model.md), [SPEC-002 CLI](../specs/cli.md), [SPEC-003 REPL API](../specs/repl-api.md), [SPEC-004 Weaver Runtime](../specs/daemon-runtime.md), [PRD-001 Runtime Transformations](../prd/runtime-transformations.md)
 
 ## RFC-006.P1 Problem
 
@@ -59,7 +56,7 @@ Naming explored three axes: the product brand, the stored-unit word, and the dae
   | The durable stored unit (a noun) | **strand** | task |
   | Typed, directed edge | **edge** (literal; created via `--edge`) | edge |
 
-  The connected-subgraph concept previously sketched as "molecule" is dropped; do not force a metaphor for derived structure. Connected subgraphs remain ordinary results of `skein.graph.alpha`, unnamed at the contract level. Edge types (`depends-on`, `related-to`, `parent-of`, `supersedes`) are unchanged.
+The connected-subgraph concept previously sketched as "molecule" is dropped; do not force a metaphor for derived structure. Connected subgraphs remain ordinary results of `skein.graph.alpha`, unnamed at the contract level. Edge types (`depends-on`, `related-to`, `parent-of`, `supersedes`) are unchanged.
 
 - **RFC-006.REC3:** Rationale for `skein` over `strand` as the namespace root: the top-level namespace is the published artifact identity, so it tracks the product (Skein), not a domain entity. `skein.graph.alpha` reads as "Skein's graph library"; `strand.graph.alpha` would read as a library merely about strands. The unit word still appears everywhere it matters — the `strand` binary, the `strands` table, and function names like `add-strand!` — without owning the namespace root. This also keeps the contested `strand` token (AWS adjacency) out of the published artifact name.
 

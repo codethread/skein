@@ -1,11 +1,6 @@
 # Daemon Query Registry Proposal
 
-**Document ID:** `PROP-001`
-**Status:** Draft
-**Last Updated:** 2026-06-25
-**Related RFCs:** [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md)
-**Related Specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md)
-**Philosophy:** [Devflow Philosophy](../../PHILOSOPHY.md)
+**Document ID:** `PROP-001` **Status:** Draft **Last Updated:** 2026-06-25 **Related RFCs:** [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) **Related Specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Daemon Runtime](../../specs/daemon-runtime.md) **Philosophy:** [Devflow Philosophy](../../PHILOSOPHY.md)
 
 ## PROP-001.P1 Problem
 

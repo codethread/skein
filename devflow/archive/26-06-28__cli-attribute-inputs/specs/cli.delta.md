@@ -1,9 +1,6 @@
 # CLI Surface Delta: Attribute Input Sources
 
-**Document ID:** `DELTA-004`
-**Status:** Merged
-**Target spec:** [CLI Surface](../../../specs/cli.md)
-**Feature:** [CLI Attribute Inputs](../proposal.md)
+**Document ID:** `DELTA-004` **Status:** Merged **Target spec:** [CLI Surface](../../../specs/cli.md) **Feature:** [CLI Attribute Inputs](../proposal.md)
 
 ## DELTA-004.P1 Summary
 

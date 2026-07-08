@@ -1,10 +1,6 @@
 # REPL API delta for mill router runtime
 
-**Document ID:** `DELTA-MillRouterRuntime-ReplApi-001`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-30
+**Document ID:** `DELTA-MillRouterRuntime-ReplApi-001` **Root spec:** [repl-api.md](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-30
 
 ## DELTA-MillRouterRuntime-ReplApi-001.P1 Summary
 

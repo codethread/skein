@@ -1,8 +1,6 @@
 # Add Internal Event Runtime
 
-**Document ID:** `TASK-001`
-**Status:** Pending
-**Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
+**Document ID:** `TASK-001` **Status:** Pending **Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
 
 ## TASK-001.P1 Scope
 

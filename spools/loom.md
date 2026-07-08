@@ -10,28 +10,13 @@
 
 ## 1. Overview
 
-`skein.spools.loom` is a read-only reference spool that projects the active
-strand graph into the shapes consumers actually render: parent-of work DAGs with
-their depends-on edges, per-root branch progress views joined to a ready
-frontier, and workflow flow-status (history, frontier, subagent gates, delegated
-runs, and stalls) with a Mermaid gate chain. It mutates nothing.
+`skein.spools.loom` is a read-only reference spool that projects the active strand graph into the shapes consumers actually render: parent-of work DAGs with their depends-on edges, per-root branch progress views joined to a ready frontier, and workflow flow-status (history, frontier, subagent gates, delegated runs, and stalls) with a Mermaid gate chain. It mutates nothing.
 
-The name follows the textile metaphor: a loom holds the whole warp under tension
-and reveals the developing cloth. This spool holds the active strand graph and
-reveals its work structure.
+The name follows the textile metaphor: a loom holds the whole warp under tension and reveals the developing cloth. This spool holds the active strand graph and reveals its work structure.
 
-These projections were previously hand-rolled inside repo `.skein/config.clj`.
-They are generic graph vocabulary that other code builds on, so they ship here on
-the classpath while a repo keeps only its own policy — which attribute names a
-branch, which query feeds the ready frontier, and the op registration glue.
-`.skein/config.clj`'s `current-dags`, `branches`, and `flow-status` ops are thin
-wrappers over this spool.
+These projections were previously hand-rolled inside repo `.skein/config.clj`. They are generic graph vocabulary that other code builds on, so they ship here on the classpath while a repo keeps only its own policy — which attribute names a branch, which query feeds the ready frontier, and the op registration glue. `.skein/config.clj`'s `current-dags`, `branches`, and `flow-status` ops are thin wrappers over this spool.
 
-Every function is **read-only** and composes the public
-`skein.api.graph.alpha` / `skein.api.weaver.alpha` / `skein.spools.workflow`
-surfaces. Because it reads edges via `graph/subgraph`/`api/list`, it requires
-an **in-process weaver runtime** — trusted startup config, the weaver's own
-nREPL, or an in-process test runtime. Callers pass the runtime explicitly.
+Every function is **read-only** and composes the public `skein.api.graph.alpha` / `skein.api.weaver.alpha` / `skein.spools.workflow` surfaces. Because it reads edges via `graph/subgraph`/`api/list`, it requires an **in-process weaver runtime** — trusted startup config, the weaver's own nREPL, or an in-process test runtime. Callers pass the runtime explicitly.
 
 ## 2. Usage
 
@@ -70,10 +55,7 @@ nREPL, or an in-process test runtime. Callers pass the runtime explicitly.
 | `(gate-chain-mermaid gates ready-ids)` | Dev-only Mermaid `flowchart LR` marking each gate `ready`/`stalled`/`closed`/its state. |
 | `(install!)` | Installation metadata: function symbols and `:read-only true` for trusted registration by name. Registers no ops. |
 
-`active-by-id`, `internal-active-edges`, `descendants-by-root`, and
-`root-view` are private graph-composition helpers used internally by
-`work-dags`/`branch-views`; they carry no external-consumer contract and are
-not part of this surface table.
+`active-by-id`, `internal-active-edges`, `descendants-by-root`, and `root-view` are private graph-composition helpers used internally by `work-dags`/`branch-views`; they carry no external-consumer contract and are not part of this surface table.
 
 `branch-views` options:
 
@@ -86,9 +68,7 @@ not part of this surface table.
   fails loudly with `ex-info`.
 - `:branch` — optional branch name; scopes the projection to one branch.
 
-`branch-views` validates its `opts` map loudly: a non-map `opts`, an unknown
-key, a non-keyword `:branch-attr`, or a non-string `:branch` all fail with a
-contextual `ex-info`.
+`branch-views` validates its `opts` map loudly: a non-map `opts`, an unknown key, a non-keyword `:branch-attr`, or a non-string `:branch` all fail with a contextual `ex-info`.
 
 `flow-status` returns a JSON-compatible map with:
 

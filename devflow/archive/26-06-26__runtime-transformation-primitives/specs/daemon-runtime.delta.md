@@ -1,9 +1,6 @@
 # Daemon Runtime Delta: Runtime Transformation Primitives
 
-**Document ID:** `SPEC-004-D002`
-**Status:** Merged into root spec
-**Base Spec:** [Daemon Runtime](../../../specs/daemon-runtime.md)
-**Last Updated:** 2026-06-26
+**Document ID:** `SPEC-004-D002` **Status:** Merged into root spec **Base Spec:** [Daemon Runtime](../../../specs/daemon-runtime.md) **Last Updated:** 2026-06-26
 
 ## SPEC-004-D002.P1 Changed contracts
 

@@ -1,9 +1,6 @@
 # Repo-first Config Proposal
 
-**Document ID:** `PROP-RepoFirstConfig-001`
-**Last Updated:** 2026-06-29
-**Related RFCs:** None
-**Related root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
+**Document ID:** `PROP-RepoFirstConfig-001` **Last Updated:** 2026-06-29 **Related RFCs:** None **Related root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
 
 ## PROP-RepoFirstConfig-001.P1 Problem
 

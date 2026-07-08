@@ -1,9 +1,6 @@
 # Spike: In-Memory Smoke Feasibility
 
-**Spike ID:** `SPIKE-2026-06-26-005`
-**Status:** Open
-**Date:** 2026-06-26
-**Related RFC:** [`RFC-005 Library Author Testing Support`](../rfcs/2026-06-26-library-author-testing.md)
+**Spike ID:** `SPIKE-2026-06-26-005` **Status:** Open **Date:** 2026-06-26 **Related RFC:** [`RFC-005 Library Author Testing Support`](../rfcs/2026-06-26-library-author-testing.md)
 
 ## Question
 

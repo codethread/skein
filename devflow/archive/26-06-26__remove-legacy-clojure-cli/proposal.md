@@ -1,7 +1,6 @@
 # Remove legacy Clojure CLI
 
-**Document ID:** `RCLC-PROP-001`
-**Last Updated:** 2026-06-26
+**Document ID:** `RCLC-PROP-001` **Last Updated:** 2026-06-26
 
 ## Problem
 

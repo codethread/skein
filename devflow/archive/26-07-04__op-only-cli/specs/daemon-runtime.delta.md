@@ -1,10 +1,6 @@
 # Weaver Runtime Delta: Op-only CLI
 
-**Document ID:** `SPEC-004-D003`
-**Status:** Merged
-**Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md)
-**Related RFC:** [RFC-019 Op-only CLI](../../../rfcs/2026-07-04-op-only-cli.md)
-**Last Updated:** 2026-07-04
+**Document ID:** `SPEC-004-D003` **Status:** Merged **Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) **Related RFC:** [RFC-019 Op-only CLI](../../../rfcs/2026-07-04-op-only-cli.md) **Last Updated:** 2026-07-04
 
 ## SPEC-004-D003.P1 Changed contracts
 

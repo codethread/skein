@@ -6,8 +6,7 @@
 
 Type: AFK
 
-Implement DELTA-Werg-001 items D1.9–D1.11 in `skein.spools.workflow` and the
-devflow wrappers (D2.4).
+Implement DELTA-Werg-001 items D1.9–D1.11 in `skein.spools.workflow` and the devflow wrappers (D2.4).
 
 ## TASK-Werg-003.P2 Must implement exactly
 

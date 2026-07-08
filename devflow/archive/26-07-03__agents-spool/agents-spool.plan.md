@@ -1,9 +1,6 @@
 # Agents Spool Plan
 
-**Status:** Shipped
-**Last Updated:** 2026-07-03
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-015](./rfcs/2026-07-03-agents-spool.md) — the [op manual draft](./rfcs/2026-07-03-agents-spool.op-manual.md) is the authoritative surface contract for this build.
+**Status:** Shipped **Last Updated:** 2026-07-03 **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-015](./rfcs/2026-07-03-agents-spool.md) — the [op manual draft](./rfcs/2026-07-03-agents-spool.op-manual.md) is the authoritative surface contract for this build.
 
 Deliberately lean: no `tasks/` queue or AFK loop. Coordination runs through shuttle-delegated agent runs from an `agent-plan` strand DAG (per RFC-015.OUT2), with the coordinator (owner session) verifying and closing task strands.
 

@@ -1,9 +1,6 @@
 # Large-attribute Scaling (ship now) Proposal
 
-**Document ID:** `PROP-AttrScalingShipNow-001`
-**Last Updated:** 2026-07-06
-**Related RFCs:** None (no existing RFC covers attribute storage/query indexing; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language this touches but does not conflict)
-**Related root specs:** [Strand Model](../../specs/strand-model.md) (P4 Attributes, P8 Persistence, P9 Query fields), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md)
+**Document ID:** `PROP-AttrScalingShipNow-001` **Last Updated:** 2026-07-06 **Related RFCs:** None (no existing RFC covers attribute storage/query indexing; adjacent [RFC-002 Task Query DSL](../../rfcs/2026-06-24-task-query-dsl.md) defines the query language this touches but does not conflict) **Related root specs:** [Strand Model](../../specs/strand-model.md) (P4 Attributes, P8 Persistence, P9 Query fields), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md)
 
 **Evidence base:** four completed spikes plus cross-vendor review, held under `/tmp/claude/attr-scaling-ship-now-brief/` (kanban card `bvb0g`): `SYNTHESIS.md` §8 is the adopted recommendation; `NARROWING.md` is the GPT design-narrowing review whose contract decisions are adopted here; `FACTCHECK.md` is the opus adversarial fact-check (every load-bearing structural claim CONFIRMED, three precision caveats folded in); `DESIGN.md` is the semantics/contract POC; `RESULTS-baseline.md`, `RESULTS-inline.md`, and `RESULTS-sidetable.md` are the benchmark harnesses.
 

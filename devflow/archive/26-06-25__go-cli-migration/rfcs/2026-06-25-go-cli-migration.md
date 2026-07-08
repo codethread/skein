@@ -1,9 +1,6 @@
 # Go CLI Migration
 
-**Document ID:** `RFC-004`
-**Status:** Accepted
-**Date:** 2026-06-25
-**Related:** [RFC-003 Fast JSON Socket CLI](./2026-06-25-fast-json-socket-cli.md), [CLI Surface `SPEC-002`](../../../specs/cli.md), [Daemon Runtime `SPEC-004`](../../../specs/daemon-runtime.md), active query registry deltas `SPEC-002-D002` and `SPEC-004-D001`
+**Document ID:** `RFC-004` **Status:** Accepted **Date:** 2026-06-25 **Related:** [RFC-003 Fast JSON Socket CLI](./2026-06-25-fast-json-socket-cli.md), [CLI Surface `SPEC-002`](../../../specs/cli.md), [Daemon Runtime `SPEC-004`](../../../specs/daemon-runtime.md), active query registry deltas `SPEC-002-D002` and `SPEC-004-D001`
 
 ## RFC-004.P1 Problem
 

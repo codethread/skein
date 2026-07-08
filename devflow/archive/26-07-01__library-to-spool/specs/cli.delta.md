@@ -1,8 +1,6 @@
 # CLI Surface Delta: Runtime Spools
 
-**Document ID:** `LTS-SPEC-002-DELTA-001`
-**Status:** Merged
-**Target root spec:** `devflow/specs/cli.md`
+**Document ID:** `LTS-SPEC-002-DELTA-001` **Status:** Merged **Target root spec:** `devflow/specs/cli.md`
 
 ## Delta
 

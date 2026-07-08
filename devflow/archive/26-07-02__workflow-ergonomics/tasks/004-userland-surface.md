@@ -6,8 +6,7 @@
 
 Type: AFK
 
-Implement DELTA-Werg-001 items D3.1–D3.2: the repo `.skein` config, agent
-guidance, and the strand skill.
+Implement DELTA-Werg-001 items D3.1–D3.2: the repo `.skein` config, agent guidance, and the strand skill.
 
 ## TASK-Werg-004.P2 Must implement exactly
 

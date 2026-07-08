@@ -1,10 +1,6 @@
 # Weaver Runtime Delta: Arg-spec subcommands
 
-**Document ID:** `SPEC-004-D004`
-**Status:** Merged
-**Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Last Updated:** 2026-07-05
+**Document ID:** `SPEC-004-D004` **Status:** Merged **Base Spec:** [Weaver Runtime](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Last Updated:** 2026-07-05
 
 ## SPEC-004-D004.P1 Changed contracts
 

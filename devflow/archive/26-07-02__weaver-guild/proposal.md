@@ -1,29 +1,12 @@
 # Weaver Guild Proposal
 
-**Document ID:** `PROP-Guild-001`
-**Last Updated:** 2026-07-02
-**Related RFCs:** None (direction settled in owner discussion; alternatives recorded in the spec deltas' design decisions)
-**Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
-**Related spool contracts:** [Workflow spool](../../../spools/workflow.md) (§3 Gates), [Treadle](../../../spools/shuttle/treadle.md) (reference gate-adapter shape)
+**Document ID:** `PROP-Guild-001` **Last Updated:** 2026-07-02 **Related RFCs:** None (direction settled in owner discussion; alternatives recorded in the spec deltas' design decisions) **Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md) **Related spool contracts:** [Workflow spool](../../../spools/workflow.md) (§3 Gates), [Treadle](../../../spools/shuttle/treadle.md) (reference gate-adapter shape)
 
 ## PROP-Guild-001.P1 Problem
 
-Every Skein workspace gets its own weaver, and weavers are islands: nothing in
-the shipped contract lets one weaver discover or talk to another. Multi-repo
-work therefore has no coordination story. The motivating example is a
-fullstack feature spanning a frontend and a backend repo: a manager weaver (in
-a shared coordination repo) should drive a workflow whose gates wait on
-progress inside the FE and BE weavers, while each repo keeps its own
-repo-specific workflow definitions.
+Every Skein workspace gets its own weaver, and weavers are islands: nothing in the shipped contract lets one weaver discover or talk to another. Multi-repo work therefore has no coordination story. The motivating example is a fullstack feature spanning a frontend and a backend repo: a manager weaver (in a shared coordination repo) should drive a workflow whose gates wait on progress inside the FE and BE weavers, while each repo keeps its own repo-specific workflow definitions.
 
-The raw ingredients already exist — every weaver publishes discoverable
-runtime metadata under the mill state root, exposes a versioned
-identity-verified JSON socket, and owns a trusted CLI-operation (`op`)
-registry — but there is no blessed way for a weaver to enumerate its running
-siblings, no Clojure client for the JSON socket (only the Go CLI speaks it),
-and no portable naming: a weaver's friendly name defaults to its workspace
-basename, which differs between teammates' clone locations, so checked-in
-coordination code cannot address a peer reliably.
+The raw ingredients already exist — every weaver publishes discoverable runtime metadata under the mill state root, exposes a versioned identity-verified JSON socket, and owns a trusted CLI-operation (`op`) registry — but there is no blessed way for a weaver to enumerate its running siblings, no Clojure client for the JSON socket (only the Go CLI speaks it), and no portable naming: a weaver's friendly name defaults to its workspace basename, which differs between teammates' clone locations, so checked-in coordination code cannot address a peer reliably.
 
 ## PROP-Guild-001.P2 Goals
 

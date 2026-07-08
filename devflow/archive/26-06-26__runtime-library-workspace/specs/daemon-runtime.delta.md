@@ -1,10 +1,6 @@
 # Daemon Runtime Delta: Runtime Library Workspace
 
-**Document ID:** `RLW-DELTA-001`
-**Status:** Merged into root spec
-**Last Updated:** 2026-06-25
-**Root spec:** [Daemon Runtime](../../../specs/daemon-runtime.md)
-**Proposal:** [../proposal.md](../proposal.md)
+**Document ID:** `RLW-DELTA-001` **Status:** Merged into root spec **Last Updated:** 2026-06-25 **Root spec:** [Daemon Runtime](../../../specs/daemon-runtime.md) **Proposal:** [../proposal.md](../proposal.md)
 
 ## RLW-DELTA-001.P1 Summary
 

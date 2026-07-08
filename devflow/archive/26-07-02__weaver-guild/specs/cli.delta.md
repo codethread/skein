@@ -1,19 +1,10 @@
 # CLI Surface delta for weaver-guild
 
-**Document ID:** `DELTA-Cli-002`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-07-02
+**Document ID:** `DELTA-Cli-002` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-07-02
 
 ## DELTA-Cli-002.P1 Summary
 
-Returns `config.json` to version control (its gitignore entry is a stale
-leftover from when it stored the machine-local Skein source checkout path,
-pre-mill), extends the alpha config format with an optional portable weaver
-`"name"`, and adds a machine-local `config.local.json` overlay. No new CLI
-commands. Companion to
-[daemon-runtime.delta.md](./daemon-runtime.delta.md) CC5/CC6/D3.
+Returns `config.json` to version control (its gitignore entry is a stale leftover from when it stored the machine-local Skein source checkout path, pre-mill), extends the alpha config format with an optional portable weaver `"name"`, and adds a machine-local `config.local.json` overlay. No new CLI commands. Companion to [daemon-runtime.delta.md](./daemon-runtime.delta.md) CC5/CC6/D3.
 
 ## DELTA-Cli-002.P2 Contract changes
 

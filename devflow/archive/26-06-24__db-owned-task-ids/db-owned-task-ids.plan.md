@@ -1,15 +1,6 @@
 # DB-owned Task IDs Plan
 
-**Document ID:** `PLAN-001`
-**Feature:** `db-owned-task-ids`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none for core id fix; batch refs tracked in [RFC-001](../../rfcs/2026-06-24-batch-task-refs.md)
-**Root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md)
-**Feature specs:** [task-model.delta.md](./specs/task-model.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md)
-**Tenets:** [TENETS](../../TENETS.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-24
-**Configuration identification:** `PLAN-001` is the first active feature plan in this repository. Every nested point ID is prefixed with `PLAN-001`.
+**Document ID:** `PLAN-001` **Feature:** `db-owned-task-ids` **Proposal:** [proposal.md](./proposal.md) **RFC:** none for core id fix; batch refs tracked in [RFC-001](../../rfcs/2026-06-24-batch-task-refs.md) **Root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md) **Feature specs:** [task-model.delta.md](./specs/task-model.delta.md), [cli.delta.md](./specs/cli.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md) **Tenets:** [TENETS](../../TENETS.md) **Status:** Shipped **Last Updated:** 2026-06-24 **Configuration identification:** `PLAN-001` is the first active feature plan in this repository. Every nested point ID is prefixed with `PLAN-001`.
 
 ## PLAN-001.P1 Goal and scope
 

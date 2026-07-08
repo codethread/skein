@@ -1,10 +1,6 @@
 # Batch Graph Upsert Proposal
 
-**Document ID:** `BGU-PROP-001`
-**Status:** Reviewed
-**Related RFCs:** None
-**Related Specs:** [Strand Model](../../specs/strand-model.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md)
-**Feature Deltas:** [Strand Model delta](specs/strand-model.delta.md), [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md)
+**Document ID:** `BGU-PROP-001` **Status:** Reviewed **Related RFCs:** None **Related Specs:** [Strand Model](../../specs/strand-model.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md), [CLI Surface](../../specs/cli.md) **Feature Deltas:** [Strand Model delta](specs/strand-model.delta.md), [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md)
 
 ## BGU-PROP-001.P1 Problem
 

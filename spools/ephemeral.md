@@ -10,17 +10,9 @@
 
 ## 1. Overview
 
-`skein.spools.ephemeral` is a small reference spool for temporary,
-parent-owned work strands: scratch notes, intermediate results, or
-throwaway sub-tasks an agent wants tracked while it works and cleaned up
-afterwards.
+`skein.spools.ephemeral` is a small reference spool for temporary, parent-owned work strands: scratch notes, intermediate results, or throwaway sub-tasks an agent wants tracked while it works and cleaned up afterwards.
 
-It is deliberately a userland convention, not a core lifecycle: an
-ephemeral strand is an ordinary persistent strand carrying the attribute
-`ephemeral "true"` and a `parent-of` edge from its owner. Nothing in the
-engine treats it specially — the spool composes only the documented
-`skein.repl` and `skein.api.graph.alpha` surfaces, which also makes it the
-smallest worked example of attribute-convention spool design.
+It is deliberately a userland convention, not a core lifecycle: an ephemeral strand is an ordinary persistent strand carrying the attribute `ephemeral "true"` and a `parent-of` edge from its owner. Nothing in the engine treats it specially — the spool composes only the documented `skein.repl` and `skein.api.graph.alpha` surfaces, which also makes it the smallest worked example of attribute-convention spool design.
 
 ## 2. Usage
 
@@ -52,9 +44,7 @@ smallest worked example of attribute-convention spool design.
 | `(burn-ephemeral!)` | Burn all active ephemeral strands; returns `{:burned [...] :count n}` (empty result when nothing is active). |
 | `(install!)` | Installation metadata: the attribute convention plus creator/burner fns as a symbol map, for trusted registration by name. |
 
-Burning is workspace-wide by design: `burn-ephemeral!` clears **all**
-active ephemeral strands, not one parent's. Scope it yourself (e.g. compose
-`ephemeral-query` with a parent filter) if you need finer granularity.
+Burning is workspace-wide by design: `burn-ephemeral!` clears **all** active ephemeral strands, not one parent's. Scope it yourself (e.g. compose `ephemeral-query` with a parent filter) if you need finer granularity.
 
 ## 4. See also
 

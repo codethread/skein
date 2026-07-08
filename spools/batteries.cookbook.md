@@ -1,9 +1,6 @@
 # Skein Batteries Spool — Cookbook
 
-Scripting recipes for the shipped `strand <op>` surface: how to compose the
-everyday ops — `add`, `update`, `show`, `supersede`, `burn`, `list`, `ready`,
-`subgraph`, `weave`, `query`, `pattern` — into shell pipelines that do real
-work, and *why* each shape is the right one.
+Scripting recipes for the shipped `strand <op>` surface: how to compose the everyday ops — `add`, `update`, `show`, `supersede`, `burn`, `list`, `ready`, `subgraph`, `weave`, `query`, `pattern` — into shell pipelines that do real work, and *why* each shape is the right one.
 
 This is the **how/why** half of the batteries docs. The other two halves are:
 
@@ -13,15 +10,11 @@ This is the **how/why** half of the batteries docs. The other two halves are:
 - [`batteries.api.md`](./batteries.api.md) — the **generated reference**: each
   op's arg-spec (flags, positionals, types) produced from the source.
 
-Division of truth: exact flags and types live in the generated API doc; per-op
-guarantees live in the contract; the compositions and the reasoning live here.
-This cookbook never restates a flag table — it links to them. When a recipe
-needs the precise flag list, follow the link.
+Division of truth: exact flags and types live in the generated API doc; per-op guarantees live in the contract; the compositions and the reasoning live here. This cookbook never restates a flag table — it links to them. When a recipe needs the precise flag list, follow the link.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which ops combine, and how.
@@ -30,29 +23,17 @@ your situation and lift the snippet:
 4. **Why this shape** — the reasoning: why these ops, what the flags buy you, and
    what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — the batteries source,
-the test suite, or this repo's own `.skein` config — so you can read the
-load-bearing version.
+Each recipe cites the honest source it was distilled from — the batteries source, the test suite, or this repo's own `.skein` config — so you can read the load-bearing version.
 
-One thing to internalise before the recipes: `strand` splits its flags into two
-groups. **Op flags** (`--attr`, `--edge`, `--state`, `--query`, `--param`,
-`--pattern`, `--input`) come *after* the op name and are parsed by that op's
-arg-spec. **Dispatcher flags** (`--workspace`, `--stdin`, `--payload name=path`,
-`--dry-run`) select context and attach payloads, so they come *before* the op
-name. Put a dispatcher flag after the op and the op's parser rejects it as
-unknown.
+One thing to internalise before the recipes: `strand` splits its flags into two groups. **Op flags** (`--attr`, `--edge`, `--state`, `--query`, `--param`, `--pattern`, `--input`) come *after* the op name and are parsed by that op's arg-spec. **Dispatcher flags** (`--workspace`, `--stdin`, `--payload name=path`, `--dry-run`) select context and attach payloads, so they come *before* the op name. Put a dispatcher flag after the op and the op's parser rejects it as unknown.
 
 ---
 
 ## Recipe: Capture ids and wire a dependency graph in a pipeline
 
-**Situation.** You're building a small graph from a script — a design strand, an
-implementation strand that depends on it — and you need each strand's generated
-id to wire the next edge and to check what's unblocked.
+**Situation.** You're building a small graph from a script — a design strand, an implementation strand that depends on it — and you need each strand's generated id to wire the next edge and to check what's unblocked.
 
-**Composition.** `add` returns the created strand as JSON; pull `.id` out of it,
-feed it to `update --edge depends-on:<id>`, then let `ready` compute the
-unblocked frontier.
+**Composition.** `add` returns the created strand as JSON; pull `.id` out of it, feed it to `update --edge depends-on:<id>`, then let `ready` compute the unblocked frontier.
 
 ```sh
 # the id() helper below needs python3 on PATH; with jq installed you can
@@ -86,24 +67,15 @@ strand ready
   outgoing edge; repeat the flag to fan a strand out over several dependencies.
   A malformed spec (no `:`, empty terminal) fails loudly before the update lands.
 
-Honest source: the `add`/`update`/`ready` ops in
-`spools/src/skein/spools/batteries.clj`, verified against the `list-and-ready`
-test in `test/skein/spools/batteries_test.clj` and empirically in a disposable
-workspace (active dependency blocks `ready`; closing it unblocks the dependent).
+Honest source: the `add`/`update`/`ready` ops in `spools/src/skein/spools/batteries.clj`, verified against the `list-and-ready` test in `test/skein/spools/batteries_test.clj` and empirically in a disposable workspace (active dependency blocks `ready`; closing it unblocks the dependent).
 
 ---
 
 ## Recipe: Multi-line bodies and typed attributes through payload slots
 
-**Situation.** A strand needs a real body — a multi-paragraph delegation brief,
-or a block of markdown — and some attributes that aren't strings (a numeric
-priority, a boolean flag). You can't cram a newline-heavy brief into
-`--attr key=value` on one command line, and `--attr` values are always strings.
+**Situation.** A strand needs a real body — a multi-paragraph delegation brief, or a block of markdown — and some attributes that aren't strings (a numeric priority, a boolean flag). You can't cram a newline-heavy brief into `--attr key=value` on one command line, and `--attr` values are always strings.
 
-**Composition.** Attach the content as a **named payload** with the dispatcher
-flags `--payload name=path` (from a file) or `--stdin` (from a pipe), then
-reference it from an op flag as `:payload/<name>` or `:stdin`. For typed values,
-hand `--attributes` a whole JSON object through a payload.
+**Composition.** Attach the content as a **named payload** with the dispatcher flags `--payload name=path` (from a file) or `--stdin` (from a pipe), then reference it from an op flag as `:payload/<name>` or `:stdin`. For typed values, hand `--attributes` a whole JSON object through a payload.
 
 ```sh
 # a file body, referenced by name
@@ -133,21 +105,15 @@ printf '{"priority":3,"blocking":true,"owner":"queue"}' \
   `body=:payload/brief` keeps a long, newline-heavy brief out of the argv
   entirely, which is exactly what a delegation brief or generated markdown needs.
 
-Honest source: the payload-reference rules in [`batteries.md`](./batteries.md)
-§BAT-C2/C16/C17, the `add-attr-precedence-and-payload-json-bulk` test in
-`test/skein/spools/batteries_test.clj`, and empirical runs of both forms in a
-disposable workspace.
+Honest source: the payload-reference rules in [`batteries.md`](./batteries.md) §BAT-C2/C16/C17, the `add-attr-precedence-and-payload-json-bulk` test in `test/skein/spools/batteries_test.clj`, and empirical runs of both forms in a disposable workspace.
 
 ---
 
 ## Recipe: Preview a mutation with `--dry-run` before it touches anything
 
-**Situation.** You've assembled a gnarly `add` or `weave` invocation — payload
-refs, several flags — and you want to see exactly what the dispatcher will send
-before a single strand is created.
+**Situation.** You've assembled a gnarly `add` or `weave` invocation — payload refs, several flags — and you want to see exactly what the dispatcher will send before a single strand is created.
 
-**Composition.** Put the dispatcher flag `--dry-run` before the op. `strand`
-assembles the full invoke envelope, prints it as JSON, and contacts nothing.
+**Composition.** Put the dispatcher flag `--dry-run` before the op. `strand` assembles the full invoke envelope, prints it as JSON, and contacts nothing.
 
 ```sh
 strand --dry-run add "Preview me" --attr owner=agent
@@ -167,22 +133,15 @@ strand --dry-run add "Preview me" --attr owner=agent
   `argv` and `payloads` the envelope carries is the fastest way to catch a
   misplaced dispatcher flag or an unattached payload before it fails for real.
 
-Honest source: the `--dry-run` dispatcher flag documented in
-[`cli.md`](../devflow/specs/cli.md), verified by running it against `add` in a
-disposable workspace (envelope printed, no strand created).
+Honest source: the `--dry-run` dispatcher flag documented in [`cli.md`](../devflow/specs/cli.md), verified by running it against `add` in a disposable workspace (envelope printed, no strand created).
 
 ---
 
 ## Recipe: Discover and run a named query
 
-**Situation.** You're in a workspace that ships named queries (this repo defines
-`work`, `feature-work`, and more in its `.skein` config), and you want to run one
-without reading the config to learn its name or parameters.
+**Situation.** You're in a workspace that ships named queries (this repo defines `work`, `feature-work`, and more in its `.skein` config), and you want to run one without reading the config to learn its name or parameters.
 
-**Composition.** `query list` enumerates what's registered; `query explain
-<name>` tells you a query's parameters and its compiled `where` form; then
-`list --query <name>` or `ready --query <name>` runs it, with `--param
-key=value` supplying any runtime values.
+**Composition.** `query list` enumerates what's registered; `query explain <name>` tells you a query's parameters and its compiled `where` form; then `list --query <name>` or `ready --query <name>` runs it, with `--param key=value` supplying any runtime values.
 
 ```sh
 strand query list                 # every registered query + its params
@@ -211,26 +170,15 @@ strand ready --query work         # same query, gated to the unblocked frontier
   key isn't a declared parameter fails loudly, and `--param` without a `--query`
   is rejected — you can't accidentally pass a value into nothing.
 
-Honest source: the `query`/`list`/`ready` ops in
-`spools/src/skein/spools/batteries.clj`, the
-`list-and-ready-named-queries` and `query-list-and-explain-shapes` tests in
-`test/skein/spools/batteries_test.clj`, and the `work`/`feature-run` queries this
-repo registers in [`.skein/config.clj`](../.skein/config.clj). Verified against a
-demo query registered in a disposable workspace.
+Honest source: the `query`/`list`/`ready` ops in `spools/src/skein/spools/batteries.clj`, the `list-and-ready-named-queries` and `query-list-and-explain-shapes` tests in `test/skein/spools/batteries_test.clj`, and the `work`/`feature-run` queries this repo registers in [`.skein/config.clj`](../.skein/config.clj). Verified against a demo query registered in a disposable workspace.
 
 ---
 
 ## Recipe: Apply a registered pattern with `weave` and JSON input
 
-**Situation.** A pattern registered in your workspace (this repo ships
-`agent-plan`, `kanban-batch`, `delegate-pipeline`) builds a whole batch of wired
-strands from one JSON input, and you want to drive it from a script and keep the
-ids it hands back.
+**Situation.** A pattern registered in your workspace (this repo ships `agent-plan`, `kanban-batch`, `delegate-pipeline`) builds a whole batch of wired strands from one JSON input, and you want to drive it from a script and keep the ids it hands back.
 
-**Composition.** `pattern list` shows what's registered; `pattern explain <name>`
-shows the input spec; then `weave --pattern <name> --input :stdin` (with the JSON
-piped through `--stdin`) applies it and returns the created strands plus a `refs`
-map from the pattern's named slots to real ids.
+**Composition.** `pattern list` shows what's registered; `pattern explain <name>` shows the input spec; then `weave --pattern <name> --input :stdin` (with the JSON piped through `--stdin`) applies it and returns the created strands plus a `refs` map from the pattern's named slots to real ids.
 
 ```sh
 strand pattern list                    # registered patterns + input specs
@@ -266,25 +214,15 @@ printf '%s' '{
   off the command line. Registering a pattern is a trusted config/REPL job and is
   deliberately not part of this surface; `weave` only *applies* one.
 
-Honest source: the `weave`/`pattern` ops and their strict input parsing in
-`spools/src/skein/spools/batteries.clj`, the `weave-happy-path-and-json-value`,
-`weave-loud-input-paths`, and `pattern-list-and-explain-shapes` tests in
-`test/skein/spools/batteries_test.clj`, and this repo's `agent-plan` usage in
-[`CLAUDE.md`](../CLAUDE.md). Verified end to end against a demo pattern registered
-in a disposable workspace (stdin and inline JSON both returned `{:created :refs}`).
+Honest source: the `weave`/`pattern` ops and their strict input parsing in `spools/src/skein/spools/batteries.clj`, the `weave-happy-path-and-json-value`, `weave-loud-input-paths`, and `pattern-list-and-explain-shapes` tests in `test/skein/spools/batteries_test.clj`, and this repo's `agent-plan` usage in [`CLAUDE.md`](../CLAUDE.md). Verified end to end against a demo pattern registered in a disposable workspace (stdin and inline JSON both returned `{:created :refs}`).
 
 ---
 
 ## Recipe: Retire work honestly — supersede, close, or burn
 
-**Situation.** A strand is finished, wrong, or replaced by a better version, and
-you need to take it out of the ready frontier without corrupting the graph. Three
-ops do different things here, and reaching for the wrong one loses history or
-strands dependents.
+**Situation.** A strand is finished, wrong, or replaced by a better version, and you need to take it out of the ready frontier without corrupting the graph. Three ops do different things here, and reaching for the wrong one loses history or strands dependents.
 
-**Composition.** `supersede` when a *replacement* exists and other strands depend
-on the old one; `update --state closed` when the work is simply done and you want
-it kept for history; `burn` only when a strand should never have existed.
+**Composition.** `supersede` when a *replacement* exists and other strands depend on the old one; `update --state closed` when the work is simply done and you want it kept for history; `burn` only when a strand should never have existed.
 
 ```sh
 old=$(strand add "Plan v1" | id)
@@ -322,12 +260,7 @@ strand burn "$typo"                        # => {"burned":["<id>"],"count":1}
   `supersede`, so the "this was replaced by X" relationship always carries the
   edge that says by what.
 
-Honest source: the `supersede`/`burn`/`update` ops in
-`spools/src/skein/spools/batteries.clj`, the `show-supersede-burn` test in
-`test/skein/spools/batteries_test.clj`, and empirical runs in a disposable
-workspace (supersede rewired the dependent and marked the old `replaced`; burn
-returned `{:burned … :count 1}` and the strand was gone; close kept it in
-`list --state closed`).
+Honest source: the `supersede`/`burn`/`update` ops in `spools/src/skein/spools/batteries.clj`, the `show-supersede-burn` test in `test/skein/spools/batteries_test.clj`, and empirical runs in a disposable workspace (supersede rewired the dependent and marked the old `replaced`; burn returned `{:burned … :count 1}` and the strand was gone; close kept it in `list --state closed`).
 
 ---
 

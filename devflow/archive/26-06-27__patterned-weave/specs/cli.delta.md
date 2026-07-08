@@ -1,10 +1,6 @@
 # CLI Surface delta for patterned weave
 
-**Document ID:** `DELTA-001`
-**Root spec:** [CLI Surface](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-27
+**Document ID:** `DELTA-001` **Root spec:** [CLI Surface](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-27
 
 ## DELTA-001.P1 Summary
 

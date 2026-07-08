@@ -1,9 +1,6 @@
 # CLI Surface Delta — User Daemon Home
 
-**Document ID:** `UDH-DELTA-002`
-**Status:** Merged into root spec
-**Date:** 2026-06-25
-**Updates:** [CLI Surface](../../../specs/cli.md)
+**Document ID:** `UDH-DELTA-002` **Status:** Merged into root spec **Date:** 2026-06-25 **Updates:** [CLI Surface](../../../specs/cli.md)
 
 ## UDH-DELTA-002.P1 Summary
 

@@ -1,11 +1,6 @@
 # Edge Relation Families Proposal
 
-**Document ID:** `ERF-PROP-001`
-**Status:** Shipped
-**Last Updated:** 2026-06-29
-**Related RFCs:** [RFC-007 Edge Relation Families, Strand State, and Supersession](rfcs/2026-06-28-edge-relation-families.md)
-**Related Specs:** [Strand Model](../../specs/strand-model.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
-**Feature Deltas:** [Strand Model delta](specs/strand-model.delta.md), [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md), [TENETS delta](tenets.delta.md)
+**Document ID:** `ERF-PROP-001` **Status:** Shipped **Last Updated:** 2026-06-29 **Related RFCs:** [RFC-007 Edge Relation Families, Strand State, and Supersession](rfcs/2026-06-28-edge-relation-families.md) **Related Specs:** [Strand Model](../../specs/strand-model.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md) **Feature Deltas:** [Strand Model delta](specs/strand-model.delta.md), [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md), [TENETS delta](tenets.delta.md)
 
 ## ERF-PROP-001.P1 Problem
 

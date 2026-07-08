@@ -1,8 +1,6 @@
 # Promote Specs and Validate
 
-**Document ID:** `RLW-TASK-007`
-**Status:** Complete
-**Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
+**Document ID:** `RLW-TASK-007` **Status:** Complete **Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
 
 ## RLW-TASK-007.P1 Scope
 

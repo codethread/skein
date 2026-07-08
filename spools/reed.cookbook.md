@@ -1,8 +1,6 @@
 # Skein Reed Spool — Cookbook
 
-Composition recipes for `skein.spools.reed`: how to let a workflow run a shell
-check as a gate and get pass / fail back on the gate itself, and *why* the
-executor is shaped the way it is.
+Composition recipes for `skein.spools.reed`: how to let a workflow run a shell check as a gate and get pass / fail back on the gate itself, and *why* the executor is shaped the way it is.
 
 This is the **how/why** half of the reed docs. The other two halves are:
 
@@ -12,16 +10,9 @@ This is the **how/why** half of the reed docs. The other two halves are:
 - [`reed.api.md`](./reed.api.md) — the **generated reference**: every public fn's
   signature and docstring, produced from the source.
 
-Division of truth: signatures and argument lists live in the generated API doc;
-narrative and composition live here and in the contract. This cookbook never
-restates a fn signature or the attribute table — it links to them.
+Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature or the attribute table — it links to them.
 
-Reed sits between two spools that know nothing of process execution: the
-[workflow engine](./workflow.md), which models an external wait point as a
-`gate`, and the operating system, which runs commands. Reed is the only namespace
-that speaks both. Load order matters — **workflow first, then reed** (its
-`install!` registers the `:shell` executor and runs an initial gate scan) — see
-[`reed.md`, "Loading"](./reed.md#loading).
+Reed sits between two spools that know nothing of process execution: the [workflow engine](./workflow.md), which models an external wait point as a `gate`, and the operating system, which runs commands. Reed is the only namespace that speaks both. Load order matters — **workflow first, then reed** (its `install!` registers the `:shell` executor and runs an initial gate scan) — see [`reed.md`, "Loading"](./reed.md#loading).
 
 ## How to read a recipe
 
@@ -34,22 +25,15 @@ Every recipe has the same four parts:
 4. **Why this shape** — the reasoning: why these primitives, what the attribute
    conventions buy you, and what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — the reed source or
-its test suite.
+Each recipe cites the honest source it was distilled from — the reed source or its test suite.
 
 ---
 
 ## Recipe: An artifact gate — `test -s`
 
-**Situation.** A stage produced a file, and the next stage must not start unless
-that file exists and is non-empty. You want the workflow to block on a real
-filesystem check, not a self-reported "done".
+**Situation.** A stage produced a file, and the next stage must not start unless that file exists and is non-empty. You want the workflow to block on a real filesystem check, not a self-reported "done".
 
-**Composition.** Model the check as an ordinary `workflow/gate` with waiter
-`:shell`, carrying the command as `shell/argv`. Reed watches for the gate to
-become ready, runs `test -s <path>` directly, and — on exit 0 — closes the gate
-through `workflow/complete!`. A non-zero exit stamps `shell/error` and leaves the
-gate ready.
+**Composition.** Model the check as an ordinary `workflow/gate` with waiter `:shell`, carrying the command as `shell/argv`. Reed watches for the gate to become ready, runs `test -s <path>` directly, and — on exit 0 — closes the gate through `workflow/complete!`. A non-zero exit stamps `shell/error` and leaves the gate ready.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -88,21 +72,15 @@ gate ready.
   and a bounded output tail land on the gate as `shell/exit-code` /
   `shell/output`. The check is part of the workflow's own audit trail.
 
-Honest source: the worked example in [`reed.md`](./reed.md#worked-example), and
-the happy-path gate test in
-[`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the worked example in [`reed.md`](./reed.md#worked-example), and the happy-path gate test in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
 
 ---
 
 ## Recipe: A multi-file check — explicit `["sh" "-c" …]`
 
-**Situation.** Your check needs a shell feature — a pipe, a glob, `&&`, a
-`for` loop over several files. A bare `argv` executes a single program with no
-shell, so none of that works directly.
+**Situation.** Your check needs a shell feature — a pipe, a glob, `&&`, a `for` loop over several files. A bare `argv` executes a single program with no shell, so none of that works directly.
 
-**Composition.** Reed runs `shell/argv` directly with **no** implicit shell, by
-design. When you genuinely want shell semantics, ask for them explicitly: make
-`sh` the program and pass the script as `-c`. The gate is otherwise identical.
+**Composition.** Reed runs `shell/argv` directly with **no** implicit shell, by design. When you genuinely want shell semantics, ask for them explicitly: make `sh` the program and pass the script as `-c`. The gate is otherwise identical.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -132,23 +110,15 @@ design. When you genuinely want shell semantics, ask for them explicitly: make
   captured output tail, and the gate stays ready and discoverable rather than
   advancing the workflow.
 
-Honest source: the argv contract in
-[`reed.md`](./reed.md#gate-request-attributes), and the `sh -c` command tests in
-[`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the argv contract in [`reed.md`](./reed.md#gate-request-attributes), and the `sh -c` command tests in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
 
 ---
 
 ## Recipe: A shell check after a subagent gate
 
-**Situation.** A step is delegated to an agent (a `:subagent` gate the treadle
-fulfils), and once that agent is done you want a *deterministic* machine check —
-run the tests, confirm the artifact — before the workflow moves on. You want the
-agent's work and the objective check to be two separate, composable gates.
+**Situation.** A step is delegated to an agent (a `:subagent` gate the treadle fulfils), and once that agent is done you want a *deterministic* machine check — run the tests, confirm the artifact — before the workflow moves on. You want the agent's work and the objective check to be two separate, composable gates.
 
-**Composition.** No new primitive: chain the two gates with `depends-on`. Author
-the subagent gate as usual, then a `:shell` gate that `:depends-on` it. The
-subagent gate closes when the treadle delivers the run result; only then does the
-`:shell` gate become ready, and reed runs the deterministic check.
+**Composition.** No new primitive: chain the two gates with `depends-on`. Author the subagent gate as usual, then a `:shell` gate that `:depends-on` it. The subagent gate closes when the treadle delivers the run result; only then does the `:shell` gate become ready, and reed runs the deterministic check.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -185,25 +155,15 @@ subagent gate closes when the treadle delivers the run result; only then does th
   gate downstream of a `:subagent` gate keeps each executor single-purpose and
   the verification independently inspectable and recoverable.
 
-Honest source: the `depends-on` gate chaining in
-[`workflow.md`, "Gates"](./workflow.md#3-definition-layer), the treadle
-`:subagent` contract in [`treadle.md`](./shuttle/treadle.md), and the dependent
-`:shell` gate test in
-[`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](./workflow.md#3-definition-layer), the treadle `:subagent` contract in [`treadle.md`](./shuttle/treadle.md), and the dependent `:shell` gate test in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
 
 ---
 
 ## Recipe: Recovering a stalled `shell/error` gate
 
-**Situation.** A shell check failed — the command exited non-zero, timed out, or
-the argv was malformed. The gate is stuck with `shell/error` and reed is skipping
-it. You've fixed the underlying problem and want the check to run again.
+**Situation.** A shell check failed — the command exited non-zero, timed out, or the argv was malformed. The gate is stuck with `shell/error` and reed is skipping it. You've fixed the underlying problem and want the check to run again.
 
-**Composition.** Discovery is the `stalled-shell-gates` named query (or the
-`gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear
-the gate's `shell/error` attribute** (optionally rewriting `shell/argv` or
-`shell/cwd`). The next scan finds a ready, un-errored, un-claimed `:shell` gate
-and re-runs the deterministic check.
+**Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `shell/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
 
 ```clojure
 (require '[skein.api.weaver.alpha :as api]
@@ -240,9 +200,7 @@ and re-runs the deterministic check.
   surfaces through `stalled-shell-gates` and through `await!` (which reads the
   registered `:shell` executor) — a graph fact, not a dropped result.
 
-Honest source: the recovery and attention sections in
-[`reed.md`](./reed.md#failure-and-recovery), and the failure / recovery tests in
-[`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the recovery and attention sections in [`reed.md`](./reed.md#failure-and-recovery), and the failure / recovery tests in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
 
 ---
 

@@ -1,7 +1,6 @@
 # Skein Bobbin Spool — Cookbook
 
-Composition recipes for `skein.spools.bobbin`: how to turn the graph around a
-strand into context an agent can act on, and *why* each shape is the right one.
+Composition recipes for `skein.spools.bobbin`: how to turn the graph around a strand into context an agent can act on, and *why* each shape is the right one.
 
 This is the **how/why** half of the bobbin docs. The other two halves are:
 
@@ -10,19 +9,13 @@ This is the **how/why** half of the bobbin docs. The other two halves are:
 - [`bobbin.api.md`](./bobbin.api.md) — the **generated reference**: every public
   fn's signature, arities, and docstring, produced from the source.
 
-Division of truth: signatures and the section table live in the contract and the
-generated API doc; narrative and composition live here. This cookbook never
-restates a fn signature or the section table — it links to them.
+Division of truth: signatures and the section table live in the contract and the generated API doc; narrative and composition live here. This cookbook never restates a fn signature or the section table — it links to them.
 
-Bobbin has two functions worth composing — `pack` (a JSON-compatible bundle) and
-`render` (deterministic prompt text) — and its value is entirely in *what you
-feed them into*: a delegation prompt, a reviewer brief, or another tool. These
-recipes are about those hand-offs.
+Bobbin has two functions worth composing — `pack` (a JSON-compatible bundle) and `render` (deterministic prompt text) — and its value is entirely in *what you feed them into*: a delegation prompt, a reviewer brief, or another tool. These recipes are about those hand-offs.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which primitives combine, and how.
@@ -35,13 +28,9 @@ your situation and lift the snippet:
 
 ## Recipe: Brief a delegated agent before handing off a task
 
-**Situation.** You're about to delegate a task strand to another agent, and its
-launch prompt alone won't tell the agent what it's walking into — what blocks it,
-what it hangs beneath, what a predecessor already decided in the notes.
+**Situation.** You're about to delegate a task strand to another agent, and its launch prompt alone won't tell the agent what it's walking into — what blocks it, what it hangs beneath, what a predecessor already decided in the notes.
 
-**Composition.** `pack` the task strand into a bundle, `render` that bundle to
-plain text, and use the text as the context prefix of your delegation prompt. The
-target's `body` comes through in full; everything else is one compact line.
+**Composition.** `pack` the task strand into a bundle, `render` that bundle to plain text, and use the text as the context prefix of your delegation prompt. The target's `body` comes through in full; everything else is one compact line.
 
 ```clojure
 (require '[skein.spools.bobbin :as bobbin])
@@ -77,22 +66,15 @@ target's `body` comes through in full; everything else is one compact line.
   points at a strand the agent can't see. Nothing dangles (contract
   [§1](./bobbin.md#1-overview)).
 
-Honest source: the `pack` → `render` round-trip verified against a live weaver;
-the determinism and body-in-full guarantees are pinned by
-[`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj)
-(`render-is-deterministic-and-includes-target-body`).
+Honest source: the `pack` → `render` round-trip verified against a live weaver; the determinism and body-in-full guarantees are pinned by [`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj) (`render-is-deterministic-and-includes-target-body`).
 
 ---
 
 ## Recipe: Trim the pack to just what a prompt needs
 
-**Situation.** The default bundle carries every section — blockers, dependents,
-parents, children, notes, workflow — but this prompt only needs a couple of them,
-and the extra lines are wasted tokens (or noise the agent will over-index on).
+**Situation.** The default bundle carries every section — blockers, dependents, parents, children, notes, workflow — but this prompt only needs a couple of them, and the extra lines are wasted tokens (or noise the agent will over-index on).
 
-**Composition.** Pass `{:include #{...}}` to `pack` with just the sections you
-want. `render` walks only the sections present in the bundle, so a trimmed pack
-renders a trimmed brief with no extra work.
+**Composition.** Pass `{:include #{...}}` to `pack` with just the sections you want. `render` walks only the sections present in the bundle, so a trimmed pack renders a trimmed brief with no extra work.
 
 ```clojure
 (require '[skein.spools.bobbin :as bobbin])
@@ -120,23 +102,15 @@ renders a trimmed brief with no extra work.
   notes shouldn't also be handed the target's children and dependents — trimming
   keeps the prompt pointed at the decision you actually want made.
 
-Honest source: the `:include` subset and its loud-failure behaviour verified
-against a live weaver, pinned by
-[`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj)
-(`include-selection-and-failure-are-explicit`).
+Honest source: the `:include` subset and its loud-failure behaviour verified against a live weaver, pinned by [`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj) (`include-selection-and-failure-are-explicit`).
 
 ---
 
 ## Recipe: Brief a reviewer on a strand's blockers, provenance, and notes
 
-**Situation.** You want a second agent to review a piece of work, and the review
-turns on context the diff doesn't show: what the work depended on, what run it
-belongs to, and what predecessors recorded in the notes.
+**Situation.** You want a second agent to review a piece of work, and the review turns on context the diff doesn't show: what the work depended on, what run it belongs to, and what predecessors recorded in the notes.
 
-**Composition.** Pack the strand with the review-relevant sections — `:strand`,
-`:blockers`, `:parents`, `:notes` — render it, and prepend your own review
-instruction. The notes section carries the handovers and provenance; the parents
-section shows what the work sits beneath.
+**Composition.** Pack the strand with the review-relevant sections — `:strand`, `:blockers`, `:parents`, `:notes` — render it, and prepend your own review instruction. The notes section carries the handovers and provenance; the parents section shows what the work sits beneath.
 
 ```clojure
 (require '[skein.spools.bobbin :as bobbin])
@@ -166,24 +140,15 @@ section shows what the work sits beneath.
   prepend the review ask and bobbin never dictates the prompt's purpose. The pack
   is a section; the preamble is the frame around it.
 
-Honest source: the reviewer-brief composition (`pack` with a review `:include`
-set, rendered under a preamble) verified against a live weaver; the notes
-ordering is pinned by
-[`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj)
-(`pack-projects-small-context-graph`).
+Honest source: the reviewer-brief composition (`pack` with a review `:include` set, rendered under a preamble) verified against a live weaver; the notes ordering is pinned by [`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj) (`pack-projects-small-context-graph`).
 
 ---
 
 ## Recipe: Pack a workflow step and locate its run automatically
 
-**Situation.** The strand you're briefing an agent on is a step inside a workflow
-run, and the agent needs to know which run it's part of and where the run's root
-is — without you looking it up.
+**Situation.** The strand you're briefing an agent on is a step inside a workflow run, and the agent needs to know which run it's part of and where the run's root is — without you looking it up.
 
-**Composition.** `pack` a strand that carries `workflow/*` attributes and the
-bundle gains a `:workflow` section: the run id, the step's role, the workflow
-attributes, and the molecule root summary when it resolves. No extra call — the
-section appears only when the target is workflow-tagged.
+**Composition.** `pack` a strand that carries `workflow/*` attributes and the bundle gains a `:workflow` section: the run id, the step's role, the workflow attributes, and the molecule root summary when it resolves. No extra call — the section appears only when the target is workflow-tagged.
 
 ```clojure
 (require '[skein.spools.bobbin :as bobbin])
@@ -210,23 +175,15 @@ section appears only when the target is workflow-tagged.
   a workflow step?" — you pack the strand and read `:workflow` if it's there. The
   spool absorbs the conditional.
 
-Honest source: the workflow section shape is pinned by
-[`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj)
-(`workflow-section-appears-for-workflow-strands`) and verified against a live
-weaver.
+Honest source: the workflow section shape is pinned by [`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj) (`workflow-section-appears-for-workflow-strands`) and verified against a live weaver.
 
 ---
 
 ## Recipe: Feed the pack to a tool instead of a prompt
 
-**Situation.** The consumer isn't an agent reading prose — it's code: a dashboard
-panel, a routing decision, a check that a strand's blockers are all closed. You
-want structured data, not rendered text.
+**Situation.** The consumer isn't an agent reading prose — it's code: a dashboard panel, a routing decision, a check that a strand's blockers are all closed. You want structured data, not rendered text.
 
-**Composition.** Use `pack` directly and skip `render`. The bundle is
-JSON-compatible and carries `:bobbin/version` plus the resolved `:include` list,
-so a downstream tool can consume it as data and know exactly which sections are
-present.
+**Composition.** Use `pack` directly and skip `render`. The bundle is JSON-compatible and carries `:bobbin/version` plus the resolved `:include` list, so a downstream tool can consume it as data and know exactly which sections are present.
 
 ```clojure
 (require '[skein.spools.bobbin :as bobbin])
@@ -252,10 +209,7 @@ present.
   mini-graph without resolving ids that live outside it — the guarantee that also
   makes the JSON safe to ship whole (contract [§1](./bobbin.md#1-overview)).
 
-Honest source: the JSON-compatible bundle keys verified against a live weaver;
-the self-contained-edges guarantee is pinned by
-[`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj)
-(`pack-section-edges-are-self-contained`).
+Honest source: the JSON-compatible bundle keys verified against a live weaver; the self-contained-edges guarantee is pinned by [`test/skein/spools/bobbin_test.clj`](../test/skein/spools/bobbin_test.clj) (`pack-section-edges-are-self-contained`).
 
 ---
 

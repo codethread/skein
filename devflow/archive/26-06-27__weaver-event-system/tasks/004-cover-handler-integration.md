@@ -1,8 +1,6 @@
 # Cover Handler Integration
 
-**Document ID:** `TASK-004`
-**Status:** Complete
-**Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
+**Document ID:** `TASK-004` **Status:** Complete **Plan:** [Weaver Event System Plan](../weaver-event-system.plan.md)
 
 ## TASK-004.P1 Scope
 

@@ -1,10 +1,6 @@
 # Batch Task Refs Proposal
 
-**Document ID:** `PROP-001`
-**Last Updated:** 2026-06-24
-**Related RFCs:** [RFC-001 Batch task refs](../../rfcs/2026-06-24-batch-task-refs.md)
-**Related root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md)
-**Configuration identification:** `PROP-001` is the proposal document for this feature. Every nested point ID is prefixed with `PROP-001`.
+**Document ID:** `PROP-001` **Last Updated:** 2026-06-24 **Related RFCs:** [RFC-001 Batch task refs](../../rfcs/2026-06-24-batch-task-refs.md) **Related root specs:** [Task Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md) **Configuration identification:** `PROP-001` is the proposal document for this feature. Every nested point ID is prefixed with `PROP-001`.
 
 ## PROP-001.P1 Problem
 

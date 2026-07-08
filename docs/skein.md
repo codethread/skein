@@ -57,9 +57,7 @@ A workspace can also be selected explicitly with:
 strand --workspace /path/to/workspace ...
 ```
 
-For explicit workspaces, `/path/to/workspace` is the config workspace. Runtime state,
-metadata, sockets, and data are owned by mill under Skein's XDG state root for
-the selected config identity.
+For explicit workspaces, `/path/to/workspace` is the config workspace. Runtime state, metadata, sockets, and data are owned by mill under Skein's XDG state root for the selected config identity.
 
 The important file is `config.json`:
 
@@ -79,33 +77,9 @@ From a Skein source checkout, `make install` installs the Go CLIs (`strand` and 
 
 User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`. Two harness-agnostic orientation commands surface this to agents at runtime, with no running weaver required: `mill skein prime` resolves the Skein source and prints the paths to the docs, the spool index, and the repo coordination guidance, plus how to extend `.skein` config; `mill strand prime` prints the strand planning/tracking workflow. In a repo-world bootstrap, `mill init` also seeds a `## Skein / strand` section in the repository-root `AGENTS.md`/`CLAUDE.md` that points new agents at these two commands. Each shipped spool's per-fn API reference (`spools/*.api.md`) is generated from source docstrings and regenerated with `make api-docs` — never hand-edited; see the [spool index](../spools/README.md#doc-triad) for the contract/cookbook/generated-API triad.
 
-When working in this repository, also read the "Repo coordination workspace (.skein)" section of the root [`AGENTS.md`](../AGENTS.md).
-This repo-local guidance documents the installed runtime surface loaded from
-`.skein/init.clj` and its per-concern config modules (`config.clj` for queries
-and the CLI op surface, `workflows.clj` for hand-authored workflows,
-`harnesses.clj`, `attention.clj`, `nvd_scan.clj`, `reviewers.clj`): the
-classpath `skein.spools.workflow` spool, the git-distributed
-`skein.spools.devflow` spool (approved via a `.skein/spools.edn` git
-coordinate), the `devflow-*` CLI ops that drive the feature lifecycle,
-feature-scoped queries, and the `agent-plan` pattern for lightweight work DAGs.
+When working in this repository, also read the "Repo coordination workspace (.skein)" section of the root [`AGENTS.md`](../AGENTS.md). This repo-local guidance documents the installed runtime surface loaded from `.skein/init.clj` and its per-concern config modules (`config.clj` for queries and the CLI op surface, `workflows.clj` for hand-authored workflows, `harnesses.clj`, `attention.clj`, `nvd_scan.clj`, `reviewers.clj`): the classpath `skein.spools.workflow` spool, the git-distributed `skein.spools.devflow` spool (approved via a `.skein/spools.edn` git coordinate), the `devflow-*` CLI ops that drive the feature lifecycle, feature-scoped queries, and the `agent-plan` pattern for lightweight work DAGs.
 
-`.skein/workflows.clj` registers the **landing workflow** (family `land`) behind the
-`land` op — the coordinator-only discipline for taking a finished branch to
-landed. It is a single sequential `skein.spools.workflow` molecule whose ordering
-is the enforcement: push the branch and open a draft PR, drive CI green at HEAD,
-then run the declared roster sign-off — sign-off is only valid on a pushed branch
-with a draft PR and green CI. A coordinator sign-off checkpoint (`approved`
-continues; `abort` records a required reason and leaves the branch untouched)
-then gates a squash-merge into *local* main (regenerating `make api-docs` into
-the squash first if spool docstrings changed), which must pass the full local
-verification gate (`clojure -M:test`, `go test`, `make fmt-check lint
-reflect-check docs-check`, and the smoke suite) before main is pushed; main is
-only landed once its own CI is green, after which cleanup deletes the remote
-branch/PR, removes the worktree, finishes the kanban card when one is set
-(`strand kanban finish <card> --outcome done`), and closes the run. Worker agents never land —
-they stop at implemented+committed; only a coordinator holding delegated sign-off
-authority drives a `land` run (`strand land about` for the manual, `strand help
-land` for the command surface).
+`.skein/workflows.clj` registers the **landing workflow** (family `land`) behind the `land` op — the coordinator-only discipline for taking a finished branch to landed. It is a single sequential `skein.spools.workflow` molecule whose ordering is the enforcement: push the branch and open a draft PR, drive CI green at HEAD, then run the declared roster sign-off — sign-off is only valid on a pushed branch with a draft PR and green CI. A coordinator sign-off checkpoint (`approved` continues; `abort` records a required reason and leaves the branch untouched) then gates a squash-merge into *local* main (regenerating `make api-docs` into the squash first if spool docstrings changed), which must pass the full local verification gate (`clojure -M:test`, `go test`, `make fmt-check lint reflect-check docs-check`, and the smoke suite) before main is pushed; main is only landed once its own CI is green, after which cleanup deletes the remote branch/PR, removes the worktree, finishes the kanban card when one is set (`strand kanban finish <card> --outcome done`), and closes the run. Worker agents never land — they stop at implemented+committed; only a coordinator holding delegated sign-off authority drives a `land` run (`strand land about` for the manual, `strand help land` for the command surface).
 
 ## Weaver
 
@@ -424,11 +398,7 @@ Reload clears weaver-lifetime spool sync state, module-use state, named queries,
 
 ## Authoring your own spool code
 
-Skein treats runtime extensions as trusted Clojure code. Before writing your
-own, see the [shipped reference spools](../spools/README.md) — a
-workflow engine and an ephemeral-strand helper (plus the external,
-git-distributed devflow lifecycle) that double as worked examples of spool
-design. A common layout is:
+Skein treats runtime extensions as trusted Clojure code. Before writing your own, see the [shipped reference spools](../spools/README.md) — a workflow engine and an ephemeral-strand helper (plus the external, git-distributed devflow lifecycle) that double as worked examples of spool design. A common layout is:
 
 ```text
 workspace/

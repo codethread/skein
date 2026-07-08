@@ -4,23 +4,15 @@
 > `skein.libs.*` / `src/skein/libs/` / `test/skein/libs/` below now live at
 > `skein.spools.*` / `src/skein/spools/` / `test/skein/spools/`.
 
-Review of `src/skein/libs/workflow.clj`, `src/skein/libs/workflow.md`, and
-`src/skein/libs/devflow.clj`. Loops-as-control-flow and async primitives are out
-of scope. Terminology is borrowed from beads (`~/dev/vendor/beads`,
-`docs/MOLECULES.md`) — credit must land in the library doc before shipping.
+Review of `src/skein/libs/workflow.clj`, `src/skein/libs/workflow.md`, and `src/skein/libs/devflow.clj`. Loops-as-control-flow and async primitives are out of scope. Terminology is borrowed from beads (`~/dev/vendor/beads`, `docs/MOLECULES.md`) — credit must land in the library doc before shipping.
 
-Overall: layering is right per the tenets (plain-data definitions, `compile` to
-a batch payload, no privileged state, attributes as the extension surface). The
-compile layer is in decent shape; the defects concentrate in the runtime layer,
-which is weaker than the compiler and in places contradicts it.
+Overall: layering is right per the tenets (plain-data definitions, `compile` to a batch payload, no privileged state, attributes as the extension surface). The compile layer is in decent shape; the defects concentrate in the runtime layer, which is weaker than the compiler and in places contradicts it.
 
-Each finding below carries a pinned **Fix** decision. Agents implementing a fix
-should follow the decision as written and tick the checklist at the bottom.
+Each finding below carries a pinned **Fix** decision. Agents implementing a fix should follow the decision as written and tick the checklist at the bottom.
 
 ## Status (end of first fix pass, 2026-07-01)
 
-Landed uncommitted in this tree, validated by `clojure -M:test` (202 tests,
-1185 assertions, green) and a clean `code-review --deep`:
+Landed uncommitted in this tree, validated by `clojure -M:test` (202 tests, 1185 assertions, green) and a clean `code-review --deep`:
 
 - **F1, F2, F3, F4, F5, F6, R1, R2, R3, R4** are implemented. Their Fix
   decisions below read as future-tense specs but describe shipped behavior (F2
@@ -65,131 +57,49 @@ Deviations/nuances discovered while landing (not in the original decisions):
 
 ### F1 — "Done" conflated with "nothing ready"; blocked runs get force-closed
 
-`close-run-if-done!` closes the whole root when `raw-next-steps` is empty.
-`repl/ready` means "no *active* deps", so a step blocked by an external edge
-(e.g. `bond!` `:sequential` to another molecule, or any userland-added
-dependency) makes the run look done, and `complete!`/`choose!` then force-close
-every unstarted step via `close-workflow-root!`. This also silently breaks the
-bond → compound-execution story.
+`close-run-if-done!` closes the whole root when `raw-next-steps` is empty. `repl/ready` means "no *active* deps", so a step blocked by an external edge (e.g. `bond!` `:sequential` to another molecule, or any userland-added dependency) makes the run look done, and `complete!`/`choose!` then force-close every unstarted step via `close-workflow-root!`. This also silently breaks the bond → compound-execution story.
 
-**Fix:** a run is done iff every strand in the root subgraph with
-`workflow/role` in `#{"step" "checkpoint" "procedure"}` is `"closed"`.
-`close-run-if-done!` uses that check. `done?` returns true only for a run-id
-that has at least one root strand (any state) and no remaining active workflow
-work; it throws (`ex-info`, fail loudly) for a run-id with no root at all.
+**Fix:** a run is done iff every strand in the root subgraph with `workflow/role` in `#{"step" "checkpoint" "procedure"}` is `"closed"`. `close-run-if-done!` uses that check. `done?` returns true only for a run-id that has at least one root strand (any state) and no remaining active workflow work; it throws (`ex-info`, fail loudly) for a run-id with no root at all.
 
 ### F2 — Devflow `:revise` / `:needs-more-brief` choices are dead ends
 
-`choose!` on a choice with no `:next` closes the checkpoint; nothing is ready;
-the root gets force-closed. Choosing "Revise" terminates the feature run
-identically to approving it, while the choice description promises "update it
-and run review again". The engine has no reopen mechanism.
+`choose!` on a choice with no `:next` closes the checkpoint; nothing is ready; the root gets force-closed. Choosing "Revise" terminates the feature run identically to approving it, while the choice description promises "update it and run review again". The engine has no reopen mechanism.
 
-**Fix (REVISED 2026-07-01 — loop by routing; the earlier `:reopen` design is
-rejected):** iteration is a tail call the engine already supports. A
-revise-style choice sets `:next` back to the *same* stage workflow fn:
-choosing it closes the checkpoint and old root (outcome `"revise"`) and pours
-a fresh stage subgraph under the same run-id. Every iteration stays in the
-graph as an immutable, squashable record. Iteration state flows through
-choice input → `workflow/context` → step `:condition`s (e.g. a `:revision`
-param that condition-skips `:inspect-context` on later rounds). `:reopen` is
-rejected because reactivating closed strands mutates the audit trail, leaks
-call-expansion refs into userland, and duplicates state the graph already
-carries. Prerequisite: the F6 routing-order fix, since every loop iteration
-crosses the routed-choice path.
+**Fix (REVISED 2026-07-01 — loop by routing; the earlier `:reopen` design is rejected):** iteration is a tail call the engine already supports. A revise-style choice sets `:next` back to the *same* stage workflow fn: choosing it closes the checkpoint and old root (outcome `"revise"`) and pours a fresh stage subgraph under the same run-id. Every iteration stays in the graph as an immutable, squashable record. Iteration state flows through choice input → `workflow/context` → step `:condition`s (e.g. a `:revision` param that condition-skips `:inspect-context` on later rounds). `:reopen` is rejected because reactivating closed strands mutates the audit trail, leaks call-expansion refs into userland, and duplicates state the graph already carries. Prerequisite: the F6 routing-order fix, since every loop iteration crosses the routed-choice path.
 
-**Fix (devflow):** revise-style choices route to their own stage —
-`human-signoff-proposal :revise` → `proposal-workflow`,
-`human-signoff-spec-plan :revise` → `spec-plan-workflow`,
-`human-signoff-tasks :revise` → `task-breakdown-workflow`,
-`human-acceptance :revise` → `direct-implementation-workflow`, intake
-`:needs-more-brief` → `intake-workflow` (skipping the worktree checkpoint via
-condition on a routed param). Add the missing `:next abort-workflow` on
-direct-implementation `:abort` for consistency.
+**Fix (devflow):** revise-style choices route to their own stage — `human-signoff-proposal :revise` → `proposal-workflow`, `human-signoff-spec-plan :revise` → `spec-plan-workflow`, `human-signoff-tasks :revise` → `task-breakdown-workflow`, `human-acceptance :revise` → `direct-implementation-workflow`, intake `:needs-more-brief` → `intake-workflow` (skipping the worktree checkpoint via condition on a routed param). Add the missing `:next abort-workflow` on direct-implementation `:abort` for consistency.
 
 ### F3 — Runtime is linear-only while the compiler builds DAGs
 
-`raw-next-step` throws on >1 ready step, and `start!`/`complete!`/`choose!`
-funnel through it, so any workflow with two independent entry steps (the beads
-default: parallel-by-default) makes `start!` throw. Worse, `complete!` mutates
-first and throws after, on the return path.
+`raw-next-step` throws on >1 ready step, and `start!`/`complete!`/`choose!` funnel through it, so any workflow with two independent entry steps (the beads default: parallel-by-default) makes `start!` throw. Worse, `complete!` mutates first and throws after, on the return path.
 
-**Fix:** `complete!` and `choose!` accept an optional trailing opts map with
-`:step` (materialized strand id) to select among multiple ready steps;
-validation happens before any mutation. Without `:step`, current
-single-ready-step behavior stands. `start!`, `complete!`, and `choose!` return
-`(next-steps run-id)` (a vector of step views); `next-step` remains as the
-throw-on-ambiguity convenience. `complete!` opts also accept `:notes` and
-`:attributes`, recorded on the closed step (`"workflow/notes"` plus merged
-attrs) — molecules exist for the audit trail, so closing a step should be able
-to record what happened. `choice-details`/`choice-detail` accept the same
-`:step` selector. Devflow wrappers pass through.
+**Fix:** `complete!` and `choose!` accept an optional trailing opts map with `:step` (materialized strand id) to select among multiple ready steps; validation happens before any mutation. Without `:step`, current single-ready-step behavior stands. `start!`, `complete!`, and `choose!` return `(next-steps run-id)` (a vector of step views); `next-step` remains as the throw-on-ambiguity convenience. `complete!` opts also accept `:notes` and `:attributes`, recorded on the closed step (`"workflow/notes"` plus merged attrs) — molecules exist for the audit trail, so closing a step should be able to record what happened. `choice-details`/`choice-detail` accept the same `:step` selector. Devflow wrappers pass through.
 
 ### F4 — Dangling `:depends-on` refs from `:condition` exclusion and typos
 
-A step excluded by `:condition` still appears in others' `:depends-on`;
-`dependency-edges` emits an edge to a ref with no strand, failing (if at all)
-at pour time inside batch with no step context. A typo'd ref behaves the same.
-The root ref (default `:molecule`) can also silently collide with a step ref.
+A step excluded by `:condition` still appears in others' `:depends-on`; `dependency-edges` emits an edge to a ref with no strand, failing (if at all) at pour time inside batch with no step context. A typo'd ref behaves the same. The root ref (default `:molecule`) can also silently collide with a step ref.
 
-**Fix:** after expansion and filtering, compile validates every dep ref:
-refs pointing at condition-excluded steps are **spliced** (the dependent
-inherits the excluded step's own deps, transitively, matching beads); refs that
-never existed fail loudly with `{:step … :missing …}`; a step ref equal to the
-root ref fails loudly.
+**Fix:** after expansion and filtering, compile validates every dep ref: refs pointing at condition-excluded steps are **spliced** (the dependent inherits the excluded step's own deps, transitively, matching beads); refs that never existed fail loudly with `{:step … :missing …}`; a step ref equal to the root ref fails loudly.
 
 ### F5 — Loop steps can't see workflow vars; `:each` can't be dynamic
 
-`expand-loop-step` runs before var resolution and renders with only
-`{:item v :i v}` (`:i` is the value, not an index), so loop titles never see
-`:feature` etc., and `:each` must be a literal collection — ruling out "for
-each x in param". Dependents referencing the base loop id dangle after id
-expansion.
+`expand-loop-step` runs before var resolution and renders with only `{:item v :i v}` (`:i` is the value, not an index), so loop titles never see `:feature` etc., and `:each` must be a literal collection — ruling out "for each x in param". Dependents referencing the base loop id dangle after id expansion.
 
-**Fix:** expand loops after vars are resolved; render loop-step fns with
-`(merge vars {:item item :i idx})` where `:i` is the 0-based index. `:each` may
-be a literal sequential, a keyword naming a var, or a fn of vars. Id suffix:
-the number for `:count`; `(:id item)` when the item is a map with `:id`, else
-the 1-based position. Dependents that reference the base loop id get fan-in
-deps on all expanded ids.
+**Fix:** expand loops after vars are resolved; render loop-step fns with `(merge vars {:item item :i idx})` where `:i` is the 0-based index. `:each` may be a literal sequential, a keyword naming a var, or a fn of vars. Id suffix: the number for `:count`; `(:id item)` when the item is a map with `:id`, else the 1-based position. Dependents that reference the base loop id get fan-in deps on all expanded ids.
 
 ### F6 — `choose!` routing: two-active-roots window, implicit abandonment, no actor
 
-On a routed choice the new root is poured before the old one closes, so a
-concurrent `current-root` throws "multiple active roots". Closing the old root
-force-closes remaining downstream steps — routing silently abandons the rest of
-the current workflow. Continuation is also compiled twice. No record of who
-made the choice (`:kind :human` is decorative), which matters for libraries
-building autonomous agents on top.
+On a routed choice the new root is poured before the old one closes, so a concurrent `current-root` throws "multiple active roots". Closing the old root force-closes remaining downstream steps — routing silently abandons the rest of the current workflow. Continuation is also compiled twice. No record of who made the choice (`:kind :human` is decorative), which matters for libraries building autonomous agents on top.
 
-**Fix:** compile the continuation payload once (with run-id/family/context
-opts), then close the checkpoint and old root, then `batch/apply!` the payload.
-Record optional `choose!` opts `:by` as `"workflow/outcome-by"`. Keep
-kind unenforced (TEN-002) but persisted provenance. Document that a routed
-choice closes out the remaining steps of the current workflow (agent task 7).
+**Fix:** compile the continuation payload once (with run-id/family/context opts), then close the checkpoint and old root, then `batch/apply!` the payload. Record optional `choose!` opts `:by` as `"workflow/outcome-by"`. Keep kind unenforced (TEN-002) but persisted provenance. Document that a routed choice closes out the remaining steps of the current workflow (agent task 7).
 
 ### F7 — external wait points need a named primitive (gates)
 
-The runtime is pull-based and every strand is already a durable wait point —
-any external actor (CI, cron, sub-agent, another session) can close a strand
-through the ordinary surface and the run resumes on the next `next-steps`
-poll. But there is no way to mark a step "not yours to complete — wait for an
-external actor"; checkpoints only model decisions, so driving agents cannot
-tell work-steps from wait-steps.
+The runtime is pull-based and every strand is already a durable wait point — any external actor (CI, cron, sub-agent, another session) can close a strand through the ordinary surface and the run resumes on the next `next-steps` poll. But there is no way to mark a step "not yours to complete — wait for an external actor"; checkpoints only model decisions, so driving agents cannot tell work-steps from wait-steps.
 
-**Fix (engine):** add a `gate` builder: an ordinary step (role stays
-`"step"`, so done-semantics are untouched) stamped with `workflow/gate
-<waiter>` — a freeform actor hint such as `"ci"`, `"human"`, or
-`"subagent"`. `step-view` surfaces `:gate`. `complete!` refuses to close a
-gate step unless opts include `:by` (recorded as `workflow/outcome-by`) —
-trust per TEN-002, but provenance is mandatory, and the refusal fails loudly
-per TEN-003.
+**Fix (engine):** add a `gate` builder: an ordinary step (role stays `"step"`, so done-semantics are untouched) stamped with `workflow/gate <waiter>` — a freeform actor hint such as `"ci"`, `"human"`, or `"subagent"`. `step-view` surfaces `:gate`. `complete!` refuses to close a gate step unless opts include `:by` (recorded as `workflow/outcome-by`) — trust per TEN-002, but provenance is mandatory, and the refusal fails loudly per TEN-003.
 
-**Fix (docs):** document the external-close path (`complete!` with
-`{:step id :by …}`, or raw `repl/update!` as the trusted escape hatch) and
-that the run subgraph is recomputed live — userland may add strands to a
-running molecule mid-flight for dynamic fan-out (e.g. spawning sub-agent
-steps); no primitive needed.
+**Fix (docs):** document the external-close path (`complete!` with `{:step id :by …}`, or raw `repl/update!` as the trusted escape hatch) and that the run subgraph is recomputed live — userland may add strands to a running molecule mid-flight for dynamic fan-out (e.g. spawning sub-agent steps); no primitive needed.
 
 ## Refinements
 
@@ -228,9 +138,7 @@ steps); no primitive needed.
 
 ## Fix plan
 
-Recommended order for the remaining items: 3, then 8, then 9 (devflow's
-revise choices currently dead-end the feature run — worst live defect), then
-5, then 6.
+Recommended order for the remaining items: 3, then 8, then 9 (devflow's revise choices currently dead-end the feature run — worst live defect), then 5, then 6.
 
 - [x] 1. F1 done semantics
 - [x] 2. F3 runtime DAG support (`:step` selector, plural returns, notes)

@@ -1,11 +1,6 @@
 # Weaver Lifecycle Hooks Proposal
 
-**Document ID:** `WLH-PROP-001`
-**Status:** Reviewed
-**Last Updated:** 2026-06-29
-**Related RFCs:** [RFC-008 Weaver Lifecycle Hooks](rfcs/2026-06-29-weaver-lifecycle-hooks.md)
-**Related Specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [Strand Model](../../specs/strand-model.md)
-**Feature Deltas:** [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md)
+**Document ID:** `WLH-PROP-001` **Status:** Reviewed **Last Updated:** 2026-06-29 **Related RFCs:** [RFC-008 Weaver Lifecycle Hooks](rfcs/2026-06-29-weaver-lifecycle-hooks.md) **Related Specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [Strand Model](../../specs/strand-model.md) **Feature Deltas:** [Weaver Runtime delta](specs/daemon-runtime.delta.md), [REPL API delta](specs/repl-api.delta.md), [CLI Surface delta](specs/cli.delta.md)
 
 ## WLH-PROP-001.P1 Problem
 

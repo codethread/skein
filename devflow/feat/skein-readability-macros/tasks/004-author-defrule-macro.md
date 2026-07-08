@@ -6,9 +6,7 @@
 
 Type: AFK
 
-Add `skein.macros.rules`: a `defrule` macro that fuses a chime attention rule's function and its chime registration into one
-block, remembering it per-namespace for an `install-rules!` that registers it through `chime/defrule!`. Mirror the `defpattern`
-remember-then-install shape. Do not convert `attention.clj` — that is task 8.
+Add `skein.macros.rules`: a `defrule` macro that fuses a chime attention rule's function and its chime registration into one block, remembering it per-namespace for an `install-rules!` that registers it through `chime/defrule!`. Mirror the `defpattern` remember-then-install shape. Do not convert `attention.clj` — that is task 8.
 
 ## TASK-Srm-004.P2 Must implement exactly
 

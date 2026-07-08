@@ -90,9 +90,7 @@ Errors are reported with `vim.notify` if `mill` is missing, the JSON is malforme
 (do (require 'skein.repl) (in-ns 'skein.repl))
 ```
 
-That makes bare helpers like `(ready)` work at the REPL prompt. When evaluating
-forms from a file such as `.skein/init.clj`, the file's namespace still matters,
-so prefer an explicit require/alias:
+That makes bare helpers like `(ready)` work at the REPL prompt. When evaluating forms from a file such as `.skein/init.clj`, the file's namespace still matters, so prefer an explicit require/alias:
 
 ```clojure
 (require '[skein.repl :as repl])
@@ -101,9 +99,7 @@ so prefer an explicit require/alias:
 (repl/strands) ; all strands
 ```
 
-For scratch examples you want to keep in a config or source file, put them in a
-`comment` block. Clojure ignores the block when loading the file, but Conjure can
-evaluate forms inside it:
+For scratch examples you want to keep in a config or source file, put them in a `comment` block. Clojure ignores the block when loading the file, but Conjure can evaluate forms inside it:
 
 ```clojure
 (comment

@@ -7,20 +7,11 @@
 
 ## Unsafe declaration
 
-**This spool breaks the namespace-tier rules on purpose.** It is a maintained
-example of rule-breaking done in the open — the Clojure equivalent of a Rust
-`unsafe` block — not a path you should copy without understanding the cost. Read
-this section before you activate it.
+**This spool breaks the namespace-tier rules on purpose.** It is a maintained example of rule-breaking done in the open — the Clojure equivalent of a Rust `unsafe` block — not a path you should copy without understanding the cost. Read this section before you activate it.
 
-**Internal namespaces it requires.** `skein.spools.text-search` requires
-`skein.core.db` directly and runs SQL against the physical `strands` and
-`attributes` tables, and it reads the runtime's raw SQLite datasource
-(`(:datasource runtime)`). Both are `skein.core.*` internals with no
-compatibility promise. A blessed spool builds only on `skein.api.*.alpha`; this
-one reaches past that boundary.
+**Internal namespaces it requires.** `skein.spools.text-search` requires `skein.core.db` directly and runs SQL against the physical `strands` and `attributes` tables, and it reads the runtime's raw SQLite datasource (`(:datasource runtime)`). Both are `skein.core.*` internals with no compatibility promise. A blessed spool builds only on `skein.api.*.alpha`; this one reaches past that boundary.
 
-**Why the blessed surface cannot serve this.** Two deliberate design choices
-close the door:
+**Why the blessed surface cannot serve this.** Two deliberate design choices close the door:
 
 - The query language has no text or substring operator. Its predicates match
   attribute values by equality, membership, and existence, never by
@@ -31,42 +22,17 @@ close the door:
   circulation. Searching archived values at all means reading rows the blessed
   layer is built to hide.
 
-Neither is a gap waiting to be filled. Both are load-bearing invariants (TEN-004
-keeps the query surface small; TEN-007 keeps attribute storage the core's
-private burden). Adding text search or archived visibility to `api.*` would
-weaken them for everyone. So the capability lives here instead, clearly marked,
-where only a workspace that opts in pays for it.
+Neither is a gap waiting to be filled. Both are load-bearing invariants (TEN-004 keeps the query surface small; TEN-007 keeps attribute storage the core's private burden). Adding text search or archived visibility to `api.*` would weaken them for everyone. So the capability lives here instead, clearly marked, where only a workspace that opts in pays for it.
 
-**The breakage contract.** `skein.core.*` changes freely and owes this spool
-nothing (TEN-000). The physical table names, the `archived` column, the
-datasource handle — any of them can change in an upgrade, and when they do, this
-spool breaks. It is maintained in-repo, in lockstep with the storage it reads,
-so that a storage change and this spool's fix land together. **An external spool
-that copies this pattern gets no such guarantee.** It pins itself to internals
-that will move, and it owns the fallout alone. If you are tempted to vendor this
-into your own distributed spool, don't: fork the storage assumptions knowingly
-or petition for a blessed capability instead.
+**The breakage contract.** `skein.core.*` changes freely and owes this spool nothing (TEN-000). The physical table names, the `archived` column, the datasource handle — any of them can change in an upgrade, and when they do, this spool breaks. It is maintained in-repo, in lockstep with the storage it reads, so that a storage change and this spool's fix land together. **An external spool that copies this pattern gets no such guarantee.** It pins itself to internals that will move, and it owns the fallout alone. If you are tempted to vendor this into your own distributed spool, don't: fork the storage assumptions knowingly or petition for a blessed capability instead.
 
-**Design rationale.** Why is text search over history worth a rule-break at all,
-rather than a core feature? Because it is not core work. Skein's strands are
-working memory beside the code, not the project's source of truth
-(`devflow/PHILOSOPHY.md`, "The work record is not the source of truth"). Old
-strands and archived attributes are memory and teaching material, not authority.
-Grepping them — "which feature discussed the retry backoff?", "what did that
-archived transcript say?" — is a reader reconstructing context, which is exactly
-the userland concern a spool should own. The core owes no history search; a spool
-that wants one accepts the coupling and says so. This one does.
+**Design rationale.** Why is text search over history worth a rule-break at all, rather than a core feature? Because it is not core work. Skein's strands are working memory beside the code, not the project's source of truth (`devflow/PHILOSOPHY.md`, "The work record is not the source of truth"). Old strands and archived attributes are memory and teaching material, not authority. Grepping them — "which feature discussed the retry backoff?", "what did that archived transcript say?" — is a reader reconstructing context, which is exactly the userland concern a spool should own. The core owes no history search; a spool that wants one accepts the coupling and says so. This one does.
 
 ## 1. Overview
 
-`skein.spools.text-search` registers one op, `search`: a `LIKE`-based substring
-search over strand titles and attribute values. Hot rows only by default;
-`--archived` opts the cold rows in. It mutates nothing.
+`skein.spools.text-search` registers one op, `search`: a `LIKE`-based substring search over strand titles and attribute values. Hot rows only by default; `--archived` opts the cold rows in. It mutates nothing.
 
-Every query pattern is a bound parameter — user text is escaped for `LIKE`
-metacharacters and never spliced into SQL. Because it reads the raw datasource,
-it requires an **in-process weaver runtime**: trusted startup config, the
-weaver's own REPL, or an in-process test runtime.
+Every query pattern is a bound parameter — user text is escaped for `LIKE` metacharacters and never spliced into SQL. Because it reads the raw datasource, it requires an **in-process weaver runtime**: trusted startup config, the weaver's own REPL, or an in-process test runtime.
 
 ## 2. Usage
 

@@ -1,13 +1,6 @@
 # CLI Definition Parity Plan
 
-**Document ID:** `CDP-PLAN-001`
-**Feature:** `cli-definition-parity`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none (CDP-PROP-001.D4)
-**Root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md)
-**Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-01
+**Document ID:** `CDP-PLAN-001` **Feature:** `cli-definition-parity` **Proposal:** [proposal.md](./proposal.md) **RFC:** none (CDP-PROP-001.D4) **Root specs:** [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md) **Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) **Status:** Shipped **Last Updated:** 2026-07-01
 
 ## CDP-PLAN-001.P1 Goal and scope
 

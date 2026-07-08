@@ -1,7 +1,6 @@
 # Task 1: Add shared agent query operations
 
-**Document ID:** `TASK-001`
-**Configuration identification:** `TASK-001` is the first task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-001`.
+**Document ID:** `TASK-001` **Configuration identification:** `TASK-001` is the first task in `agent-tool-interface`. Every nested point ID is prefixed with `TASK-001`.
 
 ## TASK-001.P1 Scope
 

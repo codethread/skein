@@ -1,7 +1,6 @@
 # Skein Chime Spool — Cookbook
 
-Composition recipes for `skein.spools.chime`: how to turn graph mutations into a
-real attention surface, and *why* each shape is the right one.
+Composition recipes for `skein.spools.chime`: how to turn graph mutations into a real attention surface, and *why* each shape is the right one.
 
 This is the **how/why** half of the chime docs. The other two halves are:
 
@@ -11,15 +10,11 @@ This is the **how/why** half of the chime docs. The other two halves are:
 - [`chime.api.md`](./chime.api.md) — the **generated reference**: every public
   fn's signature, arity, and docstring, produced from source.
 
-Division of truth: signatures and argument lists live in the generated API doc;
-narrative and composition live here and in the contract. This cookbook never
-restates a fn signature — it links to them. When a recipe needs an exact arity,
-follow the link.
+Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature — it links to them. When a recipe needs an exact arity, follow the link.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches
-your situation and lift the snippet:
+Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
 
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which pieces combine, and how.
@@ -28,27 +23,17 @@ your situation and lift the snippet:
 4. **Why this shape** — the reasoning: why chime is built this way, and what the
    alternative would cost.
 
-Each recipe cites the honest source it was distilled from — this repo's own
-config, or the chime test suite — so you can read the load-bearing version.
+Each recipe cites the honest source it was distilled from — this repo's own config, or the chime test suite — so you can read the load-bearing version.
 
-The one idea under all of it: **chime owns the plumbing, your config owns the
-judgement.** The engine ships no rules and no notifier. A workspace's trusted
-config decides what deserves attention (rules); each developer decides how they
-are told (notifier). Everything below is one of those two halves.
+The one idea under all of it: **chime owns the plumbing, your config owns the judgement.** The engine ships no rules and no notifier. A workspace's trusted config decides what deserves attention (rules); each developer decides how they are told (notifier). Everything below is one of those two halves.
 
 ---
 
 ## Recipe: Bind how you are told, per developer
 
-**Situation.** The repo already agrees on *what* is worth a notification, but you
-personally want those notices to reach you your way — a desktop banner, a
-terminal bell, whatever notifier daemon you run — without editing shared config.
+**Situation.** The repo already agrees on *what* is worth a notification, but you personally want those notices to reach you your way — a desktop banner, a terminal bell, whatever notifier daemon you run — without editing shared config.
 
-**Composition.** One `set-notifier!` call with an `{:argv [..]}` binding. Chime
-spawns that argv per notification with the **title appended as the last argument
-and the body written to stdin**, so any command shaped like `my-notify <title>`
-(body on stdin) works. Put the call in your gitignored `init.local.clj`, which
-the weaver loads after the shared startup files on every start and reload.
+**Composition.** One `set-notifier!` call with an `{:argv [..]}` binding. Chime spawns that argv per notification with the **title appended as the last argument and the body written to stdin**, so any command shaped like `my-notify <title>` (body on stdin) works. Put the call in your gitignored `init.local.clj`, which the weaver loads after the shared startup files on every start and reload.
 
 ```clojure
 (require '[skein.spools.chime :as chime])
@@ -84,25 +69,15 @@ the weaver loads after the shared startup files on every start and reload.
   startup and reload. Putting the call in `init.local.clj` makes that automatic —
   the file re-runs on both.
 
-Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block
-and [CLAUDE.md](../CLAUDE.md)'s chime note (`cc-notify` / `osascript` per-developer
-binding in `init.local.clj`); the argv-and-stdin behaviour is exercised by
-`notifier-binding-and-manual-notify` in
-[`test/skein/chime_test.clj`](../test/skein/chime_test.clj), which binds a script
-that appends the title and stdin body to a file and asserts both arrive.
+Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block and [CLAUDE.md](../CLAUDE.md)'s chime note (`cc-notify` / `osascript` per-developer binding in `init.local.clj`); the argv-and-stdin behaviour is exercised by `notifier-binding-and-manual-notify` in [`test/skein/chime_test.clj`](../test/skein/chime_test.clj), which binds a script that appends the title and stdin body to a file and asserts both arrive.
 
 ---
 
 ## Recipe: Fire on an attribute transition
 
-**Situation.** A strand crosses into a state you want to hear about — a delegated
-run flips to `failed`, a workflow checkpoint becomes a human's to decide — and you
-want one notification the moment it happens.
+**Situation.** A strand crosses into a state you want to hear about — a delegated run flips to `failed`, a workflow checkpoint becomes a human's to decide — and you want one notification the moment it happens.
 
-**Composition.** A named rule: a fully-qualified fn that receives the rule context
-and returns `nil` for "no notification" or `{:title .. :body ..}` to send one.
-Register it with `defrule!` from shared config. The rule reads the candidate
-strand's attributes and matches only the transition you care about.
+**Composition.** A named rule: a fully-qualified fn that receives the rule context and returns `nil` for "no notification" or `{:title .. :body ..}` to send one. Register it with `defrule!` from shared config. The rule reads the candidate strand's attributes and matches only the transition you care about.
 
 ```clojure
 (ns my.rules
@@ -139,26 +114,15 @@ strand's attributes and matches only the transition you care about.
   mark clears when the rule stops matching, so a genuine recurrence alerts again.
   You write the plain predicate; the engine handles "only once."
 
-Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
-in [`.skein/attention.clj`](../.skein/attention.clj), registered together in
-`register-chime-rules!`; the fire-once-per-transition behaviour is pinned by
-`registered-rules-fire-end-to-end` and `dedup-and-reset-seen` in
-[`test/skein/chime_test.clj`](../test/skein/chime_test.clj).
+Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule` in [`.skein/attention.clj`](../.skein/attention.clj), registered together in `register-chime-rules!`; the fire-once-per-transition behaviour is pinned by `registered-rules-fire-end-to-end` and `dedup-and-reset-seen` in [`test/skein/chime_test.clj`](../test/skein/chime_test.clj).
 
 ---
 
 ## Recipe: Notify when an interactive session is waiting
 
-**Situation.** A `strand hitl` or `agent delegate --interactive` run starts a
-live multiplexer session. The attach command is available from `strand agent ps`,
-but the human should not have to poll for it. You want one notification when an
-interactive shuttle run enters `running`, with the same attach hint that `ps`
-shows.
+**Situation.** A `strand hitl` or `agent delegate --interactive` run starts a live multiplexer session. The attach command is available from `strand agent ps`, but the human should not have to poll for it. You want one notification when an interactive shuttle run enters `running`, with the same attach hint that `ps` shows.
 
-**Composition.** Keep this in userland. Shuttle exposes durable run attributes
-and the `ps` summary includes `attach`; chime only needs a normal rule that
-recognises a running interactive run. Put the rule in trusted workspace code and
-register it from startup config after chime is active.
+**Composition.** Keep this in userland. Shuttle exposes durable run attributes and the `ps` summary includes `attach`; chime only needs a normal rule that recognises a running interactive run. Put the rule in trusted workspace code and register it from startup config after chime is active.
 
 ```clojure
 (ns my.rules
@@ -202,25 +166,15 @@ register it from startup config after chime is active.
   argv over the stored handle. If a backend has no attach template yet, the rule
   says no attach hint is configured instead of inventing a command.
 
-Honest source: shuttle's `run-summary` / `runs` implementation in
-[`spools/shuttle/src/skein/spools/shuttle.clj`](shuttle/src/skein/spools/shuttle.clj)
-renders `:attach` from the backend's display-only `:attach` op, and
-[`spools/agents/README.md`](agents/README.md) documents that `strand agent ps`
-carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+Honest source: shuttle's `run-summary` / `runs` implementation in [`spools/shuttle/src/skein/spools/shuttle.clj`](shuttle/src/skein/spools/shuttle.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/agents/README.md`](agents/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
 
 ---
 
 ## Recipe: Notify about a different strand than the one that changed
 
-**Situation.** The strand worth telling a human about is not the one that
-mutated. Closing a blocker is what makes a *dependent* ready; a run does not
-become "silently parked" by changing — it becomes parked by *not* changing while
-staying ready and unclaimed. You need readiness, not the raw event alone.
+**Situation.** The strand worth telling a human about is not the one that mutated. Closing a blocker is what makes a *dependent* ready; a run does not become "silently parked" by changing — it becomes parked by *not* changing while staying ready and unclaimed. You need readiness, not the raw event alone.
 
-**Composition.** Read `:ready-ids` from the rule context — the set of ready strand
-ids, computed once per scan. Chime scans the whole graph on every mutation, so a
-rule may fire on a strand the triggering event never touched. Combine readiness
-with the strand's own attributes and age to catch a stuck condition.
+**Composition.** Read `:ready-ids` from the rule context — the set of ready strand ids, computed once per scan. Chime scans the whole graph on every mutation, so a rule may fire on a strand the triggering event never touched. Combine readiness with the strand's own attributes and age to catch a stuck condition.
 
 ```clojure
 (defn checkpoint-ready
@@ -252,24 +206,15 @@ with the strand's own attributes and age to catch a stuck condition.
   the strand's `updated_at` age lets a rule notice the absence of progress, which
   is the failure mode a mutation-only trigger would miss entirely.
 
-Honest source: this repo's `hitl-checkpoint-ready-rule` and `parked-run-rule` in
-[`.skein/attention.clj`](../.skein/attention.clj); readiness firing on both born-ready
-and later-unblocked strands is covered by
-`ready-rule-fires-born-ready-and-when-unblocked` in
-[`test/skein/chime_test.clj`](../test/skein/chime_test.clj).
+Honest source: this repo's `hitl-checkpoint-ready-rule` and `parked-run-rule` in [`.skein/attention.clj`](../.skein/attention.clj); readiness firing on both born-ready and later-unblocked strands is covered by `ready-rule-fires-born-ready-and-when-unblocked` in [`test/skein/chime_test.clj`](../test/skein/chime_test.clj).
 
 ---
 
 ## Recipe: When the notifications go quiet
 
-**Situation.** You expected a chime and heard nothing. Before suspecting the rule
-logic, you need to know whether the notifier ever ran, threw, or was simply never
-bound.
+**Situation.** You expected a chime and heard nothing. Before suspecting the rule logic, you need to know whether the notifier ever ran, threw, or was simply never bound.
 
-**Composition.** Read `(chime/failures)`. Chime records notifier, process, and
-rule failures for the weaver lifetime instead of swallowing them — a fired rule
-with no notifier bound is a loud `:notifier-missing` failure, not a dropped event.
-A rule that throws is recorded and skipped rather than crashing the scan.
+**Composition.** Read `(chime/failures)`. Chime records notifier, process, and rule failures for the weaver lifetime instead of swallowing them — a fired rule with no notifier bound is a loud `:notifier-missing` failure, not a dropped event. A rule that throws is recorded and skipped rather than crashing the scan.
 
 ```clojure
 ;; What has failed this weaver lifetime?
@@ -302,12 +247,7 @@ A rule that throws is recorded and skipped rather than crashing the scan.
   clears that memory without touching registrations — the right tool when testing
   a rule interactively, the wrong reflex for a genuinely-once notification.
 
-Honest source: `missing-notifier-is-recorded-loudly`, `rule-failures-are-recorded`,
-and `dedup-and-reset-seen` in
-[`test/skein/chime_test.clj`](../test/skein/chime_test.clj); the loud-failure
-discipline is the same one this repo relies on in
-[`.skein/init.clj`](../.skein/init.clj) ("Unbound chime records loud
-notifier-missing failures").
+Honest source: `missing-notifier-is-recorded-loudly`, `rule-failures-are-recorded`, and `dedup-and-reset-seen` in [`test/skein/chime_test.clj`](../test/skein/chime_test.clj); the loud-failure discipline is the same one this repo relies on in [`.skein/init.clj`](../.skein/init.clj) ("Unbound chime records loud notifier-missing failures").
 
 ---
 

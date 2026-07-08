@@ -1,9 +1,6 @@
 # CLI Surface Delta: Runtime Transformation Primitives
 
-**Document ID:** `SPEC-002-D003`
-**Status:** Merged into root spec
-**Base Spec:** [CLI Surface](../../../specs/cli.md)
-**Last Updated:** 2026-06-26
+**Document ID:** `SPEC-002-D003` **Status:** Merged into root spec **Base Spec:** [CLI Surface](../../../specs/cli.md) **Last Updated:** 2026-06-26
 
 ## SPEC-002-D003.P1 Changed contracts
 

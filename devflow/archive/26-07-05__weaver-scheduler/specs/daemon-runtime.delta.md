@@ -1,11 +1,6 @@
 # Weaver Scheduler Runtime Delta
 
-**Document ID:** `DELTA-weaver-scheduler-runtime-001`
-**Status:** Promoted (into `SPEC-004.P10d`, `SPEC-004.C1`, `SPEC-004.C91a`, `SPEC-004.C97`–`C105`)
-**Feature:** `weaver-scheduler`
-**Root spec:** [`SPEC-004 Weaver Runtime`](../../../specs/daemon-runtime.md)
-**Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../../rfcs/2026-06-29-weaver-scheduler.md)
-**Related proposal:** [`PROP-weaver-scheduler-001`](../proposal.md)
+**Document ID:** `DELTA-weaver-scheduler-runtime-001` **Status:** Promoted (into `SPEC-004.P10d`, `SPEC-004.C1`, `SPEC-004.C91a`, `SPEC-004.C97`–`C105`) **Feature:** `weaver-scheduler` **Root spec:** [`SPEC-004 Weaver Runtime`](../../../specs/daemon-runtime.md) **Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../../rfcs/2026-06-29-weaver-scheduler.md) **Related proposal:** [`PROP-weaver-scheduler-001`](../proposal.md)
 
 ## DELTA-weaver-scheduler-runtime-001.P1 Summary
 

@@ -6,10 +6,7 @@
 
 Type: AFK
 
-Replace the hand-maintained config-owned `:ops` and `:queries` name listings in `devflow-conventions-op` with a derivation from
-the entries `install-ops!`/`install-queries!` remembered, removing the fourth name repetition (RFC-020.Q2). The non-config
-entries and all authored prose stay hand-written, and the `devflow-conventions` output stays byte-identical, entry order
-included.
+Replace the hand-maintained config-owned `:ops` and `:queries` name listings in `devflow-conventions-op` with a derivation from the entries `install-ops!`/`install-queries!` remembered, removing the fourth name repetition (RFC-020.Q2). The non-config entries and all authored prose stay hand-written, and the `devflow-conventions` output stays byte-identical, entry order included.
 
 ## TASK-Srm-007.P2 Must implement exactly
 

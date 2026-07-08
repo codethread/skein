@@ -1,10 +1,6 @@
 # CLI Surface Delta: Op help convention
 
-**Document ID:** `SPEC-002-D006`
-**Status:** Merged
-**Base Spec:** [CLI Surface](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Last Updated:** 2026-07-05
+**Document ID:** `SPEC-002-D006` **Status:** Merged **Base Spec:** [CLI Surface](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Last Updated:** 2026-07-05
 
 ## SPEC-002-D006.P1 Changed contracts
 

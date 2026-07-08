@@ -1,11 +1,6 @@
 # Runtime Library Workspace Proposal
 
-**Document ID:** `RLW-PROP-001`
-**Status:** Reviewed
-**Date:** 2026-06-25
-**Related RFCs:** None
-**Prerequisite shipped:** [`devflow/archive/26-06-25__runtime-plugin-system`](../../archive/26-06-25__runtime-plugin-system/) — trusted local runtime plugin/library MVP and `atom.*.alpha` namespaces now promoted into root specs
-**Relevant root specs:** [Daemon Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
+**Document ID:** `RLW-PROP-001` **Status:** Reviewed **Date:** 2026-06-25 **Related RFCs:** None **Prerequisite shipped:** [`devflow/archive/26-06-25__runtime-plugin-system`](../../archive/26-06-25__runtime-plugin-system/) — trusted local runtime plugin/library MVP and `atom.*.alpha` namespaces now promoted into root specs **Relevant root specs:** [Daemon Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
 
 ## RLW-PROP-001.P1 Problem
 

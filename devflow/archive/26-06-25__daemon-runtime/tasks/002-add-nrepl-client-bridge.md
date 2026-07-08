@@ -1,9 +1,6 @@
 # Add nREPL Client Bridge
 
-**Document ID:** `TASK-002`
-**Feature:** `daemon-runtime`
-**Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md)
-**Specs:** [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
+**Document ID:** `TASK-002` **Feature:** `daemon-runtime` **Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md) **Specs:** [../specs/daemon-runtime.md](../specs/daemon-runtime.md)
 
 ## TASK-002.P1 Scope
 

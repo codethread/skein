@@ -1,10 +1,6 @@
 # CLI Surface delta for attr-scaling-ship-now
 
-**Document ID:** `ASSN-DELTA-002`
-**Root spec:** [cli.md](../../../specs/cli.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
-**Last Updated:** 2026-07-06
+**Document ID:** `ASSN-DELTA-002` **Root spec:** [cli.md](../../../specs/cli.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Draft **Last Updated:** 2026-07-06
 
 ## ASSN-DELTA-002.P1 Summary
 

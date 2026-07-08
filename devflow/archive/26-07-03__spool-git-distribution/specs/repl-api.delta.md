@@ -1,9 +1,6 @@
 # REPL API delta — spool git distribution
 
-**Document ID:** `SGD-SPEC-RA-001`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md) (SPEC-003)
-**Status:** Merged
-**Last Updated:** 2026-07-03
+**Document ID:** `SGD-SPEC-RA-001` **Root spec:** [repl-api.md](../../../specs/repl-api.md) (SPEC-003) **Status:** Merged **Last Updated:** 2026-07-03
 
 Changes relative to SPEC-003 on ship. Decision history: [RFC-017](../../../rfcs/2026-07-03-spool-git-distribution.md).
 

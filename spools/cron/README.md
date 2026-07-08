@@ -2,35 +2,19 @@
 
 ## Overview
 
-`skein.spools.cron` is a generic timer/scheduling engine for the Skein weaver.
-It registers named jobs that fire on a fixed interval with uniform jitter, each
-on a spool-owned scheduled executor created at activation and closed when the
-runtime stops (weaver-lifetime; a version-mismatch reload reinitialises it).
+`skein.spools.cron` is a generic timer/scheduling engine for the Skein weaver. It registers named jobs that fire on a fixed interval with uniform jitter, each on a spool-owned scheduled executor created at activation and closed when the runtime stops (weaver-lifetime; a version-mismatch reload reinitialises it).
 
-Cron knows nothing about any particular job: a caller registers a job by
-fully-qualified `:run!` symbol resolving to a `(fn [runtime] ..)`, and the
-engine owns only the timing, the last-outcome/next-fire status listing, and a
-loud inspectable failure log. It is deliberately just timers — workflow/gate
-integration is intentionally out of scope.
+Cron knows nothing about any particular job: a caller registers a job by fully-qualified `:run!` symbol resolving to a `(fn [runtime] ..)`, and the engine owns only the timing, the last-outcome/next-fire status listing, and a loud inspectable failure log. It is deliberately just timers — workflow/gate integration is intentionally out of scope.
 
-It owns only runtime-local weaver-lifetime state (the executor, the job table,
-the failure log, and a jitter RNG), kept on the active runtime via
-`skein.api.runtime.alpha/spool-state` and isolated from other runtimes in the
-same JVM.
+It owns only runtime-local weaver-lifetime state (the executor, the job table, the failure log, and a jitter RNG), kept on the active runtime via `skein.api.runtime.alpha/spool-state` and isolated from other runtimes in the same JVM.
 
-Cron itself spawns no external processes and ships no jobs. Because a real job
-almost always escalates capability (a shell subprocess, a network call), cron is
-an approved local-root spool like shuttle rather than a shipped classpath spool.
+Cron itself spawns no external processes and ships no jobs. Because a real job almost always escalates capability (a shell subprocess, a network call), cron is an approved local-root spool like shuttle rather than a shipped classpath spool.
 
-For composition recipes — registering an interval+jitter job, seeding the first
-fire from external state, registering from `init.clj` rather than `install!`, and
-coordinating many weavers with a best-effort lock — see the
-[cookbook](../cron.cookbook.md).
+For composition recipes — registering an interval+jitter job, seeding the first fire from external state, registering from `init.clj` rather than `install!`, and coordinating many weavers with a best-effort lock — see the [cookbook](../cron.cookbook.md).
 
 ## Dependency information
 
-Cron has no spool prerequisites. Approve the local root from the selected
-workspace's `spools.edn`:
+Cron has no spool prerequisites. Approve the local root from the selected workspace's `spools.edn`:
 
 ```clojure
 ;; spools.edn
@@ -54,14 +38,11 @@ Activate it from trusted startup config after syncing approved roots:
    :required? true})
 ```
 
-`install!` only creates the scheduled executor; it registers no jobs. Trusted
-config registers jobs afterwards with `register!`, so the repo decides what runs
-on a timer.
+`install!` only creates the scheduled executor; it registers no jobs. Trusted config registers jobs afterwards with `register!`, so the repo decides what runs on a timer.
 
 ## Registering jobs
 
-A job is registered by fully-qualified `:run!` symbol so registration stays
-runtime-portable and resolvable across reloads:
+A job is registered by fully-qualified `:run!` symbol so registration stays runtime-portable and resolvable across reloads:
 
 ```clojure
 (require '[skein.spools.cron :as cron])
@@ -86,8 +67,7 @@ runtime-portable and resolvable across reloads:
   single jitter definition (pass a seeded `java.util.Random` for deterministic
   tests).
 
-Re-registering the same `:id` cancels the existing job's pending fire first, so
-re-running startup config on reload is idempotent.
+Re-registering the same `:id` cancels the existing job's pending fire first, so re-running startup config on reload is idempotent.
 
 ## Inspecting and removing
 
@@ -98,8 +78,7 @@ re-running startup config on reload is idempotent.
 (cron/deregister! runtime :nightly-report)
 ```
 
-Job execution failures are recorded, not swallowed (TEN-003): a job whose
-`:run!` throws stays scheduled, and its failure is queryable through `failures`.
+Job execution failures are recorded, not swallowed (TEN-003): a job whose `:run!` throws stays scheduled, and its failure is queryable through `failures`.
 
 ## See also
 

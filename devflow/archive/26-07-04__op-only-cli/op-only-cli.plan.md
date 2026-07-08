@@ -1,13 +1,6 @@
 # Op-only CLI Plan
 
-**Document ID:** `PLAN-Ooc-001`
-**Feature:** `op-only-cli`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-019 Op-only CLI](../../rfcs/2026-07-04-op-only-cli.md)
-**Root specs:** [cli.md](../../specs/cli.md), [daemon-runtime.md](../../specs/daemon-runtime.md), [repl-api.md](../../specs/repl-api.md)
-**Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-07-04
+**Document ID:** `PLAN-Ooc-001` **Feature:** `op-only-cli` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-019 Op-only CLI](../../rfcs/2026-07-04-op-only-cli.md) **Root specs:** [cli.md](../../specs/cli.md), [daemon-runtime.md](../../specs/daemon-runtime.md), [repl-api.md](../../specs/repl-api.md) **Feature specs:** [specs/cli.delta.md](./specs/cli.delta.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md) **Status:** Shipped **Last Updated:** 2026-07-04
 
 ## PLAN-Ooc-001.P1 Goal and scope
 

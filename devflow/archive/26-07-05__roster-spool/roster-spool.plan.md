@@ -1,12 +1,6 @@
 # Roster Spool Implementation Plan
 
-**Document ID:** `PLAN-RosterSpool-001`
-**Status:** Reviewed
-**Last Updated:** 2026-07-05
-**Proposal:** [Roster Spool Proposal](./proposal.md)
-**RFC:** [RFC-014 Feature Tracking Registry](../../rfcs/2026-07-02-feature-tracking-registry.md)
-**Feature spec:** [Roster Spool Spec](./specs/roster-spool.md)
-**Root specs touched at finish:** [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md)
+**Document ID:** `PLAN-RosterSpool-001` **Status:** Reviewed **Last Updated:** 2026-07-05 **Proposal:** [Roster Spool Proposal](./proposal.md) **RFC:** [RFC-014 Feature Tracking Registry](../../rfcs/2026-07-02-feature-tracking-registry.md) **Feature spec:** [Roster Spool Spec](./specs/roster-spool.md) **Root specs touched at finish:** [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md)
 
 ## PLAN-RosterSpool-001.P1 Goal and scope
 

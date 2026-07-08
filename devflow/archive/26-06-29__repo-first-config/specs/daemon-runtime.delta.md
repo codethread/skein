@@ -1,10 +1,6 @@
 # Weaver Runtime delta for repo-first config
 
-**Document ID:** `DELTA-DaemonRuntime-001`
-**Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-29
+**Document ID:** `DELTA-DaemonRuntime-001` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-29
 
 ## DELTA-DaemonRuntime-001.P1 Summary
 

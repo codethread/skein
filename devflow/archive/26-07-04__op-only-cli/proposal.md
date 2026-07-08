@@ -1,9 +1,6 @@
 # Op-only CLI Proposal
 
-**Document ID:** `PROP-Ooc-001`
-**Last Updated:** 2026-07-04
-**Related RFCs:** [RFC-019 Op-only CLI](../../rfcs/2026-07-04-op-only-cli.md)
-**Related root specs:** [CLI Surface](../../specs/cli.md) (SPEC-002), [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004), [REPL API](../../specs/repl-api.md) (SPEC-003; affected because `register-op!`/`replace-op!`, op metadata, and the blessed parser are trusted REPL/config surfaces documented there)
+**Document ID:** `PROP-Ooc-001` **Last Updated:** 2026-07-04 **Related RFCs:** [RFC-019 Op-only CLI](../../rfcs/2026-07-04-op-only-cli.md) **Related root specs:** [CLI Surface](../../specs/cli.md) (SPEC-002), [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004), [REPL API](../../specs/repl-api.md) (SPEC-003; affected because `register-op!`/`replace-op!`, op metadata, and the blessed parser are trusted REPL/config surfaces documented there)
 
 ## PROP-Ooc-001.P1 Problem
 

@@ -1,9 +1,6 @@
 # Agents Spool: a Cross-Harness Subagent Surface over Shuttle
 
-**Document ID:** `RFC-015`
-**Status:** Implemented
-**Date:** 2026-07-03
-**Related:** [Agent Shuttle](../../../../spools/shuttle/README.md), [Treadle Gate Bridge](../../../../spools/shuttle/treadle.md), [Shuttle-backed Agent Coordination](../../../rfcs/2026-07-02-shuttle-backed-coordination.md) (RFC-010), [Weaver Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), repo workspace policy in [`.skein/config.clj`](../../../../.skein/config.clj), [`.agents/skills/strand/SKILL.md`](../../../../.agents/skills/strand/SKILL.md)
+**Document ID:** `RFC-015` **Status:** Implemented **Date:** 2026-07-03 **Related:** [Agent Shuttle](../../../../spools/shuttle/README.md), [Treadle Gate Bridge](../../../../spools/shuttle/treadle.md), [Shuttle-backed Agent Coordination](../../../rfcs/2026-07-02-shuttle-backed-coordination.md) (RFC-010), [Weaver Runtime](../../../specs/daemon-runtime.md), [REPL API](../../../specs/repl-api.md), repo workspace policy in [`.skein/config.clj`](../../../../.skein/config.clj), [`.agents/skills/strand/SKILL.md`](../../../../.agents/skills/strand/SKILL.md)
 
 ## RFC-015.P1 Problem
 

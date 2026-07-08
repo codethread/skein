@@ -1,25 +1,12 @@
 # Shuttle-backed Agent Coordination
 
-**Document ID:** `RFC-010`
-**Status:** Implemented
-**Date:** 2026-07-02
-**Related:** [Shuttle spool](../../spools/shuttle/src/skein/spools/shuttle.clj), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), [Workflow ergonomics archive](../archive/26-07-02__workflow-ergonomics/), [Shuttle spool proposal](../archive/26-07-02__shuttle-spool/proposal.md), [Strand Model](../specs/strand-model.md), [Weaver Runtime](../specs/daemon-runtime.md), [CLI Surface](../specs/cli.md)
+**Document ID:** `RFC-010` **Status:** Implemented **Date:** 2026-07-02 **Related:** [Shuttle spool](../../spools/shuttle/src/skein/spools/shuttle.clj), [Workflow spool](../../spools/workflow.md), [Devflow spool](../../spools/devflow.md), [Workflow ergonomics archive](../archive/26-07-02__workflow-ergonomics/), [Shuttle spool proposal](../archive/26-07-02__shuttle-spool/proposal.md), [Strand Model](../specs/strand-model.md), [Weaver Runtime](../specs/daemon-runtime.md), [CLI Surface](../specs/cli.md)
 
 ## RFC-010.P1 Problem
 
-Dogfooding the `workflow-ergonomics` feature proved that strands are a strong
-coordination substrate, but the executable-agent part of the loop is still too
-manual. The coordinator had to translate ready strands into harness-native
-subagent calls, watch chat/session state, reconcile `/tmp` sentinels with strand
-attributes, update task indexes and plan notes by hand, and recover from partial
-subagent completion by inspecting diffs and ad hoc progress markers.
+Dogfooding the `workflow-ergonomics` feature proved that strands are a strong coordination substrate, but the executable-agent part of the loop is still too manual. The coordinator had to translate ready strands into harness-native subagent calls, watch chat/session state, reconcile `/tmp` sentinels with strand attributes, update task indexes and plan notes by hand, and recover from partial subagent completion by inspecting diffs and ad hoc progress markers.
 
-The newly landed Shuttle spool supplies the missing executable layer: durable
-agent-run strands, readiness-driven spawning, harness selection, run results,
-crash reconciliation, and append-only notes. The decision now is how to compose
-Shuttle with the existing strand DAG, workflow/devflow stages, and repo-local
-`.skein` conventions so future features can delegate work through Skein itself
-rather than through a coordinator's private harness session.
+The newly landed Shuttle spool supplies the missing executable layer: durable agent-run strands, readiness-driven spawning, harness selection, run results, crash reconciliation, and append-only notes. The decision now is how to compose Shuttle with the existing strand DAG, workflow/devflow stages, and repo-local `.skein` conventions so future features can delegate work through Skein itself rather than through a coordinator's private harness session.
 
 Pain points to address:
 

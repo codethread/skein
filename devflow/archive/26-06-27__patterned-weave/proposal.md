@@ -1,11 +1,6 @@
 # Patterned Weave Proposal
 
-**Document ID:** `PROP-001`
-**Feature:** `patterned-weave`
-**Status:** Proposed
-**Last Updated:** 2026-06-27
-**Related RFCs:** None
-**Related root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md)
+**Document ID:** `PROP-001` **Feature:** `patterned-weave` **Status:** Proposed **Last Updated:** 2026-06-27 **Related RFCs:** None **Related root specs:** [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md), [REPL API](../../specs/repl-api.md), [Weaver Runtime](../../specs/daemon-runtime.md)
 
 ## PROP-001.P1 Problem
 

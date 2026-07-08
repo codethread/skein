@@ -1,9 +1,6 @@
 # Approved Libs Config
 
-**Document ID:** `RLW-TASK-002`
-**Status:** Pending
-**Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md)
-**Spec delta:** [../specs/repl-api.delta.md](../specs/repl-api.delta.md)
+**Document ID:** `RLW-TASK-002` **Status:** Pending **Plan:** [../runtime-library-workspace.plan.md](../runtime-library-workspace.plan.md) **Spec delta:** [../specs/repl-api.delta.md](../specs/repl-api.delta.md)
 
 ## RLW-TASK-002.P1 Scope
 

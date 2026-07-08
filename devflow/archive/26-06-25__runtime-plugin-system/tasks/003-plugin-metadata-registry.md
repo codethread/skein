@@ -1,9 +1,6 @@
 # Plugin Metadata Registry
 
-**Document ID:** `RPS-TASK-003`
-**Status:** Complete
-**Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md)
-**Specs:** [daemon-runtime.delta.md](../specs/daemon-runtime.delta.md), [repl-api.delta.md](../specs/repl-api.delta.md)
+**Document ID:** `RPS-TASK-003` **Status:** Complete **Plan:** [runtime-plugin-system.plan.md](../runtime-plugin-system.plan.md) **Specs:** [daemon-runtime.delta.md](../specs/daemon-runtime.delta.md), [repl-api.delta.md](../specs/repl-api.delta.md)
 
 ## RPS-TASK-003.P1 Scope
 

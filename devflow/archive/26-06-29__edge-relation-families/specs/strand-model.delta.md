@@ -1,10 +1,6 @@
 # Strand Model delta for edge relation families
 
-**Document ID:** `ERF-DELTA-001`
-**Root spec:** [strand-model.md](../../../specs/strand-model.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-29
+**Document ID:** `ERF-DELTA-001` **Root spec:** [strand-model.md](../../../specs/strand-model.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-29
 
 ## ERF-DELTA-001.P1 Summary
 

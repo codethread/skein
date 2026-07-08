@@ -1,9 +1,6 @@
 # Library Author Testing Support Proposal
 
-**Document ID:** `LAT-PROP-001`
-**Last Updated:** 2026-07-03
-**Related RFCs:** [RFC-005 Library Author Testing Support](./rfcs/2026-06-26-library-author-testing.md)
-**Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
+**Document ID:** `LAT-PROP-001` **Last Updated:** 2026-07-03 **Related RFCs:** [RFC-005 Library Author Testing Support](./rfcs/2026-06-26-library-author-testing.md) **Related root specs:** [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md)
 
 ## LAT-PROP-001.P1 Problem
 

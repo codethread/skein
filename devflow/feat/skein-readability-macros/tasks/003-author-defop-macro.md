@@ -6,9 +6,7 @@
 
 Type: AFK
 
-Add `skein.macros.ops`: a `defop` macro that fuses a CLI op's handler `defn`, its arg-spec, and its conventions metadata into one
-block, remembering it per-namespace for an `install-ops!` that registers it through the blessed op API. Mirror the `defpattern`
-remember-then-install shape. Do not convert `config.clj` — that is task 6.
+Add `skein.macros.ops`: a `defop` macro that fuses a CLI op's handler `defn`, its arg-spec, and its conventions metadata into one block, remembering it per-namespace for an `install-ops!` that registers it through the blessed op API. Mirror the `defpattern` remember-then-install shape. Do not convert `config.clj` — that is task 6.
 
 ## TASK-Srm-003.P2 Must implement exactly
 

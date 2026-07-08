@@ -1,7 +1,6 @@
 # Task 1: World config resolution
 
-**Document ID:** `TASK-001`
-**Configuration identification:** `TASK-001` is the first task for `user-daemon-home`. Prefix every nested point ID with `TASK-001`.
+**Document ID:** `TASK-001` **Configuration identification:** `TASK-001` is the first task for `user-daemon-home`. Prefix every nested point ID with `TASK-001`.
 
 ## TASK-001.P1 Scope
 

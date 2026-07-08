@@ -1,10 +1,6 @@
 # REPL API delta for edge relation families
 
-**Document ID:** `ERF-DELTA-003`
-**Root spec:** [repl-api.md](../../../specs/repl-api.md)
-**Feature:** [../proposal.md](../proposal.md)
-**Status:** Merged
-**Last Updated:** 2026-06-29
+**Document ID:** `ERF-DELTA-003` **Root spec:** [repl-api.md](../../../specs/repl-api.md) **Feature:** [../proposal.md](../proposal.md) **Status:** Merged **Last Updated:** 2026-06-29
 
 ## ERF-DELTA-003.P1 Summary
 

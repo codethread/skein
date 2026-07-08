@@ -1,7 +1,6 @@
 # Task 3: Daemon startup and init
 
-**Document ID:** `TASK-003`
-**Configuration identification:** `TASK-003` is the third task for `user-daemon-home`. Prefix every nested point ID with `TASK-003`.
+**Document ID:** `TASK-003` **Configuration identification:** `TASK-003` is the third task for `user-daemon-home`. Prefix every nested point ID with `TASK-003`.
 
 ## TASK-003.P1 Scope
 

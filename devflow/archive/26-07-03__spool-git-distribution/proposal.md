@@ -1,9 +1,6 @@
 # Spool git distribution Proposal
 
-**Document ID:** `SGD-PROP-001`
-**Last Updated:** 2026-07-03
-**Related RFCs:** [Registry-free git distribution for spools](../../rfcs/2026-07-03-spool-git-distribution.md) (RFC-017)
-**Related root specs:** [REPL API](../../specs/repl-api.md) (SPEC-003), [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004)
+**Document ID:** `SGD-PROP-001` **Last Updated:** 2026-07-03 **Related RFCs:** [Registry-free git distribution for spools](../../rfcs/2026-07-03-spool-git-distribution.md) (RFC-017) **Related root specs:** [REPL API](../../specs/repl-api.md) (SPEC-003), [Weaver Runtime](../../specs/daemon-runtime.md) (SPEC-004)
 
 ## SGD-PROP-001.P1 Problem
 

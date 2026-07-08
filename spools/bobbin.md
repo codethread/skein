@@ -9,15 +9,9 @@
 
 ## 1. Overview
 
-`skein.spools.bobbin` assembles a compact context bundle for one strand:
-the target summary, nearby blocking and ownership graph, attached shuttle notes,
-and workflow metadata when present. The bundle is JSON-compatible and
-self-contained: every edge emitted by a section references strands summarized in
-that section.
+`skein.spools.bobbin` assembles a compact context bundle for one strand: the target summary, nearby blocking and ownership graph, attached shuttle notes, and workflow metadata when present. The bundle is JSON-compatible and self-contained: every edge emitted by a section references strands summarized in that section.
 
-Bobbin is deliberately a classpath reference spool. It owns no engine behavior
-and composes only the documented `skein.repl` and `skein.api.graph.alpha`
-surfaces.
+Bobbin is deliberately a classpath reference spool. It owns no engine behavior and composes only the documented `skein.repl` and `skein.api.graph.alpha` surfaces.
 
 ## 2. Usage
 
@@ -33,8 +27,7 @@ surfaces.
 (println (bobbin/render bundle))
 ```
 
-The target strand's `body` attribute is included in full by `render`; other
-related strands render as one compact line each.
+The target strand's `body` attribute is included in full by `render`; other related strands render as one compact line each.
 
 ## 3. Surface
 

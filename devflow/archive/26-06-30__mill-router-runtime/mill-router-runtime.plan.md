@@ -1,13 +1,6 @@
 # Mill Router Runtime Plan
 
-**Document ID:** `PLAN-MillRouterRuntime-001`
-**Feature:** `mill-router-runtime`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** none
-**Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md)
-**Feature specs:** [cli.delta.md](./specs/cli.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-30
+**Document ID:** `PLAN-MillRouterRuntime-001` **Feature:** `mill-router-runtime` **Proposal:** [proposal.md](./proposal.md) **RFC:** none **Root specs:** [CLI Surface](../../specs/cli.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md) **Feature specs:** [cli.delta.md](./specs/cli.delta.md), [daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [repl-api.delta.md](./specs/repl-api.delta.md) **Status:** Shipped **Last Updated:** 2026-06-30
 
 ## PLAN-MillRouterRuntime-001.P1 Goal and scope
 

@@ -1,22 +1,14 @@
 # Skein orientation
 
-Skein is a local strand graph for agents and humans: a durable SQLite-backed
-graph of work, notes, dependencies, and workflow state, behind a small
-machine-readable command surface. `mill` is the local router/supervisor, the
-long-lived **weaver** owns storage and runtime state, and the `strand` CLI is a
-thin JSON control surface. Runtime customization lives in trusted config and
-REPL workflows.
+Skein is a local strand graph for agents and humans: a durable SQLite-backed graph of work, notes, dependencies, and workflow state, behind a small machine-readable command surface. `mill` is the local router/supervisor, the long-lived **weaver** owns storage and runtime state, and the `strand` CLI is a thin JSON control surface. Runtime customization lives in trusted config and REPL workflows.
 
-Run `mill strand prime` for the task-tracking workflow (creating and driving
-strand plans).
+Run `mill strand prime` for the task-tracking workflow (creating and driving strand plans).
 
 ## Skein source on disk
 
-    {{.Source}}
+{{.Source}}
 
-This is the resolved Skein source checkout for the current world (from
-`SKEIN_SOURCE`, the install-time source recorded by `make install`, or a
-canonical Skein checkout cwd). All the docs below live under it.
+This is the resolved Skein source checkout for the current world (from `SKEIN_SOURCE`, the install-time source recorded by `make install`, or a canonical Skein checkout cwd). All the docs below live under it.
 
 ## Read these to go deeper
 
@@ -36,8 +28,7 @@ canonical Skein checkout cwd). All the docs below live under it.
 
 ## Extending the .skein config
 
-Runtime behaviour is trusted Clojure loaded by the weaver. To add named queries,
-weave patterns, ops, views, event handlers, or activate a spool:
+Runtime behaviour is trusted Clojure loaded by the weaver. To add named queries, weave patterns, ops, views, event handlers, or activate a spool:
 
 - Read `docs/skein.md` → "Startup config", "Authoring your own spool code",
   "Weave patterns", "Queries", and "Views and graph helpers".
@@ -48,10 +39,7 @@ weave patterns, ops, views, event handlers, or activate a spool:
 
 ## Live REPL hygiene for shared weaver sessions
 
-`mill weaver repl` and `mill weaver repl --stdin` evaluate inside the live weaver
-JVM, usually in the shared `skein.repl` namespace. Exploratory requires and
-scratch defs mutate that namespace, so use names that are easy to identify and
-clean up.
+`mill weaver repl` and `mill weaver repl --stdin` evaluate inside the live weaver JVM, usually in the shared `skein.repl` namespace. Exploratory requires and scratch defs mutate that namespace, so use names that are easy to identify and clean up.
 
 - Prefer `:as` aliases over `:refer` in shared REPL work.
 - Prefix aliases and scratch vars with an owner/session prefix, e.g. `ct-`,
@@ -70,8 +58,7 @@ clean up.
 (ns-unmap *ns* 'ct-config-publics)
 ```
 
-For stronger isolation, create an agent-local namespace and call Skein helpers
-through an alias:
+For stronger isolation, create an agent-local namespace and call Skein helpers through an alias:
 
 ```clojure
 (create-ns 'agent.ct)

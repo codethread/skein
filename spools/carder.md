@@ -10,20 +10,11 @@
 
 ## 1. Overview
 
-`skein.spools.carder` is a read-only reference spool for graph hygiene and
-triage. Long-lived strand graphs can accumulate stale active work, unconnected
-active strands, and work blocked behind failed agent runs. Carder reports those
-conditions as JSON-compatible data and mutates nothing.
+`skein.spools.carder` is a read-only reference spool for graph hygiene and triage. Long-lived strand graphs can accumulate stale active work, unconnected active strands, and work blocked behind failed agent runs. Carder reports those conditions as JSON-compatible data and mutates nothing.
 
 The name follows the textile metaphor: carding untangles fibers before spinning.
 
-`orphans`, `blocked-by-failure`, and `report` inspect `strand_edges` directly
-through the active runtime's datasource, because the public graph helpers
-expose relation-scoped traversal rather than a workspace-wide edge listing.
-They therefore require an **in-process weaver runtime** — trusted startup
-config, the weaver's own nREPL, or an in-process test runtime — and fail
-loudly with `ex-info` when none is active. `stale` composes only the public
-strand-listing surface.
+`orphans`, `blocked-by-failure`, and `report` inspect `strand_edges` directly through the active runtime's datasource, because the public graph helpers expose relation-scoped traversal rather than a workspace-wide edge listing. They therefore require an **in-process weaver runtime** — trusted startup config, the weaver's own nREPL, or an in-process test runtime — and fail loudly with `ex-info` when none is active. `stale` composes only the public strand-listing surface.
 
 ## 2. Usage
 

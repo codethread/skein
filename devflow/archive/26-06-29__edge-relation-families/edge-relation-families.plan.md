@@ -1,13 +1,6 @@
 # Edge Relation Families Plan
 
-**Document ID:** `ERF-PLAN-001`
-**Feature:** `edge-relation-families`
-**Proposal:** [proposal.md](./proposal.md)
-**RFC:** [RFC-007 Edge Relation Families, Strand State, and Supersession](rfcs/2026-06-28-edge-relation-families.md)
-**Root specs:** [Strand Model](../../specs/strand-model.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [TENETS](../../TENETS.md)
-**Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md), [REPL API delta](./specs/repl-api.delta.md), [CLI Surface delta](./specs/cli.delta.md), [TENETS delta](./tenets.delta.md)
-**Status:** Shipped
-**Last Updated:** 2026-06-29
+**Document ID:** `ERF-PLAN-001` **Feature:** `edge-relation-families` **Proposal:** [proposal.md](./proposal.md) **RFC:** [RFC-007 Edge Relation Families, Strand State, and Supersession](rfcs/2026-06-28-edge-relation-families.md) **Root specs:** [Strand Model](../../specs/strand-model.md), [Weaver Runtime](../../specs/daemon-runtime.md), [REPL API](../../specs/repl-api.md), [CLI Surface](../../specs/cli.md), [TENETS](../../TENETS.md) **Feature specs:** [Strand Model delta](./specs/strand-model.delta.md), [Weaver Runtime delta](./specs/daemon-runtime.delta.md), [REPL API delta](./specs/repl-api.delta.md), [CLI Surface delta](./specs/cli.delta.md), [TENETS delta](./tenets.delta.md) **Status:** Shipped **Last Updated:** 2026-06-29
 
 ## ERF-PLAN-001.P1 Goal and scope
 

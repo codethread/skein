@@ -1,9 +1,6 @@
 # Update Smoke, Docs, and Validation
 
-**Document ID:** `TASK-005`
-**Feature:** `daemon-runtime`
-**Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md)
-**Specs:** [../specs/cli.delta.md](../specs/cli.delta.md), [../specs/repl-api.delta.md](../specs/repl-api.delta.md)
+**Document ID:** `TASK-005` **Feature:** `daemon-runtime` **Plan:** [../daemon-runtime.plan.md](../daemon-runtime.plan.md) **Specs:** [../specs/cli.delta.md](../specs/cli.delta.md), [../specs/repl-api.delta.md](../specs/repl-api.delta.md)
 
 ## TASK-005.P1 Scope
 
