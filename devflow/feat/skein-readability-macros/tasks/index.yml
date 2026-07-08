@@ -27,7 +27,7 @@ tasks:
   - id: 6
     description: Convert config.clj ops to defop
     task_file: tasks/006-convert-config-ops.md
-    status: pending
+    status: complete
     blocked_by: [3, 5]
   - id: 7
     description: Derive devflow-conventions listings from remembered entries
