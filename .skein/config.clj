@@ -16,6 +16,7 @@
   in nvd_scan.clj, and reviewer rosters in reviewers.clj."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
+            [skein.macros.ops :refer [defop install-ops!]]
             [skein.macros.queries :refer [defquery install-queries!]]
             [skein.spools.carder :as carder]
             [skein.spools.devflow :as devflow]
@@ -97,13 +98,15 @@
 ;; current-dags: active work-DAG projection (loom)
 ;; ---------------------------------------------------------------------------
 
-(defn current-dags-op
+(defop current-dags
   "Return active parent-of work DAGs and their active depends-on edges.
 
   This is an operation rather than only a named query because the CLI query
   surface returns flat strand rows; `skein.spools.loom/work-dags` projects
   roots, hierarchy edges, dependency edges, and compact strand rows into one
   JSON-compatible structure for agents and humans."
+  {:arg-spec {:op "current-dags"
+              :doc "Show active parent-of work DAGs with active depends-on edges."}}
   [_ctx]
   (merge {:operation "current-dags"}
          (loom/work-dags (current/runtime))))
@@ -161,11 +164,24 @@
 (def ^:private worktree-check-values
   #{"required" "already-in-worktree-ok"})
 
-(defn devflow-start-op
+(def ^:private feature-positional
+  "Required `<feature>` positional shared by the devflow wrapper ops."
+  {:name :feature
+   :type :string
+   :required? true
+   :doc "Feature name; the workflow run id shared by all devflow ops."})
+
+(defop devflow-start
   "Start the devflow lifecycle for a feature.
 
   The feature name is the workflow run-id for all other devflow ops;
   worktree-check is `required` (default) or `already-in-worktree-ok`."
+  {:arg-spec {:op "devflow-start"
+              :doc "Start the devflow lifecycle for a feature."
+              :positionals [feature-positional
+                            {:name :worktree-check
+                             :type :string
+                             :doc "Worktree policy: required (default) or already-in-worktree-ok."}]}}
   [ctx]
   (let [{:keys [feature worktree-check]} (:op/args ctx)]
     (require-non-blank! :feature feature)
@@ -176,16 +192,26 @@
             :feature feature}
            (devflow/start! feature (if worktree-check {:worktree-check worktree-check} {})))))
 
-(defn devflow-next-op
+(defop devflow-next
   "Return the ready devflow step views for a feature."
+  {:arg-spec {:op "devflow-next"
+              :doc "Show the ready devflow step views for a feature."
+              :positionals [feature-positional]}}
   [ctx]
   (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-next"
      :feature feature
      :ready (devflow/next-steps feature)}))
 
-(defn devflow-choices-op
+(defop devflow-choices
   "Return choice explanations for the feature's current checkpoint."
+  {:arg-spec {:op "devflow-choices"
+              :doc "Explain the current devflow checkpoint choices for a feature."
+              :positionals [feature-positional
+                            {:name :step-selector
+                             :type :string
+                             :variadic? true
+                             :doc "Optional trailing `step=<id>` selector for a specific ready step."}]}}
   [ctx]
   (let [{:keys [feature step-selector]} (:op/args ctx)
         [extra step] (pop-step-selector "devflow-choices" step-selector)]
@@ -196,11 +222,22 @@
      :feature feature
      :choices (devflow/choice-details feature (if step {:step step} {}))}))
 
-(defn devflow-choose-op
+(defop devflow-choose
   "Record a devflow checkpoint choice, optionally with JSON input.
 
   `json-input` must be a JSON object; routed choices merge it into the next
   stage's params (an abort requires `{\"reason\":\"...\"}`)."
+  {:arg-spec {:op "devflow-choose"
+              :doc "Record a devflow checkpoint choice for a feature, optionally with JSON input."
+              :positionals [feature-positional
+                            {:name :choice
+                             :type :string
+                             :required? true
+                             :doc "Checkpoint choice key, e.g. approved or abort."}
+                            {:name :tail
+                             :type :string
+                             :variadic? true
+                             :doc "Optional JSON-object input and a trailing `step=<id>` selector."}]}}
   [ctx]
   (let [{:keys [feature choice tail]} (:op/args ctx)
         [rest-tokens step] (pop-step-selector "devflow-choose" tail)
@@ -214,8 +251,15 @@
               :choice choice}
              (devflow/choose! feature (keyword choice) input (if step {:step step} {}))))))
 
-(defn devflow-complete-op
+(defop devflow-complete
   "Close the feature's current non-checkpoint devflow step."
+  {:arg-spec {:op "devflow-complete"
+              :doc "Close the current non-checkpoint devflow step for a feature."
+              :positionals [feature-positional
+                            {:name :tail
+                             :type :string
+                             :variadic? true
+                             :doc "Optional notes and a trailing `step=<id>` selector."}]}}
   [ctx]
   (let [{:keys [feature tail]} (:op/args ctx)
         [rest-tokens step] (pop-step-selector "devflow-complete" tail)
@@ -276,8 +320,15 @@
       input (assoc :input input)
       notes (assoc :notes notes))))
 
-(defn devflow-advance-op
+(defop devflow-advance
   "Advance the current devflow step or checkpoint for a feature."
+  {:arg-spec {:op "devflow-advance"
+              :doc "Advance the current devflow step or checkpoint for a feature."
+              :positionals [feature-positional
+                            {:name :tail
+                             :type :string
+                             :variadic? true
+                             :doc "Optional `[choice] [json-input] [notes]` and a trailing `step=<id>` selector."}]}}
   [ctx]
   (let [{:keys [feature tail]} (:op/args ctx)]
     (require-non-blank! :feature feature)
@@ -285,38 +336,52 @@
             :feature feature}
            (devflow/advance! feature (parse-advance-tail feature tail)))))
 
-(defn devflow-describe-op
+(defop devflow-describe
   "Return the devflow cycle or one registered stage description.
 
   stage-key is a stable devflow registry key such as `proposal` or `spec-plan`."
+  {:arg-spec {:op "devflow-describe"
+              :doc "Describe the devflow cycle or one registered stage."
+              :positionals [{:name :stage-key
+                             :type :string
+                             :doc "Optional stage key such as proposal or spec-plan."}]}}
   [ctx]
   (let [{:keys [stage-key]} (:op/args ctx)]
     {:operation "devflow-describe"
      :stage stage-key
      :description (if stage-key (devflow/describe (keyword stage-key)) (devflow/describe))}))
 
-(defn devflow-history-op
+(defop devflow-history
   "Return ordered devflow run history for a feature."
+  {:arg-spec {:op "devflow-history"
+              :doc "Show ordered devflow run history for a feature."
+              :positionals [feature-positional]}}
   [ctx]
   (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-history"
      :feature feature
      :history (devflow/history feature)}))
 
-(defn devflow-archive-op
+(defop devflow-archive
   "Archive a finished devflow run into one closed digest strand.
 
   Fails loudly while any devflow stage root for the feature is still active."
+  {:arg-spec {:op "devflow-archive"
+              :doc "Archive a finished devflow run into one digest strand."
+              :positionals [feature-positional]}}
   [ctx]
   (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-archive"
      :feature feature
      :digest (devflow/archive! feature)}))
 
-(defn devflow-status-op
+(defop devflow-status
   "Return the active devflow root, ready steps, and done state for a feature.
 
   Fails loudly for a feature that never started a devflow run."
+  {:arg-spec {:op "devflow-status"
+              :doc "Show the devflow root, ready steps, and done state for a feature."
+              :positionals [feature-positional]}}
   [ctx]
   (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-status"
@@ -325,8 +390,13 @@
      :done (workflow/done? feature)
      :ready (devflow/next-steps feature)}))
 
-(defn workflow-runs-op
+(defop workflow-runs
   "Return active workflow molecule roots, optionally filtered by family."
+  {:arg-spec {:op "workflow-runs"
+              :doc "Show active workflow molecule roots, optionally filtered by family."
+              :positionals [{:name :family
+                             :type :string
+                             :doc "Optional workflow family, e.g. devflow."}]}}
   [ctx]
   (let [{:keys [family]} (:op/args ctx)]
     {:operation "workflow-runs"
@@ -334,8 +404,10 @@
      :runs (mapv loom/summarize
                  (if family (workflow/active-runs family) (workflow/active-runs)))}))
 
-(defn devflow-conventions-op
+(defop devflow-conventions
   "Return the blessed repo conventions installed by this config."
+  {:arg-spec {:op "devflow-conventions"
+              :doc "Show repo-local spools, ops, patterns, and queries."}}
   [_ctx]
   {:operation "devflow-conventions"
    :spools [{:namespace "skein.spools.workflow"
@@ -420,12 +492,18 @@
   (let [rows (remove kanban-card-orphan? (get-in report [:orphans :rows]))]
     (assoc report :orphans {:count (count rows) :rows (vec rows)})))
 
-(defn carder-report-op
+(defop carder-report
   "Return the carder graph hygiene report for active work.
 
   This is a read-only wrapper around `skein.spools.carder/report` for checking
   stale active strands, orphaned strands, and work blocked by failed agent runs.
   Repo-local expected kanban board roots are suppressed from the orphan list."
+  {:arg-spec {:op "carder-report"
+              :doc "Show the read-only carder graph hygiene report."
+              :flags {:days {:type :int
+                             :doc "Maximum active age, in days, before a strand is stale."}
+                      :include-plumbing {:type :boolean-token
+                                         :doc "Whether to include workflow/shuttle plumbing: true or false."}}}}
   [ctx]
   (let [{:keys [days include-plumbing]} (:op/args ctx)]
     (suppress-expected-carder-orphans
@@ -433,24 +511,39 @@
                       days (assoc :days days)
                       (some? include-plumbing) (assoc :include-plumbing? include-plumbing))))))
 
-(defn flow-await-op
+(defop flow-await
   "Block until a workflow run is done or needs coordinator attention.
 
   Usage: `strand flow-await <workflow-run-id> [--timeout-secs <n>]`. Workflow
   executor registrations decide which ready gates can stay waiting silently and
   which stalled gates need coordinator attention."
+  {:arg-spec {:op "flow-await"
+              :doc "Block until a workflow run needs coordinator attention."
+              :flags {:timeout-secs {:type :int
+                                     :doc "Optional timeout in seconds."}}
+              :positionals [{:name :workflow-run-id
+                             :type :string
+                             :required? true
+                             :doc "Workflow run id."}]}
+   :deadline-class :unbounded}
   [ctx]
   (let [{:keys [workflow-run-id timeout-secs]} (:op/args ctx)]
     (workflow/await! workflow-run-id (cond-> {}
                                        timeout-secs (assoc :timeout-secs timeout-secs)))))
 
-(defn flow-status-op
+(defop flow-status
   "Return workflow flow status by joining history, frontier, gates, runs, and stalls.
 
   The JSON payload is read-only and suitable for renderers; no workflow,
   shuttle, or treadle state is mutated. The join and Mermaid gate chain live in
   `skein.spools.loom/flow-status`; this op only names the run and stamps the
   operation."
+  {:arg-spec {:op "flow-status"
+              :doc "Show workflow flow status for renderer consumption."
+              :positionals [{:name :workflow-run-id
+                             :type :string
+                             :required? true
+                             :doc "Workflow run id."}]}}
   [ctx]
   (let [{run-id :workflow-run-id} (:op/args ctx)]
     (merge {:operation "flow-status"}
@@ -486,7 +579,7 @@
        " session — make it your very last act, after the outcome attr is"
        " written and any final commit is made.\n"))
 
-(defn hitl-op
+(defop hitl
   "Open an interactive HITL working session for a human + agent pair.
 
   Usage: `strand hitl <parent-id> <title> --context <text> [--cwd <dir>]
@@ -499,6 +592,24 @@
   strand for notes and outcome. Returns the tracking id and pending run
   summary — `strand agent ps` carries the session name and attach command once
   the session is live."
+  {:arg-spec {:op "hitl"
+              :doc "Open an interactive HITL session: tracking strand + multiplexer run."
+              :positionals [{:name :parent-id
+                             :type :string
+                             :required? true
+                             :doc "Strand to hang the tracking strand under (kanban card, plan, or work root)."}
+                            {:name :title
+                             :type :string
+                             :required? true
+                             :doc "Short session title."}]
+              :flags {:context {:type :string
+                                :doc "Required session brief: the situation, artifacts, findings, and what to work through together."}
+                      :cwd {:type :string
+                            :doc "Working directory for the session (defaults to the workspace root)."}
+                      :harness {:type :string
+                                :doc "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-build — the default). Headless harnesses like build/pi-main die in a pane."}
+                      :backend {:type :string
+                                :doc "Multiplexer backend (default tmux)."}}}}
   [ctx]
   (let [{:keys [parent-id title context cwd harness backend]} (:op/args ctx)
         rt (current/runtime)]
@@ -529,7 +640,7 @@
 ;; branches: branch-visibility projection over work-root strands (loom)
 ;; ---------------------------------------------------------------------------
 
-(defn branches-op
+(defop branches
   "Group active branch-stamped work roots into a per-branch progress view.
 
   The repo convention stamps `branch` (plus `owner`/`worktree`) on exactly one
@@ -539,6 +650,11 @@
   feeds the ready frontier (so workflow plumbing and shuttle run records stay
   hidden) — and delegates the projection to `skein.spools.loom/branch-views`.
   A scoping `branch` argument that matches no stamped root fails loudly."
+  {:arg-spec {:op "branches"
+              :doc "Show active branch-stamped work roots grouped by branch."
+              :positionals [{:name :branch
+                             :type :string
+                             :doc "Optional branch name to scope the projection."}]}}
   [ctx]
   (let [{:keys [branch]} (:op/args ctx)
         branches (loom/branch-views (current/runtime)
@@ -552,267 +668,13 @@
      :branches branches}))
 
 ;; ---------------------------------------------------------------------------
-;; repo-local op arg-specs
-;; ---------------------------------------------------------------------------
-
-(def ^:private feature-positional
-  "Required `<feature>` positional shared by the devflow wrapper ops."
-  {:name :feature
-   :type :string
-   :required? true
-   :doc "Feature name; the workflow run id shared by all devflow ops."})
-
-;; Ops that carry a position-independent `step=<id>` selector alongside other
-;; optional args declare a single variadic `:tail` positional; the arg-spec
-;; parser binds positionals strictly by order, so pop-step-selector interprets
-;; that tail in the handler (see the comment above that fn).
-(def ^:private devflow-start-arg-spec
-  {:op "devflow-start"
-   :doc "Start the devflow lifecycle for a feature."
-   :positionals [feature-positional
-                 {:name :worktree-check
-                  :type :string
-                  :doc "Worktree policy: required (default) or already-in-worktree-ok."}]})
-
-(def ^:private devflow-next-arg-spec
-  {:op "devflow-next"
-   :doc "Show the ready devflow step views for a feature."
-   :positionals [feature-positional]})
-
-(def ^:private devflow-choices-arg-spec
-  {:op "devflow-choices"
-   :doc "Explain the current devflow checkpoint choices for a feature."
-   :positionals [feature-positional
-                 {:name :step-selector
-                  :type :string
-                  :variadic? true
-                  :doc "Optional trailing `step=<id>` selector for a specific ready step."}]})
-
-(def ^:private devflow-choose-arg-spec
-  {:op "devflow-choose"
-   :doc "Record a devflow checkpoint choice for a feature, optionally with JSON input."
-   :positionals [feature-positional
-                 {:name :choice
-                  :type :string
-                  :required? true
-                  :doc "Checkpoint choice key, e.g. approved or abort."}
-                 {:name :tail
-                  :type :string
-                  :variadic? true
-                  :doc "Optional JSON-object input and a trailing `step=<id>` selector."}]})
-
-(def ^:private devflow-complete-arg-spec
-  {:op "devflow-complete"
-   :doc "Close the current non-checkpoint devflow step for a feature."
-   :positionals [feature-positional
-                 {:name :tail
-                  :type :string
-                  :variadic? true
-                  :doc "Optional notes and a trailing `step=<id>` selector."}]})
-
-(def ^:private devflow-advance-arg-spec
-  {:op "devflow-advance"
-   :doc "Advance the current devflow step or checkpoint for a feature."
-   :positionals [feature-positional
-                 {:name :tail
-                  :type :string
-                  :variadic? true
-                  :doc "Optional `[choice] [json-input] [notes]` and a trailing `step=<id>` selector."}]})
-
-(def ^:private devflow-describe-arg-spec
-  {:op "devflow-describe"
-   :doc "Describe the devflow cycle or one registered stage."
-   :positionals [{:name :stage-key
-                  :type :string
-                  :doc "Optional stage key such as proposal or spec-plan."}]})
-
-(def ^:private devflow-history-arg-spec
-  {:op "devflow-history"
-   :doc "Show ordered devflow run history for a feature."
-   :positionals [feature-positional]})
-
-(def ^:private devflow-archive-arg-spec
-  {:op "devflow-archive"
-   :doc "Archive a finished devflow run into one digest strand."
-   :positionals [feature-positional]})
-
-(def ^:private devflow-status-arg-spec
-  {:op "devflow-status"
-   :doc "Show the devflow root, ready steps, and done state for a feature."
-   :positionals [feature-positional]})
-
-(def ^:private current-dags-arg-spec
-  {:op "current-dags"
-   :doc "Show active parent-of work DAGs with active depends-on edges."})
-
-(def ^:private branches-arg-spec
-  {:op "branches"
-   :doc "Show active branch-stamped work roots grouped by branch."
-   :positionals [{:name :branch
-                  :type :string
-                  :doc "Optional branch name to scope the projection."}]})
-
-(def ^:private carder-report-arg-spec
-  {:op "carder-report"
-   :doc "Show the read-only carder graph hygiene report."
-   :flags {:days {:type :int
-                  :doc "Maximum active age, in days, before a strand is stale."}
-           :include-plumbing {:type :boolean-token
-                              :doc "Whether to include workflow/shuttle plumbing: true or false."}}})
-
-(def ^:private workflow-runs-arg-spec
-  {:op "workflow-runs"
-   :doc "Show active workflow molecule roots, optionally filtered by family."
-   :positionals [{:name :family
-                  :type :string
-                  :doc "Optional workflow family, e.g. devflow."}]})
-
-(def ^:private devflow-conventions-arg-spec
-  {:op "devflow-conventions"
-   :doc "Show repo-local spools, ops, patterns, and queries."})
-
-(def ^:private flow-await-arg-spec
-  {:op "flow-await"
-   :doc "Block until a workflow run needs coordinator attention."
-   :flags {:timeout-secs {:type :int
-                          :doc "Optional timeout in seconds."}}
-   :positionals [{:name :workflow-run-id
-                  :type :string
-                  :required? true
-                  :doc "Workflow run id."}]})
-
-(def ^:private hitl-arg-spec
-  {:op "hitl"
-   :doc "Open an interactive HITL session: tracking strand + multiplexer run."
-   :positionals [{:name :parent-id
-                  :type :string
-                  :required? true
-                  :doc "Strand to hang the tracking strand under (kanban card, plan, or work root)."}
-                 {:name :title
-                  :type :string
-                  :required? true
-                  :doc "Short session title."}]
-   :flags {:context {:type :string
-                     :doc "Required session brief: the situation, artifacts, findings, and what to work through together."}
-           :cwd {:type :string
-                 :doc "Working directory for the session (defaults to the workspace root)."}
-           :harness {:type :string
-                     :doc "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-build — the default). Headless harnesses like build/pi-main die in a pane."}
-           :backend {:type :string
-                     :doc "Multiplexer backend (default tmux)."}}})
-
-(def ^:private flow-status-arg-spec
-  {:op "flow-status"
-   :doc "Show workflow flow status for renderer consumption."
-   :positionals [{:name :workflow-run-id
-                  :type :string
-                  :required? true
-                  :doc "Workflow run id."}]})
-
-(defn- op-metadata
-  "Return parser-backed op metadata for repo-local wrapper ops."
-  [arg-spec]
-  {:doc (:doc arg-spec)
-   :arg-spec arg-spec})
-
-;; ---------------------------------------------------------------------------
 ;; install!
 ;; ---------------------------------------------------------------------------
 
 (defn install!
   "Install the repo-local named queries and CLI op surface."
   []
-  (let [runtime (current/runtime)]
-    {:installed true
-     :namespace 'config
-     :queries (install-queries! 'config)
-     :ops [(api/register-op!
-            runtime
-            'current-dags
-            (op-metadata current-dags-arg-spec)
-            'config/current-dags-op)
-           (api/register-op!
-            runtime
-            'branches
-            (op-metadata branches-arg-spec)
-            'config/branches-op)
-           (api/register-op!
-            runtime
-            'carder-report
-            (op-metadata carder-report-arg-spec)
-            'config/carder-report-op)
-           (api/register-op!
-            runtime
-            'devflow-start
-            (op-metadata devflow-start-arg-spec)
-            'config/devflow-start-op)
-           (api/register-op!
-            runtime
-            'devflow-next
-            (op-metadata devflow-next-arg-spec)
-            'config/devflow-next-op)
-           (api/register-op!
-            runtime
-            'devflow-choices
-            (op-metadata devflow-choices-arg-spec)
-            'config/devflow-choices-op)
-           (api/register-op!
-            runtime
-            'devflow-choose
-            (op-metadata devflow-choose-arg-spec)
-            'config/devflow-choose-op)
-           (api/register-op!
-            runtime
-            'devflow-complete
-            (op-metadata devflow-complete-arg-spec)
-            'config/devflow-complete-op)
-           (api/register-op!
-            runtime
-            'devflow-advance
-            (op-metadata devflow-advance-arg-spec)
-            'config/devflow-advance-op)
-           (api/register-op!
-            runtime
-            'devflow-describe
-            (op-metadata devflow-describe-arg-spec)
-            'config/devflow-describe-op)
-           (api/register-op!
-            runtime
-            'devflow-history
-            (op-metadata devflow-history-arg-spec)
-            'config/devflow-history-op)
-           (api/register-op!
-            runtime
-            'devflow-archive
-            (op-metadata devflow-archive-arg-spec)
-            'config/devflow-archive-op)
-           (api/register-op!
-            runtime
-            'devflow-status
-            (op-metadata devflow-status-arg-spec)
-            'config/devflow-status-op)
-           (api/register-op!
-            runtime
-            'workflow-runs
-            (op-metadata workflow-runs-arg-spec)
-            'config/workflow-runs-op)
-           (api/register-op!
-            runtime
-            'devflow-conventions
-            (op-metadata devflow-conventions-arg-spec)
-            'config/devflow-conventions-op)
-           (api/register-op!
-            runtime
-            'flow-await
-            (assoc (op-metadata flow-await-arg-spec) :deadline-class :unbounded)
-            'config/flow-await-op)
-           (api/register-op!
-            runtime
-            'flow-status
-            (op-metadata flow-status-arg-spec)
-            'config/flow-status-op)
-           (api/register-op!
-            runtime
-            'hitl
-            (op-metadata hitl-arg-spec)
-            'config/hitl-op)]}))
+  {:installed true
+   :namespace 'config
+   :queries (install-queries! 'config)
+   :ops (install-ops! 'config)})
