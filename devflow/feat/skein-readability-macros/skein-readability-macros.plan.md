@@ -167,3 +167,26 @@ Append notes here. Do not rewrite earlier notes.
   RFC-020.Q2 explicitly weighed as a reason to keep conventions hand-authored) or reordering the derived output (which
   MI4 rules out directly). Per MI4 and the R1 mitigation, `:ops` stays the RFC-020.Q2 hand-authored fallback, unchanged;
   `:queries` is the only listing derived in this slice.
+
+### PLAN-Srm-001.DN2 Task 9 — in-process byte-identical verification done; live disposable-world diff deferred to coordinator — 2026-07-08
+
+- MI2 (the live disposable-world CLI diff) is **deferred to the coordinator**, per MI3 and R3. This task ran under the
+  shuttle worker contract, which forbids starting or stopping mills/weavers, so a `mill weaver start` disposable world could
+  not be created in-loop. The coordinator should run the RFC-020.C1 CLI diff at review/finish; MI1 plus the smoke suite are
+  the in-loop evidence, mirroring the op-only-cli feature's weaver-barred slices.
+- MI1 (in-process verification) is implemented in `test/skein/config_test.clj` and green:
+  - `converted-config-surface-is-byte-identical-to-pre-refactor` asserts the current converted config's config-owned
+    surface (generated `help <op>` for all 18 `defop` ops + all 7 `defquery` definitions) equals a committed golden,
+    `test/skein/surface_baseline.edn`, captured from the pre-refactor base `ad5d2eb` (before the defquery/defop conversion)
+    via `capture-config-surface`. A committed snapshot (not a `git show` at test time) was chosen deliberately: CI checks out
+    with `actions/checkout@v4` at the default `fetch-depth: 1`, so a base-revision `git show` would fail in CI. The snapshot
+    is a genuine pre-refactor baseline and doubles as a regression guard.
+  - The `devflow-conventions` payload (including the derived `:queries` listing) stays pinned byte-for-byte by the existing
+    `devflow-conventions-op-lists-repo-conventions` test, so the byte-identical snapshot scopes to op-help + query defs.
+  - `named-queries-return-expected-rows-against-seeded-strands` exercises each registered named query's rows against one
+    deterministic seed; `chime-attention-rules-register-and-fire` (through the full startup fixture that loads
+    `attention.clj`) asserts the registered chime rule keys and fires the registered `treadle-error`/`agent-failure`
+    handlers, including the no-false-positive case.
+- Cross-checked once out-of-loop that the pre-refactor base and current configs register byte-identical op-help, query
+  definitions, and `devflow-conventions` (two isolated `:publish? false` runtimes, baseline loaded via `git show ad5d2eb`).
+  Full gates green: `clojure -M:test` (719 tests), `clojure -M:smoke`, `make fmt-check lint reflect-check docs-check`.
