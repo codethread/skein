@@ -38,6 +38,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.weaver.alpha :as api]
+            [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
             [skein.spools.format :as fmt]
@@ -1708,11 +1709,11 @@
   (let [runtime (rt)]
     (register-default-harnesses!)
     (register-default-backends!)
-    (api/register-event-handler! runtime :shuttle/engine
-                                 #{:strand/added :strand/updated :batch/applied
-                                   :strand/burned :strand/superseded}
-                                 'skein.spools.shuttle/on-event
-                                 {:spool "shuttle"})
+    (events/register! runtime :shuttle/engine
+                      #{:strand/added :strand/updated :batch/applied
+                        :strand/burned :strand/superseded}
+                      'skein.spools.shuttle/on-event
+                      {:spool "shuttle"})
     (let [recovered (reconcile!)]
       {:installed true
        :namespace 'skein.spools.shuttle

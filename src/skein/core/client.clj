@@ -35,16 +35,16 @@
    :strands-by-ids 'skein.api.weaver.alpha/strands-by-ids
    :ancestor-root-ids 'skein.api.weaver.alpha/ancestor-root-ids
    :subgraph 'skein.api.weaver.alpha/subgraph
-   :register-view! 'skein.api.weaver.alpha/register-view!
-   :view! 'skein.api.weaver.alpha/view!
-   :views 'skein.api.weaver.alpha/views
-   :register-event-handler! 'skein.api.weaver.alpha/register-event-handler!
-   :unregister-event-handler! 'skein.api.weaver.alpha/unregister-event-handler!
-   :event-handlers 'skein.api.weaver.alpha/event-handlers
-   :recent-event-failures 'skein.api.weaver.alpha/recent-event-failures
-   :register-hook! 'skein.api.weaver.alpha/register-hook!
-   :unregister-hook! 'skein.api.weaver.alpha/unregister-hook!
-   :hooks 'skein.api.weaver.alpha/hooks
+   :register-view! 'skein.api.views.alpha/register-view!
+   :view! 'skein.api.views.alpha/view!
+   :views 'skein.api.views.alpha/views
+   :register-event-handler! 'skein.api.events.alpha/register!
+   :unregister-event-handler! 'skein.api.events.alpha/unregister!
+   :event-handlers 'skein.api.events.alpha/handlers
+   :recent-event-failures 'skein.api.events.alpha/recent-failures
+   :register-hook! 'skein.api.hooks.alpha/register!
+   :unregister-hook! 'skein.api.hooks.alpha/unregister!
+   :hooks 'skein.api.hooks.alpha/hooks
    :register-pattern! 'skein.api.weaver.alpha/register-pattern!
    :register-op! 'skein.api.weaver.alpha/register-op!
    :replace-op! 'skein.api.weaver.alpha/replace-op!
@@ -125,7 +125,7 @@
                     (contains? hooked-operation-request-contexts op)
                     (conj (hooked-operation-request-contexts op)))]
     (str "(do "
-         "(require '[skein.api.weaver.alpha] '[skein.core.weaver.runtime]) "
+         "(require '[" (namespace api-symbol) "] '[skein.core.weaver.runtime]) "
          "(let [rt " (runtime-form port) " args '" (pr-str call-args) "] "
          "(try {:ok true :value (apply " api-symbol " rt args)} "
          "(catch Throwable t {:ok false :class (str (class t)) :message (ex-message t) :data (ex-data t)})))"

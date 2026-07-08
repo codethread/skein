@@ -7,7 +7,7 @@
   the parallel batch."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.events.alpha :as events]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.runtime :as runtime]))
@@ -44,7 +44,7 @@
             (is (contains? #{:loaded :already-available}
                            (get-in synced [:spools 'skein.spools/chime :status])))
             (is (= :loaded (:status used)))
-            (is (some #(= :chime/engine (:key %)) (api/event-handlers rt))))
+            (is (some #(= :chime/engine (:key %)) (events/handlers rt))))
           (finally
             (runtime/stop! rt))))
       (finally

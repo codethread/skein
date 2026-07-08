@@ -6,6 +6,7 @@
   only weaver-lifetime runtime state and composes the public weaver/event API."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.events.alpha :as events]
             [skein.api.weaver.alpha :as api]
             [skein.api.runtime.alpha :as runtime]
             [skein.spools.util :refer [fail!]])
@@ -271,9 +272,9 @@
   `defrule!` and a notifier with `set-notifier!`."
   []
   (let [runtime (rt)]
-    (api/register-event-handler! runtime :chime/engine event-types
-                                 'skein.spools.chime/on-event
-                                 {:spool "chime"})
+    (events/register! runtime :chime/engine event-types
+                      'skein.spools.chime/on-event
+                      {:spool "chime"})
     {:installed true
      :namespace 'skein.spools.chime
      :handler :chime/engine

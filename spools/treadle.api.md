@@ -27,7 +27,7 @@ Bridge workflow subagent gates to shuttle agent runs.
 
 
 Runtime captured for asynchronous treadle scans.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L29-L31">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L30-L32">Source</a></sub></p>
 
 ## <a name="skein.spools.treadle/gate-stalled?">`gate-stalled?`</a>
 ``` clojure
@@ -42,7 +42,7 @@ Return durable stall detail for a ready subagent gate view, or nil.
   a gate whose run was retired by `agent retry` (which supersedes the run without
   re-linking the fresh one) stays discoverable rather than silently pending until
   a coordinator clears the stamp. No wall-clock hang policy is applied.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L231-L248">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L232-L249">Source</a></sub></p>
 
 ## <a name="skein.spools.treadle/install!">`install!`</a>
 ``` clojure
@@ -54,7 +54,7 @@ Install the treadle event handler and perform an initial scan.
 
   Fails loudly unless `skein.spools.shuttle/install!` has already registered
   the shuttle engine in this weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L250-L286">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L251-L287">Source</a></sub></p>
 
 ## <a name="skein.spools.treadle/on-event">`on-event`</a>
 ``` clojure
@@ -63,7 +63,7 @@ Install the treadle event handler and perform an initial scan.
 Function.
 
 Weaver event handler: graph changes may finish or unblock treadle work.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L226-L229">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L227-L230">Source</a></sub></p>
 
 ## <a name="skein.spools.treadle/scan!">`scan!`</a>
 ``` clojure
@@ -72,4 +72,4 @@ Weaver event handler: graph changes may finish or unblock treadle work.
 Function.
 
 Deliver finished shuttle runs and spawn ready workflow subagent gates.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L214-L224">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/treadle.clj#L215-L225">Source</a></sub></p>

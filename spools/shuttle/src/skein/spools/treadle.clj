@@ -11,6 +11,7 @@
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
             [skein.api.weaver.alpha :as api]
+            [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]))
 
@@ -254,12 +255,12 @@
   the shuttle engine in this weaver runtime."
   []
   (let [runtime (rt)
-        handlers (set (map :key (api/event-handlers runtime)))]
+        handlers (set (map :key (events/handlers runtime)))]
     (when-not (contains? handlers :shuttle/engine)
       (fail! "Treadle requires the shuttle engine to be installed first" {:handlers handlers}))
-    (api/register-event-handler! runtime :treadle/engine event-types
-                                 'skein.spools.treadle/on-event
-                                 {:spool "treadle"})
+    (events/register! runtime :treadle/engine event-types
+                      'skein.spools.treadle/on-event
+                      {:spool "treadle"})
     (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates: an active subagent gate whose
     ;; spawn errored, or whose current delegated run is dead in a terminal phase.

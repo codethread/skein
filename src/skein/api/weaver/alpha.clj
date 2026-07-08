@@ -11,9 +11,10 @@
             [skein.core.db :as db]
             [skein.core.weaver.access :refer [ds normalize query-registry view-registry
                                               pattern-registry op-registry hook-registry
-                                              approved-spool-sync-state module-use-state event-system
+                                              approved-spool-sync-state module-use-state
                                               with-spool-classloader config-dir spools-file
                                               canonical-root cache-base validate-fn-symbol!]]
+            [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :refer [event-base request-context
                                                  run-validation-hooks! run-transform-hooks]]
             [skein.core.weaver.runtime :as runtime]
@@ -24,7 +25,7 @@
            [java.nio.file FileSystemException FileVisitResult Files LinkOption SimpleFileVisitor StandardCopyOption]
            [java.nio.file.attribute FileAttribute]))
 
-(declare enqueue-event! register-built-in-ops! apply-edges! op-detail)
+(declare register-built-in-ops! apply-edges! op-detail)
 
 (def ^:private local-spool-keys #{:local/root})
 (def ^:private git-spool-keys #{:git/url :git/sha :git/tag :deps/root})
@@ -813,9 +814,9 @@
                                                     :strand/after created
                                                     :strand/edge-ops (vec edges)}))
                      created))]
-     (enqueue-event! runtime (assoc (event-base :strand/added)
-                                    :strand/id (:id created)
-                                    :strand created))
+     (dispatch/enqueue! runtime (assoc (event-base :strand/added)
+                                       :strand/id (:id created)
+                                       :strand created))
      created)))
 
 (defn- strand-patch-for-ref [payload ref]
@@ -826,23 +827,23 @@
 
 (defn- enqueue-batch-fanout! [runtime batch-id payload result]
   (doseq [created (:created result)]
-    (enqueue-event! runtime (assoc (event-base :strand/added)
-                                   :batch/id batch-id
-                                   :strand/id (:id created)
-                                   :strand created)))
+    (dispatch/enqueue! runtime (assoc (event-base :strand/added)
+                                      :batch/id batch-id
+                                      :strand/id (:id created)
+                                      :strand created)))
   (doseq [{:keys [ref id before after]} (:updated result)]
-    (enqueue-event! runtime (assoc (event-base :strand/updated)
-                                   :batch/id batch-id
-                                   :strand/id id
-                                   :strand/patch (strand-patch-for-ref payload ref)
-                                   :strand/before before
-                                   :strand/after after)))
+    (dispatch/enqueue! runtime (assoc (event-base :strand/updated)
+                                      :batch/id batch-id
+                                      :strand/id id
+                                      :strand/patch (strand-patch-for-ref payload ref)
+                                      :strand/before before
+                                      :strand/after after)))
   (when (seq (:burned result))
-    (enqueue-event! runtime (assoc (event-base :strand/burned)
-                                   :batch/id batch-id
-                                   :strand/requested-ids (mapv :id (:burned result))
-                                   :strand/burned-ids (mapv :id (:burned result))
-                                   :strand/before (mapv :before (:burned result))))))
+    (dispatch/enqueue! runtime (assoc (event-base :strand/burned)
+                                      :batch/id batch-id
+                                      :strand/requested-ids (mapv :id (:burned result))
+                                      :strand/burned-ids (mapv :id (:burned result))
+                                      :strand/before (mapv :before (:burned result))))))
 
 (defn- normalize-batch-strand-attributes [runtime req-ctx payload]
   (clojure.core/update payload :strands
@@ -885,13 +886,13 @@
                                            (batch-apply-context req-ctx submitted-payload result))
                     result))
          batch-id (str (UUID/randomUUID))]
-     (enqueue-event! runtime (assoc (event-base :batch/applied)
-                                    :batch/id batch-id
-                                    :batch/refs (:refs result)
-                                    :batch/created (:created result)
-                                    :batch/updated (:updated result)
-                                    :batch/burned (:burned result)
-                                    :batch/edges (:edges result)))
+     (dispatch/enqueue! runtime (assoc (event-base :batch/applied)
+                                       :batch/id batch-id
+                                       :batch/refs (:refs result)
+                                       :batch/created (:created result)
+                                       :batch/updated (:updated result)
+                                       :batch/burned (:burned result)
+                                       :batch/edges (:edges result)))
      (enqueue-batch-fanout! runtime batch-id normalized-payload result)
      result)))
 
@@ -943,11 +944,11 @@
                                                      :strand/after after
                                                      :strand/edge-ops (vec edges)}))
                       {:before before :after after :patch patch})))]
-     (enqueue-event! runtime (assoc (event-base :strand/updated)
-                                    :strand/id id
-                                    :strand/patch (:patch result)
-                                    :strand/before (:before result)
-                                    :strand/after (:after result)))
+     (dispatch/enqueue! runtime (assoc (event-base :strand/updated)
+                                       :strand/id id
+                                       :strand/patch (:patch result)
+                                       :strand/before (:before result)
+                                       :strand/after (:after result)))
      (:after result))))
 
 (defn- supersede-context [old-id replacement-id result]
@@ -972,8 +973,8 @@
                                                   {:mutation/operation :strand/supersede}
                                                   (supersede-context old-id replacement-id result)))
                     result))]
-     (enqueue-event! runtime (merge (event-base :strand/superseded)
-                                    (supersede-context old-id replacement-id result)))
+     (dispatch/enqueue! runtime (merge (event-base :strand/superseded)
+                                       (supersede-context old-id replacement-id result)))
      result)))
 
 (defn declare-acyclic-relation!
@@ -1052,10 +1053,10 @@
                                                                     :strand/before before}))
                                      {:before before
                                       :result (db/burn-by-ids! tx requested-ids)}))]
-     (enqueue-event! runtime (assoc (event-base :strand/burned)
-                                    :strand/requested-ids requested-ids
-                                    :strand/burned-ids (:burned result)
-                                    :strand/before before))
+     (dispatch/enqueue! runtime (assoc (event-base :strand/burned)
+                                       :strand/requested-ids requested-ids
+                                       :strand/burned-ids (:burned result)
+                                       :strand/before before))
      result)))
 
 (defn burn-by-id
@@ -1160,45 +1161,11 @@
   [runtime from-ids edge-type]
   (normalize (db/outgoing-edges (ds runtime) from-ids edge-type)))
 
-(defn- canonical-view-name [view-name]
-  (query/canonical-query-name view-name))
-
-(defn- validate-view-fn-symbol! [fn-sym]
-  (validate-fn-symbol! "View" fn-sym))
-
 (defn- validate-pattern-fn-symbol! [fn-sym]
   (validate-fn-symbol! "Pattern" fn-sym))
 
 (defn- validate-op-fn-symbol! [fn-sym]
   (validate-fn-symbol! "Operation" fn-sym))
-
-(defn register-view!
-  "Register a named view function for trusted in-process rendering."
-  [runtime view-name fn-sym]
-  (let [name (canonical-view-name view-name)
-        entry {:name name :fn (validate-view-fn-symbol! fn-sym)}]
-    (swap! (view-registry runtime) assoc name entry)
-    entry))
-
-(defn views
-  "Return registered view metadata ordered by name."
-  [runtime]
-  (mapv val (sort-by key @(view-registry runtime))))
-
-(defn- resolve-view [runtime view-name]
-  (let [canonical-name (canonical-view-name view-name)]
-    (or (get @(view-registry runtime) canonical-name)
-        (throw (ex-info "View not found" {:view view-name
-                                          :canonical-view canonical-name
-                                          :available (sort (keys @(view-registry runtime)))})))))
-
-(defn view!
-  "Invoke a registered view function with params."
-  [runtime view-name params]
-  (let [{fn-sym :fn} (resolve-view runtime view-name)]
-    (with-spool-classloader
-      runtime
-      #((requiring-resolve fn-sym) {:params params}))))
 
 (defn- canonical-op-name [op-name]
   (query/canonical-query-name op-name))
@@ -1643,173 +1610,12 @@
       ;; a weave is a create-only batch apply; without this event, event-driven
       ;; spools (shuttle, treadle) never see pattern-created strands until an
       ;; unrelated mutation happens to trigger their next scan
-       (enqueue-event! runtime (assoc (event-base :batch/applied)
-                                      :batch/id (str (UUID/randomUUID))
-                                      :pattern/name canonical-name
-                                      :batch/refs (:refs result)
-                                      :batch/created (:created result)))
+       (dispatch/enqueue! runtime (assoc (event-base :batch/applied)
+                                         :batch/id (str (UUID/randomUUID))
+                                         :pattern/name canonical-name
+                                         :batch/refs (:refs result)
+                                         :batch/created (:created result)))
        (select-keys result [:created :refs])))))
-
-(declare data-first-value?)
-
-(defn- validate-hook-key! [key]
-  (when-not (or (keyword? key) (symbol? key) (string? key))
-    (throw (ex-info "Hook key must be a keyword, symbol, or string" {:key key})))
-  (when (and (string? key) (str/blank? key))
-    (throw (ex-info "Hook key string must be non-blank" {:key key})))
-  key)
-
-(defn- validate-hook-types! [types]
-  (when-not (set? types)
-    (throw (ex-info "Hook types must be a set" {:types types})))
-  (when-not (seq types)
-    (throw (ex-info "Hook types must be non-empty" {:types types})))
-  (doseq [type types]
-    (when-not (keyword? type)
-      (throw (ex-info "Hook types must be keywords" {:type type :types types}))))
-  types)
-
-(defn- resolve-hook-fn! [runtime fn-sym]
-  (when-not (and (symbol? fn-sym) (namespace fn-sym))
-    (throw (ex-info "Hook function must be a fully qualified symbol" {:fn fn-sym})))
-  (let [resolved (with-spool-classloader runtime #(requiring-resolve fn-sym))
-        value (if (var? resolved) @resolved resolved)]
-    (when-not (ifn? value)
-      (throw (ex-info "Hook symbol must resolve to a callable value" {:fn fn-sym :resolved-class (str (class value))})))
-    resolved))
-
-(defn- validate-hook-opts! [opts]
-  (let [opts (or opts {})]
-    (when-not (map? opts)
-      (throw (ex-info "Hook opts must be a map" {:opts opts})))
-    (when-not (data-first-value? opts)
-      (throw (ex-info "Hook opts must contain only data-first values" {:opts opts})))
-    (when (and (contains? opts :order) (not (integer? (:order opts))))
-      (throw (ex-info "Hook :order must be an integer" {:order (:order opts)})))
-    opts))
-
-(defn register-hook!
-  "Register a trusted lifecycle hook for selected hook types."
-  ([runtime key types fn-sym]
-   (register-hook! runtime key types fn-sym {}))
-  ([runtime key types fn-sym opts]
-   (let [opts (validate-hook-opts! opts)
-         entry {:key (validate-hook-key! key)
-                :types (validate-hook-types! types)
-                :fn fn-sym
-                :fn-value (resolve-hook-fn! runtime fn-sym)
-                :order (get opts :order 0)
-                :metadata (dissoc opts :order)}]
-     (swap! (hook-registry runtime) assoc (:key entry) entry)
-     (dissoc entry :fn-value))))
-
-(defn unregister-hook!
-  "Remove a registered lifecycle hook by key and return that key."
-  [runtime key]
-  (let [key (validate-hook-key! key)]
-    (swap! (hook-registry runtime) dissoc key)
-    key))
-
-(defn hooks
-  "Return lifecycle hook registry entries in deterministic execution order."
-  [runtime]
-  (mapv #(dissoc % :fn-value)
-        (sort-by (juxt :order (comp pr-str :key)) (vals @(hook-registry runtime)))))
-
-(defn- validate-event-handler-key! [key]
-  (when-not (or (keyword? key) (symbol? key) (string? key))
-    (throw (ex-info "Event handler key must be a keyword, symbol, or string" {:key key})))
-  (when (and (string? key) (str/blank? key))
-    (throw (ex-info "Event handler key string must be non-blank" {:key key})))
-  key)
-
-(defn- validate-event-types! [types]
-  (when-not (set? types)
-    (throw (ex-info "Event handler types must be a set" {:types types})))
-  (when-not (seq types)
-    (throw (ex-info "Event handler types must be non-empty" {:types types})))
-  (doseq [type types]
-    (when-not (keyword? type)
-      (throw (ex-info "Event handler types must be keywords" {:type type :types types}))))
-  types)
-
-(defn- resolve-event-handler-fn! [runtime fn-sym]
-  (when-not (and (symbol? fn-sym) (namespace fn-sym))
-    (throw (ex-info "Event handler function must be a fully qualified symbol" {:fn fn-sym})))
-  (let [resolved (try
-                   (with-spool-classloader runtime #(requiring-resolve fn-sym))
-                   (catch Throwable t
-                     (throw (ex-info "Event handler function could not be resolved" {:fn fn-sym} t))))
-        value (if (var? resolved) @resolved resolved)]
-    (when-not (ifn? value)
-      (throw (ex-info "Event handler symbol must resolve to a callable value" {:fn fn-sym :resolved-class (str (class value))})))
-    value))
-
-(defn- data-first-value? [value]
-  (cond
-    (or (nil? value)
-        (string? value)
-        (number? value)
-        (keyword? value)
-        (symbol? value)
-        (boolean? value)
-        (inst? value)
-        (uuid? value)) true
-    (map? value) (and (every? data-first-value? (keys value))
-                      (every? data-first-value? (vals value)))
-    (or (vector? value) (set? value)) (every? data-first-value? value)
-    :else false))
-
-(defn- validate-event-handler-metadata! [metadata]
-  (let [metadata (or metadata {})]
-    (when-not (map? metadata)
-      (throw (ex-info "Event handler metadata must be a map" {:metadata metadata})))
-    (when-not (data-first-value? metadata)
-      (throw (ex-info "Event handler metadata must contain only data-first values" {:metadata metadata})))
-    metadata))
-
-(defn register-event-handler!
-  "Register a trusted event handler for selected event types."
-  [runtime key types fn-sym metadata]
-  (let [entry {:key (validate-event-handler-key! key)
-               :types (validate-event-types! types)
-               :fn fn-sym
-               :fn-value (resolve-event-handler-fn! runtime fn-sym)
-               :metadata (validate-event-handler-metadata! metadata)}]
-    (swap! (:handler-registry (event-system runtime)) assoc (:key entry) entry)
-    (dissoc entry :fn-value)))
-
-(defn unregister-event-handler!
-  "Remove a registered event handler by key."
-  [runtime key]
-  (let [key (validate-event-handler-key! key)]
-    (swap! (:handler-registry (event-system runtime)) dissoc key)
-    {:unregistered key}))
-
-(defn event-handlers
-  "Return registered event handler metadata."
-  [runtime]
-  (mapv #(dissoc % :fn-value)
-        (sort-by (comp pr-str :key) (vals @(:handler-registry (event-system runtime))))))
-
-(defn recent-event-failures
-  "Return recent asynchronous event handler failures."
-  [runtime]
-  @(:recent-failures (event-system runtime)))
-
-(defn enqueue-event!
-  "Submit an event to the runtime event system."
-  [runtime event]
-  (when-not (map? event)
-    (throw (ex-info "Event must be a map" {:event event})))
-  (doseq [k [:event/type :event/id :event/at :event/source]]
-    (when-not (contains? event k)
-      (throw (ex-info "Event requires key" {:key k :event event}))))
-  (when-not (keyword? (:event/type event))
-    (throw (ex-info "Event :event/type must be a keyword" {:event/type (:event/type event)})))
-  (when-not (.offer ^java.util.concurrent.BlockingQueue (:queue (event-system runtime)) event)
-    (throw (ex-info "Event queue is full" {:event/type (:event/type event) :event/id (:event/id event)})))
-  {:enqueued true :event/id (:event/id event) :event/type (:event/type event)})
 
 ;; Scheduler wakes: durable weaver-owned coordination state (RFC-009), not
 ;; strands. `skein.core.db` owns storage validation and persistence;

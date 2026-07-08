@@ -151,7 +151,7 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 
 ## SPEC-004.P10a Event helpers
 
-- **SPEC-004.C64:** Skein ships `skein.api.events.alpha` as a blessed source-visible explicit-runtime namespace for trusted config and live weaver REPL workflows. It exposes registration, unregistration, registry introspection, and recent failure introspection.
+- **SPEC-004.C64:** Skein ships `skein.api.events.alpha` as a blessed source-visible explicit-runtime namespace for trusted config and live weaver REPL workflows. It exposes registration, unregistration, registry introspection, recent failure introspection, and event submission.
 - **SPEC-004.C65:** Event handler registration uses a stable key, a non-empty set of event type keywords, and a fully qualified function symbol resolvable in the weaver JVM under the runtime spool classloader. Duplicate keys replace prior entries for reload workflows.
 - **SPEC-004.C66:** Event registry introspection returns data-first entries containing handler keys, subscribed event type sets, handler function symbols, and metadata. It does not expose function values or worker internals.
 - **SPEC-004.C67:** Event handler failures are recorded in bounded weaver-lifetime introspection state. Handler exceptions do not fail the already-committed mutation that emitted the event.

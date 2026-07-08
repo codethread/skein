@@ -2,6 +2,7 @@
   "Tests for the explicit-runtime roster model and helpers, and the installed
   `roster` op/named query."
   (:require [clojure.test :refer [deftest is testing]]
+            [skein.api.events.alpha :as events]
             [skein.api.weaver.alpha :as api]
             [skein.spools.roster :as roster]
             [skein.spools.test-support :as test-support :refer [with-runtime]])
@@ -402,7 +403,7 @@
     (fn [rt _]
       (let [{:keys [watcher]} (roster/install!)]
         (is (= :skein.spools.roster/integration watcher))
-        (is (contains? (set (map :key (api/event-handlers rt)))
+        (is (contains? (set (map :key (events/handlers rt)))
                        :skein.spools.roster/integration))))))
 
 (deftest auto-stamps-active-non-plumbing-roots-carrying-feature-and-owner

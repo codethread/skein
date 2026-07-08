@@ -4,7 +4,7 @@
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [nrepl.core :as nrepl]
             [skein.core.client :as client]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.hooks.alpha :as hooks]
             [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as runtime]
@@ -138,9 +138,9 @@
     (fn [rt world _db-file]
       (call-world world :init)
       (reset! client-hook-contexts [])
-      (api/register-hook! rt :client-normalize #{:attributes/normalize} 'skein.core.client-test/client-normalize-hook {})
-      (api/register-hook! rt :client-add #{:strand/add-before-commit} 'skein.core.client-test/client-capture-hook {})
-      (api/register-hook! rt :client-update #{:strand/update-before-commit} 'skein.core.client-test/client-capture-hook {})
+      (hooks/register! rt :client-normalize #{:attributes/normalize} 'skein.core.client-test/client-normalize-hook {})
+      (hooks/register! rt :client-add #{:strand/add-before-commit} 'skein.core.client-test/client-capture-hook {})
+      (hooks/register! rt :client-update #{:strand/update-before-commit} 'skein.core.client-test/client-capture-hook {})
       (let [created (call-world world :add {:title "Hooked client" :attributes {:owner "agent"}})]
         (call-world world :update (:id created) {:attributes {:owner "agent" :phase "updated"}}))
       (is (= [:client-normalize :client-add :client-normalize :client-update]

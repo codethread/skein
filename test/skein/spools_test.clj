@@ -14,6 +14,7 @@
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
             [skein.repl :as repl]
             [skein.api.runtime.alpha :as runtime-alpha]
+            [skein.api.views.alpha :as views]
             [skein.api.weaver.alpha :as api]
             [skein.test.alpha :as t]))
 
@@ -1086,32 +1087,32 @@
       (write-module-file! config-dir "modules/stale.clj" "(ns demo.stale)\n(defn handler [_] :ok)\n")
       (is (= :loaded (:status (runtime-alpha/use! rt :stale {:file "modules/stale.clj"}))))
       (api/register-query rt 'stale [:= [:attr :owner] "stale"])
-      (api/register-view! rt 'stale-view 'demo.stale/view)
+      (views/register-view! rt 'stale-view 'demo.stale/view)
       (reset! reload-deliveries [])
-      (api/register-event-handler! rt :stale #{:strand/added} 'demo.stale/handler {})
-      (api/register-event-handler! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
-      (api/enqueue-event! rt {:event/type :strand/added
-                              :event/id "before-reload"
-                              :event/at "2026-06-27T00:00:00Z"
-                              :event/source :test})
+      (events/register! rt :stale #{:strand/added} 'demo.stale/handler {})
+      (events/register! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
+      (events/enqueue! rt {:event/type :strand/added
+                           :event/id "before-reload"
+                           :event/at "2026-06-27T00:00:00Z"
+                           :event/source :test})
       (Thread/sleep 250)
-      (is (seq (api/recent-event-failures rt)))
+      (is (seq (events/recent-failures rt)))
       (spit (io/file config-dir "init.clj")
-            (str "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api])\n"
+            (str "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api] '[skein.api.events.alpha :as events])\n"
                  "(let [rt (current/runtime)]\n"
                  "  (api/register-query rt 'fresh [:= [:attr :owner] \"fresh\"])\n"
-                 "  (api/register-event-handler! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n"))
+                 "  (events/register! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n"))
       (is (= :loaded (:status (runtime-alpha/reload! rt))))
       (is (nil? (runtime-alpha/use rt :stale)))
       (is (nil? (get (api/queries rt) "stale")))
       (is (= [:= [:attr :owner] "fresh"] (get (api/queries rt) "fresh")))
-      (is (= [] (api/views rt)))
-      (is (= [:fresh] (mapv :key (api/event-handlers rt))))
-      (is (= [] (api/recent-event-failures rt)))
-      (api/enqueue-event! rt {:event/type :strand/added
-                              :event/id "after-reload"
-                              :event/at "2026-06-27T00:00:00Z"
-                              :event/source :test})
+      (is (= [] (views/views rt)))
+      (is (= [:fresh] (mapv :key (events/handlers rt))))
+      (is (= [] (events/recent-failures rt)))
+      (events/enqueue! rt {:event/type :strand/added
+                           :event/id "after-reload"
+                           :event/at "2026-06-27T00:00:00Z"
+                           :event/source :test})
       (Thread/sleep 250)
       (is (= ["after-reload"] @reload-deliveries)))))
 
