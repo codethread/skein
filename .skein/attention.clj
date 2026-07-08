@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.chime :as chime]
+            [skein.macros.rules :refer [defrule install-rules!]]
             [skein.spools.shuttle :as shuttle]))
 
 (defn- config-attr
@@ -15,7 +15,7 @@
   (let [attrs (:attributes strand)]
     (or (get attrs k) (get attrs (subs (str k) 1)))))
 
-(defn hitl-checkpoint-ready-rule
+(defrule hitl-checkpoint-ready
   "Notify when a human-in-the-loop workflow checkpoint is ready to decide."
   [{:keys [strand ready-ids]}]
   (let [hitl (config-attr strand :workflow/hitl)]
@@ -26,7 +26,7 @@
       {:title (str "HITL checkpoint ready: " (:title strand))
        :body (str "Checkpoint " (:id strand) " is ready for human attention.")})))
 
-(defn agent-failure-rule
+(defrule agent-failure
   "Notify when a shuttle run has failed or exhausted its attempts."
   [{:keys [strand]}]
   (let [phase (config-attr strand :shuttle/phase)]
@@ -36,14 +36,14 @@
                   (when-let [error (config-attr strand :shuttle/error)]
                     (str "\n\n" error)))})))
 
-(defn treadle-error-rule
+(defrule treadle-error
   "Notify when a workflow gate is stamped with a treadle error."
   [{:keys [strand]}]
   (when-let [error (config-attr strand :treadle/error)]
     {:title (str "Treadle error: " (:title strand))
      :body (str "Strand " (:id strand) " has treadle/error:\n\n" error)}))
 
-(defn kanban-started-rule
+(defrule kanban-started
   "Notify when a kanban card is claimed and work starts."
   [{:keys [strand]}]
   (when (and (= "active" (:state strand))
@@ -52,7 +52,7 @@
     {:title (str "Kanban started: " (:title strand))
      :body (str "Kanban card " (:id strand) " has been claimed and work has started.")}))
 
-(defn kanban-completed-rule
+(defrule kanban-completed
   "Notify when a kanban card reaches the explicit done outcome."
   [{:keys [strand]}]
   (when (and (= "closed" (:state strand))
@@ -89,7 +89,7 @@
          (sort-by :id)
          vec)))
 
-(defn kanban-blocked-rule
+(defrule kanban-blocked
   "Notify when active card work is blocked by failed/exhausted delegated work."
   [{:keys [strand]}]
   (when (and (= "active" (:state strand))
@@ -142,7 +142,7 @@
                                    :exception/message (ex-message e)})))))
         nil))))
 
-(defn parked-run-rule
+(defrule parked-run
   "Notify when a ready pending shuttle run has sat unclaimed past the threshold.
 
   This is the silent-parking detector: the morning incident left runs ready and
@@ -163,20 +163,9 @@
                 " This is the silent-parking signature — verify the weaver's shuttle"
                 " executors are healthy and the run was not dropped by a reload.")}))
 
-(defn- register-chime-rules!
-  "Register the repo's attention rules with the chime engine."
-  []
-  [(chime/defrule! :hitl-checkpoint-ready 'attention/hitl-checkpoint-ready-rule)
-   (chime/defrule! :agent-failure 'attention/agent-failure-rule)
-   (chime/defrule! :treadle-error 'attention/treadle-error-rule)
-   (chime/defrule! :kanban-started 'attention/kanban-started-rule)
-   (chime/defrule! :kanban-completed 'attention/kanban-completed-rule)
-   (chime/defrule! :kanban-blocked 'attention/kanban-blocked-rule)
-   (chime/defrule! :parked-run 'attention/parked-run-rule)])
-
 (defn install!
   "Register this repository's chime attention rules."
   []
   {:installed true
    :namespace 'attention
-   :chime-rules (register-chime-rules!)})
+   :chime-rules (install-rules! 'attention)})
