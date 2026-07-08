@@ -122,28 +122,40 @@ export function defineTab<V>(tab: Tab<V>): Tab<unknown> {
 // tab contract from a fetch and a list component, so the tab module stays a
 // single self-contained file that never re-implements navigation.
 
-type SimpleView<R extends DetailRow> = { rows: R[]; loaded: boolean; failure: string | null; s: ListState };
+type SimpleView<R extends DetailRow, B> = { rows: R[]; banner: B | undefined; loaded: boolean; failure: string | null; s: ListState };
 
-export function listDetailTab<R extends DetailRow>(cfg: {
+// An optional status strip a tab renders above its list. Its fetch runs alongside
+// the row fetch each poll; `rows` reserves that many viewport lines so the pinned
+// frame math stays exact whether or not the strip draws this frame. `render`
+// returns null to draw nothing (and then reserves no rows).
+export type ListBanner<B> = {
+  fetch: () => Promise<B>;
+  rows: (b: B) => number;
+  render: (b: B, ctx: RenderCtx) => React.ReactElement | null;
+};
+
+export function listDetailTab<R extends DetailRow, B = undefined>(cfg: {
   id: string;
   label: string;
   fetch: (all: boolean) => Promise<R[]>;
   List: (props: ListProps<R>) => React.ReactElement;
   keyOf?: (r: R) => string;
+  banner?: ListBanner<B>;
 }): Tab<unknown> {
   const keyOf = cfg.keyOf ?? ((r: R) => r.id);
-  return defineTab<SimpleView<R>>({
+  return defineTab<SimpleView<R, B>>({
     id: cfg.id,
     label: cfg.label,
-    init: () => ({ rows: [], loaded: false, failure: null, s: emptyListState() }),
+    init: () => ({ rows: [], banner: undefined, loaded: false, failure: null, s: emptyListState() }),
     fetchKey: () => "",
     allApplies: () => true,
     inDetail: (v) => v.s.view === "detail",
     editTarget: (v) => v.rows[v.s.selected] ?? null,
     refresh: async (_v, all) => {
       try {
-        const rows = await cfg.fetch(all);
-        return (latest) => ({ rows, loaded: true, failure: null, s: followSelection(latest.s, rows, keyOf) });
+        const bannerFetch: Promise<B | undefined> = cfg.banner ? cfg.banner.fetch() : Promise.resolve(undefined);
+        const [rows, banner] = await Promise.all([cfg.fetch(all), bannerFetch]);
+        return (latest) => ({ rows, banner, loaded: true, failure: null, s: followSelection(latest.s, rows, keyOf) });
       } catch (e) {
         const failure = e instanceof Error ? e.message : String(e);
         return (latest) => ({ ...latest, loaded: true, failure });
@@ -169,16 +181,24 @@ export function listDetailTab<R extends DetailRow>(cfg: {
       if (v.failure) return <Failure failure={v.failure} cols={ctx.cols} />;
       if (v.s.view === "detail" && ctx.interactive)
         return <DetailView row={v.rows[v.s.selected]} scroll={v.s.detailScroll} cols={ctx.cols} termRows={ctx.termRows} />;
+      // The banner only draws when its fetch produced something to show; it then
+      // reserves rows so the list windows against the height it actually gets and
+      // their stacked heights still sum to the pinned frame.
+      const banner = cfg.banner && v.banner !== undefined ? cfg.banner.render(v.banner, ctx) : null;
+      const reserved = banner && cfg.banner ? cfg.banner.rows(v.banner as B) : 0;
       return (
-        <cfg.List
-          rows={v.rows}
-          selected={v.s.selected}
-          interactive={ctx.interactive}
-          cols={ctx.cols}
-          termRows={ctx.termRows}
-          all={ctx.all}
-          loaded={v.loaded}
-        />
+        <Box flexDirection="column">
+          {banner}
+          <cfg.List
+            rows={v.rows}
+            selected={v.s.selected}
+            interactive={ctx.interactive}
+            cols={ctx.cols}
+            termRows={ctx.termRows - reserved}
+            all={ctx.all}
+            loaded={v.loaded}
+          />
+        </Box>
       );
     },
   });

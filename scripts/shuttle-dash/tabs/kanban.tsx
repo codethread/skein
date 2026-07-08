@@ -4,9 +4,9 @@
 // live here so the tab is edited in exactly one place.
 
 import { Box, Text } from "ink";
-import { str, strandJson, type DetailRow, type StrandRecord } from "../data";
-import { clip, fitCol, ListFooter, oneLine, pad, TableRow, windowRows, type Cell, type ListProps } from "../ui";
-import { listDetailTab } from "../app";
+import { parseInstant, str, strandJson, type DetailRow, type StrandRecord } from "../data";
+import { age, clip, fitCol, ListFooter, oneLine, pad, TableRow, windowRows, type Cell, type ListProps } from "../ui";
+import { listDetailTab, type RenderCtx } from "../app";
 
 export type KanbanRow = DetailRow & {
   lane: string;
@@ -15,19 +15,20 @@ export type KanbanRow = DetailRow & {
   priority: string;
 };
 
-const LANE_COLOR: Record<string, string | undefined> = { claimed: "green", pending: "yellow", refinement: "cyan" };
+const LANE_COLOR: Record<string, string | undefined> = { claimed: "green", in_review: "magenta", pending: "yellow", refinement: "cyan" };
 
 // Priority tint mirrors the spool's p1..p4 urgency (spools/kanban.md): p1 is an
 // immediate blocker, p4 is someday. p3 is the unstamped default and stays plain.
 const PRIO_COLOR: Record<string, string | undefined> = { p1: "red", p2: "yellow" };
 const prioDim = (p: string): boolean => p === "p4";
 
-// Board lane order: claimed work first, then the actionable queue, then ideas
-// still in refinement. Closed strands sink regardless of their kanban/status —
-// migrated cards can carry a stale lane attr after close — and show their
-// outcome (done/abandoned/...) dimmed.
-const LANE_RANK: Record<string, number> = { claimed: 0, pending: 1, refinement: 2 };
-const laneRank = (r: KanbanRow): number => (r.state === "closed" ? 3 : (LANE_RANK[r.lane] ?? 3));
+// Board lane order follows the card lifecycle: claimed work, then the cards under
+// review on their way out (claimed -> in_review -> closed), then the actionable
+// queue, then ideas still in refinement. Closed strands sink regardless of their
+// kanban/status — migrated cards can carry a stale lane attr after close — and
+// show their outcome (done/abandoned/...) dimmed.
+const LANE_RANK: Record<string, number> = { claimed: 0, in_review: 1, pending: 2, refinement: 3 };
+const laneRank = (r: KanbanRow): number => (r.state === "closed" ? 4 : (LANE_RANK[r.lane] ?? 4));
 
 async function fetchKanban(all: boolean): Promise<KanbanRow[]> {
   const args = ["list", "--query", "kanban-cards", ...(all ? [] : ["--state", "active"])];
@@ -119,4 +120,44 @@ function KanbanList({ rows, selected, interactive, cols, termRows, all, loaded }
   );
 }
 
-export const kanbanTab = listDetailTab<KanbanRow>({ id: "kanban", label: "KANBAN", fetch: fetchKanban, List: KanbanList });
+// The singleton merge sentinel (land workflow): at most one active kind=merge-lock
+// strand exists, acquired at land sign-off and released at cleanup/abort. Its
+// owner is the land root id, land/run-id is the feature, and created_at is when
+// the lock was acquired. The active-strand list is the cleanest read that needs no
+// registered query — the board payload omits the lock — so we scan it for the one
+// active lock.
+type MergeLock = { id: string; owner: string; feature: string; acquiredAt: string };
+
+async function fetchMergeLock(): Promise<MergeLock | null> {
+  const items = (await strandJson(["list", "--state", "active"])) as StrandRecord[];
+  const lock = items.find((s) => str(s.attributes["kind"]) === "merge-lock");
+  if (!lock) return null;
+  return {
+    id: lock.id,
+    owner: str(lock.attributes["owner"], "-"),
+    feature: str(lock.attributes["land/run-id"], "-"),
+    acquiredAt: lock.created_at,
+  };
+}
+
+// One clipped line so a coordinator sees a merge in flight at a glance: the feature
+// landing, the land run that owns the lock, and how long it has been held. Null
+// when no lock is active, so the tab reserves no row for it (see listDetailTab).
+function MergeLockBanner(lock: MergeLock | null, ctx: RenderCtx) {
+  if (!lock) return null;
+  const held = age(parseInstant(lock.acquiredAt), new Date());
+  const text = `MERGE LOCK · ${lock.feature} · owner ${lock.owner} · held ${held}`;
+  return (
+    <Text bold color="magenta">
+      {clip(text, ctx.cols)}
+    </Text>
+  );
+}
+
+export const kanbanTab = listDetailTab<KanbanRow, MergeLock | null>({
+  id: "kanban",
+  label: "KANBAN",
+  fetch: fetchKanban,
+  List: KanbanList,
+  banner: { fetch: fetchMergeLock, rows: () => 1, render: MergeLockBanner },
+});
