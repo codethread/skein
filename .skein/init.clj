@@ -21,6 +21,13 @@
 (runtime-alpha/use! runtime :skein/spools-loom
                     {:ns 'skein.spools.loom
                      :call 'skein.spools.loom/install!})
+;; reed is a classpath-shipped spool that fulfils :shell workflow gates by
+;; running the gate command directly. Its install! runs an initial scan, so it
+;; is ordered after workflow (which owns the executor registry it registers into).
+(runtime-alpha/use! runtime :skein/spools-reed
+                    {:ns 'skein.spools.reed
+                     :after [:skein/spools-workflow]
+                     :call 'skein.spools.reed/install!})
 ;; UNSAFE spool: text-search reaches past the blessed api.* contract into
 ;; skein.core.db to LIKE-search titles and attribute values, including archived
 ;; rows the query language cannot see. It is a maintained, in-the-open example
