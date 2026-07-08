@@ -34,8 +34,11 @@ full-suite-per-slice prescription.
   a chosen subset of test namespaces with the correct `:test`-alias classpath
   while the runner keeps honoring parallel/serial/shard island placement.
 - **PROP-Ttv-001.G2:** A focused run of an undeclared test namespace fails
-  loudly (TEN-003), so island placement stays the single source of truth and
-  new test namespaces must be registered before they can gate a slice.
+  loudly (TEN-003), so island placement stays the single source of truth. This
+  adds no new registration burden: the runner has no auto-discovery, so a test
+  namespace already must be declared in one of its island sets before the full
+  suite runs it at all; the error message names the known namespaces so
+  authors of new test namespaces are routed to the declaration site.
 - **PROP-Ttv-001.G3:** A documented tiered validation convention: focused
   namespace runs per slice; the full locked suite exactly once as the final
   acceptance gate of a queue and again at land `merge-local-verify`.
@@ -79,10 +82,15 @@ full-suite-per-slice prescription.
 
 ## PROP-Ttv-001.P5 Open questions
 
-- **PROP-Ttv-001.Q1:** Lock discipline for focused runs: shared/exclusive
-  `flock -s` composition against the full-suite lock, a lower `-w` wait, or no
-  lock at all for focused runs — decide in the plan after checking what
-  `util-linux flock` supports on the reference machine.
+- **PROP-Ttv-001.Q1:** The full validation contract for focused runs, decided
+  in the plan: lock discipline against the exclusive full-suite lock (shared
+  `flock -s`, a lower `-w` wait, or no lock), whether focused runs of
+  timing-sensitive serial namespaces need `SKEIN_TEST_AWAIT_SCALE` guidance,
+  and explicit confirmation that focused mode is additive — CI's
+  `clojure -M:test` and the land `merge-local-verify` full gate invoke the
+  unchanged parent mode. Standardize on the util-linux `flock` path the task
+  templates already use (`/opt/homebrew/opt/util-linux/bin/flock`; macOS's
+  own `flock` lacks `-w`).
 - **PROP-Ttv-001.Q2:** Whether a focused run that selects namespaces from an
   add-libs shard should spawn the shard subprocess (faithful, slower) or may
   run them in-process when the selection touches exactly one shard — decide in
