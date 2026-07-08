@@ -6,6 +6,7 @@
             [clojure.test :refer [deftest is testing]]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.kanban :as kanban]
@@ -377,14 +378,14 @@
     (fn [rt config-dir]
       (install-kanban! rt config-dir)
       (let [existing (api/add rt {:title "Existing blocker"})
-            result (api/weave! rt :kanban-batch
-                               {:items [{:key "design"
-                                         :title "Design batch"
-                                         :body "Design body"
-                                         :priority "p2"}
-                                        {:key "docs"
-                                         :title "Write docs"
-                                         :deps ["design" (:id existing)]}]})
+            result (patterns/weave! rt :kanban-batch
+                                    {:items [{:key "design"
+                                              :title "Design batch"
+                                              :body "Design body"
+                                              :priority "p2"}
+                                             {:key "docs"
+                                              :title "Write docs"
+                                              :deps ["design" (:id existing)]}]})
             design-id (get-in result [:refs "design"])
             docs-id (get-in result [:refs "docs"])
             design (api/show rt design-id)
@@ -405,15 +406,15 @@
     (fn [rt config-dir]
       (install-kanban! rt config-dir)
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Pattern input failed spec validation"
-                            (api/weave! rt :kanban-batch
-                                        {:items [{:key "x" :title "X" :surprise true}]})))
+                            (patterns/weave! rt :kanban-batch
+                                             {:items [{:key "x" :title "X" :surprise true}]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Pattern input failed spec validation"
-                            (api/weave! rt :kanban-batch
-                                        {:items [{:key "x" :title "X" :priority "urgent"}]})))
+                            (patterns/weave! rt :kanban-batch
+                                             {:items [{:key "x" :title "X" :priority "urgent"}]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"item keys must be unique"
-                            (api/weave! rt :kanban-batch
-                                        {:items [{:key "x" :title "X"}
-                                                 {:key "x" :title "Again"}]})))
+                            (patterns/weave! rt :kanban-batch
+                                             {:items [{:key "x" :title "X"}
+                                                      {:key "x" :title "Again"}]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target strand not found"
-                            (api/weave! rt :kanban-batch
-                                        {:items [{:key "x" :title "X" :deps ["missing-strand"]}]}))))))
+                            (patterns/weave! rt :kanban-batch
+                                             {:items [{:key "x" :title "X" :deps ["missing-strand"]}]}))))))

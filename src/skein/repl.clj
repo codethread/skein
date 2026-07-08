@@ -12,6 +12,7 @@
             [skein.core.client :as client]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns-api]
             [skein.api.weaver.alpha :as api]
             [skein.core.terse :as terse]
             [skein.core.weaver.config :as daemon-config]
@@ -106,11 +107,11 @@
     :list-query (apply api/list-query rt args)
     :ready (if (seq args) (apply api/ready rt args) (api/ready rt))
     :ready-query (apply api/ready-query rt args)
-    :register-pattern! (apply api/register-pattern! rt args)
-    :patterns (api/patterns rt)
-    :resolve-pattern (apply api/resolve-pattern rt args)
-    :pattern-explain (apply api/pattern-explain rt args)
-    :weave! (apply api/weave! rt args)))
+    :register-pattern! (apply patterns-api/register-pattern! rt args)
+    :patterns (patterns-api/patterns rt)
+    :resolve-pattern (apply patterns-api/pattern rt args)
+    :pattern-explain (apply patterns-api/explain rt args)
+    :weave! (apply patterns-api/weave! rt args)))
 
 (defn- daemon [op & args]
   (call-daemon

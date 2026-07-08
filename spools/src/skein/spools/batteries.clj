@@ -5,7 +5,7 @@
   burn/list/ready/subgraph plus the create-only `weave` op and the read-only
   `query`/`pattern` registry-introspection ops — as `register-op!` ops whose
   `:arg-spec` is parsed by `skein.api.cli.alpha`. Each op delegates to the same
-  `skein.api.weaver.alpha` calls the JSON socket dispatch uses today and returns
+  `skein.api.*.alpha` calls the JSON socket dispatch uses today and returns
   the same JSON shapes, so the ops are reachable through `strand <name>` at the
   CLI root. The namespace owns no module-level state:
   op handlers read the runtime from their invocation context (`:op/runtime`).
@@ -22,6 +22,7 @@
             [clojure.walk :as walk]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime-api]
             [skein.api.weaver.alpha :as api]
             [skein.core.query :as query]
@@ -291,10 +292,10 @@
   [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [pattern input]} (:op/args ctx)]
-    (api/weave! rt
-                (handle-name pattern)
-                (walk/keywordize-keys (read-single-json input))
-                (request-context :weave))))
+    (patterns/weave! rt
+                     (handle-name pattern)
+                     (walk/keywordize-keys (read-single-json input))
+                     (request-context :weave))))
 
 (defn query-op
   "Introspect registered named queries: list all metadata or explain one."
@@ -313,10 +314,10 @@
   (let [rt (:op/runtime ctx)
         {:keys [subcommand] nm :name} (:op/args ctx)]
     (case subcommand
-      "list" (api/patterns rt)
+      "list" (patterns/patterns rt)
       "explain" (do (when (str/blank? nm)
                       (throw (ex-info "pattern explain requires a pattern name" {})))
-                    (api/pattern-explain rt (handle-name nm))))))
+                    (patterns/explain rt (handle-name nm))))))
 
 ;; --- arg-specs --------------------------------------------------------------
 

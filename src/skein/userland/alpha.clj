@@ -35,6 +35,7 @@
   (:require [skein.api.current.alpha :as current]
             [skein.api.batch.alpha :as batch]
             [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns-api]
             [skein.api.weaver.alpha :as api]
             [skein.core.terse :as terse]))
 
@@ -224,29 +225,29 @@
   Accepts a pattern name, optional non-blank doc string, fully qualified function
   symbol, and input spec name. Duplicate names replace prior entries."
   ([pattern-name fn-sym input-spec]
-   (api/register-pattern! (resolve-runtime) pattern-name fn-sym input-spec))
+   (patterns-api/register-pattern! (resolve-runtime) pattern-name fn-sym input-spec))
   ([pattern-name doc fn-sym input-spec]
-   (api/register-pattern! (resolve-runtime) pattern-name doc fn-sym input-spec)))
+   (patterns-api/register-pattern! (resolve-runtime) pattern-name doc fn-sym input-spec)))
 
 (defn patterns
   "Return the resolved runtime's in-memory pattern registry."
   []
-  (api/patterns (resolve-runtime)))
+  (patterns-api/patterns (resolve-runtime)))
 
 (defn pattern
   "Return the registered pattern named `pattern-name`. Missing patterns fail loudly."
   [pattern-name]
-  (api/resolve-pattern (resolve-runtime) pattern-name))
+  (patterns-api/pattern (resolve-runtime) pattern-name))
 
 (defn pattern-explain
   "Return serializable input guidance for the registered pattern `pattern-name`."
   [pattern-name]
-  (api/pattern-explain (resolve-runtime) pattern-name))
+  (patterns-api/explain (resolve-runtime) pattern-name))
 
 (defn weave!
   "Invoke the registered pattern `pattern-name` with `input` and create its batch."
   [pattern-name input]
-  (api/weave! (resolve-runtime) pattern-name input))
+  (patterns-api/weave! (resolve-runtime) pattern-name input))
 
 (defn apply!
   "Apply one transactional batch graph mutation `payload` to the resolved runtime."

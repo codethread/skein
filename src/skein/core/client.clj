@@ -45,16 +45,16 @@
    :register-hook! 'skein.api.hooks.alpha/register!
    :unregister-hook! 'skein.api.hooks.alpha/unregister!
    :hooks 'skein.api.hooks.alpha/hooks
-   :register-pattern! 'skein.api.weaver.alpha/register-pattern!
+   :register-pattern! 'skein.api.patterns.alpha/register-pattern!
    :register-op! 'skein.api.weaver.alpha/register-op!
    :replace-op! 'skein.api.weaver.alpha/replace-op!
    :ops 'skein.api.weaver.alpha/ops
    :resolve-op 'skein.api.weaver.alpha/resolve-op
    :op! 'skein.api.weaver.alpha/op!
-   :patterns 'skein.api.weaver.alpha/patterns
-   :resolve-pattern 'skein.api.weaver.alpha/resolve-pattern
-   :pattern-explain 'skein.api.weaver.alpha/pattern-explain
-   :weave! 'skein.api.weaver.alpha/weave!
+   :patterns 'skein.api.patterns.alpha/patterns
+   :resolve-pattern 'skein.api.patterns.alpha/pattern
+   :pattern-explain 'skein.api.patterns.alpha/explain
+   :weave! 'skein.api.patterns.alpha/weave!
    :apply-batch 'skein.api.batch.alpha/apply!
    :approved-spools 'skein.api.weaver.alpha/approved-spools
    :sync-approved-spools 'skein.api.weaver.alpha/sync-approved-spools

@@ -12,6 +12,7 @@
             [skein.api.hooks.alpha :as hooks]
             [skein.api.views.alpha :as views]
             [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
@@ -1919,26 +1920,26 @@
     (fn [rt _]
       (api/init rt)
       (is (= {:name "dev-task" :fn 'skein.weaver-test/test-pattern :input-spec ::pattern-input}
-             (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)))
+             (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)))
       (is (= [{:name "dev-task" :fn 'skein.weaver-test/test-pattern :input-spec ::pattern-input}]
-             (api/patterns rt)))
+             (patterns/patterns rt)))
       (is (= {:name "documented-task"
               :doc "Create implementation and review strands."
               :fn 'skein.weaver-test/test-pattern
               :input-spec ::pattern-input}
-             (api/register-pattern! rt 'documented-task "Create implementation and review strands."
-                                    'skein.weaver-test/test-pattern ::pattern-input)))
+             (patterns/register-pattern! rt 'documented-task "Create implementation and review strands."
+                                         'skein.weaver-test/test-pattern ::pattern-input)))
       (is (= "Create implementation and review strands."
-             (:doc (api/pattern-explain rt :documented-task))))
+             (:doc (patterns/explain rt :documented-task))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern doc"
-                            (api/register-pattern! rt 'bad-doc "" 'skein.weaver-test/test-pattern ::pattern-input)))
-      (is (str/includes? (:spec-form (api/pattern-explain rt :dev-task))
+                            (patterns/register-pattern! rt 'bad-doc "" 'skein.weaver-test/test-pattern ::pattern-input)))
+      (is (str/includes? (:spec-form (patterns/explain rt :dev-task))
                          "clojure.spec.alpha/keys"))
       (reset! delivered-events [])
       (events/register! rt :capture-weave #{:batch/applied}
                         'skein.weaver-test/capture-event {})
-      (let [result (api/weave! rt :dev-task {:title "Implement weave"})]
+      (let [result (patterns/weave! rt :dev-task {:title "Implement weave"})]
         (is (= ["Implement weave" "Review: Implement weave"] (mapv :title (:created result))))
         (is (= #{"impl" "review"} (set (keys (:refs result)))))
         (is (= 1 (count (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"]))))
@@ -1951,20 +1952,20 @@
       (events/unregister! rt :capture-weave)
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern input failed spec validation"
-                            (api/weave! rt :dev-task {})))
+                            (patterns/weave! rt :dev-task {})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern not found"
-                            (api/weave! rt :missing {:title "x"})))
+                            (patterns/weave! rt :missing {:title "x"})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern function"
-                            (api/register-pattern! rt 'bad 'unqualified ::pattern-input))))))
+                            (patterns/register-pattern! rt 'bad 'unqualified ::pattern-input))))))
 
 (deftest weaver-weave-create-only-contract-remains-compatible
   (with-runtime
     (fn [rt _]
       (api/init rt)
-      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-      (let [result (api/weave! rt :dev-task {:title "Compatible weave"})
+      (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
+      (let [result (patterns/weave! rt :dev-task {:title "Compatible weave"})
             [impl review] (:created result)]
         (is (= #{:refs :created} (set (keys result))))
         (is (= {"impl" (:id impl) "review" (:id review)} (:refs result)))
@@ -1980,16 +1981,16 @@
     (fn [rt _]
       (api/init rt)
       (reset! hook-contexts [])
-      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-      (api/register-pattern! rt 'points 'skein.weaver-test/points-pattern ::pattern-input)
+      (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
+      (patterns/register-pattern! rt 'points 'skein.weaver-test/points-pattern ::pattern-input)
       (hooks/register! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {})
       (hooks/register! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
-      (let [points-result (api/weave! rt :points {:title "Pointed"})]
+      (let [points-result (patterns/weave! rt :points {:title "Pointed"})]
         (is (= {:storyPoints 8} (get-in points-result [:created 0 :attributes])))
         (is (= {:storyPoints 8}
                (:attributes (some #(when (= "Pointed" (:title %)) %) (api/list rt))))))
       (reset! hook-contexts [])
-      (let [result (api/weave! rt :dev-task {:title "Hooked weave"})
+      (let [result (patterns/weave! rt :dev-task {:title "Hooked weave"})
             [impl review] (:created result)
             contexts @hook-contexts
             normalize-contexts (filter #(= :attributes/normalize (:hook/type %)) contexts)
@@ -2026,25 +2027,25 @@
       (reset! hook-contexts [])
       (reset! delivered-events [])
       (events/register! rt :capture #{:strand/added :batch/applied} 'skein.weaver-test/capture-event {})
-      (api/register-pattern! rt 'counting 'skein.weaver-test/counting-pattern ::never-valid)
+      (patterns/register-pattern! rt 'counting 'skein.weaver-test/counting-pattern ::never-valid)
       (hooks/register! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern input failed spec validation"
-                            (api/weave! rt :counting {:title "Nope"})))
+                            (patterns/weave! rt :counting {:title "Nope"})))
       (is (zero? @pattern-call-count))
       (is (empty? @hook-contexts))
       (is (empty? (api/list rt)))
-      (api/register-pattern! rt 'bad-edge 'skein.weaver-test/bad-edge-pattern ::pattern-input)
+      (patterns/register-pattern! rt 'bad-edge 'skein.weaver-test/bad-edge-pattern ::pattern-input)
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Batch target strand not found"
-                            (api/weave! rt :bad-edge {:title "Rollback"})))
+                            (patterns/weave! rt :bad-edge {:title "Rollback"})))
       (is (empty? (api/list rt)))
       (is (empty? (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"])))
-      (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
+      (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
       (hooks/unregister! rt :capture-batch)
       (hooks/register! rt :reject-batch #{:batch/apply-before-commit} 'skein.weaver-test/rejecting-hook {})
       (try
-        (api/weave! rt :dev-task {:title "Rejected weave"})
+        (patterns/weave! rt :dev-task {:title "Rejected weave"})
         (is false "expected weave hook rejection")
         (catch clojure.lang.ExceptionInfo e
           (is (= "hook/failed" (:code (ex-data e))))
@@ -2061,13 +2062,13 @@
     (fn [rt _]
       (let [init-file (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
         (spit init-file "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime-alpha])\n(runtime-alpha/sync! (current/runtime))\n")
-        (api/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-        (is (= 1 (count (api/patterns rt))))
+        (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
+        (is (= 1 (count (patterns/patterns rt))))
         (api/reload-config! rt)
-        (is (empty? (api/patterns rt)))
+        (is (empty? (patterns/patterns rt)))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Pattern not found"
-                              (api/resolve-pattern rt 'dev-task)))))))
+                              (patterns/pattern rt 'dev-task)))))))
 
 (deftest json-socket-invoke-dispatch
   (with-runtime

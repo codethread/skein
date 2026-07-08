@@ -9,6 +9,7 @@
             [matcher-combinators.matchers :as m]
             [matcher-combinators.test :refer [match?]]
             [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
             [skein.core.specs :as specs]
             [skein.spools.batteries :as batteries]
@@ -256,7 +257,7 @@
   [f]
   (with-batteries
     (fn [rt]
-      (api/register-pattern! rt 'task 'skein.spools.batteries-test/weave-test-pattern ::weave-input)
+      (patterns/register-pattern! rt 'task 'skein.spools.batteries-test/weave-test-pattern ::weave-input)
       (f rt))))
 
 (deftest weave-happy-path-and-json-value
@@ -268,7 +269,7 @@
           (is (= #{:created :refs} (set (keys result))))
           (is (= ["Do it"] (map :title (:created result))))
           (testing "shape matches a direct weaver-API weave!"
-            (let [direct (api/weave! rt 'task {:title "Do it"})]
+            (let [direct (patterns/weave! rt 'task {:title "Do it"})]
               (is (= (set (keys result)) (set (keys direct))))))))
       (testing "literal inline JSON input works too"
         (let [result (api/op! rt 'weave ["--pattern" "task" "--input" "{\"title\":\"Inline\"}"])]

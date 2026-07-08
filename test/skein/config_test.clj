@@ -12,6 +12,7 @@
             [skein.api.format.alpha :as format-alpha]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.graph.alpha :as graph]
+            [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.runtime :as runtime]
@@ -180,10 +181,10 @@
                    "devflow-status" "workflow-runs" "devflow-conventions"
                    "flow-await" "flow-status" "hitl" "land" "agent" "bench"]]
     (is (some #(= op-name (:name %)) (api/ops rt))))
-  (is (some #(= "delegate-pipeline" (:name %)) (api/patterns rt)))
+  (is (some #(= "delegate-pipeline" (:name %)) (patterns/patterns rt)))
   ;; agent-plan is spool-owned now; a real startup wires the agents spool in
   ;; via init.clj, so it must still be registered end to end
-  (is (some #(= "agent-plan" (:name %)) (api/patterns rt)))
+  (is (some #(= "agent-plan" (:name %)) (patterns/patterns rt)))
   ;; agent review must consume the one authoritative policy text by default;
   ;; the text ships from skein.spools.agents, the accessor stays on shuttle
   (is (= (var-get (requiring-resolve 'skein.spools.agents/review-contract))
@@ -410,12 +411,12 @@
 (deftest delegate-pipeline-weave-creates-chain-loop-gates
   (with-config-runtime
     (fn [rt]
-      (api/weave! rt :delegate-pipeline
-                  {:run_id "pipe-test"
-                   :harness "pi-main"
-                   :accept true
-                   :tasks [{:id "a" :title "Do A" :body "A body"}
-                           {:id "b" :title "Do B"}]})
+      (patterns/weave! rt :delegate-pipeline
+                       {:run_id "pipe-test"
+                        :harness "pi-main"
+                        :accept true
+                        :tasks [{:id "a" :title "Do A" :body "A body"}
+                                {:id "b" :title "Do B"}]})
       (let [strands (api/list rt)
             by-task (into {} (keep (fn [s]
                                      (when-let [task (or (get-in s [:attributes :delegate-pipeline/task])
@@ -431,9 +432,9 @@
   (testing "acceptance checkpoint is optional and task max-attempts pass through"
     (with-config-runtime
       (fn [rt]
-        (api/weave! rt :delegate-pipeline
-                    {:run_id "pipe-no-accept"
-                     :tasks [{:id "a" :title "Do A" :harness "pi-main" :max-attempts 4}]})
+        (patterns/weave! rt :delegate-pipeline
+                         {:run_id "pipe-no-accept"
+                          :tasks [{:id "a" :title "Do A" :harness "pi-main" :max-attempts 4}]})
         (let [strands (api/list rt)
               task (first (filter #(= "a" (or (get-in % [:attributes :delegate-pipeline/task])
                                               (get-in % [:attributes "delegate-pipeline/task"])))
