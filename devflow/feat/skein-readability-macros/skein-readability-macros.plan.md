@@ -190,3 +190,19 @@ Append notes here. Do not rewrite earlier notes.
 - Cross-checked once out-of-loop that the pre-refactor base and current configs register byte-identical op-help, query
   definitions, and `devflow-conventions` (two isolated `:publish? false` runtimes, baseline loaded via `git show ad5d2eb`).
   Full gates green: `clojure -M:test` (719 tests), `clojure -M:smoke`, `make fmt-check lint reflect-check docs-check`.
+
+### PLAN-Srm-001.DN3 Live RFC-020.C1 surface diff — accepted post-merge-of-main — 2026-07-08
+
+- MI2's deferred live disposable-world CLI diff (RFC-020.C1, deferred to the coordinator in DN2) was run **post-merge-of-main**
+  under coordinator strand `g80oq` (run `7z6mm`, evidence in note `y6igw`): two `mktemp -d` worlds, one on `main`-config and
+  one on the branch config, captured through the CLI and diffed with `diff -r`. Result: **byte-identical across `help`, all 36
+  `help <op>`, `devflow-conventions`, `harnesses`, `rosters`, the pattern list, and 15 named queries — zero normalizations**.
+  Both disposable weavers were stopped and their worlds removed; the canonical `.skein` world was never touched.
+- Follow-up review pass `change-review-ab268b36` (synthesis note `tp4l7`) then hardened the registration mechanics before
+  landing: `defquery`/`defop`/`defrule`/`defpattern` gained a per-namespace `forget-*!` reset that each config namespace
+  (`config.clj`, `attention.clj`, `demo.clj`) calls at the top of its load, so a targeted reload registers exactly the
+  current source rather than re-registering entries since renamed or deleted from a JVM-global registry (TEN-003). Because a
+  cold load clears an empty registry before the def forms populate it, the registered surface a fresh weaver publishes is
+  unchanged; the in-process surface-identity checks in `config_test` (MI1) plus the new `forget-*` reload regression tests
+  cover this in-loop. A live re-run of the RFC-020.C1 diff after the reload fix requires `mill weaver start`, which the
+  shuttle worker contract bars, so the coordinator re-runs it at land per the DN2 precedent.
