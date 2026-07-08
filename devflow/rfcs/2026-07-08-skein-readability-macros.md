@@ -71,15 +71,18 @@ Boilerplate that separates a construct from its usage today, from the worktree f
 - **Queries (`config.clj`).** Seven `def *-query` vars with docstrings (32-86), re-listed by symbol in
   `register-query-map!` (714-726), then documented a third time in `devflow-conventions`.
 - **Attention rules (`attention.clj`).** Each rule is a `defn *-rule` (18-164) whose registration lands in
-  `register-chime-rules!` at the bottom (166-175), so the name-to-function binding is far from the body.
+  `register-chime-rules!` at the bottom (166-175, a batch of `chime/defrule!` calls), so the name-to-function
+  binding is far from the body.
 - **Harness seats (`harnesses.clj`).** Already one readable `defalias!`/`defharness!` block each, doc and
   routing rationale beside the seat. Low grouping ROI.
 - **Reviewer rosters (`reviewers.clj`).** Already data-first; one map per reviewer, validated loudly by
   `defroster!`. A macro would obscure a validated shape for no gain.
 - **NVD cron (`nvd_scan.clj`).** Mostly domain logic and test seams, not registration boilerplate; only the
   final `cron/register!` metadata is separated, and that separation aids testing.
-- **Patterns (`workflows.clj` delegate-pipeline; `skein.macros.demo`).** The `skein.macros/defpattern` shape
-  already fuses this concern where it is used.
+- **Patterns (`workflows.clj` delegate-pipeline; `skein.macros.demo`).** `delegate-pipeline` still registers
+  manually via `patterns/register-pattern!` in `workflows.clj`; the fused `defpattern` shape exists in the
+  `skein.macros` spool and is exercised only by `demo.clj` today. Migrating `delegate-pipeline` onto it is
+  optional cleanup, not a driver of this RFC.
 
 Load-order constraints any macro layer must respect (from `init.clj` and the recon): registration side effects
 happen only inside `install!`, after `:after` dependencies load; treadle installs last and needs every harness
@@ -155,14 +158,15 @@ Each `install!` calls `install-queries!`/`install-ops!`/`install-rules!` for its
 ## RFC-020.P7 Consequences
 
 - **RFC-020.C1 (semantics identical, and how it is verified).** The macros relocate calls; they do not change
-  them. Verification is a disposable-world smoke, per the CLAUDE.md disposable-workspace rule: spin a
-  `mktemp -d` world (`ws=$(mktemp -d)`, guarded `${ws:?}`), point it at the branch config, start a weaver with
-  `:publish? false` semantics, and diff the before/after registry-derived surfaces — `strand help`,
-  `strand help <op>` for every op, `strand agent harnesses`, `strand agent rosters`, `strand pattern list`,
-  `strand devflow-conventions`, each named query's rows, and a chime rule firing — asserting byte-identical
-  output against the status-quo branch. Back it with `clojure -M:test` (under the `flock` suite lock) and
-  `make fmt-check lint reflect-check docs-check`. A registry snapshot compared before/after the refactor is the
-  tightest single check.
+  them. Verification is a disposable-world smoke, per the CLAUDE.md disposable-workspace rule: create a
+  `mktemp -d` workspace (`ws=$(mktemp -d)`, guarded `${ws:?}`), `mill init --workspace "${ws:?}"` it with the
+  branch's `.skein` config, start that workspace's own weaver (`mill weaver start --workspace "${ws:?}"`), and
+  capture the registry-derived surfaces through the CLI against it — `strand --workspace "${ws:?}" help`,
+  `help <op>` for every op, `agent harnesses`, `agent rosters`, `pattern list`, `devflow-conventions`, each
+  named query's rows, and a chime rule firing — then repeat on the status-quo config and assert byte-identical
+  output. Stop that weaver when done; the canonical world is never touched. Back it with `clojure -M:test`
+  (under the `flock` suite lock) and `make fmt-check lint reflect-check docs-check`. The before/after surface
+  snapshot is the tightest single check.
 - **RFC-020.C2 (migration, sketch not runbook).** Add `skein.macros.{ops,queries,rules}` to the local spool;
   activate them in `init.clj` under the existing `:macros/*` module block (or fold into `:macros/patterns`'s
   require). Rewrite `config.clj` queries and ops, and `attention.clj` rules, one construct per block; delete

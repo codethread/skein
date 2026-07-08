@@ -62,7 +62,8 @@ feature extends that proven shape to the config concerns that actually drift.
 - **PROP-SkeinReadabilityMacros-001.S2:** Convert `config.clj` to author its seven queries and its op family through
   `defquery`/`defop`, one block per construct, and delete `register-query-map!` and the `install!` op vector in favour of
   the `install-*!` calls. Convert `attention.clj` to author its rules through `defrule` and delete
-  `register-chime-rules!`. No other `.skein` file changes.
+  `register-chime-rules!`. Beyond those two config files, the new spool namespaces under `.skein/spools/macros` (S1),
+  and an `init.clj` require/activation touch for the `:macros/*` module if loading needs it, no `.skein` file changes.
 - **PROP-SkeinReadabilityMacros-001.S3 (accepted RFC resolutions, carried into scope):** `defop` accepts either a named
   arg-spec var or an inline arg-spec map, mirroring `defpattern`'s `:spec`/`:input` (RFC-020.Q1). `install-ops!` /
   `install-queries!` derive the mechanical `:ops`/`:queries` name listings in `devflow-conventions` from the remembered
