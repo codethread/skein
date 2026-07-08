@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: Author skein.macros.rules defrule
     task_file: tasks/004-author-defrule-macro.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 5
     description: Convert config.clj queries to defquery
