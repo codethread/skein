@@ -1,132 +1,72 @@
 # Contributing to Skein
 
-Skein is alpha software and follows the project tenets in `devflow/TENETS.md` and `devflow/PHILOSOPHY.md`.
+Skein is alpha software; the tenets in [`devflow/TENETS.md`](./devflow/TENETS.md) and [`devflow/PHILOSOPHY.md`](./devflow/PHILOSOPHY.md) govern every change.
 
-## Local setup
+This repo is agent-first: most changes are planned, built, reviewed, and landed by coding agents coordinating through the repo's own `.skein` world. The main contributor skill is steering those agents well. [`AGENTS.md`](./AGENTS.md) is the contract the agents follow; this file is the human side.
 
-```sh
-make install
-mill start
-```
-
-`make install` builds `strand` and `mill` and records this checkout as mill's install-time source for weaver launch and the thin nREPL attach client. `mill init` creates only the selected workspace's alpha config marker; do not write source paths into `config.json`.
-
-Start the weaver in one terminal:
+## Setup
 
 ```sh
-mill weaver start
+make install        # build strand + mill from this checkout and install them on PATH
+mill start          # supervisor; leave it running in a terminal
+mill weaver start   # boot this repo's weaver — the shared coordination world
 ```
 
-Use it from another terminal:
+`make install` records this checkout as mill's install-time source for weaver launches. Re-run it after pulling main. Agents never run it; that one is yours.
 
-```sh
-mill init
-strand list
-mill weaver status
-mill weaver stop
-```
+## How work flows
+
+Every piece of work takes the same shape, whoever does it:
+
+1. **A kanban card.** Anything you ask for becomes a feature card on the strand-backed board ([`spools/kanban.md`](./spools/kanban.md)); half-formed ideas sit in the refinement lane until you promote them.
+2. **The devflow lifecycle.** A coordinator agent runs a feature through devflow — proposal, spec/plan, tasks, implementation — in its own worktree, delegating tasks to worker agents.
+3. **Adversarial review.** Finished changes are reviewed by the declared rosters in [`.skein/reviewers.clj`](./.skein/reviewers.clj): small single-concern reviewers, synthesized cross-vendor so no model family signs off its own work.
+4. **Landing.** A coordinator drives the `land` workflow: draft PR, green CI, roster sign-off, verified squash-merge, green main CI. `strand land about` prints the discipline.
+
+You sit at the edges: describe outcomes, decide checkpoints, read the board.
+
+## Steering agents
+
+- State the outcome you want and let the coordinator drive. The conventions (card claiming, devflow, delegation, review) live in AGENTS.md and the workflow briefs, so you should not need to restate them. By default the session still stops at every human checkpoint; the `bonkai` skill (`.agents/skills/bonkai`) is the opt-in authority grant that lets it decide checkpoints and sign off on your behalf for AFK runs.
+- Human decisions come back as HITL checkpoints, which agents may not answer for you. Bind how you are notified in a gitignored `.skein/init.local.clj`:
+
+  ```clojure
+  (require '[skein.spools.chime :as chime])
+  (chime/set-notifier! {:argv ["cc-notify"]})   ; anything with the `cmd <title>` + body-on-stdin shape
+  ```
+
+- Watch progress with `make dash` (TUI over agent runs, the board, and devflow), `strand kanban board`, `strand branches [branch]`, and `strand flow-status <feature>`. For an ASCII board: `printf "(do (require 'skein.spools.kanban) (skein.spools.kanban/print-board!))\n" | mill weaver repl --stdin`.
+- `strand agent harnesses` lists the model seats and their roles; the routing policy comments sit beside the alias definitions in `.skein/harnesses.clj`.
 
 ## Discovery: help, about, prime
 
-Skein has one convention for "how do I find out?", in three escalating tiers (canonical write-up: [`docs/skein.md`](./docs/skein.md) "Discovery tiers"; authoring rules: [`docs/writing-shared-spools.md`](./docs/writing-shared-spools.md)):
+Skein has one convention for "how do I find out?", in three escalating tiers (canonical write-up: [`docs/skein.md`](./docs/skein.md) "Discovery tiers"):
 
-- **`help`** — generated from arg-spec data, never hand-written: `strand help`, `strand help <op>`, and `strand <op> help|-h|--help` for subcommand ops. Declare `:subcommands` and usage rendering, help aliases, and structured unknown-verb errors all come for free.
-- **`about`** — the authored per-op JSON manual for semantics beyond argument shapes: `strand kanban about`, `strand agent about`.
-- **`prime`** — run-first agent orientation: `mill skein prime`, `mill strand prime`, `strand kanban prime`. Run these before working an area.
+- **`help`** — generated from arg-spec data, never hand-written: `strand help [<op>]`.
+- **`about`** — the authored per-op manual: `strand agent about`, `strand kanban about`, `strand land about`.
+- **`prime`** — run-first orientation: `mill skein prime`, `mill strand prime`, `strand kanban prime`.
 
-When contributing ops or spools: never hand-roll subcommand dispatch or usage strings, ship `about` for ops with semantics, and ship `prime` where there is working discipline.
+## Working by hand
 
-## Disposable workspaces for development
-
-Use explicit workspaces for tests, smoke reproduction, examples, and agent work:
+Direct hacking is welcome; use a disposable workspace so experiments never touch the coordination world:
 
 ```sh
-workspace=$(mktemp -d)
-mill init --workspace "$workspace"
-mill weaver start --workspace "$workspace"
-design=$(strand --workspace "$workspace" add "Sketch model" --state closed --attr priority=high)
-docs=$(strand --workspace "$workspace" add "Write docs" --attr owner=agent)
-strand --workspace "$workspace" update "$docs" --edge depends-on:$design
-strand --workspace "$workspace" ready
-mill weaver stop --workspace "$workspace"
+ws=$(mktemp -d)
+mill init --workspace "$ws"
+mill weaver start --workspace "$ws"
+strand --workspace "$ws" add "Sketch model"
+mill weaver stop --workspace "$ws"
 ```
 
-`mill init` bootstraps missing `config.json`, `spools.edn`, `init.clj`, `spools/`, and `.gitignore` files/directories without overwriting existing user files. `config.json` contains only `{"configFormat":"alpha"}`.
+`mill weaver repl` attaches a live REPL to a running weaver. [Getting started](./docs/getting-started.md) walks the whole surface, and [`docs/skein.md`](./docs/skein.md) covers workspaces, reload/restart boundaries, and the REPL in depth.
 
-## REPL and runtime config
-
-```sh
-mill weaver repl --workspace "$workspace"
-```
-
-```clojure
-(init!)
-(def design (:id (strand! "Sketch model" {:priority "high"} {:state "closed"})))
-(def docs (:id (strand! "Write docs" {:owner "agent"})))
-(update! docs {:edges [{:type "depends-on" :to design}]})
-(defquery! 'agent-owned '[:= [:attr :owner] "agent"])
-(ready)
-```
-
-Non-interactive trusted forms:
-
-```sh
-printf '(skein.api.current.alpha/runtime)\n' | mill weaver repl --stdin --workspace "$workspace"
-```
-
-Runtime spool startup config may use:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha]
-         '[skein.api.graph.alpha :as graph]
-         '[skein.api.views.alpha :as views])
-(def runtime (current/runtime))
-(runtime-alpha/sync! runtime)
-```
-
-Shipped `skein.api.*.alpha` namespaces are privileged built-in helpers. `spools.edn` approves user/community local roots; `skein.api.runtime.alpha/sync!` makes approved roots available; `runtime-alpha/use!` activates modules for the weaver lifetime.
-
-## Work tracking: the kanban board
-
-The user↔agent work board is strand-backed, not a separate app: `spools/kanban.md` is the contract and `strand kanban about` is the live manual. Everything you ask for becomes a `feature` card.
-
-- `strand kanban board` — high-level overview. The `claimed` lane is work in progress, each card carrying its `owner`, `branch`, and latest handover; `needs-review` lists what awaits your attention and where (ready review work, per card and branch).
-- `strand kanban card <id>` — one card's notes, latest handover, active work, and `related` (adjacent cards linked by `depends-on`).
-- `strand branches [branch]` — what is happening inside a feature branch: the cards on it and their substrands.
-- New ideas enter with `strand kanban add "..."`; use `--status refinement` for not-yet-actionable ideas and `strand kanban promote <id>` when one is ready to work.
-
-`strand` output is JSON by design; for an ASCII board run `printf "(do (require 'skein.spools.kanban) (skein.spools.kanban/print-board!))\n" | mill weaver repl --stdin` (or call `(skein.spools.kanban/print-board!)` from an interactive `mill weaver repl`).
-
-Agents follow the fuller board contract in `AGENTS.md` (claim/notes/handover rules); this section is the human-side overview.
-
-## Validation
+Validate before committing:
 
 ```sh
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test
 (cd cli && go test ./...)
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
+make fmt-check lint reflect-check docs-check
 ```
 
-After validation, `git status --short` should not show generated SQLite, socket, metadata, smoke, or built CLI artifacts.
-
-## Debugging SQLite state
-
-```sh
-# Smoke workspaces are created under a short /tmp/sk<pid>/ root while the suite runs.
-sqlite3 /tmp/sk<pid>/smoke-cli.sqlite.workspace/data/skein.sqlite '.schema'
-sqlite3 /tmp/sk<pid>/smoke-cli.sqlite.workspace/data/skein.sqlite 'select id, title, state, attributes from strands;'
-sqlite3 /tmp/sk<pid>/smoke-cli.sqlite.workspace/data/skein.sqlite 'select from_strand_id, to_strand_id, edge_type, attributes from strand_edges;'
-```
-
-## Implementation boundaries
-
-- Keep the CLI thin: parse command-line input, normalize output, and route strand commands through the weaver client.
-- Keep SQL and persistence behavior in `skein.core.db`.
-- Keep strand attributes as JSON `TEXT`; do not introduce JSONB assumptions.
-- Do not add schemas for userland attributes yet.
-- Keep public CLI automation in `cli/` and weaver transport glue thin.
-- Keep interactive convenience wrappers in `skein.repl`.
-- Fail loudly on invalid CLI input instead of silently falling back.
-- Keep public CLI machine output JSON-only; EDN belongs to Clojure REPL/config/dev workflows.
-- When changing shipped behavior, update the relevant root spec in `devflow/specs/`.
+After validation, `git status --short` should show no generated SQLite, socket, metadata, smoke, or built CLI artifacts.
