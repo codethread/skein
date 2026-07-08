@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Author skein.macros.ops defop
     task_file: tasks/003-author-defop-macro.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 4
     description: Author skein.macros.rules defrule
