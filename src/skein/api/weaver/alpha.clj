@@ -1,5 +1,18 @@
 (ns skein.api.weaver.alpha
-  "Trusted in-process API for manipulating strands and weaver runtime registries."
+  "Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
+
+  This namespace owns the primitives no domain namespace does: strand
+  create/read/update (`add`, `update`, `supersede`, `archive!`/`unarchive!`,
+  `show`, `list`/`list-lean`/`list-query`, `ready`/`ready-lean`/`ready-query`),
+  database schema `init`, acyclic-relation declaration
+  (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
+  (`register-op!`, `replace-op!`, `ops`, `resolve-op`, `op!`,
+  `op-help-handler`, `help-alias-result`, `register-built-in-ops!`). Domain
+  surfaces (events, views, hooks, graph queries, batch, patterns, scheduler,
+  runtime config) each own their own alpha namespace.
+
+  Callers own runtime selection and pass the target weaver runtime as the first
+  argument to every function here."
   (:refer-clojure :exclude [list update])
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]

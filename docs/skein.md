@@ -310,7 +310,7 @@ For a simple persistent query, put it directly in `init.clj`:
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime-alpha]
-         '[skein.api.weaver.alpha :as api])
+         '[skein.api.graph.alpha :as graph])
 
 (def runtime (current/runtime))
 
@@ -318,10 +318,10 @@ For a simple persistent query, put it directly in `init.clj`:
 (runtime-alpha/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
-(api/register-query! runtime 'mine [:= [:attr :owner] "ct"])
+(graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 
-For a workspace that already activates a local spool with `runtime-alpha/use!`, follow that existing pattern instead: add the `api/register-query!` call to the spool's `install!` function so reload/startup installs everything from one place.
+For a workspace that already activates a local spool with `runtime-alpha/use!`, follow that existing pattern instead: add the `graph/register-query!` call to the spool's `install!` function so reload/startup installs everything from one place.
 
 Defining a Clojure var that contains query data is not the same as registering a named query. A local var can be passed to graph helpers from your own code, but `strand list --query mine` only works after `mine` has been registered in the weaver's named-query registry.
 
@@ -399,7 +399,7 @@ A direct `init.clj` query registration can look like this:
 ```clojure
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime-alpha]
-         '[skein.api.weaver.alpha :as api])
+         '[skein.api.graph.alpha :as graph])
 
 (def runtime (current/runtime))
 
@@ -407,7 +407,7 @@ A direct `init.clj` query registration can look like this:
 (runtime-alpha/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
-(api/register-query! runtime 'mine [:= [:attr :owner] "ct"])
+(graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 
 Use reload during development:
@@ -462,10 +462,10 @@ Implement the spool:
 ```clojure
 (ns my.workflow
   (:require [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.graph.alpha :as graph]))
 
 (defn install! []
-  (api/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
+  (graph/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
   {:my.workflow/installed true})
 ```
 
@@ -559,8 +559,7 @@ Views let you register named read-only transformations backed by weaver-loadable
 (ns my.workflow
   (:require [skein.api.graph.alpha :as graph]
             [skein.api.views.alpha :as views]
-            [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.current.alpha :as current]))
 
 (defn owned-view [{:keys [params]}]
   (let [rt (current/runtime)
@@ -570,7 +569,7 @@ Views let you register named read-only transformations backed by weaver-loadable
 
 (defn install! []
   (let [rt (current/runtime)]
-    (api/register-query! rt 'owned [:= [:attr :owner] "ct"])
+    (graph/register-query! rt 'owned [:= [:attr :owner] "ct"])
     (views/register-view! rt 'owned-view 'my.workflow/owned-view)
     {:installed true}))
 ```
