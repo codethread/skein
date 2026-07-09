@@ -1860,7 +1860,7 @@
   (let [runtime (rt)]
     (register-default-harnesses!)
     (register-default-backends!)
-    (events/register! runtime :shuttle/engine
+    (events/register! runtime :agent-run/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}
                       'skein.spools.agent-run/on-event

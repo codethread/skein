@@ -257,9 +257,9 @@
   []
   (let [runtime (rt)
         handlers (set (map :key (events/handlers runtime)))]
-    (when-not (contains? handlers :shuttle/engine)
+    (when-not (contains? handlers :agent-run/engine)
       (fail! "Treadle requires the shuttle engine to be installed first" {:handlers handlers}))
-    (events/register! runtime :treadle/engine event-types
+    (events/register! runtime :gate/engine event-types
                       'skein.spools.executors.subagent/on-event
                       {:spool "treadle"})
     (workflow/register-executor! :subagent gate-stalled?)
