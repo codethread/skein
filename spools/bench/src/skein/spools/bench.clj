@@ -739,11 +739,11 @@
   This is the seam `run!` and workflow authors both consume. `run!` pours the
   judge strand and (in `:harness` mode) its serving shuttle run straight from
   this output — the strand's `bench/judge-prompt` and a shuttle run's
-  `shuttle/prompt` come from this one builder, so they never drift. A workflow
+  `agent-run/prompt` come from this one builder, so they never drift. A workflow
   author calls `judge-spec` at pour time and maps it onto a `:subagent` gate
   exactly as roster review specs do (`skein.spools.delegation/roster-review-specs`):
-  `:prompt` becomes the gate's `shuttle/prompt`, the author picks the gate's
-  `shuttle/harness`, `:attrs` merge into the gate, and the gate depends on
+  `:prompt` becomes the gate's `agent-run/prompt`, the author picks the gate's
+  `agent-run/harness`, `:attrs` merge into the gate, and the gate depends on
   `:entry-ids`. Bench thus never requires or references the workflow spool.
 
   Fails loudly when the suite declares `:judge :none` (there is no judge to
@@ -960,7 +960,7 @@
   every entry's container by name. The judge strand is closed with
   `bench/error \"aborted\"` (the same marking as an aborted entry, whether the
   judge is a shuttle run or an external seam); a shuttle-run judge additionally
-  gets `shuttle/phase \"superseded\"` so the run engine treats it as retired."
+  gets `agent-run/phase \"superseded\"` so the run engine treats it as retired."
   [runtime run-id]
   (let [root (or (api/show runtime run-id) (fail! "bench abort: no such run" {:id run-id}))
         eng (engine runtime)
@@ -989,7 +989,7 @@
       (api/update runtime (:id judge)
                   {:state "closed"
                    :attributes (cond-> {"bench/aborted" "true" "bench/error" "aborted"}
-                                 (attr-get judge "shuttle/run") (assoc "shuttle/phase" "superseded"))}))
+                                 (attr-get judge "agent-run/run") (assoc "agent-run/phase" "superseded"))}))
     (drop-semaphore! runtime run-id)
     {:aborted run-id :failed failed :judge (:id judge)}))
 
@@ -1037,12 +1037,12 @@
 (defn- judge-verdict
   "Resolve a judge strand's verdict and its source (§8): the strand's
   `bench/verdict` attribute wins (the canonical, mode-agnostic location); else a
-  serving shuttle run's `shuttle/result`; else none. Returns
+  serving shuttle run's `agent-run/result`; else none. Returns
   `{:verdict <text>? :verdict-source \"attr\"|\"run\"|\"none\"}`."
   [judge]
   (if-let [v (attr-get judge "bench/verdict")]
     {:verdict v :verdict-source "attr"}
-    (if-let [r (attr-get judge "shuttle/result")]
+    (if-let [r (attr-get judge "agent-run/result")]
       {:verdict r :verdict-source "run"}
       {:verdict-source "none"})))
 
@@ -1121,7 +1121,7 @@
      :judge (when judge
               (merge {:id (:id judge)
                       :state (:state judge)
-                      :phase (attr-get judge "shuttle/phase")}
+                      :phase (attr-get judge "agent-run/phase")}
                      (judge-verdict judge)))
      :blocking-failures (->> entries
                              (filter #(= "failed" (attr-get % "bench/phase")))
@@ -1154,7 +1154,7 @@
   "Return the full comparison document for a bench run (§10): per-entry
   normalized metrics, extraction warnings, artifact paths, and per-entry judge
   notes, plus the judge verdict resolved per §8 (the judge strand's
-  `bench/verdict` attr, else a serving run's `shuttle/result`) with its
+  `bench/verdict` attr, else a serving run's `agent-run/result`) with its
   `:verdict-source` (attr|run|none). A pure read."
   [runtime run-id]
   (let [root (run-root! runtime run-id "report")
@@ -1182,7 +1182,7 @@
                       entries)
        :judge (when judge
                 (merge {:id (:id judge)
-                        :phase (attr-get judge "shuttle/phase")}
+                        :phase (attr-get judge "agent-run/phase")}
                        (judge-verdict judge)))})))
 
 ;; ---------------------------------------------------------------------------
@@ -1263,7 +1263,7 @@
                     :composition (fmt/reflow
                                   "|skein.spools.bench/judge-spec (trusted Clojure) returns {:prompt
                                    |:attrs :entry-ids} — the same source run! pours from. A workflow
-                                   |author maps it onto a :subagent gate (shuttle/prompt from
+                                   |author maps it onto a :subagent gate (agent-run/prompt from
                                    |:prompt, gate depends on :entry-ids), exactly like agents'
                                    |roster-review-specs.")
                     :seat "In :harness mode the suite's :judge :harness — any shuttle harness/alias — chooses the approving model."
@@ -1273,8 +1273,8 @@
                                     |the builder, not overridable by :contract).")
                     :verdict (fmt/reflow
                               "|The verdict lands in bench/verdict on the judge strand (canonical);
-                               |a shuttle run also leaves it as shuttle/result. report/status
-                               |resolve bench/verdict first, else shuttle/result, and report the
+                               |a shuttle run also leaves it as agent-run/result. report/status
+                               |resolve bench/verdict first, else agent-run/result, and report the
                                |verdict-source (attr|run|none).")
                     :output "One note appended per entry strand with scores and findings, the verdict stamped on the judge strand, then the strand closed."
                     :recovery "A failed shuttle-run judge recovers with the ordinary strand agent retry."}

@@ -300,7 +300,7 @@ esac
             (is (= #{entry-id} (set (map :to_strand_id (graph/outgoing-edges rt [judge] "depends-on")))))
             (is (= "true" (get-in (api/show rt judge) [:attributes :bench/judge])))
             (let [judged (test-support/await-phase rt judge #{"done"})]
-              (is (= "verdict" (get-in judged [:attributes :shuttle/result]))))))))))
+              (is (= "verdict" (get-in judged [:attributes :agent-run/result]))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; :rev resolution
@@ -429,7 +429,7 @@ esac
             (is (= "aborted" (get-in aborted [:attributes :bench/error]))))
           (let [j (api/show rt judge)]
             (is (= "closed" (:state j)))
-            (is (= "superseded" (get-in j [:attributes :shuttle/phase])))))))))
+            (is (= "superseded" (get-in j [:attributes :agent-run/phase])))))))))
 
 (deftest reconcile-fails-orphaned-entries
   (with-bench
@@ -823,7 +823,7 @@ esac
             (is (some? judge))
             (is (= "true" (get-in js [:attributes :bench/judge])))
             (is (= run (get-in js [:attributes :bench/run])))
-            (is (nil? (get-in js [:attributes :shuttle/run])) "external mode spawns no shuttle run")
+            (is (nil? (get-in js [:attributes :agent-run/run])) "external mode spawns no shuttle run")
             (is (str/includes? (get-in js [:attributes :bench/judge-prompt]) entry-id))
             (is (str/includes? (get-in js [:attributes :body]) "bench/verdict"))
             (is (= #{entry-id} (set (map :to_strand_id (graph/outgoing-edges rt [judge] "depends-on"))))))
@@ -903,7 +903,7 @@ esac
           (await-phase rt entry-id #{"done"})
           (testing "prompt and stamped attr share one builder (no drift)"
             (let [js (api/show rt judge)]
-              (is (= (get-in js [:attributes :shuttle/prompt])
+              (is (= (get-in js [:attributes :agent-run/prompt])
                      (get-in js [:attributes :bench/judge-prompt])))))
           (test-support/await-phase rt judge #{"done"})
           (testing "bench/verdict attr wins over the run result"
@@ -932,5 +932,5 @@ esac
           (let [j (api/show rt judge)]
             (is (= "closed" (:state j)))
             (is (= "aborted" (get-in j [:attributes :bench/error])))
-            (is (nil? (get-in j [:attributes :shuttle/phase]))
+            (is (nil? (get-in j [:attributes :agent-run/phase]))
                 "an external judge is not a shuttle run — no superseded phase")))))))
