@@ -27,7 +27,7 @@ tasks:
   - id: 6
     description: Migrate reed onto lane quiescence + subprocess poll
     task_file: tasks/006-reed-migration.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 7
     description: Migrate chime onto notifier + lane settle

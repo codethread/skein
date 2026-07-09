@@ -201,3 +201,7 @@ serial-island comments updated. Full locked suite green.
 ### PLAN-Dtt-001.DN6 Task 005 treadle migration — 2026-07-09
 
 - Migrated treadle's gate-outcome waits to layered deterministic settling: the real shuttle-run terminal markers are awaited first, then `events.alpha/await-quiescent!` settles treadle's on-lane delivery/error/supersede reactions before assertions read dependent state. The bare sleeps in gate non-spawn paths are now lane quiescence awaits, with no treadle engine changes. Focused `skein.treadle-test` passed via the in-process classpath invocation, and `make fmt-check lint` was clean.
+
+### PLAN-Dtt-001.DN7 Task 006 reed migration — 2026-07-09
+
+- Migrated reed's dispatch waits to `events.alpha/await-quiescent!` after mutations that can make `:shell` gates ready, while keeping the existing outcome-keyed `poll-until` helper solely for the real off-lane subprocess completion. Reed engine behavior and worker-pool semantics were unchanged. Focused `skein.spools.reed-test` passed via the in-process classpath invocation, and `make fmt-check lint` was clean.
