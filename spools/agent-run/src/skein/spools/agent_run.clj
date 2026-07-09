@@ -1700,12 +1700,23 @@
          (map #(api/show (rt) %))
          (remove #(= "superseded" (sattr % "phase"))))))
 
+(defn- helper-parent
+  "Return a helper run's structural target: its `parent-of` parent (from
+  `parents`, the run's parent-of source ids), excluding `spawned-by` provenance.
+  Helpers carry no `serves` edge, so `spawn --for X` still reads \"for X\" off
+  placement."
+  [run parents]
+  (let [spawned-by (sattr run "spawned-by")]
+    (first (remove #(= spawned-by %) parents))))
+
 (defn supersede-and-respawn!
   "Succeed a dead run `old-run-id` with a fresh successor — the sole succession
   path in the engine (PROP-Aep-001.C4). Preserved from the predecessor, engine
-  owned: its `serves` target (the successor now serves it), its `depends-on`
-  edges, its `spawned-by` provenance (the parent-of placement plus the
-  `agent-run/spawned-by` attr), and its execution shape (`agent-run/mode`/
+  owned: its `serves` target (the successor now serves it), its structural
+  `parent-of` placement (the served target for serving runs, the `--for`
+  placement for helpers — a serving run carries both edges, C1), its
+  `depends-on` edges, its `spawned-by` provenance (the parent-of placement plus
+  the `agent-run/spawned-by` attr), and its execution shape (`agent-run/mode`/
   `backend`/`reap` and the interactive completion target for interactive runs,
   `agent-run/max-attempts` always). `:prompt` and `:harness` come from the
   caller, `:cwd` too (else the predecessor's). `:carry-attrs` layers spool-owned
@@ -1734,6 +1745,8 @@
                         (fail! "Supersede predecessor not found" {:run old-run-id}))
         interactive? (interactive? predecessor)
         served-target (run-for-target predecessor)
+        placement (or served-target
+                      (helper-parent predecessor (parent-of-sources old-run-id)))
         deps (mapv :to_strand_id (graph/outgoing-edges (rt) [old-run-id] "depends-on"))
         successor (spawn-run!
                    (cond-> {:harness harness
@@ -1741,6 +1754,7 @@
                             :title (:title predecessor)
                             :cwd (or cwd (sattr predecessor "cwd"))
                             :depends-on deps}
+                     placement (assoc :parent placement)
                      served-target (assoc :serves served-target)
                      (sattr predecessor "spawned-by") (assoc :spawned-by (sattr predecessor "spawned-by"))
                      (sattr predecessor "max-attempts") (assoc :max-attempts (sattr predecessor "max-attempts"))
@@ -1757,15 +1771,6 @@
                 {:attributes {"agent-run/supersedes" old-run-id}
                  :edges [{:type "supersedes" :to old-run-id}]})
     successor))
-
-(defn- helper-parent
-  "Return a helper run's structural target: its `parent-of` parent (from
-  `parents`, the run's parent-of source ids), excluding `spawned-by` provenance.
-  Helpers carry no `serves` edge, so `spawn --for X` still reads \"for X\" off
-  placement."
-  [run parents]
-  (let [spawned-by (sattr run "spawned-by")]
-    (first (remove #(= spawned-by %) parents))))
 
 (defn- attach-hint
   "Render the backend :attach op over the run's stored handle as the human

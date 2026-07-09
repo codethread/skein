@@ -915,7 +915,30 @@
           (is (= (:id spawner) (:spawned-by summary)))
           (is (= "/tmp/retry-cwd" (get-in new-run [:attributes :agent-run/cwd])))
           (is (= 5 (get-in new-run [:attributes :agent-run/max-attempts])))
-          (is (some #(= (:id blocker) (:to_strand_id %)) dep-edges)))))))
+          (is (some #(= (:id blocker) (:to_strand_id %)) dep-edges))
+          ;; regression (change-review-3abc37ac): a retried serving run keeps
+          ;; BOTH edges of the C1 invariant — serves for semantics AND parent-of
+          ;; placement under the served target, so it stays in status trees
+          (is (some #(and (= "parent-of" (:edge_type %)) (= new-id (:to_strand_id %)))
+                    (:edges (graph/subgraph rt [(:id task)])))
+              "the successor keeps parent-of placement under the served target"))))))
+
+(deftest retry-helper-run-preserves-structural-placement
+  ;; regression (change-review-3abc37ac): retrying a read-only helper by run id
+  ;; keeps its parent-of placement (spawn --for X still renders "for X") while
+  ;; staying a helper — no serves edge on the successor.
+  (with-agents
+    (fn [rt]
+      (let [task (api/add rt {:title "reconned"})
+            helper (shuttle/spawn-run! {:harness :sh :prompt "exit 3" :parent (:id task)})]
+        (await-phase rt (:id helper) #{"failed"})
+        (let [retried (agents/agent-op {:op/argv ["retry" (:id helper) "--prompt" "echo recovered"]})
+              new-id (get-in retried [:run :id])]
+          (is (some #(and (= "parent-of" (:edge_type %)) (= new-id (:to_strand_id %)))
+                    (:edges (graph/subgraph rt [(:id task)])))
+              "the helper successor keeps parent-of placement")
+          (is (empty? (graph/outgoing-edges rt [new-id] "serves"))
+              "a helper retry stays a helper: no serves edge"))))))
 
 (deftest retry-by-task-targets-serving-run-not-helper
   ;; Regression (card 0nd97): retry <task-id> means "retry the task's own work",
