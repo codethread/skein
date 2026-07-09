@@ -18,9 +18,12 @@ no timer and is not a clock consumer. It stays in `serial-namespaces` here.
 - **TASK-Dtt-007.MI2:** Keep the real notifier subprocess; no chime engine change
   (`chime.clj:109-133` per-dispatch daemon threads stay).
 - **TASK-Dtt-007.MI3:** Resolve Q2: default is that every notifier assertion tolerates the settle
-  signal and the whole suite is deterministic. If a specific assertion genuinely resists the
-  settle signal, leave that one test deterministic-by-other-means or documented as remaining
-  serial, and record which in the plan's Developer Notes — do not weaken the assertion.
+  signal and `skein.chime-test` is deterministic as a whole namespace. If a specific assertion
+  genuinely resists the settle signal, split it into a dedicated test namespace that stays in
+  `serial-namespaces` with a why-serial comment (precedent: the `skein.chime-sync-test` split) —
+  the runner schedules whole namespaces, so a lone "serial test" inside a parallel namespace is
+  not implementable. Record the split and its reason in the plan's Developer Notes; do not
+  weaken the assertion.
 
 ## TASK-Dtt-007.P3 Done when
 

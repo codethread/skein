@@ -114,8 +114,10 @@ on-lane settles via `await-quiescent!` plus outcome-keyed `poll-until` for the s
 ### PLAN-Dtt-001.PH5 Chime migration
 
 Outcome: chime's fixed sleeps replaced by `await-notifier-threads!` + `await-quiescent!`;
-PROP-Dtt-001.Q2 resolved (default: all chime tests graduate; any assertion that resists the
-settle signal stays serial and is documented).
+PROP-Dtt-001.Q2 resolved. Default: `skein.chime-test` graduates whole. The runner schedules
+whole namespaces only, so if an assertion genuinely resists the settle signal it is split into
+a dedicated namespace that stays in `serial-namespaces` with a why-serial comment (precedent:
+the `skein.chime-sync-test` split) — never a "serial test" inside a parallel namespace.
 
 ### PLAN-Dtt-001.PH6 Weaver-test re-evaluation
 

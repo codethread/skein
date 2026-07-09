@@ -11,7 +11,8 @@
 `skein.test.alpha` (the author-side test namespace, SPEC-003.P8) gains the manual-clock control
 pair that installs a deterministic clock and advances it. The blessed `runtime.alpha/now` time
 read (contract in [daemon-runtime.delta.md](./daemon-runtime.delta.md), DELTA-Dtt-001.CC2) is
-listed among the `runtime.alpha` P4 helpers. Additive to SPEC-003; no existing helper changes.
+listed among the `runtime.alpha` P4 helpers, and the `skein.api.events.alpha` P4 enumeration
+gains `await-quiescent!`. Additive to SPEC-003; no existing helper changes.
 See [RFC-Dtt-001](../../../rfcs/2026-07-09-deterministic-test-time.md) REC2/REC4.
 
 ## DELTA-Dtt-002.P2 Contract changes
@@ -32,6 +33,11 @@ See [RFC-Dtt-001](../../../rfcs/2026-07-09-deterministic-test-time.md) REC2/REC4
   runtime clock's current `Instant` (authoritative contract DELTA-Dtt-001.CC2). Like every other
   `runtime.alpha` helper it takes the runtime first (SPEC-003.C18) and performs no
   connected-client routing or implicit ambient lookup.
+- **DELTA-Dtt-002.CC3 (`events.alpha/await-quiescent!` in the helper list):** The
+  `skein.api.events.alpha` enumeration (SPEC-003.P4) adds `(await-quiescent! runtime)` /
+  `(await-quiescent! runtime opts)`, the blessed event-lane settle await whose authoritative
+  contract is DELTA-Dtt-001.CC4. Listed here so the trusted REPL/API surface index stays
+  complete for every blessed function this feature accretes.
 
 ## DELTA-Dtt-002.P3 Design decisions
 

@@ -21,8 +21,8 @@ task that edits `test_runner.clj` island vectors and the only one that runs the 
   (`skein.bench-test`) and the singleton-semantics suites (`skein.repl-test`,
   `skein.userland-test`, `skein.weaver-publication-test`, `skein.peers-test`). Do not move those.
 - **TASK-Dtt-009.MI3:** Update the RFC-016 serial-island comments (`test_runner.clj:33-34,55-58`)
-  to reflect the paid-down island. If Task 7 left any single chime test serial, keep exactly that
-  member and its reason.
+  to reflect the paid-down island. If Task 7 split a resistant chime namespace to stay serial,
+  keep exactly that namespace and its why-serial comment.
 - **TASK-Dtt-009.MI4:** Keep bench and the singleton-semantics suites serial; keep the add-libs
   shards unchanged.
 
