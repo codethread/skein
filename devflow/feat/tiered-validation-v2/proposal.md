@@ -2,24 +2,29 @@
 
 **Document ID:** `PROP-Ttv-001`
 **Last Updated:** 2026-07-09
-**Related RFCs:** [RFC-016 Test Concurrency and Multi-Runtime JVM Support](../../rfcs/2026-07-03-test-concurrency.md), [RFC-Dtt-001 Deterministic Test Time and Async Quiescence](../../archive/26-07-09__deterministic-test-time/rfcs/2026-07-09-deterministic-test-time.md)
+**Related RFCs:** [RFC-016 Test Concurrency and Multi-Runtime JVM Support](../../rfcs/2026-07-03-test-concurrency.md),
+[RFC-Dtt-001 Deterministic Test Time and Async Quiescence](../../archive/26-07-09__deterministic-test-time/rfcs/2026-07-09-deterministic-test-time.md)
 **Related root specs:** None
 
 ## PROP-Ttv-001.P1 Problem
 
 Two landings since this proposal was first drafted shipped part of its own
-scope, so the pain has moved. A blessed focused entrypoint now exists: focused
+scope, so the problem has shifted. A blessed focused entrypoint now exists: focused
 runner v1 (commit 2bf5f80) accepts `clojure -M:test <ns...>` and runs the named
 namespaces in-process on the correct `:test`-alias classpath, validating each
 against the runner's declared island sets (`validate-focused!`) and failing
 loudly on an unknown or shard-only namespace. Deterministic test time (commit
-a11c915, RFC-Dtt-001) then paid down the serial island: the full suite is now
+a11c915, RFC-Dtt-001) then shrank the serial island: the full suite is now
 ~40s wall, the serial island is ~18.8s across 5 namespaces, and the floor is the
 add-libs shard A subprocess at 35-45s.
 
-The remaining pain is twofold. First, the focused entrypoint and the fast suite
-both exist, yet every documented validation path still prescribes the full
-locked suite per slice. AGENTS.md prescribes
+The remaining problem is twofold. First, the focused entrypoint and the fast
+suite both exist, yet the standing guidance surfaces agents copy from —
+AGENTS.md/CLAUDE.md testing rules, the agents spool policy prose, and the
+pending `attr-scaling-ship-now` queue — still prescribe the full locked suite
+per slice (the archived deterministic-test-time plan already used focused
+per-slice runs, but nothing durable prescribes that convention). AGENTS.md
+prescribes
 `flock -w 3600 /tmp/skein-test.lock clojure -M:test` as the safe test command,
 so plan and task authors rationally copy it into every AFK slice's Done-when
 block. A serial queue of N slices then pays N full-suite runs under a lock
@@ -28,10 +33,11 @@ would gate the slice correctly. Second, even the focused run pays JVM boot every
 invocation, so there is no warm loop for sub-second iteration while a slice is in
 flight.
 
-Evidence: macros tasks 001/002 Done-when blocks, plan PLAN-Srm-001.V1 ("full
-suite after every slice"), session timeline analysis on kanban card `n7aya`;
-the currently pending `attr-scaling-ship-now` queue repeats the same
-full-suite-per-slice prescription.
+Evidence (point-in-time observations, 2026-07-08/09; timings measured on the
+development host and expected to drift): macros tasks 001/002 Done-when blocks,
+plan PLAN-Srm-001.V1 ("full suite after every slice"), session timeline
+analysis on kanban card `n7aya`; the currently pending `attr-scaling-ship-now`
+queue repeats the same full-suite-per-slice prescription.
 
 ## PROP-Ttv-001.P2 Goals
 
@@ -42,8 +48,8 @@ full-suite-per-slice prescription.
 - **PROP-Ttv-001.G2:** (shipped) A focused run of an undeclared test namespace
   fails loudly (TEN-003), so island placement stays the single source of truth;
   add-libs shard namespaces are likewise rejected from focused mode in v1. The
-  error names the known namespaces, routing authors of a new test namespace to
-  the declaration site.
+  error carries the known namespaces in its ex-data, routing authors of a new
+  test namespace to the declaration site.
 - **PROP-Ttv-001.G3:** A documented tiered validation convention: a warm REPL
   to iterate, a cold focused run (`clojure -M:test <ns...>`) as the slice
   Done-when gate, and the full locked suite exactly once at queue acceptance and
@@ -85,8 +91,8 @@ full-suite-per-slice prescription.
   `about` manual with `make api-docs`).
 - **PROP-Ttv-001.S4:** The pending `attr-scaling-ship-now` task queue is swept
   to the tiers: per-slice Done-when blocks become focused namespace runs; the
-  full locked suite stays only in its `005-validation-sweep` task; dead
-  `flock` paths are fixed.
+  full locked suite stays only in its `005-validation-sweep` task; stale
+  `flock` paths are corrected.
 - **PROP-Ttv-001.S5:** A warm test REPL per worktree: a script entry that
   probes an existing REPL or boots one, idle self-termination, and cleanup on
   worktree removal. The warm side reuses the runner's namespace validation, and
