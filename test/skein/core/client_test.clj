@@ -2,7 +2,6 @@
   "Tests for skein.core.client: routing CLI calls to a running weaver over nREPL."
   (:refer-clojure :exclude [list update])
   (:require [clojure.test :refer [deftest is use-fixtures]]
-            [nrepl.core :as nrepl]
             [skein.core.client :as client]
             [skein.api.hooks.alpha :as hooks]
             [skein.core.weaver.config :as daemon-config]
@@ -46,7 +45,7 @@
 (defn with-runtime [f]
   (let [db-file (db-test/temp-db-file)
         world (temp-world)
-        rt (runtime/start! db-file {:world world})]
+        rt (runtime/start! db-file {:world world :publish? false})]
     (try
       (f rt world db-file)
       (finally
@@ -257,10 +256,11 @@
 (deftest client-fails-loudly-for-timeouts
   (with-runtime
     (fn [_ world _db-file]
-      (with-redefs [nrepl/client (fn [conn _timeout-ms] conn)
-                    nrepl/client-session (fn [client _timeout-ms] client)
-                    nrepl/message (fn [_session _message]
-                                    (throw (java.net.SocketTimeoutException. "timed out")))]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                              #"timed out"
-                              (call-world-with-opts world {:timeout-ms 50} :list)))))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"timed out"
+                            (call-world-with-opts world {:timeout-ms 50
+                                                         :nrepl-client (fn [conn _timeout-ms] conn)
+                                                         :nrepl-client-session (fn [client _timeout-ms] client)
+                                                         :nrepl-message (fn [_session _message]
+                                                                          (throw (java.net.SocketTimeoutException. "timed out")))}
+                                                  :list))))))

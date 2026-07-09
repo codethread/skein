@@ -158,10 +158,13 @@
   Converts nREPL transport failures, daemon-side exceptions, and missing values
   into ExceptionInfo with client error data."
   [conn form timeout-ms context]
-  (let [client (nrepl/client conn timeout-ms)
-        session (nrepl/client-session client timeout-ms)
+  (let [nrepl-client (:nrepl-client context nrepl/client)
+        nrepl-client-session (:nrepl-client-session context nrepl/client-session)
+        nrepl-message (:nrepl-message context nrepl/message)
+        client (nrepl-client conn timeout-ms)
+        session (nrepl-client-session client timeout-ms)
         responses (try
-                    (doall (nrepl/message session {:op "eval" :code form}))
+                    (doall (nrepl-message session {:op "eval" :code form}))
                     (catch java.net.SocketTimeoutException e
                       (throw (ex-info "Weaver nREPL request timed out" (assoc context :type :skein.core.client/timeout) e)))
                     (catch Exception e
@@ -211,13 +214,21 @@
     actual))
 
 (defn call-world
-  "Call a weaver API operation in config-dir's world and return Clojure data."
-  [config-dir {:keys [timeout-ms state-dir] :or {timeout-ms default-timeout-ms}} op & args]
+  "Call a weaver API operation in config-dir's world and return Clojure data.
+
+  opts accepts `:timeout-ms`, `:state-dir`, and optional nREPL transport
+  function overrides for callers that need to exercise transport failure paths
+  without mutating process-global nREPL vars."
+  [config-dir {:keys [timeout-ms state-dir nrepl-client nrepl-client-session nrepl-message]
+               :or {timeout-ms default-timeout-ms}} op & args]
   (let [meta (metadata-for-world config-dir state-dir)]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms)
-      (eval-form conn (fixed-form op args (get-in meta [:endpoint :port])) timeout-ms {:operation op
-                                                                                       :config-dir (:config-dir meta)}))))
+      (eval-form conn (fixed-form op args (get-in meta [:endpoint :port])) timeout-ms (cond-> {:operation op
+                                                                                               :config-dir (:config-dir meta)}
+                                                                                        nrepl-client (assoc :nrepl-client nrepl-client)
+                                                                                        nrepl-client-session (assoc :nrepl-client-session nrepl-client-session)
+                                                                                        nrepl-message (assoc :nrepl-message nrepl-message))))))
 
 (defn- raw-form
   "Return an nREPL form that evaluates code under the connected runtime binding.

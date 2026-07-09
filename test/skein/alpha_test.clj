@@ -7,7 +7,6 @@
             [skein.api.views.alpha :as views]
             [clojure.string :as str]
             [clojure.test :refer [deftest is use-fixtures]]
-            [skein.core.client]
             [skein.api.weaver.alpha :as api]
             [skein.core.weaver.config :as daemon-config]
             [skein.core.weaver.runtime :as runtime]
@@ -25,7 +24,7 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-alpha-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
+    (let [rt (runtime/start! db-file {:world (test-world config-dir) :publish? false})]
       (try
         (f rt)
         (finally
@@ -127,38 +126,11 @@
                   :attributes {:owner "agent" :phase "batched"}}
                  (select-keys (:after updated) [:id :state :attributes]))))))))
 
-(deftest trusted-client-can-route-through-explicit-world
-  (with-redefs [skein.core.client/call-world (fn [config-dir opts op & args]
-                                               {:config-dir config-dir
-                                                :opts opts
-                                                :op op
-                                                :args args})]
-    (is (= {:config-dir "/tmp/skein-connected-world"
-            :opts {:state-dir "/tmp/skein-state-world"}
-            :op :query-ids
-            :args ['mine {:owner "agent"}]}
-           (skein.core.client/call-world "/tmp/skein-connected-world"
-                                         {:state-dir "/tmp/skein-state-world"}
-                                         :query-ids
-                                         'mine
-                                         {:owner "agent"})))
-    (is (= {:config-dir "/tmp/skein-connected-world"
-            :opts {:state-dir "/tmp/skein-state-world"}
-            :op :strands-by-ids
-            :args [["a" "b"]]}
-           (skein.core.client/call-world "/tmp/skein-connected-world"
-                                         {:state-dir "/tmp/skein-state-world"}
-                                         :strands-by-ids
-                                         ["a" "b"])))))
-
 (deftest current-runtime-fails-loudly-without-ambient-runtime
-  ;; Isolate from any weaver a sibling test may have published so the fail-loud
-  ;; path is exercised deterministically.
   (binding [runtime/*runtime* nil]
-    (with-redefs [runtime/current-runtime (atom nil)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"No active Skein weaver runtime"
-                            (current/runtime))))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"No active Skein weaver runtime"
+                          (current/runtime)))))
 
 (deftest current-with-runtime*-rejects-nil-runtime
   (is (thrown-with-msg? clojure.lang.ExceptionInfo

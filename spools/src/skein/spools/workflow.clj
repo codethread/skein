@@ -1821,12 +1821,13 @@
            (fail! "Choice is not valid for checkpoint" {:run-id run-id :choice choice :valid choices})))
        (validate-choice-input! run-id step choice input)
        (let [route (route-plan rt run-id step choice input)
+             apply-batch! (:batch-apply-fn opts batch/apply!)
              outcome (cond-> {"workflow/outcome" choice
                               "workflow/outcome-input" input}
                        (contains? opts :by) (assoc "workflow/outcome-by" (:by opts)))]
          (if route
-           (batch/apply! rt (routed-batch rt route step outcome))
-           (batch/apply! rt (close-batch (:id step) outcome
+           (apply-batch! rt (routed-batch rt route step outcome))
+           (apply-batch! rt (close-batch (:id step) outcome
                                          (cascade-join-ids rt (:id (current-root-with-rt rt run-id)) #{(:id step)}))))
          ;; also covers a routed continuation that poured no active work, so the
          ;; new root cannot linger active on a logically finished run

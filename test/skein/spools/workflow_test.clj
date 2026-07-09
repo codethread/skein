@@ -3,7 +3,6 @@
   explain, compile semantics (calls, conditions, loops, splicing), and the
   run-driving surface (start!/complete!/choose!, gates, checkpoints, bonds)."
   (:require [clojure.test :refer [deftest is testing]]
-            [skein.api.batch.alpha :as batch]
             [skein.api.graph.alpha :as graph]
             [skein.spools.test-support :refer [with-runtime]]
             [skein.spools.workflow :as workflow]
@@ -632,8 +631,9 @@
         ;; terminal state; the checkpoint close and continuation pour are folded
         ;; into one batch, so a failing apply commits nothing
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"batch boom"
-                              (with-redefs [batch/apply! (fn [_ _] (throw (ex-info "batch boom" {})))]
-                                (workflow/choose! "loopy-fail" :revise))))
+                              (workflow/choose! "loopy-fail" :revise {}
+                                                {:batch-apply-fn (fn [_ _]
+                                                                   (throw (ex-info "batch boom" {})))})))
         (let [root (workflow/current-root "loopy-fail")]
           (is (some? root))
           (is (= old-root-id (:id root)))
