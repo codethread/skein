@@ -28,6 +28,11 @@
     :direction "run --serves--> served-target"
     :declared-acyclic? true
     :help "Engine-owned delegation battery: this run is a delegation of that strand's own work."}
+   {:relation "notes"
+    :family :operational
+    :direction "note --notes--> target"
+    :declared-acyclic? true
+    :help "Append-only memory: a closed note strand attached to its target."}
    {:relation "related-to"
     :family :annotation
     :direction "source --related-to--> target"
