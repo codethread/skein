@@ -115,11 +115,10 @@ strand agent retry <core>
   If you retry before editing, you respawn the same instructions and get the same
   failure. The supersede-then-rebuild order is exactly why the body is the tuning
   knob: change the contract, and the next attempt is told the new thing.
-- **Supersede keeps the evidence.** The dead run is closed as `superseded`, not
-  deleted — its logs and notes stay queryable, and it stops blocking
-  delegate-eligibility so the fresh run is unobstructed. A failed *helper* (a
-  recon spawn or reviewer, stamped `agent-run/serves=false`) never shadows the real
-  delegation failure, so `retry <task-id>` always finds the serving run.
+- **Supersede keeps the evidence.** Retry routes through `supersede-and-respawn!`.
+  The dead run is closed as `superseded`, not deleted, so its logs and notes stay queryable.
+  The `serves` edge moves to the successor, so the fresh run is the serving run the task sees.
+  A failed *helper* (a recon spawn or reviewer, carrying no `serves` edge) never shadows the real delegation failure.
 - **`--fresh` is for a dead session, not a bad brief.** A run that continued a
   predecessor's session re-resumes it by default; when the session itself was
   lost (`agent-run/error-class "resume"`), a plain retry fails loudly telling you to
@@ -162,10 +161,9 @@ strand agent review <target> --members 2 --harness claude,review-gpt --synthesiz
   is the default read-through seat, `explore` (haiku) is reserved for trivially
   greppable single-file concerns, and the synthesizer is a cross-vendor GPT seat
   so sign-off never comes from the model family that authored the work.
-- **Reviewers never gate delegation.** Reviewer and synthesizer runs are non-
-  serving helpers (`agent-run/serves=false`): they hang under the target but never
-  trip its `delegate` guard, so you can review a task before *or* after
-  delegating it.
+- **Reviewers never gate delegation.** Reviewer and synthesizer runs carry no
+  `serves` edge. They hang under the target but never trip its `delegate` guard,
+  so you can review a task before *or* after delegating it.
 - **`--commit-range` injects the diff, so reviewers read it instead of guessing
   it.** The range's changed files are expanded via `git diff --name-only` and
   handed to every reviewer as the authoritative diff surface — which also means a
@@ -242,11 +240,9 @@ strand agent await "$helper"   # => {"runs":[{"result":"...file:line list..."}]}
 
 **Why this shape.**
 
-- **`spawn` runs are non-serving, so a recon helper never gates delegation.**
-  Raw `spawn` marks its runs `agent-run/serves=false`, and the delegate guards and
-  `delegate --ready` skip classification only count *serving* runs — so recon-ing
-  or reviewing a task never blocks delegating its real work later. That's the
-  whole reason recon uses `spawn`, not `delegate`.
+- **`spawn` runs carry no `serves` edge, so a recon helper never gates delegation.**
+  Delegate guards and `delegate --ready` selection only count runs with a `serves` edge.
+  Reconning or reviewing a task never blocks delegating its real work later. That's the whole reason recon uses `spawn`, not `delegate`.
 - **`--spawned-by` is provenance, not scheduling.** It's your run id, so
   `agent status` nests the helper under you in the delegation tree. It's distinct
   from `--for` (which attaches a run to the strand it serves) precisely because a
@@ -256,7 +252,7 @@ strand agent await "$helper"   # => {"runs":[{"result":"...file:line list..."}]}
   file scope. Recon fans out; writing stays single-owner. Delegation stays
   shallow.
 
-Honest source: the `spawn` verb and serving/non-serving model in [`delegation/README.md` §3](./delegation/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in ``delegation_test.clj``.
+Honest source: the `spawn` verb and `serves`-edge model in [`delegation/README.md` §3](./delegation/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in ``delegation_test.clj``.
 
 ---
 

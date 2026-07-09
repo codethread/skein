@@ -98,7 +98,7 @@ Every operational verb returns JSON; all verbs are flat under `strand agent <ver
 - Run phases: `pending → running → done | failed | exhausted | superseded`. The last four are terminal; only `failed`/`exhausted` leave the run active.
 - An **interactive run** (`mode=interactive`) is a live multiplexer session: it completes when the strand it serves closes, not when a process exits. `ps` carries its `attach` command; a session that dies before its work completes fails the run loudly (no auto-respawn — `retry` opens a fresh session).
 - **Run success never closes the task it served.** You verify, then close the task — and closing the task is what makes dependent tasks ready. Skip the close and the plan silently stalls.
-- A **serving run** delegates a task's own work and gates that task's delegation; a **non-serving helper** (recon `spawn`, reviewers, panel/council seats) only reads or reviews and is stamped `agent-run/serves=false`. A run serves its `--for` target by default; only the helper-spawning paths mark it non-serving. Delegation guards and `delegate --ready` skip classification count only serving, non-superseded runs, so reviewing or reconning a task never blocks delegating it later.
+- A **serving run** delegates a task's own work and gates that task's delegation. It has a `serves` edge to the task. A **non-serving helper** (recon `spawn`, reviewers, panel/council seats) only reads or reviews and carries no `serves` edge. Delegation guards and `delegate --ready` count only non-superseded runs with a `serves` edge, so reviewing or reconning a task never blocks delegating it later.
 - A task's **file scope** is the set of files its body names as owned. Every scope rule (disjoint siblings, one mutator per scope) refers to that owned set.
 
 ### Engine verbs
@@ -108,7 +108,10 @@ agent spawn --harness <name> --prompt "..." [--title t] [--depends-on <strand-id
             [--for <strand-id>] [--spawned-by <run-id>] [--cwd <dir>] [--max-attempts n]
             [--interactive --backend <name> [--reap auto|manual]]
 ```
-Raw run creation, no task contract. Async; the run starts when ready. `--for` attaches the run under a strand (a `parent-of` edge). **`spawn` is the raw helper verb: its runs are non-serving** (`agent-run/serves=false`), so a `spawn --for` a task is a recon/one-off helper that never gates that task's later `delegate` — delegating a task's own work is `delegate`'s job. `--spawned-by` = *your* run id when you are an agent spawning a helper (provenance only). Helpers usually pass only `--spawned-by`. `--interactive` launches the harness into a multiplexer session via `--backend`: with `--for` the run completes when that strand closes, without it when the run strand itself is closed; `--reap manual` leaves the finished session open for the human (default `auto` tears it down, capturing scrollback first when the backend supports it). → `{"id","title","state","phase","harness", …}` (run summary)
+Raw run creation, no task contract. Async; the run starts when ready. `--for` attaches the run under a strand (a `parent-of` edge).
+**`spawn` is the raw helper verb:** its runs carry no `serves` edge, so a `spawn --for` a task is a recon or one-off helper that never gates that task's later `delegate`.
+Delegating a task's own work is `delegate`'s job. `--spawned-by` = *your* run id when you are an agent spawning a helper (provenance only).
+Helpers usually pass only `--spawned-by`. `--interactive` launches the harness into a multiplexer session via `--backend`: with `--for` the run completes when that strand closes, without it when the run strand itself is closed; `--reap manual` leaves the finished session open for the human (default `auto` tears it down, capturing scrollback first when the backend supports it). → `{"id","title","state","phase","harness", …}` (run summary)
 
 ```
 agent ps [--active] [--for <strand-id>]
@@ -150,18 +153,35 @@ Delegate one **active** task strand: builds the worker prompt from the task's cu
 - **Harness resolution:** `--harness` flag > task's `harness` attribute > fail loudly (no default).
 - **cwd resolution:** `--cwd` flag > task's `cwd` attribute > workspace root.
 - **`--interactive`** opens a live multiplexer session for the task instead of a headless run — this is how `hitl=true` tasks are delegated. Backend resolution: `--backend` flag > task's `backend` attribute > fail loudly. The prompt frames the agent as pairing *with* the user (the human is the authority on scope and completion), and the session is reaped when the task closes.
-- Fails loudly when: task not active; task not **ready** (still has active `depends-on` blockers — delegation follows readiness); task has no body and no `--prompt`; no harness resolvable; task is `hitl=true` and `--interactive` was not passed; no backend resolvable with `--interactive`; task already has an **active serving** run (kill or await it first; a failed/exhausted one wants `retry`; a successful one must be verified and closed). Non-serving helper runs (recon spawns, reviewers) never trip these guards.
+- Fails loudly when: task not active; task not **ready** (still has active `depends-on` blockers — delegation follows readiness); task has no body and no `--prompt`; no harness resolvable; task is `hitl=true` and `--interactive` was not passed; no backend resolvable with `--interactive`; task already has an **active serving** run (kill or await it first; a failed/exhausted one wants `retry`; a successful one must be verified and closed). Helper runs with no `serves` edge (recon spawns, reviewers) never trip these guards.
 → `{"task":"<task-id>","run":{"id","phase","harness","attach"?}}`
 
 ```
 agent delegate --ready <plan-id> [--cwd dir]
 ```
-Fan-out: delegate every **ready** task under the plan (all blockers closed) that has no active or successful **serving** run and is not `hitl` — non-serving helper runs (recon/review) are ignored, so a reconned or reviewed task is still delegated. Every task is classified exactly once against pre-spawn state, so a task delegated this pass is never also reported in `skipped`. Harness comes from **each task's** `harness` attribute (this is how mixed-harness fan-out works); fails loudly up front, delegating nothing, if any ready task lacks one. Idempotent: re-invoke after verifying + closing finished tasks to pick up newly-unblocked work. `--interactive` is deliberately rejected here — live sessions are delegated one task at a time so the human is never swamped. → `{"plan":"<plan-id>","delegated":[{"task","run":{"id","phase","harness"}}],"skipped":[{"task","reason":"hitl|has-active-run|failed-needs-retry|already-succeeded"}]}`
+Fan-out: delegate every **ready** task under the plan (all blockers closed) that has no active or successful **serving** run and is not `hitl`.
+Helper runs with no `serves` edge (recon/review) are ignored, so a reconned or reviewed task is still delegated.
+Every task is classified exactly once against pre-spawn state, so a task delegated this pass is never also reported in `skipped`.
+Harness comes from **each task's** `harness` attribute (this is how mixed-harness fan-out works); fails loudly up front, delegating nothing, if any ready task lacks one.
+Idempotent: re-invoke after verifying + closing finished tasks to pick up newly-unblocked work.
+`--interactive` is deliberately rejected here — live sessions are delegated one task at a time so the human is never swamped.
+→ `{"plan":"<plan-id>","delegated":[{"task","run":{"id","phase","harness"}}],"skipped":[{"task","reason":"hitl|has-active-run|failed-needs-retry|already-succeeded"}]}`
 
 ```
 agent retry <task-or-run-id> [--fresh] [--harness h] [--cwd dir] [--prompt <extra>]
 ```
-**The** recovery verb. Given a **task id**: finds its failed/exhausted **serving** run (read-only helpers — recon `spawn`s, reviewers, seats stamped `agent-run/serves=false` — are ignored, so a failed helper never shadows the real delegation failure; retry a failed helper by passing its run id directly), marks that run `superseded` (closed with phase `superseded` — it stops blocking delegate-eligibility; its logs and notes remain), rebuilds the prompt from the task's **current** body, and spawns a fresh run. If a task somehow has more than one failed serving run, retry fails loudly listing the candidate run ids rather than picking one. When the contract was the problem, fix the body **first** (`strand update <task-id> --attr body=:payload/<name> --payload <name>=<path>`). Given a **raw run id**: same supersede-and-respawn, preserving the served target, spawned-by provenance, `depends-on` edges, cwd, max-attempts, and the panel/review structural attrs (`agent-run/panel-seat`, `agent-run/panel-turn`, `agent-run/review-*`, and the `agent-run/serves` non-serving marker) so a recovered seat stays queryable from run attrs and a retried helper stays non-serving. A failed interactive run retries as a fresh session on the same backend. Fails loudly if the target has no failed/exhausted run to supersede.
+**The** recovery verb. Given a **task id**: finds its failed/exhausted **serving** run by `serves` edge.
+Read-only helpers (recon `spawn`s, reviewers, seats) carry no `serves` edge and are ignored, so a failed helper never shadows the real delegation failure.
+Retry a failed helper by passing its run id directly.
+
+Retry routes through `supersede-and-respawn!`: it marks the old run `superseded` (closed with phase `superseded`), rebuilds the prompt from the task's **current** body, and spawns a fresh run.
+The old run stops blocking delegate-eligibility, but its logs and notes remain.
+For serving runs, the `serves` edge moves to the successor, so later serving-run selection sees the new attempt.
+If a task somehow has more than one failed serving run, retry fails loudly listing the candidate run ids rather than picking one.
+When the contract was the problem, fix the body **first** (`strand update <task-id> --attr body=:payload/<name> --payload <name>=<path>`).
+Given a **raw run id**: same supersede-and-respawn, preserving the served target, spawned-by provenance, `depends-on` edges, cwd, max-attempts, and the panel/review structural attrs (`agent-run/panel-seat`, `agent-run/panel-turn`, `agent-run/review-*`).
+A recovered seat stays queryable from run attrs, and a retried helper still carries no `serves` edge. A failed interactive run retries as a fresh session on the same backend.
+Fails loudly if the target has no failed/exhausted run to supersede.
 - **`--fresh` and session continuity.** A **resumed** run (one continuing a predecessor's session, see [§6](#6-panels-presets-and-the-composition-layer)) re-resumes that same session by default. `--fresh` severs the linkage and respawns cold on the run's full-brief prompt — a fresh process can never take the short continuation form. A plain retry of a run whose failure is **resume-classed** (`agent-run/error-class "resume"`, i.e. the session was lost) fails loudly instructing `--fresh`, so recovery never loops against a dead session.
 → `{"superseded":"<old-run-id>","task":"<task-id>"?,"run":{"id","phase","harness"}}`
 
@@ -195,7 +215,18 @@ agent review <target-id> [--roster name | --members n --harness a,b --contract t
                          [--cwd dir] [--commit-range range] [--changed-files a,b]
                          [--synthesize] [--spawned-by <run-id>]
 ```
-Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature. Reviewer and synthesizer runs are **non-serving helpers** (`agent-run/serves=false`): they hang under the target but never gate a later `delegate` of it, so a target can be reviewed before or after it is delegated. Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target. `--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract. `--synthesize` adds a synthesizer run that depends on all reviewers; its `result` is the verdict (await it), with raw findings in the target's notes. `--commit-range <range>` (e.g. `main..HEAD`) names the **diff surface**: its changed files are expanded via `git -C <cwd> diff --name-only <range>` and injected into every reviewer prompt as the authoritative diff surface, so reviewers stop re-deriving the diff. `--changed-files a,b` overrides the file list explicitly (csv). A `--commit-range` with no `--cwd` to expand it, or one git cannot expand at `--cwd`, fails loudly — a range is never injected without its resolved file list. The synthesizer never receives the change context — it weighs notes, not the diff. `--roster <name>` fans out a **named declarative roster** instead (see [Reviewer rosters](#reviewer-rosters) below): one run per declared entry with its own precise contract and scope, always synthesized. The roster is the one authoritative source of reviewer count, harnesses, and contracts, so combining `--roster` with `--members`, `--harness`, or `--contract` fails loudly; unknown roster names fail loudly with the available names. → `{"target","reviewers":["<run-id>"...],"synthesizer":"<run-id>"?}`
+Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature.
+Reviewer and synthesizer runs carry no `serves` edge: they hang under the target but never gate a later `delegate` of it, so a target can be reviewed before or after it is delegated.
+Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target.
+`--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract.
+`--synthesize` adds a synthesizer run that depends on all reviewers; its `result` is the verdict (await it), with raw findings in the target's notes.
+`--commit-range <range>` (e.g. `main..HEAD`) names the **diff surface**: its changed files are expanded via `git -C <cwd> diff --name-only <range>` and injected into every reviewer prompt as the authoritative diff surface, so reviewers stop re-deriving the diff.
+`--changed-files a,b` overrides the file list explicitly (csv).
+A `--commit-range` with no `--cwd` to expand it, or one git cannot expand at `--cwd`, fails loudly — a range is never injected without its resolved file list.
+The synthesizer never receives the change context — it weighs notes, not the diff.
+`--roster <name>` fans out a **named declarative roster** instead (see [Reviewer rosters](#reviewer-rosters) below): one run per declared entry with its own precise contract and scope, always synthesized.
+The roster is the one authoritative source of reviewer count, harnesses, and contracts, so combining `--roster` with `--members`, `--harness`, or `--contract` fails loudly; unknown roster names fail loudly with the available names.
+→ `{"target","reviewers":["<run-id>"...],"synthesizer":"<run-id>"?}`
 
 ```
 agent rosters
@@ -264,7 +295,7 @@ Task fields: `key`, `title`, `body` (the full worker contract: scope, owned file
 Delegation shapes the strand graph by convention, so the whole tree is inspectable:
 
 - **Task strands carry contracts.** The body is the complete, current worker contract; validation/cwd/harness live in the task's attributes. `agent delegate` reads them at delegate time, so editing the body before a `retry` changes what the next run is told.
-- **Runs attach to their task with `--for`.** A delegated run gets a `parent-of` edge from the task it serves; that edge is what `agent status` and `runs --for` render as the run's `for` target. A run serves its `--for` target by default; read-only helpers (recon `spawn`, reviewers, panel/council seats) attach the same way but are stamped `agent-run/serves=false` so they never gate the target's delegation.
+- **Runs attach to their task with `--for`.** A delegated run gets a `parent-of` edge from the task it serves; that edge is what `agent status` and `runs --for` render as the run's `for` target. The separate `serves` edge says which run owns the target's work. Read-only helpers (recon `spawn`, reviewers, panel/council seats) may attach the same way, but they carry no `serves` edge and never gate the target's delegation.
 - **Sub-spawns carry `--spawned-by`.** When a worker spawns a helper, it passes its own run id as `--spawned-by` (provenance only, distinct from `--for`). That is how `agent status` nests sub-spawns under the run that launched them.
 - **Readiness is the scheduler.** A task/run with open `depends-on` blockers is not delegable/spawnable yet; it becomes ready the moment its blockers close. `delegate` refuses a not-ready task, so readiness is the only sequencer at every layer.
 - **Verify-then-close unblocks dependents.** A run finishing does not advance the plan. You verify the task (re-run its validation, inspect the diff) and close it; closing is the single event that makes dependent tasks ready.
