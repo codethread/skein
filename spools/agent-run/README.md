@@ -139,10 +139,10 @@ Capture runs at two points: best-effort before teardown (never a completion bloc
 
 | Fn | Behavior |
 |---|---|
-| `(spawn-run! opts)` | Create one run strand. Required: `:harness`, `:prompt`. Optional: `:title`, `:depends-on`, `:parent`, `:spawned-by`, `:cwd`, `:max-attempts`, `:attrs`, `:resume <predecessor-run-id>` (continue that run's session — see [§3.1](#31-session-continuation-resume)); interactive runs add `:mode :interactive` with required `:backend` and optional `:reap`. `:parent` and `:spawned-by` each add a `parent-of` edge to the run. Returns immediately. |
+| `(spawn-run! opts)` | Create one run strand. Required: `:harness`, `:prompt`. Optional: `:title`, `:depends-on`, `:parent`, `:spawned-by`, `:serves`, `:cwd`, `:max-attempts`, `:attrs`, and `:resume`. `:parent` and `:spawned-by` add `parent-of`; `:serves` adds `serves`. Interactive runs add `:mode`, `:backend`, and `:reap`. |
 | `(scan!)` | Spawn every ready pending run not already claimed in this weaver lifetime. Usually called by events and install/reconcile. |
 | `(supervise!)` | Advance every interactive run in phase `running`: reap completed ones, fail dead sessions. Called by events, `runs`, `await-runs`, and reconcile — the weaver deliberately has no timers, so there is no background poller. |
-| `(runs opts)` | Return summaries of agent-run runs; `{:active true}` filters active runs, `{:for <strand-id>}` filters by delegated target. Summaries carry `:for` (the delegated target: `subagent/gate` when present, else a non-`spawned-by` `parent-of` source) with spawning provenance separately visible as `:spawned-by`. Interactive summaries add `:mode`, `:backend`, `:completion`, `:session`, and the rendered `:attach` hint. Listing doubles as a liveness checkpoint. |
+| `(runs opts)` | Return summaries of agent-run runs; `{:active true}` filters active runs, `{:for <strand-id>}` filters by delegated target. `:for` is the served target (`serves`) or, for helpers, the non-`spawned-by` `parent-of` source. `:spawned-by` remains separate. Interactive summaries add session fields. |
 | `(await-runs ids opts)` | Block until all runs are terminal or `:timeout-secs` (default 300) elapses; interactive runs are liveness-probed every ~2s while awaited. |
 | `(kill! id)` | Destroy a live harness process or backend session and mark the run failed; fails loudly when the run has no live process/session. |
 | `(capture! id)` | Capture an interactive run's transcript now (harness `:capture` > backend scrollback), persist it as `agent-run/log`, and return `{:id :path :text}`. |
@@ -170,6 +170,35 @@ If you want the human notified as soon as a session is ready to attach, keep tha
 
 `reconcile!` runs on `install!`. **Headless:** any active `running` run this weaver holds no in-flight handle for was owned by a dead predecessor: its stale process is killed when its identity can be verified (pid plus recorded OS start instant), then the run is reset to `pending` for respawn or marked `exhausted` (loudly, still active) once `agent-run/max-attempts` (default `3`) is spent. Recovered runs are stamped with `agent-run/recovered-at`; if a recovery-origin respawn references a harness alias that is not registered yet, the run is returned to `pending` with a loud `agent-run/error` and `agent-run/recovery-deferred-until`, and scans skip it until that quiet retry timestamp passes rather than immediately self-looping. The retry wakeup is runtime-owned spool state and is cancelled/joined on runtime stop; after a restart, ordinary scans still enforce the persisted `agent-run/recovery-deferred-until` timestamp. That deferral is bounded by a recovery window (currently 30 seconds from `agent-run/recovered-at`): transient startup/config alias races can heal, but a genuinely missing alias becomes a normal `failed` run and is visible to failure queries. User-created spawns and handmade pending runs with unknown harnesses still fail loudly. **Interactive:** sessions survive the weaver by design, so orphans are *adopted*, never respawned — a live session (probed via its durable handle attrs) keeps its run `running`; a dead one is reaped as done when its target already closed, otherwise failed loudly regardless of attempts. Runs survive weaver crashes because the strands are durable.
 
+### 5.3 Serving runs and lineage
+
+A serving run is a run with a `serves` edge from the run to the target strand. Helpers omit that
+edge. `parent-of` is only graph placement and provenance; no reader infers serving from it. This
+keeps a recon run, reviewer, or panel seat under a task without making it the task's active
+delegation.
+
+Interactive completion is separate. A claim-completion interactive run still records its completion
+target in `agent-run/for` and completes when that strand closes. A run may also carry a `serves`
+edge when the caller wants it to be the current serving run for that target, but `agent-run/for`
+remains the session-reap signal.
+
+`supersede-and-respawn!` is the engine's succession primitive. It creates a fresh successor and
+preserves the predecessor's `serves` target, outgoing `depends-on` edges, `spawned-by` provenance,
+`parent-of` placement, execution shape, `agent-run/max-attempts`, and caller-supplied `:carry-
+attrs`. The caller supplies the new prompt and harness; `:cwd` comes from the caller or the
+predecessor. The successor starts at `agent-run/phase "pending"` with no process residue.
+
+The same call records lineage. The predecessor is closed with `agent-run/phase "superseded"`. The
+successor gets a `supersedes` edge to the predecessor and an `agent-run/supersedes` attribute naming
+it. `runs-serving` resolves the current run serving a target as the serving run with no incoming
+`supersedes` edge and no `superseded` phase. Helpers never enter that set because they have no
+`serves` edge.
+
+The family has three members. Deliberate supersession uses a fresh successor. `:resume` supersession
+also creates a successor, but carries a `resumes` edge and `agent-run/resumes` so the harness can
+continue the predecessor's session; `resumes` and `supersedes` stay separate. In-place crash-respawn
+is recovery of the same run id and has no supersession edge; it increments the attempt path for the
+orphaned run.
 ## 6. Run memory (notes)
 
 | Fn | Behavior |
@@ -221,6 +250,7 @@ Interactive runs get their own preamble variant carrying the completion contract
 | `agent-run/pid-started-at` | OS process start instant used to avoid signalling recycled pids. |
 | `agent-run/started-at` / `agent-run/finished-at` | Run timing metadata. |
 | `agent-run/spawned-by` | Parent run id for provenance. |
+| `agent-run/supersedes` | Predecessor run id superseded by this successor; mirrored by a `supersedes` edge from successor to predecessor. |
 | `agent-run/cwd` | Optional working directory override. |
 | `agent-run/mode` | `interactive` marks a session run; absent means headless. |
 | `agent-run/backend` | Backend name for an interactive run. |
@@ -233,9 +263,11 @@ Interactive runs get their own preamble variant carrying the completion contract
 | `agent-run/note-for` | Target strand id for a note strand. |
 | `agent-run/note`, `agent-run/note-by`, `agent-run/round`, `agent-run/at` | Note payload and ordering metadata. |
 
-The `pending → running → done | failed | exhausted` transitions are written by the engine. The terminal `superseded` phase is written by the delegation spool's `retry` verb (the engine already treats any closed run as terminal, so it needs no code to honor it); a superseded run's logs and notes remain for archaeology.
+The `pending → running → done | failed | exhausted` transitions are written by the engine. The terminal `superseded` phase is written by `supersede-and-respawn!`;
+a superseded run's logs and notes remain for archaeology.
 
-Run parents are connected to children with `parent-of` edges. Notes use the undeclared annotation relation `notes`.
+Run parents are connected to children with `parent-of` edges. Serving runs connect to their targets with `serves` edges. Lineage uses `supersedes` edges.
+Notes use the undeclared annotation relation `notes`.
 
 ## 9. See also
 

@@ -134,7 +134,59 @@ Honest source: `defharness-validates-resume-splice` and `resume-continues-a-capt
 
 ---
 
-## Recipe: Fan out then collect, driven only by readiness
+
+## Recipe: Replace a failed serving run without losing lineage
+
+**Situation.** A run that owns a task's work failed or exhausted. You need a new run for the same
+task, with the same blockers and provenance, while keeping the failed run's logs and notes attached
+to history.
+
+**Composition.** Serving is an edge, not a boolean. Spawn serving work with both placement and
+serving: `:parent` puts the run under the task, and `:serves` marks the run as the task's active
+work. Helpers use placement only. When the serving run dies, call `supersede-and-respawn!` with the
+replacement prompt and harness.
+
+```clojure
+(require '[skein.spools.agent-run :as agent-run])
+
+;; The run is placed under task and also serves task. A helper would omit :serves.
+(def run
+  (agent-run/spawn-run! {:harness :worker
+                       :prompt "Implement the task"
+                       :parent (:id task)
+                       :serves (:id task)
+                       :depends-on [(:id gate)]}))
+
+;; Later, run failed. Create the successor from the updated prompt.
+(agent-run/supersede-and-respawn! (:id run)
+  {:harness :worker
+   :prompt "Implement the revised task body"
+   :carry-attrs {"delegation/task" (:id task)}})
+```
+
+**Why this shape.**
+
+- **Serving is explicit.** A serving run is a run with a `serves` edge to the target. `parent-of` is
+  only placement, so a recon run, reviewer, or panel seat can hang under the same task without
+  becoming the task's delegation. Interactive sessions still use `agent-run/for` as their completion
+  target; closing that strand is what reaps the session.
+- **The successor preserves the engine-owned shape.** `supersede-and-respawn!` carries forward the old
+  run's `serves` target, outgoing `depends-on` edges, `spawned-by` provenance, `parent-of`
+  placement, execution shape, and `agent-run/max-attempts`. The caller supplies the new prompt and
+  harness, may override `:cwd`, and may pass `:carry-attrs` for spool-owned structural attributes.
+- **Lineage is queryable.** The old run closes with phase `superseded`. The new run records a
+  `supersedes` edge to the old run and an `agent-run/supersedes` attr. The current run serving a
+  task is the serving run with no incoming `supersedes` edge and no `superseded` phase.
+- **Resume is lineage plus session continuity.** Passing `:continuity :resume` also records a
+  `resumes` edge and `agent-run/resumes`; those are separate from `supersedes`. In-place crash-
+  respawn is the other family member: recovery keeps the same run id and attempt path, so it has no
+  supersession edge.
+
+Honest source: `spawn-run!`, `runs-serving`, and `supersede-and-respawn!` in [`agent-
+run.clj`](./agent-run/src/skein/spools/agent_run.clj), with coverage in
+``test/skein/agent_run_test.clj``.
+
+---## Recipe: Fan out then collect, driven only by readiness
 
 **Situation.** You have several runs that can go in parallel and one run that must wait for all of them — a batch of workers feeding a collector, or a prepare/build/verify chain. You want the ordering to fall out of the graph, not a scheduler you have to run.
 
@@ -241,11 +293,13 @@ Honest source: `skein.spools.delegation/install!` calling `set-preamble-extensio
 ;; then marked `exhausted` (loud, still active) so dependents stay blocked.
 (agent-run/spawn-run! {:harness :sh :prompt "echo work" :max-attempts 2})
 
-;; interactive claim: the run serves `target` and completes when target closes.
-;; A surviving session is adopted after a crash, never respawned.
+;; interactive claim: agent-run/for is the completion target. If this run also
+;; owns the target's work, pass :serves too. A surviving session is adopted after
+;; a crash, never respawned.
 (agent-run/spawn-run! {:harness :sh :prompt "drive the session"
                      :mode :interactive :backend :tmux
-                     :parent (:id target)})
+                     :parent (:id target)
+                     :serves (:id target)})
 ```
 
 **Why this shape.**
