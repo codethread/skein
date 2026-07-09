@@ -1,4 +1,4 @@
-.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report
+.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report test-warm test-warm-stop
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
@@ -90,3 +90,22 @@ deps-report:
 security-report:
 	-clojure -M:security/clj-watson
 	-cd cli && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+# Per-worktree warm test loop: probe-or-boot the worktree's warm REPL and run the
+# NS-named namespaces through it. Iteration only — never a Done-when gate; the
+# cold `clojure -M:test <ns...>` run is the slice gate (PLAN-Ttv-001.TC1).
+test-warm:
+	NS="$(NS)" bash scripts/test-warm
+
+# Reap the worktree's warm REPL by recorded PID (PID only, never `pkill -f`) and
+# remove the runtime files (PLAN-Ttv-001.R1). The land cleanup step calls this
+# before `wktree remove`.
+test-warm-stop:
+	@if [ -f .test-repl.pid ]; then \
+		pid="$$(tr -d '[:space:]' <.test-repl.pid)"; \
+		if [ -n "$$pid" ]; then \
+			echo "test-warm-stop: killing recorded warm REPL pid $$pid"; \
+			kill "$$pid" 2>/dev/null || true; \
+		fi; \
+	fi; \
+	rm -f .test-repl-port .test-repl.pid

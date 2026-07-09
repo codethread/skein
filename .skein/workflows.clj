@@ -388,8 +388,12 @@
                   :depends-on [:push-main-ci-green]
                   :attributes {"workflow/action-ref" "land.cleanup"
                                "workflow/instruction"
-                               (fn [{:keys [branch card]}]
-                                 (str "Delete the remote branch (`git push origin --delete " branch "`), which also"
+                               (fn [{:keys [branch card worktree]}]
+                                 (str "Stop the worktree's warm test REPL before removing it: run `make test-warm-stop`"
+                                      " in " worktree " — it reaps the recorded PID from `.test-repl.pid` (by PID only,"
+                                      " never `pkill -f`) and clears the `.test-repl-port`/`.test-repl.pid` files, so no"
+                                      " orphaned warm JVM outlives the worktree."
+                                      " Delete the remote branch (`git push origin --delete " branch "`), which also"
                                       " closes the draft PR. Remove the worktree and local branch"
                                       " (`wktree remove --branch " branch " --force`; force is expected after the"
                                       " squash-merge)."

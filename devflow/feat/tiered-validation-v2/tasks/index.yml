@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Script entry and worktree cleanup
     task_file: tasks/003-script-and-cleanup.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 4
     description: Guidance surfaces (AGENTS/CLAUDE/agents spool)

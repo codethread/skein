@@ -321,3 +321,34 @@ Append notes here. Do not rewrite earlier notes.
   shard (`skein.spools-test`) and undeclared namespaces reject with the runner's own
   messages. Declared in `parallel-namespaces`; the nested in-process run binds its own
   `*report-counters*`, so it is isolated even when the full suite runs it in parallel.
+
+### PLAN-Ttv-001.DN5 PH3 script entry + worktree cleanup — 2026-07-09
+
+- Shipped `scripts/test-warm` (probe-or-boot), the `test-warm`/`test-warm-stop`
+  Makefile targets, and the land `cleanup`-step instruction to reap the warm REPL
+  before `wktree remove`. Exercised end-to-end in the worktree:
+  `make test-warm NS="skein.test.alpha-test"` boots fresh (`{:test 7, :pass 27,
+  :fail 0, :error 0}`), a second run reuses the same PID/port with no new JVM
+  (154ms), `make test-warm-stop` reaps the recorded PID and removes both files with
+  no orphan by that PID.
+- **The socket-driving form must use `requiring-resolve`, not `(require ...)` +
+  a qualified call in one form.** A `(do (require 'skein.test.alpha)
+  (skein.test.alpha/run-focused! ...))` form fails at *compile* time
+  (`ClassNotFoundException` — the qualified symbol resolves before the require
+  runs), and because that is a compile error the surrounding `try` never catches
+  it, so the sentinel never prints and an unbounded `read` hangs (this is what
+  made the first `make test-warm` run wedge for four minutes). The shipped form is
+  `((requiring-resolve 'skein.test.alpha/run-focused!) '[ns...])`, wrapped in a
+  server-side `try` that prints `TEST-WARM-ERROR` so the `TEST-WARM-DONE` sentinel
+  always prints; the read loop also carries a `read -t 300` safety timeout.
+- **The socket probe/drive needs bash, not sh/zsh:** `/dev/tcp` network
+  redirection is a bash builtin (zsh and POSIX sh lack it), so the `Makefile`
+  invokes `bash scripts/test-warm` and the script keeps `#!/usr/bin/env bash`.
+- **Disposable-world smoke of the `.skein/workflows.clj` edit** (TC6/DW3) loads the
+  split config into an isolated in-process runtime rooted at a `${ws:?}`
+  `mktemp -d` world (mirroring `skein.config-test`'s `with-config-runtime`, scoped
+  by `current/with-runtime`) and drives the land op to its cleanup step — no
+  weaver started or stopped. Verified the rendered cleanup instruction interpolates
+  the worktree path and reaps the warm REPL by recorded PID (`make test-warm-stop`,
+  PID-only) before `wktree remove`. The runner core prints `Aggregate summary:
+  {...}` and the shell surfaces a non-zero exit on any `:fail`/`:error`.

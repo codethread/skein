@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Per-worktree warm test loop entry (PLAN-Ttv-001.A3 / TASK-Ttv-003).
+#
+# Probe-or-boot: reuse the worktree's live warm REPL if its socket answers,
+# otherwise reap a dead one by recorded PID and boot a fresh one, then run the
+# NS-named namespaces through skein.test.alpha/run-focused! over the socket and
+# print the summary. The socket probe -- not the port file -- is the liveness
+# truth (PLAN-Ttv-001.R2/TC3). All kills are by recorded PID, never `pkill -f`
+# (PLAN-Ttv-001.R1). A warm run is for iteration only and never a Done-when
+# gate (PLAN-Ttv-001.TC1); the cold `clojure -M:test <ns...>` run is the gate.
+#
+# Usage: NS="ns1 ns2" scripts/test-warm   (normally via `make test-warm NS=...`)
+set -euo pipefail
+
+# Homebrew OpenJDK when java is not on the default PATH (repo convention).
+export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
+
+port_file=".test-repl-port"
+pid_file=".test-repl.pid"
+# Boot via the COMPOSED alias so :test-repl inherits :test's classpath and
+# native-access opt (PLAN-Ttv-001.DN4); never `-M:test-repl` alone.
+boot_cmd=(clojure -M:test:test-repl)
+
+: "${NS:?NS is required, e.g. make test-warm NS=\"skein.test.alpha-test\"}"
+
+# Socket probe: succeed only when a TCP connection to the recorded port is
+# accepted. This is the single source of truth for liveness.
+probe_socket() {
+  (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+read_file_value() {
+  [ -f "$1" ] && tr -d '[:space:]' <"$1"
+}
+
+# Reap the recorded PID (PID only) and clear stale runtime files.
+reap_dead() {
+  local pid
+  pid="$(read_file_value "$pid_file" || true)"
+  if [ -n "${pid:-}" ]; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  rm -f "$port_file" "$pid_file"
+}
+
+# Boot a fresh warm REPL and block until its socket answers. Sets $port.
+boot_fresh() {
+  local boot_log
+  boot_log="$(mktemp "${TMPDIR:-/tmp}/test-warm-boot.XXXXXX")"
+  # Detach so the warm JVM outlives this script; it records its own PID via
+  # ProcessHandle/current, so `make test-warm-stop` reaps the real JVM.
+  nohup "${boot_cmd[@]}" >"$boot_log" 2>&1 &
+  local waited=0
+  # JVM boot + compile can take a while on a cold cache; poll up to ~150s.
+  while [ "$waited" -lt 300 ]; do
+    port="$(read_file_value "$port_file" || true)"
+    if [ -n "${port:-}" ] && probe_socket "$port"; then
+      return 0
+    fi
+    sleep 0.5
+    waited=$((waited + 1))
+  done
+  echo "test-warm: warm REPL did not answer within timeout; boot log: $boot_log" >&2
+  return 1
+}
+
+# Resolve a live warm REPL, booting or reaping-and-booting as needed. Sets $port.
+ensure_warm() {
+  port="$(read_file_value "$port_file" || true)"
+  if [ -n "${port:-}" ] && probe_socket "$port"; then
+    return 0
+  fi
+  # Port file present but socket dead (or no file): reap any recorded PID, then boot.
+  reap_dead
+  boot_fresh
+}
+
+# Drive one focused run over the socket REPL and stream its output. The trailing
+# sentinel marks the end so a persistent (non-EOF) REPL connection can be read to
+# completion; a validation/compile failure is caught server-side so the sentinel
+# still prints.
+run_focused() {
+  local port="$1" out="$2"
+  # `requiring-resolve` loads skein.test.alpha and resolves run-focused! at
+  # runtime; a bare `(require ...)` + qualified call in one form would fail at
+  # compile time (the symbol resolves before the require runs). The try/catch
+  # keeps a validation failure from aborting before the sentinel prints.
+  local form
+  form="(do (try ((requiring-resolve 'skein.test.alpha/run-focused!) '[${NS}]) (catch Throwable t (println \"TEST-WARM-ERROR:\" (.getMessage t)))) (println) (println \"TEST-WARM-DONE\"))"
+  exec 3<>"/dev/tcp/127.0.0.1/$port"
+  printf '%s\n' "$form" >&3
+  local status=0 line
+  # A generous per-line timeout guards against an unexpected server-side hang
+  # so the warm loop can never block a caller indefinitely.
+  while IFS= read -t 300 -r line <&3; do
+    case "$line" in
+      *TEST-WARM-DONE*) break ;;
+      *TEST-WARM-ERROR*) status=1 ;;
+    esac
+    printf '%s\n' "$line" | tee -a "$out"
+  done
+  exec 3>&- 3<&-
+  return "$status"
+}
+
+main() {
+  ensure_warm
+  local out status=0
+  out="$(mktemp "${TMPDIR:-/tmp}/test-warm-out.XXXXXX")"
+  run_focused "$port" "$out" || status=1
+  # A non-zero failed/error count means the warm run was red even without a
+  # server-side exception; surface it in the exit status.
+  local agg fails errs
+  agg="$(grep 'Aggregate summary:' "$out" | tail -n1 || true)"
+  fails="$(printf '%s' "$agg" | sed -n 's/.*:fail \([0-9][0-9]*\).*/\1/p')"
+  errs="$(printf '%s' "$agg" | sed -n 's/.*:error \([0-9][0-9]*\).*/\1/p')"
+  rm -f "$out"
+  if [ -n "${fails:-}" ] && [ "$fails" -ne 0 ]; then status=1; fi
+  if [ -n "${errs:-}" ] && [ "$errs" -ne 0 ]; then status=1; fi
+  return "$status"
+}
+
+main
