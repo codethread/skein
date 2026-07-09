@@ -28,15 +28,25 @@ Engine phase PLAN-HarnessAliasRegistries-001.PH1 in
   "harness-not-found"` (recovery deferral keys off it) and now list both
   registries' available names; a genuine alias cycle fails with a
   distinct error that is NOT classed `harness-not-found`.
-- **TASK-HarnessAliasRegistries-001.MI4:** `harnesses` returns the union
-  of both registries ordered by name (a same-named tool and seat both
-  appear; `:kind` distinguishes), and alias entries keep carrying
+- **TASK-HarnessAliasRegistries-001.MI4:** `harnesses` returns the
+  concatenation of both registries' entries sorted by name — never merged
+  by name first, or the same-name shadow pair would silently collapse to
+  one row (a same-named tool and seat both appear; `:kind`
+  distinguishes) — and alias entries keep carrying
   `:harness`/`:harness-doc` resolved via the new rule, still best-effort
   (broken chains omit the keys rather than failing the listing).
 - **TASK-HarnessAliasRegistries-001.MI5:** `register-default-harnesses!`
   keeps its keep-existing semantics against the harness registry.
   `defharness!`/`defalias!`/ns docstrings state the two-registry contract
   and resolution order.
+- **TASK-HarnessAliasRegistries-001.MI7:** Registry entry shapes become
+  clojure.specs that validation actually consults: `::harness-def` and
+  `::alias-def` data specs, checked by `defharness!`/`defalias!` and by
+  the migrate split's exactly-one-shape assertion, replacing the
+  equivalent hand-rolled structural checks. Keep manual checks only for
+  what a spec cannot express (closed key sets already enforced, resume
+  argv placeholder membership, cross-registry semantics), and reference
+  each spec from its owning docstring.
 - **TASK-HarnessAliasRegistries-001.MI6:** Tests in
   `test/skein/shuttle_test.clj`: same-name shadow resolves alias-first and
   terminates at the tool; unshadowed harness resolves directly; alias

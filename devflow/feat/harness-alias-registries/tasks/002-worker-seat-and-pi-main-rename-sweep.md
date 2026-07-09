@@ -21,10 +21,15 @@ seats over tools.
   `.skein/init.clj` (~line 142 comment), `spools/shuttle/treadle.md`
   (~line 41), `spools/agents/README.md` (~lines 31, 253),
   `spools/shuttle.cookbook.md` honest-source lines if they name it,
-  `test/skein/config_test.clj` fixtures/assertions, and the golden
+  `test/skein/config_test.clj` fixtures/assertions, the golden
   `test/skein/surface_baseline.edn` entry embedding the config doc
-  string. Re-grep `pi-main` repo-wide afterward; only historical devflow
-  archive/notes may keep it.
+  string, and the live lookup paths review found: the bonkai skill text
+  (`.claude/skills/bonkai/SKILL.md` and its `.agents/skills/bonkai/`
+  copy) and the active `devflow/feat/attr-scaling-ship-now/tasks/`
+  `signoff-payload.json` + `index.yml` harness fields (those would
+  delegate against a name that no longer resolves). Re-grep `pi-main`
+  repo-wide afterward; only historical devflow archive/notes may keep
+  it.
 - **TASK-HarnessAliasRegistries-002.MI3:** `spools/shuttle/README.md`
   documents the two-registry contract: one harness per tool, aliases as
   seats, alias-first resolution, lawful same-name shadowing, migration
