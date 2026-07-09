@@ -22,6 +22,7 @@
             [clojure.walk :as walk]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
+            [skein.api.notes.alpha :as notes-api]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime-api]
             [skein.api.weaver.alpha :as api]
@@ -319,6 +320,22 @@
                       (throw (ex-info "pattern explain requires a pattern name" {})))
                     (patterns/explain rt (handle-name nm))))))
 
+(defn note-op
+  "Append an immutable note to a target strand's memory via the note primitive.
+
+  Returns the primitive's `{:id :target}` shape, where `target` is a projection
+  of the `notes` edge rather than a stored attribute."
+  [ctx]
+  (let [{:keys [id text by round]} (:op/args ctx)]
+    (notes-api/note! (:op/runtime ctx) id text {:by by :round round})))
+
+(defn notes-op
+  "Return a target strand's notes from every primitive writer in note/at order,
+  optionally filtered to one review round."
+  [ctx]
+  (let [{:keys [id round]} (:op/args ctx)]
+    (notes-api/notes (:op/runtime ctx) id {:round round})))
+
 ;; --- arg-specs --------------------------------------------------------------
 
 (def ^:private add-arg-spec
@@ -425,6 +442,23 @@
                                            :required? true
                                            :doc "Pattern name."}]}}})
 
+(def ^:private note-arg-spec
+  {:op "note"
+   :doc "Append an immutable note to a target strand's memory."
+   :flags {:by {:type :string
+                :doc "Author attribution recorded on the note."}
+           :round {:type :string
+                   :doc "Review round the note belongs to."}}
+   :positionals [{:name :id :type :string :required? true :doc "Target strand id."}
+                 {:name :text :type :string :required? true :doc "Note text."}]})
+
+(def ^:private notes-arg-spec
+  {:op "notes"
+   :doc "Return a target strand's notes in note/at order from every writer."
+   :flags {:round {:type :string
+                   :doc "Filter to notes from one review round."}}
+   :positionals [{:name :id :type :string :required? true :doc "Target strand id."}]})
+
 (def ^:private op-registrations
   "Each shipped op: [op-name arg-spec hook-class handler-symbol]."
   [['add add-arg-spec :mutating 'skein.spools.batteries/add-op]
@@ -437,7 +471,9 @@
    ['subgraph subgraph-arg-spec :read 'skein.spools.batteries/subgraph-op]
    ['weave weave-arg-spec :mutating 'skein.spools.batteries/weave-op]
    ['query query-arg-spec :read 'skein.spools.batteries/query-op]
-   ['pattern pattern-arg-spec :read 'skein.spools.batteries/pattern-op]])
+   ['pattern pattern-arg-spec :read 'skein.spools.batteries/pattern-op]
+   ['note note-arg-spec :mutating 'skein.spools.batteries/note-op]
+   ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]])
 
 (defn activate!
   "Register the batteries core strand ops into a weaver runtime.

@@ -9,6 +9,7 @@
             [matcher-combinators.matchers :as m]
             [matcher-combinators.test :refer [match?]]
             [skein.api.graph.alpha :as graph]
+            [skein.api.notes.alpha :as notes-api]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
             [skein.core.specs :as specs]
@@ -39,7 +40,7 @@
     (fn [rt]
       (testing "all shipped ops are registered under batteries provenance"
         (doseq [op-name ['add 'update 'show 'supersede 'burn 'list 'ready 'subgraph
-                         'weave 'query 'pattern]]
+                         'weave 'query 'pattern 'note 'notes]]
           (let [entry (op-entry rt op-name)]
             (is (some? entry) (str op-name " should be registered"))
             (is (= 'skein.spools.batteries (:provenance entry)))
@@ -56,7 +57,9 @@
         (is (= :read (:hook-class (op-entry rt 'ready))))
         (is (= :read (:hook-class (op-entry rt 'subgraph))))
         (is (= :read (:hook-class (op-entry rt 'query))))
-        (is (= :read (:hook-class (op-entry rt 'pattern))))))))
+        (is (= :read (:hook-class (op-entry rt 'pattern))))
+        (is (= :mutating (:hook-class (op-entry rt 'note))))
+        (is (= :read (:hook-class (op-entry rt 'notes))))))))
 
 (deftest add-happy-path-and-json-shape
   (with-batteries
@@ -361,3 +364,44 @@
       (testing "pattern explain of an unknown pattern fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Pattern not found"
                               (api/op! rt 'pattern ["explain" "nope"])))))))
+
+(deftest note-op-projects-target-from-edge
+  (with-batteries
+    (fn [rt]
+      (let [target (api/add rt {:title "Design" :attributes {}})
+            written (api/op! rt 'note [(:id target) "first pass looks solid" "--by" "gpt"])]
+        (testing "note returns the primitive's id/target shape"
+          (is (match? {:id string? :target (:id target)} written))
+          (is (= #{:id :target} (set (keys written)))))
+        (testing "target is an edge projection, never a stored attribute"
+          (is (nil? (get-in (api/show rt (:id written)) [:attributes :note/for])))
+          (is (contains? (set (map :from_strand_id
+                                   (graph/incoming-edges rt [(:id target)] "notes")))
+                         (:id written))))
+        (testing "missing required text fails in the parser"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required"
+                                (api/op! rt 'note [(:id target)]))))
+        (testing "blank text fails loudly in the primitive"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
+                                (api/op! rt 'note [(:id target) "   "]))))))))
+
+(deftest notes-op-reads-every-writer-in-order
+  (with-batteries
+    (fn [rt]
+      (let [target (api/add rt {:title "Reviewed" :attributes {}})]
+        ;; two writers: the CLI verb and a direct primitive caller with its own
+        ;; decorating attrs — the read walks the edge regardless of writer.
+        (api/op! rt 'note [(:id target) "verb note" "--by" "opus" "--round" "1"])
+        (notes-api/note! rt (:id target) "primitive note"
+                         {:by "gpt" :round "2" "reviewer/seat" "panel"})
+        (let [rows (api/op! rt 'notes [(:id target)])]
+          (testing "both writers' notes come back, in note/at order"
+            (is (match? [{:id string? :note "verb note" :at string? :by "opus" :round "1"}
+                         {:id string? :note "primitive note" :at string? :by "gpt" :round "2"}]
+                        rows))
+            (is (every? #(= #{:id :note :at :by :round} (set (keys %))) rows)))
+          (testing "--round filters to one review round"
+            (is (= ["primitive note"] (mapv :note (api/op! rt 'notes [(:id target) "--round" "2"]))))))
+        (testing "missing required id fails in the parser"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required"
+                                (api/op! rt 'notes []))))))))
