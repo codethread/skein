@@ -8,10 +8,19 @@ This is the F1 mechanical-rename delta (no behavior change). The strand model's 
 
 ## SPEC-Alr-001.P2 Contract changes
 
-- **SPEC-Alr-001.CC1** (edit, `SPEC-001.P4`, line 32): the namespace round-trip example renames `shuttle/*` → `agent-run/*`.
-  - **Old:** `Namespaced userland vocabularies such as `workflow/*` and `shuttle/*` therefore round-trip without collapsing distinct namespaces onto the same local name.`
-  - **New:** `Namespaced userland vocabularies such as `workflow/*` and `agent-run/*` therefore round-trip without collapsing distinct namespaces onto the same local name.`
-  - Token swap only; the round-trip contract is unchanged.
+- **SPEC-Alr-001.CC1** (edit, `SPEC-001.P4`, line 32): the namespace round-trip example renames `shuttle/*` → `agent-run/*`. Token swap only; the round-trip contract is unchanged.
+
+  Old:
+
+  ```text
+  Namespaced userland vocabularies such as `workflow/*` and `shuttle/*` therefore round-trip without collapsing distinct namespaces onto the same local name.
+  ```
+
+  New:
+
+  ```text
+  Namespaced userland vocabularies such as `workflow/*` and `agent-run/*` therefore round-trip without collapsing distinct namespaces onto the same local name.
+  ```
 
 - **SPEC-Alr-001.CC2** (ADD, `SPEC-001.P4` Attributes): add the institutionalized naming rule as a new contract paragraph, inserted immediately after the paragraph ending `…collapsing distinct namespaces onto the same local name.` (line 32 as renamed by CC1). This is the naming rule from `brief.md` ("Naming rule (institutionalized by this feature)") and `PROP-Alr-001.G2`. Verbatim text to add:
 
