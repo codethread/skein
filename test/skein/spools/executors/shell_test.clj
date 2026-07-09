@@ -1,8 +1,8 @@
-(ns skein.spools.reed-test
+(ns skein.spools.executors.shell-test
   "Tests for the reed workflow-gate to shell-command executor."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [skein.spools.reed :as reed]
+            [skein.spools.executors.shell :as reed]
             [skein.spools.workflow :as workflow]
             [skein.spools.test-support :as test-support :refer [with-runtime]]
             [skein.api.weaver.alpha :as api]

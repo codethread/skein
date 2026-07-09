@@ -1,4 +1,4 @@
-(ns skein.spools.reed
+(ns skein.spools.executors.shell
   "Fulfil workflow `:shell` gates by running their command off the event thread.
 
   A reed watches workflow runs for ready gates whose waiter is `:shell`, runs the
@@ -305,7 +305,7 @@
   []
   (let [runtime (rt)]
     (events/register! runtime :reed/engine event-types
-                      'skein.spools.reed/on-event
+                      'skein.spools.executors.shell/on-event
                       {:spool "reed"})
     (workflow/register-executor! :shell gate-stalled?)
     ;; The coordinator attention surface for stuck shell gates: an active `:shell`
@@ -317,4 +317,4 @@
                             [:exists [:attr "shell/error"]]])
     (scan!)
     {:installed true
-     :namespace 'skein.spools.reed}))
+     :namespace 'skein.spools.executors.shell}))
