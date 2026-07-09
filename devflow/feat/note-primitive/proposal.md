@@ -342,21 +342,24 @@ All green before cutover:
 
 ## PROP-Np-001.P8 Open questions
 
-- **PROP-Np-001.Q1 — cascade-divergence invariant.** Drop `note/for` entirely so linkage is single-encoded (C8), or
-  keep `note/for` and cascade-burn note strands on target burn (`db.clj:887-903`)? **Proposed resolution: drop
+All four questions were decided by the coordinator at proposal sign-off (docs-review pass 4484a6be raised no
+objection to any recommendation); each proposed resolution below is the adopted contract. Count: **0 open questions**.
+
+- **PROP-Np-001.Q1 (resolved) — cascade-divergence invariant.** Drop `note/for` entirely so linkage is single-encoded (C8), or
+  keep `note/for` and cascade-burn note strands on target burn (`db.clj:887-903`)? **Resolution (adopted): drop
   `note/for`.** It is the minimal, structurally-divergence-proof fix, adds no destructive cascade semantics to `burn`,
   and matches F2's no-dual-encoding tenet. Content attrs (`note/text`/`note/at`/`note/by`) never point at a target, so
   nothing dangles.
-- **PROP-Np-001.Q2 — primitive namespace.** New `skein.api.notes.alpha`, keep it in the agent-run spool, or fold it
-  into the batteries spool? **Proposed resolution: `skein.api.notes.alpha`.** The primitive is cross-spool (kanban,
+- **PROP-Np-001.Q2 (resolved) — primitive namespace.** New `skein.api.notes.alpha`, keep it in the agent-run spool, or fold it
+  into the batteries spool? **Resolution (adopted): `skein.api.notes.alpha`.** The primitive is cross-spool (kanban,
   delegation, batteries all call it), and the tenet reserves `skein.api.*.alpha` for the blessed spool-facing API; a
   spool-internal home would force userland spools to depend on another spool's internals.
-- **PROP-Np-001.Q3 — `notes` acyclicity family.** Declare `notes` acyclic as an operational battery (joining
-  `serves`/`supersedes`), or leave it an annotation relation with no acyclicity guarantee (TEN-005)? **Proposed
-  resolution: operational, declared acyclic.** It ships a read surface that walks it, notes never cycle in practice, and
+- **PROP-Np-001.Q3 (resolved) — `notes` acyclicity family.** Declare `notes` acyclic as an operational battery (joining
+  `serves`/`supersedes`), or leave it an annotation relation with no acyclicity guarantee (TEN-005)? **Resolution
+  (adopted): operational, declared acyclic.** It ships a read surface that walks it, notes never cycle in practice, and
   the declaration makes malformed rewrite/write edges fail loudly. It is classified operational, so TEN-005's
   annotation carve-out does not apply.
-- **PROP-Np-001.Q4 — fate of the 67 dangling.** Leave them as inert closed memory (C11), or burn them during the
-  rewrite? **Proposed resolution: leave them inert.** Their targets are gone, so they carry no live relation and are
+- **PROP-Np-001.Q4 (resolved) — fate of the 67 dangling.** Leave them as inert closed memory (C11), or burn them during the
+  rewrite? **Resolution (adopted): leave them inert.** Their targets are gone, so they carry no live relation and are
   read by nothing; deleting historical memory is a heavier, irreversible action than the brief asks for, and F2's
   policy is that historical strands are memory, not authority.
