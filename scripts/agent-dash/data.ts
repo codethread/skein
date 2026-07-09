@@ -51,7 +51,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--once") opts.once = true;
   else if (a === "--workspace") opts.workspace = argv[++i];
   else if (a === "--help" || a === "-h") {
-    console.log("usage: bun scripts/shuttle-dash/index.tsx [--interval secs] [--all] [--once] [--workspace dir]");
+    console.log("usage: bun scripts/agent-dash/index.tsx [--interval secs] [--all] [--once] [--workspace dir]");
     process.exit(0);
   } else {
     console.error(`unknown flag: ${a}`);
@@ -167,7 +167,7 @@ export function editorFileFor(row: DetailRow): string {
 export async function renderBoxart(dot: string, format = "boxart"): Promise<{ lines: string[] | null; error: string | null }> {
   let dir: string | null = null;
   try {
-    dir = mkdtempSync(join(tmpdir(), "shuttle-dash-graph-"));
+    dir = mkdtempSync(join(tmpdir(), "agent-dash-graph-"));
     const file = join(dir, "graph.dot");
     writeFileSync(file, dot);
     const res = await run(["graph-easy", file, "--as", format], repoRoot);

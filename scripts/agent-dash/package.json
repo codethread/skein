@@ -1,5 +1,5 @@
 {
-  "name": "shuttle-dash",
+  "name": "agent-dash",
   "private": true,
   "type": "module",
   "dependencies": {

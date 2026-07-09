@@ -168,13 +168,13 @@ async function fetchRunsRows(all: boolean): Promise<Row[]> {
     summaries.map(async (s): Promise<Row> => {
       const strand = await strandShow(s.id);
       const attrs = strand.attributes;
-      const cwd = str(attrs["shuttle/cwd"]) || undefined;
+      const cwd = str(attrs["agent-run/cwd"]) || undefined;
       return {
         ...s,
         ...detailRowFrom(strand, { branch: await branchFor(cwd ?? workspaceRoot, cache), phase: s.phase }),
-        prompt: str(attrs["shuttle/prompt"]),
+        prompt: str(attrs["agent-run/prompt"]),
         cwd,
-        startedAt: parseInstant(attrs["shuttle/started-at"] as string | undefined) ?? parseInstant(strand.created_at),
+        startedAt: parseInstant(attrs["agent-run/started-at"] as string | undefined) ?? parseInstant(strand.created_at),
       };
     }),
   );
@@ -255,7 +255,7 @@ async function openPlanDetail(id: string, phase: string | undefined, setV: (next
   try {
     const s = await strandShow(id);
     if (seq !== planDetailSeq) return;
-    const cwd = str(s.attributes["shuttle/cwd"]) || undefined;
+    const cwd = str(s.attributes["agent-run/cwd"]) || undefined;
     const branch = cwd ? await branchFor(cwd, branchCache) : str(s.attributes["branch"], "-");
     if (seq !== planDetailSeq) return;
     const row = detailRowFrom(s, { branch, phase });

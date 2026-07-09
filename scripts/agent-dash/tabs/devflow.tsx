@@ -73,7 +73,7 @@ const STATE_COLOR: Record<StateLabel, string | undefined> = { error: "red", atte
 // groups (Array.sort).
 const STATE_RANK: Record<StateLabel, number> = { error: 0, attention: 1, active: 2, done: 3 };
 
-type GateRun = { id: string; "shuttle/harness"?: string; "shuttle/phase"?: string; "shuttle/result"?: string };
+type GateRun = { id: string; "agent-run/harness"?: string; "agent-run/phase"?: string; "agent-run/result"?: string };
 type Gate = { gate: string; id: string; run?: GateRun };
 
 type FlowStatus = {
@@ -198,8 +198,8 @@ function featureGraph(sub: SubgraphResult, gates: Gate[]): { nodes: GraphNode[];
     runNodes.set(g.run.id, {
       id: g.run.id,
       kind: "run",
-      status: `${g.run["shuttle/harness"] ?? "?"} ${g.run["shuttle/phase"] ?? "?"}`,
-      title: firstLine(g.run["shuttle/result"] ?? ""),
+      status: `${g.run["agent-run/harness"] ?? "?"} ${g.run["agent-run/phase"] ?? "?"}`,
+      title: firstLine(g.run["agent-run/result"] ?? ""),
       depth: 0,
     });
   }

@@ -18,7 +18,7 @@
 // and ./ui for a plain list+detail or a tab that owns several views — then add it
 // to the registry below. No other file needs to change.
 //
-// Usage: bun scripts/shuttle-dash/index.tsx [--interval secs] [--all] [--once] [--workspace dir]
+// Usage: bun scripts/agent-dash/index.tsx [--interval secs] [--all] [--once] [--workspace dir]
 
 import { runApp } from "./app";
 import { agentsTab } from "./tabs/agents";
