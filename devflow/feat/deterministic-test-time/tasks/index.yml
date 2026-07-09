@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: Migrate treadle onto lane quiescence + shuttle await
     task_file: tasks/005-treadle-migration.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 6
     description: Migrate reed onto lane quiescence + subprocess poll
