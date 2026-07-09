@@ -127,9 +127,9 @@
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "echo hello-shuttle"})
             done (await-phase rt (:id run) #{"done"})]
         (is (= "closed" (:state done)))
-        (is (= "hello-shuttle" (get-in done [:attributes :shuttle/result])))
-        (is (= 1 (get-in done [:attributes :shuttle/attempt])))
-        (is (some? (get-in done [:attributes :shuttle/pid])))))))
+        (is (= "hello-shuttle" (get-in done [:attributes :agent-run/result])))
+        (is (= 1 (get-in done [:attributes :agent-run/attempt])))
+        (is (some? (get-in done [:attributes :agent-run/pid])))))))
 
 (deftest stdin-prompt-stays-off-argv
   (with-shuttle
@@ -152,7 +152,7 @@
         (let [run (shuttle/spawn-run! {:harness :sh-stdin :prompt "echo hello-stdin"})
               done (await-phase rt (:id run) #{"done"})]
           (is (= "closed" (:state done)))
-          (is (= "hello-stdin" (get-in done [:attributes :shuttle/result]))))))))
+          (is (= "hello-stdin" (get-in done [:attributes :agent-run/result]))))))))
 
 (deftest failing-run-stays-active-and-loud
   (with-shuttle
@@ -160,8 +160,8 @@
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "echo boom >&2; exit 3"})
             failed (await-phase rt (:id run) #{"failed"})]
         (is (= "active" (:state failed)))
-        (is (str/includes? (get-in failed [:attributes :shuttle/error]) "exited 3"))
-        (is (str/includes? (get-in failed [:attributes :shuttle/error]) "boom"))))))
+        (is (str/includes? (get-in failed [:attributes :agent-run/error]) "exited 3"))
+        (is (str/includes? (get-in failed [:attributes :agent-run/error]) "boom"))))))
 
 (deftest empty-result-exit-0-fails-loudly-and-is-retryable
   (with-shuttle
@@ -169,21 +169,21 @@
       (testing "a harness that exits 0 but writes nothing is not recorded done"
         ;; the incident: a transport death drops the harness mid-turn, which
         ;; writes no result yet still exits 0. Recording that as done with an
-        ;; empty shuttle/result dodges agent-failures and both recovery paths.
+        ;; empty agent-run/result dodges agent-failures and both recovery paths.
         (let [run (shuttle/spawn-run! {:harness :sh :prompt "exit 0"})
               failed (await-phase rt (:id run) #{"failed"})]
           (is (= "active" (:state failed)) "stays active so it is loud and retryable")
-          (is (= "failed" (get-in failed [:attributes :shuttle/phase])))
-          (is (zero? (get-in failed [:attributes :shuttle/exit-code])))
-          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "empty result"))
+          (is (= "failed" (get-in failed [:attributes :agent-run/phase])))
+          (is (zero? (get-in failed [:attributes :agent-run/exit-code])))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "empty result"))
           (testing "the failed phase is exactly what agent retry supersedes"
             (is (contains? #{"failed" "exhausted"}
-                           (get-in failed [:attributes :shuttle/phase]))))))
+                           (get-in failed [:attributes :agent-run/phase]))))))
       (testing "a blank (whitespace-only) result fails the same way"
         (let [run (shuttle/spawn-run! {:harness :sh :prompt "printf '   \\n'"})
               failed (await-phase rt (:id run) #{"failed"})]
-          (is (= "failed" (get-in failed [:attributes :shuttle/phase])))
-          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "empty result")))))))
+          (is (= "failed" (get-in failed [:attributes :agent-run/phase])))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "empty result")))))))
 
 (deftest dependent-run-waits-for-blocker-and-fans-in
   (with-shuttle
@@ -197,11 +197,11 @@
         (await-phase rt (:id child-b) #{"done"})
         (testing "collector stays pending while any dependency is active"
           (Thread/sleep 300)
-          (is (= "pending" (get-in (api/show rt (:id collector)) [:attributes :shuttle/phase]))))
+          (is (= "pending" (get-in (api/show rt (:id collector)) [:attributes :agent-run/phase]))))
         (testing "closing the last dependency triggers the spawn via events"
           (api/update rt (:id blocker) {:state "closed"})
           (let [done (await-phase rt (:id collector) #{"done"})]
-            (is (= "collected" (get-in done [:attributes :shuttle/result])))))))))
+            (is (= "collected" (get-in done [:attributes :agent-run/result])))))))))
 
 (deftest spawned-by-records-provenance-tree
   (with-shuttle
@@ -212,7 +212,7 @@
         (await-phase rt (:id parent) #{"done"})
         (await-phase rt (:id child) #{"done"})
         (is (= (:id parent)
-               (get-in (api/show rt (:id child)) [:attributes :shuttle/spawned-by])))
+               (get-in (api/show rt (:id child)) [:attributes :agent-run/spawned-by])))
         (is (some #(and (= (:id child) (:to_strand_id %)) (= "parent-of" (:edge_type %)))
                   (:edges (graph/subgraph rt [(:id parent)]))))
         (is (= (:id parent) (:spawned-by (shuttle/run-summary (api/show rt (:id child))))))
@@ -308,37 +308,37 @@
         (await-phase rt (:id run) #{"running"})
         (shuttle/kill! (:id run))
         (let [failed (await-phase rt (:id run) #{"failed"})]
-          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "killed")))))))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "killed")))))))
 
 (deftest reconcile-respawns-orphans-and-exhausts-bounded-attempts
   (with-shuttle
     (fn [rt]
       (testing "an orphaned running run respawns and completes"
         (let [orphan (api/add rt {:title "orphan"
-                                  :attributes {"shuttle/run" "true"
-                                               "shuttle/harness" "sh"
-                                               "shuttle/prompt" "echo recovered"
-                                               "shuttle/phase" "running"
-                                               "shuttle/attempt" 1
-                                               "shuttle/pid" 99999999}})
+                                  :attributes {"agent-run/run" "true"
+                                               "agent-run/harness" "sh"
+                                               "agent-run/prompt" "echo recovered"
+                                               "agent-run/phase" "running"
+                                               "agent-run/attempt" 1
+                                               "agent-run/pid" 99999999}})
               summary (shuttle/reconcile!)]
           (is (= [(:id orphan)] (:respawned summary)))
           (is (= "recovered"
                  (get-in (await-phase rt (:id orphan) #{"done"})
-                         [:attributes :shuttle/result])))))
+                         [:attributes :agent-run/result])))))
       (testing "a run out of attempts is marked exhausted, stays active"
         (let [spent (api/add rt {:title "spent"
-                                 :attributes {"shuttle/run" "true"
-                                              "shuttle/harness" "sh"
-                                              "shuttle/prompt" "echo nope"
-                                              "shuttle/phase" "running"
-                                              "shuttle/attempt" 3}})
+                                 :attributes {"agent-run/run" "true"
+                                              "agent-run/harness" "sh"
+                                              "agent-run/prompt" "echo nope"
+                                              "agent-run/phase" "running"
+                                              "agent-run/attempt" 3}})
               summary (shuttle/reconcile!)]
           (is (= [(:id spent)] (:exhausted summary)))
           (let [strand (api/show rt (:id spent))]
             (is (= "active" (:state strand)))
-            (is (= "exhausted" (get-in strand [:attributes :shuttle/phase])))
-            (is (str/includes? (get-in strand [:attributes :shuttle/error]) "exhausted"))))))))
+            (is (= "exhausted" (get-in strand [:attributes :agent-run/phase])))
+            (is (str/includes? (get-in strand [:attributes :agent-run/error]) "exhausted"))))))))
 
 (deftest spawn-validates-inputs-before-creating-anything
   (with-shuttle
@@ -346,7 +346,7 @@
       (testing "reserved control attributes cannot be overridden"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"control attributes"
                               (shuttle/spawn-run! {:harness :sh :prompt "echo x"
-                                                   :attrs {"shuttle/phase" "done"}}))))
+                                                   :attrs {"agent-run/phase" "done"}}))))
       (testing "provenance targets must exist before the run is created"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"parent strand not found"
                               (shuttle/spawn-run! {:harness :sh :prompt "echo x"
@@ -360,38 +360,38 @@
                             (shuttle/spawn-run! {:harness :absent :prompt "x"})))
       (testing "a pending strand referencing a missing harness fails at spawn"
         (api/add rt {:title "handmade"
-                     :attributes {"shuttle/run" "true"
-                                  "shuttle/harness" "absent"
-                                  "shuttle/prompt" "echo x"
-                                  "shuttle/phase" "pending"}})
+                     :attributes {"agent-run/run" "true"
+                                  "agent-run/harness" "absent"
+                                  "agent-run/prompt" "echo x"
+                                  "agent-run/phase" "pending"}})
         (let [run-id (:id (first (filter #(= "handmade" (:title %))
                                          (api/list rt shuttle/run-query {}))))
               failed (await-phase rt run-id #{"failed"})]
-          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "Harness not found")))))))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "Harness not found")))))))
 
 (deftest recovered-run-with-late-registered-alias-defers-then-respawns
   (with-shuttle
     (fn [rt]
       (let [orphan (api/add rt {:title "late-alias-orphan"
-                                :attributes {"shuttle/run" "true"
-                                             "shuttle/harness" "late-sh"
-                                             "shuttle/prompt" "echo recovered-late"
-                                             "shuttle/phase" "running"
-                                             "shuttle/attempt" 1
-                                             "shuttle/pid" 99999999}})
+                                :attributes {"agent-run/run" "true"
+                                             "agent-run/harness" "late-sh"
+                                             "agent-run/prompt" "echo recovered-late"
+                                             "agent-run/phase" "running"
+                                             "agent-run/attempt" 1
+                                             "agent-run/pid" 99999999}})
             summary (shuttle/reconcile!)]
         (is (= [(:id orphan)] (:respawned summary)))
-        (let [deferred (await-attr-matching rt (:id orphan) :shuttle/error
+        (let [deferred (await-attr-matching rt (:id orphan) :agent-run/error
                                             #(and % (str/includes? % "Harness not found")))]
-          (is (= "pending" (get-in deferred [:attributes :shuttle/phase])))
-          (is (some? (get-in deferred [:attributes :shuttle/recovered-at])))
-          (is (= 1 (get-in deferred [:attributes :shuttle/attempt]))))
+          (is (= "pending" (get-in deferred [:attributes :agent-run/phase])))
+          (is (some? (get-in deferred [:attributes :agent-run/recovered-at])))
+          (is (= 1 (get-in deferred [:attributes :agent-run/attempt]))))
         (shuttle/defalias! :late-sh {:alias-of :sh})
         (shuttle/scan!)
         (let [done (await-phase rt (:id orphan) #{"done"})]
           (is (= "closed" (:state done)))
-          (is (= "recovered-late" (get-in done [:attributes :shuttle/result])))
-          (is (= 2 (get-in done [:attributes :shuttle/attempt]))))))))
+          (is (= "recovered-late" (get-in done [:attributes :agent-run/result])))
+          (is (= 2 (get-in done [:attributes :agent-run/attempt]))))))))
 
 (deftest recovered-run-with-permanently-missing-alias-eventually-fails
   (let [original @#'shuttle/*recovery-harness-deferral-ms*]
@@ -400,17 +400,17 @@
       (with-shuttle
         (fn [rt]
           (let [orphan (api/add rt {:title "missing-alias-orphan"
-                                    :attributes {"shuttle/run" "true"
-                                                 "shuttle/harness" "never-registered"
-                                                 "shuttle/prompt" "echo unreachable"
-                                                 "shuttle/phase" "running"
-                                                 "shuttle/attempt" 1
-                                                 "shuttle/pid" 99999999}})
+                                    :attributes {"agent-run/run" "true"
+                                                 "agent-run/harness" "never-registered"
+                                                 "agent-run/prompt" "echo unreachable"
+                                                 "agent-run/phase" "running"
+                                                 "agent-run/attempt" 1
+                                                 "agent-run/pid" 99999999}})
                 summary (shuttle/reconcile!)]
             (is (= [(:id orphan)] (:respawned summary)))
             (let [failed (await-phase rt (:id orphan) #{"failed"})]
               (is (= "active" (:state failed)))
-              (is (str/includes? (get-in failed [:attributes :shuttle/error])
+              (is (str/includes? (get-in failed [:attributes :agent-run/error])
                                  "Harness not found"))))))
       (finally
         (alter-var-root #'shuttle/*recovery-harness-deferral-ms* (constantly original))))))
@@ -472,8 +472,8 @@
   (let [run (shuttle/spawn-run! (merge {:harness :sh :prompt "sleep 300"
                                         :mode :interactive :backend :fake-mux}
                                        opts))
-        running (await-attr rt (:id run) (keyword "shuttle" "handle.pid"))
-        pid (get-in running [:attributes (keyword "shuttle" "handle.pid")])]
+        running (await-attr rt (:id run) (keyword "agent-run" "handle.pid"))
+        pid (get-in running [:attributes (keyword "agent-run" "handle.pid")])]
     (is (process-alive? pid))
     {:run running :pid pid}))
 
@@ -509,16 +509,16 @@
                                                  :backend :fake-mux :reap :sometimes})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"control attributes"
                             (shuttle/spawn-run! {:harness :sh :prompt "x"
-                                                 :attrs {"shuttle/handle.pid" "1"}}))))))
+                                                 :attrs {"agent-run/handle.pid" "1"}}))))))
 
 (deftest interactive-run-reaps-when-served-strand-closes
   (with-shuttle
     (fn [rt]
       (let [target (api/add rt {:title "hitl task"})
             {:keys [run pid]} (spawn-interactive! rt {:parent (:id target)})]
-        (is (= "claim" (get-in run [:attributes :shuttle/completion])))
-        (is (= (:id target) (get-in run [:attributes :shuttle/for])))
-        (is (str/starts-with? (get-in run [:attributes :shuttle/session]) "skein-"))
+        (is (= "claim" (get-in run [:attributes :agent-run/completion])))
+        (is (= (:id target) (get-in run [:attributes :agent-run/for])))
+        (is (str/starts-with? (get-in run [:attributes :agent-run/session]) "skein-"))
         (testing "summary carries interactive fields"
           (let [summary (shuttle/run-summary (api/show rt (:id run)))]
             (is (= "interactive" (:mode summary)))
@@ -528,10 +528,10 @@
           (api/update rt (:id target) {:state "closed"})
           (let [done (await-phase rt (:id run) #{"done"})]
             (is (= "closed" (:state done)))
-            (is (nil? (get-in done [:attributes :shuttle/teardown-error])))
+            (is (nil? (get-in done [:attributes :agent-run/teardown-error])))
             (is (true? (await-process-death pid)))
             (testing "scrollback was captured before teardown"
-              (let [log (get-in done [:attributes :shuttle/log])]
+              (let [log (get-in done [:attributes :agent-run/log])]
                 (is (some? log))
                 (is (= (str "scrollback " pid) (slurp log)))))))))))
 
@@ -539,7 +539,7 @@
   (with-shuttle
     (fn [rt]
       (let [{:keys [run pid]} (spawn-interactive! rt)]
-        (is (= "manual-close" (get-in run [:attributes :shuttle/completion])))
+        (is (= "manual-close" (get-in run [:attributes :agent-run/completion])))
         (api/update rt (:id run) {:state "closed"})
         (let [done (await-phase rt (:id run) #{"done"})]
           (is (= "closed" (:state done)))
@@ -567,7 +567,7 @@
           (shuttle/supervise!)
           (let [failed (await-phase rt (:id run) #{"failed"})]
             (is (= "active" (:state failed)))
-            (is (str/includes? (get-in failed [:attributes :shuttle/error]) "session ended")))
+            (is (str/includes? (get-in failed [:attributes :agent-run/error]) "session ended")))
           (is (= "active" (:state (api/show rt (:id target)))))))
       (testing "a dead session whose target already closed is done, not failed"
         (let [target (api/add rt {:title "finished then exited"})
@@ -595,23 +595,23 @@
             run (shuttle/spawn-run! {:harness :sh-hooked :prompt "sleep 300"
                                      :mode :interactive :backend :fake-mux
                                      :parent (:id target)})
-            running (await-attr rt (:id run) (keyword "shuttle" "handle.pid"))
-            pid (get-in running [:attributes (keyword "shuttle" "handle.pid")])]
+            running (await-attr rt (:id run) (keyword "agent-run" "handle.pid"))
+            pid (get-in running [:attributes (keyword "agent-run" "handle.pid")])]
         (testing "capture! peeks a live session without killing it"
           (let [{:keys [text path]} (shuttle/capture! (:id run))]
             (is (= (str "dialogue log for " (:id run) " in /tmp") text))
-            (is (= path (get-in (api/show rt (:id run)) [:attributes :shuttle/log])))
+            (is (= path (get-in (api/show rt (:id run)) [:attributes :agent-run/log])))
             (is (process-alive? pid))))
         (testing "teardown persists the harness capture, not backend scrollback"
           (api/update rt (:id target) {:state "closed"})
           (let [done (await-phase rt (:id run) #{"done"})
-                log (get-in done [:attributes :shuttle/log])]
+                log (get-in done [:attributes :agent-run/log])]
             (is (str/starts-with? (slurp log) "dialogue log for"))))
         (testing "capture! fails loudly when nothing provides a capture op"
           (shuttle/defbackend! :bare-mux (dissoc fake-mux :capture :attach))
           (let [bare (shuttle/spawn-run! {:harness :sh :prompt "sleep 300"
                                           :mode :interactive :backend :bare-mux})]
-            (await-attr rt (:id bare) (keyword "shuttle" "handle.pid"))
+            (await-attr rt (:id bare) (keyword "agent-run" "handle.pid"))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no capture op"
                                   (shuttle/capture! (:id bare))))
             (shuttle/kill! (:id bare))))))))
@@ -630,8 +630,8 @@
         (shuttle/kill! (:id run))
         (is (true? (await-process-death pid)))
         (let [failed (api/show rt (:id run))]
-          (is (= "failed" (get-in failed [:attributes :shuttle/phase])))
-          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "killed")))
+          (is (= "failed" (get-in failed [:attributes :agent-run/phase])))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "killed")))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no live session"
                               (shuttle/kill! (:id run))))))))
 
@@ -645,7 +645,7 @@
           (let [summary (shuttle/reconcile!)]
             (is (= [(:id run)] (:adopted summary)))
             (is (empty? (:respawned summary))))
-          (is (= "running" (get-in (api/show rt (:id run)) [:attributes :shuttle/phase])))
+          (is (= "running" (get-in (api/show rt (:id run)) [:attributes :agent-run/phase])))
           (is (process-alive? pid)))
         (testing "a dead orphan fails loudly instead of respawning"
           (clojure.java.shell/sh "kill" "-9" (str pid))
@@ -655,7 +655,7 @@
             (is (= [(:id run)] (:failed summary))))
           (let [failed (api/show rt (:id run))]
             (is (= "active" (:state failed)))
-            (is (= "failed" (get-in failed [:attributes :shuttle/phase])))))))))
+            (is (= "failed" (get-in failed [:attributes :agent-run/phase])))))))))
 
 (deftest malformed-handle-stops-the-started-session
   (with-shuttle
@@ -671,10 +671,10 @@
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "sleep 300"
                                      :mode :interactive :backend :broken-mux})
             failed (await-phase rt (:id run) #{"failed"})
-            session (get-in failed [:attributes :shuttle/session])
+            session (get-in failed [:attributes :agent-run/session])
             pid-file (io/file "/tmp" (str session ".pid"))
             pid (str/trim (slurp pid-file))]
-        (is (str/includes? (get-in failed [:attributes :shuttle/error]) "not a JSON handle"))
+        (is (str/includes? (get-in failed [:attributes :agent-run/error]) "not a JSON handle"))
         (testing "the leaked session process was stopped"
           (is (true? (await-process-death pid))))
         (.delete pid-file)))))
@@ -696,8 +696,8 @@
 ;;
 ;; The session-echo harness is a fake claude-json harness: its result reflects
 ;; the argv tail (so a resumed run's spliced flags are observable in
-;; shuttle/result) and it fabricates a fixed session id the engine captures as
-;; shuttle/session-id. The prompt stays quote-free so the emitted line is valid
+;; agent-run/result) and it fabricates a fixed session id the engine captures as
+;; agent-run/session-id. The prompt stays quote-free so the emitted line is valid
 ;; JSON.
 
 (def ^:private session-echo
@@ -706,7 +706,7 @@
           "session-echo"]
    :parse :claude-json
    :preamble? false
-   :resume ["--resume" :shuttle/session-id]})
+   :resume ["--resume" :agent-run/session-id]})
 
 (defn- edge-targets
   "Return the `edge-type` edge targets from `from-id`. The resumes edge is an
@@ -719,12 +719,12 @@
                         from-id edge-type])))
 
 (defn- captured-predecessor
-  "Spawn a session-echo run and return it once done, its shuttle/session-id
+  "Spawn a session-echo run and return it once done, its agent-run/session-id
   captured (sess-abc)."
   [rt]
   (let [pred (shuttle/spawn-run! {:harness :session-echo :prompt "start"})
         done (await-phase rt (:id pred) #{"done"})]
-    (is (= "sess-abc" (get-in done [:attributes :shuttle/session-id])))
+    (is (= "sess-abc" (get-in done [:attributes :agent-run/session-id])))
     done))
 
 (deftest defharness-validates-resume-splice
@@ -747,12 +747,12 @@
       (let [pred (captured-predecessor rt)
             resumer (shuttle/spawn-run! {:harness :session-echo :prompt "continue"
                                          :resume (:id pred)})]
-        (testing "provenance: shuttle/resumes attr and a resumes annotation edge"
-          (is (= (:id pred) (get-in (api/show rt (:id resumer)) [:attributes :shuttle/resumes])))
+        (testing "provenance: agent-run/resumes attr and a resumes annotation edge"
+          (is (= (:id pred) (get-in (api/show rt (:id resumer)) [:attributes :agent-run/resumes])))
           (is (= [(:id pred)] (edge-targets rt (:id resumer) "resumes"))))
         (let [done (await-phase rt (:id resumer) #{"done"})]
           (testing "the resolved :resume splice rides ahead of the prompt"
-            (is (str/includes? (get-in done [:attributes :shuttle/result]) "--resume sess-abc")))
+            (is (str/includes? (get-in done [:attributes :agent-run/result]) "--resume sess-abc")))
           (is (= (:id pred) (:resumes (shuttle/run-summary done)))))))))
 
 (deftest resume-with-no-opt-is-behavior-identical
@@ -761,8 +761,8 @@
       (shuttle/defharness! :session-echo session-echo)
       (let [plain (await-phase rt (:id (shuttle/spawn-run! {:harness :session-echo :prompt "solo"}))
                                #{"done"})]
-        (is (nil? (get-in plain [:attributes :shuttle/resumes])))
-        (is (not (str/includes? (get-in plain [:attributes :shuttle/result]) "--resume")))
+        (is (nil? (get-in plain [:attributes :agent-run/resumes])))
+        (is (not (str/includes? (get-in plain [:attributes :agent-run/result]) "--resume")))
         (is (empty? (edge-targets rt (:id plain) "resumes")))))))
 
 (deftest resume-failure-matrix
@@ -772,15 +772,15 @@
       (shuttle/defbackend! :fake-mux fake-mux)
       (testing "a harness without a :resume splice is rejected"
         (let [pred (api/add rt {:title "sh-pred" :state "closed"
-                                :attributes {"shuttle/run" "true" "shuttle/harness" "sh"
-                                             "shuttle/session-id" "sess-x" "shuttle/phase" "done"}})]
+                                :attributes {"agent-run/run" "true" "agent-run/harness" "sh"
+                                             "agent-run/session-id" "sess-x" "agent-run/phase" "done"}})]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"declares a :resume splice"
                                 (shuttle/spawn-run! {:harness :sh :prompt "x" :resume (:id pred)})))))
       (testing "a predecessor with no captured session-id is rejected"
         (let [pred (api/add rt {:title "no-session" :state "closed"
-                                :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
-                                             "shuttle/phase" "done"}})]
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no captured shuttle/session-id"
+                                :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                             "agent-run/phase" "done"}})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no captured agent-run/session-id"
                                 (shuttle/spawn-run! {:harness :session-echo :prompt "x" :resume (:id pred)})))))
       (testing "a harness name mismatch is rejected with both names"
         (let [pred (captured-predecessor rt)]
@@ -815,30 +815,30 @@
       ;; so the resumer reaches launch, where resume resolution fails loud and
       ;; classed so recovery can branch to --fresh instead of retrying cold.
       (let [pred (api/add rt {:title "lost-session" :state "closed"
-                              :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
-                                           "shuttle/phase" "done"}})
+                              :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                           "agent-run/phase" "done"}})
             resumer (api/add rt {:title "resumer"
-                                 :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
-                                              "shuttle/prompt" "continue" "shuttle/phase" "pending"
-                                              "shuttle/resumes" (:id pred)}})
+                                 :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                              "agent-run/prompt" "continue" "agent-run/phase" "pending"
+                                              "agent-run/resumes" (:id pred)}})
             failed (await-phase rt (:id resumer) #{"failed"})]
-        (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
-        (is (str/includes? (get-in failed [:attributes :shuttle/error]) "missing a required attribute"))))))
+        (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
+        (is (str/includes? (get-in failed [:attributes :agent-run/error]) "missing a required attribute"))))))
 
 (deftest shipped-defaults-declare-capture-and-resume
   ;; PLAN-Pnl-001.A2/PH2: the shipped :claude/:pi defs are persistence-friendly
-  ;; out of the box — they capture shuttle/session-id and declare a resume splice.
+  ;; out of the box — they capture agent-run/session-id and declare a resume splice.
   (with-shuttle
     (fn [_rt]
       (let [claude (shuttle/resolve-harness :claude)
             pi (shuttle/resolve-harness :pi)]
         (testing "claude captures via :claude-json and resumes by session id"
           (is (= :claude-json (:parse claude)))
-          (is (= ["--resume" :shuttle/session-id] (:resume claude))))
+          (is (= ["--resume" :agent-run/session-id] (:resume claude))))
         (testing "pi runs JSON events, captures via :pi-json, resumes a specific session"
           (is (= ["pi" "-p" "--mode" "json"] (:argv pi)))
           (is (= :pi-json (:parse pi)))
-          (is (= ["--session" :shuttle/session-id] (:resume pi))))))))
+          (is (= ["--session" :agent-run/session-id] (:resume pi))))))))
 
 (deftest resume-launch-enforces-invariants-on-handmade-runs
   ;; PLAN-Pnl-001.A1 / PH1 review [P1]: creating a pending run strand directly is
@@ -849,42 +849,42 @@
     (fn [rt]
       (shuttle/defharness! :session-echo session-echo)
       (shuttle/defbackend! :fake-mux fake-mux)
-      (testing "a handmade interactive run carrying shuttle/resumes is rejected"
+      (testing "a handmade interactive run carrying agent-run/resumes is rejected"
         (let [pred (captured-predecessor rt)
               run (api/add rt {:title "handmade-interactive-resume"
-                               :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
-                                            "shuttle/prompt" "continue" "shuttle/phase" "pending"
-                                            "shuttle/mode" "interactive" "shuttle/backend" "fake-mux"
-                                            "shuttle/resumes" (:id pred)}})
+                               :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                            "agent-run/prompt" "continue" "agent-run/phase" "pending"
+                                            "agent-run/mode" "interactive" "agent-run/backend" "fake-mux"
+                                            "agent-run/resumes" (:id pred)}})
               failed (await-phase rt (:id run) #{"failed"})]
-          (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
-          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "cannot resume"))))
+          (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "cannot resume"))))
       (testing "a handmade cross-harness resumer is rejected at launch"
         (let [pred (captured-predecessor rt)
               run (api/add rt {:title "handmade-cross-harness"
-                               :attributes {"shuttle/run" "true" "shuttle/harness" "sh"
-                                            "shuttle/prompt" "echo x" "shuttle/phase" "pending"
-                                            "shuttle/resumes" (:id pred)}})
+                               :attributes {"agent-run/run" "true" "agent-run/harness" "sh"
+                                            "agent-run/prompt" "echo x" "agent-run/phase" "pending"
+                                            "agent-run/resumes" (:id pred)}})
               failed (await-phase rt (:id run) #{"failed"})]
-          (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
-          (is (str/includes? (get-in failed [:attributes :shuttle/error]) "exact same harness"))))
+          (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "exact same harness"))))
       (testing "a second handmade continuation of a live session is rejected at launch"
         (let [pred (captured-predecessor rt)
               blocker (api/add rt {:title "gate"})]
           ;; the first continuation stays active-but-blocked, so it holds the
           ;; session while the second reaches launch and must fail loudly
           (api/add rt {:title "held-continuation"
-                       :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
-                                    "shuttle/prompt" "first" "shuttle/phase" "pending"
-                                    "shuttle/resumes" (:id pred)}
+                       :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                    "agent-run/prompt" "first" "agent-run/phase" "pending"
+                                    "agent-run/resumes" (:id pred)}
                        :edges [{:type "depends-on" :to (:id blocker)}]})
           (let [run (api/add rt {:title "second-continuation"
-                                 :attributes {"shuttle/run" "true" "shuttle/harness" "session-echo"
-                                              "shuttle/prompt" "second" "shuttle/phase" "pending"
-                                              "shuttle/resumes" (:id pred)}})
+                                 :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                              "agent-run/prompt" "second" "agent-run/phase" "pending"
+                                              "agent-run/resumes" (:id pred)}})
                 failed (await-phase rt (:id run) #{"failed"})]
-            (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
-            (is (str/includes? (get-in failed [:attributes :shuttle/error]) "already continues"))))))))
+            (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
+            (is (str/includes? (get-in failed [:attributes :agent-run/error]) "already continues"))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Reload safety: versioned spool-state, tolerant set-once registration, and

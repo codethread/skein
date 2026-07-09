@@ -1,7 +1,7 @@
 (ns skein.spools.agent-run
   "Userland spool that spawns coding agents in user-chosen harnesses.
 
-  An agent run is a strand carrying `shuttle/*` attributes; creating the strand
+  An agent run is a strand carrying `agent-run/*` attributes; creating the strand
   is the API. The shuttle listens for graph mutations, spawns each pending run
   the moment its strand becomes ready (`depends-on` readiness is the only
   scheduler), captures the harness process output back onto the run strand, and
@@ -10,15 +10,15 @@
 
   Runs survive weaver crashes because the strands are durable: `reconcile!`
   respawns still-active running strands on install, bounded by
-  `shuttle/max-attempts`. Run memory is append-only note strands linked by
+  `agent-run/max-attempts`. Run memory is append-only note strands linked by
   `notes` annotation edges plus `shuttle/note-for` attributes.
 
   A run may continue a predecessor's harness session: `spawn-run!` accepts
   `:resume <predecessor-run-id>`, and a harness def declares a `:resume` argv
   splice (keyword placeholders resolve from the predecessor's captured
   attributes) that the engine splices in before the prompt. Continuation is
-  recorded on the graph (`shuttle/resumes` plus a `resumes` annotation edge);
-  a lost session fails loudly, classed `shuttle/error-class \"resume\"`, so
+  recorded on the graph (`agent-run/resumes` plus a `resumes` annotation edge);
+  a lost session fails loudly, classed `agent-run/error-class \"resume\"`, so
   recovery deliberately branches to a fresh spawn rather than silently starting
   cold.
 
@@ -27,7 +27,7 @@
   (tmux by default) and supervises it through the graph — the run completes
   when the strand it serves closes (claims model), not when a process exits.
   Backends are data-first argv definitions (`defbackend!`) whose `:start` op
-  returns a durable handle stored as `shuttle/handle.*` attributes, so
+  returns a durable handle stored as `agent-run/handle.*` attributes, so
   sessions survive weaver restarts and are adopted, never respawned.
 
   Harnesses (tools) and aliases (seats) live in two independent runtime
@@ -211,7 +211,14 @@
   (:default-review-contract (state)))
 
 (defn- sattr
-  "Read the `shuttle/<k>` attribute from a normalized strand."
+  "Read the `agent-run/<k>` attribute from a normalized strand."
+  [strand k]
+  (attr-get strand (keyword "agent-run" k)))
+
+(defn- nattr
+  "Read the `shuttle/<k>` note-memory attribute from a normalized strand. Note
+  strands carry their own attribute family, distinct from the run attributes
+  `sattr` reads."
   [strand k]
   (attr-get strand (keyword "shuttle" k)))
 
@@ -241,7 +248,7 @@
 ;; keywords, each resolving from the predecessor run's captured attribute of the
 ;; same name at launch. The placeholder set is closed so a typo diagnoses loudly
 ;; instead of resolving to nil.
-(def ^:private resume-placeholder-inputs #{:shuttle/session-id})
+(def ^:private resume-placeholder-inputs #{:agent-run/session-id})
 
 (s/def :skein.spools.agent-run.harness/resume-token
   (s/or :literal string? :placeholder resume-placeholder-inputs))
@@ -501,7 +508,7 @@
         {:claude {:argv ["claude" "-p" "--output-format" "json" "--dangerously-skip-permissions"]
                   :parse :claude-json
                   :prompt-via :stdin
-                  :resume ["--resume" :shuttle/session-id]
+                  :resume ["--resume" :agent-run/session-id]
                   :doc (fmt/reflow "
                         |Claude Code headless: full agentic coding toolset (file edits, shell,
                         |subagents) plus web search/fetch, from a code-focused model family.
@@ -509,19 +516,19 @@
                         |it) so it never lands in the process argv, keeping prompts out of `ps` and
                         |out of the blast radius of any `pkill -f` pattern kill. Skips permission
                         |prompts so the run can drive the strand CLI; redefine with your own argv
-                        |to tighten. :claude-json captures shuttle/session-id and :resume continues
+                        |to tighten. :claude-json captures agent-run/session-id and :resume continues
                         |that session with `--resume <session-id>`.")}
          :pi {:argv ["pi" "-p" "--mode" "json"]
               :parse :pi-json
               :prompt-via :stdin
-              :resume ["--session" :shuttle/session-id]
+              :resume ["--session" :agent-run/session-id]
               :doc (fmt/reflow "
                     |pi headless in JSON event mode: agentic coding toolset that is
                     |provider/model-agnostic — aliases pick the model via --provider/--model,
                     |so model capability notes belong on the aliases.
                     |The worker prompt rides on stdin (`pi -p`
                     |reads it) so it stays out of the process argv, `ps`, and any `pkill -f`
-                    |blast radius. :pi-json captures shuttle/session-id and :resume continues
+                    |blast radius. :pi-json captures agent-run/session-id and :resume continues
                     |that specific session with `--session <session-id>` (an existing session,
                     |not the create-if-missing --session-id).")}
          :sh {:argv ["sh" "-c"]
@@ -664,27 +671,27 @@
 
 (def run-query
   "Query form selecting all shuttle run strands."
-  [:= [:attr "shuttle/run"] "true"])
+  [:= [:attr "agent-run/run"] "true"])
 
 (def ^:private pending-query
-  [:and [:= :state "active"] run-query [:= [:attr "shuttle/phase"] "pending"]])
+  [:and [:= :state "active"] run-query [:= [:attr "agent-run/phase"] "pending"]])
 
 (def ^:private running-query
-  [:and [:= :state "active"] run-query [:= [:attr "shuttle/phase"] "running"]])
+  [:and [:= :state "active"] run-query [:= [:attr "agent-run/phase"] "running"]])
 
 ;; no :state filter: a manually closed interactive run still needs its
 ;; session reaped, so supervision must see closed strands in phase running
 (def ^:private interactive-running-query
   [:and run-query
-   [:= [:attr "shuttle/mode"] "interactive"]
-   [:= [:attr "shuttle/phase"] "running"]])
+   [:= [:attr "agent-run/mode"] "interactive"]
+   [:= [:attr "agent-run/phase"] "running"]])
 
 (def ^:private control-attrs
-  #{"shuttle/run" "shuttle/harness" "shuttle/prompt" "shuttle/phase"
-    "shuttle/cwd" "shuttle/spawned-by" "shuttle/max-attempts" "shuttle/mode"
-    "shuttle/backend" "shuttle/completion" "shuttle/for" "shuttle/reap"
-    "shuttle/session" "shuttle/session-id" "shuttle/resumes" "shuttle/error-class"
-    "shuttle/recovered-at" "shuttle/recovery-deferred-until"})
+  #{"agent-run/run" "agent-run/harness" "agent-run/prompt" "agent-run/phase"
+    "agent-run/cwd" "agent-run/spawned-by" "agent-run/max-attempts" "agent-run/mode"
+    "agent-run/backend" "agent-run/completion" "agent-run/for" "agent-run/reap"
+    "agent-run/session" "agent-run/session-id" "agent-run/resumes" "agent-run/error-class"
+    "agent-run/recovered-at" "agent-run/recovery-deferred-until"})
 
 (defn- interactive? [run]
   (= "interactive" (sattr run "mode")))
@@ -861,12 +868,12 @@
 
 (defn- mark-failed!
   "Mark a run failed with `error`. `extra` merges additional terminal attributes
-  (e.g. `shuttle/error-class`) so recovery can branch on the failure kind."
+  (e.g. `agent-run/error-class`) so recovery can branch on the failure kind."
   ([id error] (mark-failed! id error nil))
   ([id error extra]
-   (update-run! id (merge {"shuttle/phase" "failed"
-                           "shuttle/error" error
-                           "shuttle/finished-at" (now)}
+   (update-run! id (merge {"agent-run/phase" "failed"
+                           "agent-run/error" error
+                           "agent-run/finished-at" (now)}
                           extra)
                 {})))
 
@@ -913,9 +920,9 @@
     (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " "))))
     (do
       (swap! (in-flight) assoc id {:phase :deferred-recovery})
-      (update-run! id {"shuttle/phase" "pending"
-                       "shuttle/error" (str (ex-message t) (some->> (ex-data t) (str " ")))
-                       "shuttle/recovery-deferred-until" (str (.plusMillis (Instant/now)
+      (update-run! id {"agent-run/phase" "pending"
+                       "agent-run/error" (str (ex-message t) (some->> (ex-data t) (str " ")))
+                       "agent-run/recovery-deferred-until" (str (.plusMillis (Instant/now)
                                                                             recovery-harness-retry-ms))}
                    {})
       (schedule-deferred-recovery! (rt) id))))
@@ -935,7 +942,7 @@
   [run]
   (let [stored (into {}
                      (keep (fn [[k v]]
-                             (when (and (= "shuttle" (namespace k))
+                             (when (and (= "agent-run" (namespace k))
                                         (str/starts-with? (name k) "handle."))
                                [(subs (name k) (count "handle.")) (str v)]))
                            (:attributes run)))]
@@ -977,7 +984,7 @@
   "Resolve a resuming run's harness `:resume` splice against its predecessor's
   captured attributes, or nil when the run does not resume. Failures are
   resume-classed via `:error-class \"resume\"` in the ex-data so the launch path
-  can stamp `shuttle/error-class` and recovery can branch to a fresh spawn
+  can stamp `agent-run/error-class` and recovery can branch to a fresh spawn
   rather than silently retrying against a lost session."
   [harness run]
   (when-let [predecessor-id (sattr run "resumes")]
@@ -1001,7 +1008,7 @@
 (defn- validate-resume-at-launch!
   "Re-enforce the A1 resume invariants at the launch seam. Creating a pending
   run strand directly (via `api/add`, not `spawn-run!`) is a supported API, so a
-  handmade `shuttle/resumes` run must not bypass the checks that otherwise live
+  handmade `agent-run/resumes` run must not bypass the checks that otherwise live
   only in `validate-resume!`: interactive runs cannot resume (the live session is
   their continuity), a resuming run must share the predecessor's exact
   harness/alias name, and only one active continuation may exist per session.
@@ -1024,7 +1031,7 @@
                 :predecessor-harness predecessor-harness :error-class "resume"}))
       (when-let [live (seq (->> (api/list (rt)
                                           [:and [:= :state "active"] run-query
-                                           [:= [:attr "shuttle/resumes"] predecessor-id]]
+                                           [:= [:attr "agent-run/resumes"] predecessor-id]]
                                           {})
                                 (map :id)
                                 (remove #(= (:id run) %))))]
@@ -1088,19 +1095,19 @@
                           (str "harness exited 0 with an empty result"
                                (when parse-error (str " (parse error: " parse-error ")"))
                                (when-not (str/blank? stderr) (str "; stderr: " (tail stderr 2000))))
-                          (cond-> {"shuttle/exit-code" exit}
-                            session-id (assoc "shuttle/session-id" session-id))))
-          (update-run! id (cond-> {"shuttle/phase" "done"
-                                   "shuttle/exit-code" exit
-                                   "shuttle/result" result
-                                   "shuttle/finished-at" (now)}
-                            session-id (assoc "shuttle/session-id" session-id)
-                            parse-error (assoc "shuttle/parse-error" parse-error))
+                          (cond-> {"agent-run/exit-code" exit}
+                            session-id (assoc "agent-run/session-id" session-id))))
+          (update-run! id (cond-> {"agent-run/phase" "done"
+                                   "agent-run/exit-code" exit
+                                   "agent-run/result" result
+                                   "agent-run/finished-at" (now)}
+                            session-id (assoc "agent-run/session-id" session-id)
+                            parse-error (assoc "agent-run/parse-error" parse-error))
                        {:state "closed"})))
         (let [stderr (str/trim (read-file-safe err-file))
               detail (if (str/blank? stderr) (str/trim stdout) stderr)]
           (mark-failed! id (str "harness exited " exit ": " (tail detail 2000))
-                        {"shuttle/exit-code" exit}))))))
+                        {"agent-run/exit-code" exit}))))))
 
 (defn- process-start-instant
   "Return the OS start instant string for a live process, or nil when unknown."
@@ -1199,11 +1206,11 @@
                 stop-error (when (= "auto" reap)
                              (stop-session! id current backend-name backend))]
             (.delete (launcher-script-file id))
-            (update-run! id (cond-> {"shuttle/phase" "done"
-                                     "shuttle/result" reason
-                                     "shuttle/finished-at" (now)}
-                              capture-path (assoc "shuttle/log" capture-path)
-                              stop-error (assoc "shuttle/teardown-error" stop-error))
+            (update-run! id (cond-> {"agent-run/phase" "done"
+                                     "agent-run/result" reason
+                                     "agent-run/finished-at" (now)}
+                              capture-path (assoc "agent-run/log" capture-path)
+                              stop-error (assoc "agent-run/teardown-error" stop-error))
                          (if (= "active" (:state current)) {:state "closed"} {})))))
       (finally
         (swap! (in-flight) dissoc id)))))
@@ -1285,10 +1292,10 @@
           session (suggested-session id)
           attempt (inc (or (sattr run "attempt") 0))
           script (write-launcher-script! id argv (:env harness) cwd)]
-      (update-run! id {"shuttle/phase" "running"
-                       "shuttle/attempt" attempt
-                       "shuttle/session" session
-                       "shuttle/started-at" (now)}
+      (update-run! id {"agent-run/phase" "running"
+                       "agent-run/attempt" attempt
+                       "agent-run/session" session
+                       "agent-run/started-at" (now)}
                    {})
       (let [inputs {:session session :cwd cwd :command script :run-id id}
             start-argv (splice-op-argv backend-name :start (:start backend) inputs {})
@@ -1304,7 +1311,7 @@
         (try
           (let [handle (parse-handle backend-name out)]
             (when (seq handle)
-              (update-run! id (into {} (map (fn [[k v]] [(str "shuttle/handle." k) v])) handle) {}))
+              (update-run! id (into {} (map (fn [[k v]] [(str "agent-run/handle." k) v])) handle) {}))
             (swap! (in-flight) assoc id {:phase :running}))
           (catch Throwable t
             (try
@@ -1332,10 +1339,10 @@
         ;; durably mark the run running before the process exists: a crash in
         ;; the gap respawns a strand whose process never started, instead of
         ;; leaving a pending strand with a live orphan process.
-        (update-run! id {"shuttle/phase" "running"
-                         "shuttle/attempt" attempt
-                         "shuttle/log" (.getPath out-file)
-                         "shuttle/started-at" (now)}
+        (update-run! id {"agent-run/phase" "running"
+                         "agent-run/attempt" attempt
+                         "agent-run/log" (.getPath out-file)
+                         "agent-run/started-at" (now)}
                      {})
         (let [process (start-process! argv {:cwd (or (sattr run "cwd") (:cwd harness) (workspace-dir))
                                             :env (:env harness)
@@ -1344,9 +1351,9 @@
                                             :stdin (when (= :stdin (:prompt-via harness)) prompt)})]
           (reset! process-ref process)
           (swap! (in-flight) assoc id {:phase :running :process process})
-          (update-run! id (cond-> {"shuttle/pid" (.pid ^Process process)}
+          (update-run! id (cond-> {"agent-run/pid" (.pid ^Process process)}
                             (process-start-instant process)
-                            (assoc "shuttle/pid-started-at" (process-start-instant process)))
+                            (assoc "agent-run/pid-started-at" (process-start-instant process)))
                        {})
           (finish-run! id process harness out-file err-file)))
       (catch Throwable t
@@ -1357,7 +1364,7 @@
             (defer-recovered-missing-harness! id run t)
             (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " ")))
                           (when (= "resume" (:error-class (ex-data t)))
-                            {"shuttle/error-class" "resume"})))
+                            {"agent-run/error-class" "resume"})))
           (catch Throwable _
             nil))))))
 
@@ -1372,7 +1379,7 @@
             (try
               (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " ")))
                             (when (= "resume" (:error-class (ex-data t)))
-                              {"shuttle/error-class" "resume"}))
+                              {"agent-run/error-class" "resume"}))
               (catch Throwable _
                 nil))))
         (launch-headless! id run)))))
@@ -1427,7 +1434,7 @@
   was owned by a dead predecessor: its stale process is killed when its
   identity can be verified (pid plus recorded start instant), then the run is
   either reset to `pending` for respawn or marked `exhausted` (loudly, still
-  active so dependents stay blocked) when `shuttle/max-attempts` is spent.
+  active so dependents stay blocked) when `agent-run/max-attempts` is spent.
 
   Interactive: sessions survive the weaver by design, so orphans are adopted,
   never respawned — a live session keeps its run `running` from durable
@@ -1448,13 +1455,13 @@
                          max-attempts (or (sattr run "max-attempts") default-max-attempts)]
                      (some-> (run-process-handle run) (.destroy))
                      (if (>= attempt max-attempts)
-                       (do (update-run! id {"shuttle/phase" "exhausted"
-                                            "shuttle/error" (str "run exhausted " attempt " of " max-attempts
+                       (do (update-run! id {"agent-run/phase" "exhausted"
+                                            "agent-run/error" (str "run exhausted " attempt " of " max-attempts
                                                                  " attempts after weaver crash")}
                                         {})
                            (update acc :exhausted conj id))
-                       (do (update-run! id {"shuttle/phase" "pending"
-                                            "shuttle/recovered-at" (now)} {})
+                       (do (update-run! id {"agent-run/phase" "pending"
+                                            "agent-run/recovered-at" (now)} {})
                            (update acc :respawned conj id)))))
                  {:respawned [] :exhausted [] :adopted [] :reaped [] :failed []}
                  headless-orphans)
@@ -1503,7 +1510,7 @@
   interactive runs cannot resume (the live session is their continuity), the
   predecessor must exist and share the exact harness/alias name (aliases swap
   model/provider, so a base-root match is too weak — the error carries both
-  names), it must carry a captured `shuttle/session-id`, the spawning harness
+  names), it must carry a captured `agent-run/session-id`, the spawning harness
   must declare a `:resume` splice, and only one active continuation may exist
   per predecessor session. `harness-name` is the resolved spawn name string;
   `harness-def` its flattened def."
@@ -1519,14 +1526,14 @@
              {:resume predecessor-id :harness harness-name
               :predecessor-harness predecessor-harness}))
     (when-not (sattr predecessor "session-id")
-      (fail! "Resume predecessor has no captured shuttle/session-id"
+      (fail! "Resume predecessor has no captured agent-run/session-id"
              {:resume predecessor-id :harness harness-name}))
     (when-not (:resume harness-def)
       (fail! "Resume requires a harness that declares a :resume splice"
              {:resume predecessor-id :harness harness-name}))
     (when-let [live (seq (mapv :id (api/list (rt)
                                              [:and [:= :state "active"] run-query
-                                              [:= [:attr "shuttle/resumes"] predecessor-id]]
+                                              [:= [:attr "agent-run/resumes"] predecessor-id]]
                                              {})))]
       (fail! "Another active run already continues this session"
              {:resume predecessor-id :active live}))))
@@ -1544,7 +1551,7 @@
   its own run strand is closed (manual-close).
 
   `:resume <predecessor-run-id>` continues the predecessor's harness session:
-  the run is stamped `shuttle/resumes` with a `resumes` annotation edge, and at
+  the run is stamped `agent-run/resumes` with a `resumes` annotation edge, and at
   launch the harness `:resume` splice resolves from the predecessor's captured
   attributes ahead of the prompt (see `validate-resume!` for the loud rules).
   Asynchronous: returns the created run strand immediately."
@@ -1565,22 +1572,22 @@
     (when resume
       (validate-resume! (name (harness-key harness)) resolved mode resume)))
   (let [parent-ids (distinct (remove nil? [parent spawned-by]))
-        reserved (merge {"shuttle/run" "true"
-                         "shuttle/harness" (name (harness-key harness))
-                         "shuttle/prompt" prompt
-                         "shuttle/phase" "pending"}
-                        (when cwd {"shuttle/cwd" cwd})
-                        (when spawned-by {"shuttle/spawned-by" spawned-by})
-                        (when max-attempts {"shuttle/max-attempts" max-attempts})
-                        (when resume {"shuttle/resumes" resume})
+        reserved (merge {"agent-run/run" "true"
+                         "agent-run/harness" (name (harness-key harness))
+                         "agent-run/prompt" prompt
+                         "agent-run/phase" "pending"}
+                        (when cwd {"agent-run/cwd" cwd})
+                        (when spawned-by {"agent-run/spawned-by" spawned-by})
+                        (when max-attempts {"agent-run/max-attempts" max-attempts})
+                        (when resume {"agent-run/resumes" resume})
                         (when mode
-                          (merge {"shuttle/mode" "interactive"
-                                  "shuttle/backend" (name (harness-key backend))
-                                  "shuttle/completion" (if parent "claim" "manual-close")}
-                                 (when parent {"shuttle/for" parent})
-                                 (when reap {"shuttle/reap" (name (keyword reap))}))))]
+                          (merge {"agent-run/mode" "interactive"
+                                  "agent-run/backend" (name (harness-key backend))
+                                  "agent-run/completion" (if parent "claim" "manual-close")}
+                                 (when parent {"agent-run/for" parent})
+                                 (when reap {"agent-run/reap" (name (keyword reap))}))))]
     (when-let [collisions (seq (filter #(or (contains? control-attrs %)
-                                            (str/starts-with? (str %) "shuttle/handle."))
+                                            (str/starts-with? (str %) "agent-run/handle."))
                                        (keys (or attrs {}))))]
       (fail! "Run :attrs must not override shuttle control attributes" {:keys (vec collisions)}))
     ;; validate provenance targets before the run exists so a bad parent id
@@ -1763,17 +1770,17 @@
 
 (defn capture!
   "Capture an interactive run's transcript right now, persist it as the run's
-  `shuttle/log`, and return {:id :path :text}. Works on live runs (a
+  `agent-run/log`, and return {:id :path :text}. Works on live runs (a
   coordinator peek without attaching) and, when the harness capture source
   outlives the session (hook-written logs), on finished runs too. Fails
   loudly when the run is not interactive or no capture op is configured."
   [id]
   (let [run (or (api/show (rt) id) (fail! "Run not found" {:id id}))]
     (when-not (interactive? run)
-      (fail! "Capture applies to interactive runs; headless runs already write shuttle/log" {:id id}))
+      (fail! "Capture applies to interactive runs; headless runs already write agent-run/log" {:id id}))
     (let [backend (resolve-backend (harness-key (sattr run "backend")))
           path (run-capture-op! id run backend)]
-      (update-run! id {"shuttle/log" path} {})
+      (update-run! id {"agent-run/log" path} {})
       {:id id :path path :text (slurp path)})))
 
 (defn note!
@@ -1809,13 +1816,13 @@
                   (cond-> [:and [:= [:attr "shuttle/note-for"] target-id]]
                     round (conj [:= [:attr "shuttle/round"] round]))
                   {})
-        (sort-by (juxt #(sattr % "at") :created_at :id))
+        (sort-by (juxt #(nattr % "at") :created_at :id))
         (mapv (fn [note]
                 (cond-> {:id (:id note)
-                         :note (sattr note "note")
-                         :at (or (sattr note "at") (:created_at note))}
-                  (sattr note "note-by") (assoc :by (sattr note "note-by"))
-                  (sattr note "round") (assoc :round (sattr note "round"))))))))
+                         :note (nattr note "note")
+                         :at (or (nattr note "at") (:created_at note))}
+                  (nattr note "note-by") (assoc :by (nattr note "note-by"))
+                  (nattr note "round") (assoc :round (nattr note "round"))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Review contract state

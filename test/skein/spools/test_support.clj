@@ -126,7 +126,7 @@
            (do (Thread/sleep interval-ms) (recur))))))))
 
 (defn await-phase
-  "Poll until the strand's shuttle/phase is in `phases` or timeout; return it.
+  "Poll until the strand's agent-run/phase is in `phases` or timeout; return it.
 
   Shared by shuttle and agents spool tests so neither requires the other's
   test namespace for a wait helper."
@@ -134,7 +134,7 @@
   ([rt id phases timeout-ms]
    (poll-until
     #(let [strand (api/show rt id)]
-       (when (contains? phases (get-in strand [:attributes :shuttle/phase])) strand))
+       (when (contains? phases (get-in strand [:attributes :agent-run/phase])) strand))
     {:timeout-ms timeout-ms
      :on-timeout #(throw (ex-info "Timed out waiting for run phase"
                                   {:id id :want phases :strand (api/show rt id)}))})))
