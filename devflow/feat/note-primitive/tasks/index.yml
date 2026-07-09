@@ -1,0 +1,93 @@
+tasks:
+  - id: 1
+    description: "S1: notes relation declaration (catalog + core acyclic set)"
+    task_file: tasks/001-notes-relation-declaration.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: []
+  - id: 2
+    description: "S2: skein.api.notes.alpha primitive (note!/notes, edge-walking read, no note/for)"
+    task_file: tasks/002-notes-primitive.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 3
+    description: "S3: agent-run re-export + note/for drop + docstring (agent_run.clj)"
+    task_file: tasks/003-agent-run-reexport.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 4
+    description: "S4: kanban migration (note!, card-subtree, compact-note, handovers) (kanban.clj)"
+    task_file: tasks/004-kanban-migration.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 5
+    description: "S5: delegation op-note/op-notes re-point (delegation.clj)"
+    task_file: tasks/005-delegation-note-verbs.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 6
+    description: "S6: batteries note/notes ops + arg-specs (batteries.clj)"
+    task_file: tasks/006-batteries-surface.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 7
+    description: "S7: spools/batteries.md note/notes command contracts"
+    task_file: tasks/007-batteries-doc.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [6]
+  - id: 8
+    description: "S8: spools/kanban.md + spools/delegation/README.md note prose reconcile"
+    task_file: tasks/008-userland-spool-docs.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [4, 5]
+  - id: 9
+    description: "S9: docs/skein.md relation-list rewrite + note/notes gloss"
+    task_file: tasks/009-user-reference-doc.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: []
+  - id: 10
+    description: "S10: apply SPEC-Np-001/SPEC-Np-002; mark deltas"
+    task_file: tasks/010-spec-delta-application.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: []
+  - id: 11
+    description: "S11: cutover script + test + rehearsal on a copy + ceremony doc"
+    task_file: tasks/011-cutover-script-rehearsal.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1, 2, 3, 4, 5, 6]
+  - id: 12
+    description: "S12: acceptance / atomic-landing gate (api-docs + full locked suite + go + smoke + quality + DW3 grep)"
+    task_file: tasks/012-acceptance-gate.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+  - id: 13
+    description: "[HITL] canonical HISTORY rewrite + user-signed weaver restart + post-cutover smoke"
+    task_file: tasks/013-canonical-cutover-hitl.md
+    status: blocked
+    harness: coordinator
+    type: HITL
+    hitl: true
+    blocked_by: [11, 12]

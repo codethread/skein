@@ -14,7 +14,7 @@
 [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) (`SPEC-Np-004`, no change)
 **Contract:** [proposal.md](./proposal.md) clauses `PROP-Np-001.C1`–`C14` — the approved contract; this plan sequences it
 and never widens it.
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-10
 
 ## PLAN-Np-001.P1 Goal and scope
@@ -396,3 +396,23 @@ siblings share no file.
 ## PLAN-Np-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
+
+### PLAN-Np-001.DN1 Task queue authored — 2026-07-10
+
+- Queue = one task per slice (Tasks 1–12 ↔ S1–S12) plus Task 13, the HITL canonical HISTORY rewrite +
+  weaver restart (`PROP-Np-001.C10.3`, `C13.1`–`C13.3`) under standing pre-authorization `cu3wz`,
+  mirroring F2's `TASK-Aep-013`. Harness routing follows F2: build seats for the code slices
+  (Tasks 1–6, 11, 12), worker seats for the doc-only slices (Tasks 7–10), coordinator for the HITL
+  cutover (Task 13).
+- Dependency seams as encoded (blocked_by): 1←[]; 2←[1]; 3/4/5/6←[2] (disjoint files, parallel);
+  7←[6]; 8←[4,5]; 9←[] and 10←[] (doc-only, parallel-safe); 11←[1,2,3,4,5,6]; 12←[1..11]; 13←[11,12]
+  (HITL, `status: blocked`, `hitl: true`). S1→S2 is the only serial code chain; S3∥S4∥S5∥S6 fan out on
+  disjoint files after S2. Verified forward-only and acyclic.
+- Per-slice validation gates use only the focused-runnable namespaces `PLAN-Np-001.TC4` names —
+  `skein.relations-test`/`skein.core.db-test` (S1), `skein.notes-test` (S2, new), `skein.kanban-test`
+  (S4), `skein.delegation-test` (S3 proxy + S5), `skein.spools.batteries-test` (S6). The authoritative
+  `skein.agent-run-test` is a full-suite-only add-libs shard, so S12 is its gate; doc slices gate on
+  `make docs-check`.
+- The `PLAN-Np-001.R5` runtime-first reconciliation (`note!`/`notes` take the runtime first per
+  `SPEC-003.C18`; the `PROP-Np-001.C4` arg shape follows) is carried into `TASK-Np-002.MI1` and
+  threaded by the re-export (Task 3), delegation (Task 5), and batteries (Task 6) tasks.
