@@ -20,13 +20,14 @@
   #{:strand/added :strand/updated :batch/applied :strand/burned :strand/superseded})
 
 (def ^:private stalled-run-phases
-  "Terminal agent-run phases that leave a delegated run dead: a `failed`/`exhausted`
-  worker, or a `superseded` run `agent retry` retired. A gate whose delegated run
-  is in one of these is stalled — both `gate-stalled?` and the `stalled-gates`
-  query key off this list. Phase alone is not enough for lockstep: the query
-  reaches phases through `delegates` edges, so `stamp-run-on-gate!` also repoints
-  superseded runs out of the query (see there) so the two agree on membership."
-  ["failed" "exhausted" "superseded"])
+  "Terminal agent-run phases that leave a gate's current serving run dead: a
+  `failed` or `exhausted` worker. A gate whose current delegated run is in one of
+  these is stalled — both `gate-stalled?` and the `stalled-gates` query key off
+  this list. `superseded` is deliberately absent: a run `agent retry` retired is
+  not the gate's current server (its successor inherits the `serves` edge), so it
+  never resolves as the current run in the first place, and the two membership
+  rules agree by construction on \"the current serving run is dead.\""
+  ["failed" "exhausted"])
 
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous subagent-executor scans."
@@ -63,28 +64,37 @@
 (defn- stamp! [id attributes]
   (api/update (rt) id {:attributes attributes}))
 
-(defn- spawn-idempotency-run-for-gate
-  "Return an existing live run for gate-id, so a crash between spawn and gate
-  stamp re-stamps instead of double-spawning. Failed/exhausted/superseded runs
-  are deliberately excluded so clearing a gate's `gate/run` requests a fresh
-  run rather than re-adopting the dead one (a `superseded` run is one `agent
-  retry` closed out); the trade-off is that a run that died inside that same
-  crash window is orphaned, not re-adopted (see subagent.md)."
+(defn- current-serving-run
+  "The gate's current delegated run, or nil: the single non-superseded run with a
+  `serves` edge to the gate (`agent-run/runs-serving`, the C5 resolution rule).
+  `agent retry` supersedes the dead run and its fresh successor inherits the
+  `serves` edge, so this tracks the live successor with no separate re-link, and
+  `gate-stalled?`, the `stalled-gates` query, and the spawn guard all read the
+  same run."
   [gate-id]
-  (first (api/list (rt)
-                   [:and [:= [:attr "gate/step"] gate-id]
-                    [:missing [:attr "gate/delivered"]]
-                    [:not [:= [:attr "agent-run/phase"] "failed"]]
-                    [:not [:= [:attr "agent-run/phase"] "exhausted"]]
-                    [:not [:= [:attr "agent-run/phase"] "superseded"]]]
-                   {})))
+  (first (agent-run/runs-serving gate-id)))
+
+(defn- spawn-idempotency-run-for-gate
+  "Return the gate's current serving run, if any, so a scan that re-observes a
+  still-ready gate re-adopts the in-flight run instead of double-spawning. A
+  `superseded` run (retired by `agent retry`) is not current, so recovery's fresh
+  successor — which inherits the `serves` edge — is what this returns; a
+  `failed`/`exhausted` run still counts as delegated, since recovery is retry, not
+  auto-respawn."
+  [gate-id]
+  (current-serving-run gate-id))
 
 (defn- ready-gate? [run-id gate-id]
   (some #(= gate-id (:id %)) (workflow/next-steps run-id)))
 
+(defn- run-served-gate
+  "The gate a run delegates: the target of its one outgoing `serves` edge, or nil."
+  [run-id]
+  (first (map :to_strand_id (graph/outgoing-edges (rt) [run-id] "serves"))))
+
 (defn- deliver-run! [run]
   (let [run-id (:id run)
-        gate-id (attr run :gate/step)
+        gate-id (run-served-gate run-id)
         workflow-run-id (attr run :gate/run-id)]
     (try
       (let [gate (api/show (rt) gate-id)]
@@ -121,12 +131,12 @@
   ;; worker's report, so `agent-run/phase "done"` (which the engine records only for a
   ;; non-blank result) is the delivery gate. Any other closed phase — notably a
   ;; `superseded` run left by `agent retry` — is a dead worker whose (blank or
-  ;; stale) result must never silently complete the gate; recovery re-spawns a
-  ;; fresh run instead.
+  ;; stale) result must never silently complete the gate; recovery supersedes it
+  ;; with a fresh successor that inherits the `serves` edge.
   (api/list (rt)
             [:and [:= :state "closed"]
              [:= [:attr "agent-run/phase"] "done"]
-             [:exists [:attr "gate/step"]]
+             [:edge/out "serves" [:= [:attr "workflow/gate"] "subagent"]]
              [:missing [:attr "gate/delivered"]]]
             {}))
 
@@ -153,51 +163,25 @@
                     (fail! "agent-run/max-attempts must be an integer" {:value v})))
     :else (fail! "agent-run/max-attempts must be an integer" {:value v})))
 
-(defn- stamp-run-on-gate!
-  "Stamp gate-id with its current delegated run: the `gate/run` attribute and a
-  `delegates` edge, repointing every prior delegated run's provenance to this one.
-
-  `stalled-gates` reaches a run's `agent-run/phase` through the gate's `delegates`
-  edges because the query DSL has no attr->id join back to `gate/run`. A
-  cleared-and-respawned gate keeps its old `delegates` edge to the dead run, so
-  without repointing the query would keep surfacing a healthy gate while
-  `gate-stalled?` (which reads only the current `gate/run`) reports nil. Marking
-  each superseded run `gate/superseded-by` excludes its stale edge from the
-  query, keeping the query's membership rule — the current delegated run is dead —
-  in lockstep with the predicate."
-  [gate-id run-id]
-  (doseq [prior (api/list (rt)
-                          [:and [:= [:attr "gate/step"] gate-id]
-                           [:!= :id run-id]
-                           [:missing [:attr "gate/superseded-by"]]]
-                          {})]
-    (stamp! (:id prior) {"gate/superseded-by" run-id}))
-  (api/update (rt) gate-id {:attributes {"gate/run" run-id}
-                            :edges [{:type "delegates" :to run-id}]}))
-
-(defn- ensure-run-stamp! [gate]
-  (when-let [run (spawn-idempotency-run-for-gate (:id gate))]
-    (stamp-run-on-gate! (:id gate) (:id run))
-    (:id run)))
-
 (defn- spawn-for-gate! [run-id gate-view]
   (let [gate (api/show (rt) (:id gate-view))]
-    (when-not (or (non-blank (attr gate :gate/run)) (non-blank (attr gate :gate/error)))
+    ;; Skip when the gate already has a run serving it (in flight, or dead and
+    ;; awaiting `agent retry`) or a spawn error: the `serves` edge, written
+    ;; atomically with the run, is the sole run↔gate link — there is no separate
+    ;; stamp to lose in a crash between spawn and link.
+    (when-not (or (spawn-idempotency-run-for-gate (:id gate)) (non-blank (attr gate :gate/error)))
       (try
-        (if (ensure-run-stamp! gate)
-          nil
-          (let [harness (or (non-blank (attr gate :agent-run/harness))
-                            (fail! "subagent gate requires agent-run/harness" {:gate (:id gate)}))
-                prompt (or (gate-prompt gate)
-                           (fail! "subagent gate requires agent-run/prompt or derivable instruction" {:gate (:id gate)}))
-                run (agent-run/spawn-run! {:harness harness
-                                           :cwd (attr gate :agent-run/cwd)
-                                           :max-attempts (parse-max-attempts (attr gate :agent-run/max-attempts))
-                                           :prompt (subagent-preamble {:gate gate :run-id run-id :prompt prompt})
-                                           :title (str "Delegated: " (:title gate))
-                                           :attrs {"gate/step" (:id gate)
-                                                   "gate/run-id" run-id}})]
-            (stamp-run-on-gate! (:id gate) (:id run))))
+        (let [harness (or (non-blank (attr gate :agent-run/harness))
+                          (fail! "subagent gate requires agent-run/harness" {:gate (:id gate)}))
+              prompt (or (gate-prompt gate)
+                         (fail! "subagent gate requires agent-run/prompt or derivable instruction" {:gate (:id gate)}))]
+          (agent-run/spawn-run! {:harness harness
+                                 :cwd (attr gate :agent-run/cwd)
+                                 :max-attempts (parse-max-attempts (attr gate :agent-run/max-attempts))
+                                 :prompt (subagent-preamble {:gate gate :run-id run-id :prompt prompt})
+                                 :title (str "Delegated: " (:title gate))
+                                 :serves (:id gate)
+                                 :attrs {"gate/run-id" run-id}}))
         (catch Throwable t
           (stamp! (:id gate) {"gate/error" (str (ex-message t)
                                                    (some->> (ex-data t) (str " ")))}))))))
@@ -233,20 +217,20 @@
 (defn gate-stalled?
   "Return durable stall detail for a ready subagent gate view, or nil.
 
-  A gate is stalled when spawn failed onto `gate/error`, or its stamped run is
-  in agent-run phase `failed`/`exhausted`/`superseded`. `superseded` is included so
-  a gate whose run was retired by `agent retry` (which supersedes the run without
-  re-linking the fresh one) stays discoverable rather than silently pending until
-  a coordinator clears the stamp. No wall-clock hang policy is applied."
+  A gate is stalled when spawn failed onto `gate/error`, or its current serving
+  run — the non-superseded run with a `serves` edge to the gate — is dead in
+  agent-run phase `failed`/`exhausted`. A run `agent retry` retired is superseded,
+  so its fresh successor is the current server; the gate stays discoverable only
+  while that server is itself dead, with no re-link step. No wall-clock hang
+  policy is applied."
   [gate-view]
   (let [gate (api/show (rt) (:id gate-view))
-        run-id (non-blank (attr gate :gate/run))
         error (non-blank (attr gate :gate/error))
-        run (when run-id (api/show (rt) run-id))]
+        run (current-serving-run (:id gate))]
     (cond
       error {:gate (:id gate) :error error}
       (contains? (set stalled-run-phases) (attr run :agent-run/phase))
-      {:gate (:id gate) :run run-id :phase (attr run :agent-run/phase)
+      {:gate (:id gate) :run (:id run) :phase (attr run :agent-run/phase)
        :error (attr run :agent-run/error)})))
 
 (defn install!
@@ -265,20 +249,19 @@
     (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates: an active subagent gate whose
     ;; spawn errored, or whose current delegated run is dead in a terminal phase.
-    ;; The `delegates` edge (added beside every `gate/run` stamp) lets the query
-    ;; reach the run's `agent-run/phase` — no per-attr join back to `gate/run`
-    ;; exists. `stamp-run-on-gate!` marks superseded runs `gate/superseded-by`,
-    ;; so excluding those keeps the edge-scoped query in lockstep with the
-    ;; current-stamp `gate-stalled?` predicate through the clear-and-respawn flow.
+    ;; The gate's incoming `serves` edges reach each delegated run's
+    ;; `agent-run/phase`; a superseded run carries `agent-run/phase "superseded"`
+    ;; (never `failed`/`exhausted`), so matching a dead phase over `serves` selects
+    ;; exactly the gates whose current serving run is dead — by construction in
+    ;; lockstep with the `gate-stalled?` predicate, no `gate/superseded-by` bridge.
     (graph/register-query! runtime 'stalled-gates
                          [:and [:= :state "active"]
                           [:= [:attr "workflow/gate"] "subagent"]
                           [:or
                            [:and [:exists [:attr "gate/error"]]
                             [:not [:= [:attr "gate/error"] ""]]]
-                           [:edge/out "delegates"
-                            [:and [:missing [:attr "gate/superseded-by"]]
-                             [:in [:attr "agent-run/phase"] stalled-run-phases]]]]])
+                           [:edge/in "serves"
+                            [:in [:attr "agent-run/phase"] stalled-run-phases]]]])
     (graph/register-query! runtime 'blocked-deliveries
                          [:and [:= :state "closed"]
                           [:exists [:attr "gate/delivery-blocked"]]

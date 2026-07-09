@@ -37,8 +37,8 @@
   "Poll `pred` (a strand -> truthy fn) against strand `id` for a real
   off-lane subprocess completion (RFC-Dtt-001.REC7) that lane quiescence
   alone cannot observe. Once `pred` lands, settle the event lane so
-  treadle's on-lane reaction to that transition (delivery, error,
-  superseded-by stamps) has run before the caller reads dependent state."
+  treadle's on-lane reaction to that transition (delivery, spawn error)
+  has run before the caller reads dependent state."
   ([rt id pred] (await-settled rt id pred (test-support/await-budget-ms)))
   ([rt id pred timeout-ms]
    (await-eventually #(let [s (api/show rt id)]
@@ -70,7 +70,14 @@
    (workflow/step :after "After" :self :depends-on [:delegate])))
 
 (defn- run-for-gate [rt gate-id]
-  (first (api/list rt [:= [:attr "gate/step"] gate-id] {})))
+  (first (api/list rt [:edge/out "serves" [:= :id gate-id]] {})))
+
+(defn- other-run-for-gate
+  "The gate's serving run whose id is not `exclude-id` — the fresh successor after
+  a retry supersedes the original run."
+  [rt gate-id exclude-id]
+  (first (remove #(= exclude-id (:id %))
+                 (api/list rt [:edge/out "serves" [:= :id gate-id]] {}))))
 
 (defn- ready-subagent-gate [run-id]
   (first (filter #(= "subagent" (:gate %)) (workflow/next-steps run-id))))
@@ -98,17 +105,19 @@
             _ (events/await-quiescent! rt)
             run-id (:id (run-for-gate rt gate-id))
             run (await-delivered rt run-id)
-            gate (api/show rt (attr run :gate/step))
+            gate (api/show rt gate-id)
             after (first (workflow/next-steps "happy"))]
         (is (= "true" (attr run :gate/delivered)))
         (is (= (:id run) (attr gate :workflow/outcome-by)))
         (is (= "gate-result" (attr gate :workflow/outcome-notes)))
         (is (= "happy" (attr run :gate/run-id)))
         (is (= "After" (:title after)))
-        (is (= {:from_strand_id (:id gate)
-                :to_strand_id (:id run)
-                :edge_type "delegates"}
-               (edge-row rt (:id gate) (:id run) "delegates")))
+        ;; the run↔gate link is the run's own outgoing `serves` edge — placement
+        ;; is orthogonal, so the gate has no `parent-of` edge to the run.
+        (is (= {:from_strand_id (:id run)
+                :to_strand_id (:id gate)
+                :edge_type "serves"}
+               (edge-row rt (:id run) (:id gate) "serves")))
         (is (nil? (edge-row rt (:id gate) (:id run) "parent-of")))))))
 
 (deftest blocked-gate-spawns-only-after-blocker-closes
@@ -147,7 +156,7 @@
         (events/await-quiescent! rt)
         (is (nil? (run-for-gate rt gate-id)))))))
 
-(deftest failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run
+(deftest failed-run-stays-ready-and-agent-retry-recovers-the-gate
   (with-treadle
     (fn [rt]
       (workflow/start! "retry" (workflow/workflow
@@ -161,16 +170,21 @@
             run-id (:id (run-for-gate rt gate-id))
             failed (await-run-phase rt run-id #{"failed"})]
         (is (= "active" (:state failed)))
-        (is (= gate-id (attr failed :gate/step)))
+        ;; the failed run serves the gate; the gate stays ready and does not respawn
+        (is (= gate-id (:to_strand_id (edge-row rt (:id failed) gate-id "serves"))))
         (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/next-steps "retry")))))
-        (api/update rt gate-id {:attributes {"gate/run" ""
-                                             "agent-run/prompt" "echo recovered"}})
-        (events/await-quiescent! rt)
-        (let [fresh-id (:id (some (fn [r]
-                                    (when (not= (:id failed) (:id r)) r))
-                                  (api/list rt [:= [:attr "gate/step"] gate-id] {})))
-              done (await-run-phase rt fresh-id #{"done"})]
-          (is (= "recovered" (attr done :agent-run/result))))))))
+        ;; recover with `agent retry`: supersede the dead run with a fresh
+        ;; successor that inherits the serves edge — no re-link step
+        (let [fresh (shuttle/supersede-and-respawn! (:id failed)
+                                                    {:harness "sh-tail"
+                                                     :prompt "echo recovered"
+                                                     :carry-attrs {"gate/run-id" (attr failed :gate/run-id)}})
+              delivered (await-delivered rt (:id fresh))]
+          (is (= "recovered" (attr delivered :agent-run/result)))
+          (is (= "true" (attr delivered :gate/delivered)))
+          (is (= gate-id (:to_strand_id (edge-row rt (:id fresh) gate-id "serves"))))
+          (is (= "superseded" (attr (api/show rt (:id failed)) :agent-run/phase)))
+          (is (= "recovered" (attr (api/show rt gate-id) :workflow/outcome-notes))))))))
 
 (deftest blank-result-gate-fails-loudly-stays-discoverable-and-recovers
   (with-treadle
@@ -193,7 +207,7 @@
         ;; (a) the blank-result run is recorded failed, loud, and stays active
         (is (= "active" (:state failed)))
         (is (str/includes? (attr failed :agent-run/error) "empty result"))
-        (is (= gate-id (attr failed :gate/step)))
+        (is (= gate-id (:to_strand_id (edge-row rt (:id failed) gate-id "serves"))))
         ;; (b) the gate is never delivered and its downstream step stays blocked
         (is (nil? (attr failed :gate/delivered)))
         (is (nil? (attr (api/show rt gate-id) :workflow/outcome-notes)))
@@ -203,22 +217,22 @@
         (is (some #(= (:id failed) (:id %)) (api/list-query rt 'agent-failures {})))
         (is (= "failed" (:phase (treadle/gate-stalled? (ready-subagent-gate "blank")))))
         (is (some #(= gate-id (:id %)) (api/list-query rt 'stalled-gates {})))
-        ;; (d) recover by clearing the gate's run stamp: the treadle respawns a fresh run
-        (api/update rt gate-id {:attributes {"gate/run" ""
-                                             "agent-run/prompt" "echo recovered"}})
-        (events/await-quiescent! rt)
-        (let [fresh-id (:id (some (fn [r] (when (not= (:id failed) (:id r)) r))
-                                  (api/list rt [:= [:attr "gate/step"] gate-id] {})))
-              delivered (await-delivered rt fresh-id)]
+        ;; (d) recover with `agent retry`: the successor inherits the serves edge
+        ;; and the treadle delivers it once it succeeds
+        (let [fresh (shuttle/supersede-and-respawn! (:id failed)
+                                                    {:harness "sh-tail"
+                                                     :prompt "echo recovered"
+                                                     :carry-attrs {"gate/run-id" (attr failed :gate/run-id)}})
+              delivered (await-delivered rt (:id fresh))]
           (is (= "true" (attr delivered :gate/delivered)))
           (is (= "recovered" (attr (api/show rt gate-id) :workflow/outcome-notes)))
           (is (= "After" (:title (first (workflow/next-steps "blank"))))))))))
 
 (deftest recovery-respawn-keeps-stalled-gates-in-lockstep-with-predicate
-  ;; A cleared-and-respawned gate leaves a stale `delegates` edge to its dead run.
-  ;; The `stalled-gates` query follows that edge; `gate-stalled?` reads only the
-  ;; current `gate/run`. Repointing the dead run's provenance keeps the two in
-  ;; lockstep: the gate stops surfacing the moment a healthy replacement is in flight.
+  ;; The `stalled-gates` query and the `gate-stalled?` predicate both resolve the
+  ;; gate's current serving run from `serves` + lineage, so they agree by
+  ;; construction: the moment `agent retry` supersedes the dead run and a healthy
+  ;; successor inherits the serves edge, neither surfaces the gate.
   (with-treadle
     (fn [rt]
       (workflow/start! "lockstep" (workflow/workflow
@@ -235,66 +249,55 @@
         ;; dead run: predicate and query agree the gate is stalled
         (is (= "failed" (:phase (treadle/gate-stalled? (ready-subagent-gate "lockstep")))))
         (is (some #(= gate-id (:id %)) (api/list-query rt 'stalled-gates {})))
-        ;; recover by clearing the stamp; the treadle respawns a slow, healthy run
-        (api/update rt gate-id {:attributes {"gate/run" nil
-                                             "agent-run/prompt" "sleep 3; echo recovered"}})
-        (events/await-quiescent! rt)
-        (let [fresh-id (:id (some (fn [r] (when (not= (:id failed) (:id r)) r))
-                                  (api/list rt [:= [:attr "gate/step"] gate-id] {})))]
-          ;; the respawn stamps the gate's gate/run in the same on-lane scan
-          ;; that created the fresh run, so it is already in lockstep here
-          (is (= fresh-id (attr (api/show rt gate-id) :gate/run)))
-          (await-run-phase rt fresh-id #{"running"})
-          ;; the dead run's provenance is repointed at the fresh run
-          (is (= fresh-id (attr (api/show rt (:id failed)) :gate/superseded-by)))
-          (is (nil? (attr (api/show rt fresh-id) :gate/superseded-by)))
+        ;; recover with agent retry; the successor is slow but healthy
+        (let [fresh (shuttle/supersede-and-respawn! (:id failed)
+                                                    {:harness "sh-tail"
+                                                     :prompt "sleep 3; echo recovered"
+                                                     :carry-attrs {"gate/run-id" (attr failed :gate/run-id)}})]
+          ;; the fresh successor is the gate's current server; the old run is superseded
+          (is (= (:id fresh) (:id (other-run-for-gate rt gate-id (:id failed)))))
+          (is (= "superseded" (attr (api/show rt (:id failed)) :agent-run/phase)))
+          (await-run-phase rt (:id fresh) #{"running"})
           ;; lockstep while the replacement is healthy: neither surfaces the gate
           (is (nil? (treadle/gate-stalled? (ready-subagent-gate "lockstep"))))
           (is (empty? (filter #(= gate-id (:id %)) (api/list-query rt 'stalled-gates {}))))
           ;; let the healthy run finish so the gate delivers and teardown is clean
-          (is (= "true" (attr (await-delivered rt fresh-id (test-support/await-budget-ms 15000))
+          (is (= "true" (attr (await-delivered rt (:id fresh) (test-support/await-budget-ms 15000))
                               :gate/delivered))))))))
 
-(deftest agent-retry-of-blank-gate-run-supersedes-without-stale-delivery
+(deftest superseded-run-stale-result-never-delivers
+  ;; C14/NG2: only a `done` run with a non-blank result delivers a gate. A run
+  ;; `agent retry` supersedes is closed `superseded`, never `done`, so its stale
+  ;; result must never complete the gate — even when a delivery scan runs over it.
+  ;; The fresh successor inherits the serves edge and delivers on success instead.
   (with-treadle
     (fn [rt]
-      (agents/install!)
-      (workflow/start! "retry-blank" (workflow/workflow
-                                      "Retry blank"
-                                      (workflow/gate :delegate "Delegate" :subagent
-                                                     :attributes {"agent-run/harness" "sh-tail"
-                                                                  "agent-run/prompt" "true"})
-                                      (workflow/step :after "After" :self :depends-on [:delegate])) {})
+      (workflow/start! "stale" (workflow/workflow
+                                "Stale"
+                                (workflow/gate :delegate "Delegate" :subagent
+                                               :attributes {"agent-run/harness" "sh-tail"
+                                                            "agent-run/prompt" "true"})
+                                (workflow/step :after "After" :self :depends-on [:delegate])) {})
       (events/await-quiescent! rt)
-      (let [gate-id (:id (ready-subagent-gate "retry-blank"))
+      (let [gate-id (:id (ready-subagent-gate "stale"))
             run-id (:id (run-for-gate rt gate-id))
             failed (await-run-phase rt run-id #{"failed"})
-            retry (agents/agent-op {:op/argv ["retry" (:id failed)]})]
-        ;; agent retry supersedes the dead run (closes it) and spawns a fresh run
-        (is (= (:id failed) (:superseded retry)))
+            ;; supersede with a slow successor so it has not delivered yet
+            fresh (shuttle/supersede-and-respawn! (:id failed)
+                                                  {:harness "sh-tail"
+                                                   :prompt "sleep 3; echo recovered"
+                                                   :carry-attrs {"gate/run-id" (attr failed :gate/run-id)}})]
         (let [superseded (api/show rt (:id failed))]
           (is (= "superseded" (attr superseded :agent-run/phase)))
           (is (= "closed" (:state superseded))))
-        ;; retry respawns with :parent = served-target, which resolves from the
-        ;; failed run's serves edge. A treadle-delegated run carries no serves
-        ;; edge (treadle stamps gate/step + a delegates edge, not serves), so the
-        ;; served-target is nil and the fresh run is unparented: no parent-of and
-        ;; no delegates edge from the gate, no gate/step attr, and the gate's
-        ;; gate/run stamp is never rewritten. This is exactly why retry is not the
-        ;; gate-recovery verb — the fresh run is never adopted by the gate.
-        (let [fresh-run-id (get-in retry [:run :id])]
-          (is (nil? (edge-row rt gate-id fresh-run-id "parent-of")))
-          (is (nil? (edge-row rt gate-id fresh-run-id "delegates")))
-          (is (nil? (attr (api/show rt fresh-run-id) :gate/step)))
-          (is (= (:id failed) (attr (api/show rt gate-id) :gate/run))))
-        ;; a superseded run is closed but not `done`: its stale result must never
-        ;; complete the gate, even when a delivery scan runs over it.
+        ;; a scan over the superseded run must not deliver its stale blank result
         (treadle/scan!)
         (is (nil? (attr (api/show rt (:id failed)) :gate/delivered)))
         (is (nil? (attr (api/show rt gate-id) :workflow/outcome-notes)))
-        ;; retry re-links no fresh run to the gate, so the gate must stay
-        ;; discoverable as stalled rather than silently pending.
-        (is (= "superseded" (:phase (treadle/gate-stalled? (ready-subagent-gate "retry-blank")))))))))
+        ;; the healthy successor still serves the gate and delivers on success
+        (let [delivered (await-delivered rt (:id fresh) (test-support/await-budget-ms 15000))]
+          (is (= "true" (attr delivered :gate/delivered)))
+          (is (= "recovered" (attr (api/show rt gate-id) :workflow/outcome-notes))))))))
 
 (deftest routed-away-gate-marks-run-gate-closed
   (with-treadle
@@ -367,8 +370,8 @@
                                         (workflow/gate :delegate "Broken delegate" :subagent
                                                        :attributes {"agent-run/prompt" "echo no"})) {})
         ;; (c) a gate whose delegated run died (blank result -> failed) also
-        ;; surfaces: the query reaches the run's phase through the delegates edge,
-        ;; not just the gate's own gate/error.
+        ;; surfaces: the query reaches the run's phase through the incoming serves
+        ;; edge, not just the gate's own gate/error.
         (workflow/start! "query-dead" (workflow/workflow
                                        "Query dead"
                                        (workflow/gate :delegate "Dead delegate" :subagent
@@ -393,8 +396,7 @@
                                                          "agent-run/prompt" "echo ignored"})) {})
       (let [gate-id (:id (first (workflow/next-steps "ci")))]
         (events/await-quiescent! rt)
-        (is (nil? (run-for-gate rt gate-id)))
-        (is (nil? (attr (api/show rt gate-id) :gate/run)))))))
+        (is (nil? (run-for-gate rt gate-id)))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for the treadle's versioned spool-state: a key added to

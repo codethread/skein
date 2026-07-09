@@ -201,10 +201,25 @@
       (attr-get run :gate/delivered) (assoc :gate/delivered (attr-get run :gate/delivered))
       (attr-get run :gate/delivery-blocked) (assoc :gate/delivery-blocked (attr-get run :gate/delivery-blocked)))))
 
+(defn- gate-serving-run-id
+  "The gate's current delegated run id, or nil: the source of an incoming `serves`
+  edge whose run is not superseded. Mirrors the agent-run serving-resolution rule
+  (a superseded run carries an incoming `supersedes` edge / `agent-run/phase
+  \"superseded\"`) so flow-status and the subagent executor agree on the live run."
+  [rt gate-id]
+  (let [run-ids (mapv :from_strand_id (graph/incoming-edges rt [gate-id] "serves"))
+        superseded (set (map :to_strand_id (graph/incoming-edges rt run-ids "supersedes")))]
+    (->> run-ids
+         (remove superseded)
+         (map #(api/show rt %))
+         (remove #(= "superseded" (attr-get % :agent-run/phase)))
+         (map :id)
+         first)))
+
 (defn- compact-gate
   "Return a compact workflow gate projection joined to its delegated run."
-  [rt failed-run-ids stalled-gate-ids gate]
-  (let [run-id (attr-get gate :gate/run)
+  [rt gate->run failed-run-ids stalled-gate-ids gate]
+  (let [run-id (get gate->run (:id gate))
         run (when run-id (api/show rt run-id))
         run-failed? (contains? failed-run-ids run-id)
         spawn-stalled? (contains? stalled-gate-ids (:id gate))]
@@ -263,7 +278,8 @@
         done (workflow/done? run-id)
         run-gates (run-subagent-gates rt history)
         run-gate-ids (set (map :id run-gates))
-        run-delegated-ids (set (keep #(attr-get % :gate/run) run-gates))
+        gate->run (into {} (keep (fn [g] (when-let [r (gate-serving-run-id rt (:id g))] [(:id g) r]))) run-gates)
+        run-delegated-ids (set (vals gate->run))
         stalled-gates (filterv #(contains? run-gate-ids (:id %))
                                (api/list rt [:and [:= :state "active"]
                                              [:= [:attr "workflow/gate"] "subagent"]
@@ -272,7 +288,7 @@
                                 (api/list rt [:in [:attr "agent-run/phase"] ["failed" "exhausted"]] {}))
         stalled-gate-ids (set (map :id stalled-gates))
         failed-run-ids (set (map :id agent-failures))
-        gates (mapv (partial compact-gate rt failed-run-ids stalled-gate-ids) run-gates)
+        gates (mapv (partial compact-gate rt gate->run failed-run-ids stalled-gate-ids) run-gates)
         ready-ids (set (map :id frontier))]
     {:run-id run-id
      :history history
