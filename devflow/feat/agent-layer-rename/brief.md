@@ -16,7 +16,7 @@ Attribute namespaces name **concepts, not owners**. Names riding durable data or
 |---|---|
 | `skein.spools.shuttle` | `skein.spools.agent-run` |
 | `shuttle/*` run attrs (phase, harness, prompt, result, error, exit-code, session-id, resumes, log, pid, pid-started-at, started-at, finished-at, spawned-by, attempt, max-attempts, recovered-at, recovery-deferred-until, cwd, mode, backend, completion, for, reap, session, handle.*, teardown-error, error-class) | `agent-run/*` same suffixes |
-| `shuttle/run` boolean marker | **dropped** — `agent-run/phase` presence is the marker |
+| `shuttle/run` boolean marker | `agent-run/run` (dropping it is a logic change — deferred to F2, which owns behavior) |
 | `skein.spools.agents` | `skein.spools.delegation` |
 | `strand agent ...` CLI verbs, `agent-plan` pattern, `agent-failures` query | **unchanged** (trained-vocabulary surface is frozen) |
 | `skein.spools.treadle` | `skein.spools.executors.subagent` |
@@ -27,11 +27,13 @@ Attribute namespaces name **concepts, not owners**. Names riding durable data or
 | `shuttle/serves` | `agent-run/serves` (boolean survives until F2's `serves` edge) |
 | `treadle/error` | `gate/error` (on gate) |
 | `treadle/delivered`, `treadle/delivery-blocked` | `gate/delivered`, `gate/delivery-blocked` (on run) |
-| `treadle/run`, `treadle/gate`, `treadle/run-id`, `treadle/superseded-by` | `gate/run`, `gate/gate-of`→ keep as `gate/step`, `gate/run-id`, `gate/superseded-by` (deleted entirely in F2) |
+| `treadle/run` (on gate: current delegated run id) | `gate/run` (deleted entirely in F2) |
+| `treadle/gate` (on run: the gate step it fulfills) | `gate/step` (deleted entirely in F2) |
+| `treadle/run-id`, `treadle/superseded-by` | `gate/run-id`, `gate/superseded-by` (deleted entirely in F2) |
 | `shuttle/note-for`, `note`, `note-by`, `round`, `at` | `note/for`, `note/text`, `note/by`, `note/round`, `note/at` |
 | `workflow/notes` | `workflow/outcome-notes` (gate-outcome string; kills the notes collision) |
 
-Spool dir moves: `spools/shuttle` → `spools/agent-run` (treadle source joins `spools/executors/`), doc triads follow. Untouched: `skein`/`strand`/`weaver`/`mill`, harness/alias/backend terms, seat names, kanban/roster/devflow vocabularies.
+Spool dir moves: `spools/shuttle` → `spools/agent-run`, `spools/agents` → `spools/delegation` (treadle source joins an `executors/` grouping within its current spool root); doc triads follow. **Distribution tiers are unchanged**: namespace family ≠ distribution tier — `executors.shell` (reed) stays on the shipped classpath, `executors.subagent` (treadle) stays approved-local-root. `scripts/shuttle-dash` is **in scope** (its data layer reads the renamed attrs and breaks at cutover otherwise); dir renames to `scripts/agent-dash` with the `make dash` reference. `mkdocs.yml` hardcoded doc paths follow the doc moves. Untouched: `skein`/`strand`/`weaver`/`mill`, harness/alias/backend terms, seat names, kanban/roster/devflow vocabularies, `devflow/archive/*` (historical record).
 
 ## Constraints
 
