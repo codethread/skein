@@ -153,11 +153,11 @@
                    :semantics (fmt/fill "
                                 |Async; the run starts when ready.
                                 |
-                                |--for attaches the run under a strand (parent-of edge). spawn is
-                                |the raw helper verb: its runs are stamped non-serving
-                                |(agent-run/serves=false), so a spawn --for a task is a recon/one-off
-                                |helper and never gates that task's later delegation. Delegation of
-                                |a task's own work is delegate's job, not spawn's.
+                                |--for places the run under a strand (parent-of edge) only. spawn
+                                |is the raw helper verb: its runs carry no serves edge, so a spawn
+                                |--for a task is a recon/one-off helper and never gates that task's
+                                |later delegation. Delegation of a task's own work is delegate's
+                                |job, not spawn's.
                                 |
                                 |--spawned-by is the caller's run id for helper provenance only.
                                 |Helpers usually pass only --spawned-by.
@@ -251,10 +251,11 @@
                                    |
                                    |A task with any non-superseded SERVING run is not delegable:
                                    |pending/running is active, failed/exhausted wants retry, done
-                                   |must be verified and closed. Read-only helper runs (recon
-                                   |spawns, reviewers, panel/council seats — stamped
-                                   |agent-run/serves=false) never count, so reviewing or reconning a
-                                   |task never blocks delegating it.
+                                   |must be verified and closed. Serving is the run's serves edge
+                                   |to the task; read-only helper runs (recon spawns, reviewers,
+                                   |panel/council seats) carry parent-of placement alone with no
+                                   |serves edge, so reviewing or reconning a task never blocks
+                                   |delegating it.
                                    |
                                    |--interactive opens a live multiplexer session for the task
                                    |instead of a headless run — this is how hitl=true tasks are
@@ -275,7 +276,7 @@
                             :semantics (fmt/fill "
                                          |Fan out every ready, non-hitl task under the plan that has
                                          |no active, failed/exhausted, or successful non-superseded
-                                         |SERVING run. Read-only helper runs (agent-run/serves=false)
+                                         |SERVING run. Read-only helper runs carry no serves edge and
                                          |are ignored, so a reconned or reviewed task is still
                                          |delegated.
                                          |
@@ -364,8 +365,8 @@
                                  |Spawn independent read-only reviewers of the target strand and
                                  |its subtree; reviewing a plan root reviews the whole feature.
                                  |
-                                 |Reviewer and synthesizer runs are non-serving helpers
-                                 |(agent-run/serves=false): they hang under the target but never
+                                 |Reviewer and synthesizer runs are read-only helpers with no
+                                 |serves edge: they hang under the target (parent-of) but never
                                  |gate a later delegate of it, so a target can be reviewed before
                                  |or after it is delegated.
                                  |
@@ -507,33 +508,21 @@
 (defn- task-runs [task-id]
   (->> (children-ids task-id) (map #(api/show (rt) %)) (filter run?) vec))
 
-(defn- serving-run?
-  "True unless the run is a stamped read-only helper. A run serves its --for
-  target — counts as a delegation of that task's work — by default; recon
-  spawns, reviewers, and panel/council seats stamp agent-run/serves=false so they
-  never gate delegation of the task they hang under. The stamp is closed: absent
-  or \"true\" serves, \"false\" does not, and any other value fails loudly rather
-  than silently reclassifying a malformed helper as serving."
-  [s]
-  (case (sattr s "serves")
-    (nil "true") true
-    "false" false
-    (fail! "run has an invalid agent-run/serves value" {:run (:id s) :serves (sattr s "serves")})))
-
-;; Attrs stamped on a spawned run to mark it a non-serving read-only helper.
-;; Merged into every recon/review/panel run's :attrs so the delegation seam can
-;; distinguish helpers from delegations of the task's own work.
-(def ^:private non-serving-attrs {"agent-run/serves" "false"})
-
 (defn- serving-runs
-  "Serving, non-superseded runs hanging under a task: the runs that gate
-  delegation. Non-serving helper runs (agent-run/serves=false) and superseded
-  runs never count, so a recon or review run under a task never blocks its
-  later delegation."
+  "Serving, non-superseded runs for a task: the runs that gate delegation.
+  Serving is the incoming `serves` edges to the task; a superseded run (phase
+  `superseded`, or replaced via an incoming `supersedes` edge) never counts, so
+  a retried-away run never blocks the task's later delegation. Read-only helper
+  runs — recon spawns, reviewers, panel/council seats — carry parent-of
+  placement alone with no `serves` edge, so a recon or review run under the task
+  never gates it."
   [task-id]
-  (->> (task-runs task-id)
-       (filter serving-run?)
-       (remove #(= "superseded" (sattr % "phase")))))
+  (let [run-ids (mapv :from_strand_id (graph/incoming-edges (rt) [task-id] "serves"))
+        superseded-ids (set (map :to_strand_id (graph/incoming-edges (rt) run-ids "supersedes")))]
+    (->> run-ids
+         (remove superseded-ids)
+         (map #(api/show (rt) %))
+         (remove #(= "superseded" (sattr % "phase"))))))
 
 (defn- prompt-for-task
   ([task extra] (prompt-for-task task extra false))
@@ -582,6 +571,7 @@
                                            :prompt (prompt-for-task task (get flags "--prompt") interactive?)
                                            :title (str "Delegate: " (:title task))
                                            :parent (:id task)
+                                           :serves (:id task)
                                            :cwd (or (get flags "--cwd")
                                                     (attr task :cwd)
                                                     (workspace-root-dir))}
@@ -641,8 +631,8 @@
     (when (seq positional) (fail! "spawn takes only flags" {:unexpected positional}))
     ;; spawn is the raw helper/escape-hatch verb — recon reads, review helpers,
     ;; and one-off runs. It never delegates a task's own work (delegate does),
-    ;; so a spawn --for a task is a non-serving helper and must not gate that
-    ;; task's later delegation.
+    ;; so a spawn --for a task carries parent-of placement alone with no serves
+    ;; edge, and must not gate that task's later delegation.
     (agent-run/run-summary (agent-run/spawn-run! {:harness (or (get flags "--harness") (fail! "spawn requires --harness" {}))
                                               :prompt (or (get flags "--prompt") (fail! "spawn requires --prompt" {}))
                                               :title (get flags "--title")
@@ -651,7 +641,6 @@
                                               :spawned-by (get flags "--spawned-by")
                                               :cwd (get flags "--cwd")
                                               :max-attempts (some->> (get flags "--max-attempts") (parse-int! "--max-attempts"))
-                                              :attrs non-serving-attrs
                                               :mode (when (get flags "--interactive") :interactive)
                                               :backend (get flags "--backend")
                                               :reap (get flags "--reap")}))))
@@ -1401,9 +1390,11 @@
                           ;; durable cold-start prompt (a fresh process must
                           ;; never be handed the continuation, PLAN-Pnl-001.A6)
                           ;; panel seats and synthesis are read-only deliberators
-                          ;; of the board; a :target-board panel hangs them under
-                          ;; the target task, so mark them non-serving too
-                          attrs (cond-> (into non-serving-attrs
+                          ;; of the board; even when a :target-board panel hangs
+                          ;; them under the target task, they carry parent-of
+                          ;; placement alone and no serves edge, so they never
+                          ;; gate the target's delegation
+                          attrs (cond-> (into {}
                                               (map (fn [[k v]] [k (resolve-board v)]))
                                               (:attrs spec))
                                   resume-run (assoc "panel/fresh-prompt" (resolve-board (:prompt spec))))]
@@ -1516,7 +1507,8 @@
                     reviewers)))
         synthesize? (or synthesize? (some? roster-specs))
         ;; reviewers and the synthesizer are read-only helpers of the target:
-        ;; they must never gate a later delegation of the target task
+        ;; they carry parent-of placement alone with no serves edge, so they
+        ;; never gate a later delegation of the target task
         spawn-spec! (fn [spec extra]
                       (agent-run/spawn-run!
                        (merge {:harness (:harness spec)
@@ -1524,7 +1516,7 @@
                                :parent target-id
                                :spawned-by spawned-by
                                :cwd cwd
-                               :attrs (merge (:attrs spec) non-serving-attrs)}
+                               :attrs (:attrs spec)}
                               extra)))
         review-runs (mapv (fn [{spec-name :name :as spec}]
                             (spawn-spec! spec {:title (truncate (str "Review " target-id
@@ -1728,10 +1720,7 @@
 ;; spawn-run!, so only these spool-owned structural attrs are carried.
 (def ^:private preserved-run-attr-keys
   ["review/target" "review/pass" "review/roster" "review/focus"
-   "review/synthesis" "panel/seat" "panel/turn"
-   ;; a retried non-serving helper stays non-serving, so its retry never gates
-   ;; delegation of the target it was only reviewing
-   "agent-run/serves"])
+   "review/synthesis" "panel/seat" "panel/turn"])
 
 (defn- op-retry [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--cwd" :single "--prompt" :single "--fresh" :bool})
@@ -1862,7 +1851,7 @@
                      :prompt {:required? true :doc "Prompt text for the run."}
                      :title {:doc "Run strand title."}
                      :depends-on {:repeat? true :doc "Blocking strand id; repeatable."}
-                     :for {:doc "Served strand id."}
+                     :for {:doc "Parent strand id; places the run as a read-only helper (parent-of, no serves edge)."}
                      :spawned-by {:doc "Caller run id for provenance."}
                      :cwd {:doc "Working directory."}
                      :max-attempts {:type :int :doc "Maximum run attempts."}
@@ -1871,7 +1860,7 @@
                      :reap {:doc "Interactive session reap policy: auto or manual."}}}
     "ps" {:doc "List agent run summaries."
           :flags {:active {:type :boolean :doc "Only active run strands."}
-                  :for {:doc "Only runs serving this strand id."}}}
+                  :for {:doc "Runs serving this strand plus its structural (parent-of) helpers."}}}
     "await" {:doc "Wait for run ids, or non-terminal runs under a root, to finish."
              :flags {:timeout-secs {:type :int :doc "Maximum seconds to wait."}
                      :under {:doc "Root strand whose descendant runs should be awaited."}}
