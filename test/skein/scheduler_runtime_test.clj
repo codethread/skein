@@ -125,15 +125,15 @@
       (with-scheduler ds 8 500
         (fn [rt _st]
           (let [^ArrayBlockingQueue queue (get-in rt [:event-system :queue])
-                real-due db/due-wakes]
-            (with-redefs [db/due-wakes (fn [ds now]
-                                         (cons {:key "gone" :wake_at (.toEpochMilli ^Instant now) :attempts 0}
-                                               (real-due ds now)))]
-              (let [result (scheduler/dispatch-due! rt)]
-                (is (not (:transient? result)) "a vanished row does not throw or fail the pass")
-                (is (nil? (db/get-pending-wake ds "gone")) "the vanished key was never persisted")
-                (is (= 1 (:attempts (db/get-pending-wake ds "live")))
-                    "the live wake still records exactly one delivery attempt")))
+                real-due db/due-wakes
+                due-wakes-fn (fn [ds now]
+                               (cons {:key "gone" :wake_at (.toEpochMilli ^Instant now) :attempts 0}
+                                     (real-due ds now)))
+                result (scheduler/dispatch-due! rt {:due-wakes-fn due-wakes-fn})]
+            (is (not (:transient? result)) "a vanished row does not throw or fail the pass")
+            (is (nil? (db/get-pending-wake ds "gone")) "the vanished key was never persisted")
+            (is (= 1 (:attempts (db/get-pending-wake ds "live")))
+                "the live wake still records exactly one delivery attempt")
             (is (= #{"gone" "live"}
                    (set (repeatedly 2 #(:scheduler/key (.poll queue)))))
                 "both envelopes enqueue; the stale one is dropped downstream by run-fire!")))))))
@@ -151,17 +151,17 @@
       (with-scheduler ds 8 500
         (fn [rt st]
           (let [^ArrayBlockingQueue queue (get-in rt [:event-system :queue])
-                real-due db/due-wakes]
-            (with-redefs [db/due-wakes (fn [ds now]
-                                         (let [due (real-due ds now)]
-                                           ;; Reschedule to gen B after selection, before the mark.
-                                           (db/schedule-wake! ds {:key "resched" :wake-at (instant 200) :handler 'a/b})
-                                           due))]
-              (let [result (scheduler/dispatch-due! rt)]
-                (is (= 1 (:dispatched result)) "the stale envelope still enqueues")
-                (is (= 200000 (:wake_at (db/get-pending-wake ds "resched"))) "gen B owns the row now")
-                (is (zero? (:attempts (db/get-pending-wake ds "resched")))
-                    "the stale claim never increments the rescheduled generation")))
+                real-due db/due-wakes
+                due-wakes-fn (fn [ds now]
+                               (let [due (real-due ds now)]
+                                 ;; Reschedule to gen B after selection, before the mark.
+                                 (db/schedule-wake! ds {:key "resched" :wake-at (instant 200) :handler 'a/b})
+                                 due))
+                result (scheduler/dispatch-due! rt {:due-wakes-fn due-wakes-fn})]
+            (is (= 1 (:dispatched result)) "the stale envelope still enqueues")
+            (is (= 200000 (:wake_at (db/get-pending-wake ds "resched"))) "gen B owns the row now")
+            (is (zero? (:attempts (db/get-pending-wake ds "resched")))
+                "the stale claim never increments the rescheduled generation")
             ;; The stale envelope carried gen A's wake-at; run-fire! drops it (covered
             ;; by run-fire-skips-cancelled-and-rescheduled-wakes). Now deliver gen B.
             (.poll queue)
@@ -182,8 +182,7 @@
         (fn [rt st]
           ;; Force an unexpected failure in the timer body: the guard must record
           ;; it AND still re-arm, so one bad tick cannot permanently stop the clock.
-          (with-redefs [scheduler/dispatch-due! (fn [_] (throw (ex-info "boom" {})))]
-            (#'scheduler/dispatch-and-rearm! rt))
+          (#'scheduler/dispatch-and-rearm! rt {:dispatch-due-fn (fn [_] (throw (ex-info "boom" {})))})
           (is (= 1 (count (scheduler/dispatch-failures rt))) "the unexpected throw is recorded as a dispatch failure")
           (is (some? @(:timer st)) "the scheduler re-armed rather than dying silently"))))))
 

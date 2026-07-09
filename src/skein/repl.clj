@@ -392,11 +392,15 @@
           (eval-remote! session "(do (require 'skein.repl) (in-ns 'skein.repl))")))
       (print "skein=> "))))
 
-(defn- attach-repl! [host port]
-  ((nrepl-run-repl)
-   host
-   (Integer/parseInt port)
-   {:prompt (helper-ready-prompt)}))
+(defn- attach-repl!
+  ([host port]
+   (attach-repl! host port {}))
+  ([host port {:keys [run-repl-fn]
+               :or {run-repl-fn (nrepl-run-repl)}}]
+   (run-repl-fn
+    host
+    (Integer/parseInt port)
+    {:prompt (helper-ready-prompt)})))
 
 (defn -main
   "Start a direct live weaver REPL or evaluate stdin forms.

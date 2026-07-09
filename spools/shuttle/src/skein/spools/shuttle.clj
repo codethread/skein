@@ -1497,11 +1497,13 @@
 (defn- parents-by-run
   "Map run-id -> its parent-of source ids from one bulk incoming-edge fetch,
   so summarising many runs costs a single query instead of one per run."
-  [run-ids]
-  (reduce (fn [m {:keys [from_strand_id to_strand_id]}]
-            (update m to_strand_id (fnil conj []) from_strand_id))
-          {}
-          (graph/incoming-edges (rt) (vec run-ids) "parent-of")))
+  ([run-ids]
+   (parents-by-run run-ids graph/incoming-edges))
+  ([run-ids incoming-edges-fn]
+   (reduce (fn [m {:keys [from_strand_id to_strand_id]}]
+             (update m to_strand_id (fnil conj []) from_strand_id))
+           {}
+           (incoming-edges-fn (rt) (vec run-ids) "parent-of"))))
 
 (defn- run-for-target
   "Return the delegated target for `run` given its parent-of source ids,
@@ -1558,13 +1560,10 @@
            attach (assoc :attach attach)))
        base))))
 
-(defn runs
-  "Return summaries of shuttle runs; opts may filter to `:active` or `:for`.
-  Listing doubles as an interactive liveness checkpoint (there is no
-  background poller): dead sessions are failed here, best-effort."
-  ([] (runs {}))
-  ([{:keys [active for]}]
-   (try (supervise!) (catch Exception _ nil))
+(defn- runs*
+  [opts incoming-edges-fn]
+  (let [{:keys [active for]} opts]
+    (try (supervise!) (catch Exception _ nil))
    (let [run-strands (api/list (rt)
                                (if active [:and [:= :state "active"] run-query] run-query)
                                {})
@@ -1581,11 +1580,19 @@
                                         (= for (attr run :treadle/gate))))
                                   run-strands))
                        run-strands)
-         parents (parents-by-run (mapv :id run-strands))
+         parents (parents-by-run (mapv :id run-strands) incoming-edges-fn)
          summaries (mapv #(run-summary % (get parents (:id %) [])) run-strands)]
-     (if for
-       (filterv #(= for (:for %)) summaries)
-       summaries))))
+      (if for
+        (filterv #(= for (:for %)) summaries)
+        summaries))))
+
+(defn runs
+  "Return summaries of shuttle runs; opts may filter to `:active` or `:for`.
+  Listing doubles as an interactive liveness checkpoint (there is no
+  background poller): dead sessions are failed here, best-effort."
+  ([] (runs {}))
+  ([{:keys [active for]}]
+   (runs* {:active active :for for} graph/incoming-edges)))
 
 (def ^:private terminal-phases #{"done" "failed" "exhausted" "superseded"})
 

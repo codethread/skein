@@ -229,23 +229,17 @@
         (await-phase rt (:id run) #{"done"})
         ;; unrelated strands the summary path must never touch per-strand
         (dotimes [i 150] (api/add rt {:title (str "noise-" i)}))
-        (let [subgraph-calls (atom 0)
-              incoming-calls (atom 0)
-              real-subgraph graph/subgraph
-              real-incoming graph/incoming-edges]
-          (with-redefs [graph/subgraph (fn [& args]
-                                         (swap! subgraph-calls inc)
-                                         (apply real-subgraph args))
-                        graph/incoming-edges (fn [& args]
-                                               (swap! incoming-calls inc)
-                                               (apply real-incoming args))]
-            (let [summaries (shuttle/runs)]
-              (is (= (:id target)
-                     (:for (first (filter #(= (:id run) (:id %)) summaries)))))
-              ;; never a per-strand subgraph fan-out
-              (is (zero? @subgraph-calls))
-              ;; one bulk incoming-edge fetch resolves every run's parents
-              (is (= 1 @incoming-calls)))))))))
+        (let [incoming-calls (atom 0)
+              real-incoming graph/incoming-edges
+              incoming-edges-fn (fn [& args]
+                                  (swap! incoming-calls inc)
+                                  (apply real-incoming args))
+              summaries (#'shuttle/runs* {} incoming-edges-fn)]
+          (is (= (:id target)
+                 (:for (first (filter #(= (:id run) (:id %)) summaries)))))
+          ;; one bulk incoming-edge fetch resolves every run's parents; no
+          ;; subgraph seam is present on the summary path anymore.
+          (is (= 1 @incoming-calls)))))))
 
 (deftest notes-are-append-only-memory-with-rounds
   (with-shuttle

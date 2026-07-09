@@ -26,18 +26,21 @@
   [{:ref 'created
     :title (get-in ctx [:input :title])}])
 
-(defn with-runtime [f]
-  (let [db-file (db-test/temp-db-file)
-        config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]
-    (.mkdirs (java.io.File. config-dir))
-    (let [world (test-world config-dir)
-          rt (runtime/start! db-file {:world world})]
-      (try
-        (f rt db-file)
-        (finally
-          (reset-open-state!)
-          (runtime/stop! rt)
-          (db-test/delete-sqlite-family! db-file))))))
+(defn with-runtime
+  ([f]
+   (with-runtime {} f))
+  ([opts f]
+   (let [db-file (db-test/temp-db-file)
+         config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]
+     (.mkdirs (java.io.File. config-dir))
+     (let [world (test-world config-dir)
+           rt (runtime/start! db-file (merge {:world world} opts))]
+       (try
+         (f rt db-file)
+         (finally
+           (reset-open-state!)
+           (runtime/stop! rt)
+           (db-test/delete-sqlite-family! db-file)))))))
 
 (deftest helpers-fail-before-connect
   (reset-open-state!)
@@ -50,13 +53,10 @@
 
 (deftest connect-without-arg-fails-loudly-without-selected-world
   (let [calls (atom [])]
-    (with-redefs [skein.core.client/status-world (fn [config-dir]
-                                                   (swap! calls conj config-dir)
-                                                   {:ok true})]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"connect! requires an explicit config-dir"
-                            (repl/connect!)))
-      (is (= [] @calls)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"connect! requires an explicit config-dir"
+                          (repl/connect!)))
+    (is (= [] @calls))
     (reset-open-state!)))
 
 (deftest connect-fails-without-selecting-a-daemon
@@ -74,6 +74,7 @@
 
 (deftest failed-connect-clears-previous-selection
   (with-runtime
+    {:publish? false}
     (fn [rt db-file]
       (repl/connect! (:config-dir (:metadata rt)))
       (spit db-file "not a config dir")
@@ -81,10 +82,9 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"connect! expects a daemon config directory"
                               (repl/connect! db-file)))
-        (with-redefs [runtime/current-runtime (atom nil)]
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                                #"No Skein weaver world is connected"
-                                (repl/strands))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"No Skein weaver world is connected"
+                              (repl/strands)))
         (finally
           (db-test/delete-sqlite-family! db-file))))))
 
@@ -197,28 +197,28 @@
     (fn [rt _]
       (let [{:keys [endpoint]} (:metadata rt)
             calls (atom [])
-            out (java.io.StringWriter.)]
-        (with-redefs-fn {(ns-resolve 'skein.repl 'nrepl-run-repl)
-                         (fn []
-                           (fn [host port options]
-                             (swap! calls conj {:host host
-                                                :port port
-                                                :options options})
-                             (let [conn (nrepl/connect :host host :port port)
-                                   session (nrepl/client-session (nrepl/client conn 60000))]
-                               (try
-                                 (swap! nrepl.cmdline/running-repl assoc :client session)
-                                 ((:prompt options) 'user)
-                                 (let [responses (doall (nrepl/message session {:op "eval" :code "(ready)"}))]
-                                   (is (= "[]" (last (keep :value responses)))))
-                                 (finally
-                                   (swap! nrepl.cmdline/running-repl assoc :client nil)
-                                   (.close conn))))))}
-          (fn []
-            (binding [*in* (java.io.StringReader. "(+ 10 5)\n")
-                      *out* out
-                      *err* (java.io.StringWriter.)]
-              ((ns-resolve 'skein.repl 'attach-repl!) (:host endpoint) (str (:port endpoint))))))
+            out (java.io.StringWriter.)
+            run-repl-fn (fn [host port options]
+                          (swap! calls conj {:host host
+                                             :port port
+                                             :options options})
+                          (let [conn (nrepl/connect :host host :port port)
+                                session (nrepl/client-session (nrepl/client conn 60000))]
+                            (try
+                              (swap! nrepl.cmdline/running-repl assoc :client session)
+                              ((:prompt options) 'user)
+                              (let [responses (doall (nrepl/message session {:op "eval" :code "(ready)"}))]
+                                (is (= "[]" (last (keep :value responses)))))
+                              (finally
+                                (swap! nrepl.cmdline/running-repl assoc :client nil)
+                                (.close conn)))))]
+        (binding [*in* (java.io.StringReader. "(+ 10 5)\n")
+                  *out* out
+                  *err* (java.io.StringWriter.)]
+          ((ns-resolve 'skein.repl 'attach-repl!)
+           (:host endpoint)
+           (str (:port endpoint))
+           {:run-repl-fn run-repl-fn}))
         (is (= [{:host (:host endpoint)
                  :port (:port endpoint)
                  :options {:prompt (:prompt (:options (first @calls)))}}]

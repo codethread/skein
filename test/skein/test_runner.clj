@@ -22,7 +22,7 @@
 
 (def serial-namespaces
   "JVM-global namespaces the parent still runs serially outside add-libs shards."
-  [;; ambient REPL connection atoms and with-redefs.
+  [;; ambient REPL connection atoms.
    'skein.repl-test
    ;; module-local bind! is process-global and loud-failure asserts no published runtime.
    'skein.userland-test
