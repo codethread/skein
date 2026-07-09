@@ -38,8 +38,8 @@ install:
 
 # code-owner TUI over live shuttle agent runs; polls the strand CLI
 dash:
-	bun install --cwd scripts/shuttle-dash --silent
-	bun scripts/shuttle-dash/index.tsx
+	bun install --cwd scripts/agent-dash --silent
+	bun scripts/agent-dash/index.tsx
 
 api-docs:
 	@if command -v bb >/dev/null 2>&1; then \
@@ -53,7 +53,7 @@ docs-site:
 
 docs-check:
 	$(MAKE) api-docs
-	git diff --exit-code -- 'spools/*.api.md'
+	git diff --exit-code -- 'spools/*.api.md' 'spools/executors/*.api.md'
 	$(MAKE) docs-site
 
 docs-serve:
