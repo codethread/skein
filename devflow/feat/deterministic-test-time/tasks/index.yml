@@ -1,0 +1,46 @@
+tasks:
+  - id: 1
+    description: Clock seam + scheduler consumer collapse
+    task_file: tasks/001-clock-seam.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Event-lane await-quiescent! seam
+    task_file: tasks/002-await-quiescent-seam.md
+    status: pending
+    blocked_by: []
+  - id: 3
+    description: Migrate scheduler suites onto the seams
+    task_file: tasks/003-scheduler-migration.md
+    status: pending
+    blocked_by: [1, 2]
+  - id: 4
+    description: Migrate cron onto clock-driven due-ness
+    task_file: tasks/004-cron-migration.md
+    status: pending
+    blocked_by: [1, 2]
+  - id: 5
+    description: Migrate treadle onto lane quiescence + shuttle await
+    task_file: tasks/005-treadle-migration.md
+    status: pending
+    blocked_by: [2]
+  - id: 6
+    description: Migrate reed onto lane quiescence + subprocess poll
+    task_file: tasks/006-reed-migration.md
+    status: pending
+    blocked_by: [2]
+  - id: 7
+    description: Migrate chime onto notifier + lane settle
+    task_file: tasks/007-chime-migration.md
+    status: pending
+    blocked_by: [2]
+  - id: 8
+    description: Re-evaluate weaver-test on lane quiescence
+    task_file: tasks/008-weaver-test-migration.md
+    status: pending
+    blocked_by: [2]
+  - id: 9
+    description: Graduate island vectors + full-suite acceptance
+    task_file: tasks/009-island-graduation.md
+    status: pending
+    blocked_by: [3, 4, 5, 6, 7, 8]
