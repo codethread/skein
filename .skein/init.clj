@@ -60,10 +60,10 @@
                      :call 'skein.spools.agent-run/install!
                      :required? true})
 (runtime-alpha/use! runtime :skein/spools-agents
-                    {:ns 'skein.spools.agents
-                     :spools ['skein.spools/agents]
+                    {:ns 'skein.spools.delegation
+                     :spools ['skein.spools/delegation]
                      :after [:skein/spools-shuttle]
-                     :call 'skein.spools.agents/install!
+                     :call 'skein.spools.delegation/install!
                      :required? true})
 (runtime-alpha/use! runtime :skein/spools-bench
                     {:ns 'skein.spools.bench

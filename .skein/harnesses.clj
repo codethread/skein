@@ -18,7 +18,7 @@
   `strand agent harnesses` (which shows alias and root-harness docs together)
   without proliferating aliases."
   (:require [skein.api.format.alpha :as format-alpha]
-            [skein.spools.agents :as agents]
+            [skein.spools.delegation :as agents]
             [skein.spools.agent-run :as shuttle]))
 
 (defn- register-harness-aliases!
@@ -134,6 +134,6 @@
    :namespace 'harnesses
    :harnesses (register-harness-aliases!)
    ;; agent review consumes the one authoritative policy text by default; the
-   ;; text itself ships from skein.spools.agents, set-default-review-contract!
+   ;; text itself ships from skein.spools.delegation, set-default-review-contract!
    ;; still lives on the shuttle engine
    :review-contract (shuttle/set-default-review-contract! agents/review-contract)})

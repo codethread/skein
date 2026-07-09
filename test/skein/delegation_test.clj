@@ -1,4 +1,4 @@
-(ns skein.agents-test
+(ns skein.delegation-test
   "Tests for the agents coordination spool layered over shuttle."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
@@ -8,7 +8,7 @@
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.agents :as agents]
+            [skein.spools.delegation :as agents]
             [skein.spools.agent-run :as shuttle]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
@@ -164,7 +164,7 @@
         (agents/defroster! :repo {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
         (is (= ["solo"] (mapv :name (:reviewers (first (agents/rosters)))))))
       (testing "the roster shape is spec-defined and registered data conforms"
-        (is (s/valid? :skein.spools.agents/roster
+        (is (s/valid? :skein.spools.delegation/roster
                       {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})))
       (testing "structurally malformed roster data fails loudly via the spec"
         (doseq [bad [[:not-a-map]
@@ -275,15 +275,15 @@
                     (:review-pass (agents/roster-review-specs :composed {:target (:id target)})))
               "each pass mints a distinct tag"))
         (testing "the seam output conforms to its public spec"
-          (is (s/valid? :skein.spools.agents/review-specs specs)
-              (s/explain-str :skein.spools.agents/review-specs specs)))
+          (is (s/valid? :skein.spools.delegation/review-specs specs)
+              (s/explain-str :skein.spools.delegation/review-specs specs)))
         (testing "an inline roster value works anywhere a name does"
           (let [inline {:reviewers [{:name "adhoc" :harness :sh :contract "One-off pass."}]}
                 inline-specs (agents/roster-review-specs inline {:target (:id target)})
                 inline-review (agents/review! (:id target) {:roster inline})
                 run (api/show rt (first (:reviewers inline-review)))]
             (is (= :inline (:roster inline-specs)))
-            (is (s/valid? :skein.spools.agents/review-specs inline-specs))
+            (is (s/valid? :skein.spools.delegation/review-specs inline-specs))
             (is (= "inline" (get-in run [:attributes :shuttle/review-roster])))
             (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "One-off pass."))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
@@ -486,8 +486,8 @@
             specs (agents/panel-specs panel {:target (:id target)})
             row1 (first (:turns specs))]
         (testing "output conforms to its public spec"
-          (is (s/valid? :skein.spools.agents/panel-specs specs)
-              (s/explain-str :skein.spools.agents/panel-specs specs)))
+          (is (s/valid? :skein.spools.delegation/panel-specs specs)
+              (s/explain-str :skein.spools.delegation/panel-specs specs)))
         (testing "a single default round is one turn row of independent seats"
           (is (= 1 (count (:turns specs))))
           (is (= ["correctness" "tests"] (mapv :name row1)))
@@ -511,7 +511,7 @@
         (testing "no synthesis yields no synthesizer and still conforms"
           (let [bare (agents/panel-specs (dissoc panel :synthesis) {:target (:id target)})]
             (is (nil? (:synthesizer bare)))
-            (is (s/valid? :skein.spools.agents/panel-specs bare))))
+            (is (s/valid? :skein.spools.delegation/panel-specs bare))))
         (testing ":review-id overrides the minted pass tag"
           (is (= "pass-x" (:review-pass (agents/panel-specs panel {:target (:id target) :review-id "pass-x"})))))))))
 
@@ -525,8 +525,8 @@
             specs (agents/panel-specs panel {})]
         (testing "one turn row per round, conforming to the spec"
           (is (= 3 (count (:turns specs))))
-          (is (s/valid? :skein.spools.agents/panel-specs specs)
-              (s/explain-str :skein.spools.agents/panel-specs specs)))
+          (is (s/valid? :skein.spools.delegation/panel-specs specs)
+              (s/explain-str :skein.spools.delegation/panel-specs specs)))
         (testing "a fresh blackboard defers the id to the spawner via a placeholder"
           (is (= {:kind :fresh} (:blackboard specs)))
           (is (str/includes? (:prompt (ffirst (:turns specs))) "«panel-board»")))
@@ -652,11 +652,11 @@
   ;; the compiled seam is a consumer contract, so a malformed blackboard
   ;; directive must fail the spec rather than only being documented away
   (testing ":target carries an :id; :fresh omits it"
-    (is (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :target :id "s1"}))
-    (is (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :fresh})))
+    (is (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :target :id "s1"}))
+    (is (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :fresh})))
   (testing "kind/id disagreement is rejected"
-    (is (not (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :target})))
-    (is (not (s/valid? :skein.spools.agents.panel-specs/blackboard {:kind :fresh :id "s1"})))))
+    (is (not (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :target})))
+    (is (not (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :fresh :id "s1"})))))
 
 (deftest roster->panel-produces-independent-target-panel
   (with-agents
@@ -677,7 +677,7 @@
           (let [specs (agents/panel-specs panel {:target (:id target)})]
             (is (= 1 (count (:turns specs))))
             (is (every? #(str/includes? (:prompt %) "Work independently") (first (:turns specs))))
-            (is (s/valid? :skein.spools.agents/panel-specs specs))))
+            (is (s/valid? :skein.spools.delegation/panel-specs specs))))
         (testing "a synthesizer-less roster falls back to the first reviewer's harness"
           (is (= {:harness :sh}
                  (:synthesis (agents/roster->panel {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})))))

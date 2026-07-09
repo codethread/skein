@@ -39,7 +39,7 @@
 
   The whole spool composes public surfaces (`skein.api.weaver.alpha` inside the
   weaver JVM) and owns no privileged runtime state. Higher-level spools, such as
-  `skein.spools.agents`, register CLI operations over this engine."
+  `skein.spools.delegation`, register CLI operations over this engine."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]

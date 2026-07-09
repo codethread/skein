@@ -210,7 +210,7 @@
 ;;
 ;; Specs are the discoverable/reusable source of truth for the shapes of the
 ;; public `track!`/`finish!`/`roster`/`await-quiet!` input maps, matching
-;; sibling spools (skein.spools.agents, skein.spools.workflow). Each fn's
+;; sibling spools (skein.spools.delegation, skein.spools.workflow). Each fn's
 ;; manual checks cover what s/keys cannot express: closed key sets (s/keys maps
 ;; stay open) and track!'s feature/owner requirement, which is satisfiable from
 ;; an existing `:id` strand rather than the attrs map. Predicate specs are used

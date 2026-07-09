@@ -741,7 +741,7 @@
   this output — the strand's `bench/judge-prompt` and a shuttle run's
   `shuttle/prompt` come from this one builder, so they never drift. A workflow
   author calls `judge-spec` at pour time and maps it onto a `:subagent` gate
-  exactly as roster review specs do (`skein.spools.agents/roster-review-specs`):
+  exactly as roster review specs do (`skein.spools.delegation/roster-review-specs`):
   `:prompt` becomes the gate's `shuttle/prompt`, the author picks the gate's
   `shuttle/harness`, `:attrs` merge into the gate, and the gate depends on
   `:entry-ids`. Bench thus never requires or references the workflow spool.

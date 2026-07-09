@@ -19,7 +19,7 @@
   weaver-lifetime state: edits here need a weaver restart or config reload to
   take effect.
 
-  Entry shape (validated loudly by skein.spools.agents/defroster!):
+  Entry shape (validated loudly by skein.spools.delegation/defroster!):
     :name     unique reviewer name; becomes the run's review focus
     :harness  harness alias from harnesses.clj (resolved at review time)
     :contract the reviewer's single concern - precise, judgmental, actionable
@@ -37,7 +37,7 @@
   Reserve frontier seats for judgment-heavy contracts. The synthesizer is the
   cross-vendor GPT seat so sign-off never comes from the model family that
   authored the work, and it de-duplicates overlapping findings by root cause."
-  (:require [skein.spools.agents :as agents]))
+  (:require [skein.spools.delegation :as agents]))
 
 (def change-review
   "Roster fanned out over each reviewed change in this repository."

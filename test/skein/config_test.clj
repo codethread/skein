@@ -79,8 +79,8 @@
   (spit (io/file target "spools.edn")
         (pr-str {:spools {'skein.spools/agent-run
                           {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
-                          'skein.spools/agents
-                          {:local/root (.getCanonicalPath (io/file "spools/agents"))}
+                          'skein.spools/delegation
+                          {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
                           {:local/root (.getCanonicalPath (io/file "spools/chime"))}
                           'skein.spools/kanban
@@ -186,15 +186,15 @@
   ;; via init.clj, so it must still be registered end to end
   (is (some #(= "agent-plan" (:name %)) (patterns/patterns rt)))
   ;; agent review must consume the one authoritative policy text by default;
-  ;; the text ships from skein.spools.agents, the accessor stays on shuttle
-  (is (= (var-get (requiring-resolve 'skein.spools.agents/review-contract))
+  ;; the text ships from skein.spools.delegation, the accessor stays on shuttle
+  (is (= (var-get (requiring-resolve 'skein.spools.delegation/review-contract))
          ((requiring-resolve 'skein.spools.agent-run/default-review-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run :treadle-error]
          (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
-  (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))]
+  (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
 
@@ -242,7 +242,7 @@
                                 |sign-off, squash-merge to local main with full verification, then
                                 |green main CI. Registered by .skein/workflows.clj.")}]
               :patterns [{:name "agent-plan"
-                          :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.agents."}
+                          :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.delegation."}
                          {:name "delegate-pipeline"
                           :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
               :queries [{:name "kanban-cards" :usage "strand list --query kanban-cards"}
@@ -522,7 +522,7 @@
     (fn [_rt]
       (load-file ".skein/reviewers.clj")
       ((requiring-resolve 'reviewers/install!))
-      (let [rosters ((requiring-resolve 'skein.spools.agents/rosters))
+      (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))
             roster (first (filter #(= :change-review (:name %)) rosters))
             complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))
             docs-roster (first (filter #(= :docs-review (:name %)) rosters))]

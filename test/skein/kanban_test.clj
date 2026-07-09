@@ -15,7 +15,7 @@
 
   kanban ships on the :test classpath (spools/kanban/src), so install! runs
   directly against the runtime bound by with-runtime — no add-libs sync of an
-  approved workspace root (pattern: skein.agents-test)."
+  approved workspace root (pattern: skein.delegation-test)."
   [f]
   (with-runtime
     (fn [rt _config-dir]

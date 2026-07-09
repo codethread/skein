@@ -13,7 +13,7 @@
             [skein.api.format.alpha :as format-alpha]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.agents :as agents]
+            [skein.spools.delegation :as agents]
             [skein.spools.loom :as loom]
             [skein.spools.util :refer [attr-get]]
             [skein.spools.workflow :as workflow]))

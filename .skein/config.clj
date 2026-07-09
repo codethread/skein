@@ -3,7 +3,7 @@
   thin CLI op surface over the shipped spools.
 
   Thin glue only: `skein.spools.devflow` owns the feature lifecycle,
-  `skein.spools.workflow` is the engine, `skein.spools.agents` owns the
+  `skein.spools.workflow` is the engine, `skein.spools.delegation` owns the
   `strand agent` surface plus the `agent-plan` pattern, and `skein.spools.loom`
   owns the read-only work-graph projections (all activated from init.clj).
   This file registers the devflow wrapper ops, the loom projection ops
@@ -459,7 +459,7 @@
                      |sign-off, squash-merge to local main with full verification, then
                      |green main CI. Registered by .skein/workflows.clj.")}]
    :patterns [{:name "agent-plan"
-               :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.agents."}
+               :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.delegation."}
               {:name "delegate-pipeline"
                :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
    :queries (into [{:name "kanban-cards"
