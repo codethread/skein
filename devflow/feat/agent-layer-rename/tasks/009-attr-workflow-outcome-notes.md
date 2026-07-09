@@ -2,7 +2,7 @@
 
 **Document ID:** `TASK-Alr-009`
 **Phase:** `PLAN-Alr-001.PH2` (d)  **Harness:** build  **Type:** AFK
-**Depends on:** TASK-Alr-005
+**Depends on:** TASK-Alr-006, TASK-Alr-007
 
 ## TASK-Alr-009.P1 Scope
 
@@ -11,6 +11,9 @@ gate-outcome string `workflow/notes`→`workflow/outcome-notes` (removes the col
 concept) plus any renamed run/gate marker these files read to project state
 (`PLAN-Alr-001.AA5`, brief "Workflow gate-outcome string" row). Bench and chime consumers are
 **not** owned here — they are Task 17 (PH4c), kept disjoint from this workflow-core sweep.
+Serialized after Tasks 6 and 7: MI2 reads the renamed run/gate markers those tasks produce, so
+this sweep and its focused suites must land against the already-renamed marker vocabulary, not a
+half-renamed one.
 
 **Owned files (disjoint from sibling PH2/PH4 tasks):**
 - `spools/src/skein/spools/workflow.clj`, `spools/src/skein/spools/loom.clj`,
@@ -33,8 +36,9 @@ concept) plus any renamed run/gate marker these files read to project state
 ## TASK-Alr-009.P3 Validation / Done when
 
 - **TASK-Alr-009.DW1:** Cold focused slice gate green for the touched workflow-core suites
-  (`clojure -M:test skein.workflow-test skein.loom-test skein.carder-test`, exact ns names as they
-  exist). `make test-warm` iterates only.
+  (`clojure -M:test skein.spools.workflow-test skein.spools.loom-test skein.spools.carder-test`,
+  the exact ns names — these workflow-core suites live under `test/skein/spools/` and are consumers,
+  not renamed by this feature). `make test-warm` iterates only.
 - **TASK-Alr-009.DW2:** `make fmt-check lint` pass for the touched namespaces.
 - **TASK-Alr-009.DW3:** `grep -n` confirms no `workflow/notes` (the old gate-outcome string) and no
   stale run/gate marker reads survive in owned files outside `devflow/archive/*`.

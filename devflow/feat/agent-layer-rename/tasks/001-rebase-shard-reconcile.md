@@ -25,8 +25,11 @@ and any shard-ordering file the two blockers moved. Do not rename anything yet.
   queue; `vk8aa` shard-tier cleanup). Resolve conflicts by *keeping the landed base* — never
   discard a sibling's change; merge both graduations.
 - **TASK-Alr-001.MI2:** Confirm the focused-gate infrastructure this feature depends on is present
-  on the rebased base: `scripts/test-warm` exists and runs, and the cold per-namespace runner
-  (`clojure -M:test <ns...>`) works. If either is missing, stop and report — do not proceed.
+  on the rebased base: `scripts/test-warm` exists and runs, the `make test-warm` target resolves
+  (`make -n test-warm` succeeds — the tiered-test-validation queue lands the `Makefile` target as
+  part of the rebase; every downstream task's `make test-warm` iteration loop assumes this base),
+  and the cold per-namespace runner (`clojure -M:test <ns...>`) works. If any is missing, stop and
+  report — do not proceed.
 - **TASK-Alr-001.MI3:** Confirm `vk8aa` has deleted the redundant `shuttle_test` sync deftest and
   settled shard ordering in `test_runner.clj`; if a stale copy survives the rebase, remove exactly
   that residue so it cannot collide with the PH1 suite renames. Do not rename suite files here.

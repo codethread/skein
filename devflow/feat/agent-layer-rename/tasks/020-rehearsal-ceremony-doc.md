@@ -18,16 +18,21 @@ itself is Task 22 (`hitl`).
 
 ## TASK-Alr-020.P2 Must implement exactly
 
-- **TASK-Alr-020.MI1:** Record the rehearsal recipe: copy the canonical world's `data/skein.sqlite`
-  into a `mktemp -d` `--workspace` world (guard every expansion with `${ws:?}`; never the canonical
-  world, never a shared scratch path), run the renamed code + the Task 19 script there, confirm
-  smoke (`agent status` / `stalled-gates` / `kanban board` read clean on the new keys).
+- **TASK-Alr-020.MI1:** Record the rehearsal recipe: resolve the canonical world's **live** SQLite
+  path from `mill weaver status --workspace <canonical>` (`database_path` — it lives under the
+  weaver state dir `~/.local/state/skein/weavers/<hash>/data/skein.sqlite`, **not** workspace-local
+  `data/`), copy that db file into a `mktemp -d` scratch location (guard every expansion with
+  `${ws:?}`; never the canonical world, never a shared scratch path), and run the Task 19 script
+  against the copy's explicit `--db` path. Then confirm smoke on the new keys with the runnable
+  commands: `strand agent status`, `strand ready --query stalled-gates`, `strand kanban board`.
 - **TASK-Alr-020.MI2:** Execute that rehearsal once and capture the result (key-rewrite counts,
   smoke output) in the doc as evidence the script is safe.
 - **TASK-Alr-020.MI3:** Write the canonical-cutover ceremony as an ordered runbook: quiet the board →
-  run the script against the canonical db → **user-signed weaver restart (HARD STOP — coordinator +
-  user only)** → post-restart smoke (`PROP-Alr-001.C5`). Mark the restart step explicitly as the
-  human sign-off gate and cross-reference Task 22.
+  run the script against the canonical world's **live** db (path from `mill weaver status --workspace
+  <canonical>` → `database_path`, under the weaver state dir, not workspace-local `data/`) →
+  **user-signed weaver restart (HARD STOP — coordinator + user only)** → post-restart smoke
+  (`PROP-Alr-001.C5`). Mark the restart step explicitly as the human sign-off gate and
+  cross-reference Task 22.
 - **TASK-Alr-020.MI4:** State plainly that a worker never runs the canonical cutover or restart
   (repo hard rule; `PROP-Alr-001.C4/DW4`).
 

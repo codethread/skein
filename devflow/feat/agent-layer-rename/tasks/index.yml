@@ -61,7 +61,7 @@ tasks:
     status: pending
     harness: build
     type: AFK
-    blocked_by: [5]
+    blocked_by: [6, 7]
   - id: 10
     description: "PH2e: event-type keyword rename (:agent-run/engine, :gate/engine)"
     task_file: tasks/010-event-type-keywords.md
@@ -117,7 +117,7 @@ tasks:
     status: pending
     harness: build
     type: AFK
-    blocked_by: [6, 7]
+    blocked_by: [6, 7, 8]
   - id: 18
     description: "PH5: apply the three spec deltas to root specs; mark Merged"
     task_file: tasks/018-spec-delta-application.md

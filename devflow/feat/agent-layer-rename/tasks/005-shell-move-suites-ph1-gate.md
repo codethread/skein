@@ -14,7 +14,8 @@ the last serial PH1 task; it owns the whole-tree class-1 verification.
 
 **Owned files (disjoint):**
 - `spools/src/skein/spools/reed.clj` → `spools/src/skein/spools/executors/shell.clj`.
-- `test/skein/spools/reed_test.clj` → the executors/shell suite path.
+- `test/skein/spools/reed_test.clj` → `test/skein/spools/executors/shell_test.clj` (the suite stays
+  under `test/skein/spools/`, so its `ns` renames to `skein.spools.executors.shell-test`).
 - `test/skein/test_runner.clj` — the `reed`/`reed-test` entries **and** the final cross-check that
   all four renamed namespaces resolve (serial; Tasks 3–4 set their own entries).
 - `test/skein/surface_baseline.edn` — hand-edited golden (deliberate edit, **not** regen), covering
@@ -40,8 +41,8 @@ the last serial PH1 task; it owns the whole-tree class-1 verification.
 
 - **TASK-Alr-005.DW1:** Cold focused gate green for all four moved suites + config + runner load:
   `clojure -M:test skein.agent-run-test skein.executors.subagent-test skein.delegation-test
-  skein.executors.shell-test skein.config-test` and `test_runner` loads. `make test-warm` iterates
-  only.
+  skein.spools.executors.shell-test skein.config-test` and `test_runner` loads. `make test-warm`
+  iterates only.
 - **TASK-Alr-005.DW2:** `make build`; `make reflect-check` at zero findings (proves **both**
   `deps.edn` extra-paths landed — `PROP-Alr-001.P5.H4`); `make fmt-check lint`.
 - **TASK-Alr-005.DW3:** `grep -n` tree-wide confirms **no** class-1 survivors for

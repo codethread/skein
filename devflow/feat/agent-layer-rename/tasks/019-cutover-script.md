@@ -33,9 +33,12 @@ executed against the canonical world only by the coordinator with user sign-off 
   in the old vocabulary by design.
 - **TASK-Alr-019.MI4:** The event-type keywords (`:agent-run/engine`, `:gate/engine`) are **not**
   durable attributes — the script must not touch them (brief event-kw row).
-- **TASK-Alr-019.MI5:** The script operates on a workspace's `data/skein.sqlite` given by a
-  `--workspace` path (or explicit db path); it must refuse to run without an explicit target — no
-  implicit canonical-world discovery.
+- **TASK-Alr-019.MI5:** The script operates on an explicit SQLite db path. A live workspace's db is
+  **not** at workspace-local `data/skein.sqlite` — it lives under the weaver state dir
+  (`~/.local/state/skein/weavers/<hash>/data/skein.sqlite`), and the workspace `data/` dir may not
+  exist. Resolve the real path from `mill weaver status --workspace <w>` (`database_path`) or accept
+  an explicit `--db <path>`; the script must refuse to run without an explicit db target — no
+  implicit canonical-world discovery, no workspace-local `data/` assumption.
 
 ## TASK-Alr-019.P3 Validation / Done when
 

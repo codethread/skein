@@ -2,15 +2,17 @@
 
 **Document ID:** `TASK-Alr-017`
 **Phase:** `PLAN-Alr-001.PH4` (c)  **Harness:** build  **Type:** AFK
-**Depends on:** TASK-Alr-006, TASK-Alr-007
+**Depends on:** TASK-Alr-006, TASK-Alr-007, TASK-Alr-008
 
 ## TASK-Alr-017.P1 Scope
 
 Reconcile the bench and chime spool consumers that read renamed run/gate attrs — their read-side
 markers and consumer prose (`PLAN-Alr-001.AA5/PH4`). Kept disjoint from the workflow-core sweep
 (Task 9 owns `workflow.clj`/`loom.clj`/`carder.clj`): this task owns `bench.clj` and `chime.clj`,
-so no two mutators share a file (`PLAN-Alr-001.TC2`). Depends on the run-attr (Task 6) and gate
-(Task 7) sweeps whose new strings these consumers read.
+so no two mutators share a file (`PLAN-Alr-001.TC2`). Depends on the run-attr (Task 6), gate
+(Task 7), and review/panel/note (Task 8) sweeps whose new strings these consumers read — chime
+notifies on `review/*`, `panel/*`, and `note/*`, so it must wait on the delegation-side split
+(Task 8) to avoid observing a half-renamed cross-family state.
 
 **Owned files (disjoint from sibling PH2/PH4 tasks):**
 - `spools/bench/src/skein/spools/bench.clj` + its suite.

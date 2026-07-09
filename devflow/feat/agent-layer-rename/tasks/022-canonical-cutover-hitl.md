@@ -23,12 +23,14 @@ data in the shared world irreversibly. The user must be present at the restart
 - **TASK-Alr-022.MI1:** Precondition: Task 21 acceptance is green (code landed) and Task 20's
   rehearsal passed against a SQLite **copy**. Do not proceed otherwise.
 - **TASK-Alr-022.MI2:** Quiet the board (no in-flight runs mid-write), then run the Task 19 cutover
-  script against the canonical world's `data/skein.sqlite`, following the Task 20 ceremony doc
-  exactly.
+  script against the canonical world's **live** db — resolve its path from `mill weaver status
+  --workspace <canonical>` (`database_path`, under the weaver state dir, not workspace-local
+  `data/`) — following the Task 20 ceremony doc exactly.
 - **TASK-Alr-022.MI3:** **HARD STOP — user sign-off:** hand to the user for the canonical weaver
   restart. The agent does not restart the canonical weaver.
 - **TASK-Alr-022.MI4:** After the user-signed restart, run the `PROP-Alr-001.C5` post-restart smoke
-  (`agent status` / `stalled-gates` / `kanban board` on the new keys) and confirm clean.
+  on the new keys with the runnable commands — `strand agent status`, `strand ready --query
+  stalled-gates`, `strand kanban board` — and confirm clean.
 
 ## TASK-Alr-022.P3 Validation / Done when
 
