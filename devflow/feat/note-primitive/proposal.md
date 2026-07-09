@@ -153,7 +153,9 @@ namespace exposing `note!` and `notes`. See PROP-Np-001.Q2 for the placement dec
 Both read the runtime from `:op/runtime` like every other batteries op (`batteries.clj:206`). JSON output shapes match
 the primitive so agent tooling is stable:
 
-- `strand note` → `{"id": "<note-id>", "note-for": "<target-id>"}` (mirrors `agent_run.clj:1956`).
+- `strand note` → `{"id": "<note-id>", "target": "<target-id>"}` — `target` is an output-only projection derived from
+  the `notes` edge, never a stored attribute (C8). The old `note-for` wire name dies with the attribute; the delegation
+  `agent note` output adopts the same projection (its contract is the spool README, rewritten in C9).
 - `strand notes` → an ordered array of `{"id", "note", "at", "by"?, "round"?}` (mirrors `agent_run.clj:1968-1972`).
 
 Batteries is a classpath-shipped reference spool whose contract is `spools/batteries.md` (SPEC-005.C3), so the new

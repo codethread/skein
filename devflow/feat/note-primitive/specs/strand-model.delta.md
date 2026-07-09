@@ -42,7 +42,9 @@ These are exact editing instructions applied at implementation time.
   > The `notes` relation is a core-owned operational edge from a closed note strand to the target it annotates (note
   > `--notes--> target`), recording append-only memory attached to that target; it is the single durable encoding of that
   > attachment and is declared acyclic. A note's content lives in self-describing `note/*` attributes, never in a
-  > target-pointing attribute, so the edge is the sole linkage and nothing else names the target.
+  > target-pointing attribute, so the edge is the sole linkage and nothing else names the target. The blessed shape is
+  > `note/text` (the content) and `note/at` (the write time), with optional `note/by` and `note/round`; note strands are
+  > born closed and stay open to decorating attributes owned by their writers.
 
   Rationale for placement: `SPEC-001.P5` is the Edges section that governs the named relation vocabulary and its
   acyclicity, so the `notes` classification belongs beside the `serves` one rather than in a spool doc. The behavioral

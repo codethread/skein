@@ -26,7 +26,7 @@ proposal names rather than a silent omission.
 ## SPEC-Np-003.P3 Flagged (out of scope for F3)
 
 - **SPEC-Np-003.F1:** None. No dispatcher flag, entrypoint, payload, selection-precedence, or mill-command contract moves.
-  The JSON output shapes of the two verbs (`PROP-Np-001.C5`: `{"id", "note-for"}` for `note`; the ordered
+  The JSON output shapes of the two verbs (`PROP-Np-001.C5`: `{"id", "target"}` for `note`; the ordered
   `{"id","note","at","by"?,"round"?}` array for `notes`) are op result shapes documented in `spools/batteries.md`, not
   the byte-faithful transport contract `SPEC-002.C4` governs — the dispatcher relays op output verbatim as NDJSON either
   way.

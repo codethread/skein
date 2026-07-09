@@ -30,7 +30,8 @@ live writers migrate onto the primitive: kanban sheds its `parent-of` annotation
 overload F2 removed from serving) and delegation's `agent note`/`agent notes` re-point at the new home
 (`PROP-Np-001.C7`). Specs (`SPEC-Np-001`/`SPEC-Np-002`) and docs (`PROP-Np-001.C9`) land in the same commit set. Because
 the unified reader walks the relation regardless of strand state, the code landing is paired with a rehearsed one-shot
-HISTORY rewrite (`PROP-Np-001.C10`) so every pre-cutover note is readable — the epic's one deliberate departure from the
+HISTORY rewrite (`PROP-Np-001.C10`) so every pre-cutover note with a surviving target is readable (the 67 whose targets
+were burned stay inert old-shape memory — `PROP-Np-001.Q4`/`C11`) — the epic's one deliberate departure from the
 active-only rewrite rule — ending at a user-signed weaver restart (`PROP-Np-001.C13`).
 
 Deliberately not built (`PROP-Np-001.C14`, `NG1`–`NG5`): no dual-read or shim on the live path, no structured review
@@ -196,7 +197,8 @@ siblings share no file.
   (`batteries.clj:206` pattern) and delegating to `skein.api.notes.alpha/note!`/`notes`; append two entries to
   `op-registrations` (`:428-440`): `['note note-arg-spec :mutating 'skein.spools.batteries/note-op]` and
   `['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]`. JSON output mirrors the primitive:
-  `strand note` → `{"id", "note-for"}`; `strand notes` → an ordered array of `{"id","note","at","by"?,"round"?}`.
+  `strand note` → `{"id", "target"}` (`target` is an output-only projection from the `notes` edge — `PROP-Np-001.C5`);
+  `strand notes` → an ordered array of `{"id","note","at","by"?,"round"?}`.
 - **Validation:** `clojure -M:test skein.spools.batteries-test` green (focused-runnable).
 - **Done-when:** `strand note`/`strand notes` register as batteries ops; `strand notes <id>` returns notes from every
   writer that used the primitive; JSON shapes match `PROP-Np-001.C5`.
