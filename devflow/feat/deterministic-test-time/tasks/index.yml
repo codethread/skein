@@ -37,7 +37,7 @@ tasks:
   - id: 8
     description: Re-evaluate weaver-test on lane quiescence
     task_file: tasks/008-weaver-test-migration.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 9
     description: Graduate island vectors + full-suite acceptance

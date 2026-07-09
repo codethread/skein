@@ -209,3 +209,7 @@ serial-island comments updated. Full locked suite green.
 ### PLAN-Dtt-001.DN8 Task 007 chime migration — 2026-07-09
 
 - Replaced chime's fixed inter-poll sleeps with lane quiescence followed by the existing notifier-thread join, leaving the real notifier subprocess and chime engine untouched. Q2 resolved without a split: all notifier assertions tolerate the deterministic settle signal as a whole `skein.chime-test` namespace. Focused chime tests passed via the in-process classpath invocation, and `make fmt-check lint` was clean.
+
+### PLAN-Dtt-001.DN9 Task 008 weaver-test migration — 2026-07-09
+
+- Replaced weaver-test's bare event-delivery sleeps with `events.alpha/await-quiescent!` against each fixture's unpublished disposable runtime, preserving the existing fixture drain and exact captured-event assertions. Non-event sleeps and count-based polling helpers were left outside this timing-seam scope. Focused `skein.weaver-test` passed via the in-process classpath invocation, and `make fmt-check lint` was clean.
