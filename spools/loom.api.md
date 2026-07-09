@@ -67,7 +67,7 @@ Return workflow flow status by joining history, frontier, gates, runs, and stall
   this run's own gates and their delegated runs so records from other workflows
   never surface in an unrelated run's payload. Includes a `:dev/mermaid` gate
   chain rendered by `gate-chain-mermaid`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L252-L284">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L267-L300">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/gate-chain-mermaid">`gate-chain-mermaid`</a>
 ``` clojure
@@ -80,7 +80,7 @@ Return a dev-only Mermaid chain showing ready, stalled, and closed gates.
   `gates` are compact gate projections (as from `flow-status`); `ready-ids` is
   the set of ids on the ready frontier. This is the single render helper for the
   gate chain, so any op reusing it renders identical marker/node/link logic.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L232-L250">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L247-L265">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/install!">`install!`</a>
 ``` clojure
@@ -93,7 +93,7 @@ Return loom installation metadata for trusted registration by name.
   Loom registers no ops; it is a read-only projection library that repo config
   and other spools compose. This metadata mirrors the other read-only spools for
   discovery symmetry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L286-L299">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L302-L315">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/summarize">`summarize`</a>
 ``` clojure
