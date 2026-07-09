@@ -3,10 +3,10 @@
 **Document ID:** `PLAN-Dtt-001`
 **Feature:** `deterministic-test-time`
 **Proposal:** [proposal.md](./proposal.md)
-**RFC:** [Deterministic Test Time RFC-Dtt-001](../../rfcs/2026-07-09-deterministic-test-time.md)
+**RFC:** [Deterministic Test Time RFC-Dtt-001](./rfcs/2026-07-09-deterministic-test-time.md)
 **Root specs:** [daemon-runtime.md](../../specs/daemon-runtime.md), [repl-api.md](../../specs/repl-api.md), [alpha-surface.md](../../specs/alpha-surface.md)
 **Feature specs:** [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md), [specs/repl-api.delta.md](./specs/repl-api.delta.md), [specs/alpha-surface.delta.md](./specs/alpha-surface.delta.md)
-**Status:** Reviewed
+**Status:** Shipped
 **Last Updated:** 2026-07-09
 
 ## PLAN-Dtt-001.P1 Goal and scope
@@ -217,3 +217,9 @@ serial-island comments updated. Full locked suite green.
 ### PLAN-Dtt-001.DN10 Task 009 island graduation — 2026-07-09
 
 - Graduated the eight deterministic scheduler/cron/treadle/reed/chime/weaver suites from the serial island to the parent parallel batch and trimmed the serial comments to bench plus singleton-semantics suites only. Full `clojure -M:test` passed with the graduated suites reporting `:parent/parallel` and aggregate `{:test 736 :pass 5430 :fail 0 :error 0}`; `(cd cli && go test ./...)`, `clojure -M:smoke`, and `make fmt-check lint reflect-check docs-check` were also clean. No generated SQLite or runtime-metadata artifacts remained in `git status --short`.
+
+### PLAN-Dtt-001.DN11 Finish/archive — spec promotion — 2026-07-09
+
+- Shipped scope: two runtime control seams — a runtime-owned clock component (`skein.api.runtime.alpha/now` read; `skein.test.alpha/set-clock!`/`advance!` controls; a clock-pump registry `advance!` drives) and an event-lane settle primitive (`skein.api.events.alpha/await-quiescent!` over a dispatch-in-progress flag raised before the worker claims an event) — plus six suite migrations (scheduler, cron, treadle, reed, chime, weaver) onto them and the island graduation. The scheduler collapsed its private clock onto the shared runtime clock (`scheduler-state-version` 1→2); cron reads the runtime clock for due-ness and registers a pump; neither reed nor chime became a clock consumer (they settle via off-lane signals layered on `await-quiescent!`). The serial island is now bench plus the singleton-semantics suites only (`repl`/`userland`/`weaver-publication`/`peers`/`bench`).
+- Promoted the three spec deltas into their root specs (DELTA-Dtt-001→SPEC-004.C1/C1a runtime clock, C64/C74b event-lane quiescence, C102a scheduler-as-clock-consumer; DELTA-Dtt-002→SPEC-003.C17 `now` read, C28/C28a `test.alpha` controls, the events.alpha P4 enumeration; DELTA-Dtt-003→SPEC-005.C5a classification) after verifying each claim against the shipped code, and marked each delta `Status: Merged`.
+- Focused-runner-timing caveat (recorded in the AFK step note): the `:test` runner rejects namespace argv, so each slice's focused validation ran the named namespaces through an in-process classpath invocation rather than `clojure -M:test <ns...>`; the final acceptance slice ran the full locked `clojure -M:test`.

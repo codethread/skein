@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Dtt-002`
 **Root spec:** [repl-api.md](../../../specs/repl-api.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Reviewed
+**Status:** Merged
 **Last Updated:** 2026-07-09
 
 ## DELTA-Dtt-002.P1 Summary
@@ -13,7 +13,7 @@ pair that installs a deterministic clock and advances it. The blessed `runtime.a
 read (contract in [daemon-runtime.delta.md](./daemon-runtime.delta.md), DELTA-Dtt-001.CC2) is
 listed among the `runtime.alpha` P4 helpers, and the `skein.api.events.alpha` P4 enumeration
 gains `await-quiescent!`. Additive to SPEC-003; no existing helper changes.
-See [RFC-Dtt-001](../../../rfcs/2026-07-09-deterministic-test-time.md) REC2/REC4.
+See [RFC-Dtt-001](../rfcs/2026-07-09-deterministic-test-time.md) REC2/REC4.
 
 ## DELTA-Dtt-002.P2 Contract changes
 

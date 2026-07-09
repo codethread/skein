@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Dtt-001`
 **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Reviewed
+**Status:** Merged
 **Last Updated:** 2026-07-09
 
 ## DELTA-Dtt-001.P1 Summary
@@ -13,7 +13,7 @@ waiting on wall-clock time and real async delivery: a runtime-owned clock compon
 place of `(Instant/now)`, and a blocking event-lane quiescence primitive. Both are additive
 to SPEC-004; production behaviour is unchanged (a real weaver reads a real wall clock and its
 executors fire on real time). The scheduler's private clock (SPEC-004.P10d) collapses into a
-consumer of the shared clock. See [RFC-Dtt-001](../../../rfcs/2026-07-09-deterministic-test-time.md).
+consumer of the shared clock. See [RFC-Dtt-001](../rfcs/2026-07-09-deterministic-test-time.md).
 
 ## DELTA-Dtt-001.P2 Contract changes
 
