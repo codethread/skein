@@ -14,7 +14,13 @@
   State is runtime-owned via `skein.api.runtime.alpha/spool-state`, so two
   runtimes in one JVM keep independent executors, job tables, and failure logs.
   A job execution that throws is recorded in `failures` and never stops the
-  cadence (TEN-003)."
+  cadence (TEN-003).
+
+  Due-ness reads the runtime clock (`skein.api.runtime.alpha/now`): in
+  production that clock tracks the wall clock, so the real scheduled executor
+  fires unchanged, but a runtime under a manual clock releases due jobs through
+  a registered clock-pump instead of waiting on wall time
+  (DELTA-Dtt-001.CC3)."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
@@ -121,7 +127,8 @@
     {:deregistered (when (contains? old id) id)}))
 
 (defn- schedule-fire! [runtime id delay-ms]
-  (let [fire-at (.plusMillis (Instant/now) (long delay-ms))
+  (let [^Instant now (runtime/now runtime)
+        fire-at (.plusMillis now (long delay-ms))
         task ^Runnable (fn [] (execute-job! runtime id))
         fut (.schedule (executor runtime) task (long delay-ms) TimeUnit/MILLISECONDS)]
     ;; Only stamp the future when the job is still registered; a deregister that
@@ -158,6 +165,43 @@
       (when (contains? @(jobs-atom runtime) id)
         (schedule-fire! runtime id (reschedule-delay-ms (:interval-ms job) (:jitter-ms job) (rng runtime))))
       outcome)))
+
+(defn- due? [^Instant now job]
+  (when-let [ts (:next-fire-at job)]
+    (not (.isBefore now (Instant/parse ts)))))
+
+(defn- fire-due!
+  "Clock-consumer pump: fire every registered job whose `:next-fire-at` is not
+  after the runtime clock.
+
+  In production the runtime clock tracks the wall clock, so the real
+  `ScheduledFuture` armed by `schedule-fire!` always wins the race and this pump
+  finds nothing due. Under a manual clock, `skein.test.alpha/advance!` can move
+  the clock past a job's fire instant without any wall time passing, leaving
+  the real future armed for a delay that will never elapse; this pump cancels
+  that future and executes the job in its place so the fire is released before
+  `advance!` returns (DELTA-Dtt-001.CC3)."
+  [runtime]
+  (let [now (runtime/now runtime)
+        due-ids (->> @(jobs-atom runtime) vals (filter #(due? now %)) (mapv :id))]
+    (doseq [id due-ids]
+      (when-let [job (get @(jobs-atom runtime) id)]
+        (when-let [^ScheduledFuture fut (:future job)]
+          (.cancel fut false))
+        (execute-job! runtime id)))))
+
+(defn- register-pump!
+  "Register cron's due-check with the runtime clock-pump registry so
+  `skein.test.alpha/advance!` can release due jobs deterministically.
+
+  Pokes `runtime`'s `:clock-pumps` slot directly rather than an
+  `skein.api.runtime.alpha` accessor: the clock-pump registry is deliberately
+  kept off the alpha surface (DELTA-Dtt-003.D1), so cron reaches it the same
+  way its only other consumer, the scheduler, does."
+  [runtime]
+  (when-let [pumps (:clock-pumps runtime)]
+    (swap! pumps assoc ::pump fire-due!))
+  nil)
 
 (defn- initial-delay-ms [runtime job]
   (let [{:keys [id interval-ms jitter-ms initial-delay-fn]} job
@@ -227,11 +271,14 @@
 (defn install!
   "Activate cron on the current runtime, creating the scheduled executor.
 
-  Registers no jobs — trusted config registers jobs with `register!`. Called as
-  a no-arg module `:call` at startup/reload."
+  Registers no jobs — trusted config registers jobs with `register!`. Also
+  (re)registers the clock-consumer pump so deterministic tests can drive due
+  jobs off the runtime clock. Called as a no-arg module `:call` at
+  startup/reload."
   []
   (let [runtime (current/runtime)]
     (state runtime)
+    (register-pump! runtime)
     {:installed true
      :namespace 'skein.spools.cron
      :jobs (mapv :id (jobs runtime))}))

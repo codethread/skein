@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: Migrate cron onto clock-driven due-ness
     task_file: tasks/004-cron-migration.md
-    status: pending
+    status: complete
     blocked_by: [1, 2]
   - id: 5
     description: Migrate treadle onto lane quiescence + shuttle await

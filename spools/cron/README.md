@@ -10,6 +10,8 @@ It owns only runtime-local weaver-lifetime state (the executor, the job table, t
 
 Cron itself spawns no external processes and ships no jobs. Because a real job almost always escalates capability (a shell subprocess, a network call), cron is an approved local-root spool like shuttle rather than a shipped classpath spool.
 
+Due-ness reads the runtime clock (`skein.api.runtime.alpha/now`) rather than the wall clock directly: in production that clock tracks wall time, so fires still happen on the real scheduled executor, but a deterministic test that installs a manual clock (`skein.test.alpha/set-clock!`) and steps it with `advance!` releases due jobs synchronously through cron's registered clock-consumer pump instead of waiting on wall time.
+
 For composition recipes — registering an interval+jitter job, seeding the first fire from external state, registering from `init.clj` rather than `install!`, and coordinating many weavers with a best-effort lock — see the [cookbook](../cron.cookbook.md).
 
 ## Dependency information
