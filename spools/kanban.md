@@ -42,7 +42,7 @@ Card state lives under the `kanban/*` attribute topic:
 | `branch` | The work branch; required at claim. |
 | `worktree` | Optional worktree path. |
 
-The card is the **work root**: feature plans, devflow runs, review strands, and task DAGs hang under it with `parent-of` edges, and the claim-time `branch`/`owner`/`worktree` stamp makes the whole subtree discoverable by branch (see the repo's `strand branches` convention). Shuttle runs are never tracked by kanban directly, but because delegated work hangs under card descendants, `strand subgraph <card-id>` (and future queries) can project every agent working under a feature.
+The card is the **work root**: feature plans, devflow runs, review strands, and task DAGs hang under it with `parent-of` edges, and the claim-time `branch`/`owner`/`worktree` stamp makes the whole subtree discoverable by branch (see the repo's `strand branches` convention). Agent-run runs are never tracked by kanban directly, but because delegated work hangs under card descendants, `strand subgraph <card-id>` (and future queries) can project every agent working under a feature.
 
 **Relating work.** Relate cards or tasks to each other with `depends-on` edges (`strand update <a> --edge depends-on:<b>`); agents check the `:related` list in `kanban card <id>` when claiming or resuming so blockers and dependents surface without extra queries.
 

@@ -1,6 +1,6 @@
-// AGENTS tab: three views over the live shuttle delegations. `v` toggles the two
+// AGENTS tab: three views over the live agent delegations. `v` toggles the two
 // list views; `d` on a plans node opens the graph for that subtree.
-//   RUNS  (default) — the flat table of shuttle runs (`strand agent ps` +
+//   RUNS  (default) — the flat table of agent runs (`strand agent ps` +
 //                     `strand show` per run + local git branch).
 //   PLANS           — the delegation forest from `strand agent status`
 //                     (runs nested under their task, tasks under their plan,

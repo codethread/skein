@@ -2,7 +2,7 @@
   "Userland spool that spawns coding agents in user-chosen harnesses.
 
   An agent run is a strand carrying `agent-run/*` attributes; creating the strand
-  is the API. The shuttle listens for graph mutations, spawns each pending run
+  is the API. The engine listens for graph mutations, spawns each pending run
   the moment its strand becomes ready (`depends-on` readiness is the only
   scheduler), captures the harness process output back onto the run strand, and
   closes the strand so dependent runs unblock. Everything is asynchronous by
@@ -62,7 +62,7 @@
 (def ^:private default-max-attempts 3)
 
 (def ^:dynamic *runtime*
-  "Runtime captured for asynchronous shuttle worker threads."
+  "Runtime captured for asynchronous engine worker threads."
   nil)
 
 (defn- rt []
@@ -76,17 +76,17 @@
           (.setDaemon true))))))
 
 (defn- warn!
-  "Emit a loud-but-non-fatal shuttle warning to the weaver's stderr log.
+  "Emit a loud-but-non-fatal engine warning to the weaver's stderr log.
 
   Used where failing dead would be worse than continuing (a reload replacing a
   set-once registration): the world stays operable and the divergence is still
   visible in the weaver log."
   [message data]
   (binding [*out* *err*]
-    (println (str "[shuttle] WARN " message " " (pr-str data)))))
+    (println (str "[agent-run] WARN " message " " (pr-str data)))))
 
 (def ^:private state-version
-  "Shape version for the shuttle's runtime spool-state map.
+  "Shape version for the engine's runtime spool-state map.
 
   Bump this whenever `new-state`'s key set changes. Spool state survives
   `reload!`, so a post-upgrade reload would otherwise reuse a preserved map that
@@ -102,8 +102,8 @@
   3)
 
 (defn- new-state []
-  (let [scheduler (ScheduledThreadPoolExecutor. 1 (daemon-thread-factory "shuttle-recovery"))
-        workers (Executors/newCachedThreadPool (daemon-thread-factory "shuttle-run"))]
+  (let [scheduler (ScheduledThreadPoolExecutor. 1 (daemon-thread-factory "agent-run-recovery"))
+        workers (Executors/newCachedThreadPool (daemon-thread-factory "agent-run-exec"))]
     (.setRemoveOnCancelPolicy scheduler true)
     {:harness-registry (atom {})
      :alias-registry (atom {})
@@ -122,9 +122,9 @@
                  (.shutdownNow scheduler)
                  (.shutdownNow workers)
                  (when-not (.awaitTermination scheduler 1000 TimeUnit/MILLISECONDS)
-                   (fail! "Shuttle recovery scheduler did not stop" {}))
+                   (fail! "Engine recovery scheduler did not stop" {}))
                  (when-not (.awaitTermination workers 1000 TimeUnit/MILLISECONDS)
-                   (fail! "Shuttle worker executor did not stop" {})))}))
+                   (fail! "Engine worker executor did not stop" {})))}))
 
 (defn- classify-registry-entry
   "Classify a preserved registry entry as `:harness` or `:alias` by exact shape
@@ -145,7 +145,7 @@
                     :matches-alias? alias?}))))
 
 (defn- migrate-state
-  "Reinit a preserved shuttle state whose shape predates `state-version`.
+  "Reinit a preserved engine state whose shape predates `state-version`.
 
   The v2 mixed `:harness-registry` is split by entry shape into the v3
   `:harness-registry` (tools) and `:alias-registry` (seats); backend registry,
@@ -185,7 +185,7 @@
   [k]
   (let [s (state)]
     (or (get s k)
-        (fail! "Required shuttle spool-state entry is missing"
+        (fail! "Required engine spool-state entry is missing"
                {:missing k :present (vec (sort (keys s)))}))))
 
 (defn- harness-registry [] (:harness-registry (state)))
@@ -198,7 +198,7 @@
 (defn- ^java.util.concurrent.ExecutorService worker-executor [] (require-state-entry :worker-executor))
 
 (defn in-flight-run-ids
-  "Return the set of run ids the shuttle is currently tracking in-flight
+  "Return the set of run ids the engine is currently tracking in-flight
   (claimed, running, or awaiting recovery).
 
   Attention detectors use this to tell a genuinely parked ready run — one that
@@ -359,7 +359,7 @@
   A harness def is plain data: required `:argv` (vector of strings; the run
   prompt is appended per `:prompt-via`, default `:arg`), optional `:parse`
   strategy (:raw, :claude-json, :pi-json — default :raw), `:prompt-via`
-  (:arg or :stdin), `:preamble?` (default true; when false the shuttle run
+  (:arg or :stdin), `:preamble?` (default true; when false the run
   preamble is not injected), `:env` map, `:cwd`, `:doc`, `:resume` — an argv
   splice of literal strings and placeholder keywords (from the closed
   `resume-placeholder-inputs` set) that continues a predecessor's session, each
@@ -670,7 +670,7 @@
 ;; Run vocabulary and preamble
 
 (def run-query
-  "Query form selecting all shuttle run strands."
+  "Query form selecting all agent run strands."
   [:= [:attr "agent-run/run"] "true"])
 
 (def ^:private pending-query
@@ -718,7 +718,7 @@
 
 
 (defn set-preamble-extension!
-  "Register additional preamble text appended after shuttle's engine contract.
+  "Register additional preamble text appended after the engine's worker contract.
 
   Reload-tolerant, but it distinguishes the two cases the previous fail-loud path
   could not tell apart:
@@ -726,7 +726,7 @@
   - Replay (same spool re-running its own registration on `reload!`): identical
     text is a silent no-op (`:replaced false`).
   - Conflict (a second, distinct registrant clashing on the worker contract):
-    different text replaces the value AND is recorded durably in the shuttle's
+    different text replaces the value AND is recorded durably in the engine's
     `:preamble-conflicts` state (see `preamble-extension-conflicts`), plus a
     stderr warning. It deliberately does not fail: a hard error here would abort a
     `reload!` mid-startup and leave the world with zero ops (the original
@@ -759,8 +759,8 @@
 
 (defn- preamble [run-id prompt-prefix]
   (let [cmd (pinned-strand-command)]
-    (str "[shuttle run context]\n"
-         "You are a headless subagent run managed by the Skein shuttle spool.\n"
+    (str "[agent-run context]\n"
+         "You are a headless subagent run managed by the Skein agent-run spool.\n"
          "run-id: " run-id "\n"
          "- Every strand command MUST be invoked exactly as: " cmd " <command...>\n"
          "  (the env prefix and --workspace flag are both required; ambient env is unreliable)\n"
@@ -786,8 +786,8 @@
   (let [cmd (pinned-strand-command)
         id (:id run)
         for-id (sattr run "for")]
-    (str "[shuttle interactive session context]\n"
-         "You are an interactive agent session managed by the Skein shuttle spool.\n"
+    (str "[agent-run interactive session context]\n"
+         "You are an interactive agent session managed by the Skein agent-run spool.\n"
          "run-id: " id "\n"
          "- Every strand command MUST be invoked exactly as: " cmd " <command...>\n"
          "  (the env prefix and --workspace flag are both required; ambient env is unreliable)\n"
@@ -860,6 +860,8 @@
 ;; Spawn engine
 
 (defn- log-dir []
+  ;; on-disk log dir keeps the legacy "shuttle" name: existing run records point
+  ;; at logs under it, and renaming the layout is a behavior change beyond this rename
   (doto (io/file (get-in (rt) [:metadata :state-dir]) "shuttle")
     (.mkdirs)))
 
@@ -1156,7 +1158,7 @@
   "Resolve and run a run's capture op — the harness `:capture` (harness-aware
   transcripts: session logs, user hook-written dialogue logs) wins over the
   backend's scrollback capture — then persist its stdout as `<id>.capture`
-  under the shuttle log dir. Returns the file path or fails loudly."
+  under the run log dir. Returns the file path or fails loudly."
   [id run backend]
   (let [harness (try (resolve-harness (sattr run "harness")) (catch Exception _ nil))
         [owner op] (or (cond
@@ -1589,7 +1591,7 @@
     (when-let [collisions (seq (filter #(or (contains? control-attrs %)
                                             (str/starts-with? (str %) "agent-run/handle."))
                                        (keys (or attrs {}))))]
-      (fail! "Run :attrs must not override shuttle control attributes" {:keys (vec collisions)}))
+      (fail! "Run :attrs must not override agent-run control attributes" {:keys (vec collisions)}))
     ;; validate provenance targets before the run exists so a bad parent id
     ;; cannot leave a spawned run behind a thrown edge update
     (doseq [parent-id parent-ids]
@@ -1686,7 +1688,7 @@
                                {})
          ;; A run satisfies a --for filter two ways: a structural parent-of edge
          ;; from the target, or gate/step provenance stamped on the run itself
-         ;; (treadle-delegated runs carry no parent-of edge — treadle.md §2). Narrow
+         ;; (subagent-executor-delegated runs carry no parent-of edge — subagent.md §2). Narrow
          ;; to both up front (one indexed edge lookup plus a bulk attr check on the
          ;; already-loaded run strands) rather than summarising every run.
          run-strands (if for
@@ -1704,7 +1706,7 @@
         summaries))))
 
 (defn runs
-  "Return summaries of shuttle runs; opts may filter to `:active` or `:for`.
+  "Return summaries of agent-run runs; opts may filter to `:active` or `:for`.
   Listing doubles as an interactive liveness checkpoint (there is no
   background poller): dead sessions are failed here, best-effort."
   ([] (runs {}))
@@ -1828,7 +1830,7 @@
 ;; Review contract state
 
 (def generic-review-contract
-  "Default contract text for independent shuttle reviews."
+  "Default contract text for independent agent-run reviews."
   (fmt/reflow "
    |Review the target read-only. Report prioritized findings with file:line
    |references when applicable. Do not modify files or close strands. Append
@@ -1854,7 +1856,7 @@
 ;; Install
 
 (defn install!
-  "Install the shuttle into the active weaver: default harnesses, the graph
+  "Install the agent-run engine into the active weaver: default harnesses, the graph
   event listener, crash reconciliation, and a first scan."
   []
   (let [runtime (rt)]
@@ -1864,7 +1866,7 @@
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}
                       'skein.spools.agent-run/on-event
-                      {:spool "shuttle"})
+                      {:spool "agent-run"})
     (let [recovered (reconcile!)]
       {:installed true
        :namespace 'skein.spools.agent-run

@@ -1,5 +1,5 @@
 (ns skein.delegation-test
-  "Tests for the agents coordination spool layered over shuttle."
+  "Tests for the delegation spool layered over the agent-run engine."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.set :as set]
@@ -13,10 +13,10 @@
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-agents
-  "Run f with a fresh weaver runtime that has shuttle and agents installed.
+  "Run f with a fresh weaver runtime that has the agent-run and delegation spools installed.
 
   Nests config-dir under a `.skein` child of the temp root
-  (`test-support`'s `:nest-skein? true` opt): agents/shuttle derive the
+  (`test-support`'s `:nest-skein? true` opt): delegation/agent-run derive the
   worktree root from config-dir's parent, matching the real repo-root/.skein
   layout, so an unnested config-dir would report the wrong workspace root."
   [f]

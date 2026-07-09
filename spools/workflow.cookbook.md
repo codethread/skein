@@ -401,8 +401,8 @@ Honest source: the `github-pr-bindings` / `bind-attrs` reference in `test/skein/
   loop is chained.
 - **Gate + attributes hand off cleanly to an adapter.** Because each expansion is
   a `:subagent` gate carrying `agent-run/*` attributes, `skein.spools.executors.subagent` can
-  fulfill it by spawning a shuttle run and closing the gate with the result — the
-  workflow definition never names the shuttle.
+  fulfill it by spawning an agent-run run and closing the gate with the result — the
+  workflow definition never names the run engine.
 
 Honest source: the `delegate-pipeline` weave pattern in this repo's [`.skein/config.clj`](../.skein/config.clj) (chained `:subagent` gate loop with fn-valued `agent-run/*` attributes and a base-id fan-in to the accept checkpoint).
 

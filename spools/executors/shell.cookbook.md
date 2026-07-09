@@ -1,8 +1,8 @@
-# Skein Reed Spool — Cookbook
+# Skein Shell Executor Spool — Cookbook
 
 Composition recipes for `skein.spools.executors.shell`: how to let a workflow run a shell check as a gate and get pass / fail back on the gate itself, and *why* the executor is shaped the way it is.
 
-This is the **how/why** half of the reed docs. The other two halves are:
+This is the **how/why** half of the shell executor docs. The other two halves are:
 
 - [`executors/shell.md`](./shell.md) — the **contract**: the `shell/*` gate-attribute
   vocabulary, pass / fail semantics, recovery, and the attention surface. Read it
@@ -12,7 +12,7 @@ This is the **how/why** half of the reed docs. The other two halves are:
 
 Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature or the attribute table — it links to them.
 
-Reed sits between two spools that know nothing of process execution: the [workflow engine](../workflow.md), which models an external wait point as a `gate`, and the operating system, which runs commands. Reed is the only namespace that speaks both. Load order matters — **workflow first, then reed** (its `install!` registers the `:shell` executor and runs an initial gate scan) — see [`executors/shell.md`, "Loading"](./shell.md#loading).
+The shell executor sits between two spools that know nothing of process execution: the [workflow engine](../workflow.md), which models an external wait point as a `gate`, and the operating system, which runs commands. The shell executor is the only namespace that speaks both. Load order matters — **workflow first, then the shell executor** (its `install!` registers the `:shell` executor and runs an initial gate scan) — see [`executors/shell.md`, "Loading"](./shell.md#loading).
 
 ## How to read a recipe
 
@@ -25,7 +25,7 @@ Every recipe has the same four parts:
 4. **Why this shape** — the reasoning: why these primitives, what the attribute
    conventions buy you, and what the alternative would cost.
 
-Each recipe cites the honest source it was distilled from — the reed source or its test suite.
+Each recipe cites the honest source it was distilled from — the shell-executor source or its test suite.
 
 ---
 
@@ -33,7 +33,7 @@ Each recipe cites the honest source it was distilled from — the reed source or
 
 **Situation.** A stage produced a file, and the next stage must not start unless that file exists and is non-empty. You want the workflow to block on a real filesystem check, not a self-reported "done".
 
-**Composition.** Model the check as an ordinary `workflow/gate` with waiter `:shell`, carrying the command as `shell/argv`. Reed watches for the gate to become ready, runs `test -s <path>` directly, and — on exit 0 — closes the gate through `workflow/complete!`. A non-zero exit stamps `shell/error` and leaves the gate ready.
+**Composition.** Model the check as an ordinary `workflow/gate` with waiter `:shell`, carrying the command as `shell/argv`. The shell executor watches for the gate to become ready, runs `test -s <path>` directly, and — on exit 0 — closes the gate through `workflow/complete!`. A non-zero exit stamps `shell/error` and leaves the gate ready.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -51,7 +51,7 @@ Each recipe cites the honest source it was distilled from — the reed source or
 
 (workflow/start! "release-1" release {})
 (workflow/complete! "release-1")            ; finish :build; :verify becomes ready
-;; reed runs `test -s target/app.jar`; on exit 0 it stamps the gate
+;; the shell executor runs `test -s target/app.jar`; on exit 0 it stamps the gate
 ;; workflow/outcome-by = "shell", workflow/outcome-notes = "shell command exited 0",
 ;; and :ship becomes ready. A missing/empty jar stamps shell/error instead.
 ```
@@ -59,11 +59,11 @@ Each recipe cites the honest source it was distilled from — the reed source or
 **Why this shape.**
 
 - **The workflow stays executor-agnostic.** The author writes a plain gate with
-  a command; reed runs a plain process. Neither the engine nor the OS grows a
-  dependency on the other — reed is the small adapter that knows both, so a gate
+  a command; the shell executor runs a plain process. Neither the engine nor the OS grows a
+  dependency on the other — the shell executor is the small adapter that knows both, so a gate
   is a pure-data check request (contract
   [`executors/shell.md`, "Overview"](./shell.md#overview)).
-- **Readiness drives it, so nothing polls.** Reed is an event handler over the
+- **Readiness drives it, so nothing polls.** The shell executor is an event handler over the
   same graph the engine watches. The check runs the moment the gate becomes
   ready — after `:build` closes, not before — because `depends-on` readiness is
   the only trigger.
@@ -72,7 +72,7 @@ Each recipe cites the honest source it was distilled from — the reed source or
   and a bounded output tail land on the gate as `shell/exit-code` /
   `shell/output`. The check is part of the workflow's own audit trail.
 
-Honest source: the worked example in [`executors/shell.md`](./shell.md#worked-example), and the happy-path gate test in ``test/skein/spools/reed_test.clj``.
+Honest source: the worked example in [`executors/shell.md`](./shell.md#worked-example), and the happy-path gate test in ``test/skein/spools/executors/shell_test.clj``.
 
 ---
 
@@ -80,7 +80,7 @@ Honest source: the worked example in [`executors/shell.md`](./shell.md#worked-ex
 
 **Situation.** Your check needs a shell feature — a pipe, a glob, `&&`, a `for` loop over several files. A bare `argv` executes a single program with no shell, so none of that works directly.
 
-**Composition.** Reed runs `shell/argv` directly with **no** implicit shell, by design. When you genuinely want shell semantics, ask for them explicitly: make `sh` the program and pass the script as `-c`. The gate is otherwise identical.
+**Composition.** The shell executor runs `shell/argv` directly with **no** implicit shell, by design. When you genuinely want shell semantics, ask for them explicitly: make `sh` the program and pass the script as `-c`. The gate is otherwise identical.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -106,19 +106,19 @@ Honest source: the worked example in [`executors/shell.md`](./shell.md#worked-ex
   asked for `sh`, so you got `sh` (contract
   [`executors/shell.md`, "Gate request attributes"](./shell.md#gate-request-attributes)).
 - **A non-zero exit is a real failure.** The `for` loop `exit 1`s on the first
-  empty file; reed stamps `shell command exited 1` onto `shell/error` with the
+  empty file; the shell executor stamps `shell command exited 1` onto `shell/error` with the
   captured output tail, and the gate stays ready and discoverable rather than
   advancing the workflow.
 
-Honest source: the argv contract in [`executors/shell.md`](./shell.md#gate-request-attributes), and the `sh -c` command tests in ``test/skein/spools/reed_test.clj``.
+Honest source: the argv contract in [`executors/shell.md`](./shell.md#gate-request-attributes), and the `sh -c` command tests in ``test/skein/spools/executors/shell_test.clj``.
 
 ---
 
 ## Recipe: A shell check after a subagent gate
 
-**Situation.** A step is delegated to an agent (a `:subagent` gate the treadle fulfils), and once that agent is done you want a *deterministic* machine check — run the tests, confirm the artifact — before the workflow moves on. You want the agent's work and the objective check to be two separate, composable gates.
+**Situation.** A step is delegated to an agent (a `:subagent` gate the subagent executor fulfils), and once that agent is done you want a *deterministic* machine check — run the tests, confirm the artifact — before the workflow moves on. You want the agent's work and the objective check to be two separate, composable gates.
 
-**Composition.** No new primitive: chain the two gates with `depends-on`. Author the subagent gate as usual, then a `:shell` gate that `:depends-on` it. The subagent gate closes when the treadle delivers the run result; only then does the `:shell` gate become ready, and reed runs the deterministic check.
+**Composition.** No new primitive: chain the two gates with `depends-on`. Author the subagent gate as usual, then a `:shell` gate that `:depends-on` it. The subagent gate closes when the subagent executor delivers the run result; only then does the `:shell` gate become ready, and the shell executor runs the deterministic check.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -141,13 +141,13 @@ Honest source: the argv contract in [`executors/shell.md`](./shell.md#gate-reque
 
 **Why this shape.**
 
-- **Two executors, one graph, zero coupling.** The treadle owns `:subagent`, reed
+- **Two executors, one graph, zero coupling.** The subagent executor owns `:subagent`, the shell executor
   owns `:shell`; each is registered for its own waiter and neither knows the
   other exists. The workflow composes them with the same `depends-on` edge it uses
   for any two steps — the objective check is not baked into the agent gate, it is
   a peer gate that runs after it.
 - **The check runs once the agent's work is real.** `depends-on` readiness means
-  reed does not run the tests until the subagent gate has actually closed with a
+  the shell executor does not run the tests until the subagent gate has actually closed with a
   delivered result. You get "agent did the work, *then* the machine confirms it"
   for free, without the workflow author sequencing anything by hand.
 - **This is the composition, not a new gate type.** An earlier design considered a
@@ -155,13 +155,13 @@ Honest source: the argv contract in [`executors/shell.md`](./shell.md#gate-reque
   gate downstream of a `:subagent` gate keeps each executor single-purpose and
   the verification independently inspectable and recoverable.
 
-Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../workflow.md#3-definition-layer), the treadle `:subagent` contract in [`treadle.md`](./subagent.md), and the dependent `:shell` gate test in ``test/skein/spools/reed_test.clj``.
+Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../workflow.md#3-definition-layer), the subagent-executor `:subagent` contract in [`subagent.md`](./subagent.md), and the dependent `:shell` gate test in ``test/skein/spools/executors/shell_test.clj``.
 
 ---
 
 ## Recipe: Recovering a stalled `shell/error` gate
 
-**Situation.** A shell check failed — the command exited non-zero, timed out, or the argv was malformed. The gate is stuck with `shell/error` and reed is skipping it. You've fixed the underlying problem and want the check to run again.
+**Situation.** A shell check failed — the command exited non-zero, timed out, or the argv was malformed. The gate is stuck with `shell/error` and the shell executor is skipping it. You've fixed the underlying problem and want the check to run again.
 
 **Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `shell/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
 
@@ -189,7 +189,7 @@ Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../wor
   `clojure -M:test` runs once per deliberate request, not on every graph mutation.
   Blanking `shell/error` is the explicit "run it again" signal (contract
   [`executors/shell.md`, "Failure and recovery"](./shell.md#failure-and-recovery)).
-- **Recovery is strictly simpler than treadle's.** There is no separate run strand
+- **Recovery is strictly simpler than the subagent executor's.** There is no separate run strand
   to reconcile — the failure detail lives on the gate itself. A weaver crash
   between claim and outcome leaves `shell/running` with no live process; clearing
   it re-runs the same idempotent check. `shell/running` and `shell/error` are
@@ -200,7 +200,7 @@ Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../wor
   surfaces through `stalled-shell-gates` and through `await!` (which reads the
   registered `:shell` executor) — a graph fact, not a dropped result.
 
-Honest source: the recovery and attention sections in [`executors/shell.md`](./shell.md#failure-and-recovery), and the failure / recovery tests in ``test/skein/spools/reed_test.clj``.
+Honest source: the recovery and attention sections in [`executors/shell.md`](./shell.md#failure-and-recovery), and the failure / recovery tests in ``test/skein/spools/executors/shell_test.clj``.
 
 ---
 
@@ -211,6 +211,6 @@ Honest source: the recovery and attention sections in [`executors/shell.md`](./s
 - [`executors/shell.api.md`](./shell.api.md) — generated signatures and docstrings for every
   public fn referenced above.
 - [`workflow.cookbook.md`](../workflow.cookbook.md) — the gate and fan-out recipes
-  that author the gates reed fulfils.
-- [`treadle.md`](./subagent.md) — the `:subagent` sibling reed composes
+  that author the gates the shell executor fulfils.
+- [`subagent.md`](./subagent.md) — the `:subagent` sibling the shell executor composes
   with.

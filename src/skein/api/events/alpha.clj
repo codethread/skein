@@ -93,7 +93,7 @@
   `skein.spools.test-support/await-budget-ms`; override it with `:timeout-ms`.
 
   This is a lane-only primitive: it says nothing about off-lane completion
-  signals a handler may have kicked off (poll-until loops, shuttle awaits)."
+  signals a handler may have kicked off (poll-until loops, agent-run awaits)."
   ([runtime] (await-quiescent! runtime {}))
   ([runtime {:keys [timeout-ms]}]
    (let [event-system (access/event-system runtime)

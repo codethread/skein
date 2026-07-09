@@ -120,19 +120,19 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
 
 ## Recipe: Notify when an interactive session is waiting
 
-**Situation.** A `strand hitl` or `agent delegate --interactive` run starts a live multiplexer session. The attach command is available from `strand agent ps`, but the human should not have to poll for it. You want one notification when an interactive shuttle run enters `running`, with the same attach hint that `ps` shows.
+**Situation.** A `strand hitl` or `agent delegate --interactive` run starts a live multiplexer session. The attach command is available from `strand agent ps`, but the human should not have to poll for it. You want one notification when an interactive agent-run run enters `running`, with the same attach hint that `ps` shows.
 
-**Composition.** Keep this in userland. Shuttle exposes durable run attributes and the `ps` summary includes `attach`; chime only needs a normal rule that recognises a running interactive run. Put the rule in trusted workspace code and register it from startup config after chime is active.
+**Composition.** Keep this in userland. Agent-run exposes durable run attributes and the `ps` summary includes `attach`; chime only needs a normal rule that recognises a running interactive run. Put the rule in trusted workspace code and register it from startup config after chime is active.
 
 ```clojure
 (ns my.rules
   "Workspace attention rules."
   (:require [clojure.string :as str]
             [skein.spools.chime :as chime]
-            [skein.spools.agent-run :as shuttle]))
+            [skein.spools.agent-run :as agent-run]))
 
 (defn interactive-session-running
-  "Notify when an interactive shuttle session is ready for the human."
+  "Notify when an interactive agent-run session is ready for the human."
   [{:keys [strand]}]
   (let [attrs (:attributes strand)]
     (when (and (= "true" (get attrs "agent-run/run"))
@@ -153,9 +153,9 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
 
 **Why this shape.**
 
-- **Shuttle stays decoupled from chime.** The rule lives in workspace code.
-  Shuttle does not learn what notification engine a user has, and chime does not
-  gain shuttle-specific branching.
+- **Agent-run stays decoupled from chime.** The rule lives in workspace code.
+  Agent-run does not learn what notification engine a user has, and chime does not
+  gain agent-run-specific branching.
 - **The match is durable.** `agent-run/mode=interactive` and
   `agent-run/phase=running` are run attributes, so the rule still explains itself
   after a restart. Chime's per-`[rule strand]` dedup means a long-running session
@@ -166,7 +166,7 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
   argv over the stored handle. If a backend has no attach template yet, the rule
   says no attach hint is configured instead of inventing a command.
 
-Honest source: shuttle's `run-summary` / `runs` implementation in [`spools/agent-run/src/skein/spools/agent_run.clj`](agent-run/src/skein/spools/agent_run.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/delegation/README.md`](delegation/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/agent-run/src/skein/spools/agent_run.clj`](agent-run/src/skein/spools/agent_run.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/delegation/README.md`](delegation/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
 
 ---
 

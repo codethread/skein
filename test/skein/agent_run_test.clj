@@ -1,5 +1,5 @@
 (ns skein.agent-run-test
-  "Tests for the shuttle agent-spawning spool against a real weaver runtime.
+  "Tests for the agent-run spawning spool against a real weaver runtime.
 
   Harness processes in these tests use the shipped `sh` harness (the prompt is
   the script), so runs are cheap and deterministic while still exercising the
@@ -15,10 +15,10 @@
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-shuttle
-  "Run f with a fresh weaver runtime that has the shuttle installed.
+  "Run f with a fresh weaver runtime that has the agent-run engine installed.
 
   Publishes the runtime as the process ambient runtime (`test-support`'s
-  `:publish? true` opt): shuttle's async reap/monitor threads and its own
+  `:publish? true` opt): the engine's async reap/monitor threads and its own
   `rt` fallback resolve the runtime via `current/runtime` rather than a
   per-call binding, so they need the ambient singleton to actually exist."
   [f]

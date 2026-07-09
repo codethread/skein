@@ -73,7 +73,7 @@ Every function is **read-only** and composes the public `skein.api.graph.alpha` 
 `flow-status` returns a JSON-compatible map with:
 
 - `:run-id`, `:history`, `:frontier`, `:done` — from the workflow run.
-- `:gates` — compact subagent-gate projections joined to their treadle runs, each
+- `:gates` — compact subagent-gate projections joined to their delegated agent-run runs, each
   with `:stalled?` and (when stalled) a `:stall/reason` of `"spawn-error"` or
   `"agent-failure"`.
 - `:stalled-gates`, `:agent-failures` — compact summaries scoped to **this run's

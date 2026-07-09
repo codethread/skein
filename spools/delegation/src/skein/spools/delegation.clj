@@ -1,5 +1,5 @@
 (ns skein.spools.delegation
-  "Agent coordination spool layered over the shuttle run engine."
+  "Agent coordination spool layered over the agent-run engine."
   (:require [clojure.java.shell :as shell]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
@@ -10,7 +10,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
-            [skein.spools.agent-run :as shuttle]
+            [skein.spools.agent-run :as agent-run]
             [skein.spools.util :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
 
 (defn- rt
@@ -69,7 +69,7 @@
                    |maintainability risks; say when no findings are found."))))
 
 (def worker-contract
-  "Worker contract text appended to every shuttle preamble."
+  "Worker contract text appended to every run preamble."
   (str "[worker contract]\n- "
        (str/join "\n- "
                  (fmt/fill "
@@ -110,7 +110,7 @@
              |flat under `strand agent <verb>`.")
    :concepts {:read-first true
               :traps (fmt/fill "
-                       |A RUN is a strand carrying shuttle/* attributes; a TASK is an ordinary
+                       |A RUN is a strand carrying agent-run/* attributes; a TASK is an ordinary
                        |work strand you delegate. Their ids look identical; each verb states
                        |which kind it takes.
                        |
@@ -155,7 +155,7 @@
                                 |
                                 |--for attaches the run under a strand (parent-of edge). spawn is
                                 |the raw helper verb: its runs are stamped non-serving
-                                |(shuttle/serves=false), so a spawn --for a task is a recon/one-off
+                                |(agent-run/serves=false), so a spawn --for a task is a recon/one-off
                                 |helper and never gates that task's later delegation. Delegation of
                                 |a task's own work is delegate's job, not spawn's.
                                 |
@@ -177,7 +177,7 @@
                 :help-topic "strand help agent"
                 :verb "ps"
                 :semantics (fmt/fill "
-                             |List shuttle run summaries; --active restricts to active run
+                             |List agent run summaries; --active restricts to active run
                              |strands; --for restricts to runs serving one strand.
                              |
                              |Listing doubles as an interactive liveness check: a dead session is
@@ -275,7 +275,7 @@
                             :semantics (fmt/fill "
                                          |Fan out every ready, non-hitl task under the plan that has
                                          |no active, failed/exhausted, or successful non-superseded
-                                         |SERVING run. Read-only helper runs (shuttle/serves=false)
+                                         |SERVING run. Read-only helper runs (agent-run/serves=false)
                                          |are ignored, so a reconned or reviewed task is still
                                          |delegated.
                                          |
@@ -365,7 +365,7 @@
                                  |its subtree; reviewing a plan root reviews the whole feature.
                                  |
                                  |Reviewer and synthesizer runs are non-serving helpers
-                                 |(shuttle/serves=false): they hang under the target but never
+                                 |(agent-run/serves=false): they hang under the target but never
                                  |gate a later delegate of it, so a target can be reviewed before
                                  |or after it is delegated.
                                  |
@@ -527,7 +527,7 @@
 
 (defn- serving-runs
   "Serving, non-superseded runs hanging under a task: the runs that gate
-  delegation. Non-serving helper runs (shuttle/serves=false) and superseded
+  delegation. Non-serving helper runs (agent-run/serves=false) and superseded
   runs never count, so a recon or review run under a task never blocks its
   later delegation."
   [task-id]
@@ -578,7 +578,7 @@
       (when-let [r (first (filter #(success-phases (sattr % "phase")) runs))]
         (fail! "task already has a successful run (verify + close it)" {:task (:id task) :run (:id r)})))
     (let [harness (harness-for task flags)
-          run (shuttle/spawn-run! (cond-> {:harness harness
+          run (agent-run/spawn-run! (cond-> {:harness harness
                                            :prompt (prompt-for-task task (get flags "--prompt") interactive?)
                                            :title (str "Delegate: " (:title task))
                                            :parent (:id task)
@@ -592,7 +592,7 @@
                                                         :reap (get flags "--reap"))
                                     (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
                                     (attr task :max-attempts) (assoc :max-attempts (attr task :max-attempts))))]
-      {:task (:id task) :run (select-keys (shuttle/run-summary run) [:id :phase :harness :attach])})))
+      {:task (:id task) :run (select-keys (agent-run/run-summary run) [:id :phase :harness :attach])})))
 
 (defn- skip-reason
   "Skip reason for a ready task in `delegate --ready` fan-out, or nil to
@@ -643,7 +643,7 @@
     ;; and one-off runs. It never delegates a task's own work (delegate does),
     ;; so a spawn --for a task is a non-serving helper and must not gate that
     ;; task's later delegation.
-    (shuttle/run-summary (shuttle/spawn-run! {:harness (or (get flags "--harness") (fail! "spawn requires --harness" {}))
+    (agent-run/run-summary (agent-run/spawn-run! {:harness (or (get flags "--harness") (fail! "spawn requires --harness" {}))
                                               :prompt (or (get flags "--prompt") (fail! "spawn requires --prompt" {}))
                                               :title (get flags "--title")
                                               :depends-on (get flags "--depends-on")
@@ -664,7 +664,7 @@
     (when (and (seq positional) (get flags "--under")) (fail! "await ids and --under are mutually exclusive" {:ids positional :under (get flags "--under")}))
     (let [ids (if-let [root (get flags "--under")] (runs-under root) positional)]
       (when (empty? ids) (fail! "await requires run ids or --under with non-terminal runs" {}))
-      (shuttle/await-runs ids (cond-> {} (get flags "--timeout-secs") (assoc :timeout-secs (parse-int! "--timeout-secs" (get flags "--timeout-secs"))))))))
+      (agent-run/await-runs ids (cond-> {} (get flags "--timeout-secs") (assoc :timeout-secs (parse-int! "--timeout-secs" (get flags "--timeout-secs"))))))))
 
 (defn- op-logs [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--tail" :single}) [run-id] positional]
@@ -678,7 +678,7 @@
         ;; run (mid-teardown) has no persisted transcript yet, but its session
         ;; is still capturable
         (if (= "running" (sattr run "phase"))
-          (let [{:keys [path text]} (shuttle/capture! run-id)]
+          (let [{:keys [path text]} (agent-run/capture! run-id)]
             {:id run-id :out {:path path :text (clip text)}})
           (let [p (or (sattr run "log") (fail! "Run has no captured transcript" {:id run-id}))]
             {:id run-id :out {:path p :text (rf p)}}))
@@ -709,7 +709,7 @@
 
 (defn- harness-ref?
   "True for a keyword or non-blank string naming a harness/alias. Existence is
-  checked at review time against the shuttle registry, not at registration,
+  checked at review time against the agent-run harness registry, not at registration,
   so roster files may load before config registers aliases."
   [v]
   (or (keyword? v) (non-blank? v)))
@@ -909,7 +909,7 @@
   reads the accumulated peer posts (a deliberating seat). `:continuation` is a
   terse pointer for a session that already knows the protocol."
   [{:keys [form view board-id] :or {form :full view :strand}}]
-  (let [cmd (shuttle/pinned-strand-command)]
+  (let [cmd (agent-run/pinned-strand-command)]
     (case view
       :strand (case form
                 :full (str "Read the target with `" cmd " show " board-id
@@ -932,7 +932,7 @@
   `:form`."
   [{:keys [board-id tag lead label placeholder]
     :or {lead "When finished" label "append findings with" placeholder "<findings>"}}]
-  (let [cmd (shuttle/pinned-strand-command)
+  (let [cmd (agent-run/pinned-strand-command)
         tag-prefix (if tag (str "[" tag "] ") "")]
     (str lead ", " label ": " cmd " agent note " board-id
          " \"" tag-prefix placeholder "\" --by <your run-id>\n")))
@@ -1015,7 +1015,7 @@
   change-context)
 
 (defn- review-synthesis-prompt [{:keys [target-id review-runs contract note-tag]}]
-  (let [cmd (shuttle/pinned-strand-command)]
+  (let [cmd (agent-run/pinned-strand-command)]
     (str contract "\n\n"
          "Synthesize independent review findings for target strand " target-id ".\n"
          ;; a target accumulates notes across rounds; the pass tag is the
@@ -1037,7 +1037,7 @@
   (shape: `:skein.spools.delegation/review-specs`).
 
   This is the one prompt-building source for roster reviews. `review!` spawns
-  shuttle runs from these specs, and workflow authors map them onto
+  agent-run runs from these specs, and workflow authors map them onto
   `:subagent` gates without re-implementing the contract layering: `:harness`
   and `:prompt` become the gate's `agent-run/harness`/`agent-run/prompt`,
   `:attrs` merge into the gate's attributes, and the synthesizer gate
@@ -1075,7 +1075,7 @@
                                  [:inline (validate-roster! :inline roster)]
                                  (let [id (roster-key roster)]
                                    [id (resolve-roster! id)]))
-        base (shuttle/default-review-contract-text)
+        base (agent-run/default-review-contract-text)
         pass-id (or review-id
                     (str (name roster-id) "-" (subs (str (java.util.UUID/randomUUID)) 0 8)))
         shared-attrs {"review/target" target
@@ -1259,7 +1259,7 @@
 
 (defn- panel-synthesis-prompt
   [{:keys [board-id brief note-tag]}]
-  (let [cmd (shuttle/pinned-strand-command)]
+  (let [cmd (agent-run/pinned-strand-command)]
     (str (when (non-blank? brief) (str brief "\n\n"))
          "Synthesize the panel deliberation on strand " board-id ".\n"
          (when note-tag
@@ -1407,7 +1407,7 @@
                                               (map (fn [[k v]] [k (resolve-board v)]))
                                               (:attrs spec))
                                   resume-run (assoc "panel/fresh-prompt" (resolve-board (:prompt spec))))]
-                      (shuttle/spawn-run!
+                      (agent-run/spawn-run!
                        (cond-> (merge {:harness (:harness spec)
                                        :prompt (resolve-board (if resume-run (:resume-prompt spec) (:prompt spec)))
                                        :parent board-id
@@ -1422,7 +1422,7 @@
                         ;; a resuming row needs its predecessors' sessions
                         ;; captured, so barrier-await the previous row first
                         (when (and (pos? idx) (some :resume-ref row))
-                          (shuttle/await-runs (mapv :id prev) {}))
+                          (agent-run/await-runs (mapv :id prev) {}))
                         (let [runs (mapv (fn [spec]
                                            (let [resume-run (when-let [ri (:resume-ref spec)] (nth prev ri))]
                                              (spawn-run spec resume-run
@@ -1493,7 +1493,7 @@
                                     conflicts))})))
   (let [roster-specs (when roster (roster-review-specs roster {:target target-id
                                                                :change-context change-context}))
-        contract (or contract (shuttle/default-review-contract-text))
+        contract (or contract (agent-run/default-review-contract-text))
         reviewer-specs
         (or (:reviewers roster-specs)
             (let [reviewers (or reviewers
@@ -1518,7 +1518,7 @@
         ;; reviewers and the synthesizer are read-only helpers of the target:
         ;; they must never gate a later delegation of the target task
         spawn-spec! (fn [spec extra]
-                      (shuttle/spawn-run!
+                      (agent-run/spawn-run!
                        (merge {:harness (:harness spec)
                                :prompt (:prompt spec)
                                :parent target-id
@@ -1627,7 +1627,7 @@
   (let [{:keys [positional flags]} (parse-argv argv {"--by" :single "--round" :single})]
     (when-not (= 2 (count positional))
       (fail! "note requires <strand-id> <text>" {:got positional}))
-    (shuttle/note! (first positional) (second positional)
+    (agent-run/note! (first positional) (second positional)
                    (cond-> {}
                      (get flags "--by") (assoc :by (get flags "--by"))
                      (get flags "--round") (assoc :round (parse-int! "--round" (get flags "--round")))))))
@@ -1636,7 +1636,7 @@
   (let [{:keys [positional flags]} (parse-argv argv {"--round" :single})]
     (when-not (= 1 (count positional))
       (fail! "notes requires <strand-id>" {:got positional}))
-    (shuttle/notes (first positional)
+    (agent-run/notes (first positional)
                    (cond-> {}
                      (get flags "--round") (assoc :round (parse-int! "--round" (get flags "--round")))))))
 
@@ -1774,7 +1774,7 @@
             extra (get flags "--prompt")
             append-extra (fn [p] (str p (when extra (str "\n\n" extra))))]
         (api/update (rt) (:id run) {:state "closed" :attributes {"agent-run/phase" "superseded"}})
-        (let [summary (shuttle/run-summary run)
+        (let [summary (agent-run/run-summary run)
               task (when task-id (api/show (rt) task-id))
               served-target (or task-id (:for summary))
               deps (->> (:edges (graph/subgraph (rt) [(:id run)] {:type "depends-on"}))
@@ -1792,7 +1792,7 @@
                                                  (fail! "retry --fresh cannot reconstruct the full-brief prompt for this resuming run"
                                                         {:run (:id run)})))
                        :else (append-extra (sattr run "prompt")))
-              new-run (shuttle/spawn-run! (cond-> {:harness (or (get flags "--harness") (sattr run "harness"))
+              new-run (agent-run/spawn-run! (cond-> {:harness (or (get flags "--harness") (sattr run "harness"))
                                                    :prompt prompt
                                                    :title (str "Retry: " (:title (or task run)))
                                                    :parent served-target
@@ -1808,7 +1808,7 @@
                                             (sattr run "max-attempts") (assoc :max-attempts (sattr run "max-attempts"))
                                             preserve-resume? (assoc :resume resumes)
                                             (seq carried-attrs) (assoc :attrs carried-attrs)))]
-          (cond-> {:superseded (:id run) :run (select-keys (shuttle/run-summary new-run) [:id :phase :harness])}
+          (cond-> {:superseded (:id run) :run (select-keys (agent-run/run-summary new-run) [:id :phase :harness])}
             task-id (assoc :task task-id)))))))
 
 (defn- blockers [task]
@@ -1846,7 +1846,7 @@
        :running (mapv :id (filter #(active-run-phases (sattr % "phase")) runs))
        :failed (mapv (fn [r]
                        (cond-> {:run (:id r) :error (sattr r "error")}
-                         (:for (shuttle/run-summary r)) (assoc :task (:for (shuttle/run-summary r)))))
+                         (:for (agent-run/run-summary r)) (assoc :task (:for (agent-run/run-summary r)))))
                      (filter #(failed-phases (sattr % "phase")) runs))
        :awaiting_verification (mapv :id (filter #(= "implemented" (attr % :status)) tasks))
        :blocked (mapv (fn [t] {:task (:id t) :blockers (blockers t)}) (filter #(seq (blockers %)) tasks))})))
@@ -1857,7 +1857,7 @@
    :doc "Spawn and coordinate coding-agent runs. Run `strand agent about` for the manual."
    :subcommands
    {"about" {:doc "Return the agent coordination manual."}
-    "spawn" {:doc "Spawn a raw shuttle run."
+    "spawn" {:doc "Spawn a raw agent run."
              :flags {:harness {:required? true :doc "Harness or alias name."}
                      :prompt {:required? true :doc "Prompt text for the run."}
                      :title {:doc "Run strand title."}
@@ -1865,11 +1865,11 @@
                      :for {:doc "Served strand id."}
                      :spawned-by {:doc "Caller run id for provenance."}
                      :cwd {:doc "Working directory."}
-                     :max-attempts {:type :int :doc "Maximum shuttle attempts."}
+                     :max-attempts {:type :int :doc "Maximum run attempts."}
                      :interactive {:type :boolean :doc "Launch as an interactive multiplexer session."}
                      :backend {:doc "Interactive backend name."}
                      :reap {:doc "Interactive session reap policy: auto or manual."}}}
-    "ps" {:doc "List shuttle run summaries."
+    "ps" {:doc "List agent run summaries."
           :flags {:active {:type :boolean :doc "Only active run strands."}
                   :for {:doc "Only runs serving this strand id."}}}
     "await" {:doc "Wait for run ids, or non-terminal runs under a root, to finish."
@@ -1957,13 +1957,13 @@
     (case (:subcommand args)
       "about" about-doc
       "spawn" (op-spawn (parsed->legacy-argv args []))
-      "ps" (shuttle/runs (cond-> {:active (boolean (:active args))}
+      "ps" (agent-run/runs (cond-> {:active (boolean (:active args))}
                            (:for args) (assoc :for (:for args))))
       "await" (op-await (parsed->legacy-argv args [:ids]))
       "logs" (op-logs (parsed->legacy-argv args [:run-id]))
-      "kill" (shuttle/kill! (:run-id args))
-      "harnesses" (shuttle/harnesses)
-      "backends" (shuttle/backends)
+      "kill" (agent-run/kill! (:run-id args))
+      "harnesses" (agent-run/harnesses)
+      "backends" (agent-run/backends)
       "note" (op-note (parsed->legacy-argv args [:strand-id :text]))
       "notes" (op-notes (parsed->legacy-argv args [:strand-id]))
       "council" (op-council (parsed->legacy-argv args []))
@@ -2035,7 +2035,7 @@
   "Install the agents op surface, pattern, query, and worker preamble hook."
   []
   (let [runtime (rt)]
-    (shuttle/set-preamble-extension! worker-contract)
+    (agent-run/set-preamble-extension! worker-contract)
     {:installed true
      :namespace 'skein.spools.delegation
      :op (api/register-op! runtime 'agent

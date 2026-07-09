@@ -10,7 +10,7 @@ cli/bin/
 /bin/
 site/
 
-scripts/shuttle-dash/node_modules/
+scripts/agent-dash/node_modules/
 
 .lsp/
 .clj-kondo/

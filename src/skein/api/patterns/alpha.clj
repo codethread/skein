@@ -213,7 +213,7 @@
                                              (weave-batch-context req-ctx canonical-name input normalized-payload result))
                       result))]
       ;; a weave is a create-only batch apply; without this event, event-driven
-      ;; spools (shuttle, treadle) never see pattern-created strands until an
+      ;; spools (agent-run, the subagent executor) never see pattern-created strands until an
       ;; unrelated mutation happens to trigger their next scan
        (dispatch/enqueue! runtime (assoc (event-base :batch/applied)
                                          :batch/id (str (UUID/randomUUID))

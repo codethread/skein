@@ -53,7 +53,7 @@ Carder mutates nothing; every recipe is a *read* that hands you rows to act on w
   public strand-listing surface ([carder.md §1](./carder.md#1-overview)), so it
   is the cheapest hygiene check and the natural first pass.
 - **Plumbing is excluded by default, so the list is human work.** Workflow
-  molecule/procedure/digest strands and shuttle run records drop out unless you
+  molecule/procedure/digest strands and agent-run run records drop out unless you
   pass `:include-plumbing? true` ([carder.md §3](./carder.md#3-surface)) — a
   stale-work list you can act on, not one cluttered with bookkeeping that is
   *supposed* to sit quietly.

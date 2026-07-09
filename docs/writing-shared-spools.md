@@ -37,7 +37,7 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
    code that built it. If your state map's *shape* changes between deploys — a
    new key, a swapped resource — a post-upgrade reload would otherwise reuse the
    stale map, and code reaching for the new key silently gets `nil` (this is a
-   real incident: a shuttle reload once reused a map predating its executor keys
+   real incident: an agent-run reload once reused a map predating its executor keys
    and parked every run). Declare a `state-version` next to the builder and pass
    it, so a version mismatch reinits deliberately instead of reusing a
    shape-mismatched value:

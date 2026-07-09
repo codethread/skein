@@ -8,7 +8,7 @@ Cron knows nothing about any particular job: a caller registers a job by fully-q
 
 It owns only runtime-local weaver-lifetime state (the executor, the job table, the failure log, and a jitter RNG), kept on the active runtime via `skein.api.runtime.alpha/spool-state` and isolated from other runtimes in the same JVM.
 
-Cron itself spawns no external processes and ships no jobs. Because a real job almost always escalates capability (a shell subprocess, a network call), cron is an approved local-root spool like shuttle rather than a shipped classpath spool.
+Cron itself spawns no external processes and ships no jobs. Because a real job almost always escalates capability (a shell subprocess, a network call), cron is an approved local-root spool like agent-run rather than a shipped classpath spool.
 
 Due-ness reads the runtime clock (`skein.api.runtime.alpha/now`) rather than the wall clock directly: in production that clock tracks wall time, so fires still happen on the real scheduled executor, but a deterministic test that installs a manual clock (`skein.test.alpha/set-clock!`) and steps it with `advance!` releases due jobs synchronously through cron's registered clock-consumer pump instead of waiting on wall time.
 

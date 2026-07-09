@@ -20,7 +20,7 @@
   14)
 
 (def ^:private excluded-workflow-roles #{"molecule" "procedure" "digest"})
-(def ^:private failed-shuttle-phases #{"failed" "exhausted"})
+(def ^:private failed-run-phases #{"failed" "exhausted"})
 
 (defn- require-map! [opts context]
   (when-not (map? opts)
@@ -52,13 +52,13 @@
 (defn- workflow-plumbing? [strand]
   (contains? excluded-workflow-roles (attr strand :workflow/role)))
 
-(defn- shuttle-run? [strand]
+(defn- agent-run? [strand]
   (= "true" (attr strand :agent-run/run)))
 
 (defn- excluded? [opts strand]
   (and (not (:include-plumbing? opts))
        (or (workflow-plumbing? strand)
-           (shuttle-run? strand))))
+           (agent-run? strand))))
 
 (defn- summary [strand]
   (select-keys strand [:id :title :state :attributes :updated_at]))
@@ -88,7 +88,7 @@
   "Return active strands older than the configured age threshold.
 
   Options: `:days` positive integer threshold (default `default-days`) and
-  `:include-plumbing? true` to include workflow plumbing and shuttle run records.
+  `:include-plumbing? true` to include workflow plumbing and agent-run run records.
   Each row is a compact strand summary plus `:days-stale`."
   ([]
    (stale {}))
@@ -142,7 +142,7 @@
           vec))))
 
 (defn- failed-blocker? [strand]
-  (contains? failed-shuttle-phases (attr strand :agent-run/phase)))
+  (contains? failed-run-phases (attr strand :agent-run/phase)))
 
 (defn- blocker-detail [strand]
   (cond-> (summary strand)

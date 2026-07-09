@@ -1,15 +1,17 @@
 (ns skein.spools.executors.shell
   "Fulfil workflow `:shell` gates by running their command off the event thread.
 
-  A reed watches workflow runs for ready gates whose waiter is `:shell`, runs the
-  gate's `shell/argv` directly (no implicit shell) on a spool-owned worker pool,
-  and closes the gate through `skein.spools.workflow/complete!` on a zero exit. A
-  non-zero exit, timeout, spawn error, or invalid argv stamps a loud, distinct
-  `shell/error` and leaves the gate ready and stamped rather than masquerading as
-  a completed run. It is a treadle sibling minus everything shuttle-specific: the
-  failure detail lives on the gate itself, so there is no separate run strand, no
-  `delegates` edge, and no session/harness vocabulary. This namespace is the only
-  adapter that knows both the workflow gate contract and process execution."
+  The shell executor watches workflow runs for ready gates whose waiter is
+  `:shell`, runs the gate's `shell/argv` directly (no implicit shell) on a
+  spool-owned worker pool, and closes the gate through
+  `skein.spools.workflow/complete!` on a zero exit. A non-zero exit, timeout,
+  spawn error, or invalid argv stamps a loud, distinct `shell/error` and leaves
+  the gate ready and stamped rather than masquerading as a completed run. It is
+  a subagent-executor sibling minus everything agent-run-specific: the failure
+  detail lives on the gate itself, so there is no separate run strand, no
+  `delegates` edge, and no session/harness vocabulary. This namespace is the
+  only adapter that knows both the workflow gate contract and process
+  execution."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.spools.workflow :as workflow]
@@ -28,8 +30,9 @@
   #{:strand/added :strand/updated :batch/applied :strand/burned :strand/superseded})
 
 (def ^:private output-tail-bytes
-  "Fixed cap on captured combined stdout+stderr: reed retains only the last N
-  bytes so a runaway child cannot exhaust weaver heap (`PLAN-ShellGates-001.R3`)."
+  "Fixed cap on captured combined stdout+stderr: the shell executor retains only
+  the last N bytes so a runaway child cannot exhaust weaver heap
+  (`PLAN-ShellGates-001.R3`)."
   (* 16 1024))
 
 (def ^:private timeout-reader-drain-ms
@@ -40,17 +43,17 @@
   250)
 
 (def ^:private timeout-output-marker
-  "\n[reed: output truncated after timeout while waiting for process pipes to close]\n")
+  "\n[shell: output truncated after timeout while waiting for process pipes to close]\n")
 
 (def ^:dynamic *runtime*
-  "Runtime captured for asynchronous reed worker threads."
+  "Runtime captured for asynchronous shell-executor worker threads."
   nil)
 
 (defn- rt []
   (or *runtime* (current/runtime)))
 
 (def ^:private state-version
-  "Shape version for the reed's runtime spool-state map. Bump whenever
+  "Shape version for the shell executor's runtime spool-state map. Bump whenever
   `new-state`'s key set changes: spool-state survives `reload!`, so a
   post-upgrade reload would otherwise reuse a preserved map missing the new key.
   The `state-shape-matches-declared-version` test guards against silent drift."
@@ -70,7 +73,7 @@
      :close-fn (fn []
                  (.shutdownNow workers)
                  (when-not (.awaitTermination workers 1000 TimeUnit/MILLISECONDS)
-                   (fail! "Reed worker executor did not stop" {})))}))
+                   (fail! "Shell executor worker pool did not stop" {})))}))
 
 (defn- state []
   (runtime/spool-state (rt) ::state {:version state-version} new-state))
@@ -79,7 +82,7 @@
 
 (defn- worker-executor ^ExecutorService []
   (or (:worker-executor (state))
-      (fail! "Reed worker executor is missing from spool state" {})))
+      (fail! "Shell executor worker pool is missing from spool state" {})))
 
 (defn- attr [strand k]
   (attr-get strand k))
@@ -108,7 +111,8 @@
 
 (defn- parse-timeout
   "Return the gate's `shell/timeout-secs` as a positive long, nil when absent, or
-  fail loudly on a non-positive/non-integer value — reed never silently clamps."
+  fail loudly on a non-positive/non-integer value — the shell executor never
+  silently clamps."
   [gate]
   (let [v (attr gate :shell/timeout-secs)]
     (cond
@@ -214,8 +218,8 @@
 (defn- fail-gate!
   "Stamp a loud, distinct `shell/error` (with `shell/exit-code`/`shell/output`
   where a process ran) and clear the claim in one atomic update, leaving the gate
-  ready and stamped. The `shell/error` presence makes reed skip the gate until a
-  coordinator clears it."
+  ready and stamped. The `shell/error` presence makes the shell executor skip the
+  gate until a coordinator clears it."
   [gate-id detail exit output]
   (stamp! gate-id (cond-> {"shell/running" nil "shell/error" detail}
                     (some? exit) (assoc "shell/exit-code" exit)
@@ -293,20 +297,22 @@
   "Return durable stall detail for a ready `:shell` gate view, or nil.
 
   The failure detail lives on the gate itself (`shell/error`), so — unlike
-  treadle — there is no `delegates`-edge join back to a separate run row."
+  the subagent executor — there is no `delegates`-edge join back to a separate
+  run row."
   [gate-view]
   (let [gate (api/show (rt) (:id gate-view))]
     (when-let [error (attr gate :shell/error)]
       {:gate (:id gate) :error error})))
 
 (defn install!
-  "Install the reed event handler, register the `:shell` executor and the
-  `stalled-shell-gates` coordinator query, and perform an initial scan."
+  "Install the shell executor: register its event handler, the `:shell`
+  workflow executor, and the `stalled-shell-gates` coordinator query, then
+  perform an initial scan."
   []
   (let [runtime (rt)]
-    (events/register! runtime :reed/engine event-types
+    (events/register! runtime :shell/engine event-types
                       'skein.spools.executors.shell/on-event
-                      {:spool "reed"})
+                      {:spool "shell"})
     (workflow/register-executor! :shell gate-stalled?)
     ;; The coordinator attention surface for stuck shell gates: an active `:shell`
     ;; gate carrying `shell/error`. No delegates-edge join is needed because the

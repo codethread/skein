@@ -1318,7 +1318,7 @@
   executor-owned gate whose stall predicate reports detail, or timed out.
 
   opts: `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching
-  the shuttle await surface). Fails loudly for a non-negative-integer
+  the agent-run await surface). Fails loudly for a non-negative-integer
   violation on either, agreeing with `skein.spools.roster/await-quiet!`'s
   `:timeout-ms`/`:poll-ms` validation.
 

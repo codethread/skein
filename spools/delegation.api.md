@@ -1,5 +1,5 @@
 # Table of contents
--  [`skein.spools.delegation`](#skein.spools.delegation)  - Agent coordination spool layered over the shuttle run engine.
+-  [`skein.spools.delegation`](#skein.spools.delegation)  - Agent coordination spool layered over the agent-run engine.
     -  [`about-doc`](#skein.spools.delegation/about-doc) - Structured manual returned by <code>agent about</code>.
     -  [`agent-op`](#skein.spools.delegation/agent-op) - Dispatch parsed <code>strand agent</code> subcommands.
     -  [`agent-plan`](#skein.spools.delegation/agent-plan) - Create a feature strand plus task/review children for agent work.
@@ -13,13 +13,13 @@
     -  [`roster->panel`](#skein.spools.delegation/roster->panel) - Convert a roster value into an equivalent single-round, target-blackboard panel: each reviewer becomes an independent seat whose contract is the seat brief, and the roster synthesizer (or the first reviewer's harness) becomes the panel synthesis.
     -  [`roster-review-specs`](#skein.spools.delegation/roster-review-specs) - Return a roster's review fan-out as plain, fully-built run specs (shape: <code>:skein.spools.delegation/review-specs</code>).
     -  [`rosters`](#skein.spools.delegation/rosters) - List registered reviewer rosters as full plain data.
-    -  [`worker-contract`](#skein.spools.delegation/worker-contract) - Worker contract text appended to every shuttle preamble.
+    -  [`worker-contract`](#skein.spools.delegation/worker-contract) - Worker contract text appended to every run preamble.
 
 -----
 # <a name="skein.spools.delegation">skein.spools.delegation</a>
 
 
-Agent coordination spool layered over the shuttle run engine.
+Agent coordination spool layered over the agent-run engine.
 
 
 
@@ -216,7 +216,7 @@ Return a roster's review fan-out as plain, fully-built run specs
   (shape: `:skein.spools.delegation/review-specs`).
 
   This is the one prompt-building source for roster reviews. `review!` spawns
-  shuttle runs from these specs, and workflow authors map them onto
+  agent-run runs from these specs, and workflow authors map them onto
   `:subagent` gates without re-implementing the contract layering: `:harness`
   and `:prompt` become the gate's `agent-run/harness`/`agent-run/prompt`,
   `:attrs` merge into the gate's attributes, and the synthesizer gate
@@ -259,5 +259,5 @@ List registered reviewer rosters as full plain data.
 
 
 
-Worker contract text appended to every shuttle preamble.
+Worker contract text appended to every run preamble.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/delegation/src/skein/spools/delegation.clj#L71-L103">Source</a></sub></p>

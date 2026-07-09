@@ -41,7 +41,7 @@
    'skein.weaver-publication-test
    ;; multiple published peer runtimes verify routing semantics.
    'skein.peers-test
-   ;; publishes an ambient runtime for the judge shuttle run and spawns real
+   ;; publishes an ambient runtime for the judge agent run and spawns real
    ;; container-engine subprocesses on a spool executor; real-process,
    ;; published-singleton reasoning keeps it off parent parallel load.
    'skein.bench-test])
@@ -50,7 +50,7 @@
   "Subprocess JVM shard groups for tests that mutate JVM-global tools.deps state."
   {;; Largest add-libs suite stands alone to balance wall time against parent work.
    "A" ['skein.spools-test]
-   ;; Shuttle-first within this JVM; runtime-deps intentionally poisons the basis, so it is last.
+   ;; Agent-run-first within this JVM; runtime-deps intentionally poisons the basis, so it is last.
    "B" ['skein.agent-run-test 'skein.runtime-deps-test]
    ;; Medium add-libs suites share one JVM to amortize boot without exceeding shard A.
    ;; nvd-scan-test load-files .skein/nvd_scan.clj (which requires the cron

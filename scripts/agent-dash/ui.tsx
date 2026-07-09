@@ -1,4 +1,4 @@
-// Shared presentation kit for the shuttle dashboard: text-fitting helpers, the
+// Shared presentation kit for the agent dashboard: text-fitting helpers, the
 // header/failure chrome, the list windowing/footer primitives every tab reuses,
 // and the strand-generic DetailView. Tab modules render over these; tab-specific
 // columns and colour maps live in each tab's own file.
@@ -77,8 +77,8 @@ export function Header({ all, noun, refreshedAt, cols }: { all: boolean; noun: s
   const info = ` ${workspaceRoot} · ${all ? "all" : "active"} ${noun} · every ${opts.interval}s · ${refreshedAt.toLocaleTimeString()}`;
   return (
     <Text>
-      <Text bold>shuttle</Text>
-      <Text dimColor>{clip(info, Math.max(0, cols - "shuttle".length))}</Text>
+      <Text bold>agents</Text>
+      <Text dimColor>{clip(info, Math.max(0, cols - "agents".length))}</Text>
     </Text>
   );
 }

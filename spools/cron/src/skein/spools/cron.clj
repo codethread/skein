@@ -3,7 +3,7 @@
 
   Cron registers named jobs that fire on a fixed interval with uniform jitter,
   each on a spool-owned scheduled executor created at activation and closed when
-  the runtime stops (weaver-lifetime, like shuttle's supervision; a
+  the runtime stops (weaver-lifetime, like agent-run's supervision; a
   version-mismatch reload reinitialises it). It knows nothing about any
   particular job: a caller registers
   a job by fully-qualified `:run!` symbol resolving to a `(fn [runtime] ..)`,

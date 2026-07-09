@@ -46,9 +46,9 @@ Gate scans serialize on a runtime-owned monitor: independent weaver runtimes in 
 
 | Attribute | Required | Meaning |
 |---|---|---|
-| `workflow/gate` = `"subagent"` | yes | Marks a ready workflow gate for treadle fulfillment. Other waiters are ignored. |
+| `workflow/gate` = `"subagent"` | yes | Marks a ready workflow gate for subagent-executor fulfillment. Other waiters are ignored. |
 | `agent-run/harness` | yes | Harness or alias name passed to `agent-run/spawn-run!`. Missing or invalid values stamp `subagent/error` on the gate. |
-| `agent-run/prompt` | no | Run prompt. If absent, treadle derives one from `workflow/instruction`, `description`, then title. If nothing non-blank exists, it stamps `subagent/error`. |
+| `agent-run/prompt` | no | Run prompt. If absent, the subagent executor derives one from `workflow/instruction`, `description`, then title. If nothing non-blank exists, it stamps `subagent/error`. |
 | `agent-run/cwd` | no | Passed through as the run working directory. |
 | `agent-run/max-attempts` | no | Agent-run crash-recovery attempt bound. Accepts an integer or an integer string (attributes may arrive JSON-stringified); anything else stamps `subagent/error`. |
 
@@ -104,7 +104,7 @@ Crash-window caveat: spawn idempotency re-adopts only live prior runs. A run tha
 
 ## Coordination attention
 
-`install!` calls `(workflow/register-executor! :subagent gate-stalled?)`, registering treadle as the executor for every gate whose `waiter` is `subagent`. Because an executor is registered, `await!` stays silent (`:waiting`) on a healthy subagent gate instead of surfacing it immediately as `:gate`; `gate-stalled?` reports a ready subagent gate as stalled (`:reason :stalled`) when the gate has `subagent/error` or its stamped `subagent/run` is in agent-run phase `failed`/`exhausted`/`superseded`, else it reports nothing. No wall-clock hang policy is applied. `superseded` is included so a gate whose run was retired by `agent retry` stays discoverable rather than silently pending until a coordinator clears the stamp.
+`install!` calls `(workflow/register-executor! :subagent gate-stalled?)`, registering itself as the executor for every gate whose `waiter` is `subagent`. Because an executor is registered, `await!` stays silent (`:waiting`) on a healthy subagent gate instead of surfacing it immediately as `:gate`; `gate-stalled?` reports a ready subagent gate as stalled (`:reason :stalled`) when the gate has `subagent/error` or its stamped `subagent/run` is in agent-run phase `failed`/`exhausted`/`superseded`, else it reports nothing. No wall-clock hang policy is applied. `superseded` is included so a gate whose run was retired by `agent retry` stays discoverable rather than silently pending until a coordinator clears the stamp.
 
 The spool also registers `stalled-gates` and `blocked-deliveries` named queries for coordinator inspection. `stalled-gates` is the SQL-side mirror of the stall predicate: it returns active subagent gates that either carry `subagent/error` or have a `delegates`-linked run in a terminal phase (`failed`/`exhausted`/`superseded`). A named query cannot join a gate's `subagent/run` id back to the run row, so it matches through the `delegates` edge instead. To keep that edge-scoped view in lockstep with the current-stamp `:subagent` predicate, stamping a fresh run marks the run it replaces `subagent/superseded-by`, and the query excludes superseded runs. So after a clear-and-respawn the gate stops surfacing as soon as a healthy replacement is in flight — exactly when `gate-stalled?` (which reads the single current `subagent/run`) also returns nil. Its membership rule is therefore "the current delegated run is dead", the same condition the predicate applies. `blocked-deliveries` returns finished runs parked on `subagent/delivery-blocked`.
 
@@ -112,4 +112,4 @@ The spool also registers `stalled-gates` and `blocked-deliveries` named queries 
 
 - [`skein.spools.workflow`](../workflow.md) — workflow gates and runtime API.
 - [`skein.spools.agent-run`](../agent-run/README.md) — agent-run run lifecycle and harness registry.
-- ``test/skein/treadle_test.clj`` — executable contract tests.
+- ``test/skein/executors/subagent_test.clj`` — executable contract tests.

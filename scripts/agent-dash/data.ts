@@ -1,4 +1,4 @@
-// Core plumbing for the shuttle dashboard: CLI/argv parsing, workspace
+// Core plumbing for the agent dashboard: CLI/argv parsing, workspace
 // resolution, and the strand JSON access primitives that tab modules build
 // their own fetchers on. Everything reaches the coordination world through the
 // public strand JSON CLI (TEN-006 — the CLI is the safe consumption surface;
@@ -151,7 +151,7 @@ export function editorFileFor(row: DetailRow): string {
   // leaves the document body empty under the frontmatter.
   const md = typeof body === "string" ? body : body === undefined ? "" : JSON.stringify(body, null, 2);
   const content = `---\n${stringifyYaml(front)}---\n\n${md}\n`;
-  const file = join(tmpdir(), `shuttle-${row.id}.md`);
+  const file = join(tmpdir(), `agent-run-${row.id}.md`);
   writeFileSync(file, content);
   return file;
 }

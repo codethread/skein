@@ -819,11 +819,11 @@ esac
               slug "fake-opus"
               entry-id (get entries slug)
               js (api/show rt judge)]
-          (testing "judge strand is a fulfilment seam, not a shuttle run"
+          (testing "judge strand is a fulfilment seam, not an agent run"
             (is (some? judge))
             (is (= "true" (get-in js [:attributes :bench/judge])))
             (is (= run (get-in js [:attributes :bench/run])))
-            (is (nil? (get-in js [:attributes :agent-run/run])) "external mode spawns no shuttle run")
+            (is (nil? (get-in js [:attributes :agent-run/run])) "external mode spawns no agent run")
             (is (str/includes? (get-in js [:attributes :bench/judge-prompt]) entry-id))
             (is (str/includes? (get-in js [:attributes :body]) "bench/verdict"))
             (is (= #{entry-id} (set (map :to_strand_id (graph/outgoing-edges rt [judge] "depends-on"))))))
@@ -933,4 +933,4 @@ esac
             (is (= "closed" (:state j)))
             (is (= "aborted" (get-in j [:attributes :bench/error])))
             (is (nil? (get-in j [:attributes :agent-run/phase]))
-                "an external judge is not a shuttle run — no superseded phase")))))))
+                "an external judge is not an agent run — no superseded phase")))))))

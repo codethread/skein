@@ -24,7 +24,7 @@ Watch mode is post-hoc **detection**, not rejection. It uses asynchronous `skein
 
 (selvage/install!)
 
-(selvage/defvocab! :shuttle
+(selvage/defvocab! :agent-run
   {:checks [{:attr "agent-run/phase"
              :enum ["pending" "running" "done" "failed" "exhausted"]}
             {:attr "agent-run/run" :kind :string}
@@ -39,7 +39,7 @@ Watch mode is post-hoc **detection**, not rejection. It uses asynchronous `skein
 
 (repl/update! (:id run) {:attributes {:agent-run/phase "bogus"}})
 (selvage/check (:id run))
-;; => [{:strand-id "..." :vocab :shuttle :attr "agent-run/phase" ...}]
+;; => [{:strand-id "..." :vocab :agent-run :attr "agent-run/phase" ...}]
 
 (selvage/violations)
 ;; asynchronous watch results, in delivery order
@@ -63,7 +63,7 @@ Each violation has this shape:
 
 ```clojure
 {:strand-id "..."
- :vocab :shuttle
+ :vocab :agent-run
  :attr "agent-run/phase"
  :check :enum
  :value "bogus"

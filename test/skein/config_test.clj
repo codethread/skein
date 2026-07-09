@@ -186,7 +186,7 @@
   ;; via init.clj, so it must still be registered end to end
   (is (some #(= "agent-plan" (:name %)) (patterns/patterns rt)))
   ;; agent review must consume the one authoritative policy text by default;
-  ;; the text ships from skein.spools.delegation, the accessor stays on shuttle
+  ;; the text ships from skein.spools.delegation, the accessor stays on agent-run
   (is (= (var-get (requiring-resolve 'skein.spools.delegation/review-contract))
          ((requiring-resolve 'skein.spools.agent-run/default-review-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
@@ -325,7 +325,7 @@
         ;; and stays silent (no false positive) when the condition is absent
         (is (nil? (fire :gate-error {:id "g2" :state "active" :title "Clean gate"
                                      :attributes {}})))
-        ;; agent-failure fires on a failed shuttle run and carries its error
+        ;; agent-failure fires on a failed agent run and carries its error
         (let [note (fire :agent-failure {:id "r1" :state "active" :title "Run"
                                          :attributes {:agent-run/phase "failed" :agent-run/error "boom"}})]
           (is (= "Agent run failed: Run" (:title note)))
@@ -828,7 +828,7 @@
               (is (str/includes? (:dev/mermaid status) "Delegate B (stalled)")))))))))
 
 (defn- assert-treadle-installed-after-config
-  "Assert treadle loaded and declares :config in :after — its install! runs an
+  "Assert the subagent executor loaded and declares :config in :after — its install! runs an
   initial gate scan, so config.clj's harness aliases must already exist or a
   durable ready gate would be stamped gate/error on every cold start."
   [rt]

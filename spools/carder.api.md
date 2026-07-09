@@ -90,6 +90,6 @@ Function.
 Return active strands older than the configured age threshold.
 
   Options: `:days` positive integer threshold (default `default-days`) and
-  `:include-plumbing? true` to include workflow plumbing and shuttle run records.
+  `:include-plumbing? true` to include workflow plumbing and agent-run run records.
   Each row is a compact strand summary plus `:days-stale`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/carder.clj#L87-L105">Source</a></sub></p>

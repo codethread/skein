@@ -124,7 +124,7 @@ The runtime is pull-based and *every* strand is already a durable wait point: an
   waiter has no registered executor always surfaces immediately — there is no
   silent default.
 - A shipped local-root adapter, `skein.spools.executors.subagent`, fulfills ready
-  `:subagent` gates by spawning shuttle runs, registers the `:subagent`
+  `:subagent` gates by spawning agent-run runs, registers the `:subagent`
   executor, and closes each gate with the run's result. See
   `executors/subagent.md`.
 - A shipped classpath executor, `skein.spools.executors.shell`, fulfills ready `:shell`
@@ -211,7 +211,7 @@ start! ──▶ next-steps / next-step ──▶ complete! / choose! ──▶ 
 
 The three-arg `(runtime run-id opts)` arity threads the target runtime explicitly, agreeing with `roster/await-quiet!`; the shorter arities resolve the ambient `current/runtime` as the ergonomic default.
 
-It returns `{:reason :done|:checkpoint|:step|:gate|:stalled|:timeout :ready [...] :done boolean :detail ...}`. `opts` takes `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching the shuttle await surface) — there is no predicate to name, because `await!` resolves attention purely from the ready frontier and the executor registry. A negative or non-integer `:timeout-secs`/ `:poll-ms` fails loudly instead of reaching `Thread/sleep`:
+It returns `{:reason :done|:checkpoint|:step|:gate|:stalled|:timeout :ready [...] :done boolean :detail ...}`. `opts` takes `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching the agent-run await surface) — there is no predicate to name, because `await!` resolves attention purely from the ready frontier and the executor registry. A negative or non-integer `:timeout-secs`/ `:poll-ms` fails loudly instead of reaching `Thread/sleep`:
 
 - `:done` — the run is finished.
 - `:checkpoint` — a checkpoint is ready (any kind wakes the caller).
@@ -232,7 +232,7 @@ Executor registration is keyed by gate `waiter` name via `register-executor!` (a
 (workflow/registered-executors)                          ; => {:subagent gate-stalled? ...}
 ```
 
-This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered executor always surfaces as `:gate` immediately, and adapters such as the treadle register their own predicate for their own waiter name at install time (see `executors/subagent.md`). There is no more named "stall predicate" independent of a waiter, and no shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option are gone.
+This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered executor always surfaces as `:gate` immediately, and adapters such as the subagent executor register their own predicate for their own waiter name at install time (see `executors/subagent.md`). There is no more named "stall predicate" independent of a waiter, and no shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option are gone.
 
 ### Procedure join auto-close
 
@@ -483,7 +483,7 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
   registration by name (mirrors devflow's registries in `devflow.md` §5).
 - [README.md](./README.md) — shipped spools index and loading notes.
 - [`skein.spools.executors.subagent`](./executors/subagent.md) — shipped
-  local-root adapter that binds workflow `:subagent` gates to shuttle runs.
+  local-root adapter that binds workflow `:subagent` gates to agent-run runs.
 - [`skein.spools.executors.shell`](./executors/shell.md) — shipped classpath executor that fulfills
   workflow `:shell` gates by running their command.
 

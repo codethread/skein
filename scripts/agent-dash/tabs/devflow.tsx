@@ -8,7 +8,7 @@
 //                     (the shared DetailView can't be given a bespoke component).
 //   GRAPH           — the feature's workflow DAG as boxart: the step/checkpoint
 //                     subtree (`strand subgraph <run-id>`) with each subagent gate's
-//                     fulfilling shuttle run (from flow-status `gates`, labelled
+//                     fulfilling agent run (from flow-status `gates`, labelled
 //                     harness + phase) hung beneath its step, plus dashed depends-on
 //                     ordering between steps. Shares the AGENTS graph pipeline, so it
 //                     degrades to the indented tree when graph-easy is missing.

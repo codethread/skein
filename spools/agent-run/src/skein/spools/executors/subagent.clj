@@ -1,13 +1,13 @@
 (ns skein.spools.executors.subagent
-  "Bridge workflow subagent gates to shuttle agent runs.
+  "Bridge workflow subagent gates to agent-run runs.
 
-  The treadle watches workflow runs for ready `:subagent` gates, spawns a
-  shuttle run for each gate, and delivers successful run results by completing
-  the gate through `skein.spools.workflow/complete!`. It intentionally adds no
-  CLI surface and keeps workflow and shuttle decoupled: this namespace is the
-  only adapter that knows both vocabularies."
+  The subagent executor watches workflow runs for ready `:subagent` gates, spawns
+  an agent-run run for each gate, and delivers successful run results by
+  completing the gate through `skein.spools.workflow/complete!`. It intentionally
+  adds no CLI surface and keeps workflow and agent-run decoupled: this namespace
+  is the only adapter that knows both vocabularies."
   (:require [clojure.string :as str]
-            [skein.spools.agent-run :as shuttle]
+            [skein.spools.agent-run :as agent-run]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
             [skein.api.graph.alpha :as graph]
@@ -20,7 +20,7 @@
   #{:strand/added :strand/updated :batch/applied :strand/burned :strand/superseded})
 
 (def ^:private stalled-run-phases
-  "Terminal shuttle phases that leave a delegated run dead: a `failed`/`exhausted`
+  "Terminal agent-run phases that leave a delegated run dead: a `failed`/`exhausted`
   worker, or a `superseded` run `agent retry` retired. A gate whose delegated run
   is in one of these is stalled — both `gate-stalled?` and the `stalled-gates`
   query key off this list. Phase alone is not enough for lockstep: the query
@@ -29,14 +29,14 @@
   ["failed" "exhausted" "superseded"])
 
 (def ^:dynamic *runtime*
-  "Runtime captured for asynchronous treadle scans."
+  "Runtime captured for asynchronous subagent-executor scans."
   nil)
 
 (defn- rt []
   (or *runtime* (current/runtime)))
 
 (def ^:private state-version
-  "Shape version for the treadle's runtime spool-state map. Bump whenever
+  "Shape version for the subagent executor's runtime spool-state map. Bump whenever
   `new-state`'s key set changes: spool-state survives `reload!`, so a post-upgrade
   reload would otherwise reuse a preserved map missing the new key
   (docs/writing-shared-spools.md 'Versioned spool state', SPEC-004.C95). The
@@ -69,7 +69,7 @@
   are deliberately excluded so clearing a gate's `gate/run` requests a fresh
   run rather than re-adopting the dead one (a `superseded` run is one `agent
   retry` closed out); the trade-off is that a run that died inside that same
-  crash window is orphaned, not re-adopted (treadle.md)."
+  crash window is orphaned, not re-adopted (see subagent.md)."
   [gate-id]
   (first (api/list (rt)
                    [:and [:= [:attr "gate/step"] gate-id]
@@ -118,7 +118,7 @@
 
 (defn- finished-undelivered-runs []
   ;; Only a genuinely successful run delivers a gate. A run's result is the
-  ;; worker's report, so `agent-run/phase "done"` (which shuttle records only for a
+  ;; worker's report, so `agent-run/phase "done"` (which the engine records only for a
   ;; non-blank result) is the delivery gate. Any other closed phase — notably a
   ;; `superseded` run left by `agent retry` — is a dead worker whose (blank or
   ;; stale) result must never silently complete the gate; recovery re-spawns a
@@ -136,11 +136,11 @@
       (non-blank (attr gate :description))
       (non-blank (:title gate))))
 
-(defn- treadle-preamble [{:keys [gate run-id prompt]}]
+(defn- subagent-preamble [{:keys [gate run-id prompt]}]
   (str "This run fulfills workflow gate " (:id gate) " (" (:title gate) ") "
        "in workflow run " run-id ".\n"
        "Your final message is captured as the gate's completion record.\n"
-       "Do not close or mutate workflow strands yourself; the treadle closes the gate after this run succeeds.\n\n"
+       "Do not close or mutate workflow strands yourself; the subagent executor closes the gate after this run succeeds.\n\n"
        prompt))
 
 (defn- parse-max-attempts [v]
@@ -190,13 +190,13 @@
                             (fail! "subagent gate requires agent-run/harness" {:gate (:id gate)}))
                 prompt (or (gate-prompt gate)
                            (fail! "subagent gate requires agent-run/prompt or derivable instruction" {:gate (:id gate)}))
-                run (shuttle/spawn-run! {:harness harness
-                                         :cwd (attr gate :agent-run/cwd)
-                                         :max-attempts (parse-max-attempts (attr gate :agent-run/max-attempts))
-                                         :prompt (treadle-preamble {:gate gate :run-id run-id :prompt prompt})
-                                         :title (str "Delegated: " (:title gate))
-                                         :attrs {"gate/step" (:id gate)
-                                                 "gate/run-id" run-id}})]
+                run (agent-run/spawn-run! {:harness harness
+                                           :cwd (attr gate :agent-run/cwd)
+                                           :max-attempts (parse-max-attempts (attr gate :agent-run/max-attempts))
+                                           :prompt (subagent-preamble {:gate gate :run-id run-id :prompt prompt})
+                                           :title (str "Delegated: " (:title gate))
+                                           :attrs {"gate/step" (:id gate)
+                                                   "gate/run-id" run-id}})]
             (stamp-run-on-gate! (:id gate) (:id run))))
         (catch Throwable t
           (stamp! (:id gate) {"gate/error" (str (ex-message t)
@@ -214,11 +214,11 @@
                                                  (some->> (ex-data t) (str " ")))})))))
 
 (defn scan!
-  "Deliver finished shuttle runs and spawn ready workflow subagent gates."
+  "Deliver finished agent-run runs and spawn ready workflow subagent gates."
   []
   (let [runtime (rt)]
     (binding [*runtime* runtime
-              shuttle/*runtime* runtime]
+              agent-run/*runtime* runtime]
       (locking (scan-monitor)
         (doseq [run (finished-undelivered-runs)]
           (deliver-run! run))
@@ -226,7 +226,7 @@
         {:scanned true}))))
 
 (defn on-event
-  "Weaver event handler: graph changes may finish or unblock treadle work."
+  "Weaver event handler: graph changes may finish or unblock subagent executor work."
   [_event]
   (scan!))
 
@@ -234,7 +234,7 @@
   "Return durable stall detail for a ready subagent gate view, or nil.
 
   A gate is stalled when spawn failed onto `gate/error`, or its stamped run is
-  in shuttle phase `failed`/`exhausted`/`superseded`. `superseded` is included so
+  in agent-run phase `failed`/`exhausted`/`superseded`. `superseded` is included so
   a gate whose run was retired by `agent retry` (which supersedes the run without
   re-linking the fresh one) stays discoverable rather than silently pending until
   a coordinator clears the stamp. No wall-clock hang policy is applied."
@@ -250,18 +250,18 @@
        :error (attr run :agent-run/error)})))
 
 (defn install!
-  "Install the treadle event handler and perform an initial scan.
+  "Install the subagent executor's event handler and perform an initial scan.
 
   Fails loudly unless `skein.spools.agent-run/install!` has already registered
-  the shuttle engine in this weaver runtime."
+  the agent-run engine in this weaver runtime."
   []
   (let [runtime (rt)
         handlers (set (map :key (events/handlers runtime)))]
     (when-not (contains? handlers :agent-run/engine)
-      (fail! "Treadle requires the shuttle engine to be installed first" {:handlers handlers}))
+      (fail! "Subagent executor requires the agent-run engine to be installed first" {:handlers handlers}))
     (events/register! runtime :gate/engine event-types
                       'skein.spools.executors.subagent/on-event
-                      {:spool "treadle"})
+                      {:spool "subagent"})
     (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates: an active subagent gate whose
     ;; spawn errored, or whose current delegated run is dead in a terminal phase.

@@ -675,7 +675,7 @@
    :convention (fmt/reflow "
                  |The card is the work root: claim stamps owner/branch, and plans, devflow runs, and
                  |task DAGs hang under it with parent-of. Kanban complements devflow and delegation;
-                 |it never tracks shuttle runs directly.")
+                 |it never tracks agent-run runs directly.")
    :handover-contract (fmt/reflow "
                         |Before stopping (or at any interruption risk), write `kanban note <id> --handover`
                         |covering: what is done, what is next, validation state, gotchas, and where the
@@ -726,7 +726,7 @@
                |before starting user work.
                |
                |Kanban complements devflow, agent plans, and delegation; those hang beneath a
-               |card via `parent-of`. Kanban never tracks shuttle runs directly.
+               |card via `parent-of`. Kanban never tracks agent-run runs directly.
                |
                |Half-formed ideas go to the refinement lane (`kanban add \"...\" --status
                |refinement`); they stay inert until a human `kanban promote`s them.")

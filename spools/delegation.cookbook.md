@@ -1,8 +1,8 @@
-# Skein Agents Spool — Cookbook
+# Skein Delegation Spool — Cookbook
 
 Composition recipes for `skein.spools.delegation`: the shapes real delegation takes as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape holds up.
 
-This is the **how/why** half of the agents docs. The other two halves are:
+This is the **how/why** half of the delegation docs. The other two halves are:
 
 - [`delegation/README.md`](./delegation/README.md) — the **contract**: the concept
   model, every `strand agent` verb's semantics, the DAG conventions, the worker

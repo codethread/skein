@@ -78,7 +78,7 @@ Each recipe cites the honest source it was distilled from — a shipped attribut
   vocabulary is a convention you *check*, not a schema the engine enforces. That
   is the whole reason this lives in a spool and not in the core.
 
-Honest source: the `kanban/*` attribute table in [`kanban.md`](./kanban.md), which fixes `kanban/status` to `refinement`/`pending`/`claimed` or an explicit closed outcome (`done`, `abandoned`, …) — so the outcome values above are a workspace choice, not a spool-fixed enum — and the `shuttle` vocabulary in [selvage.md §2](./selvage.md#2-usage). The same shape hardens the `roster/*` table ([`roster.md`](./roster.md)) or the `workflow/role` enum ([`workflow.md`](./workflow.md#7-attribute-vocabulary)).
+Honest source: the `kanban/*` attribute table in [`kanban.md`](./kanban.md), which fixes `kanban/status` to `refinement`/`pending`/`claimed` or an explicit closed outcome (`done`, `abandoned`, …) — so the outcome values above are a workspace choice, not a spool-fixed enum — and the `agent-run` vocabulary in [selvage.md §2](./selvage.md#2-usage). The same shape hardens the `roster/*` table ([`roster.md`](./roster.md)) or the `workflow/role` enum ([`workflow.md`](./workflow.md#7-attribute-vocabulary)).
 
 ---
 

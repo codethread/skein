@@ -100,7 +100,7 @@ nav:
           - Contract: spools/kanban.md
           - Cookbook: spools/kanban.cookbook.md
           - API: spools/kanban.api.md
-      - Agent Shuttle:
+      - Agent Runs:
           - Contract: spools/agent-run/README.md
           - Cookbook: spools/agent-run.cookbook.md
           - API: spools/agent-run.api.md

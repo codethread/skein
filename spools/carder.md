@@ -52,7 +52,7 @@ Options accepted by all report functions:
 
 - `:days` — positive integer stale threshold. Used by `stale` and reported by
   `report`; default is `14`.
-- `:include-plumbing?` — when true, include workflow plumbing and shuttle run
+- `:include-plumbing?` — when true, include workflow plumbing and agent-run run
   records. By default all sections exclude strands with `workflow/role` in
   `"molecule"`, `"procedure"`, or `"digest"`, and strands with
   `agent-run/run "true"`.

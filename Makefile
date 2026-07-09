@@ -36,7 +36,7 @@ install:
 	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(GO_CLI) && \
 	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(MILL_CLI)
 
-# code-owner TUI over live shuttle agent runs; polls the strand CLI
+# code-owner TUI over live agent runs; polls the strand CLI
 dash:
 	bun install --cwd scripts/agent-dash --silent
 	bun scripts/agent-dash/index.tsx

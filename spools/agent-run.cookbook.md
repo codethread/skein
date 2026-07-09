@@ -1,4 +1,4 @@
-# Skein Shuttle Spool — Cookbook
+# Skein Agent-run Spool — Cookbook
 
 Composition recipes for `skein.spools.agent-run`: how to wire the engine seams a workspace owner actually touches, and *why* each shape is the right one.
 
@@ -19,7 +19,7 @@ Every recipe has the same four parts, so you can skim to the one that matches yo
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which primitives combine, and how.
 3. **Snippet** — a complete, runnable form (assume
-   `(require '[skein.spools.agent-run :as shuttle])`).
+   `(require '[skein.spools.agent-run :as agent-run])`).
 4. **Why this shape** — the reasoning: why these primitives, what the attribute
    conventions buy you, and what the alternative would cost.
 
@@ -36,7 +36,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
 **Composition.** One `defharness!` describes the concrete launcher as plain data: the `:argv`, how output is parsed (`:parse`), and how the prompt reaches the process (`:prompt-via`). Then `defalias!` registers seats in a separate alias registry — `:alias-of` plus `:extra-args` that splice into the argv before the prompt. Resolution checks aliases first, then harnesses, so a seat may intentionally share a tool's name without overwriting the tool. Aliases flatten (an alias may point at another alias), so the tier names are the only vocabulary a caller needs.
 
 ```clojure
-(require '[skein.spools.agent-run :as shuttle])
+(require '[skein.spools.agent-run :as agent-run])
 
 ;; A concrete harness. This agent prints only its final message on stdout, so
 ;; :raw parses cleanly; the prompt is appended to argv (:arg is the default).
@@ -65,7 +65,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
   run is compiled in — `defharness!` registers concrete tools and `defalias!`
   registers seats the engine reads at launch. Re-point `:build` at a different
   base and every `:build` run in the workspace follows, no caller change. This
-  is the exact seam the [agents spool](./delegation/README.md) builds its
+  is the exact seam the [delegation spool](./delegation/README.md) builds its
   cross-harness subagent surface on.
 - **`:prompt-via` is a safety decision, not a detail.** `:arg` appends the
   prompt as the final argv token (the default); `:stdin` pipes it to the
@@ -82,7 +82,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
   `:fast-reviewer` over `:explore` over `:claude` composes without repetition.
   Cycles and missing bases fail loudly at `resolve-harness` time.
 
-Honest source: the registry tests `harness-registry-validates-and-resolves-aliases` and `stdin-prompt-stays-off-argv` in ``test/skein/shuttle_test.clj``. This repo applies the same shape in its own harness roster ([`.skein/harnesses.clj`](../.skein/harnesses.clj), `register-harness-aliases!`) — one concrete harness plus named tiers over it.
+Honest source: the registry tests `harness-registry-validates-and-resolves-aliases` and `stdin-prompt-stays-off-argv` in ``test/skein/agent_run_test.clj``. This repo applies the same shape in its own harness roster ([`.skein/harnesses.clj`](../.skein/harnesses.clj), `register-harness-aliases!`) — one concrete harness plus named tiers over it.
 
 ---
 
@@ -93,7 +93,7 @@ Honest source: the registry tests `harness-registry-validates-and-resolves-alias
 **Composition.** The harness declares a `:resume` argv splice: literal flag strings interleaved with placeholder keywords (currently `:agent-run/session-id`) drawn from a closed input set. A `:parse` strategy that captures a session id (`:claude-json`, `:pi-json`) records `agent-run/session-id` on each run. Spawning with `:resume <predecessor-run-id>` then continues that predecessor's session.
 
 ```clojure
-(require '[skein.spools.agent-run :as shuttle])
+(require '[skein.spools.agent-run :as agent-run])
 
 ;; A harness that captures a session id (via :claude-json) and knows how to
 ;; continue one (via the :resume splice).
@@ -130,7 +130,7 @@ Honest source: the registry tests `harness-registry-validates-and-resolves-alias
   even declares a splice that stays inert until a session-capturing parse lands
   — declared but harmless.
 
-Honest source: `defharness-validates-resume-splice` and `resume-continues-a-captured-session` (with the `session-echo` fake harness) in ``test/skein/shuttle_test.clj``, and the `:codex` resume note in [`.skein/harnesses.clj`](../.skein/harnesses.clj).
+Honest source: `defharness-validates-resume-splice` and `resume-continues-a-captured-session` (with the `session-echo` fake harness) in ``test/skein/agent_run_test.clj``, and the `:codex` resume note in [`.skein/harnesses.clj`](../.skein/harnesses.clj).
 
 ---
 
@@ -141,7 +141,7 @@ Honest source: `defharness-validates-resume-splice` and `resume-continues-a-capt
 **Composition.** Spawn each run with `spawn-run!`; express ordering with `:depends-on`. A run with no active blockers spawns immediately; one with active blockers waits until graph mutations clear them. Depending on several ids fans in — the collector spawns only when the last blocker closes.
 
 ```clojure
-(require '[skein.spools.agent-run :as shuttle]
+(require '[skein.spools.agent-run :as agent-run]
          '[skein.api.weaver.alpha :as api]
          '[skein.api.current.alpha :as current])
 
@@ -181,7 +181,7 @@ Honest source: `defharness-validates-resume-splice` and `resume-continues-a-capt
   interchangeably — the collector above waits on a plain `api/add` strand
   alongside its two worker runs.
 
-Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/shuttle_test.clj`` (two `sh` workers plus an external gate strand, collector stays pending until the last closes).
+Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/agent_run_test.clj`` (two `sh` workers plus an external gate strand, collector stays pending until the last closes).
 
 ---
 
@@ -192,7 +192,7 @@ Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/shu
 **Composition.** The engine already injects a minimal, role-blind preamble (run id, the pinned `strand` command, spawn/await/note one-liners). Layer your policy on with `set-preamble-extension!` from trusted startup config: its text is appended after the engine contract on every spawned run.
 
 ```clojure
-(require '[skein.spools.agent-run :as shuttle])
+(require '[skein.spools.agent-run :as agent-run])
 
 ;; run once from startup config (init.clj / a spool install!)
 (agent-run/set-preamble-extension!
@@ -208,7 +208,7 @@ Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/shu
   preamble carries only run identity and the mechanics of talking to the graph.
   Higher-level policy — the worker contract — arrives through this single
   extension point, so the engine never grows a notion of "delegated worker."
-  The agents spool fills exactly this seam with its worker contract on
+  The delegation spool fills exactly this seam with its worker contract on
   `install!` (contract [§7, "Preamble seam"](./agent-run/README.md#7-preamble-seam)).
 - **Reload-tolerant: replay is silent, a genuine clash is recorded.** Startup
   config re-runs on every `reload!`, so re-registering the *same* text is a
@@ -223,7 +223,7 @@ Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/shu
   strand is how the session ends. The interactive preamble variant deliberately
   excludes it.
 
-Honest source: `skein.spools.delegation/install!` calling `set-preamble-extension!` with its worker contract, and `set-preamble-extension-tolerates-reload` / `set-preamble-extension-records-conflicts-durably` in ``test/skein/shuttle_test.clj``.
+Honest source: `skein.spools.delegation/install!` calling `set-preamble-extension!` with its worker contract, and `set-preamble-extension-tolerates-reload` / `set-preamble-extension-records-conflicts-durably` in ``test/skein/agent_run_test.clj``.
 
 ---
 
@@ -234,7 +234,7 @@ Honest source: `skein.spools.delegation/install!` calling `set-preamble-extensio
 **Composition.** Nothing to wire — `reconcile!` runs on `install!` because runs are durable strands. The two execution modes recover differently, and the shape you choose at spawn time (`:max-attempts` for headless, `:parent` for an interactive claim) is what governs recovery.
 
 ```clojure
-(require '[skein.spools.agent-run :as shuttle])
+(require '[skein.spools.agent-run :as agent-run])
 
 ;; headless: bounded crash-recovery attempts (default 3). An orphan left
 ;; `running` by a dead weaver is reset to pending and respawned, up to the bound,
@@ -267,18 +267,18 @@ Honest source: `skein.spools.delegation/install!` calling `set-preamble-extensio
   loudly. Auto-respawning would silently discard a human conversation, so the
   engine refuses to (contract [§5.1, "Interactive completion"](./agent-run/README.md#51-interactive-completion-the-claims-model)).
 
-Honest source: `reconcile-respawns-orphans-and-exhausts-bounded-attempts` and `interactive-run-reaps-when-served-strand-closes` / `reconcile-adopts-live-sessions-and-fails-dead-ones` in ``test/skein/shuttle_test.clj``.
+Honest source: `reconcile-respawns-orphans-and-exhausts-bounded-attempts` and `interactive-run-reaps-when-served-strand-closes` / `reconcile-adopts-live-sessions-and-fails-dead-ones` in ``test/skein/agent_run_test.clj``.
 
 ---
 
 ## Recipe: Registering an interactive backend
 
-**Situation.** Interactive runs launch an agent into a terminal multiplexer for a live human session. You run tmux (the shipped default), or zellij, or wezterm, or a wrapper script — and you want shuttle to drive whichever one, through the graph.
+**Situation.** Interactive runs launch an agent into a terminal multiplexer for a live human session. You run tmux (the shipped default), or zellij, or wezterm, or a wrapper script — and you want agent-run to drive whichever one, through the graph.
 
 **Composition.** `defbackend!` registers the multiplexer as three argv vectors — `:start`, `:alive`, `:stop` — plus optional `:capture` and a display-only `:attach` hint. Argv tokens are keyword **splice points**, not string templates: engine inputs like `:session`/`:cwd`/`:command`, and `:handle/<key>` lookups into whatever `:start` returned. `:start` must print one flat JSON object as its last stdout line — the run's durable *handle*.
 
 ```clojure
-(require '[skein.spools.agent-run :as shuttle])
+(require '[skein.spools.agent-run :as agent-run])
 
 ;; The shipped tmux backend, verbatim — the reference shape.
 (agent-run/defbackend! :tmux
@@ -314,7 +314,7 @@ Honest source: `reconcile-respawns-orphans-and-exhausts-bounded-attempts` and `i
   routing) wraps that behind a shell script and names it in the vectors —
   the engine stays a dumb, testable splicer.
 
-Honest source: the shipped `:tmux` backend in [`agent-run/README.md`](./agent-run/README.md#4-backend-registry-interactive-sessions), and the `fake-mux` backend plus `backend-registry-validates-defs` / `interactive-run-reaps-when-served-strand-closes` in ``test/skein/shuttle_test.clj``.
+Honest source: the shipped `:tmux` backend in [`agent-run/README.md`](./agent-run/README.md#4-backend-registry-interactive-sessions), and the `fake-mux` backend plus `backend-registry-validates-defs` / `interactive-run-reaps-when-served-strand-closes` in ``test/skein/agent_run_test.clj``.
 
 ---
 
