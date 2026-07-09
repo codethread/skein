@@ -3,6 +3,8 @@
 *.sqlite-*
 *.sqlite.repl*
 .nrepl-port
+.test-repl-port
+.test-repl.pid
 
 cli/bin/
 /bin/

@@ -296,3 +296,28 @@ Append notes here. Do not rewrite earlier notes.
   resolves private vars fine, so no public surface was added. Cold focused mode
   and the full suite are byte-for-byte unchanged. Island vectors and
   `validate-focused!` untouched.
+
+### PLAN-Ttv-001.DN4 PH2 warm loop: entry, server, alias — 2026-07-09
+
+- Accreted `run-focused!` onto `skein.test.alpha` as a one-liner over
+  `(requiring-resolve 'skein.test-runner/run-focused-core)` — validation and
+  in-process run come free from DN3's core, so warm and cold share one path with
+  no second validator. Reflection-clean; reflect-check confirms the boundary does
+  not leak the test-side runner onto the main classpath.
+- **`:test-repl` composes with `:test`, it does not duplicate it.** The alias body
+  is only `:main-opts` — invoke as `clojure -M:test:test-repl` so it inherits the
+  `:test` extra-paths/deps and native-access opt. Deliberately not self-contained:
+  the `:test` `:extra-deps` carries the devflow git sha that must stay synchronized
+  with `.skein/spools.edn`, and a copy in `:test-repl` would be a third sync point.
+  Task 3's `scripts/test-warm` must use the composed `-M:test:test-repl` form.
+- `skein.test.warm` keeps a module-level `last-active` atom for the idle deadline:
+  `clojure.core.server`'s `:accept` is resolved by symbol so the accept fn must be
+  a top-level var, and it reaches the deadline through the atom. The "no
+  module-level atoms" rule is spool-scoped (`skein.spools.*`); this is test-classpath
+  tooling, so it does not apply. `-main` parks on `@(promise)` (the socket server
+  and watchdog threads are daemons) — the watchdog's `System/exit` is the only exit.
+- `skein.warm-test` exercises `run-focused!` against `skein.relations-test` (pure,
+  island-declared, ~6ms) for the returns-a-summary-without-exiting path, and asserts
+  shard (`skein.spools-test`) and undeclared namespaces reject with the runner's own
+  messages. Declared in `parallel-namespaces`; the nested in-process run binds its own
+  `*report-counters*`, so it is isolated even when the full suite runs it in parallel.

@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: Warm REPL server, run-focused! entry, alias
     task_file: tasks/002-warm-repl.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: Script entry and worktree cleanup

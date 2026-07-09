@@ -262,6 +262,27 @@
     (runtime/run-clock-pumps! runtime)
     target))
 
+(defn run-focused!
+  "Run the named test namespaces in-process and return the aggregate
+  `clojure.test` summary, without exiting the JVM.
+
+  `namespaces` is a collection of test-namespace symbols. The run reuses the
+  cold focused runner's single validation-and-execution core
+  (`skein.test-runner/run-focused-core`), so a warm focused run accepts and
+  rejects exactly the namespace set a cold `clojure -M:test <ns...>` run does:
+  an add-libs shard namespace, or a namespace not declared in the runner's
+  island sets, fails loudly. The runner is resolved at call time
+  (`requiring-resolve`) because it lives on the test classpath while this
+  namespace is on the main classpath, so requiring `skein.test.alpha` outside a
+  test JVM is unaffected.
+
+  This is the agent-facing entry for the per-worktree warm test REPL. A warm
+  focused run is never a validation gate — the cold focused run is; `run-focused!`
+  exists for sub-second iteration only, and returns rather than exits so it is
+  safe to call repeatedly inside a long-lived REPL."
+  [namespaces]
+  ((requiring-resolve 'skein.test-runner/run-focused-core) namespaces))
+
 (defn repl!
   "Evaluate a weaver-routed form against ctx's weaver world and return data.
 

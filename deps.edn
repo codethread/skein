@@ -23,6 +23,9 @@
                       org.clojure/test.check {:mvn/version "1.1.1"}}
          :jvm-opts ["--enable-native-access=ALL-UNNAMED"]
          :main-opts ["-m" "skein.test-runner"]}
+  ;; Per-worktree warm test REPL: compose with :test to inherit its classpath and
+  ;; native-access opt — `clojure -M:test:test-repl` boots skein.test.warm.
+  :test-repl {:main-opts ["-m" "skein.test.warm"]}
   :repl {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
   :rebel {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]
           :main-opts ["-m" "rebel-readline.main"]}
