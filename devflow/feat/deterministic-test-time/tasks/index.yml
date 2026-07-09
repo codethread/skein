@@ -42,5 +42,5 @@ tasks:
   - id: 9
     description: Graduate island vectors + full-suite acceptance
     task_file: tasks/009-island-graduation.md
-    status: pending
+    status: complete
     blocked_by: [3, 4, 5, 6, 7, 8]

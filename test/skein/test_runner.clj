@@ -21,7 +21,14 @@
    'skein.bench-metrics-test
    ;; each test drives its own unpublished runtime, so the event lane it awaits
    ;; is per-runtime with no JVM-global or shared-lane state — parallel-safe.
-   'skein.events-quiescence-test])
+   'skein.events-quiescence-test
+   ;; Graduated from the serial island: each drives its own unpublished runtime
+   ;; and settles work through deterministic seams — an injected runtime clock
+   ;; for the scheduler and cron timers, event-lane quiescence for the async
+   ;; dispatch suites — so there is no JVM-global timer or shared-lane state.
+   'skein.scheduler-runtime-test 'skein.api.scheduler.alpha-test 'skein.scheduler-e2e-test
+   'skein.cron-test 'skein.treadle-test 'skein.spools.reed-test 'skein.chime-test
+   'skein.weaver-test])
 
 (def serial-namespaces
   "JVM-global namespaces the parent still runs serially outside add-libs shards."
@@ -33,31 +40,9 @@
    'skein.weaver-publication-test
    ;; multiple published peer runtimes verify routing semantics.
    'skein.peers-test
-   ;; Event bus order assertions observe process-global delivery under load.
-   'skein.weaver-test
-   ;; Scheduler dispatch rides the shared event worker and arms real executor
-   ;; timers; reuses weaver-test helpers, so it runs beside it serially.
-   'skein.scheduler-runtime-test
-   ;; Blessed scheduler API tests also arm real executor timers via a real
-   ;; runtime for classloader-accurate handler resolution; same reasoning.
-   'skein.api.scheduler.alpha-test
-   ;; End-to-end scheduler coverage drives real weaver stop/start cycles and
-   ;; dispatches graph mutations on the shared lane; same real-timer reasoning.
-   'skein.scheduler-e2e-test
-   ;; notifier binding and process-output assertions mutate runtime-owned chime state but are flaky under parent parallel load.
-   'skein.chime-test
-   ;; arms real cron executor timers and polls for async job fires; same
-   ;; real-timer reasoning as the scheduler suites above.
-   'skein.cron-test
-   ;; Treadle delivers async shuttle gate outcomes through runtime event workers;
-   ;; keep it out of parent parallel load so the hard sleeps remain deterministic.
-   'skein.treadle-test
-   ;; Reed runs :shell gate commands off the event thread and delivers async gate
-   ;; outcomes through runtime event workers; same hard-sleep reasoning as treadle.
-   'skein.spools.reed-test
    ;; publishes an ambient runtime for the judge shuttle run and spawns real
-   ;; container-engine subprocesses on a spool executor; same real-process,
-   ;; published-singleton reasoning as the suites above.
+   ;; container-engine subprocesses on a spool executor; real-process,
+   ;; published-singleton reasoning keeps it off parent parallel load.
    'skein.bench-test])
 
 (def add-libs-shards

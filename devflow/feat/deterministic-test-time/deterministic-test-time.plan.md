@@ -213,3 +213,7 @@ serial-island comments updated. Full locked suite green.
 ### PLAN-Dtt-001.DN9 Task 008 weaver-test migration — 2026-07-09
 
 - Replaced weaver-test's bare event-delivery sleeps with `events.alpha/await-quiescent!` against each fixture's unpublished disposable runtime, preserving the existing fixture drain and exact captured-event assertions. Non-event sleeps and count-based polling helpers were left outside this timing-seam scope. Focused `skein.weaver-test` passed via the in-process classpath invocation, and `make fmt-check lint` was clean.
+
+### PLAN-Dtt-001.DN10 Task 009 island graduation — 2026-07-09
+
+- Graduated the eight deterministic scheduler/cron/treadle/reed/chime/weaver suites from the serial island to the parent parallel batch and trimmed the serial comments to bench plus singleton-semantics suites only. Full `clojure -M:test` passed with the graduated suites reporting `:parent/parallel` and aggregate `{:test 736 :pass 5430 :fail 0 :error 0}`; `(cd cli && go test ./...)`, `clojure -M:smoke`, and `make fmt-check lint reflect-check docs-check` were also clean. No generated SQLite or runtime-metadata artifacts remained in `git status --short`.
