@@ -58,6 +58,18 @@ Harnesses are data-first launcher definitions registered in trusted Clojure:
 
 Default parse strategies are `:raw`, `:claude-json`, and `:pi-json`. The `sh` harness is intended for tests and plumbing.
 
+Harnesses and aliases live in separate runtime registries. A harness names one
+concrete tool (`claude`, `pi`, `sh`); an alias names a seat over a tool
+(`worker`, `explore`, `build`) and may carry model/provider flags, prompt
+prefixes, or seat-specific docs. Name resolution is alias-first, then harness:
+a seat can intentionally shadow a tool name without replacing the tool, and a
+harness remains directly addressable whenever no alias with that name exists.
+Same-name shadowing is therefore lawful, while alias cycles and missing roots
+still fail loudly. On reload from the prior mixed registry shape, shuttle
+migrates entries by shape: definitions with `:alias-of` become aliases,
+definitions with `:argv` become harnesses, and malformed entries fail the
+migration rather than guessing.
+
 `:prompt-via` controls how a headless run's worker prompt reaches the process — `:stdin` (piped to the process's standard input) or `:arg` (appended as the final argv token, the default). **The shipped `:claude` and `:pi` harnesses default to `:stdin`** because `-p` mode on both reads the prompt from stdin: an argv-delivered prompt is exposed in `ps` and, worse, lands in the blast radius of any `pkill -f` pattern kill that happens to match quoted prompt text (a pattern kill matching prompt text once strafed sibling agent processes). Keep the argv shape declarative per harness — a harness whose CLI cannot read the prompt from stdin (e.g. `sh -c`, whose script is a required positional argument) stays `:arg`. Interactive runs always use `:arg`: stdin belongs to the live session, so a `:stdin` harness is rejected on the interactive path. `defharness!` rejects any `:prompt-via` other than `:arg` or `:stdin` at registration — a typo fails loudly rather than silently falling back to the less-safe argv delivery.
 
 Because a harness is plain data, swapping the underlying provider for a whole workspace is a single `defharness!`/`defalias!` line — this is the seam the agents spool builds its cross-harness subagent surface on.

@@ -7,5 +7,5 @@ tasks:
   - id: 2
     description: Worker seat and pi-main rename sweep
     task_file: tasks/002-worker-seat-and-pi-main-rename-sweep.md
-    status: pending
+    status: done
     blocked_by: [1]
