@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-Np-001` **Root spec:** [strand-model.md](../../../specs/strand-model.md) (`SPEC-001`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-Np-001`) **Contract:** [../brief.md](../brief.md) **Status:**
-Draft **Last Updated:** 2026-07-10
+Merged **Last Updated:** 2026-07-10
 
 ## SPEC-Np-001.P1 Summary
 
