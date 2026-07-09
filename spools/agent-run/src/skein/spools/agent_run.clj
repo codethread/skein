@@ -900,7 +900,7 @@
   (when-let [deferred-until (sattr run "recovery-deferred-until")]
     (.isAfter (Instant/parse deferred-until) (Instant/now))))
 
-(declare claim! launch-run! scan!)
+(declare claim! launch-run! note! scan!)
 
 (defn- schedule-deferred-recovery!
   "Schedule a recovered run retry on the runtime-owned recovery executor."
@@ -1332,8 +1332,12 @@
                     (catch Throwable _ nil))
                   (.delete (launcher-script-file id))
                   (throw t))
-              (warn! "interactive launch failure lost the teardown claim; deferring to the owning path"
-                     {:run id :error (ex-message t)}))))))))
+              (do (warn! "interactive launch failure lost the teardown claim; deferring to the owning path"
+                         {:run id :error (ex-message t)})
+                  ;; the owner's terminal outcome stands, but the launch failure
+                  ;; must stay strand-visible, not only in weaver stderr
+                  (note! id (str "interactive launch failed after another teardown path claimed the run: "
+                                 (ex-message t)))))))))))
 
 (defn- launch-headless! [id run]
   (let [process-ref (atom nil)]
