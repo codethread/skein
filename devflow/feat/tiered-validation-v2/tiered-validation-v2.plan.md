@@ -89,7 +89,7 @@ why it matters; the land gate and CI are unchanged (PROP-Ttv-001.NG3).
 | -- | ---- | --------------- |
 | PLAN-Ttv-001.AA1 | `test/skein/test_runner.clj` | Extract a non-exiting focused core (validate + in-process run returning the summary) from `run-focused`; keep `run-focused` as the exiting `-main` wrapper. No island-vector or validation-rule change. |
 | PLAN-Ttv-001.AA2 | `src/skein/test/alpha.clj` | Accrete `run-focused! namespaces` (DELTA-Ttv-001.CC1): resolve and call the runner core via `requiring-resolve`, return the summary, no `System/exit`. Reflection-clean (no new Java interop). |
-| PLAN-Ttv-001.AA3 | `test/skein/warm.clj` (`skein.test.warm`) | New test-side bootstrap `-main`: start a `clojure.core.server` socket REPL on an ephemeral port with an accept fn that resets the idle timer, write `.test-repl-port` + `.test-repl.pid` into the worktree root, run a daemon idle watchdog (60 min default) that deletes the files and exits. |
+| PLAN-Ttv-001.AA3 | `test/skein/test/warm.clj` (`skein.test.warm`) | New test-side bootstrap `-main`: start a `clojure.core.server` socket REPL on an ephemeral port with an accept fn that resets the idle timer, write `.test-repl-port` + `.test-repl.pid` into the worktree root, run a daemon idle watchdog (60 min default) that deletes the files and exits. |
 | PLAN-Ttv-001.AA4 | `deps.edn` | Add the `:test-repl` alias on the `:test` classpath (`:main-opts` → `skein.test.warm`); it inherits the `:test` extra-paths/deps and native-access JVM opt. |
 | PLAN-Ttv-001.AA5 | `scripts/test-warm` (+ `Makefile`) | New committed probe-or-boot shell script; `make test-warm NS=...` and `make test-warm-stop` targets. PID-only kills. |
 | PLAN-Ttv-001.AA6 | `.gitignore` | Ignore `.test-repl-port` and `.test-repl.pid` (per-worktree runtime files). |
@@ -183,9 +183,9 @@ generated SQLite/runtime artifacts and no warm files.
   smoke, and the quality gates. This is the only full-suite run in the queue.
 - **PLAN-Ttv-001.V3:** `make docs-check` after PH4/PH5 keeps
   `spools/agents.api.md` and the docs site in sync.
-- **PLAN-Ttv-001.V4 (CI independence):** CI runs only `clojure -M:test` (full)
-  and never the `:test-repl` alias or `make test-warm`; the warm files are
-  gitignored. Prove this by inspection, not a test: no CI job and no Makefile
+- **PLAN-Ttv-001.V4 (CI independence):** CI (`clojure -M:test`, `clojure
+  -M:smoke`, and the quality gates) never invokes the `:test-repl` alias or
+  `make test-warm`; the warm files are gitignored. Prove this by inspection, not a test: no CI job and no Makefile
   gate references the warm loop.
 
 ## PLAN-Ttv-001.P7 Risks and open questions
