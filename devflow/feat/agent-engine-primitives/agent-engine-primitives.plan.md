@@ -8,8 +8,9 @@
 [alpha-surface.md](../../specs/alpha-surface.md) (`SPEC-005`), [daemon-runtime.md](../../specs/daemon-runtime.md)
 (`SPEC-004`)
 **Feature specs:** [specs/strand-model.delta.md](./specs/strand-model.delta.md) (`SPEC-Aep-001`),
-[specs/alpha-surface.delta.md](./specs/alpha-surface.delta.md) (`SPEC-Aep-002`, no change); no `daemon-runtime` delta
-(see `PLAN-Aep-001.CM4`)
+[specs/alpha-surface.delta.md](./specs/alpha-surface.delta.md) (`SPEC-Aep-002`, no change),
+[specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) (`SPEC-Aep-003`, `C92` staleness correction only —
+the gate-link conditional stays unfired, see `PLAN-Aep-001.CM4`)
 **Contract:** [proposal.md](./proposal.md) clauses `PROP-Aep-001.C1`–`C14` — the approved contract; this plan sequences it and never widens it.
 **Status:** Reviewed
 **Last Updated:** 2026-07-09
@@ -36,7 +37,7 @@ where it reads the served target (the `serves` edge, not `gate/step`). `xwhe7` s
 ## PLAN-Aep-001.P2 Approach
 
 - **PLAN-Aep-001.A1:** Slice for one worker context window each, not by clause breadth. The F1 lesson is that broad
-  sweeps run a Sonnet seat out of context mid-task; this plan prefers more, smaller slices with explicit `depends-on`
+  sweeps over large engine files overrun a worker seat's context window mid-task; this plan prefers more, smaller slices with explicit `depends-on`
   over fewer large ones. The two engine files (`agent_run.clj` 1892 lines, `delegation.clj` 2050 lines) are each split
   into two sequential slices rather than rewritten in one pass.
 - **PLAN-Aep-001.A2:** Foundation-first, then engine, then consumers, then docs. The `serves` relation must be declared
@@ -68,13 +69,13 @@ where it reads the served target (the `serves` edge, not `gate/step`). `xwhe7` s
 | PLAN-Aep-001.AA1 | `src/skein/api/relations/alpha.clj`, `src/skein/core/db.clj` | Add `serves` operational catalog entry (`declared-acyclic? true`); add `"serves"` to `shipped-acyclic-relations`. |
 | PLAN-Aep-001.AA2 | `spools/agent-run/src/skein/spools/agent_run.clj` (serves) | `:serves` option on `spawn-run!`; `serves`-edge write; rewrite `run-for-target`, `run-summary` `:for`, `runs*` `--for` filter onto the `serves` edge; delete the `parent-of`-minus-`spawned-by` heuristic and the `gate/step` `--for` clause. |
 | PLAN-Aep-001.AA3 | `spools/agent-run/src/skein/spools/agent_run.clj` (lineage) | `supersede-and-respawn!` primitive; `supersedes` edge + `agent-run/supersedes` attr; "current run serving X" resolution rule; `reconcile!` and `validate-resume!`/`resume-args` folded into the one preservation contract as the in-place and `:resume` members. |
-| PLAN-Aep-001.AA4 | `spools/delegation/src/skein/spools/delegation.clj` (serving) | Delete `serving-run?`, `non-serving-attrs`, and the `agent-run/serves` merge at spawn/review/panel; rewrite `serving-runs` over incoming `serves` edges minus superseded; guards count `serves` edges; drop `agent-run/serves` from `preserved-run-attr-keys`; rewrite `about` prose to the `serves` model. |
+| PLAN-Aep-001.AA4 | `spools/delegation/src/skein/spools/delegation.clj` (serving) | Delete `serving-run?`, `non-serving-attrs`, and the `agent-run/serves` merge at spawn/review/panel; rewrite `serving-runs` over incoming `serves` edges minus superseded; guards count `serves` edges; drop `agent-run/serves` from `preserved-run-attr-keys`; rewrite `about` prose and the `spawn --for`/`ps --for` arg-spec help strings to the `serves` model. |
 | PLAN-Aep-001.AA5 | `spools/delegation/src/skein/spools/delegation.clj` (retry) | `op-retry` sheds its hand-rolled supersession and calls `supersede-and-respawn!`, keeping its policy (task/run resolution, serving-run selection, ambiguity guard, `--fresh`, resume-classed refusal, fix-body-first rebuild, `--harness`/`--cwd`/`--prompt`, `:carry-attrs`). |
 | PLAN-Aep-001.AA6 | `spools/agent-run/src/skein/spools/executors/subagent.clj`, `spools/src/skein/spools/loom.clj` | `spawn-for-gate!` passes `:serves gate-id`; delete `stamp-run-on-gate!`/`ensure-run-stamp!`/`gate/run`/`gate/superseded-by`/`gate/step`-as-link; `deliver-run!` reads the served target from `serves`; `gate-stalled?` + the `stalled-gates` named query rewrite over incoming `serves`; drop `"superseded"` from `stalled-run-phases`; `loom/flow-status` resolves each gate's current serving run via `serves`. |
 | PLAN-Aep-001.AA7 | `spools/agent-run/README.md`, `spools/agent-run.cookbook.md` | Document the `serves` edge and the `supersede-and-respawn` family (`PROP-Aep-001.C10`). |
 | PLAN-Aep-001.AA8 | `spools/delegation/README.md`, `spools/delegation.cookbook.md` | Rewrite `agent-run/serves=false` helper prose to "helpers carry no `serves` edge." |
 | PLAN-Aep-001.AA9 | `spools/executors/subagent.md`, `spools/executors/subagent.cookbook.md` | Delete the "retry is not the gate-recovery verb" paragraph; delete retired-attr rows; rewrite Failure/recovery, Coordination-attention, and `stalled-gates` composition prose onto `serves`+lineage; correct residual `subagent/*`→`gate/*` prose. |
-| PLAN-Aep-001.AA10 | `devflow/specs/strand-model.md`, feature deltas | Apply `SPEC-Aep-001` (`serves` in the acyclic set + the `serves`/`parent-of` clarification); flip both deltas' Status. |
+| PLAN-Aep-001.AA10 | `devflow/specs/strand-model.md`, `devflow/specs/daemon-runtime.md`, feature deltas | Apply `SPEC-Aep-001` (`serves` in the acyclic set + the `serves`/`parent-of` clarification) and `SPEC-Aep-003` (the `SPEC-004.C92` storage-location correction); flip the applied deltas' Status. |
 | PLAN-Aep-001.AA11 | `scripts/cutover/` (new), disposable-world rehearsal | One-shot active-run stamping script + its test, rehearsed against a copied canonical SQLite (`PROP-Aep-001.C12`). |
 | PLAN-Aep-001.AA12 | `spools/agent-run.api.md`, `spools/delegation.api.md`, `spools/executors/subagent.api.md` | `make api-docs` regen after docstring changes (`PROP-Aep-001.P6`). |
 
@@ -89,10 +90,12 @@ where it reads the served target (the `serves` edge, not `gate/step`). `xwhe7` s
 - **PLAN-Aep-001.CM3:** Active canonical-world strands carry old keys until the one-shot cutover (`PLAN-Aep-001.S11`)
   stamps `serves`/`supersedes` and removes the retired markers. The code landing and the canonical cutover are separated
   only by a user-signed weaver restart (`PROP-Aep-001.C12.4`, `R2`).
-- **PLAN-Aep-001.CM4:** No `daemon-runtime.md` delta. `SPEC-004`'s only mention of a gate's run is `SPEC-004.C74b`,
-  which names "a subagent-executor gate's agent run reaching a terminal state" as an *off-lane completion* example for
-  `await-quiescent!`; that is completion-signal prose, not the run↔gate *link* mechanism F2 rewires, and it stays true
-  after F2 (`PROP-Aep-001.C11` bullet 4 — the conditional does not fire).
+- **PLAN-Aep-001.CM4:** No `daemon-runtime.md` delta for the gate link. `SPEC-004`'s only mention of a gate's run is
+  `SPEC-004.C74b`, which names "a subagent-executor gate's agent run reaching a terminal state" as an *off-lane
+  completion* example for `await-quiescent!`; that is completion-signal prose, not the run↔gate *link* mechanism F2
+  rewires, and it stays true after F2 (`PROP-Aep-001.C11` bullet 4 — the conditional does not fire). Separately,
+  docs-review pass aa4b5716 surfaced that `SPEC-004.C92`'s storage-location sentence is stale (the live db is under
+  the weaver state directory, not the workspace); `SPEC-Aep-003` records that correction and Task 10 applies it.
 
 ## PLAN-Aep-001.P5 Implementation slices
 
@@ -161,7 +164,8 @@ siblings share no file.
   (`:1527`) with no `:serves` (helpers by construction); rewrite `serving-runs` (`:528`) to incoming `serves` edges to
   the task minus superseded (`graph/incoming-edges rt [task] "serves"`, then drop runs with an incoming `supersedes`
   edge); point delegation guards at the `serves` count; drop `agent-run/serves` from `preserved-run-attr-keys`
-  (`:1734`); rewrite the `about` prose (`:156,256,267-278,339,368`) to the `serves`-edge model.
+  (`:1734`); rewrite the `about` prose (`:156,256,267-278,339,368`) and the arg-spec `:doc` help strings for
+  `spawn --for` and `ps --for` (`:1865,1874` — both false after F2) to the `serves`-edge model.
   `task-runs`/`children-ids`/`subtree`/`tree-node` (`:485,488,508,1825`) stay on `parent-of` (structural rendering,
   unchanged).
 - **Validation:** `clojure -M:test skein.delegation-test` green.
@@ -241,14 +245,18 @@ siblings share no file.
 
 ### PLAN-Aep-001.S10 — spec-delta application `[parallel, doc-only]`
 
-- **Owned files:** `devflow/specs/strand-model.md`, `devflow/feat/agent-engine-primitives/specs/strand-model.delta.md`, `.../alpha-surface.delta.md`.
+- **Owned files:** `devflow/specs/strand-model.md`, `devflow/specs/daemon-runtime.md`,
+  `devflow/feat/agent-engine-primitives/specs/strand-model.delta.md`, `.../alpha-surface.delta.md`,
+  `.../daemon-runtime.delta.md`.
 - **Depends-on:** none (doc-only; lands with the set).
 - **Change:** apply `SPEC-Aep-001.CC1` (`serves` in the shipped acyclic enumeration, `strand-model.md:48`) and
   `SPEC-Aep-001.CC2` (the new `serves`/`parent-of` clarification paragraph after `:48`), verified against the delta's
-  Old/New fragments; flip `SPEC-Aep-001` Status to Merged and confirm `SPEC-Aep-002` remains the recorded no-change
+  Old/New fragments; apply `SPEC-Aep-003.CC1` (the `SPEC-004.C92` storage-location correction) the same way; flip
+  `SPEC-Aep-001` and `SPEC-Aep-003` Status to Merged and confirm `SPEC-Aep-002` remains the recorded no-change
   disposition.
 - **Validation:** `make docs-check`; each delta fragment verified against the edited root spec.
-- **Done-when:** `strand-model.md` names `serves` acyclic and states the `serves`/`parent-of` distinction; `SPEC-Aep-001` marked Merged.
+- **Done-when:** `strand-model.md` names `serves` acyclic and states the `serves`/`parent-of` distinction;
+  `daemon-runtime.md` `C92` states the state-dir storage location; `SPEC-Aep-001`/`SPEC-Aep-003` marked Merged.
 
 ### PLAN-Aep-001.S11 — cutover script + rehearsal `[coordinator-adjacent, after S1–S6]`
 
@@ -261,10 +269,13 @@ siblings share no file.
   `gate/run`/`gate/superseded-by`/`gate/step`; backfills `supersedes` edge + `agent-run/supersedes` attr for active
   mid-lineage runs from any still-linked `superseded` predecessor. Rehearse per `PROP-Aep-001.C12.2`: resolve the live
   canonical SQLite path from `./bin/mill weaver status --workspace <canonical>` (the `database_path` field — under the
-  weaver state directory, not workspace-local `data/`), copy it into a `mktemp -d` disposable `--workspace` (guard every
-  expansion with `${ws:?}`; never the canonical world, never a shared scratch path), run the rewired code + script
-  there, confirm the smoke checks (`agent status`, `ready --query stalled-gates`, `kanban board`, `agent ps`) render
-  clean.
+  weaver state directory, not workspace-local `data/`); create the disposable world with `ws=$(mktemp -d)` then
+  `./bin/mill init --workspace "${ws:?}"` (a bare temp dir is not a valid selected workspace); resolve the disposable
+  world's own `database_path` from `./bin/mill weaver status --workspace "${ws:?}"` (resolvable before any weaver
+  starts) and copy the canonical file there (guard every expansion with `${ws:?}`; never the canonical world, never a
+  shared scratch path); run the rewired code + script against that explicit `--db` target; then start the disposable
+  weaver and confirm the smoke checks (`agent status`, `ready --query stalled-gates`, `kanban board`, `agent ps`)
+  render clean.
 - **Validation:** the script's own test green (`clojure -M:test` of the cutover test ns); rehearsal against a copied
   SQLite in a disposable world passes the C12.2 smoke checks. The canonical cutover is **not** a worker task — it is
   coordinator-run after explicit user sign-off (`PROP-Aep-001.C12.3`–`C12.4`).
@@ -359,9 +370,16 @@ siblings share no file.
   `serves` from `gate/run`, drop `gate/run`/`gate/superseded-by`/`gate/step`; active mid-lineage run → backfill
   `supersedes` edge + `agent-run/supersedes` from a still-linked `superseded` predecessor. Rehearsal = resolve the live
   canonical SQLite path via `mill weaver status` (`database_path` — the weaver state directory, not workspace-local
-  `data/`), copy it into a `mktemp -d` `--workspace` world (guard every expansion with `${ws:?}`; never the canonical
-  world, never a shared scratch path), run the rewired code + script, confirm the C12.2 smoke checks. Ceremony ends at
+  `data/`); `mill init` a `mktemp -d` `--workspace` world and copy the file to that world's own `database_path`
+  (also from `mill weaver status`; guard every expansion with `${ws:?}`; never the canonical world, never a shared
+  scratch path); run the rewired code + script against the explicit `--db` copy; start the disposable weaver and
+  confirm the C12.2 smoke checks. Ceremony ends at
   the user-signed weaver restart (hard stop) then the `PROP-Aep-001.C12.5` post-restart smoke.
+
+- **PLAN-Aep-001.TC5:** Reading map. Brief (scope contract) → `PROP-Aep-001` C-clauses (design contract; single
+  source of truth per TC1) → this plan's slices S1–S12 (sequencing) → `TASK-Aep-001..013` (execution contracts; the
+  TC3 table is the slice→task map). Vocabulary (strands, runs, gates, spools, harness seats) is defined in
+  `docs/skein.md` and the spool READMEs, not re-derived here; every point ID is a grepable anchor.
 
 ## PLAN-Aep-001.P9 Developer Notes
 
@@ -375,3 +393,18 @@ Append notes here. Do not rewrite earlier notes.
 - docs-review pass 93fb644c findings were applied before task authoring (commit `d9119cf`): the
   rehearsal db-path correction (resolve `database_path` from `mill weaver status`, never
   workspace-local `data/`) is carried into `TASK-Aep-011.MI5/MI6`.
+
+### PLAN-Aep-001.DN2 docs-review pass aa4b5716 applied — 2026-07-09
+
+- Rehearsal recipe completed end-to-end (a bare `mktemp -d` is not a valid selected workspace; `mill init` first,
+  then resolve that world's own `database_path` — verified against a fresh init world): `PROP-Aep-001.C12.2`, S11,
+  TC4, `TASK-Aep-011.MI6`.
+- `spawn --for`/`ps --for` arg-spec help strings (`delegation.clj:1865,1874`) added to the S4/Task 4 contract — the
+  shipped help would be false after F2.
+- `SPEC-Aep-003` added: `SPEC-004.C92` storage-location staleness correction (live db under the weaver state dir),
+  applied at Task 10. CM4's gate-link no-delta reasoning unchanged.
+- Reader-context finding partially accepted: reading-context note in the proposal header area + TC5 reading map here;
+  a full glossary was declined — vocabulary lives in `docs/skein.md` and the spool READMEs, and duplicating it in
+  feature docs would drift.
+- Remaining >180-column lines are markdown table rows and verbatim Old/New spec fragments, which the docs-style rule
+  exempts (reviewer vko1s's analysis); no further reflow.

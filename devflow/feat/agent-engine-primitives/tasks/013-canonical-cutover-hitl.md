@@ -9,9 +9,9 @@
 Type: HITL
 
 Coordinator-only execution of the rehearsed cutover against the canonical `.skein` world. The
-weaver restart is a hard stop requiring fresh, explicit user sign-off in this feature's own right —
-the F1 pre-authorization (`92awa`) was exercised for F1's restart and does not carry over
-(`PROP-Aep-001.C12.4`). Never delegated to a worker; never started autonomously.
+weaver restart is a hard stop that needs fresh, explicit user sign-off for this feature: the F1
+pre-authorization (`92awa`) covered F1 only and does not carry over (`PROP-Aep-001.C12.4`). Never
+delegated to a worker; never started autonomously.
 
 ## TASK-Aep-013.P2 Must implement exactly
 

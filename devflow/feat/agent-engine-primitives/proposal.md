@@ -8,6 +8,11 @@ Runtime](../../specs/daemon-runtime.md) **Related sources:** `spools/agent-run/s
 `spools/delegation/src/skein/spools/delegation.clj`, `spools/agent-run/src/skein/spools/executors/subagent.clj`,
 `spools/src/skein/spools/loom.clj`, `src/skein/api/relations/alpha.clj`
 
+**Reading context:** this proposal assumes the Skein vocabulary (strands, runs, gates, spools, harness seats) defined
+in `docs/skein.md` and the spool READMEs, and the devflow document chain: brief (scope contract) → this proposal's
+C-clauses (design contract) → `PLAN-Aep-001` slices (sequencing) → `TASK-Aep-*` files (execution contracts). Every
+point ID is a grepable anchor.
+
 ## PROP-Aep-001.P1 Problem
 
 F1 renamed the surfaces without changing behavior. This feature makes the behavioral change: it replaces two encodings that each answer engine questions the wrong way.
@@ -243,6 +248,10 @@ Delete outright:
   (`:152`) and the `stalled-gates` composition prose (`:131-175`).
 - `spools/delegation/README.md` / `delegation.cookbook.md` — the `serves=false` prose (PROP-Aep-001.C2).
 - `spools/agent-run/README.md` and the root-level `spools/agent-run.cookbook.md` — document the `serves` edge and the `supersede-and-respawn` family.
+- `delegation.clj` arg-spec help strings (`:1865,1874`) — `spawn --for` currently reads "Served strand id." and
+  `ps --for` reads "Only runs serving this strand id."; both are false after F2 (raw `spawn --for` is structural
+  helper placement, `ps --for` returns serving runs and structural helpers). Rewrite both `:doc` strings to the new
+  semantics.
 
 ## PROP-Aep-001.C11 — spec deltas
 
@@ -259,7 +268,11 @@ Delete outright:
   relations catalog entry (previous bullet) touches alpha surface.
 - **`devflow/specs/daemon-runtime.md`**: if the subagent-executor recovery contract is described there (SPEC-004
   gate/executor sections), reconcile the "gate links its run via `delegates`/`gate/run`" prose to the `serves`-edge
-  model.
+  model. (Verified unnecessary for the gate link — PLAN-Aep-001.CM4.) One unrelated staleness correction rides the
+  delta set: SPEC-004.C92 still says normal `:sqlite-file` worlds use the selected workspace's `data/skein.sqlite`,
+  but the live db is `data/skein.sqlite` under the world's weaver state directory (`database_path` from
+  `mill weaver status`, resolvable before any weaver starts) — the rule this feature's cutover docs lean on.
+  `SPEC-Aep-003` records the correction.
 
 ## PROP-Aep-001.C12 — migration / cutover
 
@@ -276,10 +289,13 @@ the canonical `.skein` world, using F1's rehearse-on-a-copy-then-live ceremony (
   are memory, not authority (PHILOSOPHY: the code wins) — the script scopes to active work.
 - **PROP-Aep-001.C12.2 — rehearse against a copy.** Resolve the live canonical SQLite path from
   `./bin/mill weaver status --workspace <canonical>` (the `database_path` field — the live file lives under the weaver
-  state directory, not workspace-local `data/`, per the F1 ceremony), copy it into a `mktemp -d` disposable workspace,
-  run the rewired code and the stamping script there, and confirm the smoke checks (`agent status`,
-  `ready --query stalled-gates`, `kanban board`, `agent ps`) render clean. The rehearsal never touches the canonical
-  world.
+  state directory, not workspace-local `data/`, per the F1 ceremony). Create the disposable world with
+  `ws=$(mktemp -d)` then `./bin/mill init --workspace "${ws:?}"` — a bare temp dir is not a valid selected workspace
+  (`strand --workspace` fails without `mill init`'s `config.json`). Resolve that world's own `database_path` from
+  `./bin/mill weaver status --workspace "${ws:?}"` (it resolves before any weaver starts), copy the canonical file
+  there, run the stamping script with that explicit `--db` target, then start the disposable weaver and confirm the
+  smoke checks (`agent status`, `ready --query stalled-gates`, `kanban board`, `agent ps`) render clean. The rehearsal
+  never touches the canonical world.
 - **PROP-Aep-001.C12.3 — quiet-board live cutover.** Land the code, quiesce the board (no in-flight delegated runs or
   open subagent gates mid-transition), run the stamping script against the canonical SQLite.
 - **PROP-Aep-001.C12.4 — weaver restart requires explicit user sign-off — hard stop.** The rewired engine needs a fresh

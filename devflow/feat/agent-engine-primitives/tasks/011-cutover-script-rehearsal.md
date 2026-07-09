@@ -33,13 +33,34 @@ runs this against the canonical world.
   live workspace's db is NOT at workspace-local `data/skein.sqlite`; it lives under the weaver
   state dir and is resolved from `mill weaver status --workspace <w>` (`database_path`), or passed
   as an explicit `--db <path>` (F1 precedent: `TASK-Alr-019.MI5`).
-- **TASK-Aep-011.MI6:** Rehearse per `PROP-Aep-001.C12.2`: resolve the live canonical SQLite path
-  from `./bin/mill weaver status --workspace <canonical>` (`database_path`), copy it into a
-  `mktemp -d` disposable `--workspace` world (hold the path in your own shell variable, guard
-  every expansion with `${ws:?}`; never the canonical world, never a shared scratch path), run the
-  rewired code + script there, and confirm the smoke checks (`agent status`,
-  `ready --query stalled-gates`, `kanban board`, `agent ps`) render clean. The rehearsal never
-  touches the canonical world.
+- **TASK-Aep-011.MI6:** Rehearse per `PROP-Aep-001.C12.2` (a bare `mktemp -d` is NOT a valid
+  selected workspace — `strand --workspace` fails without `mill init`'s `config.json`):
+
+  ```sh
+  set -euo pipefail
+  canonical=/Users/ct/dev/projects/skein-src/.skein
+  src_db=$(./bin/mill weaver status --workspace "${canonical:?}" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["database_path"])')
+
+  ws=$(mktemp -d)
+  ./bin/mill init --workspace "${ws:?}"
+  copy_db=$(./bin/mill weaver status --workspace "${ws:?}" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["database_path"])')
+  mkdir -p "$(dirname "${copy_db:?}")"
+  cp "${src_db:?}" "${copy_db:?}"
+  # run the stamping script with the explicit --db "${copy_db:?}" target, then:
+  ./bin/mill weaver start --workspace "${ws:?}"
+  ./bin/strand --workspace "${ws:?}" agent status
+  ./bin/strand --workspace "${ws:?}" ready --query stalled-gates
+  ./bin/strand --workspace "${ws:?}" kanban board
+  ./bin/strand --workspace "${ws:?}" agent ps
+  ./bin/mill weaver stop --workspace "${ws:?}"
+  ```
+
+  Hold `ws` in your own shell variable (guard every expansion with `${ws:?}`; never the canonical
+  world, never a shared scratch path). All four smoke checks must render clean. The rehearsal
+  never touches the canonical world. Record the resolved paths and outputs as evidence (F1
+  precedent: the ceremony doc's Rehearsal evidence section).
 
 ## TASK-Aep-011.P3 Done when
 

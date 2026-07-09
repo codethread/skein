@@ -39,12 +39,17 @@ Move delegation's serving semantics onto the `serves` edge and delete the boolea
   the `serves`-edge model; keep it in the `|`-margin block format. `task-runs`/`children-ids`/
   `subtree`/`tree-node` (`delegation.clj:485,488,508,1825`) stay on `parent-of` — structural
   rendering, unchanged (`PROP-Aep-001.C3` table row 6).
+- **TASK-Aep-004.MI7:** Rewrite the arg-spec `:doc` help strings at `delegation.clj:1865,1874` —
+  `spawn --for` ("Served strand id.") becomes structural helper placement, and `ps --for` ("Only
+  runs serving this strand id.") becomes serving runs plus structural helpers. Both are false
+  after F2; `strand help agent` must describe the shipped semantics (`PROP-Aep-001.C10`).
 
 ## TASK-Aep-004.P3 Done when
 
 - **TASK-Aep-004.DW1:** No live reader of `agent-run/serves` remains in `delegation.clj`;
   `serving-runs` and the guards resolve serving from `serves` edges minus superseded; helpers carry
-  no `serves` edge; structural traversals untouched.
+  no `serves` edge; structural traversals untouched; `./bin/strand help agent` (after
+  `make build`) shows the corrected `--for` docs.
 - **TASK-Aep-004.DW2:** Cold focused run `clojure -M:test skein.delegation-test` green.
 - **TASK-Aep-004.DW3:** `make fmt-check lint reflect-check` pass.
 

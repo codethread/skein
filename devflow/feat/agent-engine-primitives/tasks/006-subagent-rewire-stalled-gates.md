@@ -8,9 +8,9 @@
 
 Type: AFK
 
-The subagent executor stops maintaining its own run↔gate link and rides `serves`+lineage; the
-`stalled-gates` query and `loom/flow-status` follow (`PROP-Aep-001.C8`–`C9`). A gate's current
-delegated run = the current run serving the gate.
+The subagent executor stops maintaining its own run↔gate link and uses `serves` plus lineage
+instead; the `stalled-gates` query and `loom/flow-status` follow (`PROP-Aep-001.C8`–`C9`). A
+gate's current delegated run = the current run serving the gate.
 
 **Owned files (disjoint):**
 - `spools/agent-run/src/skein/spools/executors/subagent.clj`

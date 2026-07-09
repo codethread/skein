@@ -8,8 +8,8 @@
 
 Type: AFK
 
-Prove the whole set green in one place (`PROP-Aep-001.R1`, `P6`, `DW1`–`DW3`). No new source files;
-regenerates the three api.md outfiles.
+Run the full acceptance gate in one place and record each result (`PROP-Aep-001.R1`, `P6`,
+`DW1`–`DW3`). No new source files; regenerates the three api.md outfiles.
 
 **Owned files:**
 - `spools/agent-run.api.md`, `spools/delegation.api.md`, `spools/executors/subagent.api.md`
