@@ -89,12 +89,12 @@
    [:= [:attr "workflow/family"] "devflow"]])
 
 (defquery work-query
-  "Query for active actionable work, excluding workflow plumbing, shuttle run records, and inert kanban refinement cards."
+  "Query for active actionable work, excluding workflow plumbing, agent run records, and inert kanban refinement cards."
   {:usage "strand ready --query work"}
   [:and
    [:= :state "active"]
-   [:or [:missing [:attr "shuttle/run"]]
-    [:not [:= [:attr "shuttle/run"] "true"]]]
+   [:or [:missing [:attr "agent-run/run"]]
+    [:not [:= [:attr "agent-run/run"] "true"]]]
    [:or [:missing [:attr "kanban/status"]]
     [:not [:= [:attr "kanban/status"] "refinement"]]]
    [:or
@@ -503,7 +503,7 @@
               :flags {:days {:type :int
                              :doc "Maximum active age, in days, before a strand is stale."}
                       :include-plumbing {:type :boolean-token
-                                         :doc "Whether to include workflow/shuttle plumbing: true or false."}}}}
+                                         :doc "Whether to include workflow and agent-run plumbing: true or false."}}}}
   [ctx]
   (let [{:keys [days include-plumbing]} (:op/args ctx)]
     (suppress-expected-carder-orphans
@@ -535,7 +535,7 @@
   "Return workflow flow status by joining history, frontier, gates, runs, and stalls.
 
   The JSON payload is read-only and suitable for renderers; no workflow,
-  shuttle, or treadle state is mutated. The join and Mermaid gate chain live in
+  agent-run, or gate state is mutated. The join and Mermaid gate chain live in
   `skein.spools.loom/flow-status`; this op only names the run and stamps the
   operation."
   {:arg-spec {:op "flow-status"
@@ -647,7 +647,7 @@
   active work root per branch — `kanban claim` does this for cards — and hangs
   all execution strands beneath that root with parent-of edges. This op supplies
   the repo policy — the `branch` attribute names the branch and the `work` query
-  feeds the ready frontier (so workflow plumbing and shuttle run records stay
+  feeds the ready frontier (so workflow plumbing and agent run records stay
   hidden) — and delegates the projection to `skein.spools.loom/branch-views`.
   A scoping `branch` argument that matches no stamped root fails loudly."
   {:arg-spec {:op "branches"

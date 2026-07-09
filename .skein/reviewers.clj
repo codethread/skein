@@ -207,7 +207,7 @@
    :synthesizer {:harness :review-gpt}})
 
 (defn install!
-  "Register this repository's reviewer rosters with the agents spool."
+  "Register this repository's reviewer rosters with the delegation spool."
   []
   {:rosters [(agents/defroster! :change-review change-review)
              (agents/defroster! :complex-patch-review complex-patch-review)

@@ -1,7 +1,7 @@
 (ns attention
   "This repo's chime attention rules: what the devflow considers worth a
   human's attention. The chime engine is vocabulary-agnostic; these rules own
-  the workflow/shuttle/treadle/kanban knowledge. Developers bind how they are
+  the workflow, agent-run, gate, and kanban knowledge. Developers bind how they are
   notified in gitignored init.local.clj with (chime/set-notifier! {:argv [...]})."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
@@ -34,21 +34,21 @@
        :body (str "Checkpoint " (:id strand) " is ready for human attention.")})))
 
 (defrule agent-failure
-  "Notify when a shuttle run has failed or exhausted its attempts."
+  "Notify when an agent run has failed or exhausted its attempts."
   [{:keys [strand]}]
-  (let [phase (config-attr strand :shuttle/phase)]
+  (let [phase (config-attr strand :agent-run/phase)]
     (when (contains? #{"failed" "exhausted"} phase)
       {:title (str "Agent run " phase ": " (:title strand))
-       :body (str "Strand " (:id strand) " entered shuttle/phase " phase
-                  (when-let [error (config-attr strand :shuttle/error)]
+       :body (str "Strand " (:id strand) " entered agent-run/phase " phase
+                  (when-let [error (config-attr strand :agent-run/error)]
                     (str "\n\n" error)))})))
 
-(defrule treadle-error
-  "Notify when a workflow gate is stamped with a treadle error."
+(defrule gate-error
+  "Notify when a workflow gate is stamped with a gate error."
   [{:keys [strand]}]
-  (when-let [error (config-attr strand :treadle/error)]
-    {:title (str "Treadle error: " (:title strand))
-     :body (str "Strand " (:id strand) " has treadle/error:\n\n" error)}))
+  (when-let [error (config-attr strand :gate/error)]
+    {:title (str "Gate error: " (:title strand))
+     :body (str "Strand " (:id strand) " has gate/error:\n\n" error)}))
 
 (defrule kanban-started
   "Notify when a kanban card is claimed and work starts."
@@ -72,7 +72,7 @@
   "Return true when strand is an active failed/exhausted blocker."
   [strand]
   (and (= "active" (:state strand))
-       (contains? #{"failed" "exhausted"} (config-attr strand :shuttle/phase))))
+       (contains? #{"failed" "exhausted"} (config-attr strand :agent-run/phase))))
 
 (defn- active-descendants
   "Return active strands below a kanban card over parent-of, including the card."
@@ -108,7 +108,7 @@
          :body (str "Kanban card " (:id strand)
                     " is blocked by failed/exhausted work:\n"
                     (str/join "\n" (map #(str "- " (:id %) " " (:title %)
-                                              " (" (config-attr % :shuttle/phase) ")")
+                                              " (" (config-attr % :agent-run/phase) ")")
                                         blockers)))}))))
 
 (def ^:private parked-run-threshold-ms
@@ -150,7 +150,7 @@
         nil))))
 
 (defrule parked-run
-  "Notify when a ready pending shuttle run has sat unclaimed past the threshold.
+  "Notify when a ready pending agent run has sat unclaimed past the threshold.
 
   This is the silent-parking detector: the morning incident left runs ready and
   pending forever because scan! launched them onto a nil executor. A run that is
@@ -158,16 +158,16 @@
   than the threshold is one the launch path should have spawned but did not."
   [{:keys [strand ready-ids]}]
   (when (and (= "active" (:state strand))
-             (= "true" (config-attr strand :shuttle/run))
-             (= "pending" (config-attr strand :shuttle/phase))
+             (= "true" (config-attr strand :agent-run/run))
+             (= "pending" (config-attr strand :agent-run/phase))
              (contains? ready-ids (:id strand))
              (not (contains? (shuttle/in-flight-run-ids) (:id strand)))
              (when-let [age (strand-age-ms strand)]
                (>= age parked-run-threshold-ms)))
     {:title (str "Agent run parked: " (:title strand))
-     :body (str "Shuttle run " (:id strand) " has been ready and pending for over "
+     :body (str "Agent run " (:id strand) " has been ready and pending for over "
                 (quot parked-run-threshold-ms 60000) " minutes with no in-flight claim."
-                " This is the silent-parking signature — verify the weaver's shuttle"
+                " This is the silent-parking signature — verify the weaver's agent-run"
                 " executors are healthy and the run was not dropped by a reload.")}))
 
 (defn install!

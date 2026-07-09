@@ -21,9 +21,10 @@
 (runtime-alpha/use! runtime :skein/spools-loom
                     {:ns 'skein.spools.loom
                      :call 'skein.spools.loom/install!})
-;; reed is a classpath-shipped spool that fulfils :shell workflow gates by
-;; running the gate command directly. Its install! runs an initial scan, so it
-;; is ordered after workflow (which owns the executor registry it registers into).
+;; The shell executor is a classpath-shipped spool that fulfils :shell workflow
+;; gates by running the gate command directly. Its install! runs an initial
+;; scan, so it is ordered after workflow (which owns the executor registry it
+;; registers into).
 (runtime-alpha/use! runtime :skein/spools-reed
                     {:ns 'skein.spools.executors.shell
                      :after [:skein/spools-workflow]
@@ -92,7 +93,7 @@
                      :required? true})
 ;; Chime is a vocabulary-agnostic notification engine: it installs bare here,
 ;; attention.clj registers this repo's attention rules (HITL checkpoints, agent
-;; failures, treadle errors, kanban lifecycle, parked runs), and each developer
+;; failures, gate errors, kanban lifecycle, parked runs), and each developer
 ;; binds how they are notified in gitignored init.local.clj (loaded after this
 ;; file on startup and reload). Unbound chime records loud notifier-missing
 ;; failures.
@@ -138,9 +139,10 @@
                      :after [:skein/spools-cron :skein/spools-kanban]
                      :call 'nvd-scan/install!
                      :required? true})
-;; Treadle installs last: its install! runs an initial gate scan, so every
-;; harness alias harnesses.clj registers (e.g. worker) must already exist or a
-;; durable ready gate would be stamped treadle/error on every cold start.
+;; The subagent gate executor installs last: its install! runs an initial gate
+;; scan, so every harness alias harnesses.clj registers (e.g. worker) must
+;; already exist or a durable ready gate would be stamped gate/error on every
+;; cold start.
 (runtime-alpha/use! runtime :skein/spools-treadle
                     {:ns 'skein.spools.executors.subagent
                      :spools ['skein.spools/agent-run]

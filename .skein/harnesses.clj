@@ -1,5 +1,5 @@
 (ns harnesses
-  "Repo-local shuttle harness seats and routing policy.
+  "Repo-local harness seats and routing policy.
 
   Every model seat delegation and review can route to is declared here, with
   the routing rationale beside the alias it applies to. `strand agent
@@ -22,7 +22,7 @@
             [skein.spools.agent-run :as shuttle]))
 
 (defn- register-harness-aliases!
-  "Register repo-local shuttle harness aliases."
+  "Register repo-local harness aliases."
   []
   [(shuttle/defalias! :worker
      {:alias-of :pi
@@ -38,7 +38,7 @@
              "--dangerously-bypass-approvals-and-sandbox"
              "-c" "shell_environment_policy.inherit=all"]
       :parse :raw
-      :resume ["resume" :shuttle/session-id]
+      :resume ["resume" :agent-run/session-id]
       :doc (format-alpha/reflow
             "|Codex CLI (gpt-5.5) headless: agentic coding seat with the strongest
              |general-purpose web search of the roster — notably better than the
@@ -135,5 +135,5 @@
    :harnesses (register-harness-aliases!)
    ;; agent review consumes the one authoritative policy text by default; the
    ;; text itself ships from skein.spools.delegation, set-default-review-contract!
-   ;; still lives on the shuttle engine
+   ;; still lives on the agent-run engine
    :review-contract (shuttle/set-default-review-contract! agents/review-contract)})

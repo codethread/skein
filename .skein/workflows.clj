@@ -199,14 +199,14 @@
                      (str "Delegate pipeline task " (task-value item :id)))
                    :subagent
                    :loop {:each :tasks :chain true}
-                   :attributes {"shuttle/harness" (fn [{:keys [item harness]}]
-                                                    (or (task-value item :harness) harness))
-                                "shuttle/prompt" (fn [{:keys [run-id item]}]
-                                                   (pipeline-task-prompt run-id item))
-                                "shuttle/cwd" (fn [{:keys [item cwd]}]
-                                                (or (task-value item :cwd) cwd))
-                                "shuttle/max-attempts" (fn [{:keys [item]}]
-                                                         (task-value item :max-attempts))
+                   :attributes {"agent-run/harness" (fn [{:keys [item harness]}]
+                                                      (or (task-value item :harness) harness))
+                                "agent-run/prompt" (fn [{:keys [run-id item]}]
+                                                     (pipeline-task-prompt run-id item))
+                                "agent-run/cwd" (fn [{:keys [item cwd]}]
+                                                  (or (task-value item :cwd) cwd))
+                                "agent-run/max-attempts" (fn [{:keys [item]}]
+                                                           (task-value item :max-attempts))
                                 "delegate-pipeline/task" (fn [{:keys [item]}]
                                                            (task-value item :id))})
         accept-checkpoint (workflow/checkpoint
