@@ -181,3 +181,7 @@ serial-island comments updated. Full locked suite green.
   `vh4sq`. Both plan-level mechanism choices are decided here (A2 pump, A3 per-owner settle);
   the task queue assumes them. If review overturns either choice, the affected migration tasks
   (3–8) and DELTA-Dtt-001.CC3/CC5 need revisiting before implementation.
+
+### PLAN-Dtt-001.DN2 Task 001 clock seam — 2026-07-09
+
+- Landed the runtime-owned clock seam with `runtime.alpha/now`, test-side `set-clock!` and `advance!`, a runtime clock-pump registry, and the scheduler as the first pump consumer. The scheduler private clock was removed and its spool-state version bumped for the shape change. Focused scheduler/test-alpha namespaces passed via the in-process classpath invocation because the `:test` runner rejects namespace argv; `make fmt-check lint reflect-check` was clean.

@@ -59,7 +59,7 @@
 
   Bumping this reinitializes (and closes) any preserved state whose shape no
   longer matches after a reload, per SPEC-004.C95/C96."
-  1)
+  2)
 
 (def ^:private state-key ::state)
 
@@ -77,9 +77,14 @@
 
 (declare dispatch-and-rearm!)
 
-(defn- now-instant ^Instant [state]
-  (let [now-fn @(:clock state)]
-    (now-fn)))
+(defn- now-instant
+  "Current Instant from the runtime clock seam.
+
+  Reads the runtime's `:clock` slot directly rather than via
+  `skein.core.weaver.runtime/now`: runtime requires this scheduler namespace, so
+  a static require back would cycle."
+  ^Instant [runtime]
+  ((deref (:clock runtime))))
 
 (defn- close-state!
   "Cancel the timer and shut the executor down, joining its thread."
@@ -107,7 +112,6 @@
         state {:executor (Executors/newSingleThreadScheduledExecutor factory)
                :timer (atom nil)
                :in-flight (atom #{})
-               :clock (atom (fn [] (Instant/now)))
                :dispatch-failures (atom [])
                :closed? (atom false)
                :lock (Object.)}]
@@ -123,15 +127,6 @@
   [runtime]
   ((requiring-resolve 'skein.api.runtime.alpha/spool-state)
    runtime state-key {:version scheduler-state-version} new-state))
-
-(defn set-clock!
-  "Install a zero-arg clock fn returning the current java.time.Instant.
-
-  Test seam: deterministic runtime tests inject an advanceable clock so due
-  detection and arming do not depend on wall-clock time."
-  [runtime clock-fn]
-  (reset! (:clock (state runtime)) clock-fn)
-  nil)
 
 (defn dispatch-failures
   "Return recent transient (queue-full) dispatch failures, newest last."
@@ -158,7 +153,7 @@
   (let [ds (:datasource runtime)
         st (state runtime)
         ^ArrayBlockingQueue queue (get-in runtime [:event-system :queue])
-        due (due-wakes-fn ds (now-instant st))]
+        due (due-wakes-fn ds (now-instant runtime))]
     (reduce
      (fn [acc wake]
        (let [key (:key wake)]
@@ -237,7 +232,7 @@
         (when-let [^ScheduledFuture fut @(:timer st)]
           (.cancel fut false)
           (reset! (:timer st) nil))
-        (let [now-ms (.toEpochMilli (now-instant st))
+        (let [now-ms (.toEpochMilli (now-instant runtime))
               in-flight @(:in-flight st)
               next (first (remove #(contains? in-flight (:key %)) (db/pending-wakes ds)))]
           (when next
@@ -271,18 +266,34 @@
          (schedule-tick! runtime transient-retry-ms)
          (catch Throwable _ nil))))))
 
+(defn- register-pump!
+  "Register the scheduler's synchronous due-check with the runtime clock-pump
+  registry so `skein.test.alpha/advance!` can drive dispatch off an injected
+  clock without waiting on the real timer thread.
+
+  Pokes the runtime's `:clock-pumps` slot directly rather than calling
+  `skein.core.weaver.runtime/register-clock-pump!`: runtime requires this
+  namespace, so a static require back would cycle."
+  [runtime]
+  (when-let [pumps (:clock-pumps runtime)]
+    (swap! pumps assoc ::pump dispatch-due!))
+  nil)
+
 (defn rearm!
   "Rebuild scheduler timers from durable pending rows after config load.
 
   Called post-startup and post-reload. Reload clears the event-system queue, so
   any fire envelope already queued is discarded; the in-flight set is therefore
-  reset and rebuilt from pending rows to preserve at-least-once delivery."
+  reset and rebuilt from pending rows to preserve at-least-once delivery. Also
+  (re)registers the clock-consumer pump so deterministic tests can drive due
+  dispatch off the runtime clock."
   [runtime]
   (let [st (state runtime)]
     ;; :lock is the dedicated per-state (Object.) monitor; false positive, see close-state!.
     #_{:splint/disable [lint/locking-object]}
     (locking (:lock st)
       (reset! (:in-flight st) #{})))
+  (register-pump! runtime)
   (arm! runtime))
 
 (defn run-fire!

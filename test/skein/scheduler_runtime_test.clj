@@ -15,6 +15,7 @@
             [skein.core.weaver.runtime :as runtime]
             [skein.core.weaver.scheduler :as scheduler]
             [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as test-alpha]
             [skein.weaver-test :as wt])
   (:import [java.time Instant]
            [java.util.concurrent ArrayBlockingQueue]))
@@ -51,6 +52,8 @@
   [ds queue-capacity]
   {:datasource ds
    :spool-state (atom {})
+   :clock (atom (fn [] (Instant/now)))
+   :clock-pumps (atom {})
    :event-system {:queue (ArrayBlockingQueue. (int queue-capacity))}})
 
 (defn- with-scheduler
@@ -59,7 +62,7 @@
   [ds queue-capacity clock-seconds f]
   (let [rt (fake-runtime ds queue-capacity)
         st (scheduler/state rt)]
-    (scheduler/set-clock! rt (constantly (instant clock-seconds)))
+    (test-alpha/set-clock! rt (constantly (instant clock-seconds)))
     (try
       (f rt st)
       (finally
@@ -166,7 +169,7 @@
             ;; by run-fire-skips-cancelled-and-rescheduled-wakes). Now deliver gen B.
             (.poll queue)
             (swap! (:in-flight st) disj "resched")
-            (scheduler/set-clock! rt (constantly (instant 200)))
+            (test-alpha/set-clock! rt (constantly (instant 200)))
             (let [result (scheduler/dispatch-due! rt)]
               (is (= 1 (:dispatched result)))
               (is (= 1 (:scheduler/attempt (.poll queue)))

@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: Clock seam + scheduler consumer collapse
     task_file: tasks/001-clock-seam.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: Event-lane await-quiescent! seam
