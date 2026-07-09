@@ -262,3 +262,16 @@ Append notes here. Do not rewrite earlier notes.
   (PLAN-Ttv-001.A3, `/bin/` is gitignored). Shard-focused selection is deferred
   (PLAN-Ttv-001.A5). If review moves `run-focused!` fully test-side
   (DELTA-Ttv-001.Q1), PH2 and DELTA-Ttv-001 need revisiting before implementation.
+
+### PLAN-Ttv-001.DN2 Task queue authored — 2026-07-09
+
+- Authored `tasks/index.yml` + six task files under strand `6mejy`, one per plan
+  phase (TASK-Ttv-001..006). No phase needed splitting for a worker context window.
+  Dependency chain: 1 → 2 → 3, then 4 and 5 run in parallel after 3 (disjoint
+  scopes — 4 owns AGENTS/CLAUDE/agents-spool prose, 5 owns the attr-scaling task
+  queue), and 6 (full acceptance) is `blocked_by [4, 5]`, which transitively
+  requires all of 1–5. Eats the tiered dogfood: tasks 1–5 gate on cold focused
+  `clojure -M:test <ns...>` runs (3–5 are shell/markdown/config with no Clojure
+  test namespace, gated by focused runs of the pieces they touch, fmt-check, the
+  exercised script, and a disposable-world smoke of the workflows.clj edit); the
+  full locked `flock` suite appears only in TASK-Ttv-006.

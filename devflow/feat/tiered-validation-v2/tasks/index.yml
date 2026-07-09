@@ -1,0 +1,31 @@
+tasks:
+  - id: 1
+    description: Runner focused-core extraction
+    task_file: tasks/001-runner-focused-core.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Warm REPL server, run-focused! entry, alias
+    task_file: tasks/002-warm-repl.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: Script entry and worktree cleanup
+    task_file: tasks/003-script-and-cleanup.md
+    status: pending
+    blocked_by: [2]
+  - id: 4
+    description: Guidance surfaces (AGENTS/CLAUDE/agents spool)
+    task_file: tasks/004-guidance-surfaces.md
+    status: pending
+    blocked_by: [3]
+  - id: 5
+    description: attr-scaling queue sweep to the tiers
+    task_file: tasks/005-attr-scaling-sweep.md
+    status: pending
+    blocked_by: [3]
+  - id: 6
+    description: Full acceptance (final slice)
+    task_file: tasks/006-full-acceptance.md
+    status: pending
+    blocked_by: [4, 5]
