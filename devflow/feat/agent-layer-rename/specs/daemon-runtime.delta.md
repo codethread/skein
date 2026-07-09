@@ -1,6 +1,6 @@
 # Weaver Runtime delta for agent-layer-rename
 
-**Document ID:** `SPEC-Alr-003` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (`SPEC-004`) **Feature:** [../proposal.md](../proposal.md) (`PROP-Alr-001`) **Rename table:** [../brief.md](../brief.md) **Status:** Planned **Last Updated:** 2026-07-09
+**Document ID:** `SPEC-Alr-003` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (`SPEC-004`) **Feature:** [../proposal.md](../proposal.md) (`PROP-Alr-001`) **Rename table:** [../brief.md](../brief.md) **Status:** Merged **Last Updated:** 2026-07-09
 
 ## SPEC-Alr-003.P1 Summary
 
