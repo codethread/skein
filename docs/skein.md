@@ -134,6 +134,8 @@ strand --workspace "$workspace" update <id> --edge depends-on:<other-id>
 strand --workspace "$workspace" show <id>
 strand --workspace "$workspace" list
 strand --workspace "$workspace" ready
+strand --workspace "$workspace" note <id> "Captured decision"
+strand --workspace "$workspace" notes <id>
 strand --workspace "$workspace" burn <id>
 strand --workspace "$workspace" query list
 strand --workspace "$workspace" query explain <query-name>
@@ -151,6 +153,7 @@ Use the CLI for:
 - attaching simple attributes;
 - adding edges;
 - asking what is ready;
+- appending root-level notes with `note` and reading attached notes with `notes`;
 - consuming named queries registered by trusted config;
 - invoking weave patterns registered by trusted config;
 - starting, stopping, and checking the weaver.
@@ -210,7 +213,8 @@ strand --workspace "$workspace" burn <id>
 
 ## Edges and readiness
 
-Edges connect strands with open relation names such as `depends-on`, `parent-of`, `supersedes`, or annotation relations like `references`.
+Edges connect strands with open relation names. The shipped acyclic relations are `depends-on`, `parent-of`, `supersedes`, `serves`, and `notes`.
+Other annotation relations, such as `references`, are allowed but may form non-self cycles.
 
 A `depends-on` edge from `A` to `B` means: `A` is blocked while `B` is active.
 
@@ -224,7 +228,11 @@ strand --workspace "$workspace" update "$docs" --edge depends-on:"$design"
 strand --workspace "$workspace" ready
 ```
 
-Self-edges fail for every relation. Declared acyclic relations such as `depends-on`, `parent-of`, and `supersedes` reject relation-local cycles; annotation relations may form non-self cycles.
+Self-edges fail for every relation. The declared acyclic relations `depends-on`, `parent-of`, `supersedes`, `serves`, and `notes` reject relation-local cycles.
+Other annotation relations may form non-self cycles.
+
+The batteries `note` verb appends an immutable note strand at the root.
+`notes` reads the target's attached notes by walking the `notes` relation, no matter which writer created them.
 
 ## Attributes are the extension point
 
