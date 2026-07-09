@@ -28,7 +28,7 @@ the full locked suite only at queue acceptance and land; warm is never a gate; b
   (c) the full locked suite `flock -w 3600 /tmp/skein-test.lock clojure -M:test` only at
   queue acceptance and land `merge-local-verify`. State the CI-independence invariant
   (warm never a gate, gitignored, no warm-only result path — `R3`).
-- **TASK-Ttv-004.MI2:** Use **bare** `flock` on PATH (nix); never the dead
+- **TASK-Ttv-004.MI2:** Use **bare** `flock` on PATH (nix); never the removed
   `/opt/homebrew/opt/util-linux/bin/flock` path (PLAN-Ttv-001.TC5).
 - **TASK-Ttv-004.MI3:** Add tiered-validation prose to the `about-doc` `:policy` map in
   `spools/agents/src/skein/spools/agents.clj` (beside `:task-sizing`, ~`:447-449`)

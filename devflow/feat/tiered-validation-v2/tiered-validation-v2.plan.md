@@ -3,7 +3,10 @@
 **Document ID:** `PLAN-Ttv-001`
 **Feature:** `tiered-validation-v2`
 **Proposal:** [proposal.md](./proposal.md)
-**RFC:** none (the shipped focused runner and deterministic-test-time seams this builds on carry [RFC-016](../../rfcs/2026-07-03-test-concurrency.md) and [RFC-Dtt-001](../../archive/26-07-09__deterministic-test-time/rfcs/2026-07-09-deterministic-test-time.md); no new RFC covers the tiered convention or the warm loop)
+**RFC:** none — no new RFC covers the tiered convention or the warm loop; the
+shipped seams this builds on carry
+[RFC-016](../../rfcs/2026-07-03-test-concurrency.md) and
+[RFC-Dtt-001](../../archive/26-07-09__deterministic-test-time/rfcs/2026-07-09-deterministic-test-time.md)
 **Root specs:** [REPL API](../../specs/repl-api.md) <!-- test.alpha vocabulary; SPEC-003.C28 -->
 **Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md)
 **Status:** Draft
@@ -26,9 +29,10 @@ why it matters; the land gate and CI are unchanged (PROP-Ttv-001.NG3).
 ## PLAN-Ttv-001.P2 Approach
 
 - **PLAN-Ttv-001.A1 (documentation-led, tooling-backed):** The load-bearing
-  deliverable is the guidance rewrite — the tiers are worthless if plan/task
-  authors keep copying `flock ... clojure -M:test` into every slice. The warm
-  loop is the convenience that makes the cold-focused gate cheap to reach. Slice
+  deliverable is the guidance rewrite — the tiers take effect only when
+  plan/task authors stop copying `flock ... clojure -M:test` into every slice.
+  The warm loop is the convenience that lowers the cost of reaching the
+  cold-focused gate. Slice
   so the tooling lands first (a warm loop nobody references yet is inert and
   safe), then the guidance flips the convention over to it, then the pending
   queue is swept to match.
@@ -240,8 +244,9 @@ generated SQLite/runtime artifacts and no warm files.
   only; keep `run-focused!` reflection-clean.
 - **PLAN-Ttv-001.TC5:** The full-tier lock command is
   `flock -w 3600 /tmp/skein-test.lock clojure -M:test` with **bare** `flock`
-  (nix, on PATH). The old `/opt/homebrew/opt/util-linux/bin/flock` path is dead —
-  never prescribe it; the attr-scaling sweep (PH5) removes the stale copies.
+  (nix, on PATH). The old `/opt/homebrew/opt/util-linux/bin/flock` path no
+  longer exists — never prescribe it; the attr-scaling sweep (PH5) removes the
+  stale copies.
 - **PLAN-Ttv-001.TC6:** The `.skein/workflows.clj` cleanup-step edit is a
   coordination-world config change: read `docs/skein.md` and smoke it in a
   disposable `--workspace` world before relying on it.
@@ -270,8 +275,12 @@ Append notes here. Do not rewrite earlier notes.
   Dependency chain: 1 → 2 → 3, then 4 and 5 run in parallel after 3 (disjoint
   scopes — 4 owns AGENTS/CLAUDE/agents-spool prose, 5 owns the attr-scaling task
   queue), and 6 (full acceptance) is `blocked_by [4, 5]`, which transitively
-  requires all of 1–5. Eats the tiered dogfood: tasks 1–5 gate on cold focused
-  `clojure -M:test <ns...>` runs (3–5 are shell/markdown/config with no Clojure
-  test namespace, gated by focused runs of the pieces they touch, fmt-check, the
-  exercised script, and a disposable-world smoke of the workflows.clj edit); the
-  full locked `flock` suite appears only in TASK-Ttv-006.
+  requires all of 1–5. Gate contract, applying this feature's own convention:
+  tasks whose scope includes Clojure source (1–2) gate on cold focused
+  `clojure -M:test <ns...>` runs of the namespaces they touch; tasks 3–5 ship
+  shell/markdown/config with no Clojure test namespace of their own and gate on
+  their artifact checks — task 3 exercises `make test-warm` end-to-end (this
+  validates the warm tooling as the deliverable under test, not a warm result
+  standing in for a cold slice gate) plus fmt-check and a disposable-world smoke
+  of the workflows.clj edit; tasks 4–5 gate on docs-check/api-docs and grep
+  assertions. The full locked `flock` suite appears only in TASK-Ttv-006.

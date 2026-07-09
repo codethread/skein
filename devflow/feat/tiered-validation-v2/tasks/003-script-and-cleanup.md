@@ -37,7 +37,9 @@ REPL, `make test-warm-stop` reaps it, and the land `cleanup` step stops it befor
 
 ## TASK-Ttv-003.P3 Done when
 
-- **TASK-Ttv-003.DW1:** Exercise the script end-to-end in this worktree:
+- **TASK-Ttv-003.DW1:** Exercise the script end-to-end in this worktree (the
+  warm tooling is itself the deliverable under test here — this is not a warm
+  result standing in for a cold slice gate):
   `make test-warm NS="skein.test.alpha-test"` boots the REPL and prints a green summary;
   a second `make test-warm NS="skein.test.alpha-test"` reuses the same PID (port file
   unchanged, no new JVM); `make test-warm-stop` kills the recorded PID and removes both files.
