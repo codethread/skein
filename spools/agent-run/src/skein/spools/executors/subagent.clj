@@ -66,14 +66,14 @@
 (defn- spawn-idempotency-run-for-gate
   "Return an existing live run for gate-id, so a crash between spawn and gate
   stamp re-stamps instead of double-spawning. Failed/exhausted/superseded runs
-  are deliberately excluded so clearing a gate's `treadle/run` requests a fresh
+  are deliberately excluded so clearing a gate's `gate/run` requests a fresh
   run rather than re-adopting the dead one (a `superseded` run is one `agent
   retry` closed out); the trade-off is that a run that died inside that same
   crash window is orphaned, not re-adopted (treadle.md)."
   [gate-id]
   (first (api/list (rt)
-                   [:and [:= [:attr "treadle/gate"] gate-id]
-                    [:missing [:attr "treadle/delivered"]]
+                   [:and [:= [:attr "gate/step"] gate-id]
+                    [:missing [:attr "gate/delivered"]]
                     [:not [:= [:attr "shuttle/phase"] "failed"]]
                     [:not [:= [:attr "shuttle/phase"] "exhausted"]]
                     [:not [:= [:attr "shuttle/phase"] "superseded"]]]
@@ -84,16 +84,16 @@
 
 (defn- deliver-run! [run]
   (let [run-id (:id run)
-        gate-id (attr run :treadle/gate)
-        workflow-run-id (attr run :treadle/run-id)]
+        gate-id (attr run :gate/step)
+        workflow-run-id (attr run :gate/run-id)]
     (try
       (let [gate (api/show (rt) gate-id)]
         (cond
           (nil? gate)
-          (stamp! run-id {"treadle/delivered" "error: gate not found"})
+          (stamp! run-id {"gate/delivered" "error: gate not found"})
 
           (= "closed" (:state gate))
-          (stamp! run-id {"treadle/delivered" "gate-closed"})
+          (stamp! run-id {"gate/delivered" "gate-closed"})
 
           (ready-gate? workflow-run-id gate-id)
           (do
@@ -101,7 +101,7 @@
                                 (cond-> {:step gate-id :by run-id}
                                   (non-blank (attr run :shuttle/result))
                                   (assoc :notes (attr run :shuttle/result))))
-            (stamp! run-id {"treadle/delivered" "true"}))
+            (stamp! run-id {"gate/delivered" "true"}))
 
           :else
           ;; Gate is active but not currently ready (e.g. userland added a
@@ -109,11 +109,11 @@
           ;; scan retries once the gate is ready again, but stamp a durable
           ;; signal — write-once, or the stamp's own update event would
           ;; re-trigger this branch in a loop.
-          (when-not (attr run :treadle/delivery-blocked)
-            (stamp! run-id {"treadle/delivery-blocked"
+          (when-not (attr run :gate/delivery-blocked)
+            (stamp! run-id {"gate/delivery-blocked"
                             (str "gate " gate-id " is active but not ready")}))))
       (catch Throwable t
-        (stamp! run-id {"treadle/delivered" (str "error: " (ex-message t)
+        (stamp! run-id {"gate/delivered" (str "error: " (ex-message t)
                                                  (some->> (ex-data t) (str " ")))})))))
 
 (defn- finished-undelivered-runs []
@@ -126,8 +126,8 @@
   (api/list (rt)
             [:and [:= :state "closed"]
              [:= [:attr "shuttle/phase"] "done"]
-             [:exists [:attr "treadle/gate"]]
-             [:missing [:attr "treadle/delivered"]]]
+             [:exists [:attr "gate/step"]]
+             [:missing [:attr "gate/delivered"]]]
             {}))
 
 (defn- gate-prompt [gate]
@@ -154,25 +154,25 @@
     :else (fail! "shuttle/max-attempts must be an integer" {:value v})))
 
 (defn- stamp-run-on-gate!
-  "Stamp gate-id with its current delegated run: the `treadle/run` attribute and a
+  "Stamp gate-id with its current delegated run: the `gate/run` attribute and a
   `delegates` edge, repointing every prior delegated run's provenance to this one.
 
   `stalled-gates` reaches a run's `shuttle/phase` through the gate's `delegates`
-  edges because the query DSL has no attr->id join back to `treadle/run`. A
+  edges because the query DSL has no attr->id join back to `gate/run`. A
   cleared-and-respawned gate keeps its old `delegates` edge to the dead run, so
   without repointing the query would keep surfacing a healthy gate while
-  `gate-stalled?` (which reads only the current `treadle/run`) reports nil. Marking
-  each superseded run `treadle/superseded-by` excludes its stale edge from the
+  `gate-stalled?` (which reads only the current `gate/run`) reports nil. Marking
+  each superseded run `gate/superseded-by` excludes its stale edge from the
   query, keeping the query's membership rule — the current delegated run is dead —
   in lockstep with the predicate."
   [gate-id run-id]
   (doseq [prior (api/list (rt)
-                          [:and [:= [:attr "treadle/gate"] gate-id]
+                          [:and [:= [:attr "gate/step"] gate-id]
                            [:!= :id run-id]
-                           [:missing [:attr "treadle/superseded-by"]]]
+                           [:missing [:attr "gate/superseded-by"]]]
                           {})]
-    (stamp! (:id prior) {"treadle/superseded-by" run-id}))
-  (api/update (rt) gate-id {:attributes {"treadle/run" run-id}
+    (stamp! (:id prior) {"gate/superseded-by" run-id}))
+  (api/update (rt) gate-id {:attributes {"gate/run" run-id}
                             :edges [{:type "delegates" :to run-id}]}))
 
 (defn- ensure-run-stamp! [gate]
@@ -182,7 +182,7 @@
 
 (defn- spawn-for-gate! [run-id gate-view]
   (let [gate (api/show (rt) (:id gate-view))]
-    (when-not (or (non-blank (attr gate :treadle/run)) (non-blank (attr gate :treadle/error)))
+    (when-not (or (non-blank (attr gate :gate/run)) (non-blank (attr gate :gate/error)))
       (try
         (if (ensure-run-stamp! gate)
           nil
@@ -195,11 +195,11 @@
                                          :max-attempts (parse-max-attempts (attr gate :shuttle/max-attempts))
                                          :prompt (treadle-preamble {:gate gate :run-id run-id :prompt prompt})
                                          :title (str "Delegated: " (:title gate))
-                                         :attrs {"treadle/gate" (:id gate)
-                                                 "treadle/run-id" run-id}})]
+                                         :attrs {"gate/step" (:id gate)
+                                                 "gate/run-id" run-id}})]
             (stamp-run-on-gate! (:id gate) (:id run))))
         (catch Throwable t
-          (stamp! (:id gate) {"treadle/error" (str (ex-message t)
+          (stamp! (:id gate) {"gate/error" (str (ex-message t)
                                                    (some->> (ex-data t) (str " ")))}))))))
 
 (defn- spawn-ready-gates! []
@@ -210,7 +210,7 @@
     (try
       (spawn-for-gate! run-id step)
       (catch Throwable t
-        (stamp! (:id step) {"treadle/error" (str (ex-message t)
+        (stamp! (:id step) {"gate/error" (str (ex-message t)
                                                  (some->> (ex-data t) (str " ")))})))))
 
 (defn scan!
@@ -233,15 +233,15 @@
 (defn gate-stalled?
   "Return durable stall detail for a ready subagent gate view, or nil.
 
-  A gate is stalled when spawn failed onto `treadle/error`, or its stamped run is
+  A gate is stalled when spawn failed onto `gate/error`, or its stamped run is
   in shuttle phase `failed`/`exhausted`/`superseded`. `superseded` is included so
   a gate whose run was retired by `agent retry` (which supersedes the run without
   re-linking the fresh one) stays discoverable rather than silently pending until
   a coordinator clears the stamp. No wall-clock hang policy is applied."
   [gate-view]
   (let [gate (api/show (rt) (:id gate-view))
-        run-id (non-blank (attr gate :treadle/run))
-        error (non-blank (attr gate :treadle/error))
+        run-id (non-blank (attr gate :gate/run))
+        error (non-blank (attr gate :gate/error))
         run (when run-id (api/show (rt) run-id))]
     (cond
       error {:gate (:id gate) :error error}
@@ -265,24 +265,24 @@
     (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates: an active subagent gate whose
     ;; spawn errored, or whose current delegated run is dead in a terminal phase.
-    ;; The `delegates` edge (added beside every `treadle/run` stamp) lets the query
-    ;; reach the run's `shuttle/phase` — no per-attr join back to `treadle/run`
-    ;; exists. `stamp-run-on-gate!` marks superseded runs `treadle/superseded-by`,
+    ;; The `delegates` edge (added beside every `gate/run` stamp) lets the query
+    ;; reach the run's `shuttle/phase` — no per-attr join back to `gate/run`
+    ;; exists. `stamp-run-on-gate!` marks superseded runs `gate/superseded-by`,
     ;; so excluding those keeps the edge-scoped query in lockstep with the
     ;; current-stamp `gate-stalled?` predicate through the clear-and-respawn flow.
     (graph/register-query! runtime 'stalled-gates
                          [:and [:= :state "active"]
                           [:= [:attr "workflow/gate"] "subagent"]
                           [:or
-                           [:and [:exists [:attr "treadle/error"]]
-                            [:not [:= [:attr "treadle/error"] ""]]]
+                           [:and [:exists [:attr "gate/error"]]
+                            [:not [:= [:attr "gate/error"] ""]]]
                            [:edge/out "delegates"
-                            [:and [:missing [:attr "treadle/superseded-by"]]
+                            [:and [:missing [:attr "gate/superseded-by"]]
                              [:in [:attr "shuttle/phase"] stalled-run-phases]]]]])
     (graph/register-query! runtime 'blocked-deliveries
                          [:and [:= :state "closed"]
-                          [:exists [:attr "treadle/delivery-blocked"]]
-                          [:missing [:attr "treadle/delivered"]]])
+                          [:exists [:attr "gate/delivery-blocked"]]
+                          [:missing [:attr "gate/delivered"]]])
     (scan!)
     {:installed true
      :namespace 'skein.spools.executors.subagent}))
