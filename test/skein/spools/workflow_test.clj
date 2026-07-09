@@ -405,7 +405,7 @@
         (workflow/complete! "notes-run" {:notes "done via automation" :attributes {"outcome" "ok"}})
         (let [strand (repl/strand (:id step))]
           (is (= "closed" (:state strand)))
-          (is (= "done via automation" (get-in strand [:attributes :workflow/notes])))
+          (is (= "done via automation" (get-in strand [:attributes :workflow/outcome-notes])))
           (is (= "ok" (get-in strand [:attributes :outcome]))))))))
 
 (deftest workflow-complete-fails-loudly-on-invalid-step-and-mutates-nothing
@@ -451,7 +451,7 @@
                 closed (repl/strand gate-id)]
             (is (= "closed" (:state closed)))
             (is (= "ci" (get-in closed [:attributes :workflow/outcome-by])))
-            (is (= "green" (get-in closed [:attributes :workflow/notes])))
+            (is (= "green" (get-in closed [:attributes :workflow/outcome-notes])))
             (is (= [{:title "Deploy" :kind "step"}]
                    (mapv #(select-keys % [:title :kind]) remaining)))))))))
 

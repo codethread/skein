@@ -43,9 +43,9 @@
     (fn [_rt _]
       (let [blocked (repl/strand! "Blocked work")
             ok-blocked (repl/strand! "Blocked by nonfailed")
-            failed (repl/strand! "Failed run" {"shuttle/phase" "failed" "shuttle/error" "boom"})
-            exhausted (repl/strand! "Exhausted run" {"shuttle/phase" "exhausted"})
-            running (repl/strand! "Running run" {"shuttle/phase" "running"})]
+            failed (repl/strand! "Failed run" {"agent-run/phase" "failed" "agent-run/error" "boom"})
+            exhausted (repl/strand! "Exhausted run" {"agent-run/phase" "exhausted"})
+            running (repl/strand! "Running run" {"agent-run/phase" "running"})]
         (repl/update! (:id blocked) {:edges [{:type "depends-on" :to (:id failed)}
                                              {:type "depends-on" :to (:id exhausted)}]})
         (repl/update! (:id ok-blocked) {:edges [{:type "depends-on" :to (:id running)}]})
@@ -53,14 +53,14 @@
               row (first (filter #(= (:id blocked) (:id %)) rows))]
           (is (= [(:id blocked)] (mapv :id rows)))
           (is (= #{(:id failed) (:id exhausted)} (set (map :id (:blockers row)))))
-          (is (= "boom" (some #(when (= (:id failed) (:id %)) (:shuttle/error %)) (:blockers row)))))))))
+          (is (= "boom" (some #(when (= (:id failed) (:id %)) (:agent-run/error %)) (:blockers row)))))))))
 
 (deftest report-aggregates-and-applies-default-exclusions
   (with-runtime
     (fn [rt _]
       (let [stale-work (repl/strand! "Stale work")
             workflow-root (repl/strand! "Workflow root" {"workflow/role" "molecule"})
-            shuttle-run (repl/strand! "Run record" {"shuttle/run" "true"})]
+            shuttle-run (repl/strand! "Run record" {"agent-run/run" "true"})]
         (set-updated-at! rt (:id stale-work) "2026-01-01 00:00:00")
         (set-updated-at! rt (:id workflow-root) "2026-01-01 00:00:00")
         (set-updated-at! rt (:id shuttle-run) "2026-01-01 00:00:00")

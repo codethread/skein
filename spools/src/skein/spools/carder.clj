@@ -53,7 +53,7 @@
   (contains? excluded-workflow-roles (attr strand :workflow/role)))
 
 (defn- shuttle-run? [strand]
-  (= "true" (attr strand :shuttle/run)))
+  (= "true" (attr strand :agent-run/run)))
 
 (defn- excluded? [opts strand]
   (and (not (:include-plumbing? opts))
@@ -142,12 +142,12 @@
           vec))))
 
 (defn- failed-blocker? [strand]
-  (contains? failed-shuttle-phases (attr strand :shuttle/phase)))
+  (contains? failed-shuttle-phases (attr strand :agent-run/phase)))
 
 (defn- blocker-detail [strand]
   (cond-> (summary strand)
-    (attr strand :shuttle/phase) (assoc :shuttle/phase (attr strand :shuttle/phase))
-    (attr strand :shuttle/error) (assoc :shuttle/error (attr strand :shuttle/error))))
+    (attr strand :agent-run/phase) (assoc :agent-run/phase (attr strand :agent-run/phase))
+    (attr strand :agent-run/error) (assoc :agent-run/error (attr strand :agent-run/error))))
 
 (defn- depends-on-edges [rt]
   (jdbc/execute! (datasource rt)
@@ -157,7 +157,7 @@
 (defn blocked-by-failure
   "Return active strands blocked by active failed or exhausted depends-on targets.
 
-  A blocker is any active `depends-on` target whose `shuttle/phase` attribute is
+  A blocker is any active `depends-on` target whose `agent-run/phase` attribute is
   the string `failed` or `exhausted`. Rows include the blocked strand summary and
   a `:blockers` vector with compact blocker details."
   ([]

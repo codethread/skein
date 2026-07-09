@@ -188,23 +188,23 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- compact-run
-  "Return a compact shuttle/treadle state projection for a run strand."
+  "Return a compact agent-run/gate state projection for a run strand."
   [run]
   (when run
     (cond-> {:id (:id run)
              :title (:title run)
              :state (:state run)
-             :shuttle/phase (attr-get run :shuttle/phase)}
-      (attr-get run :shuttle/harness) (assoc :shuttle/harness (attr-get run :shuttle/harness))
-      (attr-get run :shuttle/error) (assoc :shuttle/error (attr-get run :shuttle/error))
-      (attr-get run :shuttle/result) (assoc :shuttle/result (attr-get run :shuttle/result))
-      (attr-get run :treadle/delivered) (assoc :treadle/delivered (attr-get run :treadle/delivered))
-      (attr-get run :treadle/delivery-blocked) (assoc :treadle/delivery-blocked (attr-get run :treadle/delivery-blocked)))))
+             :agent-run/phase (attr-get run :agent-run/phase)}
+      (attr-get run :agent-run/harness) (assoc :agent-run/harness (attr-get run :agent-run/harness))
+      (attr-get run :agent-run/error) (assoc :agent-run/error (attr-get run :agent-run/error))
+      (attr-get run :agent-run/result) (assoc :agent-run/result (attr-get run :agent-run/result))
+      (attr-get run :gate/delivered) (assoc :gate/delivered (attr-get run :gate/delivered))
+      (attr-get run :gate/delivery-blocked) (assoc :gate/delivery-blocked (attr-get run :gate/delivery-blocked)))))
 
 (defn- compact-gate
-  "Return a compact workflow gate projection joined to its treadle run."
+  "Return a compact workflow gate projection joined to its delegated run."
   [rt failed-run-ids stalled-gate-ids gate]
-  (let [run-id (attr-get gate :treadle/run)
+  (let [run-id (attr-get gate :gate/run)
         run (when run-id (api/show rt run-id))
         run-failed? (contains? failed-run-ids run-id)
         spawn-stalled? (contains? stalled-gate-ids (:id gate))]
@@ -212,10 +212,10 @@
              :title (:title gate)
              :state (:state gate)
              :gate (attr-get gate :workflow/gate)
-             :treadle/run run-id
+             :gate/run run-id
              :run (compact-run run)
              :stalled? (boolean (or spawn-stalled? run-failed?))}
-      (attr-get gate :treadle/error) (assoc :treadle/error (attr-get gate :treadle/error))
+      (attr-get gate :gate/error) (assoc :gate/error (attr-get gate :gate/error))
       spawn-stalled? (assoc :stall/reason "spawn-error")
       run-failed? (assoc :stall/reason "agent-failure"))))
 
@@ -253,7 +253,7 @@
   "Return workflow flow status by joining history, frontier, gates, runs, and stalls.
 
   The JSON-compatible payload is read-only and suitable for renderers; no
-  workflow, shuttle, or treadle state is mutated. Failure summaries are scoped to
+  workflow, agent-run, or gate state is mutated. Failure summaries are scoped to
   this run's own gates and their delegated runs so records from other workflows
   never surface in an unrelated run's payload. Includes a `:dev/mermaid` gate
   chain rendered by `gate-chain-mermaid`."
@@ -263,13 +263,13 @@
         done (workflow/done? run-id)
         run-gates (run-subagent-gates rt history)
         run-gate-ids (set (map :id run-gates))
-        run-delegated-ids (set (keep #(attr-get % :treadle/run) run-gates))
+        run-delegated-ids (set (keep #(attr-get % :gate/run) run-gates))
         stalled-gates (filterv #(contains? run-gate-ids (:id %))
                                (api/list rt [:and [:= :state "active"]
                                              [:= [:attr "workflow/gate"] "subagent"]
-                                             [:exists [:attr "treadle/error"]]] {}))
+                                             [:exists [:attr "gate/error"]]] {}))
         agent-failures (filterv #(contains? run-delegated-ids (:id %))
-                                (api/list rt [:in [:attr "shuttle/phase"] ["failed" "exhausted"]] {}))
+                                (api/list rt [:in [:attr "agent-run/phase"] ["failed" "exhausted"]] {}))
         stalled-gate-ids (set (map :id stalled-gates))
         failed-run-ids (set (map :id agent-failures))
         gates (mapv (partial compact-gate rt failed-run-ids stalled-gate-ids) run-gates)

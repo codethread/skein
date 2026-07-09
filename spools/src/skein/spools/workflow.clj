@@ -1192,7 +1192,7 @@
       (attr strand :workflow/outcome) (assoc :outcome (attr strand :workflow/outcome))
       (attr strand :workflow/outcome-by) (assoc :by (attr strand :workflow/outcome-by))
       (attr strand :workflow/outcome-input) (assoc :input (attr strand :workflow/outcome-input))
-      (attr strand :workflow/notes) (assoc :notes (attr strand :workflow/notes)))))
+      (attr strand :workflow/outcome-notes) (assoc :notes (attr strand :workflow/outcome-notes)))))
 
 (defn- molecule-history
   "Project one molecule root into `{:root {…} :events [event …]}`, its events being
@@ -1433,7 +1433,7 @@
 
 (defn- close-attributes!
   "Return attributes to merge onto a step closed by complete!, from optional
-  `:notes` (string, stored as \"workflow/notes\") and `:attributes` (map)
+  `:notes` (string, stored as \"workflow/outcome-notes\") and `:attributes` (map)
   opts. Returns nil when neither is present."
   [opts]
   (let [{:keys [notes attributes]} opts]
@@ -1442,7 +1442,7 @@
     (when (and (contains? opts :attributes) (not (map? attributes)))
       (fail! "Workflow :attributes must be a map" {:attributes attributes}))
     (not-empty (merge (or attributes {})
-                      (when notes {"workflow/notes" notes})))))
+                      (when notes {"workflow/outcome-notes" notes})))))
 
 (defn- depends-on-edges
   "Return the depends-on adjacency (from-id -> #{to-id ...}) internal to
@@ -1507,7 +1507,7 @@
 
   opts may include `:step` (materialized strand id) to select among multiple
   ready steps; without it, exactly one step must be ready. opts may also
-  include `:notes` (string, stored as \"workflow/notes\") and `:attributes`
+  include `:notes` (string, stored as \"workflow/outcome-notes\") and `:attributes`
   (map merged onto the closed step). A non-blank `:by` is recorded as
   \"workflow/outcome-by\" on any step it is supplied for, but is only required
   when closing a gate step (one built with `gate`).
