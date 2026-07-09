@@ -139,7 +139,7 @@
                      :call 'nvd-scan/install!
                      :required? true})
 ;; Treadle installs last: its install! runs an initial gate scan, so every
-;; harness alias harnesses.clj registers (e.g. pi-main) must already exist or a
+;; harness alias harnesses.clj registers (e.g. worker) must already exist or a
 ;; durable ready gate would be stamped treadle/error on every cold start.
 (runtime-alpha/use! runtime :skein/spools-treadle
                     {:ns 'skein.spools.treadle

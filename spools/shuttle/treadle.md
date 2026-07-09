@@ -38,7 +38,7 @@ Load shuttle first, then treadle from the same approved local-root spool:
 
 `install!` fails loudly unless `:shuttle/engine` is already installed.
 
-Install treadle **after** any startup config that registers harness aliases: `install!` runs an initial gate scan, so an alias a durable ready gate names (e.g. `pi-main`) must already be registered or that gate is stamped `treadle/error` on every cold start.
+Install treadle **after** any startup config that registers harness aliases: `install!` runs an initial gate scan, so an alias a durable ready gate names (e.g. `worker`) must already be registered or that gate is stamped `treadle/error` on every cold start.
 
 Gate scans serialize on a runtime-owned monitor: independent weaver runtimes in one JVM scan independently and never block each other.
 

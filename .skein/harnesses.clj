@@ -24,10 +24,10 @@
 (defn- register-harness-aliases!
   "Register repo-local shuttle harness aliases."
   []
-  [(shuttle/defalias! :pi-main
+  [(shuttle/defalias! :worker
      {:alias-of :pi
       :extra-args ["--agent" "main"]
-      :doc "pi main agent with scout subagents for parallel recon; preferred delegation harness."})
+      :doc "pi main agent with scout subagents for parallel recon; preferred delegation seat."})
    ;; Sessions persist to disk, so `codex exec resume <session-id>` can
    ;; continue them once a codex-json parse captures session ids; :resume
    ;; splices that subcommand ahead of the prompt (the global flags before it

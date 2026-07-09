@@ -75,11 +75,38 @@
           (is (= "fast" (:alias-of reviewer)))
           (is (= "base" (:harness reviewer)))
           (is (= "Base tool surface." (:harness-doc reviewer)))))
-      (testing "alias cycles and missing harnesses fail loudly"
+      (testing "a same-named seat shadows the tool alias-first and terminates at it"
+        ;; register a seat carrying the tool's own name: resolution must walk the
+        ;; alias hop first, then fall to the harness registry that shares the name
+        (shuttle/defalias! :pi {:alias-of :pi :extra-args ["--agent" "main"] :doc "pi worker seat."})
+        (let [effective (shuttle/resolve-harness :pi)]
+          (is (= ["pi" "-p" "--mode" "json"] (:argv effective)) "terminates at the pi tool's argv")
+          (is (= ["--agent" "main"] (:extra-args effective)) "the seat's extra args are applied")))
+      (testing "an unshadowed harness resolves directly"
+        (let [effective (shuttle/resolve-harness :sh)]
+          (is (= ["sh" "-c"] (:argv effective)))
+          (is (= [] (:extra-args effective)))))
+      (testing "the listing shows a same-named tool and seat as two rows"
+        (let [rows (filter #(= "pi" (:name %)) (shuttle/harnesses))
+              by-kind (into {} (map (juxt :kind identity)) rows)]
+          (is (= 2 (count rows)) "the same-name shadow pair does not collapse to one row")
+          (is (= "harness" (:kind (get by-kind "harness"))))
+          (is (= "alias" (:kind (get by-kind "alias"))))
+          ;; the alias row carries the root tool's name and doc beside its own
+          (is (= "pi" (:harness (get by-kind "alias"))))
+          (is (= "pi worker seat." (:doc (get by-kind "alias"))))
+          (is (string? (:harness-doc (get by-kind "alias"))))))
+      (testing "alias cycles fail loudly with a distinct, non-not-found error"
         (shuttle/defalias! :a {:alias-of :b})
         (shuttle/defalias! :b {:alias-of :a})
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cycle"
-                              (shuttle/resolve-harness :a)))
+        (try
+          (shuttle/resolve-harness :a)
+          (is false "an alias cycle should throw")
+          (catch clojure.lang.ExceptionInfo e
+            (is (str/includes? (ex-message e) "cycle"))
+            (is (= "alias-cycle" (:error-class (ex-data e))))
+            (is (not= "harness-not-found" (:error-class (ex-data e)))
+                "a cycle must not masquerade as the transient not-found reload race")))
         ;; the listing stays best-effort: a broken chain drops its root keys
         ;; instead of taking the whole diagnostic surface down
         (let [entry (first (filter #(= "a" (:name %)) (shuttle/harnesses)))]
@@ -91,7 +118,10 @@
           (is false "missing harness should throw")
           (catch clojure.lang.ExceptionInfo e
             (is (str/includes? (ex-message e) "Harness not found"))
-            (is (= "harness-not-found" (:error-class (ex-data e))))))))))
+            (is (= "harness-not-found" (:error-class (ex-data e))))
+            ;; the diagnostic now lists both registries' available names
+            (is (contains? (ex-data e) :available-harnesses))
+            (is (contains? (ex-data e) :available-aliases))))))))
 
 (deftest run-spawns-when-ready-and-captures-result
   (with-shuttle
@@ -893,8 +923,8 @@
   ;; would reuse a shape-mismatched preserved map. Pins the current key set.
   (test-support/assert-state-shape
    #'shuttle/new-state
-   #{:harness-registry :backend-registry :in-flight :recovery-scheduler
-     :worker-executor :preamble-extension :preamble-conflicts
+   #{:harness-registry :alias-registry :backend-registry :in-flight
+     :recovery-scheduler :worker-executor :preamble-extension :preamble-conflicts
      :default-review-contract :close-fn}))
 
 (deftest set-preamble-extension-tolerates-reload
@@ -954,12 +984,15 @@
                             (#'shuttle/worker-executor))))))
 
 (deftest reload-with-changed-state-shape-reinits
-  ;; Simulate a reload that preserved a pre-upgrade state: no version tag and
-  ;; missing the executor/scheduler keys. Accessing state must deliberately
-  ;; migrate to the current shape (fresh executors) rather than reuse it.
+  ;; Simulate a reload that preserved a pre-upgrade (v2) state: no version tag,
+  ;; missing the executor/scheduler keys, and one mixed harness registry.
+  ;; Accessing state must deliberately migrate to the current shape — fresh
+  ;; executors, and the mixed registry split by entry shape into the two v3
+  ;; atoms — rather than reuse it.
   (with-shuttle
     (fn [rt]
-      (let [old-registry (atom {:pi ::alias})
+      (let [old-registry (atom {:pi {:argv ["pi" "-p"] :parse :pi-json}
+                                :worker {:alias-of :pi :extra-args ["--agent" "main"]}})
             old-in-flight (atom {"run-x" {:phase :running}})
             old-state {:harness-registry old-registry
                        :backend-registry (atom {})
@@ -972,11 +1005,39 @@
           (is (some? (:worker-executor reinit)) "reinit supplies a fresh worker executor")
           (is (some? (:recovery-scheduler reinit)) "reinit supplies a fresh recovery scheduler")
           (is (some? (:close-fn reinit)))
-          (is (identical? old-registry (:harness-registry reinit)) "durable registry carried over by migrate")
+          (is (= {:pi {:argv ["pi" "-p"] :parse :pi-json}} @(:harness-registry reinit))
+              "the tool entry migrates into the harness registry")
+          (is (= {:worker {:alias-of :pi :extra-args ["--agent" "main"]}} @(:alias-registry reinit))
+              "the seat entry migrates into the alias registry, nothing dropped")
           (is (identical? old-in-flight (:in-flight reinit)) "in-flight tracking carried over by migrate")
           (is (= "preserved preamble" @(:preamble-extension reinit)))
           ;; and the fail-loud getters now resolve real executors
           (is (some? (#'shuttle/worker-executor))))))))
+
+(deftest migrate-splits-mixed-registry-and-rejects-corrupt-entries
+  ;; The v2->v3 split classifies each preserved entry by exact shape; an entry
+  ;; that matches neither registry shape (or could pass as both) is a corrupt
+  ;; record and must fail loudly rather than be silently dropped or misfiled.
+  (with-shuttle
+    (fn [rt]
+      (testing "an entry matching neither shape fails the migrate loudly"
+        (let [old-state {:harness-registry (atom {:broken {:doc "no argv, no alias-of"}})
+                         :backend-registry (atom {})
+                         :in-flight (atom {})
+                         :preamble-extension (atom nil)
+                         :default-review-contract (atom nil)}]
+          (swap! (:spool-state rt) assoc :skein.spools.shuttle/state old-state)
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"neither or both"
+                                (#'shuttle/state)))))
+      (testing "an entry carrying both shapes' required keys fails the migrate loudly"
+        (let [old-state {:harness-registry (atom {:both {:argv ["x"] :alias-of :pi}})
+                         :backend-registry (atom {})
+                         :in-flight (atom {})
+                         :preamble-extension (atom nil)
+                         :default-review-contract (atom nil)}]
+          (swap! (:spool-state rt) assoc :skein.spools.shuttle/state old-state)
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"neither or both"
+                                (#'shuttle/state))))))))
 
 (deftest parse-pi-json-result-is-always-a-string
   ;; pi tool_execution_end events carry a top-level "result" holding a tool
