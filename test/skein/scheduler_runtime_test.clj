@@ -129,7 +129,7 @@
                 due-wakes-fn (fn [ds now]
                                (cons {:key "gone" :wake_at (.toEpochMilli ^Instant now) :attempts 0}
                                      (real-due ds now)))
-                result (scheduler/dispatch-due! rt {:due-wakes-fn due-wakes-fn})]
+                result (#'scheduler/dispatch-due!* rt due-wakes-fn)]
             (is (not (:transient? result)) "a vanished row does not throw or fail the pass")
             (is (nil? (db/get-pending-wake ds "gone")) "the vanished key was never persisted")
             (is (= 1 (:attempts (db/get-pending-wake ds "live")))
@@ -157,7 +157,7 @@
                                  ;; Reschedule to gen B after selection, before the mark.
                                  (db/schedule-wake! ds {:key "resched" :wake-at (instant 200) :handler 'a/b})
                                  due))
-                result (scheduler/dispatch-due! rt {:due-wakes-fn due-wakes-fn})]
+                result (#'scheduler/dispatch-due!* rt due-wakes-fn)]
             (is (= 1 (:dispatched result)) "the stale envelope still enqueues")
             (is (= 200000 (:wake_at (db/get-pending-wake ds "resched"))) "gen B owns the row now")
             (is (zero? (:attempts (db/get-pending-wake ds "resched")))

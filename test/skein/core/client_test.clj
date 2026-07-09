@@ -258,9 +258,11 @@
     (fn [_ world _db-file]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"timed out"
-                            (call-world-with-opts world {:timeout-ms 50
-                                                         :nrepl-client (fn [conn _timeout-ms] conn)
-                                                         :nrepl-client-session (fn [client _timeout-ms] client)
-                                                         :nrepl-message (fn [_session _message]
-                                                                          (throw (java.net.SocketTimeoutException. "timed out")))}
-                                                  :list))))))
+                            (#'client/call-world* (:config-dir world)
+                                                  {:timeout-ms 50}
+                                                  :list
+                                                  []
+                                                  {:nrepl-client (fn [conn _timeout-ms] conn)
+                                                   :nrepl-client-session (fn [client _timeout-ms] client)
+                                                   :nrepl-message (fn [_session _message]
+                                                                    (throw (java.net.SocketTimeoutException. "timed out")))}))))))
