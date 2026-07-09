@@ -76,7 +76,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
   because its script is a required positional, so the engine cannot move it to
   stdin. A typo'd `:prompt-via` fails loudly at `defharness!` rather than
   silently falling back to the less-safe argv delivery (contract
-  [§3, "Harness registry"](./shuttle/README.md#3-harness-registry)).
+  [§3, "Harness and alias registries"](./shuttle/README.md#3-harness-and-alias-registries)).
 - **Aliases flatten; layering is cheap.** `:extra-args` splice in before the
   prompt, and an alias-of-an-alias resolves the whole chain, so a
   `:fast-reviewer` over `:explore` over `:claude` composes without repetition.
