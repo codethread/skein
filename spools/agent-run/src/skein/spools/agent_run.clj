@@ -1316,6 +1316,10 @@
               (update-run! id (into {} (map (fn [[k v]] [(str "agent-run/handle." k) v])) handle) {}))
             (swap! (in-flight) assoc id {:phase :running}))
           (catch Throwable t
+            ;; claim the teardown before stopping: once :stop kills the session,
+            ;; a concurrent supervise! probe sees it dead and would race its
+            ;; generic dead-session error over this launch failure
+            (claim-teardown! id)
             (try
               (let [handle (merge {"session" session}
                                   (try (parse-handle backend-name out) (catch Exception _ {})))
