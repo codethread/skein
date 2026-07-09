@@ -102,7 +102,7 @@
             after (first (workflow/next-steps "happy"))]
         (is (= "true" (attr run :gate/delivered)))
         (is (= (:id run) (attr gate :workflow/outcome-by)))
-        (is (= "gate-result" (attr gate :workflow/notes)))
+        (is (= "gate-result" (attr gate :workflow/outcome-notes)))
         (is (= "happy" (attr run :gate/run-id)))
         (is (= "After" (:title after)))
         (is (= {:from_strand_id (:id gate)
@@ -196,7 +196,7 @@
         (is (= gate-id (attr failed :gate/step)))
         ;; (b) the gate is never delivered and its downstream step stays blocked
         (is (nil? (attr failed :gate/delivered)))
-        (is (nil? (attr (api/show rt gate-id) :workflow/notes)))
+        (is (nil? (attr (api/show rt gate-id) :workflow/outcome-notes)))
         (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/next-steps "blank")))))
         ;; (c) discoverable: the run through agent-failures, the gate through both
         ;; the stall predicate and the stalled-gates coordinator query.
@@ -211,7 +211,7 @@
                                   (api/list rt [:= [:attr "gate/step"] gate-id] {})))
               delivered (await-delivered rt fresh-id)]
           (is (= "true" (attr delivered :gate/delivered)))
-          (is (= "recovered" (attr (api/show rt gate-id) :workflow/notes)))
+          (is (= "recovered" (attr (api/show rt gate-id) :workflow/outcome-notes)))
           (is (= "After" (:title (first (workflow/next-steps "blank"))))))))))
 
 (deftest recovery-respawn-keeps-stalled-gates-in-lockstep-with-predicate
@@ -291,7 +291,7 @@
         ;; complete the gate, even when a delivery scan runs over it.
         (treadle/scan!)
         (is (nil? (attr (api/show rt (:id failed)) :gate/delivered)))
-        (is (nil? (attr (api/show rt gate-id) :workflow/notes)))
+        (is (nil? (attr (api/show rt gate-id) :workflow/outcome-notes)))
         ;; retry re-links no fresh run to the gate, so the gate must stay
         ;; discoverable as stalled rather than silently pending.
         (is (= "superseded" (:phase (treadle/gate-stalled? (ready-subagent-gate "retry-blank")))))))))
@@ -333,7 +333,7 @@
         (api/update rt (:id hold) {:state "closed"})
         (let [delivered (await-delivered rt run-id)]
           (is (= "true" (attr delivered :gate/delivered)))
-          (is (= "held-result" (attr (api/show rt gate-id) :workflow/notes))))))))
+          (is (= "held-result" (attr (api/show rt gate-id) :workflow/outcome-notes))))))))
 
 (deftest treadle-registers-executor-for-flow-await
   (with-treadle
