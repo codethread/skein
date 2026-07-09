@@ -33,9 +33,8 @@ answer to "what notes does X carry" depends on which writer you ask.
   `m630j` false-loss: a note "disappears" when read through the other surface because neither reader walks a shared
   relation.
 
-Two data defects ride along, both confirmed read-only against the live canonical world
-(`database_path` from `mill weaver status`,
-`/Users/ct/.local/state/skein/weavers/068e8753b69bb0125cbf220b1733cf11/data/skein.sqlite`, `immutable=1` snapshot):
+Two data defects ride along, both confirmed read-only against the live canonical world (reproducible recipe: resolve
+the db with `./bin/mill weaver status --workspace <canonical>` → `database_path`, open as an `immutable=1` snapshot):
 
 - **Cascade divergence (67 dangling).** `strand_edges.to_strand_id` carries `ON DELETE CASCADE` (`db.clj:177`), so
   burning a note's target auto-strips the `notes` edge; but the `note/for`/`shuttle/note-for` attribute lives on the
@@ -106,7 +105,7 @@ Add a `notes` operational entry to the advisory catalog `catalog` (`src/skein/ap
  :family :operational
  :direction "note --notes--> target"
  :declared-acyclic? true
- :help "Annotation battery: a closed strand is append-only memory attached to its target."}
+ :help "Append-only memory: a closed note strand attached to its target."}
 ```
 
 The catalog is documentation-only (not a storage allowlist), so this is a source-visible advisory addition; any
@@ -204,24 +203,29 @@ PROP-Np-001.Q1.
 ## PROP-Np-001.C9 — spec and doc deltas
 
 - **`devflow/specs/strand-model.md`** (relations section, ~L46-54): add `notes` to the named relation vocabulary as a
-  core-owned annotation battery (note → target, append-only memory) and to the shipped declared-acyclic set alongside
-  `depends-on`/`parent-of`/`supersedes`/`serves` (`db.clj:217`, spec L48).
-- **`docs/skein.md`** (Edges and readiness, L213/L227): add `notes` beside `depends-on`/`parent-of`/`supersedes` in the
-  relation prose and the declared-acyclic list, with a one-line gloss of the batteries `note`/`notes` verbs.
+  core-owned operational relation (note → target, append-only memory — the C1 classification) and to the shipped
+  declared-acyclic set alongside `depends-on`/`parent-of`/`supersedes`/`serves` (`db.clj:217`, spec L48).
+- **`docs/skein.md`** (Edges and readiness, L213/L227): the relation prose and declared-acyclic list there still
+  predate F2 — `serves` is missing. Rewrite the list once to the full shipped set
+  (`depends-on`/`parent-of`/`supersedes`/`serves`/`notes`), folding in the F2 omission, with a one-line gloss of the
+  batteries `note`/`notes` verbs.
 - **`src/skein/api/relations/alpha.clj`**: the catalog entry (C2).
 - **`spools/batteries.md`**: per-command contracts for `note` and `notes` (C5), following the existing command entries.
-- **`spools/kanban/README.md`** and **`spools/delegation/README.md`**: reconcile note prose to "notes are the blessed
-  `notes` relation; kanban keeps `kanban/note`/`kanban/handover` as decoration" — repo-local userland docs, their own
-  cadence (SPEC-005.C4).
+- **`spools/kanban.md`** (the kanban spool contract doc — there is no `spools/kanban/README.md`) and
+  **`spools/delegation/README.md`**: reconcile note prose to "notes are the blessed `notes` relation; kanban keeps
+  `kanban/note`/`kanban/handover` as decoration" — repo-local userland docs, their own cadence (SPEC-005.C4).
 - **`devflow/specs/alpha-surface.md`**: SPEC-005.C2 gains `skein.api.notes.alpha` in the enumerated blessed set
   (PROP-Np-001.C12).
 
 ## PROP-Np-001.C10 — one-shot HISTORY rewrite and rehearse-on-copy ceremony
 
-Unlike F1/F2 (active-only), this rewrite touches **history** — closed and archived note strands too — because the
-unified reader walks the relation regardless of state, so any un-rekeyed pre-cutover note would be invisible
-(the `m630j` false-loss on every historical note). This divergence from the active-only rule is deliberate and is the
-brief's recorded exception.
+Unlike F1/F2 (active-only), this rewrite touches **history** — because the unified reader walks the relation
+regardless of state, any un-rekeyed pre-cutover note would be invisible (the `m630j` false-loss on every historical
+note). This divergence from the active-only rule is deliberate and is the brief's recorded exception.
+
+**Scope, stated once:** every note strand in the database — active or closed — whose target still exists. Nothing
+else. Non-note strands (closed runs and their `shuttle/*` execution residue) keep the F1/F2 old-shape treatment, and
+the `devflow/archive/*` *documents* are files, not strands (NG4, C11).
 
 - **PROP-Np-001.C10.1 — the script** `scripts/cutover/note_primitive.clj`, beside
   `agent_engine_primitives.clj`/`agent_layer_rename.clj`. It re-keys, per the counts measured *at cutover time* (not
@@ -253,8 +257,9 @@ brief's recorded exception.
   The rewrite **skips** them: there is nothing to attach them to. They stay as closed strands carrying old
   `shuttle/*` keys — inert memory, read by nothing after cutover (the unified reader walks the relation, which they no
   longer participate in). This matches F2's policy: historical strands are memory, not authority; the code wins.
-- **Archived note strands** in `devflow/archive/*` and any closed run memory keep their old shape (NG4). Nothing reads
-  them through the live relation, so their old keys are inert.
+- **Non-note history keeps its old shape.** Closed run strands' `shuttle/*` execution residue stays as-is per the
+  F1/F2 active-only policy — this feature's history-wide scope applies to note strands only (C10). The
+  `devflow/archive/*` *documents* are files, not strands; their prose keeps the old vocabulary (NG4).
 - **No dual-read** (NG1): no live code understands `shuttle/*` or `body`-as-note-text after cutover. The rewrite is the
   one and only bridge; anything it skips is unreachable-but-harmless memory.
 
@@ -280,11 +285,11 @@ brief's recorded exception.
   (PROP-Np-001.P6) before any cutover.
 - **PROP-Np-001.C13.1 — the HISTORY rewrite is a separate, signed step** after the code lands, exactly as F1/F2 ran
   their cutovers separately. Code landing and the canonical-world rewrite are not the same event.
-- **PROP-Np-001.C13.2 — weaver restart under recorded pre-authorization `cu3wz`.** The rewired note surface needs a
-  fresh weaver load. The restart runs under the standing pre-authorization `cu3wz` (user grant 2026-07-09: "no need for
-  my signoff, proceed as needed"), so it does not re-ask for sign-off — **but it remains a ceremony hard stop:** quiet
-  board, backup, rehearsal-on-copy passed, and post-cutover smoke are all mandatory. Pre-authorization removes the
-  question, not the discipline.
+- **PROP-Np-001.C13.2 — weaver restart under recorded pre-authorization.** The rewired note surface needs a fresh
+  weaver load. The restart runs under the standing pre-authorization recorded as strand `cu3wz` (card `ah5vu`, notes
+  `u9jtn`/`fls7n` — the durable record of the user grant and its F2 exercise), so it does not re-ask for sign-off —
+  **but it remains a ceremony hard stop:** quiet board, backup, rehearsal-on-copy passed, and post-cutover smoke are
+  all mandatory. Pre-authorization removes the question, not the discipline.
 - **PROP-Np-001.C13.3 — post-cutover smoke.** After restart: `strand notes <target>` returns notes from every writer,
   `strand kanban card <card>` shows its handovers, `strand agent notes <target>` agrees with `strand notes`, and
   `strand kanban board` renders clean.

@@ -1,8 +1,8 @@
 # Brief: blessed note primitive — core notes relation, note/* shape, batteries surface
 
-Kanban: card `7azzl`, feature 3 of epic `kaans` (agent-layer redesign). Source: coordinator design session 2026-07-09;
-F1 (`agent-layer-rename`, `26o9g`) and F2 (`agent-engine-primitives`, `ah5vu`) are landed on main and the canonical
-world is cut over to both (F2 squash `3b99997`; `serves` relation live).
+Kanban: card `7azzl`, feature 3 of epic `kaans` (agent-layer redesign). Source: the card body (epic design recorded
+2026-07-09). F1 (`agent-layer-rename`, `26o9g`) and F2 (`agent-engine-primitives`, `ah5vu`) are landed on main and the
+canonical world is cut over to both (F2 squash `3b99997`; `serves` relation live).
 
 ## Problem
 
@@ -32,9 +32,10 @@ notes observed 2026-07-09), and pre-cutover history is unreadable by any unified
    same primitive.
 5. **Fix the cascade disagreement**: `note/for` attr vs `notes` edge must not diverge on target deletion.
 6. **One-shot HISTORY rewrite** (not just active strands — deliberate divergence from the F1/F2 active-only rule):
-   1408 shuttle-era notes + 308 kanban notes re-keyed, else the unified read surface recreates the m630j false-loss
-   on every pre-cutover note. Rehearsed on a data copy per the F2 ceremony (`mill init` the disposable world, resolve
-   its own `database_path`, copy, stamp, weaver-backed smoke).
+   all shuttle-era and kanban notes re-keyed (measured at design capture 2026-07-09: 1408 + 308; the world is live and
+   counts drift — 1600 + 356 by proposal time — so the rewrite counts at cutover time, never from these figures), else
+   the unified read surface recreates the m630j false-loss on every pre-cutover note. Rehearsed on a data copy per the
+   F2 ceremony (`mill init` the disposable world, resolve its own `database_path`, copy, stamp, weaver-backed smoke).
 
 ## Deliberately not built
 
@@ -44,8 +45,8 @@ notes observed 2026-07-09), and pre-cutover history is unreadable by any unified
 ## Migration
 
 Same rehearse-on-a-copy-then-live ceremony as F1/F2 (`scripts/cutover/`, ceremony doc, quiet board, backup, restart).
-The restart is executed under the recorded standing pre-authorization `cu3wz` (user grant 2026-07-09: "no need for my
-signoff, proceed as needed"); ceremony discipline applies in full.
+The restart is executed under the standing pre-authorization recorded as strand `cu3wz` (card `ah5vu`, notes
+`u9jtn`/`fls7n`); ceremony discipline applies in full.
 
 ## Related
 
