@@ -108,10 +108,14 @@ nav:
           - Contract: spools/delegation/README.md
           - Cookbook: spools/delegation.cookbook.md
           - API: spools/delegation.api.md
-      - Treadle Gate Bridge:
+      - Subagent Gate Executor:
           - Contract: spools/executors/subagent.md
           - Cookbook: spools/executors/subagent.cookbook.md
           - API: spools/executors/subagent.api.md
+      - Shell Gate Executor:
+          - Contract: spools/executors/shell.md
+          - Cookbook: spools/executors/shell.cookbook.md
+          - API: spools/executors/shell.api.md
       - Chime Notifications:
           - Contract: spools/chime/README.md
           - Cookbook: spools/chime.cookbook.md
