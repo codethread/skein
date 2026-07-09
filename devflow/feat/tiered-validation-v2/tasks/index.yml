@@ -27,5 +27,5 @@ tasks:
   - id: 6
     description: Full acceptance (final slice)
     task_file: tasks/006-full-acceptance.md
-    status: in_progress
+    status: complete
     blocked_by: [4, 5]
