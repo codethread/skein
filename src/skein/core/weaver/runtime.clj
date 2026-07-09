@@ -10,7 +10,7 @@
             [skein.core.db :as db])
   (:import [java.lang ProcessHandle]
            [java.time Instant]
-           [java.util.concurrent ArrayBlockingQueue TimeUnit]))
+           [java.util.concurrent ArrayBlockingQueue]))
 
 (def ^:private loopback-host "127.0.0.1")
 
@@ -30,6 +30,11 @@
 (def ^:private recent-event-failure-limit
   "Maximum number of recent event handler failures retained in memory."
   100)
+(def ^:private event-worker-idle-poll-ms
+  "Sleep between empty-queue polls on the single event worker, in ms. The worker
+  claims events with a non-blocking poll so the dispatch-in-progress flag stays
+  down while the lane idles; this bounds the pickup latency of the next event."
+  5)
 
 (declare stop! with-spool-classloader with-runtime-binding)
 
@@ -38,6 +43,10 @@
    :recent-failures (atom [])
    :queue (ArrayBlockingQueue. event-queue-capacity)
    :running? (atom true)
+   ;; Raised before the worker claims an event, lowered after its handlers
+   ;; return, so await-quiescent! never reports settled while a just-claimed
+   ;; dispatch is still in flight (TEN-003).
+   :dispatch-in-progress? (atom false)
    :worker (atom nil)})
 
 (defn stop-event-system!
@@ -53,41 +62,57 @@
   nil)
 
 (defn- run-event-worker! [runtime event-system]
-  (let [worker (Thread.
+  (let [queue ^ArrayBlockingQueue (:queue event-system)
+        running? (:running? event-system)
+        dispatch-in-progress? (:dispatch-in-progress? event-system)
+        worker (Thread.
                 (fn []
                   (try
-                    (while @(:running? event-system)
-                      (when-let [event (.poll ^ArrayBlockingQueue (:queue event-system) 100 TimeUnit/MILLISECONDS)]
-                        (when @(:running? event-system)
-                          (if (= :scheduler/fire (:event/type event))
-                            ;; Clock-triggered wakes share this serialized lane
-                            ;; rather than a second worker. run-fire! records its
-                            ;; own completion/failure history and never throws
-                            ;; into the worker; the guard is defence in depth.
-                            (try
-                              (with-runtime-binding
-                                runtime
-                                #(with-spool-classloader runtime (fn [] (scheduler/run-fire! runtime event))))
-                              (catch Throwable _ nil))
-                            ;; :fn stays un-destructured: a local named `fn` would
-                            ;; shadow the fn macro in the handler thunks below.
-                            (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
-                                    :when (contains? types (:event/type event))]
+                    (while @running?
+                      ;; Raise the flag before claiming so await-quiescent! never
+                      ;; observes an empty queue with the flag down while an event
+                      ;; is mid-dispatch (TEN-003). A non-blocking poll keeps the
+                      ;; flag down while the lane idles, so quiescence stays
+                      ;; observable between events; the finally lowers it even
+                      ;; when a handler throws.
+                      (reset! dispatch-in-progress? true)
+                      (if-let [event (.poll queue)]
+                        (try
+                          (when @running?
+                            (if (= :scheduler/fire (:event/type event))
+                              ;; Clock-triggered wakes share this serialized lane
+                              ;; rather than a second worker. run-fire! records its
+                              ;; own completion/failure history and never throws
+                              ;; into the worker; the guard is defence in depth.
                               (try
                                 (with-runtime-binding
                                   runtime
-                                  #(with-spool-classloader runtime (fn [] (fn-value event))))
-                                (catch Throwable t
-                                  (let [failure {:handler/key key
-                                                 :handler/fn (:fn handler)
-                                                 :event/id (:event/id event)
-                                                 :event/type (:event/type event)
-                                                 :exception/message (ex-message t)
-                                                 :failed/at (str (Instant/now))}]
-                                    (swap! (:recent-failures event-system)
-                                           #(->> (conj % failure)
-                                                 (take-last recent-event-failure-limit)
-                                                 vec))))))))))
+                                  #(with-spool-classloader runtime (fn [] (scheduler/run-fire! runtime event))))
+                                (catch Throwable _ nil))
+                              ;; :fn stays un-destructured: a local named `fn` would
+                              ;; shadow the fn macro in the handler thunks below.
+                              (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
+                                      :when (contains? types (:event/type event))]
+                                (try
+                                  (with-runtime-binding
+                                    runtime
+                                    #(with-spool-classloader runtime (fn [] (fn-value event))))
+                                  (catch Throwable t
+                                    (let [failure {:handler/key key
+                                                   :handler/fn (:fn handler)
+                                                   :event/id (:event/id event)
+                                                   :event/type (:event/type event)
+                                                   :exception/message (ex-message t)
+                                                   :failed/at (str (Instant/now))}]
+                                      (swap! (:recent-failures event-system)
+                                             #(->> (conj % failure)
+                                                   (take-last recent-event-failure-limit)
+                                                   vec))))))))
+                          (finally
+                            (reset! dispatch-in-progress? false)))
+                        (do
+                          (reset! dispatch-in-progress? false)
+                          (Thread/sleep ^long event-worker-idle-poll-ms))))
                     (catch InterruptedException _ nil)))
                 "skein-event-worker")]
     (.setDaemon worker true)

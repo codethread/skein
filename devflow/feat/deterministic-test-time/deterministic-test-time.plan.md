@@ -185,3 +185,7 @@ serial-island comments updated. Full locked suite green.
 ### PLAN-Dtt-001.DN2 Task 001 clock seam — 2026-07-09
 
 - Landed the runtime-owned clock seam with `runtime.alpha/now`, test-side `set-clock!` and `advance!`, a runtime clock-pump registry, and the scheduler as the first pump consumer. The scheduler private clock was removed and its spool-state version bumped for the shape change. Focused scheduler/test-alpha namespaces passed via the in-process classpath invocation because the `:test` runner rejects namespace argv; `make fmt-check lint reflect-check` was clean.
+
+### PLAN-Dtt-001.DN3 Task 002 event-lane quiescence — 2026-07-09
+
+- Added the event-worker dispatch-in-progress flag and `events.alpha/await-quiescent!`, with timeout failures and default test-support budget lookup. The worker raises the flag around a non-blocking claim/dispatch so idle lanes do not look busy while an empty-queue in-flight dispatch cannot report settled. Added `skein.events-quiescence-test` to the parallel batch as a per-runtime lane test. Focused weaver/quiescence namespaces passed via the same in-process classpath invocation, and `make fmt-check lint reflect-check` was clean.

@@ -82,3 +82,31 @@
   "Submit an event map to `runtime`'s event system for asynchronous dispatch."
   [runtime event]
   (dispatch/enqueue! runtime event))
+
+(defn await-quiescent!
+  "Block until `runtime`'s event lane settles, then return `runtime`.
+
+  Settled means the bounded event queue is empty *and* no handler dispatch is in
+  flight; the worker raises its dispatch-in-progress flag before it claims an
+  event, so this never reports settled while a just-claimed dispatch is still
+  running. Throws an `ex-info` on timeout. The default budget comes from
+  `skein.spools.test-support/await-budget-ms`; override it with `:timeout-ms`.
+
+  This is a lane-only primitive: it says nothing about off-lane completion
+  signals a handler may have kicked off (poll-until loops, shuttle awaits)."
+  ([runtime] (await-quiescent! runtime {}))
+  ([runtime {:keys [timeout-ms]}]
+   (let [event-system (access/event-system runtime)
+         queue ^java.util.concurrent.BlockingQueue (:queue event-system)
+         dispatch-in-progress? (:dispatch-in-progress? event-system)
+         timeout-ms (or timeout-ms ((requiring-resolve 'skein.spools.test-support/await-budget-ms)))
+         deadline (+ (System/currentTimeMillis) timeout-ms)]
+     (loop []
+       (cond
+         (and (.isEmpty queue) (not @dispatch-in-progress?)) runtime
+         (> (System/currentTimeMillis) deadline)
+         (throw (ex-info "Timed out awaiting event-lane quiescence"
+                         {:timeout-ms timeout-ms
+                          :queue-size (.size queue)
+                          :dispatch-in-progress? @dispatch-in-progress?}))
+         :else (do (Thread/sleep 5) (recur)))))))

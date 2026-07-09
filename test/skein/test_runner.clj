@@ -18,7 +18,10 @@
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
    ;; pure extractor unit tests over fixture files plus one unpublished
    ;; thread-bound runtime; no JVM-global or real-process state.
-   'skein.bench-metrics-test])
+   'skein.bench-metrics-test
+   ;; each test drives its own unpublished runtime, so the event lane it awaits
+   ;; is per-runtime with no JVM-global or shared-lane state — parallel-safe.
+   'skein.events-quiescence-test])
 
 (def serial-namespaces
   "JVM-global namespaces the parent still runs serially outside add-libs shards."

@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: Event-lane await-quiescent! seam
     task_file: tasks/002-await-quiescent-seam.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 3
     description: Migrate scheduler suites onto the seams
