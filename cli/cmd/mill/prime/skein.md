@@ -19,7 +19,7 @@ This is the resolved Skein source checkout for the current world (from `SKEIN_SO
   spec index points at the exact contracts in `{{.Source}}/devflow/specs/`.
 - `{{.Source}}/spools/README.md` — index of the shipped reference spools
   (workflow engine, ephemeral strands, guild, bobbin, selvage, carder) plus the
-  approved local-root spools (shuttle, agents, treadle, chime, kanban) and the
+  approved local-root spools (agent-run, delegation, executors.subagent, chime, kanban) and the
   git-distributed devflow lifecycle. Each row links a contract doc.
 - `{{.Source}}/AGENTS.md` — when working **inside a Skein-style repo**, read its
   "Repo coordination workspace (.skein)" section: the installed runtime surface,

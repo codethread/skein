@@ -59,7 +59,7 @@ Top categories:
 
 ### Reflection
 
-Totals: 0 reflection warnings. Every warning is fixed with a type hint at the definition site, so the gate is a blocking CI check that fails on any reflected interop. The gate compiles all of `src` (every `skein.*` namespace) plus every spool source root — `spools/src`, `spools/shuttle/src`, `spools/agents/src`, `spools/chime/src`, and `spools/kanban/src` — so no shipped namespace escapes it. Repeated compile/reload warnings are preserved rather than deduplicated so the gate stays compiler-faithful.
+Totals: 0 reflection warnings. Every warning is fixed with a type hint at the definition site, so the gate is a blocking CI check that fails on any reflected interop. The gate compiles all of `src` (every `skein.*` namespace) plus every spool source root — `spools/src`, `spools/agent-run/src`, `spools/delegation/src`, `spools/chime/src`, and `spools/kanban/src` — so no shipped namespace escapes it. Repeated compile/reload warnings are preserved rather than deduplicated so the gate stays compiler-faithful.
 
 The clusters hinted to reach zero:
 
@@ -68,7 +68,7 @@ The clusters hinted to reach zero:
 - `skein.core.weaver.metadata`, `runtime`, and `socket`: file/socket/channel interop hinted at the file-returning helpers, queue, and socket-channel definition sites.
 - `skein.api.weaver.alpha` and `skein.api.peers.alpha`: spool checkout `File`, `ProcessBuilder`/`Process`, and event-queue interop.
 - `skein.test.alpha`: workspace-fixture `File` interop.
-- `skein.spools.carder`/`util`/`agents`/`chime`/`shuttle`: date, thread, `File`, executor, and `ProcessHandle` interop.
+- `skein.spools.carder`/`util`/`delegation`/`chime`/`agent-run`: date, thread, `File`, executor, and `ProcessHandle` interop.
 
 ### Dependency reports
 
