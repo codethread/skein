@@ -169,7 +169,7 @@
       (testing "a harness that exits 0 but writes nothing is not recorded done"
         ;; the incident: a transport death drops the harness mid-turn, which
         ;; writes no result yet still exits 0. Recording that as done with an
-        ;; empty shuttle/result dodges agent-failures and both recovery paths.
+        ;; empty agent-run/result dodges agent-failures and both recovery paths.
         (let [run (shuttle/spawn-run! {:harness :sh :prompt "exit 0"})
               failed (await-phase rt (:id run) #{"failed"})]
           (is (= "active" (:state failed)) "stays active so it is loud and retryable")
@@ -696,8 +696,8 @@
 ;;
 ;; The session-echo harness is a fake claude-json harness: its result reflects
 ;; the argv tail (so a resumed run's spliced flags are observable in
-;; shuttle/result) and it fabricates a fixed session id the engine captures as
-;; shuttle/session-id. The prompt stays quote-free so the emitted line is valid
+;; agent-run/result) and it fabricates a fixed session id the engine captures as
+;; agent-run/session-id. The prompt stays quote-free so the emitted line is valid
 ;; JSON.
 
 (def ^:private session-echo
@@ -719,7 +719,7 @@
                         from-id edge-type])))
 
 (defn- captured-predecessor
-  "Spawn a session-echo run and return it once done, its shuttle/session-id
+  "Spawn a session-echo run and return it once done, its agent-run/session-id
   captured (sess-abc)."
   [rt]
   (let [pred (shuttle/spawn-run! {:harness :session-echo :prompt "start"})
@@ -747,7 +747,7 @@
       (let [pred (captured-predecessor rt)
             resumer (shuttle/spawn-run! {:harness :session-echo :prompt "continue"
                                          :resume (:id pred)})]
-        (testing "provenance: shuttle/resumes attr and a resumes annotation edge"
+        (testing "provenance: agent-run/resumes attr and a resumes annotation edge"
           (is (= (:id pred) (get-in (api/show rt (:id resumer)) [:attributes :agent-run/resumes])))
           (is (= [(:id pred)] (edge-targets rt (:id resumer) "resumes"))))
         (let [done (await-phase rt (:id resumer) #{"done"})]
@@ -827,7 +827,7 @@
 
 (deftest shipped-defaults-declare-capture-and-resume
   ;; PLAN-Pnl-001.A2/PH2: the shipped :claude/:pi defs are persistence-friendly
-  ;; out of the box — they capture shuttle/session-id and declare a resume splice.
+  ;; out of the box — they capture agent-run/session-id and declare a resume splice.
   (with-shuttle
     (fn [_rt]
       (let [claude (shuttle/resolve-harness :claude)
@@ -849,7 +849,7 @@
     (fn [rt]
       (shuttle/defharness! :session-echo session-echo)
       (shuttle/defbackend! :fake-mux fake-mux)
-      (testing "a handmade interactive run carrying shuttle/resumes is rejected"
+      (testing "a handmade interactive run carrying agent-run/resumes is rejected"
         (let [pred (captured-predecessor rt)
               run (api/add rt {:title "handmade-interactive-resume"
                                :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
