@@ -217,11 +217,11 @@ generated SQLite/runtime artifacts and no warm files.
   runner from `skein.test.alpha` would break main-classpath load and
   reflect-check. Mitigation: `requiring-resolve` at call time (PLAN-Ttv-001.A4),
   covered by the PH2 focused validation and the PH6 `reflect-check`.
-- **PLAN-Ttv-001.Q1:** Whether `run-focused!` should live entirely test-side
-  (no `skein.test.alpha` contract), treating the warm loop as ungoverned dev
-  tooling like `skein.test-runner`. Kept in `skein.test.alpha` per the agreed
-  design; DELTA-Ttv-001.Q1 leaves a reviewer the option to downgrade without
-  touching the tier design. Not blocking task generation.
+- **PLAN-Ttv-001.Q1 (resolved):** Whether `run-focused!` should live entirely
+  test-side (no `skein.test.alpha` contract). Kept in `skein.test.alpha`;
+  DELTA-Ttv-001.Q1 records the closing rationale — the blessed name is the seam
+  the warm script and task contracts reference, while the runner it resolves
+  stays test-internal.
 
 ## PLAN-Ttv-001.P8 Task context
 
