@@ -125,7 +125,15 @@
             "|GPT-5.4-mini via pi: cheap seat for low-stakes single-concern review,
              |recon, and validation. Verified only at that scope (bench spool smoke
              |run) — don't route broader work here until a larger run proves it
-             |holds up.")})])
+             |holds up.")})
+   (shuttle/defalias! :pi-deepseek
+     {:alias-of :pi
+      :extra-args ["--agent" "main" "--model" "deepseek/deepseek-v4-pro:high"]
+      :doc (format-alpha/reflow
+            "|DeepSeek v4 Pro (high thinking) via pi: fallback seat for when pi and
+             |codex provider usage runs out. Less capable than the GPT seats; route
+             |reviews of primarily Claude-authored code here, not frontier design
+             |or broad implementation work.")})])
 
 (defn install!
   "Register the repo's harness seats and the default review contract."
