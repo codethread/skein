@@ -666,7 +666,11 @@
       (shuttle/defbackend! :broken-mux
         {:start ["sh" "-c" "nohup \"$1\" >/dev/null 2>&1 & echo \"$!\" > \"/tmp/$2.pid\"; printf 'not-a-json-handle'"
                  "broken-mux" :command :session]
-         :alive ["sh" "-c" "kill -0 \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]
+         ;; not-yet-written pid file counts as alive: supervise! runs on the graph
+         ;; event from the running-phase write, which lands before :start, and a
+         ;; false dead-session there steals the teardown claim from the
+         ;; malformed-handle failure this test is about
+         :alive ["sh" "-c" "[ ! -f \"/tmp/$1.pid\" ] || kill -0 \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]
          :stop ["sh" "-c" "kill \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]})
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "sleep 300"
                                      :mode :interactive :backend :broken-mux})
