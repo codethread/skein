@@ -20,8 +20,9 @@ free (`PROP-Np-001.C7`). Disjoint file from Tasks 3/4/6 — parallel after Task 
 - **TASK-Np-005.MI1:** `op-note` (`delegation.clj:1618-1624`) and `op-notes`
   (`delegation.clj:1627-1634`) call `skein.api.notes.alpha/note!`/`notes` directly (or via the
   agent-run re-export from Task 3), threading the runtime they already hold as the first argument
-  (`PLAN-Np-001.R5`, `SPEC-003.C18`). No verb signature, flag, or JSON shape changes
-  (`PROP-Np-001.C7`, `NG5`).
+  (`PLAN-Np-001.R5`, `SPEC-003.C18`). Verb signatures and flags are unchanged (`PROP-Np-001.C7`,
+  `NG5`); the ONE output change is contracted by `PROP-Np-001.C5`: `agent note`'s JSON drops the
+  retired `note-for` key for `target`, an output-only projection derived from the `notes` edge.
 - **TASK-Np-005.MI2:** Leave the dispatch (`delegation.clj:1946-1947`), the arg-spec
   (`delegation.clj:1883-1888`), and the review/panel/council note reads
   (`delegation.clj:1021,1092,1254-1257`) otherwise unchanged — they inherit the unified read through

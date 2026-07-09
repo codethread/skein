@@ -27,7 +27,8 @@ slices deferred (`PLAN-Np-001.A5`, `TC4`).
   the `agent-run-test` add-libs shard; bare `flock` from PATH, hold the lock, never a vendored absolute
   path); `(cd cli && go test ./...)`; `clojure -M:smoke`;
   `make fmt-check lint reflect-check docs-check` at zero findings.
-- **TASK-Np-012.MI3:** The `PROP-Np-001.DW3` grep: `note/for` returns only `devflow/archive/*` and the
+- **TASK-Np-012.MI3:** The `PROP-Np-001.DW3` grep, scoped to the code trees (`src/ spools/ cli/ test/ .skein/
+  scripts/ docs/` — `devflow/` is excluded, its docs mention the retired name by design): `note/for` returns only the
   rewrite script's explicit old→new mapping — no live source writes it or reads a note's target from
   it.
 - **TASK-Np-012.MI4:** `git status --short` clear of generated SQLite and runtime metadata artifacts.

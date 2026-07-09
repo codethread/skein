@@ -268,7 +268,9 @@ siblings share no file.
   disposable weaver, and confirm the smoke checks render clean (`strand notes <a re-keyed target>`,
   `strand kanban card <a card with handovers>`, `strand agent notes <a target>`, `strand kanban board`). Guard every
   expansion with `${ws:?}`; never touch the canonical world.
-- **Validation:** the script's own test green (`clojure -M:test cutover.note-primitive-test`); rehearsal against a copied
+- **Validation:** the script's own test green via
+  `clojure -Sdeps '{:paths ["scripts"]}' -M -m cutover.note-primitive-test` (`scripts/` is not on the `:test` alias;
+  F2 precedent); rehearsal against a copied
   SQLite in a disposable world passes the C10.2 smoke checks. The canonical rewrite is **not** a worker task — it is the
   coordinator-run HITL slice S13.
 - **Done-when:** script + test exist and are rehearsed clean on a copy; the ceremony's canonical steps (quiet board,
@@ -284,8 +286,9 @@ siblings share no file.
 - **Validation (all green, `PROP-Np-001.P6`):** `make build`; `flock -w 3600 /tmp/skein-test.lock clojure -M:test`
   (full locked suite — the authoritative gate for the `agent-run-test` shard); `(cd cli && go test ./...)`;
   `clojure -M:smoke`; `make fmt-check lint reflect-check docs-check` at zero findings; `make api-docs` clean;
-  `git status --short` clear of generated SQLite/runtime artifacts; the `PROP-Np-001.DW3` grep for `note/for` returns only
-  `devflow/archive/*` and the rewrite script's old→new mapping.
+  `git status --short` clear of generated SQLite/runtime artifacts; the `PROP-Np-001.DW3` grep for `note/for` over the code trees
+  (`src/ spools/ cli/ test/ .skein/ scripts/ docs/`) returns only the rewrite script's old→new mapping — the
+  `devflow/` feature docs legitimately mention the retired name and are excluded from the gate.
 - **Done-when:** `PROP-Np-001.DW1`–`DW4` proven — `notes` is the sole linkage encoding, the primitive lives in
   `skein.api.notes.alpha` and walks the edge, `strand note`/`strand notes` exist and resolve `m630j`, and all P6 gates
   green in one atomic landing. `DW5` (canonical rewrite + restart) follows landing, coordinator-run.
@@ -313,9 +316,10 @@ siblings share no file.
   and defers the authoritative proof to S12. Every other slice gates on a focused-runnable namespace:
   `skein.notes-test` (S2, new), `skein.relations-test`/`skein.core.db-test` (S1), `skein.kanban-test` (S4),
   `skein.delegation-test` (S5), `skein.spools.batteries-test` (S6).
-- **PLAN-Np-001.V2:** The `PROP-Np-001.DW3` grep is the done-when proof at S12: `note/for` returns only
-  `devflow/archive/*` and the rewrite script's explicit old→new mapping — no live source writes it or reads a note's
-  target from it.
+- **PLAN-Np-001.V2:** The `PROP-Np-001.DW3` grep is the done-when proof at S12, scoped to the code trees
+  (`src/ spools/ cli/ test/ .skein/ scripts/ docs/`): `note/for` returns only the rewrite script's explicit old→new
+  mapping — no live source writes it or reads a note's target from it. The `devflow/` docs (this feature's own
+  contract prose and the archive) are excluded: they document the retired name by design.
 - **PLAN-Np-001.V3:** Cross-writer agreement (`PROP-Np-001.G3`, the `m630j` resolution) is proven at S12: `strand notes`
   returns kanban-, delegation-, and raw-verb-written notes alike. A half-state (edge-walking reader while a writer still
   stamps `note/for`) is acceptable on the branch but never landed (`A6`, `R1`).
@@ -385,7 +389,7 @@ siblings share no file.
   `skein.spools.batteries-test`, and the new `skein.notes-test` (S2 registers it there). Full-suite-only add-libs shards:
   `skein.agent-run-test` (shard `B`, `:54`) is the authoritative agent-run primitive suite and only runs inside the full
   locked suite, so S3 gates on `skein.delegation-test` as its focused proxy and the full suite at S12 is the atomic
-  proof. The cutover script's test (`cutover.note-primitive-test`) runs via `clojure -M:test cutover.note-primitive-test`
+  proof. The cutover script's test (`cutover.note-primitive-test`) runs via `clojure -Sdeps '{:paths ["scripts"]}' -M -m cutover.note-primitive-test`
   on the `:test`/`scripts` classpath (mirroring `cutover.agent-engine-primitives-test`).
 
 - **PLAN-Np-001.TC5:** Reading map. Brief (scope contract) → `PROP-Np-001` C-clauses (design contract; single source of

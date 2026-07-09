@@ -67,8 +67,9 @@ runs this against the canonical world.
   Hold `ws` in your own shell variable (guard every expansion with `${ws:?}`; never the canonical
   world, never a shared scratch path). All four smoke checks must render clean — `strand notes` and
   `strand agent notes` must agree, and the card must show its handovers. The rehearsal never touches
-  the canonical world. Record the resolved paths and outputs as evidence in the ceremony doc's
-  Rehearsal-evidence section.
+  the canonical world. The ceremony doc's Rehearsal-evidence section carries reproducible commands, the count table,
+  and idempotency/verification statements only — machine-local resolved paths and raw outputs go in your task result
+  and a strand note, not the source-controlled doc.
 
 ## TASK-Np-011.P3 Done when
 
@@ -77,7 +78,7 @@ runs this against the canonical world.
   target are re-keyed and lose `shuttle/note-for` while keeping their edge; kanban notes gain the
   `notes` edge from `parent-of` and re-key `body` → `note/text`; the 67-style dangling notes (no live
   target) are **skipped** and keep their old shape (`PROP-Np-001.C11`); a re-run is idempotent; a
-  self/cyclic edge fails loudly. Cold focused run `clojure -M:test cutover.note-primitive-test` green
+  self/cyclic edge fails loudly. Cold run `clojure -Sdeps '{:paths ["scripts"]}' -M -m cutover.note-primitive-test` green (`scripts/` is not on the `:test` alias; F2 precedent)
   (`PLAN-Np-001.TC4`).
 - **TASK-Np-011.DW2:** The rehearsal on a copied canonical SQLite in a disposable world passes the
   four `PROP-Np-001.C10.2` smoke checks; a malformed derivation fails loudly (`R4`).
