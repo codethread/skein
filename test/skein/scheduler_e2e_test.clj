@@ -11,14 +11,16 @@
   one weaver survives a real stop/start and re-arms in a fresh weaver."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
+            [skein.api.events.alpha :as events]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.api.weaver.alpha :as api]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as runtime]
             [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as test-alpha]
             [skein.weaver-test :as wt])
-  (:import [java.time Instant]))
+  (:import [java.time Duration Instant]))
 
 ;; Resolved by fully qualified symbol, so the fire signal is namespace-level.
 (def fired (atom (promise)))
@@ -42,15 +44,13 @@
 (deftest scheduled-handler-mutates-graph-and-is-introspectable
   (wt/with-runtime
     (fn [rt _db-file]
-      (reset! fired (promise))
+      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
       (scheduler/schedule! rt {:key "seed-strand"
-                               :wake-at (.plusMillis (Instant/now) 100)
+                               :wake-at (Instant/ofEpochSecond 1)
                                :handler `add-strand-handler
                                :payload {:title "Scheduled strand"}})
-      (is (await-fire) "the near-future wake fires through the real weaver")
-      (test-support/poll-until #(empty? (scheduler/pending rt))
-                               {:on-timeout #(throw (ex-info "Timed out waiting for scheduler pending to drain"
-                                                             {:pending (scheduler/pending rt)}))})
+      (test-alpha/advance! rt (Duration/ofSeconds 2))
+      (events/await-quiescent! rt)
       (is (= ["Scheduled strand"] (scheduler-strand-titles rt))
           "the handler mutated the strand graph on the shared lane")
       (is (= ["seed-strand"] (mapv :key (scheduler/recent-fires rt)))
@@ -66,8 +66,9 @@
       ;; pending, then stops before the wake is due.
       (let [rt1 (runtime/start! db-file {:world world :publish? false})]
         (try
+          (test-alpha/set-clock! rt1 (constantly (Instant/ofEpochSecond 0)))
           (scheduler/schedule! rt1 {:key "survivor"
-                                    :wake-at (.plusSeconds (Instant/now) 3600)
+                                    :wake-at (Instant/ofEpochSecond 3600)
                                     :handler `add-strand-handler
                                     :payload {:title "Survivor strand"}})
           (is (= ["survivor"] (mapv :key (scheduler/pending rt1)))

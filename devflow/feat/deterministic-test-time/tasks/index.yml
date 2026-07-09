@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Migrate scheduler suites onto the seams
     task_file: tasks/003-scheduler-migration.md
-    status: pending
+    status: complete
     blocked_by: [1, 2]
   - id: 4
     description: Migrate cron onto clock-driven due-ness

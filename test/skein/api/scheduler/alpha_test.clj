@@ -11,6 +11,7 @@
             [skein.api.scheduler.alpha :as scheduler]
             [skein.core.db :as db]
             [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as test-alpha]
             [skein.weaver-test :as wt])
   (:import [java.time Instant]))
 
@@ -46,7 +47,8 @@
 (deftest schedule-persists-and-reads-back-decoded-shape
   (wt/with-runtime
     (fn [rt _db-file]
-      (let [far-future (.plusSeconds (Instant/now) 100000)
+      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (let [far-future (Instant/ofEpochSecond 100000)
             created (scheduler/schedule! rt {:key "far-future"
                                              :wake-at far-future
                                              :handler `deliver-fire-handler
@@ -61,7 +63,8 @@
 (deftest schedule-replaces-existing-key-and-resets-attempts
   (wt/with-runtime
     (fn [rt _db-file]
-      (let [far-future (.plusSeconds (Instant/now) 100000)]
+      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
+      (let [far-future (Instant/ofEpochSecond 100000)]
         (scheduler/schedule! rt {:key "k" :wake-at far-future :handler `deliver-fire-handler})
         (db/mark-wake-attempt! (:datasource rt) "k" (.toEpochMilli far-future))
         (let [replaced (scheduler/schedule! rt {:key "k"
