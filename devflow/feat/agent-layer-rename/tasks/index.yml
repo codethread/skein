@@ -1,0 +1,156 @@
+tasks:
+  - id: 1
+    description: "PH0: rebase over tiered-test-validation + vk8aa; reconcile shard/suite state"
+    task_file: tasks/001-rebase-shard-reconcile.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: []
+  - id: 2
+    description: "PH1a: deps.edn + spools.edn + Makefile build-config lockstep"
+    task_file: tasks/002-build-config-lockstep.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 3
+    description: "PH1b: agent-run + executors/subagent dir/ns move"
+    task_file: tasks/003-agent-run-subagent-move.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 4
+    description: "PH1c: delegation dir/ns move"
+    task_file: tasks/004-delegation-move.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [3]
+  - id: 5
+    description: "PH1d: executors/shell move + suite/test_runner reconcile + PH1-exit gate"
+    task_file: tasks/005-shell-move-suites-ph1-gate.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [4]
+  - id: 6
+    description: "PH2a: agent-run/* run attributes + markers sweep"
+    task_file: tasks/006-attr-agent-run.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [5]
+  - id: 7
+    description: "PH2b: gate/* sweep (incl. treadle/gate -> gate/step)"
+    task_file: tasks/007-attr-gate.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [5]
+  - id: 8
+    description: "PH2c: review/* + panel/* + note/* per-key split"
+    task_file: tasks/008-attr-review-panel-note.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [5]
+  - id: 9
+    description: "PH2d: workflow/outcome-notes + workflow-core marker sweep"
+    task_file: tasks/009-attr-workflow-outcome-notes.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [5]
+  - id: 10
+    description: "PH2e: event-type keyword rename (:agent-run/engine, :gate/engine)"
+    task_file: tasks/010-event-type-keywords.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [6, 7]
+  - id: 11
+    description: "PH3a: doc-triad git mv + internal link fixes"
+    task_file: tasks/011-docs-triad-move.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [6, 7, 8, 9, 10]
+  - id: 12
+    description: "PH3b: judgment prose sweep (README/quality-inventory/bench+chime docs/cli prime)"
+    task_file: tasks/012-docs-judgment-prose.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [6, 7, 8, 9, 10]
+  - id: 13
+    description: "PH3c: mkdocs.yml nav paths follow the doc moves"
+    task_file: tasks/013-mkdocs-nav.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [11]
+  - id: 14
+    description: "PH3d: make api-docs regen of the renamed outfiles"
+    task_file: tasks/014-api-docs-regen.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [11]
+  - id: 15
+    description: "PH4a: .skein config sweep + disposable-world smoke"
+    task_file: tasks/015-skein-config-sweep.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [6, 7, 8, 9, 10]
+  - id: 16
+    description: "PH4b: scripts/agent-dash rename + attr strings + make dash"
+    task_file: tasks/016-agent-dash-rename.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [6, 7, 8, 9, 10]
+  - id: 17
+    description: "PH4c: bench + chime consumer reconcile"
+    task_file: tasks/017-bench-chime-consumer-reconcile.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [6, 7]
+  - id: 18
+    description: "PH5: apply the three spec deltas to root specs; mark Merged"
+    task_file: tasks/018-spec-delta-application.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [6, 7, 8, 9, 10]
+  - id: 19
+    description: "PH6a: one-shot cutover script (per-key, active-only)"
+    task_file: tasks/019-cutover-script.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [6, 7, 8, 9, 10]
+  - id: 20
+    description: "PH6b: cutover rehearsal recipe + ceremony doc"
+    task_file: tasks/020-rehearsal-ceremony-doc.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [19]
+  - id: 21
+    description: "PH7: acceptance / atomic-landing gate (full locked suite + go + smoke + quality + DW1 grep)"
+    task_file: tasks/021-acceptance-gate.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  - id: 22
+    description: "PH6 canonical execution: cutover the canonical world at user-signed weaver restart"
+    task_file: tasks/022-canonical-cutover-hitl.md
+    status: pending
+    harness: coordinator
+    type: HITL
+    hitl: true
+    blocked_by: [20, 21]
