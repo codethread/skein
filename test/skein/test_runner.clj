@@ -1,6 +1,7 @@
 (ns skein.test-runner
   "Explicit test entrypoint with documented serial JVM-global islands,
-  subprocess shards for add-libs suites, and per-namespace timing output."
+  subprocess shards for add-libs suites, a focused in-process mode for named
+  namespaces, and per-namespace timing output."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -233,18 +234,50 @@
       ;; would otherwise hold the shard JVM (and the parent's waitFor) ~60s.
       (System/exit (if (pos? (+ (:fail summary) (:error summary))) 1 0)))))
 
+(defn- shard-for-ns [ns-sym]
+  (some (fn [[shard-id namespaces]] (when (some #{ns-sym} namespaces) shard-id)) add-libs-shards))
+
+(defn- validate-focused! [namespaces]
+  (let [in-process (set (concat serial-namespaces parallel-namespaces))
+        known (into in-process (mapcat val add-libs-shards))]
+    (doseq [ns-sym namespaces]
+      (when-let [shard-id (shard-for-ns ns-sym)]
+        (throw (ex-info (str ns-sym " is an add-libs shard namespace (shard " shard-id
+                             "); shard namespaces require the full suite in v1")
+                        {:ns ns-sym :shard shard-id})))
+      (when-not (contains? in-process ns-sym)
+        (throw (ex-info (str "Unknown test namespace: " ns-sym)
+                        {:ns ns-sym :known-namespaces (sort known)}))))))
+
+(defn- run-focused [namespaces]
+  (validate-focused! namespaces)
+  ;; Serial-island members first, then parallel members, each in declaration
+  ;; order, all in-process on this thread — focused runs skip both the parallel
+  ;; pool and the add-libs subprocess shards.
+  (let [requested (set namespaces)
+        results (concat (run-serial :focused/serial (filter requested serial-namespaces))
+                        (run-serial :focused/parallel (filter requested parallel-namespaces)))
+        summary (apply merge-summaries (map :summary results))]
+    (doseq [result results] (print-result! result))
+    (println "Aggregate summary:" summary)
+    (flush)
+    (System/exit (if (pos? (+ (:fail summary) (:error summary))) 1 0))))
+
 (defn- parse-args [args]
   (case (first args)
     nil {:mode :parent}
     "--shard" (let [[_ shard & opts] args
                     opt-map (apply hash-map opts)]
                 {:mode :shard :shard shard :summary-file (get opt-map "--summary-file")})
-    (throw (ex-info "Unknown test-runner arguments" {:args args}))))
+    (if (some #(str/starts-with? % "--") args)
+      (throw (ex-info "Unknown test-runner arguments" {:args args}))
+      {:mode :focused :namespaces (mapv symbol args)})))
 
 (defn -main [& args]
-  (let [{:keys [mode shard summary-file]} (parse-args args)]
+  (let [{:keys [mode shard summary-file namespaces]} (parse-args args)]
     (case mode
       :shard (run-shard shard summary-file)
+      :focused (run-focused namespaces)
       :parent (let [shards-result (start-shards-thread!)
                     parent-results (run-parent)
                     shard-outcome @shards-result
