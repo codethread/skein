@@ -20,7 +20,7 @@ make fmt-check
 make lint
 make reflect-check
 make docs-check
-PATH="/opt/homebrew/opt/openjdk/bin:$PATH" /opt/homebrew/opt/util-linux/bin/flock -w 3600 /tmp/skein-test.lock clojure -M:test
+PATH="/opt/homebrew/opt/openjdk/bin:$PATH" flock -w 3600 /tmp/skein-test.lock clojure -M:test
 (cd cli && go test ./...)          # expected inert (V3), run to confirm no regression
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke   # V4: lean list + full show
 git status --short                 # V7: no generated sqlite/-wal/-shm/runtime artifacts

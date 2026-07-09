@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: attr-scaling queue sweep to the tiers
     task_file: tasks/005-attr-scaling-sweep.md
-    status: pending
+    status: complete
     blocked_by: [3]
   - id: 6
     description: Full acceptance (final slice)

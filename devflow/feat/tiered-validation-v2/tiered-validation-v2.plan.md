@@ -372,3 +372,30 @@ Append notes here. Do not rewrite earlier notes.
   api.md is uncommitted (`git diff --exit-code`), so it passes once committed.
   `fmt-check` and `lint` are green; `grep util-linux` over the three surfaces
   returns nothing.
+
+### PLAN-Ttv-001.DN7 PH5 attr-scaling queue sweep — 2026-07-09
+
+- Swept `devflow/feat/attr-scaling-ship-now/tasks/{001,002,003}*.md` Validation
+  blocks from the stale full-suite `util-linux` `flock` line to a cold focused
+  `clojure -M:test <ns...>` naming each task's own touched namespaces, derived
+  from each task's Scope section: Task 001 (`db.clj` pragmas) →
+  `skein.core.db-test`; Task 002 (specs/alpha/batteries/util) →
+  `skein.spools.batteries-test skein.spools.util-test skein.core.specs-test`
+  (its Scope names these test files explicitly); Task 003 (specs/db/query/alpha)
+  → `skein.core.db-test skein.core.query-compile-test` (its Scope names these
+  test files explicitly). `005-validation-sweep.md` keeps the only full locked
+  suite, rewritten to bare `flock` per `TC5`.
+- `signoff-payload.json` (the JSON actually consumed by the devflow `approved`
+  delegation path per its `index.yml` enforcement note — the per-task `body`
+  duplicates each task's Validation prose) carried the same four stale
+  `util-linux` `flock` blocks; left as-is it would silently re-introduce the
+  broken path the next time attr-scaling delegates. Swept it in step with the
+  `.md` files: tasks 1–3 bodies now carry the same focused `clojure -M:test`
+  lines; task 5's body now points at `005-validation-sweep.md`'s Validation
+  block instead of re-embedding the literal `flock` command, so the full-suite
+  invocation has one source of truth instead of two copies that can drift
+  (which is exactly how the stale `util-linux` path survived here). This file
+  is outside the task's literal `*.md` sweep wording but inside its
+  `attr-scaling-ship-now/tasks/` file-scope boundary, and is required for both
+  Done-when greps to hold directory-wide.
+- No test suite run — markdown/JSON-only slice; `make docs-check` green.

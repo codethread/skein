@@ -63,7 +63,7 @@ L1 lean-by-default list reads at the CLI/agent op boundary, the single owned des
 
 ```sh
 cd /Users/ct/dev/projects/skein-src__attr-scaling-ship-now
-PATH="/opt/homebrew/opt/openjdk/bin:$PATH" /opt/homebrew/opt/util-linux/bin/flock -w 3600 /tmp/skein-test.lock clojure -M:test
+PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test skein.spools.batteries-test skein.spools.util-test skein.core.specs-test
 make fmt-check && make lint && make reflect-check
 git status --short
 ```

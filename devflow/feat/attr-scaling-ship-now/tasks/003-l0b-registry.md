@@ -61,7 +61,7 @@ Declaration adds capability to declared keys; it must never remove capability fr
 
 ```sh
 cd /Users/ct/dev/projects/skein-src__attr-scaling-ship-now
-PATH="/opt/homebrew/opt/openjdk/bin:$PATH" /opt/homebrew/opt/util-linux/bin/flock -w 3600 /tmp/skein-test.lock clojure -M:test
+PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test skein.core.db-test skein.core.query-compile-test
 make fmt-check && make lint && make reflect-check
 git status --short
 ```

@@ -37,7 +37,7 @@ L0a only — WAL/mmap/cache pragmas on the weaver datasource. **No** schema, con
 
 ```sh
 cd /Users/ct/dev/projects/skein-src__attr-scaling-ship-now
-PATH="/opt/homebrew/opt/openjdk/bin:$PATH" /opt/homebrew/opt/util-linux/bin/flock -w 3600 /tmp/skein-test.lock clojure -M:test
+PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:test skein.core.db-test
 make fmt-check && make lint && make reflect-check
 git status --short   # must be clean of sqlite/-wal/-shm
 ```
