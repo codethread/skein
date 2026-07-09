@@ -86,20 +86,24 @@ run_focused() {
   # compile time (the symbol resolves before the require runs). The try/catch
   # keeps a validation failure from aborting before the sentinel prints.
   local form
-  form="(do (try ((requiring-resolve 'skein.test.alpha/run-focused!) '[${NS}]) (catch Throwable t (println \"TEST-WARM-ERROR:\" (.getMessage t)))) (println) (println \"TEST-WARM-DONE\"))"
+  form="(do (try ((requiring-resolve 'skein.test.alpha/run-focused!) '[${NS}]) (catch Throwable t (println \"TEST-WARM-ERROR:\" (.getMessage t) (pr-str (ex-data t))))) (println) (println \"TEST-WARM-DONE\"))"
   exec 3<>"/dev/tcp/127.0.0.1/$port"
   printf '%s\n' "$form" >&3
-  local status=0 line
+  local status=0 done=0 line
   # A generous per-line timeout guards against an unexpected server-side hang
   # so the warm loop can never block a caller indefinitely.
   while IFS= read -t 300 -r line <&3; do
     case "$line" in
-      *TEST-WARM-DONE*) break ;;
+      *TEST-WARM-DONE*) done=1; break ;;
       *TEST-WARM-ERROR*) status=1 ;;
     esac
     printf '%s\n' "$line" | tee -a "$out"
   done
   exec 3>&- 3<&-
+  if [ "$done" -ne 1 ]; then
+    echo "test-warm: warm REPL closed or timed out before TEST-WARM-DONE" >&2
+    status=1
+  fi
   return "$status"
 }
 
@@ -115,6 +119,10 @@ main() {
   fails="$(printf '%s' "$agg" | sed -n 's/.*:fail \([0-9][0-9]*\).*/\1/p')"
   errs="$(printf '%s' "$agg" | sed -n 's/.*:error \([0-9][0-9]*\).*/\1/p')"
   rm -f "$out"
+  if [ -z "${agg:-}" ]; then
+    echo "test-warm: warm run produced no aggregate summary" >&2
+    status=1
+  fi
   if [ -n "${fails:-}" ] && [ "$fails" -ne 0 ]; then status=1; fi
   if [ -n "${errs:-}" ] && [ "$errs" -ne 0 ]; then status=1; fi
   return "$status"
