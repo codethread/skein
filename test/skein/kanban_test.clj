@@ -1,10 +1,8 @@
 (ns skein.kanban-test
   "Tests for the kanban board spool against a disposable weaver runtime."
-  (:require [clojure.java.io :as io]
-            [clojure.set :as set]
+  (:require [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.runtime.alpha :as runtime-alpha]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as api]
@@ -12,26 +10,24 @@
             [skein.spools.kanban :as kanban]
             [skein.spools.test-support :refer [with-runtime]]))
 
-(defn- spool-root []
-  (.getCanonicalPath (io/file "spools/kanban")))
+(defn- with-kanban
+  "Run f with a fresh weaver runtime that has the kanban spool installed.
 
-(defn- install-kanban! [rt config-dir]
-  (spit (io/file config-dir "spools.edn")
-        (pr-str {:spools {'skein.spools/kanban {:local/root (spool-root)}}}))
-  (runtime-alpha/sync! rt)
-  (runtime-alpha/use! rt :skein/spools-kanban
-                      {:ns 'skein.spools.kanban
-                       :spools ['skein.spools/kanban]
-                       :call 'skein.spools.kanban/install!
-                       :required? true}))
+  kanban ships on the :test classpath (spools/kanban/src), so install! runs
+  directly against the runtime bound by with-runtime — no add-libs sync of an
+  approved workspace root (pattern: skein.agents-test)."
+  [f]
+  (with-runtime
+    (fn [rt _config-dir]
+      (kanban/install!)
+      (f rt))))
 
 (defn- op! [rt & argv]
   (api/op! rt 'kanban argv))
 
 (deftest kanban-about-commands-match-declared-subcommands
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [detail (api/resolve-op rt 'kanban)
             manual-entries (-> (kanban/about) :commands)
             manual-commands (set (keep :verb manual-entries))
@@ -44,9 +40,8 @@
             (str "kanban arg-spec subcommands missing from about: " (sort (set/difference declared-commands manual-commands))))))))
 
 (deftest kanban-add-next-claim-and-finish-round-trip
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (is (some #(= "kanban" (:name %)) (api/ops rt)))
       (testing "add creates a pending feature card"
         (let [added (op! rt "add" "Build active work convention" "--source" "devflow/rfcs/2026-07-02-feature-tracking-registry.md")
@@ -89,9 +84,8 @@
               (is (= "done" (get-in finished [:card :attributes :kanban/status]))))))))))
 
 (deftest kanban-declared-subcommands-help-and-parser-errors
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (testing "help projections list the declared verb surface"
         (let [detail (api/op! rt 'help ["kanban"])
               alias (op! rt "help")
@@ -112,9 +106,8 @@
                  (:available-subcommands (ex-data unknown)))))))))
 
 (deftest kanban-prime-supersets-about-with-working-discipline
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [prime (op! rt "prime")
             about (op! rt "about")]
         (is (= "kanban prime" (:operation prime)))
@@ -160,9 +153,8 @@
                           (fmt/reflow "prose that lost its bars")))))
 
 (deftest kanban-refinement-lane-and-promote
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [idea (op! rt "add" "Vague idea" "--status" "refinement")
             idea-id (get-in idea [:card :id])]
         (is (= "refinement" (get-in idea [:card :attributes :kanban/status])))
@@ -183,9 +175,8 @@
                                 (op! rt "add" "Bad type" "--type" "story"))))))))
 
 (deftest kanban-priority-orders-lanes-and-next
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [old-default (get-in (op! rt "add" "Default work") [:card :id])
             someday (get-in (op! rt "add" "Someday idea" "--priority" "p4") [:card :id])
             blocker (get-in (op! rt "add" "Breaking change blocker" "--priority" "p1") [:card :id])]
@@ -220,9 +211,8 @@
           (is (= #{:p1 :p2 :p3 :p4} (set (keys (:priorities (op! rt "about")))))))))))
 
 (deftest kanban-epics-group-features
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [epic-id (get-in (op! rt "add" "Big theme" "--type" "epic") [:card :id])
             feat-id (get-in (op! rt "add" "First slice" "--epic" epic-id) [:card :id])]
         (testing "epic features are linked with parent-of and shown on the board"
@@ -243,9 +233,8 @@
                                 (op! rt "add" "Bad parent" "--epic" feat-id))))))))
 
 (deftest kanban-notes-handover-and-card-view
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [card-id (get-in (op! rt "add" "Crashable feature") [:card :id])]
         (op! rt "claim" card-id "--owner" "agent-a" "--branch" "crashable")
         (let [task (api/add rt {:title "Implement it" :attributes {:kind "task"}})
@@ -282,9 +271,8 @@
               (is (= :missing-required (:reason (ex-data missing-text)))))))))))
 
 (deftest kanban-board-groups-lanes
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [idea-id (get-in (op! rt "add" "Idea" "--status" "refinement") [:card :id])
             queued-id (get-in (op! rt "add" "Queued") [:card :id])
             working-id (get-in (op! rt "add" "Working") [:card :id])
@@ -306,9 +294,8 @@
         (is (= "abandoned" (get-in (api/show rt done-id) [:attributes :kanban/status])))))))
 
 (deftest kanban-board-needs-review-frontier
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [card-id (get-in (op! rt "add" "Reviewable feature") [:card :id])]
         (op! rt "claim" card-id "--owner" "agent" "--branch" "review-branch")
         (testing "needs-review is always present and empty before any review work"
@@ -329,9 +316,8 @@
               (is (= "review-branch" (:branch (first entries)))))))))))
 
 (deftest kanban-card-related-both-directions
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [a-id (get-in (op! rt "add" "Card A") [:card :id])
             b-id (get-in (op! rt "add" "Card B") [:card :id])
             edge (fn [related] (mapv (fn [e] [(:relation e) (get-in e [:strand :id])]) related))]
@@ -353,9 +339,8 @@
             (is (= [] (:related (op! rt "card" c-id))))))))))
 
 (deftest kanban-board-str-renders-ascii-lanes
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [long-title (apply str "Very long title " (repeat 40 "padding "))
             _idea (op! rt "add" long-title "--status" "refinement")
             working-id (get-in (op! rt "add" "Working card") [:card :id])]
@@ -374,9 +359,8 @@
             (is (every? #(<= (count %) 100) lines))))))))
 
 (deftest kanban-batch-weave-creates-cards-and-dependencies
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (let [existing (api/add rt {:title "Existing blocker"})
             result (patterns/weave! rt :kanban-batch
                                     {:items [{:key "design"
@@ -402,9 +386,8 @@
         (is (contains? edge-set [docs-id (:id existing) "depends-on"]))))))
 
 (deftest kanban-batch-weave-fails-loudly
-  (with-runtime
-    (fn [rt config-dir]
-      (install-kanban! rt config-dir)
+  (with-kanban
+    (fn [rt]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Pattern input failed spec validation"
                             (patterns/weave! rt :kanban-batch
                                              {:items [{:key "x" :title "X" :surprise true}]})))

@@ -13,7 +13,7 @@
   "Test namespaces that are safe to run concurrently, one namespace per worker."
   ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test
    'skein.spools.bobbin-test 'skein.spools.carder-test 'skein.spools.loom-test 'skein.spools.selvage-test 'skein.spools.text-search-test
-   'skein.guild-test 'skein.agents-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
+   'skein.guild-test 'skein.agents-test 'skein.kanban-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
    'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
    'skein.spools.batteries-test 'skein.roster-test 'skein.spools.util-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
@@ -51,12 +51,12 @@
   {;; Largest add-libs suite stands alone to balance wall time against parent work.
    "A" ['skein.spools-test]
    ;; Shuttle-first within this JVM; runtime-deps intentionally poisons the basis, so it is last.
-   "B" ['skein.shuttle-test 'skein.chime-sync-test 'skein.runtime-deps-test]
+   "B" ['skein.shuttle-test 'skein.runtime-deps-test]
    ;; Medium add-libs suites share one JVM to amortize boot without exceeding shard A.
    ;; nvd-scan-test load-files .skein/nvd_scan.clj (which requires the cron
    ;; spool root via add-libs) just as config-test does, so it shares this
    ;; shard's boot.
-   "C" ['skein.config-test 'skein.kanban-test 'skein.nvd-scan-test]})
+   "C" ['skein.config-test 'skein.nvd-scan-test]})
 
 (def shard-timeout-minutes 5)
 

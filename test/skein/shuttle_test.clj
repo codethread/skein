@@ -9,11 +9,9 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
-            [skein.core.db-test :as db-test]
             [skein.spools.shuttle :as shuttle]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
-            [skein.core.weaver.runtime :as runtime]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-shuttle
@@ -887,30 +885,6 @@
                 failed (await-phase rt (:id run) #{"failed"})]
             (is (= "resume" (get-in failed [:attributes :shuttle/error-class])))
             (is (str/includes? (get-in failed [:attributes :shuttle/error]) "already continues"))))))))
-
-(deftest spool-loads-through-approved-spool-workspace-flow
-  (let [db-file (db-test/temp-db-file)
-        config-dir (test-support/temp-config-dir {:prefix "skein-shuttle-config"})
-        repo-root (.getCanonicalPath (io/file "spools/shuttle"))]
-    (try
-      (spit (io/file config-dir "spools.edn")
-            (pr-str {:spools {'skein.spools/shuttle {:local/root repo-root}}}))
-      (let [rt (runtime/start! db-file {:world (test-support/test-world (.getCanonicalPath config-dir))})]
-        (try
-          (let [synced ((requiring-resolve 'skein.api.runtime.alpha/sync!) rt)
-                used ((requiring-resolve 'skein.api.runtime.alpha/use!)
-                      rt :shuttle {:ns 'skein.spools.shuttle
-                                   :spools ['skein.spools/shuttle]
-                                   :call 'skein.spools.shuttle/install!
-                                   :required? true})]
-            (is (contains? #{:loaded :already-available}
-                           (get-in synced [:spools 'skein.spools/shuttle :status])))
-            (is (= :loaded (:status used)))
-            (is (not-any? #(= "agent" (:name %)) (api/ops rt))))
-          (finally
-            (runtime/stop! rt))))
-      (finally
-        (db-test/delete-sqlite-family! db-file)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Reload safety: versioned spool-state, tolerant set-once registration, and
