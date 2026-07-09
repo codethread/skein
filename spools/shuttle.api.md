@@ -98,7 +98,7 @@ Function.
 
 Block until every id is terminal (closed, failed, or exhausted) or
   `timeout-secs` (default 300) elapses. Returns run summaries plus :timed-out.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1706-L1723">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1713-L1730">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/backends">`backends`</a>
 ``` clojure
@@ -120,7 +120,7 @@ Capture an interactive run's transcript right now, persist it as the run's
   coordinator peek without attaching) and, when the harness capture source
   outlives the session (hook-written logs), on finished runs too. Fails
   loudly when the run is not interactive or no capture op is configured.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1757-L1770">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1764-L1777">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/defalias!">`defalias!`</a>
 ``` clojure
@@ -147,7 +147,7 @@ Register `name` as an alias (seat) layered over another harness or alias.
 Function.
 
 Return the effective workspace review contract text.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1834-L1837">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1841-L1844">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/defbackend!">`defbackend!`</a>
 ``` clojure
@@ -202,7 +202,7 @@ Register a harness definition under `name`.
 
 
 Default contract text for independent shuttle reviews.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1816-L1822">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1823-L1829">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/harnesses">`harnesses`</a>
 ``` clojure
@@ -243,7 +243,7 @@ Function.
 
 Install the shuttle into the active weaver: default harnesses, the graph
   event listener, crash reconciliation, and a first scan.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1842-L1859">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1849-L1866">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/kill!">`kill!`</a>
 ``` clojure
@@ -252,7 +252,7 @@ Install the shuttle into the active weaver: default harnesses, the graph
 Function.
 
 Kill a run's harness process (or interactive session) and mark it failed.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1725-L1755">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1732-L1762">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/note!">`note!`</a>
 ``` clojure
@@ -266,7 +266,7 @@ Append an immutable note strand to `target-id`'s memory.
   The note is born closed (it is memory, not work), carries
   `shuttle/note-for`, optional `shuttle/note-by` and `shuttle/round`
   attributes, and a `notes` annotation edge to the target.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1772-L1795">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1779-L1802">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/notes">`notes`</a>
 ``` clojure
@@ -276,7 +276,7 @@ Append an immutable note strand to `target-id`'s memory.
 Function.
 
 Return `target-id`'s notes in creation order, optionally one `:round`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1797-L1811">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1804-L1818">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/on-event">`on-event`</a>
 ``` clojure
@@ -404,7 +404,7 @@ Project a run strand into the compact summary shape the op surface returns.
 
   Pass `parents` (the run's parent-of source ids) to reuse a bulk fetch; when
   omitted a single indexed lookup resolves them.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1639-L1669">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1641-L1671">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/runs">`runs`</a>
 ``` clojure
@@ -416,7 +416,7 @@ Function.
 Return summaries of shuttle runs; opts may filter to `:active` or `:for`.
   Listing doubles as an interactive liveness checkpoint (there is no
   background poller): dead sessions are failed here, best-effort.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1671-L1698">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1699-L1705">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/scan!">`scan!`</a>
 ``` clojure
@@ -434,7 +434,7 @@ Spawn every ready pending run not already claimed. Returns claimed run ids.
 Function.
 
 Set the workspace default review contract text; nil restores the generic one.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1826-L1832">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/shuttle/src/skein/spools/shuttle.clj#L1833-L1839">Source</a></sub></p>
 
 ## <a name="skein.spools.shuttle/set-preamble-extension!">`set-preamble-extension!`</a>
 ``` clojure
