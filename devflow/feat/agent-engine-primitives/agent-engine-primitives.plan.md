@@ -11,7 +11,7 @@
 [specs/alpha-surface.delta.md](./specs/alpha-surface.delta.md) (`SPEC-Aep-002`, no change); no `daemon-runtime` delta
 (see `PLAN-Aep-001.CM4`)
 **Contract:** [proposal.md](./proposal.md) clauses `PROP-Aep-001.C1`–`C14` — the approved contract; this plan sequences it and never widens it.
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-09
 
 ## PLAN-Aep-001.P1 Goal and scope
@@ -366,3 +366,12 @@ siblings share no file.
 ## PLAN-Aep-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
+
+### PLAN-Aep-001.DN1 Task queue authored — 2026-07-09
+
+- Queue = one task per slice (Tasks 1–12 ↔ S1–S12) plus Task 13, the HITL canonical cutover
+  (`PROP-Aep-001.C12.3`–`C12.5`), mirroring F1's `TASK-Alr-022`. Harness routing follows F1: build
+  seats for code slices, worker seats for doc slices, coordinator for the HITL cutover.
+- docs-review pass 93fb644c findings were applied before task authoring (commit `d9119cf`): the
+  rehearsal db-path correction (resolve `database_path` from `mill weaver status`, never
+  workspace-local `data/`) is carried into `TASK-Aep-011.MI5/MI6`.

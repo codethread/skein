@@ -1,0 +1,93 @@
+tasks:
+  - id: 1
+    description: "S1: serves relation declaration (catalog + core acyclic set)"
+    task_file: tasks/001-serves-relation-declaration.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: []
+  - id: 2
+    description: "S2: engine serves edge + read-side rewrite (agent_run.clj)"
+    task_file: tasks/002-engine-serves-edge.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 3
+    description: "S3: supersede-and-respawn! + lineage + resolution rule (agent_run.clj)"
+    task_file: tasks/003-lineage-primitive.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 4
+    description: "S4: delegation serving rewrite (delegation.clj)"
+    task_file: tasks/004-delegation-serving-rewrite.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 5
+    description: "S5: op-retry as thin wrapper over the primitive (delegation.clj)"
+    task_file: tasks/005-retry-thin-wrapper.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [3, 4]
+  - id: 6
+    description: "S6: subagent executor rewire + stalled-gates + loom/flow-status"
+    task_file: tasks/006-subagent-rewire-stalled-gates.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [2, 3]
+  - id: 7
+    description: "S7: agent-run README + cookbook (serves + lineage)"
+    task_file: tasks/007-agent-run-docs.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [2, 3]
+  - id: 8
+    description: "S8: delegation README + cookbook (helpers carry no serves edge)"
+    task_file: tasks/008-delegation-docs.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [4, 5]
+  - id: 9
+    description: "S9: subagent.md + cookbook (delete footgun prose, rewrite recovery)"
+    task_file: tasks/009-subagent-docs.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [6]
+  - id: 10
+    description: "S10: apply SPEC-Aep-001 to strand-model.md; mark deltas"
+    task_file: tasks/010-spec-delta-application.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: []
+  - id: 11
+    description: "S11: cutover script + test + rehearsal on a copy"
+    task_file: tasks/011-cutover-script-rehearsal.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1, 2, 3, 4, 5, 6]
+  - id: 12
+    description: "S12: acceptance / atomic-landing gate (api-docs + full locked suite + go + smoke + quality + DW1 grep)"
+    task_file: tasks/012-acceptance-gate.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+  - id: 13
+    description: "[HITL] canonical cutover: quiet-board stamping + user-signed weaver restart + post-cutover smoke"
+    task_file: tasks/013-canonical-cutover-hitl.md
+    status: blocked
+    harness: coordinator
+    type: HITL
+    hitl: true
+    blocked_by: [11, 12]
