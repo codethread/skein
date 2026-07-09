@@ -1318,17 +1318,22 @@
           (catch Throwable t
             ;; claim the teardown before stopping: once :stop kills the session,
             ;; a concurrent supervise! probe sees it dead and would race its
-            ;; generic dead-session error over this launch failure
-            (claim-teardown! id)
-            (try
-              (let [handle (merge {"session" session}
-                                  (try (parse-handle backend-name out) (catch Exception _ {})))
-                    stop-argv (splice-op-argv backend-name :stop (:stop backend)
-                                              {:run-id id} handle)]
-                (run-backend-op! backend-name :stop stop-argv cwd))
-              (catch Throwable _ nil))
-            (.delete (launcher-script-file id))
-            (throw t)))))))
+            ;; generic dead-session error over this launch failure. A lost claim
+            ;; means another teardown path (e.g. a reap after the served target
+            ;; closed) already owns the run's terminal state: stopping or
+            ;; failing it here would stamp over that owner's outcome.
+            (if (claim-teardown! id)
+              (do (try
+                    (let [handle (merge {"session" session}
+                                        (try (parse-handle backend-name out) (catch Exception _ {})))
+                          stop-argv (splice-op-argv backend-name :stop (:stop backend)
+                                                    {:run-id id} handle)]
+                      (run-backend-op! backend-name :stop stop-argv cwd))
+                    (catch Throwable _ nil))
+                  (.delete (launcher-script-file id))
+                  (throw t))
+              (warn! "interactive launch failure lost the teardown claim; deferring to the owning path"
+                     {:run id :error (ex-message t)}))))))))
 
 (defn- launch-headless! [id run]
   (let [process-ref (atom nil)]
@@ -1381,13 +1386,17 @@
         (try
           (launch-interactive! id run)
           (catch Throwable t
-            (swap! (in-flight) dissoc id)
+            ;; persist the terminal error before releasing the in-flight entry:
+            ;; released first, a concurrent supervise! probe could claim the
+            ;; teardown and overwrite this specific failure with its generic
+            ;; dead-session error
             (try
               (mark-failed! id (str (ex-message t) (some->> (ex-data t) (str " ")))
                             (when (= "resume" (:error-class (ex-data t)))
                               {"agent-run/error-class" "resume"}))
               (catch Throwable _
-                nil))))
+                nil)
+              (finally (swap! (in-flight) dissoc id)))))
         (launch-headless! id run)))))
 
 (defn- claim! [id]
