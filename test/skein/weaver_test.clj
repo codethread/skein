@@ -383,7 +383,7 @@
         (is (.isFile (io/file (:state-dir world) "weaver.json")))
         (is (.exists (io/file (:state-dir world) "weaver.sock")))
         (is (.isFile (io/file (:data-dir world) "skein.sqlite")))
-        (is (= ["depends-on" "parent-of" "supersedes"] (api/acyclic-relations rt)))
+        (is (= ["depends-on" "parent-of" "serves" "supersedes"] (api/acyclic-relations rt)))
         (is (seq (db/execute! (:datasource rt) ["SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'strands'"]))))
       (finally
         (runtime/stop! rt)
@@ -717,9 +717,9 @@
       (is (= {:database "initialized"} (api/init rt)))
       (let [design (api/add rt {:title "Design" :state "closed" :attributes {:priority "high"}})
             docs (api/add rt {:title "Docs" :attributes {:owner "agent"}})]
-        (is (= ["depends-on" "parent-of" "supersedes"] (api/acyclic-relations rt)))
+        (is (= ["depends-on" "parent-of" "serves" "supersedes"] (api/acyclic-relations rt)))
         (is (= {:relation "blocks" :acyclic true} (api/declare-acyclic-relation! rt "blocks")))
-        (is (= ["blocks" "depends-on" "parent-of" "supersedes"] (api/acyclic-relations rt)))
+        (is (= ["blocks" "depends-on" "parent-of" "serves" "supersedes"] (api/acyclic-relations rt)))
         (is (= {:priority "high"} (:attributes design)))
         (api/update rt (:id docs) {:attributes {:phase "write"}
                                    :edges [{:type "depends-on" :to (:id design)}]})

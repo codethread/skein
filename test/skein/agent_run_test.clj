@@ -218,31 +218,31 @@
         (is (= (:id parent) (:spawned-by (shuttle/run-summary (api/show rt (:id child))))))
         (is (nil? (:for (shuttle/run-summary (api/show rt (:id child))))))))))
 
-(deftest run-summary-reports-treadle-gate-provenance
+(deftest run-summary-reports-serves-gate-provenance
   (with-shuttle
     (fn [rt]
       (let [gate (api/add rt {:title "gate"})
             run (shuttle/spawn-run! {:harness :sh
                                      :prompt "echo delegated"
-                                     :attrs {"gate/step" (:id gate)}})]
+                                     :serves (:id gate)})]
         (is (= (:id gate) (:for (shuttle/run-summary (api/show rt (:id run))))))
         (await-phase rt (:id run) #{"done"})))))
 
-(deftest runs-for-filter-includes-treadle-gate-provenance
+(deftest runs-for-filter-includes-serves-gate-provenance
   ;; regression: the --for prefilter narrowed candidates to parent-of children
-  ;; of the target before summaries were built, but treadle-delegated runs record
-  ;; provenance in the gate/step attr with no parent-of edge from the gate, so
-  ;; a valid gate-owned run vanished from `runs {:for gate-id}` / `agent ps --for`.
+  ;; of the target before summaries were built, but delegated runs can serve the
+  ;; target by `serves` edge without a parent-of edge from the target, so a valid
+  ;; gate-serving run must remain visible from `runs {:for gate-id}` / `agent ps --for`.
   (with-shuttle
     (fn [rt]
       (let [gate (api/add rt {:title "gate"})
             run (shuttle/spawn-run! {:harness :sh
                                      :prompt "echo delegated"
-                                     :attrs {"gate/step" (:id gate)}})]
+                                     :serves (:id gate)})]
         (await-phase rt (:id run) #{"done"})
         (is (= [(:id run)]
                (mapv :id (shuttle/runs {:for (:id gate)})))
-            "the gate-delegated run must survive the --for prefilter")))))
+            "the gate-serving run must survive the --for prefilter")))))
 
 (deftest ps-summary-building-does-not-scale-graph-scans-with-strand-count
   ;; regression: ps once issued one subgraph per strand to find each run's
