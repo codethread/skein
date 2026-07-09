@@ -399,3 +399,30 @@ Append notes here. Do not rewrite earlier notes.
   `attr-scaling-ship-now/tasks/` file-scope boundary, and is required for both
   Done-when greps to hold directory-wide.
 - No test suite run — markdown/JSON-only slice; `make docs-check` green.
+
+### PLAN-Ttv-001.DN8 PH6 full acceptance — 2026-07-09
+
+- Ran all six acceptance gates in order, each independently verified green:
+  1. Full locked suite, `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" flock -w 3600
+     /tmp/skein-test.lock clojure -M:test` — 740 tests, 5456 assertions, 0
+     failures, 0 errors, including `skein.warm-test` and the runner refactor
+     under full parallel load plus all three add-libs shards (A/B/C).
+  2. `(cd cli && go test ./...)` — green, inert as expected (no CLI-side
+     changes in this feature).
+  3. `clojure -M:smoke` — green.
+  4. `make fmt-check lint reflect-check docs-check` — zero findings (clj-kondo
+     0 errors/0 warnings, splint 0 style warnings, golangci-lint 0 issues,
+     reflect-check clean).
+  5. `make api-docs` — no diff.
+  6. `git status --short` — clean of generated SQLite/runtime artifacts and
+     warm files.
+- One anomaly for the record: on starting this slice, `git log` already
+  carried a commit (`01a3fb6`, authored before this run's own commit) that had
+  independently flipped `tasks/index.yml` task 6 to `complete` with no
+  accompanying DN note — evidence of a second, untracked actor touching this
+  branch/worktree concurrently with this delegated run. This run's own gate
+  results above are independently captured (this run executed and read every
+  command's own output), so they stand regardless of that actor's unlogged
+  claim. Flagged to the coordinator via a strand note on `8uil4` rather than
+  investigated further, since resolving duplicate-delegation causes is outside
+  this slice's scope.
