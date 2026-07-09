@@ -6,7 +6,7 @@
 **RFC:** none
 **Root specs:** none
 **Feature specs:** none
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-09
 
 ## PLAN-HarnessAliasRegistries-001.P1 Goal and scope
@@ -28,13 +28,17 @@ and lawful same-name shadowing, and the repo roster renames `pi-main` to
   root walk adopt one lookup rule: prefer an unvisited alias, else the
   harness registry, else fail loudly with both registries' available names
   in `ex-data`. The visited set makes `alias pi -> harness pi` terminate at
-  the tool while a genuine alias cycle still fails.
+  the tool while a genuine alias cycle still fails — and the cycle failure
+  stays a distinct error from `harness-not-found`: recovery deferral keys
+  off the not-found class, and a cycle collapsing into it would let a real
+  configuration bug masquerade as a transient reload race.
 - **PLAN-HarnessAliasRegistries-001.A3:** Spool-state shape version bumps
-  2→3. `migrate-state` splits a preserved mixed registry by `:alias-of`
-  presence into the two new atoms, so a live weaver reload across the
-  upgrade keeps every registration; the
-  `state-shape-matches-declared-version` test keeps version and shape
-  honest.
+  2→3. `migrate-state` splits a preserved mixed registry into the two new
+  atoms, asserting each entry matches exactly one valid shape (alias:
+  `:alias-of` present; harness: `:argv` present) and failing loudly with
+  the offending entry in `ex-data` rather than misclassifying a corrupt
+  record; the `state-shape-matches-declared-version` test keeps version
+  and shape honest.
 - **PLAN-HarnessAliasRegistries-001.A4:** Sequencing: engine + tests first
   (independently reviewable), then the roster/docs sweep which depends on
   shadowing being lawful.
@@ -82,7 +86,8 @@ the two-registry contract; config tests green.
   review/land.
 - **PLAN-HarnessAliasRegistries-001.V2:** Migration proven by test:
   a v2-shaped state map with mixed entries migrates into split registries
-  with nothing dropped.
+  with nothing dropped, and a malformed entry (neither or both shapes)
+  fails the migration loudly — regression test for each.
 - **PLAN-HarnessAliasRegistries-001.V3:** Live smoke in a disposable
   workspace: spawn via seat name, via unshadowed harness name, and via a
   same-named shadow alias.
