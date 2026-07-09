@@ -85,6 +85,6 @@ Engine phase PLAN-HarnessAliasRegistries-001.PH1 in
   (A1–A4, TC1); proposal `proposal.md` (S1–S4).
 - **TASK-HarnessAliasRegistries-001.REF2:** Code anchors:
   `spools/shuttle/src/skein/spools/shuttle.clj` ~80–160 (state
-  version/migrate), ~277–400 (defharness!/defalias!/resolve-harness/
+  version/migrate), ~349–534 (defharness!/defalias!/resolve-harness/
   root-harness/harnesses/register-default-harnesses!);
   `test/skein/shuttle_test.clj` `harness-registry-validates-and-resolves-aliases`.

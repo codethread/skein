@@ -110,7 +110,7 @@ the two-registry contract; config tests green.
 
 - **PLAN-HarnessAliasRegistries-001.TC1:** Registry mechanics live at
   `spools/shuttle/src/skein/spools/shuttle.clj` (~lines 80–160 spool-state
-  version/migrate, ~277–400 defharness!/defalias!/resolve-harness/harnesses
+  version/migrate, ~349–534 defharness!/defalias!/resolve-harness/harnesses
   listing/register-default-harnesses!). The listing's alias entries must
   keep carrying `:harness`/`:harness-doc` from the root walk. Run targeted
   namespaces via an inline alias override (the `:test` alias's runner takes
