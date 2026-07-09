@@ -1078,9 +1078,9 @@
         base (shuttle/default-review-contract-text)
         pass-id (or review-id
                     (str (name roster-id) "-" (subs (str (java.util.UUID/randomUUID)) 0 8)))
-        shared-attrs {"shuttle/review-target" target
-                      "shuttle/review-roster" (name roster-id)
-                      "shuttle/review-pass" pass-id}]
+        shared-attrs {"review/target" target
+                      "review/roster" (name roster-id)
+                      "review/pass" pass-id}]
     {:roster roster-id
      :target target
      :review-pass pass-id
@@ -1093,7 +1093,7 @@
                                                  :scope scope
                                                  :note-tag pass-id
                                                  :change-context change-context})
-                         :attrs (assoc shared-attrs "shuttle/review-focus" entry-name)})
+                         :attrs (assoc shared-attrs "review/focus" entry-name)})
                       (:reviewers roster-def))
      ;; the synthesizer weighs findings roster-independently, so it receives
      ;; the base contract, never a per-reviewer one
@@ -1101,7 +1101,7 @@
                    :harness (or (get-in roster-def [:synthesizer :harness])
                                 (:harness (first (:reviewers roster-def))))
                    :prompt (review-synthesis-prompt {:target-id target :contract base :note-tag pass-id})
-                   :attrs (assoc shared-attrs "shuttle/review-synthesis" "true")}}))
+                   :attrs (assoc shared-attrs "review/synthesis" "true")}}))
 
 ;; ---------------------------------------------------------------------------
 ;; Panel primitive (PLAN-Pnl-001.A4/A5)
@@ -1287,8 +1287,8 @@
   `{:name :harness :prompt :resume-prompt? :attrs :resume-ref?}` where
   `:resume-ref` is the seat index in the previous row this turn continues (only
   present for a `:continuity :resume` turn r>1). Every run spec stamps
-  `shuttle/panel-seat`, `shuttle/panel-turn`, `shuttle/review-target`, and
-  `shuttle/review-pass`. `:synthesizer` is present unless `:synthesis` is
+  `panel/seat`, `panel/turn`, `review/target`, and
+  `review/pass`. `:synthesizer` is present unless `:synthesis` is
   absent or `:none`."
   [panel {:keys [target review-id]}]
   (when (and (some? review-id) (not (non-blank? review-id)))
@@ -1325,10 +1325,10 @@
                             (let [directive (cond (= 1 rounds) :independent
                                                   (= 1 turn) :open
                                                   :else :deliberate)
-                                  attrs {"shuttle/review-target" board-ref
-                                         "shuttle/review-pass" pass-id
-                                         "shuttle/panel-seat" seat-name
-                                         "shuttle/panel-turn" (str turn)}]
+                                  attrs {"review/target" board-ref
+                                         "review/pass" pass-id
+                                         "panel/seat" seat-name
+                                         "panel/turn" (str turn)}]
                               (cond-> {:name seat-name
                                        :harness harness
                                        :prompt (panel-seat-prompt {:form :full :seat (inc idx) :seats seat-count
@@ -1356,9 +1356,9 @@
              {:name "synthesis"
               :harness (:harness synthesis)
               :prompt (panel-synthesis-prompt {:board-id board-ref :brief (:brief synthesis) :note-tag pass-id})
-              :attrs {"shuttle/review-target" board-ref
-                      "shuttle/review-pass" pass-id
-                      "shuttle/review-synthesis" "true"}}))))
+              :attrs {"review/target" board-ref
+                      "review/pass" pass-id
+                      "review/synthesis" "true"}}))))
 
 (defn panel!
   "Spawn a panel from an inline panel value.
@@ -1390,14 +1390,14 @@
         board-id (case (get-in specs [:blackboard :kind])
                    :target (get-in specs [:blackboard :id])
                    :fresh (:id (api/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
-                                              :attributes (cond-> {"shuttle/role" "panel"
-                                                                   "shuttle/review-pass" (:review-pass specs)}
+                                              :attributes (cond-> {"panel/role" "panel"
+                                                                   "review/pass" (:review-pass specs)}
                                                             spawned-by (assoc "shuttle/spawned-by" spawned-by))})))
         resolve-board (fn [s] (str/replace (str s) board-placeholder board-id))
         spawn-run (fn [spec resume-run extra]
                     (let [;; a resuming turn launches on the short continuation
                           ;; prompt; stamp its full-brief form as
-                          ;; shuttle/fresh-prompt so `retry --fresh` has a
+                          ;; panel/fresh-prompt so `retry --fresh` has a
                           ;; durable cold-start prompt (a fresh process must
                           ;; never be handed the continuation, PLAN-Pnl-001.A6)
                           ;; panel seats and synthesis are read-only deliberators
@@ -1406,7 +1406,7 @@
                           attrs (cond-> (into non-serving-attrs
                                               (map (fn [[k v]] [k (resolve-board v)]))
                                               (:attrs spec))
-                                  resume-run (assoc "shuttle/fresh-prompt" (resolve-board (:prompt spec))))]
+                                  resume-run (assoc "panel/fresh-prompt" (resolve-board (:prompt spec))))]
                       (shuttle/spawn-run!
                        (cond-> (merge {:harness (:harness spec)
                                        :prompt (resolve-board (if resume-run (:resume-prompt spec) (:prompt spec)))
@@ -1511,8 +1511,8 @@
                                                :contract (or (:contract reviewer) contract)
                                                :scope (:scope reviewer)
                                                :change-context change-context})
-                       :attrs {"shuttle/review-target" target-id
-                               "shuttle/review-focus" (or focus "")}})
+                       :attrs {"review/target" target-id
+                               "review/focus" (or focus "")}})
                     reviewers)))
         synthesize? (or synthesize? (some? roster-specs))
         ;; reviewers and the synthesizer are read-only helpers of the target:
@@ -1537,8 +1537,8 @@
                                       :prompt (review-synthesis-prompt {:target-id target-id
                                                                         :review-runs (mapv :id review-runs)
                                                                         :contract contract})
-                                      :attrs {"shuttle/review-target" target-id
-                                              "shuttle/review-synthesis" "true"}})
+                                      :attrs {"review/target" target-id
+                                              "review/synthesis" "true"}})
                                  {:title (truncate (str "Review synthesis: " target-id) 72)
                                   :depends-on (mapv :id review-runs)}))]
     (cond-> {:target target-id :reviewers (mapv :id review-runs)}
@@ -1726,12 +1726,12 @@
 ;; recovery path. Engine control and lifecycle attrs (harness, prompt, cwd,
 ;; session-id, log, result, error, …) are re-derived or re-stamped by
 ;; spawn-run!, so only these spool-owned structural attrs are carried.
-(def ^:private preserved-run-attr-names
-  ["review-target" "review-pass" "review-roster" "review-focus"
-   "review-synthesis" "panel-seat" "panel-turn"
+(def ^:private preserved-run-attr-keys
+  ["review/target" "review/pass" "review/roster" "review/focus"
+   "review/synthesis" "panel/seat" "panel/turn"
    ;; a retried non-serving helper stays non-serving, so its retry never gates
    ;; delegation of the target it was only reviewing
-   "serves"])
+   "shuttle/serves"])
 
 (defn- op-retry [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--cwd" :single "--prompt" :single "--fresh" :bool})
@@ -1763,14 +1763,14 @@
                 (fail! "run failed resuming its session; retry --fresh to respawn cold on the full-brief prompt"
                        {:run (:id run) :resumes resumes}))
             preserve-resume? (and resumes (not fresh?))
-            fresh-prompt (sattr run "fresh-prompt")
+            fresh-prompt (attr-get run :panel/fresh-prompt)
             ;; carry the spool-owned structural attrs plus, when the retry keeps
             ;; resuming, the full-brief form so a later --fresh of the re-resumed
             ;; run can still cold-start correctly
             carried-attrs (cond-> (into {}
-                                        (keep (fn [n] (when-let [v (sattr run n)] [(str "shuttle/" n) v])))
-                                        preserved-run-attr-names)
-                            (and preserve-resume? fresh-prompt) (assoc "shuttle/fresh-prompt" fresh-prompt))
+                                        (keep (fn [k] (when-let [v (attr-get run k)] [k v])))
+                                        preserved-run-attr-keys)
+                            (and preserve-resume? fresh-prompt) (assoc "panel/fresh-prompt" fresh-prompt))
             extra (get flags "--prompt")
             append-extra (fn [p] (str p (when extra (str "\n\n" extra))))]
         (api/update (rt) (:id run) {:state "closed" :attributes {"shuttle/phase" "superseded"}})

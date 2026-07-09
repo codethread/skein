@@ -125,7 +125,7 @@
               "review --cwd rides onto each reviewer run"))
         (doseq [run-id (:reviewers review)]
           (let [run (api/show rt run-id)]
-            (is (= (:id target) (get-in run [:attributes :shuttle/review-target])))
+            (is (= (:id target) (get-in run [:attributes :review/target])))
             (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "Review contract"))))))))
 
 (deftest review-consumes-workspace-default-contract
@@ -211,7 +211,7 @@
         (testing "one run per roster entry, each with its own contract and scope"
           (is (= 2 (count runs)))
           (is (= ["test-sleeps" "docs"]
-                 (mapv #(get-in % [:attributes :shuttle/review-focus]) runs)))
+                 (mapv #(get-in % [:attributes :review/focus]) runs)))
           (let [[sleeps docs] (mapv #(get-in % [:attributes :shuttle/prompt]) runs)]
             (is (str/includes? sleeps "Flag sleeps and arbitrary timeouts in tests."))
             (is (str/includes? sleeps "Scope: confine this review to test files"))
@@ -220,7 +220,7 @@
             (is (str/includes? docs "Judge documentation drift."))
             (is (not (str/includes? docs "Scope:")))))
         (testing "roster name is stamped on every spawned run"
-          (is (every? #(= "repo" (get-in % [:attributes :shuttle/review-roster]))
+          (is (every? #(= "repo" (get-in % [:attributes :review/roster]))
                       (conj runs synth))))
         (testing "roster reviews synthesize by default with the declared harness and base contract"
           (is (= "sh" (get-in synth [:attributes :shuttle/harness])))
@@ -284,7 +284,7 @@
                 run (api/show rt (first (:reviewers inline-review)))]
             (is (= :inline (:roster inline-specs)))
             (is (s/valid? :skein.spools.delegation/review-specs inline-specs))
-            (is (= "inline" (get-in run [:attributes :shuttle/review-roster])))
+            (is (= "inline" (get-in run [:attributes :review/roster])))
             (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "One-off pass."))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
                                   (agents/roster-review-specs {:reviewers []} {:target (:id target)})))))
@@ -499,10 +499,10 @@
           (is (= [:sh "sh"] (mapv :harness row1))))
         (testing "every run spec stamps panel + review attrs"
           (doseq [spec row1]
-            (is (= (:id target) (get (:attrs spec) "shuttle/review-target")))
-            (is (= (:review-pass specs) (get (:attrs spec) "shuttle/review-pass")))
-            (is (= "1" (get (:attrs spec) "shuttle/panel-turn")))
-            (is (= (:name spec) (get (:attrs spec) "shuttle/panel-seat")))))
+            (is (= (:id target) (get (:attrs spec) "review/target")))
+            (is (= (:review-pass specs) (get (:attrs spec) "review/pass")))
+            (is (= "1" (get (:attrs spec) "panel/turn")))
+            (is (= (:name spec) (get (:attrs spec) "panel/seat")))))
         (testing "blackboard directive names the target strand"
           (is (= {:kind :target :id (:id target)} (:blackboard specs))))
         (testing "synthesis compiles when declared"
@@ -561,7 +561,7 @@
                            (filter #(= id (:from_strand_id %)))
                            (map :to_strand_id) set))]
         (testing "a fresh blackboard strand is minted"
-          (is (= "panel" (get-in board [:attributes :shuttle/role]))))
+          (is (= "panel" (get-in board [:attributes :panel/role]))))
         (testing "each turn row has one run per seat"
           (is (= 2 (count row1)))
           (is (= 2 (count row2))))
@@ -579,9 +579,9 @@
             (is (not (str/includes? p2 "«panel-board»")))
             (is (str/includes? p2 (:blackboard result)))
             (is (= (:blackboard result)
-                   (get-in (api/show rt (first row1)) [:attributes :shuttle/review-target])))))
+                   (get-in (api/show rt (first row1)) [:attributes :review/target])))))
         (testing "a resuming turn stashes its full-brief prompt for retry --fresh"
-          (let [f2 (get-in (api/show rt (first row2)) [:attributes :shuttle/fresh-prompt])]
+          (let [f2 (get-in (api/show rt (first row2)) [:attributes :panel/fresh-prompt])]
             (is (str/includes? f2 "You are seat")
                 "the full form, not the continuation, is durable for a cold restart")
             (is (not (str/includes? f2 "«panel-board»")))))
@@ -697,7 +697,7 @@
                 (agents/council! "test topic" {:harness :sh :members 2 :rounds 2})
                 board (api/show rt council)
                 [row1 row2] turns]
-            (is (= "panel" (get-in board [:attributes :shuttle/role]))
+            (is (= "panel" (get-in board [:attributes :panel/role]))
                 "council re-ships as a fresh-blackboard panel")
             (is (= [2 2] [(count row1) (count row2)]))
             (testing "the council strand parents every run"
@@ -964,7 +964,7 @@
                                             :attributes (merge {"shuttle/run" "true"
                                                                 "shuttle/harness" "session-fix"
                                                                 "shuttle/prompt" "CONTINUATION prompt"
-                                                                "shuttle/fresh-prompt" "FULLBRIEF prompt"
+                                                                "panel/fresh-prompt" "FULLBRIEF prompt"
                                                                 "shuttle/resumes" pred
                                                                 "shuttle/phase" "failed"}
                                                                extra)})))]
@@ -976,7 +976,7 @@
             (is (= failed (:superseded retried)))
             (is (= pred (get-in new-run [:attributes :shuttle/resumes])))
             (is (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "CONTINUATION prompt"))
-            (is (= "FULLBRIEF prompt" (get-in new-run [:attributes :shuttle/fresh-prompt]))
+            (is (= "FULLBRIEF prompt" (get-in new-run [:attributes :panel/fresh-prompt]))
                 "the full-brief form carries forward for a later --fresh")))
         (testing "--fresh severs the linkage and cold-starts on the full-brief prompt"
           (let [pred (make-pred)
@@ -1008,24 +1008,24 @@
                                                   "shuttle/harness" "sh"
                                                   "shuttle/prompt" "seat brief"
                                                   "shuttle/phase" "failed"
-                                                  "shuttle/review-target" "tgt-1"
-                                                  "shuttle/review-pass" "panel-abc123"
-                                                  "shuttle/review-roster" "repo"
-                                                  "shuttle/review-focus" "skeptic"
-                                                  "shuttle/panel-seat" "skeptic"
-                                                  "shuttle/panel-turn" "2"
+                                                  "review/target" "tgt-1"
+                                                  "review/pass" "panel-abc123"
+                                                  "review/roster" "repo"
+                                                  "review/focus" "skeptic"
+                                                  "panel/seat" "skeptic"
+                                                  "panel/turn" "2"
                                                   ;; a non-serving helper stays non-serving across retry
                                                   "shuttle/serves" "false"
                                                   ;; a lifecycle attr the engine re-derives; it must NOT ride along
                                                   "shuttle/result" "stale old result"}}))
             retried (agents/agent-op {:op/argv ["retry" failed]})
             attrs (:attributes (api/show rt (get-in retried [:run :id])))]
-        (is (= "tgt-1" (:shuttle/review-target attrs)))
-        (is (= "panel-abc123" (:shuttle/review-pass attrs)))
-        (is (= "repo" (:shuttle/review-roster attrs)))
-        (is (= "skeptic" (:shuttle/review-focus attrs)))
-        (is (= "skeptic" (:shuttle/panel-seat attrs)))
-        (is (= "2" (:shuttle/panel-turn attrs)))
+        (is (= "tgt-1" (:review/target attrs)))
+        (is (= "panel-abc123" (:review/pass attrs)))
+        (is (= "repo" (:review/roster attrs)))
+        (is (= "skeptic" (:review/focus attrs)))
+        (is (= "skeptic" (:panel/seat attrs)))
+        (is (= "2" (:panel/turn attrs)))
         (is (= "false" (:shuttle/serves attrs))
             "a retried non-serving helper stays non-serving")
         (is (not= "stale old result" (:shuttle/result attrs))
