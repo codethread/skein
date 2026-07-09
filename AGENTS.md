@@ -37,7 +37,9 @@ mill init [--workspace <dir>]           # create/complete a workspace
 mill weaver start|status|stop|repl [--workspace <dir>]
 make dash                               # code-owner TUI over the live coordination world
 
-clojure -M:test                         # primary validation, CI-blocking
+make test-warm NS="ns..."               # warm REPL to iterate a slice — never a Done-when gate
+clojure -M:test <ns...>                 # cold focused run — the per-slice Done-when gate
+flock -w 3600 /tmp/skein-test.lock clojure -M:test  # full locked suite — queue acceptance + land only; CI-blocking
 (cd cli && go test ./...)               # primary validation, CI-blocking
 clojure -M:smoke                        # primary validation, CI-blocking
 make fmt-check lint reflect-check docs-check   # blocking CI quality gates, held at zero findings
@@ -59,7 +61,7 @@ Strand data is plain SQLite under a workspace's `data/skein.sqlite` — `sqlite3
 
 - **Kill by PID only** (`jps`/`ps`/the run's recorded pid, then `kill <pid>`) — never `pkill -f <pattern>`: delegated agents' prompts can quote the very command you match, so a pattern kill strafes healthy sibling runs.
 - **Disposable workspaces for everything except coordination.** Tests, smoke runs, and config experiments use `--workspace` worlds from `mktemp -d`, never the user's default workspaces and never implicit repo discovery. Hold the path in your own shell variable (a shared scratch file under /tmp gets clobbered by sibling agents) and guard every expansion with `${ws:?}` — an empty variable must fail the command, not silently resolve to the canonical world.
-- **Serialize full test suites across agents**: when sibling agents may be testing on this machine, run `flock -w 3600 /tmp/skein-test.lock clojure -M:test` — concurrent suites starve the suite's timing budgets and flake. `SKEIN_TEST_AWAIT_SCALE` multiplies await budgets on slow hosts (CI sets 3); the lock is deliberately not baked into the `:test` alias.
+- **Test validation runs in three tiers, and warm is never a gate.** Iterate a slice with `make test-warm NS="ns1 ns2"`, a per-worktree warm REPL that gives sub-second focused runs; its output never satisfies a Done-when block. Gate each slice on the cold focused run `clojure -M:test <ns...>` naming the namespaces the slice touched. Run the full suite `flock -w 3600 /tmp/skein-test.lock clojure -M:test` only at queue acceptance and at land `merge-local-verify`. **Serialize the full suite across agents**: sibling full suites starve each other's timing budgets and flake, so hold the lock (bare `flock`, on PATH via nix — never a vendored absolute `flock` path). `SKEIN_TEST_AWAIT_SCALE` multiplies await budgets on slow hosts (CI sets 3); the lock is deliberately not baked into the `:test` alias. Warm and cold run the same in-process code path, the warm runtime files (`.test-repl-port`, `.test-repl.pid`) are gitignored, and no gate — CI or local — depends on warm state.
 
 ## Coordination: the canonical .skein world
 

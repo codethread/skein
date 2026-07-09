@@ -452,7 +452,21 @@
                            |split a large file by section with sequential depends-on
                            |links rather than handing it to a single seat whole. A
                            |worker that exhausts its context dies mid-task and loses
-                           |its handover even when its edits survive.")}
+                           |its handover even when its edits survive.")
+            :tiered-validation (fmt/reflow "
+                                 |Validation runs in three tiers; write each task's
+                                 |Done-when block to the right one. Iterate with the
+                                 |warm REPL (make test-warm NS=\"ns...\"), a
+                                 |per-worktree loop whose output never satisfies a
+                                 |Done-when gate. Gate each slice on the cold focused
+                                 |run clojure -M:test <ns...> naming the namespaces
+                                 |the slice touched. Reserve the full locked suite
+                                 |flock -w 3600 /tmp/skein-test.lock clojure -M:test
+                                 |for queue acceptance and land merge-local-verify —
+                                 |one full run per queue, not per slice. Warm is never
+                                 |a gate: warm and cold share one in-process code path
+                                 |and the warm runtime files are gitignored, so no
+                                 |Done-when may depend on warm state.")}
    :worker-contract worker-contract})
 
 (defn- parse-argv [argv flag-spec]

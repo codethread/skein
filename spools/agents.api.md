@@ -30,7 +30,7 @@ Agent coordination spool layered over the shuttle run engine.
 
 
 Structured manual returned by `agent about`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L105-L456">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L105-L470">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/agent-op">`agent-op`</a>
 ``` clojure
@@ -39,7 +39,7 @@ Structured manual returned by `agent about`.
 Function.
 
 Dispatch parsed `strand agent` subcommands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1939-L1960">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1953-L1974">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/agent-plan">`agent-plan`</a>
 ``` clojure
@@ -48,7 +48,7 @@ Dispatch parsed `strand agent` subcommands.
 Function.
 
 Create a feature strand plus task/review children for agent work.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1987-L2018">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L2001-L2032">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/council!">`council!`</a>
 ``` clojure
@@ -73,7 +73,7 @@ Convene a multi-agent council as a `:fresh`-blackboard panel (A7): its rounds
 
   Returns `{:council <shared strand id> :turns [[run-ids]...] :synthesizer
   <run id>}`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1545-L1610">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1559-L1624">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/defroster!">`defroster!`</a>
 ``` clojure
@@ -90,7 +90,7 @@ Register or replace a named reviewer roster (weaver-lifetime state, so
   with its own precise contract; `:scope` is prompt-level confinement text.
   `:synthesizer` overrides the harness of the synthesis run (default: first
   reviewer's harness). Malformed data fails loudly with spec explain data.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L842-L856">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L856-L870">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/install!">`install!`</a>
 ``` clojure
@@ -99,7 +99,7 @@ Register or replace a named reviewer roster (weaver-lifetime state, so
 Function.
 
 Install the agents op surface, pattern, query, and worker preamble hook.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L2020-L2036">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L2034-L2050">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/panel!">`panel!`</a>
 ``` clojure
@@ -127,7 +127,7 @@ Spawn a panel from an inline panel value.
   `:spawned-by` and `:cwd` ride onto every run.
 
   Returns `{:panel :blackboard :turns [[run-ids...]...] :synthesizer? :review-pass}`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1349-L1428">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1363-L1442">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/panel-specs">`panel-specs`</a>
 ``` clojure
@@ -156,7 +156,7 @@ Compile an **inline panel value** into plain, fully-built run specs
   `shuttle/panel-seat`, `shuttle/panel-turn`, `shuttle/review-target`, and
   `shuttle/review-pass`. `:synthesizer` is present unless `:synthesis` is
   absent or `:none`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1257-L1347">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1271-L1361">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/review!">`review!`</a>
 ``` clojure
@@ -182,7 +182,7 @@ Spawn independent read-only reviewers for a target strand.
   windows — injected into every reviewer prompt so reviewers read the diff
   instead of re-deriving it. The synthesizer never receives it (it weighs
   notes, not the diff).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1449-L1532">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1463-L1546">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/review-contract">`review-contract`</a>
 
@@ -204,7 +204,7 @@ Convert a roster value into an equivalent single-round, target-blackboard
   the panel synthesis. Pure — the roster is validated identically to
   `defroster!` input. A rounds=1 panel compiles to the independent review
   shape, so this is how `review!` is expressible over the panel primitive.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1430-L1447">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1444-L1461">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/roster-review-specs">`roster-review-specs`</a>
 ``` clojure
@@ -243,7 +243,7 @@ Return a roster's review fan-out as plain, fully-built run specs
   present it is injected into every reviewer prompt so reviewers read the
   changed files instead of re-deriving the diff; the synthesizer never carries
   it. Malformed change context fails loudly against its spec.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1021-L1090">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L1035-L1104">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/rosters">`rosters`</a>
 ``` clojure
@@ -252,7 +252,7 @@ Return a roster's review fan-out as plain, fully-built run specs
 Function.
 
 List registered reviewer rosters as full plain data.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L858-L862">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agents/src/skein/spools/agents.clj#L872-L876">Source</a></sub></p>
 
 ## <a name="skein.spools.agents/worker-contract">`worker-contract`</a>
 

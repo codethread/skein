@@ -352,3 +352,23 @@ Append notes here. Do not rewrite earlier notes.
   the worktree path and reaps the warm REPL by recorded PID (`make test-warm-stop`,
   PID-only) before `wktree remove`. The runner core prints `Aggregate summary:
   {...}` and the shell surfaces a non-zero exit on any `:fail`/`:error`.
+
+### PLAN-Ttv-001.DN6 PH4 guidance surfaces — 2026-07-09
+
+- Rewrote the AGENTS.md testing rule to the three tiers: the Commands block now
+  lists `make test-warm NS="ns..."`, cold focused `clojure -M:test <ns...>`, and
+  the full locked `flock -w 3600 /tmp/skein-test.lock clojure -M:test`; the
+  former "Serialize full test suites" hard rule became "Test validation runs in
+  three tiers, and warm is never a gate", which keeps the serialize-the-full-suite
+  rule scoped to the full tier and states the CI-independence invariant (warm and
+  cold share one in-process path, warm files gitignored, no gate depends on warm
+  state). **CLAUDE.md is a symlink to AGENTS.md**, so a single edit keeps them in
+  sync — the earlier grep matched both because they are one file.
+- Added a `:tiered-validation` entry to the `about-doc` `:policy` map in
+  `spools/agents.clj` beside `:task-sizing`, prescribing the tiers for delegated
+  task Done-when blocks. `make api-docs` only shifted the source-link line ranges
+  in `spools/agents.api.md` (the `:policy` prose is data, not a rendered
+  docstring); regen is idempotent. `docs-check` fails only while that regenerated
+  api.md is uncommitted (`git diff --exit-code`), so it passes once committed.
+  `fmt-check` and `lint` are green; `grep util-linux` over the three surfaces
+  returns nothing.
