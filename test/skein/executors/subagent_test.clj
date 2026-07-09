@@ -275,15 +275,15 @@
         (let [superseded (api/show rt (:id failed))]
           (is (= "superseded" (attr superseded :agent-run/phase)))
           (is (= "closed" (:state superseded))))
-        ;; retry respawns with :parent = served-target, which for a treadle run
-        ;; resolves to the gate (run-summary :for = gate/step). So the fresh
-        ;; run gets a structural parent-of edge from the gate — but NOT a
-        ;; treadle delegation (no delegates edge, no gate/step attr), and the
-        ;; gate's gate/run stamp is never rewritten. treadle keys its own
-        ;; provenance off delegates / gate/run, so it never adopts the fresh
-        ;; run: this is exactly why retry is not the gate-recovery verb.
+        ;; retry respawns with :parent = served-target, which resolves from the
+        ;; failed run's serves edge. A treadle-delegated run carries no serves
+        ;; edge (treadle stamps gate/step + a delegates edge, not serves), so the
+        ;; served-target is nil and the fresh run is unparented: no parent-of and
+        ;; no delegates edge from the gate, no gate/step attr, and the gate's
+        ;; gate/run stamp is never rewritten. This is exactly why retry is not the
+        ;; gate-recovery verb — the fresh run is never adopted by the gate.
         (let [fresh-run-id (get-in retry [:run :id])]
-          (is (some? (edge-row rt gate-id fresh-run-id "parent-of")))
+          (is (nil? (edge-row rt gate-id fresh-run-id "parent-of")))
           (is (nil? (edge-row rt gate-id fresh-run-id "delegates")))
           (is (nil? (attr (api/show rt fresh-run-id) :gate/step)))
           (is (= (:id failed) (attr (api/show rt gate-id) :gate/run))))
