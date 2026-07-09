@@ -159,13 +159,13 @@ const stateLabel = status.done ? "done"
   workflows never leak in. A per-run row can trust the counts it renders.
 - **Read-only means safe to poll hard.** `flow-status` mutates no workflow,
   shuttle, or treadle state, so a dashboard can refresh it every couple of
-  seconds with no coordination risk — the reason the shuttle dashboard leans on
+  seconds with no coordination risk — the reason the agent dashboard leans on
   it as its devflow feed.
 - **The error path is a first-class state.** Because the enrichment call *can*
   fail (an unknown run-id throws), the honest renderer catches it into a visible
   "error" row. A zero frontier and a failed call must not look the same.
 
-Honest source: the shuttle dashboard's devflow tab [`scripts/shuttle-dash/tabs/devflow.tsx`](../scripts/shuttle-dash/tabs/devflow.tsx) (`fetchDevflow` enriches each active run via `flow-status`, derives the error/attention/active/done state, and renders a loud error row on failure), and the `flow-status` payload contract in [`loom.md`](./loom.md).
+Honest source: the agent dashboard's devflow tab [`scripts/agent-dash/tabs/devflow.tsx`](../scripts/agent-dash/tabs/devflow.tsx) (`fetchDevflow` enriches each active run via `flow-status`, derives the error/attention/active/done state, and renders a loud error row on failure), and the `flow-status` payload contract in [`loom.md`](./loom.md).
 
 ---
 

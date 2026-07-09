@@ -361,7 +361,7 @@ The ergonomics live entirely on **your** side of the boundary. The shared spool 
 
 ## Namespace tiers (why this split exists)
 
-See [AGENTS.md](../AGENTS.md) and [SPEC-003](../devflow/specs/repl-api.md#spec-003c19).
+See [AGENTS.md](../AGENTS.md) and [SPEC-003](../devflow/specs/repl-api.md).
 
 - `skein.api.*.alpha` — blessed, accreting, explicit-runtime API. **Build shared
   spools on this.**
