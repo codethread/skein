@@ -10,7 +10,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
-            [skein.spools.shuttle :as shuttle]
+            [skein.spools.agent-run :as shuttle]
             [skein.spools.util :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
 
 (defn- rt

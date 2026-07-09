@@ -16,7 +16,7 @@
             [skein.api.weaver.alpha :as api]
             [skein.spools.bench :as bench]
             [skein.spools.bench.exec :as exec]
-            [skein.spools.shuttle :as shuttle]
+            [skein.spools.agent-run :as shuttle]
             [skein.spools.test-support :as test-support])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]

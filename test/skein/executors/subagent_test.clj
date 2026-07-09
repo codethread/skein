@@ -1,9 +1,9 @@
-(ns skein.treadle-test
+(ns skein.executors.subagent-test
   "Tests for the treadle workflow-gate to shuttle-run adapter."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [skein.spools.shuttle :as shuttle]
-            [skein.spools.treadle :as treadle]
+            [skein.spools.agent-run :as shuttle]
+            [skein.spools.executors.subagent :as treadle]
             [skein.spools.agents :as agents]
             [skein.spools.workflow :as workflow]
             [skein.spools.test-support :as test-support :refer [with-runtime]]

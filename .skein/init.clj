@@ -55,9 +55,9 @@
                      :call 'skein.macros.demo/install!
                      :required? true})
 (runtime-alpha/use! runtime :skein/spools-shuttle
-                    {:ns 'skein.spools.shuttle
-                     :spools ['skein.spools/shuttle]
-                     :call 'skein.spools.shuttle/install!
+                    {:ns 'skein.spools.agent-run
+                     :spools ['skein.spools/agent-run]
+                     :call 'skein.spools.agent-run/install!
                      :required? true})
 (runtime-alpha/use! runtime :skein/spools-agents
                     {:ns 'skein.spools.agents
@@ -142,8 +142,8 @@
 ;; harness alias harnesses.clj registers (e.g. worker) must already exist or a
 ;; durable ready gate would be stamped treadle/error on every cold start.
 (runtime-alpha/use! runtime :skein/spools-treadle
-                    {:ns 'skein.spools.treadle
-                     :spools ['skein.spools/shuttle]
+                    {:ns 'skein.spools.executors.subagent
+                     :spools ['skein.spools/agent-run]
                      :after [:skein/spools-shuttle :skein/spools-workflow :harnesses :config :workflows]
-                     :call 'skein.spools.treadle/install!
+                     :call 'skein.spools.executors.subagent/install!
                      :required? true})

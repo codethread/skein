@@ -1,4 +1,4 @@
-(ns skein.spools.treadle
+(ns skein.spools.executors.subagent
   "Bridge workflow subagent gates to shuttle agent runs.
 
   The treadle watches workflow runs for ready `:subagent` gates, spawns a
@@ -7,7 +7,7 @@
   CLI surface and keeps workflow and shuttle decoupled: this namespace is the
   only adapter that knows both vocabularies."
   (:require [clojure.string :as str]
-            [skein.spools.shuttle :as shuttle]
+            [skein.spools.agent-run :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
             [skein.api.graph.alpha :as graph]
@@ -252,7 +252,7 @@
 (defn install!
   "Install the treadle event handler and perform an initial scan.
 
-  Fails loudly unless `skein.spools.shuttle/install!` has already registered
+  Fails loudly unless `skein.spools.agent-run/install!` has already registered
   the shuttle engine in this weaver runtime."
   []
   (let [runtime (rt)
@@ -260,7 +260,7 @@
     (when-not (contains? handlers :shuttle/engine)
       (fail! "Treadle requires the shuttle engine to be installed first" {:handlers handlers}))
     (events/register! runtime :treadle/engine event-types
-                      'skein.spools.treadle/on-event
+                      'skein.spools.executors.subagent/on-event
                       {:spool "treadle"})
     (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates: an active subagent gate whose
@@ -285,4 +285,4 @@
                           [:missing [:attr "treadle/delivered"]]])
     (scan!)
     {:installed true
-     :namespace 'skein.spools.treadle}))
+     :namespace 'skein.spools.executors.subagent}))

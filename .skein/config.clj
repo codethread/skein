@@ -21,7 +21,7 @@
             [skein.spools.carder :as carder]
             [skein.spools.devflow :as devflow]
             [skein.spools.loom :as loom]
-            [skein.spools.shuttle :as shuttle]
+            [skein.spools.agent-run :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]

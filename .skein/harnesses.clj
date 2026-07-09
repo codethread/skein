@@ -19,7 +19,7 @@
   without proliferating aliases."
   (:require [skein.api.format.alpha :as format-alpha]
             [skein.spools.agents :as agents]
-            [skein.spools.shuttle :as shuttle]))
+            [skein.spools.agent-run :as shuttle]))
 
 (defn- register-harness-aliases!
   "Register repo-local shuttle harness aliases."

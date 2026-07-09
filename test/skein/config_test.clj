@@ -51,7 +51,7 @@
         ;; harnesses.clj's worker alias layers over the shipped :pi harness,
         ;; which shuttle/install! registers in real startups; this fixture
         ;; loads the config files alone, so register the defaults here.
-        ((requiring-resolve 'skein.spools.shuttle/register-default-harnesses!))
+        ((requiring-resolve 'skein.spools.agent-run/register-default-harnesses!))
         (load-file ".skein/config.clj")
         (load-file ".skein/harnesses.clj")
         (load-file ".skein/workflows.clj")
@@ -77,8 +77,8 @@
   ;; (tools.deps add-libs state is JVM-global; see skein.test-runner's
   ;; ordering note).
   (spit (io/file target "spools.edn")
-        (pr-str {:spools {'skein.spools/shuttle
-                          {:local/root (.getCanonicalPath (io/file "spools/shuttle"))}
+        (pr-str {:spools {'skein.spools/agent-run
+                          {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
                           'skein.spools/agents
                           {:local/root (.getCanonicalPath (io/file "spools/agents"))}
                           'skein.spools/chime
@@ -188,7 +188,7 @@
   ;; agent review must consume the one authoritative policy text by default;
   ;; the text ships from skein.spools.agents, the accessor stays on shuttle
   (is (= (var-get (requiring-resolve 'skein.spools.agents/review-contract))
-         ((requiring-resolve 'skein.spools.shuttle/default-review-contract-text))))
+         ((requiring-resolve 'skein.spools.agent-run/default-review-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run :treadle-error]
@@ -545,7 +545,7 @@
   ;; persist) and declares the verified `codex exec resume <session-id>` splice.
   (with-config-runtime
     (fn [_rt]
-      (let [codex ((requiring-resolve 'skein.spools.shuttle/resolve-harness) :codex)]
+      (let [codex ((requiring-resolve 'skein.spools.agent-run/resolve-harness) :codex)]
         (is (not-any? #{"--ephemeral"} (:argv codex))
             "sessions persist so codex exec resume can continue them")
         (is (= ["resume" :shuttle/session-id] (:resume codex))

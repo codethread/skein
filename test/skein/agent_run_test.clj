@@ -1,4 +1,4 @@
-(ns skein.shuttle-test
+(ns skein.agent-run-test
   "Tests for the shuttle agent-spawning spool against a real weaver runtime.
 
   Harness processes in these tests use the shipped `sh` harness (the prompt is
@@ -9,7 +9,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
-            [skein.spools.shuttle :as shuttle]
+            [skein.spools.agent-run :as shuttle]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
@@ -952,7 +952,7 @@
   ;; now fails loudly (TEN-003) instead of NPE-ing into the event worker.
   (with-shuttle
     (fn [rt]
-      (swap! (:spool-state rt) update :skein.spools.shuttle/state
+      (swap! (:spool-state rt) update :skein.spools.agent-run/state
              (fn [s] (with-meta (dissoc s :worker-executor) (meta s))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Required shuttle spool-state entry is missing"
                             (#'shuttle/worker-executor))))))
@@ -974,7 +974,7 @@
                        :preamble-extension (atom "preserved preamble")
                        :default-review-contract (atom nil)}]
         ;; overwrite the installed (version 1) state with an untagged old-shape map
-        (swap! (:spool-state rt) assoc :skein.spools.shuttle/state old-state)
+        (swap! (:spool-state rt) assoc :skein.spools.agent-run/state old-state)
         (let [reinit (#'shuttle/state)]
           (is (some? (:worker-executor reinit)) "reinit supplies a fresh worker executor")
           (is (some? (:recovery-scheduler reinit)) "reinit supplies a fresh recovery scheduler")
@@ -1000,7 +1000,7 @@
                          :in-flight (atom {})
                          :preamble-extension (atom nil)
                          :default-review-contract (atom nil)}]
-          (swap! (:spool-state rt) assoc :skein.spools.shuttle/state old-state)
+          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state old-state)
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"neither or both"
                                 (#'shuttle/state)))))
       (testing "an entry carrying both shapes' required keys fails the migrate loudly"
@@ -1009,7 +1009,7 @@
                          :in-flight (atom {})
                          :preamble-extension (atom nil)
                          :default-review-contract (atom nil)}]
-          (swap! (:spool-state rt) assoc :skein.spools.shuttle/state old-state)
+          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state old-state)
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"neither or both"
                                 (#'shuttle/state))))))))
 

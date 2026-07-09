@@ -1,4 +1,4 @@
-(ns skein.spools.shuttle
+(ns skein.spools.agent-run
   "Userland spool that spawns coding agents in user-chosen harnesses.
 
   An agent run is a strand carrying `shuttle/*` attributes; creating the strand
@@ -243,10 +243,10 @@
 ;; instead of resolving to nil.
 (def ^:private resume-placeholder-inputs #{:shuttle/session-id})
 
-(s/def :skein.spools.shuttle.harness/resume-token
+(s/def :skein.spools.agent-run.harness/resume-token
   (s/or :literal string? :placeholder resume-placeholder-inputs))
-(s/def :skein.spools.shuttle.harness/resume
-  (s/coll-of :skein.spools.shuttle.harness/resume-token :kind vector? :min-count 1))
+(s/def :skein.spools.agent-run.harness/resume
+  (s/coll-of :skein.spools.agent-run.harness/resume-token :kind vector? :min-count 1))
 
 ;; Registry entry shapes. `::harness-def` and `::alias-def` are the source of
 ;; truth for the "is this a tool or a seat?" distinction: they are consulted by
@@ -256,32 +256,32 @@
 ;; valid registration carrying both. `:capture`/`:resume` are intentionally left
 ;; open here; their splice semantics need the dedicated validators a spec cannot
 ;; express.
-(s/def :skein.spools.shuttle.harness/argv (s/coll-of string? :kind vector? :min-count 1))
-(s/def :skein.spools.shuttle.harness/parse parse-strategies)
-(s/def :skein.spools.shuttle.harness/prompt-via prompt-via-strategies)
-(s/def :skein.spools.shuttle.harness/preamble? boolean?)
-(s/def :skein.spools.shuttle.harness/env map?)
-(s/def :skein.spools.shuttle.harness/cwd string?)
-(s/def :skein.spools.shuttle.harness/doc string?)
+(s/def :skein.spools.agent-run.harness/argv (s/coll-of string? :kind vector? :min-count 1))
+(s/def :skein.spools.agent-run.harness/parse parse-strategies)
+(s/def :skein.spools.agent-run.harness/prompt-via prompt-via-strategies)
+(s/def :skein.spools.agent-run.harness/preamble? boolean?)
+(s/def :skein.spools.agent-run.harness/env map?)
+(s/def :skein.spools.agent-run.harness/cwd string?)
+(s/def :skein.spools.agent-run.harness/doc string?)
 (s/def ::harness-def
-  (s/keys :req-un [:skein.spools.shuttle.harness/argv]
-          :opt-un [:skein.spools.shuttle.harness/parse
-                   :skein.spools.shuttle.harness/prompt-via
-                   :skein.spools.shuttle.harness/preamble?
-                   :skein.spools.shuttle.harness/env
-                   :skein.spools.shuttle.harness/cwd
-                   :skein.spools.shuttle.harness/doc]))
+  (s/keys :req-un [:skein.spools.agent-run.harness/argv]
+          :opt-un [:skein.spools.agent-run.harness/parse
+                   :skein.spools.agent-run.harness/prompt-via
+                   :skein.spools.agent-run.harness/preamble?
+                   :skein.spools.agent-run.harness/env
+                   :skein.spools.agent-run.harness/cwd
+                   :skein.spools.agent-run.harness/doc]))
 
-(s/def :skein.spools.shuttle.alias/alias-of
+(s/def :skein.spools.agent-run.alias/alias-of
   (s/or :keyword keyword? :symbol symbol? :string (s/and string? (complement str/blank?))))
-(s/def :skein.spools.shuttle.alias/extra-args (s/coll-of string? :kind vector?))
-(s/def :skein.spools.shuttle.alias/prompt-prefix string?)
-(s/def :skein.spools.shuttle.alias/doc string?)
+(s/def :skein.spools.agent-run.alias/extra-args (s/coll-of string? :kind vector?))
+(s/def :skein.spools.agent-run.alias/prompt-prefix string?)
+(s/def :skein.spools.agent-run.alias/doc string?)
 (s/def ::alias-def
-  (s/keys :req-un [:skein.spools.shuttle.alias/alias-of]
-          :opt-un [:skein.spools.shuttle.alias/extra-args
-                   :skein.spools.shuttle.alias/prompt-prefix
-                   :skein.spools.shuttle.alias/doc]))
+  (s/keys :req-un [:skein.spools.agent-run.alias/alias-of]
+          :opt-un [:skein.spools.agent-run.alias/extra-args
+                   :skein.spools.agent-run.alias/prompt-prefix
+                   :skein.spools.agent-run.alias/doc]))
 
 (defn- validate-resume-argv!
   "Validate a harness :resume splice: a non-empty vector of literal strings and
@@ -297,10 +297,10 @@
     (when-not (resume-placeholder-inputs token)
       (fail! "Harness :resume placeholder is not an available input"
              {:harness owner :token token :allowed resume-placeholder-inputs})))
-  (when-not (s/valid? :skein.spools.shuttle.harness/resume argv)
+  (when-not (s/valid? :skein.spools.agent-run.harness/resume argv)
     (fail! "Harness :resume does not conform to spec"
-           {:harness owner :spec :skein.spools.shuttle.harness/resume
-            :explain (s/explain-str :skein.spools.shuttle.harness/resume argv)}))
+           {:harness owner :spec :skein.spools.agent-run.harness/resume
+            :explain (s/explain-str :skein.spools.agent-run.harness/resume argv)}))
   argv)
 
 ;; Spliced-op plumbing shared by the backend registry and harness :capture:
@@ -1856,11 +1856,11 @@
     (events/register! runtime :shuttle/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}
-                      'skein.spools.shuttle/on-event
+                      'skein.spools.agent-run/on-event
                       {:spool "shuttle"})
     (let [recovered (reconcile!)]
       {:installed true
-       :namespace 'skein.spools.shuttle
+       :namespace 'skein.spools.agent-run
        :harnesses (mapv :name (harnesses))
        :backends (mapv :name (backends))
        :recovered recovered})))

@@ -28,7 +28,7 @@
    ;; for the scheduler and cron timers, event-lane quiescence for the async
    ;; dispatch suites — so there is no JVM-global timer or shared-lane state.
    'skein.scheduler-runtime-test 'skein.api.scheduler.alpha-test 'skein.scheduler-e2e-test
-   'skein.cron-test 'skein.treadle-test 'skein.spools.reed-test 'skein.chime-test
+   'skein.cron-test 'skein.executors.subagent-test 'skein.spools.reed-test 'skein.chime-test
    'skein.weaver-test])
 
 (def serial-namespaces
@@ -51,7 +51,7 @@
   {;; Largest add-libs suite stands alone to balance wall time against parent work.
    "A" ['skein.spools-test]
    ;; Shuttle-first within this JVM; runtime-deps intentionally poisons the basis, so it is last.
-   "B" ['skein.shuttle-test 'skein.runtime-deps-test]
+   "B" ['skein.agent-run-test 'skein.runtime-deps-test]
    ;; Medium add-libs suites share one JVM to amortize boot without exceeding shard A.
    ;; nvd-scan-test load-files .skein/nvd_scan.clj (which requires the cron
    ;; spool root via add-libs) just as config-test does, so it shares this

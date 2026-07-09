@@ -28,7 +28,7 @@
 (defn -main [& _]
   (let [roots {"src" "skein"
                "spools/src" "skein/spools"
-               "spools/shuttle/src" "skein/spools"
+               "spools/agent-run/src" "skein/spools"
                "spools/agents/src" "skein/spools"
                "spools/chime/src" "skein/spools"
                "spools/kanban/src" "skein/spools"

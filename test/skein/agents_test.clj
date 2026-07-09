@@ -9,7 +9,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
             [skein.spools.agents :as agents]
-            [skein.spools.shuttle :as shuttle]
+            [skein.spools.agent-run :as shuttle]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-agents
