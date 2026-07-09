@@ -243,7 +243,11 @@
         (throw (ex-info (str "Unknown test namespace: " ns-sym)
                         {:ns ns-sym :known-namespaces (sort in-process)}))))))
 
-(defn- run-focused [namespaces]
+(defn- run-focused-core
+  "Non-exiting focused core shared by the cold -main wrapper and the warm REPL
+  entry: validate the requested namespaces, run them in-process, print results,
+  and return the aggregate summary."
+  [namespaces]
   (validate-focused! namespaces)
   ;; Serial-island members first, then parallel members, each in declaration
   ;; order, all in-process on this thread — focused runs skip both the parallel
@@ -255,6 +259,10 @@
     (doseq [result results] (print-result! result))
     (println "Aggregate summary:" summary)
     (flush)
+    summary))
+
+(defn- run-focused [namespaces]
+  (let [summary (run-focused-core namespaces)]
     (System/exit (if (pos? (+ (:fail summary) (:error summary))) 1 0))))
 
 (defn- parse-args [args]

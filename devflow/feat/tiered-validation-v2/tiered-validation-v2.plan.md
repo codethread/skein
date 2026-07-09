@@ -284,3 +284,15 @@ Append notes here. Do not rewrite earlier notes.
   standing in for a cold slice gate) plus fmt-check and a disposable-world smoke
   of the workflows.clj edit; tasks 4–5 gate on docs-check/api-docs and grep
   assertions. The full locked `flock` suite appears only in TASK-Ttv-006.
+
+### PLAN-Ttv-001.DN3 PH1 focused-core extraction — 2026-07-09
+
+- Extracted `run-focused-core` (private `defn-`) from `run-focused` in
+  `test/skein/test_runner.clj`. The split lands exactly at the old `:258`
+  boundary: the core validates, runs serial-then-parallel in-process, prints,
+  flushes, and returns the summary; `run-focused` is now the thin wrapper that
+  calls the core and does the `System/exit` on fail/error count. Kept the core
+  private to match the file's `defn-` style — Task 2's `requiring-resolve`
+  resolves private vars fine, so no public surface was added. Cold focused mode
+  and the full suite are byte-for-byte unchanged. Island vectors and
+  `validate-focused!` untouched.
