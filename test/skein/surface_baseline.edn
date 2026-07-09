@@ -119,7 +119,7 @@
       :required false,
       :repeat false,
       :parse nil,
-      :doc "Whether to include workflow/shuttle plumbing: true or false."}],
+      :doc "Whether to include workflow and agent-run plumbing: true or false."}],
     :positionals []}},
   "devflow-describe"
   {:name "devflow-describe",
@@ -426,7 +426,7 @@
   "work"
   [:and
    [:= :state "active"]
-   [:or [:missing [:attr "shuttle/run"]] [:not [:= [:attr "shuttle/run"] "true"]]]
+   [:or [:missing [:attr "agent-run/run"]] [:not [:= [:attr "agent-run/run"] "true"]]]
    [:or [:missing [:attr "kanban/status"]] [:not [:= [:attr "kanban/status"] "refinement"]]]
    [:or
     [:missing [:attr "workflow/role"]]

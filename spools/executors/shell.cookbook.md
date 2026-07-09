@@ -52,7 +52,7 @@ Each recipe cites the honest source it was distilled from — the reed source or
 (workflow/start! "release-1" release {})
 (workflow/complete! "release-1")            ; finish :build; :verify becomes ready
 ;; reed runs `test -s target/app.jar`; on exit 0 it stamps the gate
-;; workflow/outcome-by = "shell", workflow/notes = "shell command exited 0",
+;; workflow/outcome-by = "shell", workflow/outcome-notes = "shell command exited 0",
 ;; and :ship becomes ready. A missing/empty jar stamps shell/error instead.
 ```
 

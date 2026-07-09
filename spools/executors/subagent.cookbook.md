@@ -53,7 +53,7 @@ Each recipe cites the honest source it was distilled from — the treadle source
 (workflow/start! "widget-1" build-widget {})
 (workflow/complete! "widget-1")            ; finish :design; :implement becomes ready
 ;; treadle sees the ready :subagent gate, spawns a agent-run run, and on success
-;; stamps the gate workflow/outcome-by = run id, workflow/notes = agent-run/result,
+;; stamps the gate workflow/outcome-by = run id, workflow/outcome-notes = agent-run/result,
 ;; then :review becomes ready.
 ```
 
@@ -70,7 +70,7 @@ Each recipe cites the honest source it was distilled from — the treadle source
   readiness is the only trigger. A gate blocked behind an unfinished step is left
   untouched until it unblocks.
 - **The result comes back as a gate outcome, not a side channel.** The run's
-  `agent-run/result` lands on the gate as `workflow/notes`, and `workflow/outcome-by`
+  `agent-run/result` lands on the gate as `workflow/outcome-notes`, and `workflow/outcome-by`
   records the run id — so the delegated output is part of the workflow's own
   audit trail, and the next step reads it like any other completed step.
 
@@ -195,7 +195,7 @@ Honest source: `failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run`, `ag
 
 - **Only the workflow may close a workflow step.** Delivery through
   `workflow/complete!` means the gate closes with the engine's own bookkeeping —
-  `workflow/outcome-by`, `workflow/notes`, the auto-close of any procedure join —
+  `workflow/outcome-by`, `workflow/outcome-notes`, the auto-close of any procedure join —
   intact. A run reaching in to close the gate strand directly would bypass all of
   it. The result travels as a gate outcome, keeping the workflow the single
   authority over its own graph.
@@ -212,7 +212,7 @@ Honest source: `failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run`, `ag
   invented — stall is a graph fact, not a timeout (contract
   [`treadle.md`, "Coordination attention"](./subagent.md#coordination-attention)).
 
-Honest source: `blank-result-gate-fails-loudly-stays-discoverable-and-recovers` and `treadle-registers-executor-for-flow-await` in ``test/skein/treadle_test.clj``.
+Honest source: `blank-result-gate-fails-loudly-stays-discoverable-and-recovers` and `subagent-registers-executor-for-flow-await` in `test/skein/executors/subagent_test.clj`.
 
 ---
 

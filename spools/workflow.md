@@ -243,7 +243,7 @@ A `call` expands to its inner steps plus a `procedure`-role **join** step that d
 - `:step` — materialized strand id, selects which ready step to complete
   when more than one is ready. Without it, single-ready-step behavior
   applies (fails loudly if ambiguous). Validated before any mutation.
-- `:notes` — recorded on the closed step as `"workflow/notes"`.
+- `:notes` — recorded on the closed step as `"workflow/outcome-notes"`.
 - `:attributes` — merged onto the closed step's attributes. Molecules exist
   for the audit trail, so closing a step can record what happened.
 - `:by` — actor identity, recorded as `"workflow/outcome-by"`. **Mandatory**
@@ -442,7 +442,7 @@ This table is the extension API: spools built on top of `skein.spools.workflow` 
 | `workflow/outcome` | The choice name recorded when a checkpoint closes via a `:next`-routed or plain choice. | `choose!`, on the checkpoint step, at close. |
 | `workflow/outcome-input` | The `input` map passed to `choose!`. | `choose!`, on the checkpoint step, at close. |
 | `workflow/outcome-by` | Actor identity that closed the strand; `"engine"` on an auto-closed procedure join. | `choose!` (checkpoint close, when opts supply `:by`); `complete!` (gate close, where `:by` is mandatory); join auto-close (`"engine"`). |
-| `workflow/notes` | Freeform notes recorded when a step closes. | `complete!`, from `opts :notes`. |
+| `workflow/outcome-notes` | Freeform notes recorded when a step closes. | `complete!`, from `opts :notes`. |
 | `workflow/procedure` | Name of the `call` id whose expansion this join step represents. | `expand-call-step`, on the procedure join step. |
 | `workflow/bond` | `"sequential"` — recorded on the bond edge itself, marking a cross-molecule bond. | `bond!`. |
 | `workflow/squashed-root` | Root id of the subgraph a digest strand replaced. | `squash!`. |

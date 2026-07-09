@@ -89,7 +89,7 @@
 
 (defn- notes-section [rt target-id]
   (let [notes (->> (api/list rt [:edge/in "notes" [:= :id target-id]] {})
-                   (sort-by (juxt #(or (attr % :shuttle/at) "") :created_at :id)))]
+                   (sort-by (juxt #(or (attr % :note/at) "") :created_at :id)))]
     (graph-section notes [])))
 
 (defn- workflow-attrs [strand]
@@ -181,9 +181,9 @@
    :namespace 'skein.spools.bobbin
    :attributes {:body :body
                 :notes-edge "notes"
-                :note-convention {:text :shuttle/note
-                                  :by :shuttle/note-by
-                                  :at :shuttle/at}
+                :note-convention {:text :note/text
+                                  :by :note/by
+                                  :at :note/at}
                 :workflow-prefix "workflow/"}
    :fns {'pack 'skein.spools.bobbin/pack
          'render 'skein.spools.bobbin/render}})

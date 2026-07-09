@@ -87,7 +87,7 @@ The subagent executor links each gate to its delegated run with a `delegates` an
 (workflow/complete! "widget-1")
 ;; The subagent executor observes :implement as a ready subagent gate, spawns a agent-run
 ;; run, then completes the gate with workflow/outcome-by = run id and
-;; workflow/notes = agent-run/result when the run closes successfully.
+;; workflow/outcome-notes = agent-run/result when the run closes successfully.
 ```
 
 ## Failure and recovery

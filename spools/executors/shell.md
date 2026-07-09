@@ -56,7 +56,7 @@ Reed records the outcome on the gate itself.
 | `shell/output` | gate step | Bounded combined stdout+stderr **tail** (the last 16 KB), for audit. Bounded on purpose so a runaway child cannot exhaust weaver heap; the whole stream is never buffered. Absent where no process ran. |
 | `shell/error` | gate step | Durable failure detail (non-zero exit, timeout, spawn error, or invalid argv). Its presence makes the gate a coordinator-visible stalled state and causes reed to **skip** the gate on later scans until it is cleared. |
 
-The **pass** outcome rides the ordinary workflow vocabulary only: reed closes the gate with `workflow/complete!` `:by "shell"` and `:notes` = a short result summary (surfacing as `workflow/outcome-by "shell"` and `workflow/notes`, mirroring treadle putting its run result in `workflow/notes`). Reed introduces **no** new `workflow/*` attribute. Clearing `shell/running` and stamping the exit code and output happen in the same `complete!` batch, so no observer ever sees a closed gate without its `shell/exit-code` / `shell/output`.
+The **pass** outcome rides the ordinary workflow vocabulary only: reed closes the gate with `workflow/complete!` `:by "shell"` and `:notes` = a short result summary (surfacing as `workflow/outcome-by "shell"` and `workflow/outcome-notes`, mirroring treadle putting its run result in `workflow/outcome-notes`). Reed introduces **no** new `workflow/*` attribute. Clearing `shell/running` and stamping the exit code and output happen in the same `complete!` batch, so no observer ever sees a closed gate without its `shell/exit-code` / `shell/output`.
 
 ## Worked example
 
@@ -79,7 +79,7 @@ The **pass** outcome rides the ordinary workflow vocabulary only: reed closes th
 (workflow/complete! "release-1")
 ;; Reed observes :verify as a ready :shell gate, runs `test -s target/app.jar`,
 ;; and on exit 0 completes the gate with workflow/outcome-by = "shell" and
-;; workflow/notes = "shell command exited 0", then :ship becomes ready. A
+;; workflow/outcome-notes = "shell command exited 0", then :ship becomes ready. A
 ;; non-zero exit stamps shell/error instead and leaves :verify ready.
 ```
 

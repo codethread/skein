@@ -190,8 +190,8 @@
   (is (= (var-get (requiring-resolve 'skein.spools.delegation/review-contract))
          ((requiring-resolve 'skein.spools.agent-run/default-review-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
-  (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
-          :kanban-started :parked-run :treadle-error]
+  (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked :kanban-completed
+          :kanban-started :parked-run]
          (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
   (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))]
@@ -288,7 +288,7 @@
                              ["R1" {:workflow/run-id "alpha"}]
                              ["M1" {:workflow/role "molecule"}]
                              ["D1" {:workflow/role "molecule" :workflow/family "devflow"}]
-                             ["S1" {:shuttle/run "true"}]
+                             ["S1" {:agent-run/run "true"}]
                              ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
         (api/add rt {:title title :state "active" :attributes attrs}))
       (let [rows (fn [query-name params]
@@ -314,20 +314,20 @@
             fire (fn [rule-key strand]
                    (@(requiring-resolve (:fn (get by-key rule-key)))
                     {:strand strand :ready-ids #{}}))]
-        (is (= [:agent-failure :hitl-checkpoint-ready :kanban-blocked :kanban-completed
-                :kanban-started :parked-run :treadle-error]
+        (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked
+                :kanban-completed :kanban-started :parked-run]
                (mapv :name rules)))
-        ;; treadle-error fires on any strand stamped with a treadle error
-        (let [note (fire :treadle-error {:id "g1" :state "active" :title "Gate A"
-                                         :attributes {:treadle/error "spawn failed"}})]
-          (is (= "Treadle error: Gate A" (:title note)))
+        ;; gate-error fires on any strand stamped with a gate error
+        (let [note (fire :gate-error {:id "g1" :state "active" :title "Gate A"
+                                      :attributes {:gate/error "spawn failed"}})]
+          (is (= "Gate error: Gate A" (:title note)))
           (is (str/includes? (:body note) "spawn failed")))
         ;; and stays silent (no false positive) when the condition is absent
-        (is (nil? (fire :treadle-error {:id "g2" :state "active" :title "Clean gate"
-                                        :attributes {}})))
+        (is (nil? (fire :gate-error {:id "g2" :state "active" :title "Clean gate"
+                                     :attributes {}})))
         ;; agent-failure fires on a failed shuttle run and carries its error
         (let [note (fire :agent-failure {:id "r1" :state "active" :title "Run"
-                                         :attributes {:shuttle/phase "failed" :shuttle/error "boom"}})]
+                                         :attributes {:agent-run/phase "failed" :agent-run/error "boom"}})]
           (is (= "Agent run failed: Run" (:title note)))
           (is (str/includes? (:body note) "boom")))))))
 
@@ -426,9 +426,9 @@
                    (or (get-in s [:attributes k])
                        (get-in s [:attributes (name k)])))]
         (is (= #{"a" "b"} (set (keys by-task))))
-        (is (str/includes? (attr (by-task "a") :shuttle/prompt)
+        (is (str/includes? (attr (by-task "a") :agent-run/prompt)
                            "[worker contract]"))
-        (is (= "worker" (attr (by-task "b") :shuttle/harness))))))
+        (is (= "worker" (attr (by-task "b") :agent-run/harness))))))
   (testing "acceptance checkpoint is optional and task max-attempts pass through"
     (with-config-runtime
       (fn [rt]
@@ -440,8 +440,8 @@
                                               (get-in % [:attributes "delegate-pipeline/task"])))
                                   strands))]
           (is (some? task))
-          (is (= 4 (or (get-in task [:attributes :shuttle/max-attempts])
-                       (get-in task [:attributes "shuttle/max-attempts"]))))
+          (is (= 4 (or (get-in task [:attributes :agent-run/max-attempts])
+                       (get-in task [:attributes "agent-run/max-attempts"]))))
           (is (not-any? #(= "checkpoint" (or (get-in % [:attributes :workflow/role])
                                              (get-in % [:attributes "workflow/role"])))
                         strands)))))))
@@ -506,7 +506,7 @@
                      :state "active"
                      :attributes (cond-> {:feature "work-query"}
                                    role (assoc :workflow/role role)
-                                   (= title "Run record") (assoc :shuttle/run "true")
+                                   (= title "Run record") (assoc :agent-run/run "true")
                                    (= title "Pending card") (assoc :kanban/card "true"
                                                                    :kanban/status "pending")
                                    (= title "Refinement card") (assoc :kanban/card "true"
@@ -548,7 +548,7 @@
       (let [codex ((requiring-resolve 'skein.spools.agent-run/resolve-harness) :codex)]
         (is (not-any? #{"--ephemeral"} (:argv codex))
             "sessions persist so codex exec resume can continue them")
-        (is (= ["resume" :shuttle/session-id] (:resume codex))
+        (is (= ["resume" :agent-run/session-id] (:resume codex))
             "codex declares its verified resume subcommand splice")))))
 
 (deftest devflow-ops-fail-loudly-on-bad-input
@@ -789,39 +789,39 @@
         (let [gate-a (:id (first (workflow/next-steps "flow-status-test")))
               run-a (api/add rt {:title "Run A"
                                  :state "closed"
-                                 :attributes {:shuttle/run "true"
-                                              :shuttle/phase "done"
-                                              :shuttle/result "A complete"
-                                              :treadle/gate gate-a
-                                              :treadle/run-id "flow-status-test"}})]
-          (api/update rt gate-a {:attributes {:treadle/run (:id run-a)}})
+                                 :attributes {:agent-run/run "true"
+                                              :agent-run/phase "done"
+                                              :agent-run/result "A complete"
+                                              :gate/step gate-a
+                                              :gate/run-id "flow-status-test"}})]
+          (api/update rt gate-a {:attributes {:gate/run (:id run-a)}})
           (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
           (let [gate-b (:id (first (workflow/next-steps "flow-status-test")))
                 run-b (api/add rt {:title "Run B"
                                    :state "active"
-                                   :attributes {:shuttle/run "true"
-                                                :shuttle/phase "failed"
-                                                :shuttle/error "boom"
-                                                :treadle/gate gate-b
-                                                :treadle/run-id "flow-status-test"}})]
-            (api/update rt gate-b {:attributes {:treadle/run (:id run-b)}})
+                                   :attributes {:agent-run/run "true"
+                                                :agent-run/phase "failed"
+                                                :agent-run/error "boom"
+                                                :gate/step gate-b
+                                                :gate/run-id "flow-status-test"}})]
+            (api/update rt gate-b {:attributes {:gate/run (:id run-b)}})
             ;; failure summaries are scoped to the requested run: an unrelated
             ;; failed run and an unrelated error-stamped gate must not leak in
             (api/add rt {:title "Unrelated failed run"
-                         :attributes {:shuttle/run "true"
-                                      :shuttle/phase "failed"
-                                      :shuttle/error "other workflow"}})
+                         :attributes {:agent-run/run "true"
+                                      :agent-run/phase "failed"
+                                      :agent-run/error "other workflow"}})
             (api/add rt {:title "Unrelated stalled gate"
                          :attributes {:workflow/gate "subagent"
-                                      :treadle/error "spawn failed elsewhere"}})
+                                      :gate/error "spawn failed elsewhere"}})
             (let [status (op! "flow-status" ["flow-status-test"])
                   by-title (into {} (map (juxt :title identity)) (:gates status))]
               (is (= "flow-status" (:operation status)))
               (is (false? (:done status)))
               (is (= ["Delegate B"] (mapv :title (:frontier status))))
               (is (= [:gate-closed] (mapv :type (get-in status [:history 0 :events]))))
-              (is (= "done" (get-in by-title ["Delegate A" :run :shuttle/phase])))
-              (is (= "failed" (get-in by-title ["Delegate B" :run :shuttle/phase])))
+              (is (= "done" (get-in by-title ["Delegate A" :run :agent-run/phase])))
+              (is (= "failed" (get-in by-title ["Delegate B" :run :agent-run/phase])))
               (is (true? (get-in by-title ["Delegate B" :stalled?])))
               (is (= #{(:id run-b)} (set (map :id (:agent-failures status)))))
               (is (empty? (:stalled-gates status)))
@@ -830,7 +830,7 @@
 (defn- assert-treadle-installed-after-config
   "Assert treadle loaded and declares :config in :after — its install! runs an
   initial gate scan, so config.clj's harness aliases must already exist or a
-  durable ready gate would be stamped treadle/error on every cold start."
+  durable ready gate would be stamped gate/error on every cold start."
   [rt]
   (let [use (get (runtime-alpha/uses rt) :skein/spools-treadle)]
     (is (= :loaded (:status use)))

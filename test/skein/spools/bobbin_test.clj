@@ -21,9 +21,9 @@
             nested (repl/strand! "Research")
             dependent (repl/strand! "Review")
             child (repl/strand! "Subtask")
-            note (repl/strand! "Note" {:shuttle/note "remember this"
-                                       :shuttle/note-by "agent"
-                                       :shuttle/at "2026-07-02T00:00:00Z"})]
+            note (repl/strand! "Note" {:note/text "remember this"
+                                       :note/by "agent"
+                                       :note/at "2026-07-02T00:00:00Z"})]
         (repl/update! (:id root) {:edges [{:type "parent-of" :to (:id target)}]})
         (repl/update! (:id target) {:edges [{:type "depends-on" :to (:id blocker)}
                                             {:type "parent-of" :to (:id child)}
