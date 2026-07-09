@@ -205,3 +205,7 @@ serial-island comments updated. Full locked suite green.
 ### PLAN-Dtt-001.DN7 Task 006 reed migration — 2026-07-09
 
 - Migrated reed's dispatch waits to `events.alpha/await-quiescent!` after mutations that can make `:shell` gates ready, while keeping the existing outcome-keyed `poll-until` helper solely for the real off-lane subprocess completion. Reed engine behavior and worker-pool semantics were unchanged. Focused `skein.spools.reed-test` passed via the in-process classpath invocation, and `make fmt-check lint` was clean.
+
+### PLAN-Dtt-001.DN8 Task 007 chime migration — 2026-07-09
+
+- Replaced chime's fixed inter-poll sleeps with lane quiescence followed by the existing notifier-thread join, leaving the real notifier subprocess and chime engine untouched. Q2 resolved without a split: all notifier assertions tolerate the deterministic settle signal as a whole `skein.chime-test` namespace. Focused chime tests passed via the in-process classpath invocation, and `make fmt-check lint` was clean.

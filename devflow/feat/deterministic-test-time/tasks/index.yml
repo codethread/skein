@@ -32,7 +32,7 @@ tasks:
   - id: 7
     description: Migrate chime onto notifier + lane settle
     task_file: tasks/007-chime-migration.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 8
     description: Re-evaluate weaver-test on lane quiescence
