@@ -239,15 +239,21 @@
 
 (defn- validate-focused! [namespaces]
   (let [in-process (set (concat serial-namespaces parallel-namespaces))
-        known (into in-process (mapcat val add-libs-shards))]
+        duplicates (sort (keep (fn [[ns-sym n]] (when (< 1 n) ns-sym)) (frequencies namespaces)))]
+    (when (seq duplicates)
+      (throw (ex-info (str "Duplicate test namespace arguments: " (str/join " " duplicates))
+                      {:duplicates (vec duplicates)})))
     (doseq [ns-sym namespaces]
       (when-let [shard-id (shard-for-ns ns-sym)]
         (throw (ex-info (str ns-sym " is an add-libs shard namespace (shard " shard-id
                              "); shard namespaces require the full suite in v1")
                         {:ns ns-sym :shard shard-id})))
       (when-not (contains? in-process ns-sym)
+        ;; Offer only namespaces focused mode accepts; shard members are
+        ;; rejected above with their own message, so listing them here would
+        ;; steer an operator into a second failure.
         (throw (ex-info (str "Unknown test namespace: " ns-sym)
-                        {:ns ns-sym :known-namespaces (sort known)}))))))
+                        {:ns ns-sym :known-namespaces (sort in-process)}))))))
 
 (defn- run-focused [namespaces]
   (validate-focused! namespaces)
