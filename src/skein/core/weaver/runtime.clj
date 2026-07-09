@@ -207,8 +207,13 @@
   `pump-fn` takes the runtime and runs a synchronous due-check for a subsystem
   that arms real timers off the runtime clock, so `skein.test.alpha/advance!` can
   drive it deterministically after moving the clock. Registration is idempotent
-  per key."
+  per key. Throws when `runtime` carries no `:clock-pumps` registry, so a
+  malformed runtime fails loudly instead of silently disabling deterministic
+  clock pumping."
   [runtime key pump-fn]
+  (when-not (:clock-pumps runtime)
+    (throw (ex-info "Runtime has no :clock-pumps registry to register a clock pump"
+                    {:key key})))
   (swap! (:clock-pumps runtime) assoc key pump-fn)
   nil)
 

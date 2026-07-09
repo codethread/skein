@@ -24,6 +24,7 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.spools.util :refer [fail!]])
   (:import [java.time Instant]
            [java.util Random]
@@ -194,13 +195,14 @@
   "Register cron's due-check with the runtime clock-pump registry so
   `skein.test.alpha/advance!` can release due jobs deterministically.
 
-  Pokes `runtime`'s `:clock-pumps` slot directly rather than an
-  `skein.api.runtime.alpha` accessor: the clock-pump registry is deliberately
-  kept off the alpha surface (DELTA-Dtt-003.D1), so cron reaches it the same
-  way its only other consumer, the scheduler, does."
+  Registers through the core accessor `skein.core.weaver.runtime/register-clock-pump!`
+  rather than poking `:clock-pumps` directly: the clock-pump registry is
+  deliberately kept off the alpha surface (DELTA-Dtt-003.D1), and unlike the
+  scheduler (whose runtime require-cycle forces a direct poke) cron has no such
+  constraint. The accessor fails loudly when the runtime carries no clock-pump
+  registry."
   [runtime]
-  (when-let [pumps (:clock-pumps runtime)]
-    (swap! pumps assoc ::pump fire-due!))
+  (weaver-runtime/register-clock-pump! runtime ::pump fire-due!)
   nil)
 
 (defn- initial-delay-ms [runtime job]

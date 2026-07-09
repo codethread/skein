@@ -46,7 +46,7 @@ Function.
 Cancel a cron job's pending fire and remove it from `runtime`.
 
   Returns `{:deregistered id}` when the job existed, else `{:deregistered nil}`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L118-L127">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L119-L128">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/failures">`failures`</a>
 ``` clojure
@@ -57,7 +57,7 @@ Function.
 Return recorded cron failures (seed and execution) for this runtime's weaver
   lifetime, oldest first. Each entry carries `:kind` (`:run` or `:initial-delay`),
   `:job`, a `:message`, and `:at`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L80-L85">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L81-L86">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/install!">`install!`</a>
 ``` clojure
@@ -71,7 +71,7 @@ Activate cron on the current runtime, creating the scheduled executor.
   (re)registers the clock-consumer pump so deterministic tests can drive due
   jobs off the runtime clock. Called as a no-arg module `:call` at
   startup/reload.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L271-L284">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L273-L286">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/jitter-offset-ms">`jitter-offset-ms`</a>
 ``` clojure
@@ -84,7 +84,7 @@ Return a uniform jitter offset in the range [-bound-ms, bound-ms].
   `rng` is a `java.util.Random`; pass a seeded one for deterministic tests. A
   zero or negative bound yields 0. Exposed so a caller's `:initial-delay-fn` can
   reuse the engine's single jitter definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L87-L96">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L88-L97">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/jobs">`jobs`</a>
 ``` clojure
@@ -96,7 +96,7 @@ Return the cron jobs registered on `runtime` as status maps, sorted by id.
 
   Each map carries `:id`, `:interval-ms`, `:jitter-ms`, the `:run!` symbol,
   `:next-fire-at`, and (once fired) `:last-outcome`/`:last-fired-at`/`:last-error`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L263-L269">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L265-L271">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/register!">`register!`</a>
 ``` clojure
@@ -121,4 +121,4 @@ Register (or replace) a named cron job on `runtime`'s scheduled executor.
     engine falls back to interval+jitter. Absent -> interval+jitter.
 
   Returns the job's status map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L227-L261">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L229-L263">Source</a></sub></p>

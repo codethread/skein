@@ -273,10 +273,14 @@
 
   Pokes the runtime's `:clock-pumps` slot directly rather than calling
   `skein.core.weaver.runtime/register-clock-pump!`: runtime requires this
-  namespace, so a static require back would cycle."
+  namespace, so a static require back would cycle. Throws when the slot is
+  absent so a malformed runtime fails loudly instead of silently disabling
+  deterministic clock pumping."
   [runtime]
-  (when-let [pumps (:clock-pumps runtime)]
-    (swap! pumps assoc ::pump dispatch-due!))
+  (if-let [pumps (:clock-pumps runtime)]
+    (swap! pumps assoc ::pump dispatch-due!)
+    (throw (ex-info "Runtime has no :clock-pumps registry to register the scheduler pump"
+                    {:pump ::pump})))
   nil)
 
 (defn rearm!

@@ -47,6 +47,17 @@
       (deliver @handler-release true)
       (is (= rt (events/await-quiescent! rt {:timeout-ms (test-support/await-budget-ms)}))))))
 
+(deftest await-quiescent-rejects-non-positive-timeout
+  (test-support/with-runtime
+    (fn [rt _config-dir]
+      (doseq [bad [0 -1 1.5 "200"]]
+        (try
+          (events/await-quiescent! rt {:timeout-ms bad})
+          (is false (str "expected a validation throw for :timeout-ms " (pr-str bad)))
+          (catch clojure.lang.ExceptionInfo e
+            (is (= bad (:timeout-ms (ex-data e)))
+                "validation ex-data names the offending :timeout-ms value")))))))
+
 (deftest await-quiescent-throws-on-timeout
   (test-support/with-runtime
     (fn [rt _config-dir]

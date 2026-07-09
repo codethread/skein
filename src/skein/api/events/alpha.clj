@@ -100,6 +100,9 @@
          queue ^java.util.concurrent.BlockingQueue (:queue event-system)
          dispatch-in-progress? (:dispatch-in-progress? event-system)
          timeout-ms (or timeout-ms ((requiring-resolve 'skein.spools.test-support/await-budget-ms)))
+         _ (when-not (and (integer? timeout-ms) (pos? timeout-ms))
+             (throw (ex-info "await-quiescent! :timeout-ms must be a positive integer"
+                             {:timeout-ms timeout-ms})))
          deadline (+ (System/currentTimeMillis) timeout-ms)]
      (loop []
        (cond

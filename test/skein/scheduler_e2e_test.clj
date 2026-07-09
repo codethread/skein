@@ -85,9 +85,11 @@
       (let [rt2 (runtime/start! db-file {:world world :publish? false})]
         (try
           (is (await-fire) "the persisted overdue wake fires after a real weaver restart")
-          (test-support/poll-until #(empty? (scheduler/pending rt2))
-                                   {:on-timeout #(throw (ex-info "Timed out waiting for scheduler pending to drain"
-                                                                 {:pending (scheduler/pending rt2)}))})
+          ;; await-fire only proves the handler body ran; the wake's completion
+          ;; and re-arm happen later in the same run-fire! dispatch. Settle the
+          ;; event lane so pending has drained before we read scheduler state,
+          ;; the same quiescence gate the first test uses.
+          (events/await-quiescent! rt2)
           (is (= ["Survivor strand"] (scheduler-strand-titles rt2))
               "the re-armed handler mutated the graph in the fresh weaver")
           (is (= ["survivor"] (mapv :key (scheduler/recent-fires rt2)))
