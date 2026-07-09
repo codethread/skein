@@ -214,7 +214,7 @@
 (def ^:private forbidden-strand-columns #{"attributes"})
 (def ^:private required-attribute-columns #{"strand_id" "key" "value" "archived"})
 (def ^:private required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
-(def ^:private shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes"})
+(def ^:private shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes" "serves"})
 
 (defn- missing-columns [ds table required]
   (seq (remove (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))) required)))

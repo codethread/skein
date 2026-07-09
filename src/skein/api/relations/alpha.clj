@@ -23,6 +23,11 @@
     :direction "replacement --supersedes--> replaced"
     :declared-acyclic? true
     :help "Replacement lineage battery written by the core supersession transaction."}
+   {:relation "serves"
+    :family :operational
+    :direction "run --serves--> served-target"
+    :declared-acyclic? true
+    :help "Engine-owned delegation battery: this run is a delegation of that strand's own work."}
    {:relation "related-to"
     :family :annotation
     :direction "source --related-to--> target"
