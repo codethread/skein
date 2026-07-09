@@ -7,7 +7,7 @@
 
 ## PROP-Dtt-001.P1 Problem
 
-RFC-016 parallelized the suite but left a ~55.7s serial island (measured 2026-07-09, card `tkmvw` note `qtdqa`). About 38–40s of that is tests waiting on real wall-clock time and real async delivery — real executor timers (scheduler suites, cron, chime), hard sleeps polling async gate outcomes (treadle, reed), and event-bus delivery-order assertions under load (weaver-test). The wait is inherent to how these suites synchronize, so it also produces the timing-budget flakes RFC-016.P7 catalogues, which burn delegated AFK runs.
+RFC-016 parallelized the suite but left a ~55.7s serial island (measured 2026-07-09, card `tkmvw` note `qtdqa`). About 38–40s of that is tests waiting on real wall-clock time and real async delivery — real executor timers (scheduler suites, cron), hard sleeps polling async gate outcomes (treadle, reed), notifier-worker settling (chime), and event-bus delivery-order assertions under load (weaver-test). The wait is inherent to how these suites synchronize, so it also produces the timing-budget flakes RFC-016.P7 catalogues, which burn delegated AFK runs.
 
 ## PROP-Dtt-001.P2 Goals
 
@@ -32,6 +32,6 @@ The seam placement, the exposed API surface and its TEN-004 justification, the s
 
 ## PROP-Dtt-001.P5 Open questions
 
-- **PROP-Dtt-001.Q1:** For subsystems arming real `ScheduledExecutorService` timers (cron, chime, scheduler executor), does `advance!` drive a manual/virtual-time executor, or a clock-driven due-check plus an explicit pump (the shape the scheduler already models)? Fixed as a plan-level choice in RFC-Dtt-001.REC1; the plan must pick one and apply it uniformly.
+- **PROP-Dtt-001.Q1:** For subsystems arming real `ScheduledExecutorService` timers (cron, scheduler executor), does `advance!` drive a manual/virtual-time executor, or a clock-driven due-check plus an explicit pump (the shape the scheduler already models)? Fixed as a plan-level choice in RFC-Dtt-001.REC1; the plan must pick one and apply it uniformly.
 - **PROP-Dtt-001.Q2:** Does any `chime` notifier-subprocess assertion resist a notifier-worker settle signal and have to stay serial, or do all chime tests graduate once the fixed sleeps are replaced?
 - **PROP-Dtt-001.Q3:** For off-lane subprocess completion (reed's `:shell` process, chime's notifier daemon threads, treadle's shuttle-run terminal state), does each owning path layer its own completion await on top of `await-quiescent!`, or does one shared process-completion await generalize the lane hook to off-lane worker pools? Fixed as a plan-level choice in RFC-Dtt-001.REC7; the plan picks one and applies it uniformly.
