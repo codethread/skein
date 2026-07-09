@@ -1743,11 +1743,11 @@
                   (first failed)))]
       (when-not (and run (failed-phases (sattr run "phase"))) (fail! "nothing to supersede" {:id id}))
       (let [resumes (sattr run "resumes")
-            ;; A3 continuity: a plain retry re-resumes the predecessor session;
+            ;; A3 continuity: a plain retry continues the failed run's session;
             ;; --fresh severs it. A resume-classed failure (A1) means the session
-            ;; itself was lost, so re-resuming would only loop against it — refuse
-            ;; the plain retry and name the --fresh escape rather than silently
-            ;; cold-starting a continuation the caller did not ask for.
+            ;; itself was lost, so continuing it would only loop against it —
+            ;; refuse the plain retry and name the --fresh escape rather than
+            ;; silently cold-starting a continuation the caller did not ask for.
             _ (when (and resumes (not fresh?) (= "resume" (sattr run "error-class")))
                 (fail! "run failed resuming its session; retry --fresh to respawn cold on the full-brief prompt"
                        {:run (:id run) :resumes resumes}))
@@ -1761,44 +1761,34 @@
                                         preserved-run-attr-keys)
                             (and preserve-resume? fresh-prompt) (assoc "panel/fresh-prompt" fresh-prompt))
             extra (get flags "--prompt")
-            append-extra (fn [p] (str p (when extra (str "\n\n" extra))))]
-        (api/update (rt) (:id run) {:state "closed" :attributes {"agent-run/phase" "superseded"}})
-        (let [summary (agent-run/run-summary run)
-              task (when task-id (api/show (rt) task-id))
-              served-target (or task-id (:for summary))
-              deps (->> (:edges (graph/subgraph (rt) [(:id run)] {:type "depends-on"}))
-                        (filter #(= (:id run) (:from_strand_id %)))
-                        (mapv :to_strand_id))
-              interactive? (= "interactive" (sattr run "mode"))
-              prompt (cond
-                       task (prompt-for-task task extra interactive?)
-                       ;; --fresh severs resume, so the process starts cold and
-                       ;; must get the full-brief form the resuming run stashed;
-                       ;; the short continuation assumes a session this spawn
-                       ;; will not have (A6)
-                       (and fresh? resumes) (append-extra
-                                             (or fresh-prompt
-                                                 (fail! "retry --fresh cannot reconstruct the full-brief prompt for this resuming run"
-                                                        {:run (:id run)})))
-                       :else (append-extra (sattr run "prompt")))
-              new-run (agent-run/spawn-run! (cond-> {:harness (or (get flags "--harness") (sattr run "harness"))
-                                                   :prompt prompt
-                                                   :title (str "Retry: " (:title (or task run)))
-                                                   :parent served-target
-                                                   :depends-on deps
-                                                   :cwd (or (get flags "--cwd")
-                                                            (sattr run "cwd")
-                                                            (workspace-root-dir))}
-                                            ;; a retried interactive task gets a fresh session on the same backend
-                                            interactive? (assoc :mode :interactive
-                                                                :backend (sattr run "backend")
-                                                                :reap (sattr run "reap"))
-                                            (sattr run "spawned-by") (assoc :spawned-by (sattr run "spawned-by"))
-                                            (sattr run "max-attempts") (assoc :max-attempts (sattr run "max-attempts"))
-                                            preserve-resume? (assoc :resume resumes)
-                                            (seq carried-attrs) (assoc :attrs carried-attrs)))]
-          (cond-> {:superseded (:id run) :run (select-keys (agent-run/run-summary new-run) [:id :phase :harness])}
-            task-id (assoc :task task-id)))))))
+            append-extra (fn [p] (str p (when extra (str "\n\n" extra))))
+            task (when task-id (api/show (rt) task-id))
+            interactive? (= "interactive" (sattr run "mode"))
+            prompt (cond
+                     task (prompt-for-task task extra interactive?)
+                     ;; --fresh severs resume, so the process starts cold and
+                     ;; must get the full-brief form the resuming run stashed;
+                     ;; the short continuation assumes a session this spawn
+                     ;; will not have (A6)
+                     (and fresh? resumes) (append-extra
+                                           (or fresh-prompt
+                                               (fail! "retry --fresh cannot reconstruct the full-brief prompt for this resuming run"
+                                                      {:run (:id run)})))
+                     :else (append-extra (sattr run "prompt")))
+            ;; the primitive owns the mechanism: it closes the predecessor
+            ;; superseded, moves its serves edge to the successor (so the target's
+            ;; current serving run is the fresh one — no re-link), re-reads
+            ;; depends-on, and carries provenance plus execution shape. The wrapper
+            ;; only computes policy (prompt/harness/continuity/carry-attrs).
+            new-run (agent-run/supersede-and-respawn!
+                     (:id run)
+                     (cond-> {:prompt prompt
+                              :harness (or (get flags "--harness") (sattr run "harness"))
+                              :continuity (if preserve-resume? :resume :fresh)}
+                       (get flags "--cwd") (assoc :cwd (get flags "--cwd"))
+                       (seq carried-attrs) (assoc :carry-attrs carried-attrs)))]
+        (cond-> {:superseded (:id run) :run (select-keys (agent-run/run-summary new-run) [:id :phase :harness])}
+          task-id (assoc :task task-id))))))
 
 (defn- blockers [task]
   (->> (:edges (graph/subgraph (rt) [(:id task)] {:type "depends-on"}))

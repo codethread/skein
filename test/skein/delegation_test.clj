@@ -899,6 +899,7 @@
             failed (shuttle/spawn-run! {:harness :sh
                                         :prompt "exit 3"
                                         :parent (:id task)
+                                        :serves (:id task)
                                         :spawned-by (:id spawner)
                                         :depends-on [(:id blocker)]
                                         :cwd "/tmp/retry-cwd"
@@ -936,8 +937,10 @@
 
 (deftest retry-continuity-preserves-severs-and-guards-resume
   ;; resuming runs are hand-built so the matrix is deterministic and sleep-free:
-  ;; a closed predecessor with a captured session, plus a failed turn carrying
-  ;; both prompt forms, exercises every A3 branch without launching a real turn.
+  ;; the failed turn resumes a done predecessor and carries its own captured
+  ;; session plus both prompt forms, exercising every A3 branch without launching
+  ;; a real turn. A plain retry continues the failed turn's session (the
+  ;; succession primitive resumes the run it supersedes, not the origin).
   (with-agents
     (fn [rt]
       (shuttle/defharness! :session-fix session-fix)
@@ -954,15 +957,16 @@
                                                                 "agent-run/prompt" "CONTINUATION prompt"
                                                                 "panel/fresh-prompt" "FULLBRIEF prompt"
                                                                 "agent-run/resumes" pred
+                                                                "agent-run/session-id" "sess-def"
                                                                 "agent-run/phase" "failed"}
                                                                extra)})))]
-        (testing "a plain retry re-resumes the same predecessor on the continuation prompt"
+        (testing "a plain retry continues the failed turn's own session on the continuation prompt"
           (let [pred (make-pred)
                 failed (make-failed pred {})
                 retried (agents/agent-op {:op/argv ["retry" failed]})
                 new-run (api/show rt (get-in retried [:run :id]))]
             (is (= failed (:superseded retried)))
-            (is (= pred (get-in new-run [:attributes :agent-run/resumes])))
+            (is (= failed (get-in new-run [:attributes :agent-run/resumes])))
             (is (str/includes? (get-in new-run [:attributes :agent-run/prompt]) "CONTINUATION prompt"))
             (is (= "FULLBRIEF prompt" (get-in new-run [:attributes :panel/fresh-prompt]))
                 "the full-brief form carries forward for a later --fresh")))
