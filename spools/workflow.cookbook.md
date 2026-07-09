@@ -275,13 +275,13 @@ Honest source: the `call` inlining test in `test/skein/spools/workflow_test.clj`
   `:subagent` and a coordinator's `await!` stays silent while that adapter is
   healthy, waking only on a genuine stall. A waiter with *no* registered
   executor always surfaces immediately — there is no silent default. The shipped
-  `skein.spools.treadle` does exactly this for `:subagent` gates.
+  `skein.spools.executors.subagent` does exactly this for `:subagent` gates.
 - **Checkpoints, not conditional edges, carry the branch.** The gate waits; the
   *checkpoint after it* is where the driving agent turns an observation (CI
   verdict) into a route. Parallelism falls out of edge absence; branching lives
   in checkpoint choices.
 
-Honest source: the forge-agnostic PR flow in `test/skein/spools/workflow_test.clj` (`workflow-models-pull-request-flow-without-conditional-edges`) and the `:subagent` gate that `skein.spools.treadle` fulfills.
+Honest source: the forge-agnostic PR flow in `test/skein/spools/workflow_test.clj` (`workflow-models-pull-request-flow-without-conditional-edges`) and the `:subagent` gate that `skein.spools.executors.subagent` fulfills.
 
 ---
 
@@ -373,10 +373,10 @@ Honest source: the `github-pr-bindings` / `bind-attrs` reference in `test/skein/
                    (fn [{:keys [item]}] (str "Delegate pipeline task " (:id item)))
                    :subagent
                    :loop {:each :tasks :chain true}
-                   :attributes {"shuttle/harness" (fn [{:keys [item harness]}]
+                   :attributes {"agent-run/harness" (fn [{:keys [item harness]}]
                                                     (or (:harness item) harness))
-                                "shuttle/prompt"  (fn [{:keys [item]}] (:body item))
-                                "shuttle/cwd"     (fn [{:keys [item cwd]}]
+                                "agent-run/prompt"  (fn [{:keys [item]}] (:body item))
+                                "agent-run/cwd"     (fn [{:keys [item cwd]}]
                                                     (or (:cwd item) cwd))})
     ;; depends on the *base* loop id :task -> fans in over every expansion
     (workflow/checkpoint :accept "Accept delegated pipeline"
@@ -400,11 +400,11 @@ Honest source: the `github-pr-bindings` / `bind-attrs` reference in `test/skein/
   expanded task ids — so "wait for the whole batch" is one edge, even when the
   loop is chained.
 - **Gate + attributes hand off cleanly to an adapter.** Because each expansion is
-  a `:subagent` gate carrying `shuttle/*` attributes, `skein.spools.treadle` can
+  a `:subagent` gate carrying `agent-run/*` attributes, `skein.spools.executors.subagent` can
   fulfill it by spawning a shuttle run and closing the gate with the result — the
   workflow definition never names the shuttle.
 
-Honest source: the `delegate-pipeline` weave pattern in this repo's [`.skein/config.clj`](../.skein/config.clj) (chained `:subagent` gate loop with fn-valued `shuttle/*` attributes and a base-id fan-in to the accept checkpoint).
+Honest source: the `delegate-pipeline` weave pattern in this repo's [`.skein/config.clj`](../.skein/config.clj) (chained `:subagent` gate loop with fn-valued `agent-run/*` attributes and a base-id fan-in to the accept checkpoint).
 
 ---
 

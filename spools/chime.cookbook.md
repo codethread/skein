@@ -87,11 +87,11 @@ Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block a
 (defn agent-failed
   "Notify when a delegated run has failed or exhausted its attempts."
   [{:keys [strand]}]
-  (let [phase (get-in strand [:attributes "shuttle/phase"])]
+  (let [phase (get-in strand [:attributes "agent-run/phase"])]
     (when (contains? #{"failed" "exhausted"} phase)
       {:title (str "Agent run " phase ": " (:title strand))
-       :body  (str "Strand " (:id strand) " entered shuttle/phase " phase
-                   (when-let [err (get-in strand [:attributes "shuttle/error"])]
+       :body  (str "Strand " (:id strand) " entered agent-run/phase " phase
+                   (when-let [err (get-in strand [:attributes "agent-run/error"])]
                      (str "\n\n" err)))})))
 
 ;; register once from shared startup config
@@ -105,7 +105,7 @@ Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block a
   nothing happens; return a map and chime sends it. There is no separate "when"
   and "what" — the same fn that decides the transition matters also phrases the
   alert, so the two never drift.
-- **Match on the attribute, not the event.** The rule reads `shuttle/phase` off
+- **Match on the attribute, not the event.** The rule reads `agent-run/phase` off
   the strand rather than trying to catch a specific mutation. Attributes are the
   durable truth; an event is just what woke the scan. This is why the same rule
   fires whether the phase was set on create or on a later update.
@@ -129,16 +129,16 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
   "Workspace attention rules."
   (:require [clojure.string :as str]
             [skein.spools.chime :as chime]
-            [skein.spools.shuttle :as shuttle]))
+            [skein.spools.agent-run :as shuttle]))
 
 (defn interactive-session-running
   "Notify when an interactive shuttle session is ready for the human."
   [{:keys [strand]}]
   (let [attrs (:attributes strand)]
-    (when (and (= "true" (get attrs "shuttle/run"))
-               (= "interactive" (get attrs "shuttle/mode"))
-               (= "running" (get attrs "shuttle/phase")))
-      (let [summary (some #(when (= (:id %) (:id strand)) %) (shuttle/runs {:active true}))
+    (when (and (= "true" (get attrs "agent-run/run"))
+               (= "interactive" (get attrs "agent-run/mode"))
+               (= "running" (get attrs "agent-run/phase")))
+      (let [summary (some #(when (= (:id %) (:id strand)) %) (agent-run/runs {:active true}))
             attach (:attach summary)]
         {:title (str "Interactive session ready: " (:title strand))
          :body  (str "Run " (:id strand) " is waiting for a human."
@@ -156,17 +156,17 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
 - **Shuttle stays decoupled from chime.** The rule lives in workspace code.
   Shuttle does not learn what notification engine a user has, and chime does not
   gain shuttle-specific branching.
-- **The match is durable.** `shuttle/mode=interactive` and
-  `shuttle/phase=running` are run attributes, so the rule still explains itself
+- **The match is durable.** `agent-run/mode=interactive` and
+  `agent-run/phase=running` are run attributes, so the rule still explains itself
   after a restart. Chime's per-`[rule strand]` dedup means a long-running session
   notifies once while it remains running.
 - **The attach text comes from the same surface humans already use.**
-  `shuttle/runs` is the Clojure side of `strand agent ps`; it performs the
+  `agent-run/runs` is the Clojure side of `strand agent ps`; it performs the
   interactive liveness check and renders the backend's display-only `:attach`
   argv over the stored handle. If a backend has no attach template yet, the rule
   says no attach hint is configured instead of inventing a command.
 
-Honest source: shuttle's `run-summary` / `runs` implementation in [`spools/shuttle/src/skein/spools/shuttle.clj`](shuttle/src/skein/spools/shuttle.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/agents/README.md`](agents/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+Honest source: shuttle's `run-summary` / `runs` implementation in [`spools/agent-run/src/skein/spools/agent_run.clj`](agent-run/src/skein/spools/agent_run.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/delegation/README.md`](delegation/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
 
 ---
 

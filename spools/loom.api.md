@@ -63,7 +63,7 @@ Function.
 Return workflow flow status by joining history, frontier, gates, runs, and stalls.
 
   The JSON-compatible payload is read-only and suitable for renderers; no
-  workflow, shuttle, or treadle state is mutated. Failure summaries are scoped to
+  workflow, agent-run, or gate state is mutated. Failure summaries are scoped to
   this run's own gates and their delegated runs so records from other workflows
   never surface in an unrelated run's payload. Includes a `:dev/mermaid` gate
   chain rendered by `gate-chain-mermaid`.

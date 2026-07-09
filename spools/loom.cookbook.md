@@ -43,8 +43,8 @@ Each recipe cites the honest source it was distilled from — the spool itself, 
 ;; ../devflow/specs/repl-api.md, SPEC-003.C13a.
 (def work-query
   [:and [:= :state "active"]
-   [:or [:missing [:attr "shuttle/run"]]
-    [:not [:= [:attr "shuttle/run"] "true"]]]
+   [:or [:missing [:attr "agent-run/run"]]
+    [:not [:= [:attr "agent-run/run"] "true"]]]
    [:or [:missing [:attr "workflow/role"]]
     [:not [:in [:attr "workflow/role"] ["molecule" "digest" "procedure"]]]]])
 

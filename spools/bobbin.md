@@ -45,7 +45,7 @@ Section meanings:
 - `:dependents` — direct active strands with `depends-on` edges to the target.
 - `:parents` — active `parent-of` ancestry.
 - `:children` — direct active `parent-of` children.
-- `:notes` — strands attached by the `notes` edge, ordered by `shuttle/at`,
+- `:notes` — strands attached by the `notes` edge, ordered by `agent-run/at`,
   creation time, then id.
 - `:workflow` — present only for targets carrying `workflow/*` attributes;
   includes at least run id, role, workflow attributes, and the molecule root

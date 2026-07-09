@@ -31,7 +31,7 @@ Function.
 
 Return active strands blocked by active failed or exhausted depends-on targets.
 
-  A blocker is any active `depends-on` target whose `shuttle/phase` attribute is
+  A blocker is any active `depends-on` target whose `agent-run/phase` attribute is
   the string `failed` or `exhausted`. Rows include the blocked strand summary and
   a `:blockers` vector with compact blocker details.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/carder.clj#L157-L189">Source</a></sub></p>

@@ -1,14 +1,14 @@
 # Skein Agents Spool — Cookbook
 
-Composition recipes for `skein.spools.agents`: the shapes real delegation takes as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape holds up.
+Composition recipes for `skein.spools.delegation`: the shapes real delegation takes as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape holds up.
 
 This is the **how/why** half of the agents docs. The other two halves are:
 
-- [`agents/README.md`](./agents/README.md) — the **contract**: the concept
+- [`delegation/README.md`](./delegation/README.md) — the **contract**: the concept
   model, every `strand agent` verb's semantics, the DAG conventions, the worker
   contract, and the panel composition layer. Read it for what the surface
   promises.
-- [`agents.api.md`](./agents.api.md) — the **generated reference**: every public
+- [`delegation.api.md`](./delegation.api.md) — the **generated reference**: every public
   fn's signature, arity, and docstring, produced from source.
 
 Division of truth: verb shapes and fn signatures live in the README and the generated API doc; the coordination *shapes* live here. This cookbook never restates a verb's flags or a fn's arity — it links to them, and to `strand agent about`, the always-current in-band manual a delegated agent reads. When a recipe needs an exact flag, follow the link.
@@ -25,7 +25,7 @@ Every recipe has the same four parts, so you can skim to the one that matches yo
 4. **Why this shape** — the reasoning: what the readiness graph buys you, which
    guard you're leaning on, and what the sloppy version would cost.
 
-Each recipe cites the honest source it was distilled from — the README contract, this repo's reviewer roster and config, or the executable coverage in [`agents_test.clj`](../test/skein/agents_test.clj) — so you can read the load-bearing version.
+Each recipe cites the honest source it was distilled from — the README contract, this repo's reviewer roster and config, or the executable coverage in ``agents_test.clj`` — so you can read the load-bearing version.
 
 ---
 
@@ -72,7 +72,7 @@ strand update <core> --state closed # closing is what makes :docs ready
   *not* advance the plan — `depends-on` readiness does, and a task only becomes
   ready when its blocker is **closed**. Verify-then-close is therefore the single
   load-bearing step: skip it and the plan silently stalls with a "finished" run
-  and no ready frontier (README [§4](./agents/README.md#4-dag-conventions)).
+  and no ready frontier (README [§4](./delegation/README.md#4-dag-conventions)).
 - **The body is the contract, not the chat.** A delegated run cannot see your
   scrollback; it reads `strand show <task-id>`. Put scope, owned files,
   validation, and commit policy in the body, and `delegate` rebuilds the prompt
@@ -86,7 +86,7 @@ strand update <core> --state closed # closing is what makes :docs ready
   is the worker's claim; re-running validation in the task's cwd is your proof.
   The two are different events on purpose.
 
-Honest source: the coordinator loop in [`agents/README.md` §5](./agents/README.md#5-worker-contract-and-coordinator-loop), the `agent-plan` weave pattern (§3), and the delegate/await/status coverage in [`agents_test.clj`](../test/skein/agents_test.clj).
+Honest source: the coordinator loop in [`delegation/README.md` §5](./delegation/README.md#5-worker-contract-and-coordinator-loop), the `agent-plan` weave pattern (§3), and the delegate/await/status coverage in ``agents_test.clj``.
 
 ---
 
@@ -118,16 +118,16 @@ strand agent retry <core>
 - **Supersede keeps the evidence.** The dead run is closed as `superseded`, not
   deleted — its logs and notes stay queryable, and it stops blocking
   delegate-eligibility so the fresh run is unobstructed. A failed *helper* (a
-  recon spawn or reviewer, stamped `shuttle/serves=false`) never shadows the real
+  recon spawn or reviewer, stamped `agent-run/serves=false`) never shadows the real
   delegation failure, so `retry <task-id>` always finds the serving run.
 - **`--fresh` is for a dead session, not a bad brief.** A run that continued a
   predecessor's session re-resumes it by default; when the session itself was
-  lost (`shuttle/error-class "resume"`), a plain retry fails loudly telling you to
+  lost (`agent-run/error-class "resume"`), a plain retry fails loudly telling you to
   pass `--fresh`, which severs the linkage and cold-starts from the full brief.
   Use `--fresh` when the session is gone; fix the body when the *instructions*
   were the problem. They are different failures.
 
-Honest source: the retry semantics in [`agents/README.md` §3](./agents/README.md#delegation-verbs-the-task-contract-layer) and the retry/supersede coverage in [`agents_test.clj`](../test/skein/agents_test.clj).
+Honest source: the retry semantics in [`delegation/README.md` §3](./delegation/README.md#delegation-verbs-the-task-contract-layer) and the retry/supersede coverage in ``agents_test.clj``.
 
 ---
 
@@ -163,7 +163,7 @@ strand agent review <target> --members 2 --harness claude,review-gpt --synthesiz
   greppable single-file concerns, and the synthesizer is a cross-vendor GPT seat
   so sign-off never comes from the model family that authored the work.
 - **Reviewers never gate delegation.** Reviewer and synthesizer runs are non-
-  serving helpers (`shuttle/serves=false`): they hang under the target but never
+  serving helpers (`agent-run/serves=false`): they hang under the target but never
   trip its `delegate` guard, so you can review a task before *or* after
   delegating it.
 - **`--commit-range` injects the diff, so reviewers read it instead of guessing
@@ -174,7 +174,7 @@ strand agent review <target> --members 2 --harness claude,review-gpt --synthesiz
   Prefer the merge-base, or another range whose changed files match the review
   surface you mean.
 
-Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `change-review` roster (six single-concern reviewers, `review-gpt` synthesizer), and the review verb and roster semantics in [`agents/README.md` §3](./agents/README.md#reviewer-rosters).
+Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `change-review` roster (six single-concern reviewers, `review-gpt` synthesizer), and the review verb and roster semantics in [`delegation/README.md` §3](./delegation/README.md#reviewer-rosters).
 
 ---
 
@@ -185,7 +185,7 @@ Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `ch
 **Composition.** Drop to trusted Clojure. `council!` (and the underlying `panel!`) take a `:seats` vector where each seat names its own harness, so one deliberation spans vendors. The CLI stays scalar-only on purpose — rich per-seat data doesn't ride the control surface.
 
 ```clojure
-(require '[skein.spools.agents :as agents])
+(require '[skein.spools.delegation :as agents])
 
 ;; A cross-vendor council: an Anthropic seat and two GPT seats deliberate over
 ;; two rounds on a shared board, then a GPT synthesizer weighs the whole thing.
@@ -213,7 +213,7 @@ Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `ch
 - **Rounds are barriers, not a poll loop.** Each turn row `depends-on` every
   seat's previous-turn run, so a round completes before the next opens and the
   deliberation structure is queryable straight from run attributes
-  (`shuttle/panel-seat`, `shuttle/panel-turn`). You compose the deliberation; the
+  (`agent-run/panel-seat`, `agent-run/panel-turn`). You compose the deliberation; the
   panel compiler owns the choreography.
 - **The top-level input map is conventional, not spec-backed.** The `:seats`
   vector inside it is validated (the panel spec checks seat shape and name
@@ -221,7 +221,7 @@ Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `ch
   function — a typoed key fails at runtime, not against a named spec. Copy the
   shape from the API doc rather than from memory.
 
-Honest source: the panel composition layer in [`agents/README.md` §6](./agents/README.md#6-panels-presets-and-the-composition-layer), `council!` in [`agents.api.md`](./agents.api.md), this repo's cross-vendor GPT seats declared in [`.skein/harnesses.clj`](../.skein/harnesses.clj) (`review-gpt`, `hard-gpt`), and the same synthesizer-must-be-cross-vendor rule live in [`.skein/reviewers.clj`](../.skein/reviewers.clj).
+Honest source: the panel composition layer in [`delegation/README.md` §6](./delegation/README.md#6-panels-presets-and-the-composition-layer), `council!` in [`delegation.api.md`](./delegation.api.md), this repo's cross-vendor GPT seats declared in [`.skein/harnesses.clj`](../.skein/harnesses.clj) (`review-gpt`, `hard-gpt`), and the same synthesizer-must-be-cross-vendor rule live in [`.skein/reviewers.clj`](../.skein/reviewers.clj).
 
 ---
 
@@ -243,7 +243,7 @@ strand agent await "$helper"   # => {"runs":[{"result":"...file:line list..."}]}
 **Why this shape.**
 
 - **`spawn` runs are non-serving, so a recon helper never gates delegation.**
-  Raw `spawn` marks its runs `shuttle/serves=false`, and the delegate guards and
+  Raw `spawn` marks its runs `agent-run/serves=false`, and the delegate guards and
   `delegate --ready` skip classification only count *serving* runs — so recon-ing
   or reviewing a task never blocks delegating its real work later. That's the
   whole reason recon uses `spawn`, not `delegate`.
@@ -256,7 +256,7 @@ strand agent await "$helper"   # => {"runs":[{"result":"...file:line list..."}]}
   file scope. Recon fans out; writing stays single-owner. Delegation stays
   shallow.
 
-Honest source: the `spawn` verb and serving/non-serving model in [`agents/README.md` §3](./agents/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in [`agents_test.clj`](../test/skein/agents_test.clj).
+Honest source: the `spawn` verb and serving/non-serving model in [`delegation/README.md` §3](./delegation/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in ``agents_test.clj``.
 
 ---
 
@@ -294,20 +294,20 @@ strand agent ps --for <task>    # carries the attach command to hand the user
   `--interactive`: live sessions are delegated one at a time so the human is
   paired with, not swamped by, a wall of terminals.
 
-Honest source: the interactive delegation model in [`agents/README.md` §1 and §3](./agents/README.md#delegation-verbs-the-task-contract-layer), and this repo's `strand hitl` coordinator convention (a tracking strand under the parent, an interactive `hitl-build` session, and the self-terminating record-outcome-then-close contract) documented in the root `CLAUDE.md`.
+Honest source: the interactive delegation model in [`delegation/README.md` §1 and §3](./delegation/README.md#delegation-verbs-the-task-contract-layer), and this repo's `strand hitl` coordinator convention (a tracking strand under the parent, an interactive `hitl-build` session, and the self-terminating record-outcome-then-close contract) documented in the root `CLAUDE.md`.
 
 ---
 
 ## See also
 
-- [`agents/README.md`](./agents/README.md) — the contract: concept model, every
+- [`delegation/README.md`](./delegation/README.md) — the contract: concept model, every
   verb's semantics and failure modes, DAG conventions, the worker contract, and
   the panel composition layer.
-- [`agents.api.md`](./agents.api.md) — generated signatures and docstrings for
+- [`delegation.api.md`](./delegation.api.md) — generated signatures and docstrings for
   `council!`, `panel!`, `review!`, `defroster!`, and the rest referenced above.
 - `strand agent about` — the always-current in-band manual a delegated agent
   reads; point your workers at it rather than describing the surface yourself.
-- [`shuttle/README.md`](./shuttle/README.md) — the run engine this spool composes:
+- [`agent-run/README.md`](./agent-run/README.md) — the run engine this spool composes:
   harness registry, run lifecycle, and the interactive backend registry.
 - [`workflow.cookbook.md`](./workflow.cookbook.md) — the sibling cookbook for
   composing the workflow engine these delegation gates plug into.

@@ -1,18 +1,18 @@
 # Skein Treadle Spool — Cookbook
 
-Composition recipes for `skein.spools.treadle`: how to let a workflow hand a step to a spawned agent and get the result back, and *why* the bridge is shaped the way it is.
+Composition recipes for `skein.spools.executors.subagent`: how to let a workflow hand a step to a spawned agent and get the result back, and *why* the bridge is shaped the way it is.
 
 This is the **how/why** half of the treadle docs. The other two halves are:
 
-- [`shuttle/treadle.md`](./shuttle/treadle.md) — the **contract**: gate request
-  attributes, the `treadle/*` vocabulary, delivery semantics, and recovery.
+- [`executors/subagent.md`](./subagent.md) — the **contract**: gate request
+  attributes, the `subagent/*` vocabulary, delivery semantics, and recovery.
   Read it for what the adapter promises.
-- [`treadle.api.md`](./treadle.api.md) — the **generated reference**: every
+- [`executors/subagent.api.md`](./subagent.api.md) — the **generated reference**: every
   public fn's signature and docstring, produced from the source.
 
 Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature or the attribute table — it links to them.
 
-Treadle sits between two spools that know nothing of each other: the [workflow engine](./workflow.md), which models a step it can't do itself as a `gate`, and the [shuttle engine](./shuttle/README.md), which spawns agent runs but has no notion of workflows. Treadle is the only namespace that speaks both. Load order matters — **shuttle first, then treadle** (its `install!` fails loudly otherwise and runs an initial gate scan) — and treadle must load *after* any startup config that registers the harness aliases your gates name. See [`treadle.md`, "Loading"](./shuttle/treadle.md#loading).
+Treadle sits between two spools that know nothing of each other: the [workflow engine](../workflow.md), which models a step it can't do itself as a `gate`, and the [agent-run engine](../agent-run/README.md), which spawns agent runs but has no notion of workflows. Treadle is the only namespace that speaks both. Load order matters — **shuttle first, then treadle** (its `install!` fails loudly otherwise and runs an initial gate scan) — and treadle must load *after* any startup config that registers the harness aliases your gates name. See [`treadle.md`, "Loading"](./subagent.md#loading).
 
 ## How to read a recipe
 
@@ -33,7 +33,7 @@ Each recipe cites the honest source it was distilled from — the treadle source
 
 **Situation.** A stage in your workflow isn't the driving agent's to *do* — it's work to delegate to a fresh agent run — but the workflow should still block on it and pick up the result before moving on.
 
-**Composition.** Model the step as an ordinary `workflow/gate` with waiter `:subagent`, carrying the run request as `shuttle/*` attributes. That's the whole authoring surface. Treadle watches for the gate to become ready, spawns a shuttle run from those attributes, and — when the run succeeds — completes the gate through `workflow/complete!`. The step after the gate then unblocks normally.
+**Composition.** Model the step as an ordinary `workflow/gate` with waiter `:subagent`, carrying the run request as `agent-run/*` attributes. That's the whole authoring surface. Treadle watches for the gate to become ready, spawns a agent-run run from those attributes, and — when the run succeeds — completes the gate through `workflow/complete!`. The step after the gate then unblocks normally.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -44,37 +44,37 @@ Each recipe cites the honest source it was distilled from — the treadle source
     (workflow/step :design "Design widget" :self)
     (workflow/gate :implement "Implement widget" :subagent    ; not :self — delegate it
                    :depends-on [:design]
-                   :attributes {"shuttle/harness" "pi"
-                                "shuttle/prompt"  "Implement the widget per specs/widget.md"
-                                "shuttle/cwd"     "/path/to/worktree"})
+                   :attributes {"agent-run/harness" "pi"
+                                "agent-run/prompt"  "Implement the widget per specs/widget.md"
+                                "agent-run/cwd"     "/path/to/worktree"})
     (workflow/step :review "Review implementation" :self
                    :depends-on [:implement])))
 
 (workflow/start! "widget-1" build-widget {})
 (workflow/complete! "widget-1")            ; finish :design; :implement becomes ready
-;; treadle sees the ready :subagent gate, spawns a shuttle run, and on success
-;; stamps the gate workflow/outcome-by = run id, workflow/notes = shuttle/result,
+;; treadle sees the ready :subagent gate, spawns a agent-run run, and on success
+;; stamps the gate workflow/outcome-by = run id, workflow/notes = agent-run/result,
 ;; then :review becomes ready.
 ```
 
 **Why this shape.**
 
 - **Both engines stay ignorant of each other.** The workflow author writes a
-  plain gate; the shuttle spawns a plain run. Neither namespace grows a
+  plain gate; the agent-run spawns a plain run. Neither namespace grows a
   dependency on the other — treadle is the small adapter that knows both
   vocabularies, so you can use either engine alone and bolt them together only
-  where you need to (contract [`treadle.md`, "Overview"](./shuttle/treadle.md#overview)).
+  where you need to (contract [`treadle.md`, "Overview"](./subagent.md#overview)).
 - **Readiness drives it, so nothing polls.** Treadle is an event handler over the
   same graph both engines already watch. The gate spawns its run the moment it
   becomes ready — after `:design` closes, not before — because `depends-on`
   readiness is the only trigger. A gate blocked behind an unfinished step is left
   untouched until it unblocks.
 - **The result comes back as a gate outcome, not a side channel.** The run's
-  `shuttle/result` lands on the gate as `workflow/notes`, and `workflow/outcome-by`
+  `agent-run/result` lands on the gate as `workflow/notes`, and `workflow/outcome-by`
   records the run id — so the delegated output is part of the workflow's own
   audit trail, and the next step reads it like any other completed step.
 
-Honest source: `happy-path-spawns-delivers-and-unblocks-next-step` in [`test/skein/treadle_test.clj`](../test/skein/treadle_test.clj), and the worked example in [`treadle.md`](./shuttle/treadle.md#worked-example).
+Honest source: `happy-path-spawns-delivers-and-unblocks-next-step` in ``test/skein/treadle_test.clj``, and the worked example in [`treadle.md`](./subagent.md#worked-example).
 
 ---
 
@@ -82,21 +82,21 @@ Honest source: `happy-path-spawns-delivers-and-unblocks-next-step` in [`test/ske
 
 **Situation.** Different gates need different agents, prompts, working directories, or crash-attempt bounds — and you'd rather not repeat a prompt you already wrote as the step's instruction.
 
-**Composition.** The gate's `shuttle/*` attributes *are* the run request. `shuttle/harness` is required and passes straight to `shuttle/spawn-run!`. `shuttle/prompt` is optional: when absent, treadle derives one from `workflow/instruction`, then `description`, then the title. `shuttle/cwd` and `shuttle/max-attempts` pass through. Anything malformed stamps `treadle/error` on the gate rather than spawning a broken run.
+**Composition.** The gate's `agent-run/*` attributes *are* the run request. `agent-run/harness` is required and passes straight to `agent-run/spawn-run!`. `agent-run/prompt` is optional: when absent, treadle derives one from `workflow/instruction`, then `description`, then the title. `agent-run/cwd` and `agent-run/max-attempts` pass through. Anything malformed stamps `subagent/error` on the gate rather than spawning a broken run.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
 
 ;; explicit prompt, pinned harness and worktree, bounded recovery
 (workflow/gate :implement "Implement widget" :subagent
-               :attributes {"shuttle/harness"      "build"
-                            "shuttle/prompt"       "Implement per specs/widget.md"
-                            "shuttle/cwd"          "/path/to/worktree"
-                            "shuttle/max-attempts" "2"})     ; integer or integer-string
+               :attributes {"agent-run/harness"      "build"
+                            "agent-run/prompt"       "Implement per specs/widget.md"
+                            "agent-run/cwd"          "/path/to/worktree"
+                            "agent-run/max-attempts" "2"})     ; integer or integer-string
 
-;; no shuttle/prompt: treadle derives the run prompt from workflow/instruction
+;; no agent-run/prompt: treadle derives the run prompt from workflow/instruction
 (workflow/gate :docs "Write the docs" :subagent
-               :attributes {"shuttle/harness"      "grunt"
+               :attributes {"agent-run/harness"      "grunt"
                             "workflow/instruction" "Draft docs/widget.md from the spec"})
 ```
 
@@ -105,22 +105,22 @@ Honest source: `happy-path-spawns-delivers-and-unblocks-next-step` in [`test/ske
 - **The gate is a pure-data run request.** Handing the run its whole
   configuration as attributes keeps treadle a translator with no policy: it reads
   the gate, builds a `spawn-run!` call, and gets out of the way. The
-  [fan-out recipe](./workflow.cookbook.md#recipe-fan-out-over-a-collection-with-a-chained-loop)
-  in the workflow cookbook uses exactly this to compute per-task `shuttle/*`
+  [fan-out recipe](../workflow.cookbook.md#recipe-fan-out-over-a-collection-with-a-chained-loop)
+  in the workflow cookbook uses exactly this to compute per-task `agent-run/*`
   attributes from a loop item.
 - **Prompt derivation avoids saying the same thing twice.** A step that already
-  carries a `workflow/instruction` doesn't need it copied into `shuttle/prompt`;
+  carries a `workflow/instruction` doesn't need it copied into `agent-run/prompt`;
   treadle falls back through instruction → description → title so the gate stays
   DRY. If nothing non-blank exists to send, that's an authoring error and treadle
-  stamps `treadle/error` instead of spawning a promptless run.
+  stamps `subagent/error` instead of spawning a promptless run.
 - **Bad requests fail on the gate, loudly and locally.** A missing or invalid
-  `shuttle/harness`, or a `shuttle/max-attempts` that isn't an integer, stamps
-  `treadle/error` on the gate and does not retry. The gate is then skipped until
+  `agent-run/harness`, or a `agent-run/max-attempts` that isn't an integer, stamps
+  `subagent/error` on the gate and does not retry. The gate is then skipped until
   a coordinator clears the error — the failure is durable and visible, never a
   silently dropped spawn (contract
-  [`treadle.md`, "Gate request attributes"](./shuttle/treadle.md#gate-request-attributes)).
+  [`treadle.md`, "Gate request attributes"](./subagent.md#gate-request-attributes)).
 
-Honest source: the gate request table in [`treadle.md`](./shuttle/treadle.md#gate-request-attributes), and `missing-harness-stamps-error-and-does-not-retry` in [`test/skein/treadle_test.clj`](../test/skein/treadle_test.clj).
+Honest source: the gate request table in [`treadle.md`](./subagent.md#gate-request-attributes), and `missing-harness-stamps-error-and-does-not-retry` in ``test/skein/treadle_test.clj``.
 
 ---
 
@@ -128,7 +128,7 @@ Honest source: the gate request table in [`treadle.md`](./shuttle/treadle.md#gat
 
 **Situation.** A delegated run died — it crashed, or it exited cleanly but wrote nothing back. The gate is stuck. You want to find it and get a fresh agent onto it.
 
-**Composition.** Discovery is the `stalled-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `treadle/run` attribute** (optionally rewriting `shuttle/prompt`). The next scan finds no live run for the gate and spawns a fresh delegation. From the CLI, use `strand update <gate-id> --attr treadle/run=`; an empty string is treated as cleared. For spawn-side errors, `--attr treadle/error=` clears the error for the next scan.
+**Composition.** Discovery is the `stalled-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `subagent/run` attribute** (optionally rewriting `agent-run/prompt`). The next scan finds no live run for the gate and spawns a fresh delegation. From the CLI, use `strand update <gate-id> --attr subagent/run=`; an empty string is treated as cleared. For spawn-side errors, `--attr subagent/error=` clears the error for the next scan.
 
 ```clojure
 (require '[skein.api.weaver.alpha :as api]
@@ -140,39 +140,39 @@ Honest source: the gate request table in [`treadle.md`](./shuttle/treadle.md#gat
 (api/list-query rt 'stalled-gates {})
 
 ;; recover: clear the stamp and, if useful, sharpen the prompt.
-;; Clearing treadle/run is what triggers the fresh spawn — not `agent retry`.
-(api/update rt gate-id {:attributes {"treadle/run"    nil
-                                     "shuttle/prompt" "echo recovered"}})
-;; next scan spawns a fresh run stamped treadle/gate, linked by a delegates edge,
+;; Clearing subagent/run is what triggers the fresh spawn — not `agent retry`.
+(api/update rt gate-id {:attributes {"subagent/run"    nil
+                                     "agent-run/prompt" "echo recovered"}})
+;; next scan spawns a fresh run stamped subagent/gate, linked by a delegates edge,
 ;; which the treadle then delivers.
 ```
 
 **Why this shape.**
 
 - **Clearing the stamp, not retrying, is the recovery verb.** Treadle keys
-  delivery and idempotency off the gate's single current `treadle/run`. Blanking
+  delivery and idempotency off the gate's single current `subagent/run`. Blanking
   it tells the next scan "no live run here," which spawns a fresh delegation and
   re-stamps the gate. `agent retry <run-id>` is deliberately *not* this: it
   supersedes the dead run and parents a fresh one to the gate with a `parent-of`
   edge — the structural relation treadle avoids — so the retry run is cross-wired
   into the workflow subgraph as spurious `next-steps` work, carries no
-  `treadle/gate`, gets no `delegates` edge, and is never adopted. The gate stays
+  `subagent/gate`, gets no `delegates` edge, and is never adopted. The gate stays
   stalled until you clear the stamp (contract
-  [`treadle.md`, "Failure and recovery"](./shuttle/treadle.md#failure-and-recovery)).
+  [`treadle.md`, "Failure and recovery"](./subagent.md#failure-and-recovery)).
 - **A blank result is a failure, not a delivery.** Delivery selects only closed
-  runs in shuttle phase `done`, which shuttle records solely for a non-blank
+  runs in agent-run phase `done`, which shuttle records solely for a non-blank
   result. A run that exits 0 with empty stdout is a silently dead worker; shuttle
   records it `failed`, so it never satisfies the gate. The gate stays ready and
   stamped, discoverable through `stalled-gates` and (as a delegated run) through
   `agent-failures` — loud, not lost.
 - **The two discovery paths stay in lockstep.** `gate-stalled?` reads the gate's
-  single current `treadle/run`; the `stalled-gates` query reaches the run's phase
+  single current `subagent/run`; the `stalled-gates` query reaches the run's phase
   through the `delegates` edge. Stamping a fresh run marks the dead one
-  `treadle/superseded-by`, which the query excludes — so the gate stops surfacing
+  `subagent/superseded-by`, which the query excludes — so the gate stops surfacing
   the instant a healthy replacement is in flight, exactly when the predicate also
   goes quiet.
 
-Honest source: `failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run`, `agent-retry-of-blank-gate-run-supersedes-without-stale-delivery`, `recovery-respawn-keeps-stalled-gates-in-lockstep-with-predicate`, and `stalled-gates-query-reports-spawn-errors-and-dead-runs` in [`test/skein/treadle_test.clj`](../test/skein/treadle_test.clj).
+Honest source: `failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run`, `agent-retry-of-blank-gate-run-supersedes-without-stale-delivery`, `recovery-respawn-keeps-stalled-gates-in-lockstep-with-predicate`, and `stalled-gates-query-reports-spawn-errors-and-dead-runs` in ``test/skein/treadle_test.clj``.
 
 ---
 
@@ -188,7 +188,7 @@ Honest source: `failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run`, `ag
 ;; await! stays :waiting on a healthy subagent gate (treadle is its executor),
 ;; and surfaces :stalled — with the spawn error — only when the gate is genuinely stuck.
 (workflow/await! "widget-1" {:timeout-secs 10})
-;; => {:reason :stalled :detail {:stall {:error "... shuttle/harness ..."}}}  ; when stuck
+;; => {:reason :stalled :detail {:stall {:error "... agent-run/harness ..."}}}  ; when stuck
 ```
 
 **Why this shape.**
@@ -210,19 +210,19 @@ Honest source: `failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run`, `ag
   surfacing it as unattended, and wakes to `:stalled` only on a real stall
   (spawn error, or a dead/exhausted/superseded run). No wall-clock hang policy is
   invented — stall is a graph fact, not a timeout (contract
-  [`treadle.md`, "Coordination attention"](./shuttle/treadle.md#coordination-attention)).
+  [`treadle.md`, "Coordination attention"](./subagent.md#coordination-attention)).
 
-Honest source: `blank-result-gate-fails-loudly-stays-discoverable-and-recovers` and `treadle-registers-executor-for-flow-await` in [`test/skein/treadle_test.clj`](../test/skein/treadle_test.clj).
+Honest source: `blank-result-gate-fails-loudly-stays-discoverable-and-recovers` and `treadle-registers-executor-for-flow-await` in ``test/skein/treadle_test.clj``.
 
 ---
 
 ## See also
 
-- [`shuttle/treadle.md`](./shuttle/treadle.md) — the contract: gate request
-  attributes, the `treadle/*` vocabulary, delivery, failure, and recovery.
-- [`treadle.api.md`](./treadle.api.md) — generated signatures and docstrings for
+- [`executors/subagent.md`](./subagent.md) — the contract: gate request
+  attributes, the `subagent/*` vocabulary, delivery, failure, and recovery.
+- [`executors/subagent.api.md`](./subagent.api.md) — generated signatures and docstrings for
   every public fn referenced above.
-- [`workflow.cookbook.md`](./workflow.cookbook.md) — the gate and fan-out recipes
+- [`workflow.cookbook.md`](../workflow.cookbook.md) — the gate and fan-out recipes
   that author the `:subagent` gates treadle fulfills.
-- [`shuttle.cookbook.md`](./shuttle.cookbook.md) — the run engine treadle spawns
+- [`agent-run.cookbook.md`](../agent-run.cookbook.md) — the run engine treadle spawns
   onto: harnesses, readiness, and crash recovery.

@@ -123,14 +123,14 @@ The runtime is pull-based and *every* strand is already a durable wait point: an
   gates can make `await!` stay silent while it is healthy. A gate whose
   waiter has no registered executor always surfaces immediately — there is no
   silent default.
-- A shipped local-root adapter, `skein.spools.treadle`, fulfills ready
+- A shipped local-root adapter, `skein.spools.executors.subagent`, fulfills ready
   `:subagent` gates by spawning shuttle runs, registers the `:subagent`
   executor, and closes each gate with the run's result. See
-  `shuttle/treadle.md`.
-- A shipped classpath executor, `skein.spools.reed`, fulfills ready `:shell`
+  `executors/subagent.md`.
+- A shipped classpath executor, `skein.spools.executors.shell`, fulfills ready `:shell`
   gates by running the gate's `shell/argv` command directly, registers the
   `:shell` executor, and closes each gate with `complete!` on a zero exit
-  (stamping a loud `shell/error` otherwise). See `reed.md`.
+  (stamping a loud `shell/error` otherwise). See `executors/shell.md`.
 
 **Dynamic fan-out needs no primitive.** The run subgraph is recomputed live from the graph on every poll, so userland may add strands to a running molecule mid-flight — ordinary `strand!` plus `parent-of`/`depends-on` edges to the run's root — to spawn e.g. sub-agent steps discovered at runtime. Set `workflow/role "step"` on them so they count as workflow work and gate the run's done-check exactly like poured steps.
 
@@ -232,7 +232,7 @@ Executor registration is keyed by gate `waiter` name via `register-executor!` (a
 (workflow/registered-executors)                          ; => {:subagent gate-stalled? ...}
 ```
 
-This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered executor always surfaces as `:gate` immediately, and adapters such as the treadle register their own predicate for their own waiter name at install time (see `shuttle/treadle.md`). There is no more named "stall predicate" independent of a waiter, and no shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option are gone.
+This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered executor always surfaces as `:gate` immediately, and adapters such as the treadle register their own predicate for their own waiter name at install time (see `executors/subagent.md`). There is no more named "stall predicate" independent of a waiter, and no shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option are gone.
 
 ### Procedure join auto-close
 
@@ -482,8 +482,8 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
   runtime fns of this namespace as symbol-valued maps, for trusted
   registration by name (mirrors devflow's registries in `devflow.md` §5).
 - [README.md](./README.md) — shipped spools index and loading notes.
-- [`skein.spools.treadle`](./shuttle/treadle.md) — shipped
+- [`skein.spools.executors.subagent`](./executors/subagent.md) — shipped
   local-root adapter that binds workflow `:subagent` gates to shuttle runs.
-- [`skein.spools.reed`](./reed.md) — shipped classpath executor that fulfills
+- [`skein.spools.executors.shell`](./executors/shell.md) — shipped classpath executor that fulfills
   workflow `:shell` gates by running their command.
 

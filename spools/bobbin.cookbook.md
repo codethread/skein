@@ -38,7 +38,7 @@ Every recipe has the same four parts, so you can skim to the one that matches yo
 (def context (bobbin/render (bobbin/pack "abc12")))
 
 ;; hand `context` to whatever spawns the run — e.g. as the extra --prompt text
-;; for `strand agent delegate` (see spools/agents/README.md)
+;; for `strand agent delegate` (see spools/delegation/README.md)
 (println context)
 ;; # Bobbin context pack
 ;; ## Target
@@ -128,7 +128,7 @@ Honest source: the `:include` subset and its loud-failure behaviour verified aga
 **Why this shape.**
 
 - **Notes are the provenance channel.** Bobbin's notes section pulls strands
-  attached by the `notes` edge, ordered by `shuttle/at` then creation time, so a
+  attached by the `notes` edge, ordered by `agent-run/at` then creation time, so a
   reviewer reads predecessors' handovers in the order they happened — the same
   notes an agent leaves with `agent note` (contract
   [§3, section meanings](./bobbin.md#3-surface)).
@@ -222,5 +222,5 @@ Honest source: the JSON-compatible bundle keys verified against a live weaver; t
 - [`ephemeral.cookbook.md`](./ephemeral.cookbook.md) — the companion for
   *throwaway* state; bobbin is for the durable notes and provenance a pack
   surfaces.
-- [`spools/agents/README.md`](./agents/README.md) — the delegation surface a
+- [`spools/delegation/README.md`](./delegation/README.md) — the delegation surface a
   rendered pack feeds into as prompt context.

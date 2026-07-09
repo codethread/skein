@@ -6,7 +6,7 @@
 
 Chime knows nothing about any particular workflow or attribute vocabulary: it ships **no rules and no notifier**. A workspace's trusted config decides what deserves attention (rules) and each developer decides how to be told (notifier). It owns only runtime-local weaver-lifetime state: the notifier binding, rules, deduplication memory, batch scan memory, and recent failures are kept on the active runtime and isolated from other runtimes in the same JVM.
 
-Chime spawns a user-configured local process with the user's authority, so it is an approved local-root spool like shuttle rather than a shipped classpath spool.
+Chime spawns a user-configured local process with the user's authority, so it is an approved local-root spool like agent-run rather than a shipped classpath spool.
 
 For composition recipes — binding a notifier, writing rules that fire on an attribute transition or on readiness, and debugging when the notifications go quiet — see the [cookbook](../chime.cookbook.md).
 
@@ -102,5 +102,5 @@ Rule, notifier, and process failures are recorded by `(chime/failures)` and even
 ## See also
 
 - [`../README.md`](../README.md) — shipped and approved local-root spool index.
-- [`../shuttle/README.md`](../shuttle/README.md) — local-root layout and loading pattern.
+- [`../agent-run/README.md`](../agent-run/README.md) — local-root layout and loading pattern.
 - [`../../docs/skein.md#authoring-your-own-spool-code`](../../docs/skein.md#authoring-your-own-spool-code) — authoring and loading local spools.

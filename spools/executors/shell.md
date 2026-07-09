@@ -2,16 +2,16 @@
 
 > This is the **contract** doc: the `shell/*` gate-attribute vocabulary, pass /
 > fail semantics, recovery, and the coordination attention surface. Its two
-> companions are [`reed.cookbook.md`](./reed.cookbook.md) — worked composition
+> companions are [`executors/shell.cookbook.md`](./shell.cookbook.md) — worked composition
 > recipes (an artifact gate, an explicit multi-file check, chaining a shell gate
 > behind a subagent gate, and recovering a stalled one) — and
-> [`reed.api.md`](./reed.api.md) — generated fn signatures and docstrings. Reach
+> [`executors/shell.api.md`](./shell.api.md) — generated fn signatures and docstrings. Reach
 > for the cookbook when you want a runnable pattern, the API doc when you want an
 > exact arity, and this doc for what the executor promises.
 
 ## Overview
 
-`skein.spools.reed` is the shipped **classpath** executor for workflow gates whose waiter is `:shell`. It watches ready workflow gates, runs the gate's `shell/argv` command directly on a spool-owned worker pool, and closes the gate through `skein.spools.workflow/complete!` on a zero exit. A non-zero exit, a timeout, a spawn error, or an invalid argv stamps a loud, distinct `shell/error` and leaves the gate ready and stamped rather than masquerading as a completed run.
+`skein.spools.executors.shell` is the shipped **classpath** executor for workflow gates whose waiter is `:shell`. It watches ready workflow gates, runs the gate's `shell/argv` command directly on a spool-owned worker pool, and closes the gate through `skein.spools.workflow/complete!` on a zero exit. A non-zero exit, a timeout, a spawn error, or an invalid argv stamps a loud, distinct `shell/error` and leaves the gate ready and stamped rather than masquerading as a completed run.
 
 Reed is a treadle sibling minus everything shuttle-specific. The workflow engine stays executor-agnostic: authors declare an ordinary `(workflow/gate ... :shell ...)` with `shell/*` attributes, and reed is the small adapter that knows both the gate contract and process execution. Because the failure detail lives on the gate itself, there is no separate run strand, no `delegates` edge, and no session or harness vocabulary — the whole outcome is on the gate.
 
@@ -28,8 +28,8 @@ Reed ships on the weaver classpath, so it needs no `spools.edn` approval. Its `i
   {:ns 'skein.spools.workflow
    :call 'skein.spools.workflow/install!})
 (runtime-alpha/use! runtime :skein/spools-reed
-  {:ns 'skein.spools.reed
-   :call 'skein.spools.reed/install!})
+  {:ns 'skein.spools.executors.shell
+   :call 'skein.spools.executors.shell/install!})
 ```
 
 `install!` runs an initial gate scan, so any durable ready `:shell` gate is dispatched at load time. Gate scans serialize on a runtime-owned monitor: independent weaver runtimes in one JVM scan independently and never block each other.
@@ -106,10 +106,10 @@ The spool also registers the `stalled-shell-gates` named query for coordinator i
 
 ## See also
 
-- [`skein.spools.workflow`](./workflow.md) — workflow gates, `complete!`, and the
+- [`skein.spools.workflow`](../workflow.md) — workflow gates, `complete!`, and the
   `register-executor!` registry reed plugs into.
-- [`skein.spools.treadle`](./shuttle/treadle.md) — the shuttle-backed sibling that
+- [`skein.spools.executors.subagent`](./subagent.md) — the agent-run-backed sibling that
   fulfils `:subagent` gates; reed is the same shape without the run engine.
-- [`reed.cookbook.md`](./reed.cookbook.md) — worked composition recipes.
-- [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj) —
+- [`executors/shell.cookbook.md`](./shell.cookbook.md) — worked composition recipes.
+- ``test/skein/spools/reed_test.clj`` —
   executable contract tests.

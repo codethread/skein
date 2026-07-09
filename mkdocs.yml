@@ -101,17 +101,17 @@ nav:
           - Cookbook: spools/kanban.cookbook.md
           - API: spools/kanban.api.md
       - Agent Shuttle:
-          - Contract: spools/shuttle/README.md
-          - Cookbook: spools/shuttle.cookbook.md
-          - API: spools/shuttle.api.md
+          - Contract: spools/agent-run/README.md
+          - Cookbook: spools/agent-run.cookbook.md
+          - API: spools/agent-run.api.md
       - Agents Spool:
-          - Contract: spools/agents/README.md
-          - Cookbook: spools/agents.cookbook.md
-          - API: spools/agents.api.md
+          - Contract: spools/delegation/README.md
+          - Cookbook: spools/delegation.cookbook.md
+          - API: spools/delegation.api.md
       - Treadle Gate Bridge:
-          - Contract: spools/shuttle/treadle.md
-          - Cookbook: spools/treadle.cookbook.md
-          - API: spools/treadle.api.md
+          - Contract: spools/executors/subagent.md
+          - Cookbook: spools/executors/subagent.cookbook.md
+          - API: spools/executors/subagent.api.md
       - Chime Notifications:
           - Contract: spools/chime/README.md
           - Cookbook: spools/chime.cookbook.md

@@ -1,18 +1,18 @@
 # Skein Reed Spool — Cookbook
 
-Composition recipes for `skein.spools.reed`: how to let a workflow run a shell check as a gate and get pass / fail back on the gate itself, and *why* the executor is shaped the way it is.
+Composition recipes for `skein.spools.executors.shell`: how to let a workflow run a shell check as a gate and get pass / fail back on the gate itself, and *why* the executor is shaped the way it is.
 
 This is the **how/why** half of the reed docs. The other two halves are:
 
-- [`reed.md`](./reed.md) — the **contract**: the `shell/*` gate-attribute
+- [`executors/shell.md`](./shell.md) — the **contract**: the `shell/*` gate-attribute
   vocabulary, pass / fail semantics, recovery, and the attention surface. Read it
   for what the executor promises.
-- [`reed.api.md`](./reed.api.md) — the **generated reference**: every public fn's
+- [`executors/shell.api.md`](./shell.api.md) — the **generated reference**: every public fn's
   signature and docstring, produced from the source.
 
 Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature or the attribute table — it links to them.
 
-Reed sits between two spools that know nothing of process execution: the [workflow engine](./workflow.md), which models an external wait point as a `gate`, and the operating system, which runs commands. Reed is the only namespace that speaks both. Load order matters — **workflow first, then reed** (its `install!` registers the `:shell` executor and runs an initial gate scan) — see [`reed.md`, "Loading"](./reed.md#loading).
+Reed sits between two spools that know nothing of process execution: the [workflow engine](../workflow.md), which models an external wait point as a `gate`, and the operating system, which runs commands. Reed is the only namespace that speaks both. Load order matters — **workflow first, then reed** (its `install!` registers the `:shell` executor and runs an initial gate scan) — see [`executors/shell.md`, "Loading"](./shell.md#loading).
 
 ## How to read a recipe
 
@@ -62,7 +62,7 @@ Each recipe cites the honest source it was distilled from — the reed source or
   a command; reed runs a plain process. Neither the engine nor the OS grows a
   dependency on the other — reed is the small adapter that knows both, so a gate
   is a pure-data check request (contract
-  [`reed.md`, "Overview"](./reed.md#overview)).
+  [`executors/shell.md`, "Overview"](./shell.md#overview)).
 - **Readiness drives it, so nothing polls.** Reed is an event handler over the
   same graph the engine watches. The check runs the moment the gate becomes
   ready — after `:build` closes, not before — because `depends-on` readiness is
@@ -72,7 +72,7 @@ Each recipe cites the honest source it was distilled from — the reed source or
   and a bounded output tail land on the gate as `shell/exit-code` /
   `shell/output`. The check is part of the workflow's own audit trail.
 
-Honest source: the worked example in [`reed.md`](./reed.md#worked-example), and the happy-path gate test in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the worked example in [`executors/shell.md`](./shell.md#worked-example), and the happy-path gate test in ``test/skein/spools/reed_test.clj``.
 
 ---
 
@@ -104,13 +104,13 @@ Honest source: the worked example in [`reed.md`](./reed.md#worked-example), and 
   reader sees exactly that this gate wants a shell and reads the script inline.
   There is no hidden layer deciding whether your command "looks shell-y" — you
   asked for `sh`, so you got `sh` (contract
-  [`reed.md`, "Gate request attributes"](./reed.md#gate-request-attributes)).
+  [`executors/shell.md`, "Gate request attributes"](./shell.md#gate-request-attributes)).
 - **A non-zero exit is a real failure.** The `for` loop `exit 1`s on the first
   empty file; reed stamps `shell command exited 1` onto `shell/error` with the
   captured output tail, and the gate stays ready and discoverable rather than
   advancing the workflow.
 
-Honest source: the argv contract in [`reed.md`](./reed.md#gate-request-attributes), and the `sh -c` command tests in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the argv contract in [`executors/shell.md`](./shell.md#gate-request-attributes), and the `sh -c` command tests in ``test/skein/spools/reed_test.clj``.
 
 ---
 
@@ -127,9 +127,9 @@ Honest source: the argv contract in [`reed.md`](./reed.md#gate-request-attribute
   (workflow/workflow
     "Implement and verify"
     (workflow/gate :implement "Agent implements the feature" :subagent
-                   :attributes {"shuttle/harness" "build"
-                                "shuttle/prompt"  "Implement per specs/feature.md"
-                                "shuttle/cwd"     "/path/to/worktree"})
+                   :attributes {"agent-run/harness" "build"
+                                "agent-run/prompt"  "Implement per specs/feature.md"
+                                "agent-run/cwd"     "/path/to/worktree"})
     (workflow/gate :verify "Tests pass" :shell
                    :depends-on [:implement]                      ; only after the agent delivers
                    :attributes {"shell/argv"          ["clojure" "-M:test"]
@@ -155,7 +155,7 @@ Honest source: the argv contract in [`reed.md`](./reed.md#gate-request-attribute
   gate downstream of a `:subagent` gate keeps each executor single-purpose and
   the verification independently inspectable and recoverable.
 
-Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](./workflow.md#3-definition-layer), the treadle `:subagent` contract in [`treadle.md`](./shuttle/treadle.md), and the dependent `:shell` gate test in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../workflow.md#3-definition-layer), the treadle `:subagent` contract in [`treadle.md`](./subagent.md), and the dependent `:shell` gate test in ``test/skein/spools/reed_test.clj``.
 
 ---
 
@@ -188,7 +188,7 @@ Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](./work
   `shell/running` claim) is skipped on every later scan — so an expensive
   `clojure -M:test` runs once per deliberate request, not on every graph mutation.
   Blanking `shell/error` is the explicit "run it again" signal (contract
-  [`reed.md`, "Failure and recovery"](./reed.md#failure-and-recovery)).
+  [`executors/shell.md`, "Failure and recovery"](./shell.md#failure-and-recovery)).
 - **Recovery is strictly simpler than treadle's.** There is no separate run strand
   to reconcile — the failure detail lives on the gate itself. A weaver crash
   between claim and outcome leaves `shell/running` with no live process; clearing
@@ -200,17 +200,17 @@ Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](./work
   surfaces through `stalled-shell-gates` and through `await!` (which reads the
   registered `:shell` executor) — a graph fact, not a dropped result.
 
-Honest source: the recovery and attention sections in [`reed.md`](./reed.md#failure-and-recovery), and the failure / recovery tests in [`test/skein/spools/reed_test.clj`](../test/skein/spools/reed_test.clj).
+Honest source: the recovery and attention sections in [`executors/shell.md`](./shell.md#failure-and-recovery), and the failure / recovery tests in ``test/skein/spools/reed_test.clj``.
 
 ---
 
 ## See also
 
-- [`reed.md`](./reed.md) — the contract: the `shell/*` vocabulary, pass / fail
+- [`executors/shell.md`](./shell.md) — the contract: the `shell/*` vocabulary, pass / fail
   semantics, recovery, and the attention surface.
-- [`reed.api.md`](./reed.api.md) — generated signatures and docstrings for every
+- [`executors/shell.api.md`](./shell.api.md) — generated signatures and docstrings for every
   public fn referenced above.
-- [`workflow.cookbook.md`](./workflow.cookbook.md) — the gate and fan-out recipes
+- [`workflow.cookbook.md`](../workflow.cookbook.md) — the gate and fan-out recipes
   that author the gates reed fulfils.
-- [`treadle.md`](./shuttle/treadle.md) — the `:subagent` sibling reed composes
+- [`treadle.md`](./subagent.md) — the `:subagent` sibling reed composes
   with.

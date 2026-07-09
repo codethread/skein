@@ -44,7 +44,7 @@ The name follows the textile metaphor: carding untangles fibers before spinning.
 | `default-days` | Default stale threshold: `14`. |
 | `(stale)` / `(stale opts)` | Active strands whose `updated_at` is at least `:days` days old. Rows carry compact strand fields plus `:days-stale`. `:days` must be a positive integer. |
 | `(orphans)` / `(orphans opts)` | Active strands with zero incoming or outgoing edges in any relation in `strand_edges`, and no attribute whose key is in the `workflow/*` namespace. |
-| `(blocked-by-failure)` / `(blocked-by-failure opts)` | Active strands with at least one active `depends-on` blocker whose `shuttle/phase` string is `"failed"` or `"exhausted"`. Rows include `:blockers` with compact blocker details and any `shuttle/phase` / `shuttle/error` values. |
+| `(blocked-by-failure)` / `(blocked-by-failure opts)` | Active strands with at least one active `depends-on` blocker whose `agent-run/phase` string is `"failed"` or `"exhausted"`. Rows include `:blockers` with compact blocker details and any `agent-run/phase` / `agent-run/error` values. |
 | `(report)` / `(report opts)` | Aggregate map with `:opts` plus `:stale`, `:orphans`, and `:blocked-by-failure` sections, each carrying `:count` and `:rows`. |
 | `(install!)` | Installation metadata: function symbols, default threshold, and `:read-only true` for trusted registration by name. |
 
@@ -55,7 +55,7 @@ Options accepted by all report functions:
 - `:include-plumbing?` — when true, include workflow plumbing and shuttle run
   records. By default all sections exclude strands with `workflow/role` in
   `"molecule"`, `"procedure"`, or `"digest"`, and strands with
-  `shuttle/run "true"`.
+  `agent-run/run "true"`.
 
 Malformed options fail loudly with `ex-info`; unknown keys are not ignored.
 

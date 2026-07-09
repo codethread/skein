@@ -4,22 +4,22 @@
 
 `skein.spools.bench` is a trusted userland spool for **deterministic, containerized benchmarking of coding-agent harnesses**. It answers one question reproducibly: *given this repository at this exact commit, this exact memory-file/skill surface, and this prompt — how do N agent configurations compare?*
 
-A bench run is a strand graph: a **run root**, one **entry** strand per matrix cell, and a **judge** strand that depends on every entry. Each entry executes its agent inside a fresh container (docker or podman) against a pristine checkout of the pinned repo+sha; when the container exits, the engine deterministically extracts metrics (cost, tokens, turns, tool usage, diff stats, validation outcome) in-process and stamps them onto the entry strand. When all entries close, readiness unblocks the judge — a **decoupled fulfilment seam** (§8) that reads every entry's artifacts and writes a comparative verdict: shipped as a shuttle run on a **chosen approver harness/model**, but fulfillable by anything (a workflow, a human, a custom bridge).
+A bench run is a strand graph: a **run root**, one **entry** strand per matrix cell, and a **judge** strand that depends on every entry. Each entry executes its agent inside a fresh container (docker or podman) against a pristine checkout of the pinned repo+sha; when the container exits, the engine deterministically extracts metrics (cost, tokens, turns, tool usage, diff stats, validation outcome) in-process and stamps them onto the entry strand. When all entries close, readiness unblocks the judge — a **decoupled fulfilment seam** (§8) that reads every entry's artifacts and writes a comparative verdict: shipped as an agent run on a **chosen approver harness/model**. A workflow, a human, or a custom bridge can fulfill the same seam.
 
 Design lineage: this replaces the manual `bench.md` orchestration command (worktrees + hand-run scripts + jq) with a spool where **setup and measurement are code, and only judgment is a model**.
 
-Division of labor with the [shuttle engine](../shuttle/README.md):
+Division of labor with the [agent-run engine](../agent-run/README.md):
 
-- **Entries are bench-owned, not shuttle runs.** A benchmark process must receive *exactly* the configured prompt — no injected preamble, no strand CLI, no workspace ambient state. Containers are hermetic-by-construction, so bench owns their execution on a spool-owned executor (the cron/shuttle executor pattern) rather than contorting shuttle's fixed-argv harness model.
-- **The judge is a fulfilment seam (§8), shipped as a shuttle run.** In the default `:harness` mode it runs on the host, needs a real harness/model seat, benefits from shuttle's lifecycle (logs, `agent ps`, retry), and is scheduled by ordinary `depends-on` readiness — pending until every entry closes. But the seam is decoupled: the same judge strand can instead be fulfilled by a workflow gate, a human, or a custom bridge, so bench never requires the workflow spool.
+- **Entries are bench-owned, not agent runs.** A benchmark process must receive *exactly* the configured prompt: no injected preamble, no strand CLI, no workspace ambient state. Containers are hermetic by construction, so bench owns their execution on a spool-owned executor (the cron / executors.shell pattern) rather than contorting the agent-run harness model.
+- **The judge is a fulfilment seam (§8), shipped as an agent run.** In the default `:harness` mode it runs on the host, needs a real harness/model seat, benefits from the agent-run lifecycle (logs, `agent ps`, retry), and is scheduled by ordinary `depends-on` readiness. It stays pending until every entry closes. The seam is decoupled: the same judge strand can instead be fulfilled by a workflow gate, a human, or a custom bridge, so bench never requires the workflow spool.
 
 ## 2. Loading
 
-Approved local-root spool. Shuttle must be installed first (the default `:harness` judge is a shuttle run; `:external` judges need no shuttle).
+Approved local-root spool. Agent-run must be installed first (the default `:harness` judge is an agent run; `:external` judges need no agent-run).
 
 ```clojure
 ;; .skein/spools.edn
-{:spools {skein.spools/shuttle {:local/root "../spools/shuttle"}
+{:spools {skein.spools/agent-run {:local/root "../spools/agent-run"}
           skein.spools/bench   {:local/root "../spools/bench"}}}
 ```
 
@@ -29,7 +29,7 @@ Approved local-root spool. Shuttle must be installed first (the default `:harnes
    :spools ['skein.spools/bench]
    :call 'skein.spools.bench/install!
    :required? true
-   :after [:shuttle]})
+   :after [:agent-run]})
 ```
 
 `install!` creates the runtime-owned spool state (executor, registries, in-flight tracking — versioned per `docs/writing-shared-spools.md` with a `:close-fn`), registers the `bench` CLI op and the `bench-runs` named query, detects the container engine (see §4), and reconciles orphaned entries from a previous weaver lifetime (see §9). It registers **no suites and no agent definitions** — those are trusted config, exactly like harness aliases.
@@ -103,7 +103,7 @@ A suite is the benchmark matrix plus its deterministic starting state.
              {:agent :codex  :prompt :baseline}
              {:agent :pi     :model "gpt-5.4" :prompt :strict}]
    :parallel 2                                 ; max concurrent containers (default 2)
-   :judge {:harness :build                     ; :harness spawns a shuttle run (or :external true → any fulfiller)
+   :judge {:harness :build                     ; :harness spawns an agent run (or :external true → any fulfiller)
            :contract "Score each entry 1-10 on correctness, scope control, and code quality.
                       Verify claims against the diff. Pick a winner and justify it."}})
 ```
@@ -114,7 +114,7 @@ Rules:
 - `:prompts` — map of slug → prompt text (or `{:path ...}` read at pour time). A single-prompt suite may use `:prompt "..."` instead; entries then omit `:prompt`. With multiple prompts every entry must name one (no silent default — TEN-003).
 - `:files` values: `{:content s}` inline, `{:path p}` host file, `{:dir p}` host directory copied recursively (how skills are pinned). Relative host paths resolve against the workspace root. Overlay is applied after checkout, so it *replaces* repo files of the same name; `:remove` deletes paths (e.g. strip the repo's own CLAUDE.md to test memoryless behavior). The applied overlay is recorded in the run manifest.
 - `:entries` — each cell: required `:agent`; optional `:model`, `:thinking`, `:prompt`, `:slug` (defaults to `<agent>[-<model>][-<thinking>][-<prompt>]`, uniquified; collisions fail loudly), `:env` (extra container env). `(bench/cross {:agent [:claude :codex]} {:prompt [:baseline :strict]})` is a helper returning the expanded cross-product cells — the persisted suite always holds explicit entries.
-- `:judge` — the fulfilment seam (§8): exactly one of `:harness` (a shuttle harness/alias, validated against the shuttle registry at run time) or `:external true` (pour the seam strand and stop); optional `:contract` layered onto the built-in judge protocol; `:judge :none` runs a judgeless suite (metrics only). The `:judge` map is closed — unknown keys, or both/neither of `:harness`/`:external`, fail loudly.
+- `:judge` — the fulfilment seam (§8): exactly one of `:harness` (an agent-run harness/alias, validated against the agent-run registry at run time) or `:external true` (pour the seam strand and stop); optional `:contract` layered onto the built-in judge protocol; `:judge :none` runs a judgeless suite (metrics only). The `:judge` map is closed — unknown keys, or both/neither of `:harness`/`:external`, fail loudly.
 
 `(bench/suites runtime)` lists registered suites. Suites are plain data; `run!` also accepts an **inline suite value** from trusted Clojure, validated identically (the CLI stays name-only, TEN-006).
 
@@ -174,14 +174,14 @@ bench-run root  bench/run=true, bench/suite, bench/repo, bench/sha (resolved), b
 │                bench/phase, bench/image-digest, bench/* metrics (§7)   [parent-of from root]
 ├─ entry ...
 └─ judge         bench/judge=true, bench/judge-prompt, body, depends-on every entry  (parent-of)
-                 ← a fulfilment seam (§8): a serving shuttle run (:harness) or a bare strand (:external)
+                 ← a fulfilment seam (§8): a serving agent run (:harness) or a bare strand (:external)
 ```
 
 `(run! runtime suite-name-or-inline opts)` / `strand bench run <suite>`:
 
 1. Validate: suite exists/conforms, agents registered, judge harness resolvable (in `:harness` mode), engine resolvable. Resolve `:rev` → sha. Fail loudly on any of these **before** creating strands.
 2. Pour the graph (root under an optional `--for` parent, e.g. a kanban card) and stamp attributes. Each entry writes its manifest when it launches.
-3. Queue every entry on the spool executor bounded by `:parallel`; pour the judge seam strand (§8) `depends-on` every entry — in `:harness` mode as a serving shuttle run (`pending` until entries close), in `:external` mode as a bare strand nothing is spawned for.
+3. Queue every entry on the spool executor bounded by `:parallel`; pour the judge seam strand (§8) `depends-on` every entry — in `:harness` mode as a serving agent run (`pending` until entries close), in `:external` mode as a bare strand nothing is spawned for.
 4. Return `{:run <root-id> :entries {<slug> <id>} :judge <id>}` immediately — execution is async; `bench status` / `bench await` observe it.
 
 Entry phases (`bench/phase`): `pending → preparing → running → done | failed`. A finished entry has metrics stamped and its strand **closed** (this is what unblocks the judge). A failed entry stays **active** with `bench/phase failed` and `bench/error` — the judge stays blocked, loudly visible, until `bench retry <entry-id>` (fresh workspace, same cell) or `bench abort <run-id>` (kills live containers, fails outstanding entries, and closes the judge strand with `bench/error "aborted"`).
@@ -228,21 +228,21 @@ Attribute mapping (entry strand): `bench/cost-usd`, `bench/tokens-in`, `bench/to
 | `body` | A short, mechanism-agnostic fulfilment contract: read `bench/judge-prompt`, judge, write one note per entry on the entry strands, stamp `bench/verdict` on this strand, then close it. |
 | `bench/verdict` | The canonical, durable verdict, stamped by whoever fulfils the strand. |
 
-Stamping `bench/verdict` needs the batteries `update` op installed in the fulfiller's workspace. In a world without it the verdict is never stamped as an attribute, but in the shuttle-served `{:harness h}` mode it still lands durably as the judge run's `shuttle/result`, and `bench report`/`status` fall back to that (`verdict-source` reads `"run"` instead of `"attr"`) — a fallback exercised live and confirmed working.
+Stamping `bench/verdict` needs the batteries `update` op installed in the fulfiller's workspace. In a world without it the verdict is never stamped as an attribute, but in the agent-run-served `{:harness h}` mode it still lands durably as the judge run's `agent-run/result`, and `bench report`/`status` fall back to that (`verdict-source` reads `"run"` instead of `"attr"`).
 
 The `bench/judge-prompt` protocol is: read each entry's `metrics.json`, `diff.patch`, and captured stdout (inspect the workspace when needed); **metrics are ground truth — never re-derive or dispute them; judge quality, not arithmetic** (this invariant is baked into the builder and is *not* overridable by `:contract`); frame per the varying axis (never flatten a two-axis run into one ranking); append one note per entry with scores and findings; stamp the verdict on the judge strand; and finish with the same verdict — a comparison table plus winner/pass-fail per the suite's `:judge :contract`.
 
 ### Fulfilment modes (the suite `:judge` value)
 
-- `{:harness h, :contract? s}` — **shipped default.** Bench spawns a shuttle run serving the judge strand on `h` (any harness/alias — this is where "which model approves" is chosen). The run strand *is* the judge strand; its `shuttle/prompt` and the strand's `bench/judge-prompt` come from the **same builder**, so they never drift. A failed judge run recovers with the ordinary `strand agent retry`.
+- `{:harness h, :contract? s}` — **shipped default.** Bench spawns an agent run serving the judge strand on `h` (any harness/alias — this is where "which model approves" is chosen). The run strand *is* the judge strand; its `agent-run/prompt` and the strand's `bench/judge-prompt` come from the same builder, so they never drift. A failed judge run recovers with the ordinary `strand agent retry`.
 - `{:external true, :contract? s}` — bench pours the judge strand and **stops**; nothing is spawned. Any external mechanism (a workflow, a human, a custom bridge) fulfils the strand per its `body` contract. Mutually exclusive with `:harness` — declaring both, or neither, fails loudly.
 - `:none` — a judgeless, metrics-only suite; no judge strand.
 
-The verdict is resolved (in `bench report`/`status`) from `bench/verdict` first, else a serving shuttle run's `shuttle/result`, else absent — and the report names the `verdict-source` (`attr` | `run` | `none`). The run is **complete when the judge strand closes** in both modes; only *who* closes it changes.
+The verdict is resolved (in `bench report`/`status`) from `bench/verdict` first, else a serving agent run's `agent-run/result`, else absent. The report names the `verdict-source` (`attr` | `run` | `none`). The run is **complete when the judge strand closes** in both modes; only *who* closes it changes.
 
 ### Composition: `judge-spec` and workflow `:subagent` gates
 
-`(skein.spools.bench/judge-spec runtime suite-name-or-inline {:run-id .. :entries [{:id :slug :data-dir ..} ..] :sha ..})` returns the seam as plain data — `{:prompt <full judge prompt> :attrs {bench/* incl. body} :entry-ids [..]}` — the one source `run!` itself pours from. This mirrors `skein.spools.agents/roster-review-specs`: a workflow author calls `judge-spec` at pour time and maps it onto a `:subagent` gate exactly as roster review specs map onto gates — `:prompt` becomes the gate's `shuttle/prompt`, the author picks the gate's `shuttle/harness`, `:attrs` merge into the gate, and the gate `depends-on` `:entry-ids`. The [treadle](../shuttle/treadle.md) then bridges that gate to a shuttle run and delivers its result back into the workflow. Bench supplies the judging *contract*; the workflow spool supplies the *fulfilment*, and the two never take a dependency on each other.
+`(skein.spools.bench/judge-spec runtime suite-name-or-inline {:run-id .. :entries [{:id :slug :data-dir ..} ..] :sha ..})` returns the seam as plain data — `{:prompt <full judge prompt> :attrs {bench/* incl. body} :entry-ids [..]}` — the one source `run!` itself pours from. This mirrors `skein.spools.delegation/roster-review-specs`: a workflow author calls `judge-spec` at pour time and maps it onto a `:subagent` gate exactly as roster review specs map onto gates — `:prompt` becomes the gate's `agent-run/prompt`, the author picks the gate's `agent-run/harness`, `:attrs` merge into the gate, and the gate `depends-on` `:entry-ids`. The [executors.subagent](../executors/subagent.md) spool then bridges that gate to an agent run and delivers its result back into the workflow. Bench supplies the judging *contract*; the workflow spool supplies the *fulfilment*, and the two never take a dependency on each other.
 
 The judge is deliberately **not** asked to approve blind: validation exit codes and diffs are already extracted, so its job is the qualitative layer code cannot do.
 
@@ -279,8 +279,8 @@ Not pinned (recorded where visible): model behavior (nondeterministic by nature 
 
 ## 12. See also
 
-- [shuttle/README.md](../shuttle/README.md) — the run engine serving the default `:harness` judge; executor/state conventions this spool mirrors.
-- [shuttle/treadle.md](../shuttle/treadle.md) — bridges workflow `:subagent` gates to shuttle runs; how a `judge-spec` gate (§8) is fulfilled inside a workflow.
-- [agents/README.md](../agents/README.md) — `strand agent retry` for judge recovery; harness/alias registry the judge seat resolves against; `roster-review-specs`, the seam pattern `judge-spec` mirrors.
+- [agent-run/README.md](../agent-run/README.md) — the run engine serving the default `:harness` judge; executor/state conventions this spool mirrors.
+- [executors/subagent.md](../executors/subagent.md) — bridges workflow `:subagent` gates to agent runs; how a `judge-spec` gate (§8) is fulfilled inside a workflow.
+- [delegation/README.md](../delegation/README.md) — `strand agent retry` for judge recovery; harness/alias registry the judge seat resolves against; `roster-review-specs`, the seam pattern `judge-spec` mirrors.
 - `docs/writing-shared-spools.md` — the shared-spool rules this spool is held to (explicit runtime, versioned spool state, fail loudly, subcommand arg-specs).
 - `test/skein/bench_test.clj` — executable coverage via the injected fake engine (no container runtime needed).

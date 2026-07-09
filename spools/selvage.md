@@ -25,21 +25,21 @@ Watch mode is post-hoc **detection**, not rejection. It uses asynchronous `skein
 (selvage/install!)
 
 (selvage/defvocab! :shuttle
-  {:checks [{:attr "shuttle/phase"
+  {:checks [{:attr "agent-run/phase"
              :enum ["pending" "running" "done" "failed" "exhausted"]}
-            {:attr "shuttle/run" :kind :string}
-            {:attr "shuttle/max-attempts" :kind :int-string}]})
+            {:attr "agent-run/run" :kind :string}
+            {:attr "agent-run/max-attempts" :kind :int-string}]})
 
-(def run (repl/strand! "Run agent" {:shuttle/phase "running"
-                                    :shuttle/run "abc"
-                                    :shuttle/max-attempts "3"}))
+(def run (repl/strand! "Run agent" {:agent-run/phase "running"
+                                    :agent-run/run "abc"
+                                    :agent-run/max-attempts "3"}))
 
 (selvage/check (:id run))
 ;; => []
 
-(repl/update! (:id run) {:attributes {:shuttle/phase "bogus"}})
+(repl/update! (:id run) {:attributes {:agent-run/phase "bogus"}})
 (selvage/check (:id run))
-;; => [{:strand-id "..." :vocab :shuttle :attr "shuttle/phase" ...}]
+;; => [{:strand-id "..." :vocab :shuttle :attr "agent-run/phase" ...}]
 
 (selvage/violations)
 ;; asynchronous watch results, in delivery order
@@ -64,10 +64,10 @@ Each violation has this shape:
 ```clojure
 {:strand-id "..."
  :vocab :shuttle
- :attr "shuttle/phase"
+ :attr "agent-run/phase"
  :check :enum
  :value "bogus"
- :message "Attribute shuttle/phase must be one of ..."}
+ :message "Attribute agent-run/phase must be one of ..."}
 ```
 
 ## 4. Vocabulary checks
@@ -89,7 +89,7 @@ Supported check forms:
 | `{:attr s :kind k}` | If attribute `s` is present, its value must match `k`, one of `:string`, `:number`, `:boolean`, `:map`, or `:int-string`. |
 | `{:attr s :required-with t}` | If attribute `t` is present, attribute `s` must also be present. |
 
-Attributes are addressed by string names like `"shuttle/phase"`, matching how JSON-backed attributes appear at the CLI boundary. In Clojure strand maps these are keyword keys such as `:shuttle/phase`.
+Attributes are addressed by string names like `"agent-run/phase"`, matching how JSON-backed attributes appear at the CLI boundary. In Clojure strand maps these are keyword keys such as `:agent-run/phase`.
 
 ## 5. See also
 

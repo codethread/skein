@@ -114,7 +114,7 @@ Honest source: `suppress-expected-carder-orphans` / `kanban-card-orphan?` and th
 
 **Situation.** A delegated agent run failed and stayed active (failures are loud and visible on purpose). Downstream strands that `depends-on` it are now stuck — ready-looking but still blocked on the failed run. You want to find that stuck work and route it back into recovery.
 
-**Composition.** `blocked-by-failure` returns each active strand that has an active `depends-on` blocker whose `shuttle/phase` is `"failed"` or `"exhausted"`, with a `:blockers` vector carrying each blocker's id, phase, and `shuttle/error`. Feed those blocker ids to `strand agent retry`, the recovery verb.
+**Composition.** `blocked-by-failure` returns each active strand that has an active `depends-on` blocker whose `agent-run/phase` is `"failed"` or `"exhausted"`, with a `:blockers` vector carrying each blocker's id, phase, and `agent-run/error`. Feed those blocker ids to `strand agent retry`, the recovery verb.
 
 ```clojure
 (require '[skein.spools.carder :as carder])
@@ -122,7 +122,7 @@ Honest source: `suppress-expected-carder-orphans` / `kanban-card-orphan?` and th
 (carder/blocked-by-failure)
 ;; => [{:id "downstream-doc"
 ;;      :title "Downstream doc"
-;;      :blockers [{:id "impl-run" :shuttle/phase "failed" :shuttle/error "boom" ...}]}]
+;;      :blockers [{:id "impl-run" :agent-run/phase "failed" :agent-run/error "boom" ...}]}]
 ```
 
 Then hand each failed blocker to the agents spool's recovery verb (shell):
@@ -136,18 +136,18 @@ strand agent retry impl-run
 
 - **Readiness alone can't see this.** A blocked strand's `depends-on` edge points
   at a strand that is still *active* (a failed run stays active until retried or
-  killed — [agents README §3](./agents/README.md)), so the ready
+  killed — [agents README §3](./delegation/README.md)), so the ready
   frontier treats it as legitimately waiting. `blocked-by-failure` is what turns
   "waiting" into "waiting on a failure worth acting on".
 - **The row already carries the reason.** Each blocker brings its
-  `shuttle/error`, so you triage *why* it failed — a bad prompt, a flaky gate —
+  `agent-run/error`, so you triage *why* it failed — a bad prompt, a flaky gate —
   before deciding between `agent retry` (respawn) and fixing the task body first.
 - **Carder finds; the agents spool fixes.** Carder stays read-only and names the
   stuck work; `agent retry` supersedes the dead run and respawns from the task's
-  current body ([agents README §3](./agents/README.md)). The two compose:
+  current body ([agents README §3](./delegation/README.md)). The two compose:
   one reports, the other mutates.
 
-Honest source: `blocked-by-failure-reports-failed-blocker-details` in [`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj), which wires a strand to `failed` and `exhausted` blockers and asserts the row carries both blocker ids and the `shuttle/error`; the retry contract is in the [agents spool README](./agents/README.md).
+Honest source: `blocked-by-failure-reports-failed-blocker-details` in [`test/skein/spools/carder_test.clj`](../test/skein/spools/carder_test.clj), which wires a strand to `failed` and `exhausted` blockers and asserts the row carries both blocker ids and the `agent-run/error`; the retry contract is in the [agents spool README](./delegation/README.md).
 
 ---
 
@@ -211,5 +211,5 @@ Honest source: the `(report opts)` contract in [carder.md §3](./carder.md#3-sur
 - [`selvage.cookbook.md`](./selvage.cookbook.md) — the companion hygiene spool:
   where Carder reports structural drift, Selvage lints attribute *values* against
   a declared vocabulary.
-- [agents spool README](./agents/README.md) — `strand agent retry`, the recovery
+- [agents spool README](./delegation/README.md) — `strand agent retry`, the recovery
   verb the failure-blocked recipe hands off to.

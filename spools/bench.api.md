@@ -14,7 +14,7 @@
     -  [`install!`](#skein.spools.bench/install!) - Activate bench on the current runtime.
     -  [`judge-spec`](#skein.spools.bench/judge-spec) - Return a bench run's judge fulfilment seam as plain data — the one prompt source every fulfilment mode shares: {:prompt <full judge prompt> :attrs {"bench/judge" ..
     -  [`reconcile!`](#skein.spools.bench/reconcile!) - Fail entries orphaned by a weaver restart and best-effort kill their containers.
-    -  [`report`](#skein.spools.bench/report) - Return the full comparison document for a bench run (§10): per-entry normalized metrics, extraction warnings, artifact paths, and per-entry judge notes, plus the judge verdict resolved per §8 (the judge strand's <code>bench/verdict</code> attr, else a serving run's <code>shuttle/result</code>) with its <code>:verdict-source</code> (attr|run|none).
+    -  [`report`](#skein.spools.bench/report) - Return the full comparison document for a bench run (§10): per-entry normalized metrics, extraction warnings, artifact paths, and per-entry judge notes, plus the judge verdict resolved per §8 (the judge strand's <code>bench/verdict</code> attr, else a serving run's <code>agent-run/result</code>) with its <code>:verdict-source</code> (attr|run|none).
     -  [`retry!`](#skein.spools.bench/retry!) - Re-run one failed entry on a fresh workspace, incrementing <code>bench/attempt</code>.
     -  [`run!`](#skein.spools.bench/run!) - Pour and start a bench run for <code>suite-name-or-inline</code> on <code>runtime</code>.
     -  [`runs`](#skein.spools.bench/runs) - Return bench run roots with per-run entry phase counts.
@@ -62,7 +62,7 @@ Abort a bench run: kill live containers, fail outstanding entries, and close
   every entry's container by name. The judge strand is closed with
   `bench/error "aborted"` (the same marking as an aborted entry, whether the
   judge is a shuttle run or an external seam); a shuttle-run judge additionally
-  gets `shuttle/phase "superseded"` so the run engine treats it as retired.
+  gets `agent-run/phase "superseded"` so the run engine treats it as retired.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L954-L994">Source</a></sub></p>
 
 ## <a name="skein.spools.bench/about">`about`</a>
@@ -237,11 +237,11 @@ Return a bench run's judge fulfilment seam as plain data — the one prompt
   This is the seam `run!` and workflow authors both consume. `run!` pours the
   judge strand and (in `:harness` mode) its serving shuttle run straight from
   this output — the strand's `bench/judge-prompt` and a shuttle run's
-  `shuttle/prompt` come from this one builder, so they never drift. A workflow
+  `agent-run/prompt` come from this one builder, so they never drift. A workflow
   author calls `judge-spec` at pour time and maps it onto a `:subagent` gate
-  exactly as roster review specs do (`skein.spools.agents/roster-review-specs`):
-  `:prompt` becomes the gate's `shuttle/prompt`, the author picks the gate's
-  `shuttle/harness`, `:attrs` merge into the gate, and the gate depends on
+  exactly as roster review specs do (`skein.spools.delegation/roster-review-specs`):
+  `:prompt` becomes the gate's `agent-run/prompt`, the author picks the gate's
+  `agent-run/harness`, `:attrs` merge into the gate, and the gate depends on
   `:entry-ids`. Bench thus never requires or references the workflow spool.
 
   Fails loudly when the suite declares `:judge :none` (there is no judge to
@@ -273,7 +273,7 @@ Function.
 Return the full comparison document for a bench run (§10): per-entry
   normalized metrics, extraction warnings, artifact paths, and per-entry judge
   notes, plus the judge verdict resolved per §8 (the judge strand's
-  `bench/verdict` attr, else a serving run's `shuttle/result`) with its
+  `bench/verdict` attr, else a serving run's `agent-run/result`) with its
   `:verdict-source` (attr|run|none). A pure read.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L1153-L1186">Source</a></sub></p>
 

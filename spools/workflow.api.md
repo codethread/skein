@@ -267,7 +267,7 @@ Close the current ready non-checkpoint workflow step for run-id and return
 
   opts may include `:step` (materialized strand id) to select among multiple
   ready steps; without it, exactly one step must be ready. opts may also
-  include `:notes` (string, stored as "workflow/notes") and `:attributes`
+  include `:notes` (string, stored as "workflow/outcome-notes") and `:attributes`
   (map merged onto the closed step). A non-blank `:by` is recorded as
   "workflow/outcome-by" on any step it is supplied for, but is only required
   when closing a gate step (one built with `gate`).
