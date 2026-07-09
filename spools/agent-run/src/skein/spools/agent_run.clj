@@ -11,7 +11,7 @@
   Runs survive weaver crashes because the strands are durable: `reconcile!`
   respawns still-active running strands on install, bounded by
   `agent-run/max-attempts`. Run memory is append-only note strands linked by
-  `notes` annotation edges plus `shuttle/note-for` attributes.
+  `notes` annotation edges plus `note/for` attributes.
 
   A run may continue a predecessor's harness session: `spawn-run!` accepts
   `:resume <predecessor-run-id>`, and a harness def declares a `:resume` argv
@@ -216,11 +216,11 @@
   (attr-get strand (keyword "agent-run" k)))
 
 (defn- nattr
-  "Read the `shuttle/<k>` note-memory attribute from a normalized strand. Note
+  "Read the `note/<k>` note-memory attribute from a normalized strand. Note
   strands carry their own attribute family, distinct from the run attributes
   `sattr` reads."
   [strand k]
-  (attr-get strand (keyword "shuttle" k)))
+  (attr-get strand (keyword "note" k)))
 
 (defn- attr
   "Read a normalized strand attribute, tolerating keyword- or string-keyed maps."
@@ -1626,7 +1626,7 @@
   "Return the delegated target for `run` given its parent-of source ids,
   excluding spawned-by provenance."
   [run parents]
-  (or (attr run :treadle/gate)
+  (or (attr run :gate/step)
       (let [spawned-by (sattr run "spawned-by")]
         (first (remove #(= spawned-by %) parents)))))
 
@@ -1685,7 +1685,7 @@
                                (if active [:and [:= :state "active"] run-query] run-query)
                                {})
          ;; A run satisfies a --for filter two ways: a structural parent-of edge
-         ;; from the target, or treadle/gate provenance stamped on the run itself
+         ;; from the target, or gate/step provenance stamped on the run itself
          ;; (treadle-delegated runs carry no parent-of edge — treadle.md §2). Narrow
          ;; to both up front (one indexed edge lookup plus a bulk attr check on the
          ;; already-loaded run strands) rather than summarising every run.
@@ -1694,7 +1694,7 @@
                                                 (graph/outgoing-edges (rt) [for] "parent-of")))]
                          (filterv (fn [run]
                                     (or (children (:id run))
-                                        (= for (attr run :treadle/gate))))
+                                        (= for (attr run :gate/step))))
                                   run-strands))
                        run-strands)
          parents (parents-by-run (mapv :id run-strands) incoming-edges-fn)
@@ -1787,7 +1787,7 @@
   "Append an immutable note strand to `target-id`'s memory.
 
   The note is born closed (it is memory, not work), carries
-  `shuttle/note-for`, optional `shuttle/note-by` and `shuttle/round`
+  `note/for`, optional `note/by` and `note/round`
   attributes, and a `notes` annotation edge to the target."
   ([target-id text] (note! target-id text {}))
   ([target-id text {:keys [by round]}]
@@ -1797,14 +1797,14 @@
      (fail! "Note target strand not found" {:id target-id}))
    (let [note (api/add (rt) {:title (truncate text 72)
                              :state "closed"
-                             ;; shuttle/at carries sub-second precision; the
+                             ;; note/at carries sub-second precision; the
                              ;; core created_at column only has seconds, which
                              ;; cannot order a burst of notes.
-                             :attributes (cond-> {"shuttle/note-for" target-id
-                                                  "shuttle/note" text
-                                                  "shuttle/at" (now)}
-                                           by (assoc "shuttle/note-by" by)
-                                           round (assoc "shuttle/round" round))
+                             :attributes (cond-> {"note/for" target-id
+                                                  "note/text" text
+                                                  "note/at" (now)}
+                                           by (assoc "note/by" by)
+                                           round (assoc "note/round" round))
                              :edges [{:type "notes" :to target-id}]})]
      {:id (:id note) :note-for target-id})))
 
@@ -1813,15 +1813,15 @@
   ([target-id] (notes target-id {}))
   ([target-id {:keys [round]}]
    (->> (api/list (rt)
-                  (cond-> [:and [:= [:attr "shuttle/note-for"] target-id]]
-                    round (conj [:= [:attr "shuttle/round"] round]))
+                  (cond-> [:and [:= [:attr "note/for"] target-id]]
+                    round (conj [:= [:attr "note/round"] round]))
                   {})
         (sort-by (juxt #(nattr % "at") :created_at :id))
         (mapv (fn [note]
                 (cond-> {:id (:id note)
-                         :note (nattr note "note")
+                         :note (nattr note "text")
                          :at (or (nattr note "at") (:created_at note))}
-                  (nattr note "note-by") (assoc :by (nattr note "note-by"))
+                  (nattr note "by") (assoc :by (nattr note "by"))
                   (nattr note "round") (assoc :round (nattr note "round"))))))))
 
 ;; ---------------------------------------------------------------------------

@@ -121,12 +121,12 @@
         (let [cwd-review (agents/review! (:id target) {:reviewers [{:harness :sh :focus "cwd pass"}]
                                                        :cwd "/tmp/claude/review-cwd"})
               run (api/show rt (first (:reviewers cwd-review)))]
-          (is (= "/tmp/claude/review-cwd" (get-in run [:attributes :shuttle/cwd]))
+          (is (= "/tmp/claude/review-cwd" (get-in run [:attributes :agent-run/cwd]))
               "review --cwd rides onto each reviewer run"))
         (doseq [run-id (:reviewers review)]
           (let [run (api/show rt run-id)]
             (is (= (:id target) (get-in run [:attributes :review/target])))
-            (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "Review contract"))))))))
+            (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "Review contract"))))))))
 
 (deftest review-consumes-workspace-default-contract
   (with-agents
@@ -136,12 +136,12 @@
         (let [target (api/add rt {:title "Default-contract target"})
               review (agents/review! (:id target) {:reviewers [{:harness :sh :focus "policy"}]})
               run (api/show rt (first (:reviewers review)))]
-          (is (str/includes? (get-in run [:attributes :shuttle/prompt])
+          (is (str/includes? (get-in run [:attributes :agent-run/prompt])
                              "Workspace policy contract"))
           (let [review* (agents/review! (:id target) {:reviewers [{:harness :sh :focus "override"}]
                                                       :contract "Explicit contract"})
                 run* (api/show rt (first (:reviewers review*)))]
-            (is (str/includes? (get-in run* [:attributes :shuttle/prompt]) "Explicit contract"))))
+            (is (str/includes? (get-in run* [:attributes :agent-run/prompt]) "Explicit contract"))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
                               (shuttle/set-default-review-contract! "  ")))
         (finally
@@ -212,7 +212,7 @@
           (is (= 2 (count runs)))
           (is (= ["test-sleeps" "docs"]
                  (mapv #(get-in % [:attributes :review/focus]) runs)))
-          (let [[sleeps docs] (mapv #(get-in % [:attributes :shuttle/prompt]) runs)]
+          (let [[sleeps docs] (mapv #(get-in % [:attributes :agent-run/prompt]) runs)]
             (is (str/includes? sleeps "Flag sleeps and arbitrary timeouts in tests."))
             (is (str/includes? sleeps "Scope: confine this review to test files"))
             (is (str/includes? sleeps (shuttle/default-review-contract-text))
@@ -223,10 +223,10 @@
           (is (every? #(= "repo" (get-in % [:attributes :review/roster]))
                       (conj runs synth))))
         (testing "roster reviews synthesize by default with the declared harness and base contract"
-          (is (= "sh" (get-in synth [:attributes :shuttle/harness])))
-          (is (str/includes? (get-in synth [:attributes :shuttle/prompt])
+          (is (= "sh" (get-in synth [:attributes :agent-run/harness])))
+          (is (str/includes? (get-in synth [:attributes :agent-run/prompt])
                              (shuttle/default-review-contract-text)))
-          (is (not (str/includes? (get-in synth [:attributes :shuttle/prompt])
+          (is (not (str/includes? (get-in synth [:attributes :agent-run/prompt])
                                   "Flag sleeps and arbitrary timeouts")))
           (is (= (set (:reviewers review))
                  (->> (:edges (graph/subgraph rt [(:id synth)] {:type "depends-on"}))
@@ -238,7 +238,7 @@
             {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
           (let [review* (agents/review! (:id target) {:roster :undeclared})
                 synth* (api/show rt (:synthesizer review*))]
-            (is (= "sh" (get-in synth* [:attributes :shuttle/harness])))))))))
+            (is (= "sh" (get-in synth* [:attributes :agent-run/harness])))))))))
 
 (deftest roster-review-specs-are-the-single-prompt-source
   (with-agents
@@ -260,9 +260,9 @@
               "synthesis prompt is buildable before any run exists"))
         (testing "review! spawns exactly the spec prompts and attrs"
           (is (= (mapv :prompt (:reviewers specs))
-                 (mapv #(get-in % [:attributes :shuttle/prompt]) runs)))
+                 (mapv #(get-in % [:attributes :agent-run/prompt]) runs)))
           (is (= (get-in specs [:synthesizer :prompt])
-                 (get-in synth [:attributes :shuttle/prompt])))
+                 (get-in synth [:attributes :agent-run/prompt])))
           (doseq [[spec run] (map vector (:reviewers specs) runs)
                   [k v] (:attrs spec)]
             (is (= v (get-in run [:attributes (keyword k)])))))
@@ -285,7 +285,7 @@
             (is (= :inline (:roster inline-specs)))
             (is (s/valid? :skein.spools.delegation/review-specs inline-specs))
             (is (= "inline" (get-in run [:attributes :review/roster])))
-            (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "One-off pass."))
+            (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "One-off pass."))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
                                   (agents/roster-review-specs {:reviewers []} {:target (:id target)})))))
         (testing "specs fail loudly"
@@ -407,7 +407,7 @@
         (testing "review! threads the change context onto spawned runs"
           (let [review (agents/review! (:id target) {:roster :ctx :change-context change-context})
                 run (api/show rt (first (:reviewers review)))]
-            (is (str/includes? (get-in run [:attributes :shuttle/prompt]) "Commit range: main..HEAD"))))
+            (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "Commit range: main..HEAD"))))
         (testing "malformed change context fails loudly against its spec"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"change-context does not conform"
                                 (agents/roster-review-specs :ctx {:target (:id target)
@@ -472,7 +472,7 @@
   {:argv ["sh" "-c" "printf '{\"result\":\"ok\",\"session_id\":\"sess-abc\"}'" "session-fix"]
    :parse :claude-json
    :preamble? false
-   :resume ["--resume" :shuttle/session-id]})
+   :resume ["--resume" :agent-run/session-id]})
 
 (def ^:private session-fix-no-resume (dissoc session-fix :resume))
 
@@ -568,12 +568,12 @@
         (testing "turn 2 barriers on every turn-1 run"
           (doseq [run-id row2]
             (is (= (set row1) (deps-of run-id)))))
-        (testing "turn 2 threads each seat onto its own predecessor via shuttle/resumes"
-          (is (= (first row1) (get-in (api/show rt (first row2)) [:attributes :shuttle/resumes])))
-          (is (= (second row1) (get-in (api/show rt (second row2)) [:attributes :shuttle/resumes]))))
+        (testing "turn 2 threads each seat onto its own predecessor via agent-run/resumes"
+          (is (= (first row1) (get-in (api/show rt (first row2)) [:attributes :agent-run/resumes])))
+          (is (= (second row1) (get-in (api/show rt (second row2)) [:attributes :agent-run/resumes]))))
         (testing "spawned prompts select the form and resolve the board placeholder"
-          (let [p1 (get-in (api/show rt (first row1)) [:attributes :shuttle/prompt])
-                p2 (get-in (api/show rt (first row2)) [:attributes :shuttle/prompt])]
+          (let [p1 (get-in (api/show rt (first row1)) [:attributes :agent-run/prompt])
+                p2 (get-in (api/show rt (first row2)) [:attributes :agent-run/prompt])]
             (is (str/includes? p1 "You are seat"))
             (is (str/includes? p2 "Continuing as seat"))
             (is (not (str/includes? p2 "«panel-board»")))
@@ -705,7 +705,7 @@
                      (set (map :to_strand_id (:edges (graph/subgraph rt [council])))))))
             (testing "the poll-loop choreography is gone; the topic remains"
               (doseq [run-id (concat row1 row2 [synthesizer])]
-                (let [p (get-in (api/show rt run-id) [:attributes :shuttle/prompt])]
+                (let [p (get-in (api/show rt run-id) [:attributes :agent-run/prompt])]
                   (is (not (str/includes? p "poll")))
                   (is (not (str/includes? p "sleep")))
                   (is (str/includes? p "test topic")))))
@@ -718,11 +718,11 @@
                                                   :seats [{:name "skeptic" :harness :sh :brief "Argue against."}
                                                           {:name "advocate" :harness :sh :brief "Argue for."}]})
                 row1 (first turns)
-                prompts (mapv #(get-in (api/show rt %) [:attributes :shuttle/prompt]) row1)]
+                prompts (mapv #(get-in (api/show rt %) [:attributes :agent-run/prompt]) row1)]
             (is (= 2 (count row1)))
             (is (some #(str/includes? % "Your assigned perspective: Argue against.") prompts))
             (is (some #(str/includes? % "Your assigned perspective: Argue for.") prompts))
-            (is (every? #(= "sh" (get-in (api/show rt %) [:attributes :shuttle/harness])) row1))))
+            (is (every? #(= "sh" (get-in (api/show rt %) [:attributes :agent-run/harness])) row1))))
         (testing "council fails loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
                                 (agents/council! "  " {:harness :sh})))
@@ -774,7 +774,7 @@
           (is (= (-> (io/file (get-in rt [:metadata :config-dir]))
                      .getParentFile
                      .getCanonicalPath)
-                 (get-in run [:attributes :shuttle/cwd]))
+                 (get-in run [:attributes :agent-run/cwd]))
               "agents supplies workspace root explicitly, so harness :cwd cannot win"))
         (let [gate (api/add rt {:title "gate"})]
           (shuttle/spawn-run! {:harness :sh :prompt "echo later" :parent (:id active) :depends-on [(:id gate)]})
@@ -871,16 +871,16 @@
                                            {:type "parent-of" :to (:id review-task)}]})
         (testing "a spawn --for helper is stamped non-serving and does not block delegate"
           (let [helper (agents/agent-op {:op/argv ["spawn" "--harness" "sh" "--prompt" "echo recon" "--for" (:id spawn-task)]})]
-            (is (= "false" (get-in (api/show rt (:id helper)) [:attributes :shuttle/serves]))
+            (is (= "false" (get-in (api/show rt (:id helper)) [:attributes :agent-run/serves]))
                 "spawn stamps its run non-serving")
             (let [delegated (agents/agent-op {:op/argv ["delegate" (:id spawn-task)]})]
               (is (= (:id spawn-task) (:task delegated))
                   "the recon helper does not block delegating the task")
-              (is (nil? (get-in (api/show rt (get-in delegated [:run :id])) [:attributes :shuttle/serves]))
+              (is (nil? (get-in (api/show rt (get-in delegated [:run :id])) [:attributes :agent-run/serves]))
                   "the delegation run itself serves the task (no non-serving marker)"))))
         (testing "review runs are non-serving, so delegate --ready still delegates the reviewed task"
           (let [review (agents/review! (:id review-task) {:reviewers [{:harness :sh :focus "recon"}]})]
-            (is (every? #(= "false" (get-in (api/show rt %) [:attributes :shuttle/serves]))
+            (is (every? #(= "false" (get-in (api/show rt %) [:attributes :agent-run/serves]))
                         (:reviewers review))
                 "reviewer runs are stamped non-serving")
             (let [ready (agents/agent-op {:op/argv ["delegate" "--ready" (:id plan)]})]
@@ -910,40 +910,40 @@
               dep-edges (:edges (graph/subgraph rt [new-id] {:type "depends-on"}))]
           (is (= (:id task) (:for summary)))
           (is (= (:id spawner) (:spawned-by summary)))
-          (is (= "/tmp/retry-cwd" (get-in new-run [:attributes :shuttle/cwd])))
-          (is (= 5 (get-in new-run [:attributes :shuttle/max-attempts])))
+          (is (= "/tmp/retry-cwd" (get-in new-run [:attributes :agent-run/cwd])))
+          (is (= 5 (get-in new-run [:attributes :agent-run/max-attempts])))
           (is (some #(= (:id blocker) (:to_strand_id %)) dep-edges)))))))
 
 (deftest retry-by-task-targets-serving-run-not-helper
   ;; Regression (card 0nd97): retry <task-id> means "retry the task's own work",
   ;; so it resolves against the failed SERVING run and never lets a failed
-  ;; read-only helper (recon/review, shuttle/serves=false) shadow it.
+  ;; read-only helper (recon/review, agent-run/serves=false) shadow it.
   (with-agents
     (fn [rt]
       (let [task (api/add rt {:title "served + reconned" :attributes {:body "body" :harness "sh"}})
             helper (shuttle/spawn-run! {:harness :sh :prompt "exit 3" :parent (:id task)
-                                        :attrs {"shuttle/serves" "false"}})
+                                        :attrs {"agent-run/serves" "false"}})
             serving (shuttle/spawn-run! {:harness :sh :prompt "exit 3" :parent (:id task)})]
         (await-phase rt (:id helper) #{"failed"})
         (await-phase rt (:id serving) #{"failed"})
         (let [retried (agents/agent-op {:op/argv ["retry" (:id task)]})]
           (is (= (:id serving) (:superseded retried))
               "retry-by-task supersedes the failed serving run, not the helper")
-          (is (= "superseded" (get-in (api/show rt (:id serving)) [:attributes :shuttle/phase])))
-          (is (= "failed" (get-in (api/show rt (:id helper)) [:attributes :shuttle/phase]))
+          (is (= "superseded" (get-in (api/show rt (:id serving)) [:attributes :agent-run/phase])))
+          (is (= "failed" (get-in (api/show rt (:id helper)) [:attributes :agent-run/phase]))
               "the failed non-serving helper is left untouched"))))))
 
 (deftest malformed-serves-value-fails-loudly
-  ;; Regression (card b4nml): shuttle/serves is a closed stamp — absent/"true"
+  ;; Regression (card b4nml): agent-run/serves is a closed stamp — absent/"true"
   ;; serves, "false" does not, and any other value is malformed and must fail
   ;; loudly rather than silently reclassifying a helper as serving.
   (with-agents
     (fn [rt]
       (let [task (api/add rt {:title "malformed helper" :attributes {:body "body" :harness "sh"}})
             bad (shuttle/spawn-run! {:harness :sh :prompt "exit 3" :parent (:id task)
-                                     :attrs {"shuttle/serves" "maybe"}})]
+                                     :attrs {"agent-run/serves" "maybe"}})]
         (await-phase rt (:id bad) #{"failed"})
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shuttle/serves value"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid agent-run/serves value"
                               (agents/agent-op {:op/argv ["retry" (:id task)]})))))))
 
 (deftest retry-continuity-preserves-severs-and-guards-resume
@@ -955,18 +955,18 @@
       (shuttle/defharness! :session-fix session-fix)
       (let [make-pred (fn [] (:id (api/add rt {:title "predecessor turn"
                                                :state "closed"
-                                               :attributes {"shuttle/run" "true"
-                                                            "shuttle/harness" "session-fix"
-                                                            "shuttle/session-id" "sess-abc"
-                                                            "shuttle/phase" "done"}})))
+                                               :attributes {"agent-run/run" "true"
+                                                            "agent-run/harness" "session-fix"
+                                                            "agent-run/session-id" "sess-abc"
+                                                            "agent-run/phase" "done"}})))
             make-failed (fn [pred extra]
                           (:id (api/add rt {:title "resuming turn"
-                                            :attributes (merge {"shuttle/run" "true"
-                                                                "shuttle/harness" "session-fix"
-                                                                "shuttle/prompt" "CONTINUATION prompt"
+                                            :attributes (merge {"agent-run/run" "true"
+                                                                "agent-run/harness" "session-fix"
+                                                                "agent-run/prompt" "CONTINUATION prompt"
                                                                 "panel/fresh-prompt" "FULLBRIEF prompt"
-                                                                "shuttle/resumes" pred
-                                                                "shuttle/phase" "failed"}
+                                                                "agent-run/resumes" pred
+                                                                "agent-run/phase" "failed"}
                                                                extra)})))]
         (testing "a plain retry re-resumes the same predecessor on the continuation prompt"
           (let [pred (make-pred)
@@ -974,8 +974,8 @@
                 retried (agents/agent-op {:op/argv ["retry" failed]})
                 new-run (api/show rt (get-in retried [:run :id]))]
             (is (= failed (:superseded retried)))
-            (is (= pred (get-in new-run [:attributes :shuttle/resumes])))
-            (is (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "CONTINUATION prompt"))
+            (is (= pred (get-in new-run [:attributes :agent-run/resumes])))
+            (is (str/includes? (get-in new-run [:attributes :agent-run/prompt]) "CONTINUATION prompt"))
             (is (= "FULLBRIEF prompt" (get-in new-run [:attributes :panel/fresh-prompt]))
                 "the full-brief form carries forward for a later --fresh")))
         (testing "--fresh severs the linkage and cold-starts on the full-brief prompt"
@@ -983,19 +983,19 @@
                 failed (make-failed pred {})
                 retried (agents/agent-op {:op/argv ["retry" failed "--fresh"]})
                 new-run (api/show rt (get-in retried [:run :id]))]
-            (is (nil? (get-in new-run [:attributes :shuttle/resumes])))
-            (is (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "FULLBRIEF prompt"))
-            (is (not (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "CONTINUATION prompt")))))
+            (is (nil? (get-in new-run [:attributes :agent-run/resumes])))
+            (is (str/includes? (get-in new-run [:attributes :agent-run/prompt]) "FULLBRIEF prompt"))
+            (is (not (str/includes? (get-in new-run [:attributes :agent-run/prompt]) "CONTINUATION prompt")))))
         (testing "a resume-classed failure refuses a plain retry and names --fresh"
           (let [pred (make-pred)
-                failed (make-failed pred {"shuttle/error-class" "resume"})]
+                failed (make-failed pred {"agent-run/error-class" "resume"})]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fresh"
                                   (agents/agent-op {:op/argv ["retry" failed]})))
             (testing "--fresh recovers it"
               (let [retried (agents/agent-op {:op/argv ["retry" failed "--fresh"]})
                     new-run (api/show rt (get-in retried [:run :id]))]
-                (is (nil? (get-in new-run [:attributes :shuttle/resumes])))
-                (is (str/includes? (get-in new-run [:attributes :shuttle/prompt]) "FULLBRIEF prompt"))))))))))
+                (is (nil? (get-in new-run [:attributes :agent-run/resumes])))
+                (is (str/includes? (get-in new-run [:attributes :agent-run/prompt]) "FULLBRIEF prompt"))))))))))
 
 (deftest retry-preserves-panel-review-structural-attrs
   ;; a failed panel/review run is hand-built so the assertion is deterministic
@@ -1004,10 +1004,10 @@
   (with-agents
     (fn [rt]
       (let [failed (:id (api/add rt {:title "panel seat turn"
-                                     :attributes {"shuttle/run" "true"
-                                                  "shuttle/harness" "sh"
-                                                  "shuttle/prompt" "seat brief"
-                                                  "shuttle/phase" "failed"
+                                     :attributes {"agent-run/run" "true"
+                                                  "agent-run/harness" "sh"
+                                                  "agent-run/prompt" "seat brief"
+                                                  "agent-run/phase" "failed"
                                                   "review/target" "tgt-1"
                                                   "review/pass" "panel-abc123"
                                                   "review/roster" "repo"
@@ -1015,9 +1015,9 @@
                                                   "panel/seat" "skeptic"
                                                   "panel/turn" "2"
                                                   ;; a non-serving helper stays non-serving across retry
-                                                  "shuttle/serves" "false"
+                                                  "agent-run/serves" "false"
                                                   ;; a lifecycle attr the engine re-derives; it must NOT ride along
-                                                  "shuttle/result" "stale old result"}}))
+                                                  "agent-run/result" "stale old result"}}))
             retried (agents/agent-op {:op/argv ["retry" failed]})
             attrs (:attributes (api/show rt (get-in retried [:run :id])))]
         (is (= "tgt-1" (:review/target attrs)))
@@ -1026,9 +1026,9 @@
         (is (= "skeptic" (:review/focus attrs)))
         (is (= "skeptic" (:panel/seat attrs)))
         (is (= "2" (:panel/turn attrs)))
-        (is (= "false" (:shuttle/serves attrs))
+        (is (= "false" (:agent-run/serves attrs))
             "a retried non-serving helper stays non-serving")
-        (is (not= "stale old result" (:shuttle/result attrs))
+        (is (not= "stale old result" (:agent-run/result attrs))
             "engine lifecycle attrs are re-stamped, not carried from the superseded run")))))
 
 (deftest await-under-and-retry-workflow
@@ -1115,7 +1115,7 @@
   [rt id]
   (test-support/poll-until
    #(let [s (api/show rt id)]
-      (when (get-in s [:attributes (keyword "shuttle" "handle.pid")]) s))
+      (when (get-in s [:attributes (keyword "agent-run" "handle.pid")]) s))
    {:on-timeout #(throw (ex-info "timeout waiting handle" {:id id :strand (api/show rt id)}))}))
 
 (deftest backends-verb-lists-registered-backends
@@ -1148,13 +1148,13 @@
           (let [d (agents/agent-op {:op/argv ["delegate" (:id task) "--interactive" "--backend" "fake-mux"]})
                 run-id (get-in d [:run :id])
                 running (await-handle-pid rt run-id)
-                pid (get-in running [:attributes (keyword "shuttle" "handle.pid")])]
+                pid (get-in running [:attributes (keyword "agent-run" "handle.pid")])]
             (testing "ps carries the attach command"
               (let [summary (first (filter #(= run-id (:id %)) (agents/agent-op {:op/argv ["ps" "--active"]})))]
                 (is (= "interactive" (:mode summary)))
                 (is (= (str "echo attach " pid) (:attach summary)))))
             (testing "the session prompt carries the interactive pairing framing"
-              (is (clojure.string/includes? (get-in running [:attributes :shuttle/prompt])
+              (is (clojure.string/includes? (get-in running [:attributes :agent-run/prompt])
                                             "working WITH the user")))
             (testing "closing the task reaps the session run"
               (api/update rt (:id task) {:state "closed"})
@@ -1174,8 +1174,8 @@
         (await-phase rt run-id #{"failed"})
         (let [retried (agents/agent-op {:op/argv ["retry" (:id task)]})
               new-run (await-handle-pid rt (get-in retried [:run :id]))]
-          (is (= "interactive" (get-in new-run [:attributes :shuttle/mode])))
-          (is (= "fake-mux" (get-in new-run [:attributes :shuttle/backend])))
+          (is (= "interactive" (get-in new-run [:attributes :agent-run/mode])))
+          (is (= "fake-mux" (get-in new-run [:attributes :agent-run/backend])))
           (agents/agent-op {:op/argv ["kill" (:id new-run)]}))))))
 
 (deftest state-shape-matches-declared-version

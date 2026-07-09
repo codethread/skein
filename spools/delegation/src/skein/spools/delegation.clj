@@ -36,7 +36,7 @@
 
 (defn- sattr
   [s k]
-  (attr-get s (keyword "shuttle" k)))
+  (attr-get s (keyword "agent-run" k)))
 
 (defn- parse-int!
   [flag value]
@@ -136,7 +136,7 @@
                              |frozen. There is deliberately no panel verb: compose panels from
                              |trusted Clojure or reach for them through these presets.")
               :scheduler "depends-on readiness is the only scheduler: a pending run starts the moment its blockers close."
-              :run-result "A successful run closes itself with the worker's final message in shuttle/result. A failed run stays active, loud, and visible until retry or kill."
+              :run-result "A successful run closes itself with the worker's final message in agent-run/result. A failed run stays active, loud, and visible until retry or kill."
               :phase-enum ["pending" "running" "done" "failed" "exhausted" "superseded"]
               :terminal-phases ["done" "failed" "exhausted" "superseded"]
               :active-terminal-phases ["failed" "exhausted"]}
@@ -209,7 +209,7 @@
                                |scrollback) — a coordinator peek without attaching. Finished
                                |interactive runs return the transcript persisted at teardown; err
                                |is omitted for interactive runs.")
-                  :fails ["missing run id" "run has no shuttle/log" "log file missing" "malformed --tail" "interactive run with no capture op"]
+                  :fails ["missing run id" "run has no agent-run/log" "log file missing" "malformed --tail" "interactive run with no capture op"]
                   :returns {"id" "run id" "out" {"path" "string" "text" "string"} "err" {"path" "string" "text" "string (headless only)"}}}
            :kill {:group "engine"
                   :help-topic "strand help agent"
@@ -253,7 +253,7 @@
                                    |pending/running is active, failed/exhausted wants retry, done
                                    |must be verified and closed. Read-only helper runs (recon
                                    |spawns, reviewers, panel/council seats — stamped
-                                   |shuttle/serves=false) never count, so reviewing or reconning a
+                                   |agent-run/serves=false) never count, so reviewing or reconning a
                                    |task never blocks delegating it.
                                    |
                                    |--interactive opens a live multiplexer session for the task
@@ -510,7 +510,7 @@
 (defn- serving-run?
   "True unless the run is a stamped read-only helper. A run serves its --for
   target — counts as a delegation of that task's work — by default; recon
-  spawns, reviewers, and panel/council seats stamp shuttle/serves=false so they
+  spawns, reviewers, and panel/council seats stamp agent-run/serves=false so they
   never gate delegation of the task they hang under. The stamp is closed: absent
   or \"true\" serves, \"false\" does not, and any other value fails loudly rather
   than silently reclassifying a malformed helper as serving."
@@ -518,12 +518,12 @@
   (case (sattr s "serves")
     (nil "true") true
     "false" false
-    (fail! "run has an invalid shuttle/serves value" {:run (:id s) :serves (sattr s "serves")})))
+    (fail! "run has an invalid agent-run/serves value" {:run (:id s) :serves (sattr s "serves")})))
 
 ;; Attrs stamped on a spawned run to mark it a non-serving read-only helper.
 ;; Merged into every recon/review/panel run's :attrs so the delegation seam can
 ;; distinguish helpers from delegations of the task's own work.
-(def ^:private non-serving-attrs {"shuttle/serves" "false"})
+(def ^:private non-serving-attrs {"agent-run/serves" "false"})
 
 (defn- serving-runs
   "Serving, non-superseded runs hanging under a task: the runs that gate
@@ -682,7 +682,7 @@
             {:id run-id :out {:path path :text (clip text)}})
           (let [p (or (sattr run "log") (fail! "Run has no captured transcript" {:id run-id}))]
             {:id run-id :out {:path p :text (rf p)}}))
-        (let [p (or (sattr run "log") (fail! "Run has no shuttle/log" {:id run-id}))]
+        (let [p (or (sattr run "log") (fail! "Run has no agent-run/log" {:id run-id}))]
           {:id run-id :out {:path p :text (rf p)} :err {:path (str/replace p #"\.out$" ".err") :text (rf (str/replace p #"\.out$" ".err"))}})))))
 
 ;; ---------------------------------------------------------------------------
@@ -1039,7 +1039,7 @@
   This is the one prompt-building source for roster reviews. `review!` spawns
   shuttle runs from these specs, and workflow authors map them onto
   `:subagent` gates without re-implementing the contract layering: `:harness`
-  and `:prompt` become the gate's `shuttle/harness`/`shuttle/prompt`,
+  and `:prompt` become the gate's `agent-run/harness`/`agent-run/prompt`,
   `:attrs` merge into the gate's attributes, and the synthesizer gate
   depends on every reviewer gate. Specs are pure data built from the
   roster and the workspace base review contract; `:target` is the strand id
@@ -1392,7 +1392,7 @@
                    :fresh (:id (api/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
                                               :attributes (cond-> {"panel/role" "panel"
                                                                    "review/pass" (:review-pass specs)}
-                                                            spawned-by (assoc "shuttle/spawned-by" spawned-by))})))
+                                                            spawned-by (assoc "agent-run/spawned-by" spawned-by))})))
         resolve-board (fn [s] (str/replace (str s) board-placeholder board-id))
         spawn-run (fn [spec resume-run extra]
                     (let [;; a resuming turn launches on the short continuation
@@ -1731,7 +1731,7 @@
    "review/synthesis" "panel/seat" "panel/turn"
    ;; a retried non-serving helper stays non-serving, so its retry never gates
    ;; delegation of the target it was only reviewing
-   "shuttle/serves"])
+   "agent-run/serves"])
 
 (defn- op-retry [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--cwd" :single "--prompt" :single "--fresh" :bool})
@@ -1773,7 +1773,7 @@
                             (and preserve-resume? fresh-prompt) (assoc "panel/fresh-prompt" fresh-prompt))
             extra (get flags "--prompt")
             append-extra (fn [p] (str p (when extra (str "\n\n" extra))))]
-        (api/update (rt) (:id run) {:state "closed" :attributes {"shuttle/phase" "superseded"}})
+        (api/update (rt) (:id run) {:state "closed" :attributes {"agent-run/phase" "superseded"}})
         (let [summary (shuttle/run-summary run)
               task (when task-id (api/show (rt) task-id))
               served-target (or task-id (:for summary))
@@ -2047,4 +2047,4 @@
      :pattern (patterns/register-pattern! runtime 'agent-plan
                                           "Create a feature strand plus task/review children for agent work."
                                           'skein.spools.delegation/agent-plan ::agent-plan-input)
-     :query (graph/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "shuttle/run"] "true"] [:in [:attr "shuttle/phase"] ["failed" "exhausted"]]])}))
+     :query (graph/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "agent-run/run"] "true"] [:in [:attr "agent-run/phase"] ["failed" "exhausted"]]])}))

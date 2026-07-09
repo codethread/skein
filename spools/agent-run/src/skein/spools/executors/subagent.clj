@@ -74,9 +74,9 @@
   (first (api/list (rt)
                    [:and [:= [:attr "gate/step"] gate-id]
                     [:missing [:attr "gate/delivered"]]
-                    [:not [:= [:attr "shuttle/phase"] "failed"]]
-                    [:not [:= [:attr "shuttle/phase"] "exhausted"]]
-                    [:not [:= [:attr "shuttle/phase"] "superseded"]]]
+                    [:not [:= [:attr "agent-run/phase"] "failed"]]
+                    [:not [:= [:attr "agent-run/phase"] "exhausted"]]
+                    [:not [:= [:attr "agent-run/phase"] "superseded"]]]
                    {})))
 
 (defn- ready-gate? [run-id gate-id]
@@ -99,8 +99,8 @@
           (do
             (workflow/complete! workflow-run-id
                                 (cond-> {:step gate-id :by run-id}
-                                  (non-blank (attr run :shuttle/result))
-                                  (assoc :notes (attr run :shuttle/result))))
+                                  (non-blank (attr run :agent-run/result))
+                                  (assoc :notes (attr run :agent-run/result))))
             (stamp! run-id {"gate/delivered" "true"}))
 
           :else
@@ -118,20 +118,20 @@
 
 (defn- finished-undelivered-runs []
   ;; Only a genuinely successful run delivers a gate. A run's result is the
-  ;; worker's report, so `shuttle/phase "done"` (which shuttle records only for a
+  ;; worker's report, so `agent-run/phase "done"` (which shuttle records only for a
   ;; non-blank result) is the delivery gate. Any other closed phase — notably a
   ;; `superseded` run left by `agent retry` — is a dead worker whose (blank or
   ;; stale) result must never silently complete the gate; recovery re-spawns a
   ;; fresh run instead.
   (api/list (rt)
             [:and [:= :state "closed"]
-             [:= [:attr "shuttle/phase"] "done"]
+             [:= [:attr "agent-run/phase"] "done"]
              [:exists [:attr "gate/step"]]
              [:missing [:attr "gate/delivered"]]]
             {}))
 
 (defn- gate-prompt [gate]
-  (or (non-blank (attr gate :shuttle/prompt))
+  (or (non-blank (attr gate :agent-run/prompt))
       (non-blank (attr gate :workflow/instruction))
       (non-blank (attr gate :description))
       (non-blank (:title gate))))
@@ -150,14 +150,14 @@
     (string? v) (try
                   (Long/parseLong v)
                   (catch NumberFormatException _
-                    (fail! "shuttle/max-attempts must be an integer" {:value v})))
-    :else (fail! "shuttle/max-attempts must be an integer" {:value v})))
+                    (fail! "agent-run/max-attempts must be an integer" {:value v})))
+    :else (fail! "agent-run/max-attempts must be an integer" {:value v})))
 
 (defn- stamp-run-on-gate!
   "Stamp gate-id with its current delegated run: the `gate/run` attribute and a
   `delegates` edge, repointing every prior delegated run's provenance to this one.
 
-  `stalled-gates` reaches a run's `shuttle/phase` through the gate's `delegates`
+  `stalled-gates` reaches a run's `agent-run/phase` through the gate's `delegates`
   edges because the query DSL has no attr->id join back to `gate/run`. A
   cleared-and-respawned gate keeps its old `delegates` edge to the dead run, so
   without repointing the query would keep surfacing a healthy gate while
@@ -186,13 +186,13 @@
       (try
         (if (ensure-run-stamp! gate)
           nil
-          (let [harness (or (non-blank (attr gate :shuttle/harness))
-                            (fail! "subagent gate requires shuttle/harness" {:gate (:id gate)}))
+          (let [harness (or (non-blank (attr gate :agent-run/harness))
+                            (fail! "subagent gate requires agent-run/harness" {:gate (:id gate)}))
                 prompt (or (gate-prompt gate)
-                           (fail! "subagent gate requires shuttle/prompt or derivable instruction" {:gate (:id gate)}))
+                           (fail! "subagent gate requires agent-run/prompt or derivable instruction" {:gate (:id gate)}))
                 run (shuttle/spawn-run! {:harness harness
-                                         :cwd (attr gate :shuttle/cwd)
-                                         :max-attempts (parse-max-attempts (attr gate :shuttle/max-attempts))
+                                         :cwd (attr gate :agent-run/cwd)
+                                         :max-attempts (parse-max-attempts (attr gate :agent-run/max-attempts))
                                          :prompt (treadle-preamble {:gate gate :run-id run-id :prompt prompt})
                                          :title (str "Delegated: " (:title gate))
                                          :attrs {"gate/step" (:id gate)
@@ -245,9 +245,9 @@
         run (when run-id (api/show (rt) run-id))]
     (cond
       error {:gate (:id gate) :error error}
-      (contains? (set stalled-run-phases) (attr run :shuttle/phase))
-      {:gate (:id gate) :run run-id :phase (attr run :shuttle/phase)
-       :error (attr run :shuttle/error)})))
+      (contains? (set stalled-run-phases) (attr run :agent-run/phase))
+      {:gate (:id gate) :run run-id :phase (attr run :agent-run/phase)
+       :error (attr run :agent-run/error)})))
 
 (defn install!
   "Install the treadle event handler and perform an initial scan.
@@ -266,7 +266,7 @@
     ;; The human attention surface for stuck gates: an active subagent gate whose
     ;; spawn errored, or whose current delegated run is dead in a terminal phase.
     ;; The `delegates` edge (added beside every `gate/run` stamp) lets the query
-    ;; reach the run's `shuttle/phase` — no per-attr join back to `gate/run`
+    ;; reach the run's `agent-run/phase` — no per-attr join back to `gate/run`
     ;; exists. `stamp-run-on-gate!` marks superseded runs `gate/superseded-by`,
     ;; so excluding those keeps the edge-scoped query in lockstep with the
     ;; current-stamp `gate-stalled?` predicate through the clear-and-respawn flow.
@@ -278,7 +278,7 @@
                             [:not [:= [:attr "gate/error"] ""]]]
                            [:edge/out "delegates"
                             [:and [:missing [:attr "gate/superseded-by"]]
-                             [:in [:attr "shuttle/phase"] stalled-run-phases]]]]])
+                             [:in [:attr "agent-run/phase"] stalled-run-phases]]]]])
     (graph/register-query! runtime 'blocked-deliveries
                          [:and [:= :state "closed"]
                           [:exists [:attr "gate/delivery-blocked"]]
