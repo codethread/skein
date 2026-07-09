@@ -25,7 +25,7 @@ Every recipe has the same four parts, so you can skim to the one that matches yo
 4. **Why this shape** — the reasoning: what the readiness graph buys you, which
    guard you're leaning on, and what the sloppy version would cost.
 
-Each recipe cites the honest source it was distilled from — the README contract, this repo's reviewer roster and config, or the executable coverage in ``agents_test.clj`` — so you can read the load-bearing version.
+Each recipe cites the honest source it was distilled from — the README contract, this repo's reviewer roster and config, or the executable coverage in ``delegation_test.clj`` — so you can read the load-bearing version.
 
 ---
 
@@ -86,7 +86,7 @@ strand update <core> --state closed # closing is what makes :docs ready
   is the worker's claim; re-running validation in the task's cwd is your proof.
   The two are different events on purpose.
 
-Honest source: the coordinator loop in [`delegation/README.md` §5](./delegation/README.md#5-worker-contract-and-coordinator-loop), the `agent-plan` weave pattern (§3), and the delegate/await/status coverage in ``agents_test.clj``.
+Honest source: the coordinator loop in [`delegation/README.md` §5](./delegation/README.md#5-worker-contract-and-coordinator-loop), the `agent-plan` weave pattern (§3), and the delegate/await/status coverage in ``delegation_test.clj``.
 
 ---
 
@@ -127,7 +127,7 @@ strand agent retry <core>
   Use `--fresh` when the session is gone; fix the body when the *instructions*
   were the problem. They are different failures.
 
-Honest source: the retry semantics in [`delegation/README.md` §3](./delegation/README.md#delegation-verbs-the-task-contract-layer) and the retry/supersede coverage in ``agents_test.clj``.
+Honest source: the retry semantics in [`delegation/README.md` §3](./delegation/README.md#delegation-verbs-the-task-contract-layer) and the retry/supersede coverage in ``delegation_test.clj``.
 
 ---
 
@@ -256,7 +256,7 @@ strand agent await "$helper"   # => {"runs":[{"result":"...file:line list..."}]}
   file scope. Recon fans out; writing stays single-owner. Delegation stays
   shallow.
 
-Honest source: the `spawn` verb and serving/non-serving model in [`delegation/README.md` §3](./delegation/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in ``agents_test.clj``.
+Honest source: the `spawn` verb and serving/non-serving model in [`delegation/README.md` §3](./delegation/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in ``delegation_test.clj``.
 
 ---
 

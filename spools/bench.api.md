@@ -34,7 +34,7 @@ Trusted userland spool for deterministic, containerized benchmarking of
   inside a fresh container against a pristine checkout of a pinned repo+sha;
   when the container exits the engine deterministically extracts metrics and
   stamps them on the entry strand, then closes it. Closing every entry unblocks
-  the judge — a decoupled fulfilment seam (a agent run by default, but
+  the judge — a decoupled fulfilment seam (an agent run by default, but
   fulfillable by any mechanism) that writes a comparative verdict.
 
   Setup and measurement are code (this namespace plus `skein.spools.bench.exec`);
@@ -61,7 +61,7 @@ Abort a bench run: kill live containers, fail outstanding entries, and close
   `bench/error "aborted"`; done entries are left closed. Best-effort kills
   every entry's container by name. The judge strand is closed with
   `bench/error "aborted"` (the same marking as an aborted entry, whether the
-  judge is a agent run or an external seam); a agent-run judge additionally
+  judge is an agent run or an external seam); an agent-run judge additionally
   gets `agent-run/phase "superseded"` so the run engine treats it as retired.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L954-L994">Source</a></sub></p>
 
@@ -236,7 +236,7 @@ Return a bench run's judge fulfilment seam as plain data — the one prompt
 
   This is the seam `run!` and workflow authors both consume. `run!` pours the
   judge strand and (in `:harness` mode) its serving agent run straight from
-  this output — the strand's `bench/judge-prompt` and a agent run's
+  this output — the strand's `bench/judge-prompt` and an agent run's
   `agent-run/prompt` come from this one builder, so they never drift. A workflow
   author calls `judge-spec` at pour time and maps it onto a `:subagent` gate
   exactly as roster review specs do (`skein.spools.delegation/roster-review-specs`):

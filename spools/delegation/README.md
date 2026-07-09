@@ -346,5 +346,5 @@ Like rosters, `panel-specs`/`panel!` take an **inline panel value** — any map 
 
 - [agent-run/README.md](../agent-run/README.md) — the run engine this spool composes (harness registry, run lifecycle, preamble seam).
 - [executors/subagent.md](../executors/subagent.md) — bridges workflow `:subagent` gates to agent-run runs.
-- `test/skein/agents_test.clj` — executable coverage for the op surface, delegation, retry, status, and the weave pattern.
+- `test/skein/delegation_test.clj` — executable coverage for the op surface, delegation, retry, status, and the weave pattern.
 - [Weaver Runtime](../../devflow/specs/daemon-runtime.md) — CLI operation registry, pattern registry, and named queries.

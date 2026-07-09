@@ -64,7 +64,7 @@ These live beside this index in the repo-root [`spools/`](./) directory, **off**
 | `skein.spools.chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) · [cookbook](./chime.cookbook.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
 | `skein.spools.kanban` | [kanban.md](./kanban.md) | [kanban.api.md](./kanban.api.md) · [cookbook](./kanban.cookbook.md) | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`. |
 | `skein.spools.cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) · [cookbook](./cron.cookbook.md) | Generic weaver timer engine: registers named jobs that fire on a fixed interval with uniform jitter on a spool-owned scheduled executor, with last-outcome/next-fire status and a loud inspectable failure log. Ships no jobs. |
-| `skein.spools.bench` | [bench/README.md](./bench/README.md) | [bench.api.md](./bench.api.md) | Deterministic, containerized benchmarking of coding-agent harnesses: pinned repo/prompt/memory overlays, bench-owned entry execution, normalized metrics, and a agent-run served judge. |
+| `skein.spools.bench` | [bench/README.md](./bench/README.md) | [bench.api.md](./bench.api.md) | Deterministic, containerized benchmarking of coding-agent harnesses: pinned repo/prompt/memory overlays, bench-owned entry execution, normalized metrics, and an agent-run served judge. |
 
 ## Reference examples
 

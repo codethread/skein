@@ -202,7 +202,7 @@ Interactive runs get their own preamble variant carrying the completion contract
 
 | Attribute | Meaning |
 |---|---|
-| `agent-run/run` | String `"true"` marks a strand as a agent-run run. |
+| `agent-run/run` | String `"true"` marks a strand as an agent-run run. |
 | `agent-run/harness` | Harness or alias name. |
 | `agent-run/prompt` | Prompt/script sent to the harness. |
 | `agent-run/phase` | `pending`, `running`, `done`, `failed`, `exhausted`, or `superseded`. |

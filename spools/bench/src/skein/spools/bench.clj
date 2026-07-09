@@ -7,7 +7,7 @@
   inside a fresh container against a pristine checkout of a pinned repo+sha;
   when the container exits the engine deterministically extracts metrics and
   stamps them on the entry strand, then closes it. Closing every entry unblocks
-  the judge — a decoupled fulfilment seam (a agent run by default, but
+  the judge — a decoupled fulfilment seam (an agent run by default, but
   fulfillable by any mechanism) that writes a comparative verdict.
 
   Setup and measurement are code (this namespace plus `skein.spools.bench.exec`);
@@ -650,14 +650,14 @@
 ;;
 ;; The judge strand IS the seam. `judge-spec` builds, as plain data, the full
 ;; judge prompt plus the durable attributes a fulfiller needs — so bench pouring
-;; a agent run, a workflow `:subagent` gate, or a human all read one source of
+;; an agent run, a workflow `:subagent` gate, or a human all read one source of
 ;; truth. `bench/judge-prompt` carries the full built prompt on the strand; the
 ;; strand `body` carries a short mechanism-agnostic fulfilment contract; the
 ;; final verdict lands in `bench/verdict` regardless of who fulfils it.
 
 (defn- judge-body
   "The judge strand's `body`: a short, mechanism-agnostic fulfilment contract
-  any fulfiller (a agent run, a workflow gate, a human) follows. The full
+  any fulfiller (an agent run, a workflow gate, a human) follows. The full
   judging protocol lives in the strand's `bench/judge-prompt` attribute."
   []
   (str/join
@@ -738,7 +738,7 @@
 
   This is the seam `run!` and workflow authors both consume. `run!` pours the
   judge strand and (in `:harness` mode) its serving agent run straight from
-  this output — the strand's `bench/judge-prompt` and a agent run's
+  this output — the strand's `bench/judge-prompt` and an agent run's
   `agent-run/prompt` come from this one builder, so they never drift. A workflow
   author calls `judge-spec` at pour time and maps it onto a `:subagent` gate
   exactly as roster review specs do (`skein.spools.delegation/roster-review-specs`):
@@ -959,7 +959,7 @@
   `bench/error \"aborted\"`; done entries are left closed. Best-effort kills
   every entry's container by name. The judge strand is closed with
   `bench/error \"aborted\"` (the same marking as an aborted entry, whether the
-  judge is a agent run or an external seam); a agent-run judge additionally
+  judge is an agent run or an external seam); an agent-run judge additionally
   gets `agent-run/phase \"superseded\"` so the run engine treats it as retired."
   [runtime run-id]
   (let [root (or (api/show runtime run-id) (fail! "bench abort: no such run" {:id run-id}))
@@ -1273,7 +1273,7 @@
                                     |the builder, not overridable by :contract).")
                     :verdict (fmt/reflow
                               "|The verdict lands in bench/verdict on the judge strand (canonical);
-                               |a agent run also leaves it as agent-run/result. report/status
+                               |an agent run also leaves it as agent-run/result. report/status
                                |resolve bench/verdict first, else agent-run/result, and report the
                                |verdict-source (attr|run|none).")
                     :output "One note appended per entry strand with scores and findings, the verdict stamped on the judge strand, then the strand closed."

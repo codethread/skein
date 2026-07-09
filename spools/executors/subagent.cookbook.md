@@ -33,7 +33,7 @@ Each recipe cites the honest source it was distilled from — the subagent-execu
 
 **Situation.** A stage in your workflow isn't the driving agent's to *do* — it's work to delegate to a fresh agent run — but the workflow should still block on it and pick up the result before moving on.
 
-**Composition.** Model the step as an ordinary `workflow/gate` with waiter `:subagent`, carrying the run request as `agent-run/*` attributes. That's the whole authoring surface. The subagent executor watches for the gate to become ready, spawns a agent-run run from those attributes, and — when the run succeeds — completes the gate through `workflow/complete!`. The step after the gate then unblocks normally.
+**Composition.** Model the step as an ordinary `workflow/gate` with waiter `:subagent`, carrying the run request as `agent-run/*` attributes. That's the whole authoring surface. The subagent executor watches for the gate to become ready, spawns an agent run from those attributes, and — when the run succeeds — completes the gate through `workflow/complete!`. The step after the gate then unblocks normally.
 
 ```clojure
 (require '[skein.spools.workflow :as workflow])
@@ -52,7 +52,7 @@ Each recipe cites the honest source it was distilled from — the subagent-execu
 
 (workflow/start! "widget-1" build-widget {})
 (workflow/complete! "widget-1")            ; finish :design; :implement becomes ready
-;; the subagent executor sees the ready :subagent gate, spawns a agent-run run, and on success
+;; the subagent executor sees the ready :subagent gate, spawns an agent run, and on success
 ;; stamps the gate workflow/outcome-by = run id, workflow/outcome-notes = agent-run/result,
 ;; then :review becomes ready.
 ```
