@@ -56,7 +56,15 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"connect! requires an explicit config-dir"
                           (repl/connect!)))
-    (is (= [] @calls))
+    (is (= [] @calls)
+        "zero-arg connect! throws before reaching the status-world seam")
+    (let [connected (#'repl/connect!* "/tmp/skein-connect-check" nil
+                                      (fn [config-dir opts]
+                                        (swap! calls conj {:config-dir config-dir :opts opts})
+                                        {:ok true}))]
+      (is (= connected (-> @calls first :config-dir)))
+      (is (= [{:config-dir connected :opts {}}] @calls)
+          "the seam is meaningful for config-dir connects, so the zero-arg assertion is not vacuous"))
     (reset-open-state!)))
 
 (deftest connect-fails-without-selecting-a-daemon

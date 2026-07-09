@@ -631,9 +631,9 @@
         ;; terminal state; the checkpoint close and continuation pour are folded
         ;; into one batch, so a failing apply commits nothing
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"batch boom"
-                              (workflow/choose! "loopy-fail" :revise {}
-                                                {:batch-apply-fn (fn [_ _]
-                                                                   (throw (ex-info "batch boom" {})))})))
+                              (#'workflow/choose!* "loopy-fail" :revise {} {}
+                                                   (fn [_ _]
+                                                     (throw (ex-info "batch boom" {}))))))
         (let [root (workflow/current-root "loopy-fail")]
           (is (some? root))
           (is (= old-root-id (:id root)))

@@ -127,10 +127,9 @@
                  (select-keys (:after updated) [:id :state :attributes]))))))))
 
 (deftest current-runtime-fails-loudly-without-ambient-runtime
-  (binding [runtime/*runtime* nil]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"No active Skein weaver runtime"
-                          (current/runtime)))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"No active Skein weaver runtime"
+                        (#'current/runtime* (constantly nil)))))
 
 (deftest current-with-runtime*-rejects-nil-runtime
   (is (thrown-with-msg? clojure.lang.ExceptionInfo

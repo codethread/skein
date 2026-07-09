@@ -114,7 +114,11 @@
   loudly when the resource is not on the test classpath, is jar-backed, or does
   not come from a directory checkout with the expected layout. This is for tests
   that must approve the real dependency checkout as a `:local/root` in generated
-  `spools.edn` data."
+  `spools.edn` data.
+
+  The one-argument form resolves `resource-path` with `clojure.java.io/resource`.
+  The two-argument form accepts `resource-loader`, a function from resource path
+  string to `java.net.URL` or nil, for deterministic tests of this resolver."
   ([resource-path]
    (spool-checkout-root resource-path io/resource))
   ([resource-path resource-loader]

@@ -59,6 +59,22 @@
 (defn- connected? []
   (not= no-connection @active-config-dir))
 
+(defn- connect!*
+  [config-dir state-dir status-world-fn]
+  (reset! active-config-dir no-connection)
+  (reset! active-state-dir no-connection)
+  (when (and config-dir (.isFile (java.io.File. ^String config-dir)))
+    (throw (ex-info "connect! expects a daemon config directory, not a database file" {:config-dir config-dir})))
+  (let [world (if state-dir
+                (daemon-config/world config-dir state-dir (str state-dir "/data"))
+                (daemon-config/world config-dir))]
+    (status-world-fn (:config-dir world) (cond-> {}
+                                           state-dir (assoc :state-dir (:state-dir world))))
+    (reset! active-config-dir (:config-dir world))
+    (when state-dir
+      (reset! active-state-dir (:state-dir world)))
+    (:config-dir world)))
+
 (defn connect!
   "Select the active weaver world for helper calls.
 
@@ -72,19 +88,7 @@
   ([config-dir]
    (connect! config-dir nil))
   ([config-dir state-dir]
-   (reset! active-config-dir no-connection)
-   (reset! active-state-dir no-connection)
-   (when (and config-dir (.isFile (java.io.File. ^String config-dir)))
-     (throw (ex-info "connect! expects a daemon config directory, not a database file" {:config-dir config-dir})))
-   (let [world (if state-dir
-                 (daemon-config/world config-dir state-dir (str state-dir "/data"))
-                 (daemon-config/world config-dir))]
-     (client/status-world (:config-dir world) (cond-> {}
-                                                state-dir (assoc :state-dir (:state-dir world))))
-     (reset! active-config-dir (:config-dir world))
-     (when state-dir
-       (reset! active-state-dir (:state-dir world)))
-     (:config-dir world))))
+   (connect!* config-dir state-dir client/status-world)))
 
 (declare call-daemon)
 
