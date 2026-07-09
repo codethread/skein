@@ -65,9 +65,14 @@ the test classpath beside `skein.test-runner`.
 
 ## DELTA-Ttv-001.P4 Open questions
 
-- **DELTA-Ttv-001.Q1:** Whether `run-focused!` should instead live entirely
-  test-side (with `skein.test.warm`) and carry no `skein.test.alpha` contract at
-  all, treating the whole warm loop as ungoverned dev tooling like
-  `skein.test-runner`. The plan keeps it in `skein.test.alpha` per the agreed
-  design (PROP-Ttv-001.S5); a reviewer may downgrade this delta to None and move
-  the entry test-side without changing the tier design.
+- **DELTA-Ttv-001.Q1 (resolved — keep the `skein.test.alpha` entry):**
+  Considered moving `run-focused!` entirely test-side (with `skein.test.warm`)
+  as ungoverned dev tooling. Kept in `skein.test.alpha` because the blessed name
+  is the seam everything else points at: `scripts/test-warm` sends
+  `skein.test.alpha/run-focused!` over the socket, and REPL users get one
+  documented, stable entry while `skein.test-runner` (which it resolves at call
+  time) stays test-internal and free to change shape. Moving it test-side would
+  save one one-line public var at the cost of task contracts and tooling
+  referencing an ungoverned internal directly — the wrong side of TEN-004's
+  trade, since the surface already exists at its minimum (one function, no
+  options map).

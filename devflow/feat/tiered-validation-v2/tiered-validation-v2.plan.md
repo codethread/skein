@@ -426,3 +426,15 @@ Append notes here. Do not rewrite earlier notes.
   claim. Flagged to the coordinator via a strand note on `8uil4` rather than
   investigated further, since resolving duplicate-delegation causes is outside
   this slice's scope.
+
+### PLAN-Ttv-001.DN9 Warm-script fail-loud defect found and fixed — 2026-07-09
+
+- PH3's exercise validated the happy path, but the shipped `scripts/test-warm`
+  initially treated a warm REPL that closed or hung before printing its
+  `TEST-WARM-DONE` sentinel — or a run that produced no aggregate summary — as
+  exit 0. A hung or crashed warm run could therefore read as success. Fixed in
+  `8320e71`: the client now fails when the sentinel never arrives (per-line
+  read timeout expiry included) and when no aggregate summary was captured,
+  and the error print carries the throwable's `ex-data`. Recorded here because
+  DN5's original claim ("all Done-when green") predated the discovery of this
+  gap; the acceptance-slice results in DN8 ran with the fixed script.
