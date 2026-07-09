@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-Aep-001` **Root spec:** [strand-model.md](../../../specs/strand-model.md) (`SPEC-001`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-Aep-001`) **Contract:** [../brief.md](../brief.md) **Status:**
-Draft **Last Updated:** 2026-07-09
+Merged **Last Updated:** 2026-07-09
 
 ## SPEC-Aep-001.P1 Summary
 
