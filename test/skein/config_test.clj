@@ -48,7 +48,7 @@
     (.mkdirs (java.io.File. config-dir))
     (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
       (try
-        ;; harnesses.clj's pi-main alias layers over the shipped :pi harness,
+        ;; harnesses.clj's worker alias layers over the shipped :pi harness,
         ;; which shuttle/install! registers in real startups; this fixture
         ;; loads the config files alone, so register the defaults here.
         ((requiring-resolve 'skein.spools.shuttle/register-default-harnesses!))
@@ -413,7 +413,7 @@
     (fn [rt]
       (patterns/weave! rt :delegate-pipeline
                        {:run_id "pipe-test"
-                        :harness "pi-main"
+                        :harness "worker"
                         :accept true
                         :tasks [{:id "a" :title "Do A" :body "A body"}
                                 {:id "b" :title "Do B"}]})
@@ -428,13 +428,13 @@
         (is (= #{"a" "b"} (set (keys by-task))))
         (is (str/includes? (attr (by-task "a") :shuttle/prompt)
                            "[worker contract]"))
-        (is (= "pi-main" (attr (by-task "b") :shuttle/harness))))))
+        (is (= "worker" (attr (by-task "b") :shuttle/harness))))))
   (testing "acceptance checkpoint is optional and task max-attempts pass through"
     (with-config-runtime
       (fn [rt]
         (patterns/weave! rt :delegate-pipeline
                          {:run_id "pipe-no-accept"
-                          :tasks [{:id "a" :title "Do A" :harness "pi-main" :max-attempts 4}]})
+                          :tasks [{:id "a" :title "Do A" :harness "worker" :max-attempts 4}]})
         (let [strands (api/list rt)
               task (first (filter #(= "a" (or (get-in % [:attributes :delegate-pipeline/task])
                                               (get-in % [:attributes "delegate-pipeline/task"])))

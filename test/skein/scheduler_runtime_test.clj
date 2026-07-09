@@ -9,14 +9,16 @@
   real weaver runtime and its shared event worker."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.events.alpha :as events]
             [skein.api.runtime.alpha :as runtime-alpha]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as runtime]
             [skein.core.weaver.scheduler :as scheduler]
             [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as test-alpha]
             [skein.weaver-test :as wt])
-  (:import [java.time Instant]
+  (:import [java.time Duration Instant]
            [java.util.concurrent ArrayBlockingQueue]))
 
 ;; Handlers are resolved by fully qualified symbol, so their capture state is
@@ -51,6 +53,8 @@
   [ds queue-capacity]
   {:datasource ds
    :spool-state (atom {})
+   :clock (atom (fn [] (Instant/now)))
+   :clock-pumps (atom {})
    :event-system {:queue (ArrayBlockingQueue. (int queue-capacity))}})
 
 (defn- with-scheduler
@@ -59,7 +63,7 @@
   [ds queue-capacity clock-seconds f]
   (let [rt (fake-runtime ds queue-capacity)
         st (scheduler/state rt)]
-    (scheduler/set-clock! rt (constantly (instant clock-seconds)))
+    (test-alpha/set-clock! rt (constantly (instant clock-seconds)))
     (try
       (f rt st)
       (finally
@@ -125,15 +129,15 @@
       (with-scheduler ds 8 500
         (fn [rt _st]
           (let [^ArrayBlockingQueue queue (get-in rt [:event-system :queue])
-                real-due db/due-wakes]
-            (with-redefs [db/due-wakes (fn [ds now]
-                                         (cons {:key "gone" :wake_at (.toEpochMilli ^Instant now) :attempts 0}
-                                               (real-due ds now)))]
-              (let [result (scheduler/dispatch-due! rt)]
-                (is (not (:transient? result)) "a vanished row does not throw or fail the pass")
-                (is (nil? (db/get-pending-wake ds "gone")) "the vanished key was never persisted")
-                (is (= 1 (:attempts (db/get-pending-wake ds "live")))
-                    "the live wake still records exactly one delivery attempt")))
+                real-due db/due-wakes
+                due-wakes-fn (fn [ds now]
+                               (cons {:key "gone" :wake_at (.toEpochMilli ^Instant now) :attempts 0}
+                                     (real-due ds now)))
+                result (#'scheduler/dispatch-due!* rt due-wakes-fn)]
+            (is (not (:transient? result)) "a vanished row does not throw or fail the pass")
+            (is (nil? (db/get-pending-wake ds "gone")) "the vanished key was never persisted")
+            (is (= 1 (:attempts (db/get-pending-wake ds "live")))
+                "the live wake still records exactly one delivery attempt")
             (is (= #{"gone" "live"}
                    (set (repeatedly 2 #(:scheduler/key (.poll queue)))))
                 "both envelopes enqueue; the stale one is dropped downstream by run-fire!")))))))
@@ -151,22 +155,22 @@
       (with-scheduler ds 8 500
         (fn [rt st]
           (let [^ArrayBlockingQueue queue (get-in rt [:event-system :queue])
-                real-due db/due-wakes]
-            (with-redefs [db/due-wakes (fn [ds now]
-                                         (let [due (real-due ds now)]
-                                           ;; Reschedule to gen B after selection, before the mark.
-                                           (db/schedule-wake! ds {:key "resched" :wake-at (instant 200) :handler 'a/b})
-                                           due))]
-              (let [result (scheduler/dispatch-due! rt)]
-                (is (= 1 (:dispatched result)) "the stale envelope still enqueues")
-                (is (= 200000 (:wake_at (db/get-pending-wake ds "resched"))) "gen B owns the row now")
-                (is (zero? (:attempts (db/get-pending-wake ds "resched")))
-                    "the stale claim never increments the rescheduled generation")))
+                real-due db/due-wakes
+                due-wakes-fn (fn [ds now]
+                               (let [due (real-due ds now)]
+                                 ;; Reschedule to gen B after selection, before the mark.
+                                 (db/schedule-wake! ds {:key "resched" :wake-at (instant 200) :handler 'a/b})
+                                 due))
+                result (#'scheduler/dispatch-due!* rt due-wakes-fn)]
+            (is (= 1 (:dispatched result)) "the stale envelope still enqueues")
+            (is (= 200000 (:wake_at (db/get-pending-wake ds "resched"))) "gen B owns the row now")
+            (is (zero? (:attempts (db/get-pending-wake ds "resched")))
+                "the stale claim never increments the rescheduled generation")
             ;; The stale envelope carried gen A's wake-at; run-fire! drops it (covered
             ;; by run-fire-skips-cancelled-and-rescheduled-wakes). Now deliver gen B.
             (.poll queue)
             (swap! (:in-flight st) disj "resched")
-            (scheduler/set-clock! rt (constantly (instant 200)))
+            (test-alpha/set-clock! rt (constantly (instant 200)))
             (let [result (scheduler/dispatch-due! rt)]
               (is (= 1 (:dispatched result)))
               (is (= 1 (:scheduler/attempt (.poll queue)))
@@ -182,8 +186,7 @@
         (fn [rt st]
           ;; Force an unexpected failure in the timer body: the guard must record
           ;; it AND still re-arm, so one bad tick cannot permanently stop the clock.
-          (with-redefs [scheduler/dispatch-due! (fn [_] (throw (ex-info "boom" {})))]
-            (#'scheduler/dispatch-and-rearm! rt))
+          (#'scheduler/dispatch-and-rearm! rt {:dispatch-due-fn (fn [_] (throw (ex-info "boom" {})))})
           (is (= 1 (count (scheduler/dispatch-failures rt))) "the unexpected throw is recorded as a dispatch failure")
           (is (some? @(:timer st)) "the scheduler re-armed rather than dying silently"))))))
 
@@ -323,15 +326,15 @@
   (wt/with-runtime
     (fn [rt _db-file]
       (reset! fire-count 0)
-      (reset! fired (promise))
+      (test-alpha/set-clock! rt (constantly (instant 0)))
       (db/schedule-wake! (:datasource rt)
-                         {:key "soon" :wake-at (.plusMillis (Instant/now) 250)
+                         {:key "soon" :wake-at (instant 1)
                           :handler 'skein.scheduler-runtime-test/counting-handler})
       (scheduler/rearm! rt)
       (scheduler/rearm! rt)
       (scheduler/rearm! rt)
-      (is (await-fire) "the future wake fires after repeated re-arm")
-      (is (await-completed (:datasource rt) "soon"))
+      (test-alpha/advance! rt (Duration/ofSeconds 2))
+      (events/await-quiescent! rt)
       (is (= 1 @fire-count) "repeated re-arm must not double-arm the same wake"))))
 
 (deftest reload-rearm-does-not-refire-completed-wake

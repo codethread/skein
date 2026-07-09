@@ -1,5 +1,5 @@
 # AFK task queue for attr-scaling-ship-now (ASSN-PLAN-001).
-# Sliced by plan phase, one sequential pi-main worker each; sequencing is by
+# Sliced by plan phase, one sequential worker seat each; sequencing is by
 # blocked_by (the sign-off `approved` payload runs them as sequential gates).
 # The JSON-ready sign-off payload (tasks for the `approved` choice) is
 # tasks/signoff-payload.json.

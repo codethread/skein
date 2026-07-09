@@ -28,7 +28,7 @@ The surface is deliberately built from words coding agents are already trained o
 - **delegate** — hand a ready task to an agent (`agent delegate`); **delegate the ready ones** fans a plan out (`agent delegate --ready`).
 - **retry** — recover a failed task by superseding its dead run and respawning (`agent retry`).
 - **status** — the coordinator dashboard (`agent status`): what's ready, running, failed, or awaiting your verification.
-- **harness / alias** — which agent tool runs the work (`pi-main`, `explore`, `build`, …).
+- **harness / alias** — which agent tool runs the work (`worker`, `explore`, `build`, …).
 - **worker contract** — the standing rules every delegated agent is handed automatically.
 - **notes** — durable, append-only memory attached to any strand.
 
@@ -250,7 +250,7 @@ Convene a fresh-blackboard **panel** (see [§6](#6-panels-presets-and-the-compos
 ```
 printf '%s' '{"feature":"<slug>","title":"...","body":"...?","tasks":[
   {"key":"core","title":"...","body":"<full contract>","validation":["clojure -M:test"],"harness":"build"},
-  {"key":"docs","title":"...","body":"...","depends_on":["core"],"harness":"pi-main"}]}' \
+  {"key":"docs","title":"...","body":"...","depends_on":["core"],"harness":"worker"}]}' \
   | strand weave --pattern agent-plan
 ```
 → `{"plan":{"id","title"},"tasks":{"<your-key>":{"id","title"}}}`

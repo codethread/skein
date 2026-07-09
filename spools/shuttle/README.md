@@ -44,9 +44,9 @@ Shuttle is shipped as an approved-local-root spool example under `spools/shuttle
 
 `install!` registers the default harnesses and backends, a graph-mutation event handler, and runs crash reconciliation with a first scan. Harnesses, backends, live in-flight process ownership, deferred-recovery scheduling, preamble extensions, and default review contract text are runtime-local weaver-lifetime state, isolated from other runtimes in the same JVM. The deferred-recovery scheduler is owned by runtime spool state and is shut down during runtime stop before storage closes. This state is registered with a declared shape **version** (`skein.api.runtime.alpha/spool-state`, SPEC-004.C95): spool state survives `reload!`, so after a deploy that adds a new state key a reload deliberately reinits through a migrate hook that carries the durable registries and in-flight tracking over onto fresh executors, rather than silently reusing a preserved map missing the new executor keys (which previously turned scan!'s launch into `(.execute nil ..)` and parked every new run forever). The executor and scheduler accessors fail loudly when their spool-state entry is missing rather than parking runs on a nil executor (TEN-003). It does **not** register any CLI operations. Load the [agents spool](../agents/README.md) after shuttle for the `strand agent` surface, and the companion [treadle adapter](./treadle.md) to fulfill workflow `:subagent` gates with shuttle runs.
 
-## 3. Harness registry
+## 3. Harness and alias registries
 
-Harnesses are data-first launcher definitions registered in trusted Clojure:
+Harnesses are data-first launcher definitions registered in trusted Clojure; aliases are the seat names layered over them in a registry of their own:
 
 | Fn | Behavior |
 |---|---|
@@ -57,6 +57,18 @@ Harnesses are data-first launcher definitions registered in trusted Clojure:
 | `(register-default-harnesses!)` | Register shipped `claude`, `pi`, and `sh` harnesses without replacing existing entries. |
 
 Default parse strategies are `:raw`, `:claude-json`, and `:pi-json`. The `sh` harness is intended for tests and plumbing.
+
+Harnesses and aliases live in separate runtime registries. A harness names one
+concrete tool (`claude`, `pi`, `sh`); an alias names a seat over a tool
+(`worker`, `explore`, `build`) and may carry model/provider flags, prompt
+prefixes, or seat-specific docs. Name resolution is alias-first, then harness:
+a seat can intentionally shadow a tool name without replacing the tool, and a
+harness remains directly addressable whenever no alias with that name exists.
+Same-name shadowing is therefore lawful, while alias cycles and missing roots
+still fail loudly. On reload from the prior mixed registry shape, shuttle
+migrates entries by shape: definitions with `:alias-of` become aliases,
+definitions with `:argv` become harnesses, and malformed entries fail the
+migration rather than guessing.
 
 `:prompt-via` controls how a headless run's worker prompt reaches the process — `:stdin` (piped to the process's standard input) or `:arg` (appended as the final argv token, the default). **The shipped `:claude` and `:pi` harnesses default to `:stdin`** because `-p` mode on both reads the prompt from stdin: an argv-delivered prompt is exposed in `ps` and, worse, lands in the blast radius of any `pkill -f` pattern kill that happens to match quoted prompt text (a pattern kill matching prompt text once strafed sibling agent processes). Keep the argv shape declarative per harness — a harness whose CLI cannot read the prompt from stdin (e.g. `sh -c`, whose script is a required positional argument) stays `:arg`. Interactive runs always use `:arg`: stdin belongs to the live session, so a `:stdin` harness is rejected on the interactive path. `defharness!` rejects any `:prompt-via` other than `:arg` or `:stdin` at registration — a typo fails loudly rather than silently falling back to the less-safe argv delivery.
 

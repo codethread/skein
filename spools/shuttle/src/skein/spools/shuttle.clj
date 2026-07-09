@@ -30,6 +30,13 @@
   returns a durable handle stored as `shuttle/handle.*` attributes, so
   sessions survive weaver restarts and are adopted, never respawned.
 
+  Harnesses (tools) and aliases (seats) live in two independent runtime
+  registries: `defharness!` writes one entry per tool (claude, pi, codex, sh),
+  `defalias!` writes named seats over them. Resolution is alias-first — an
+  unvisited alias shadows a same-named harness, so a seat may carry a tool's own
+  name and still terminate at the tool. Re-registration replaces within a
+  registry (reload idempotency); across registries names are independent.
+
   The whole spool composes public surfaces (`skein.api.weaver.alpha` inside the
   weaver JVM) and owns no privileged runtime state. Higher-level spools, such as
   `skein.spools.agents`, register CLI operations over this engine."
@@ -87,14 +94,19 @@
   incident: scan!'s `(.execute nil ..)` then parked every new run silently). A
   changed version makes the runtime reinit through `migrate-state` deliberately
   instead. The `state-shape-matches-declared-version` test fails loudly if
-  `new-state` and this version drift apart."
-  2)
+  `new-state` and this version drift apart.
+
+  v3 split the single mixed harness registry into `:harness-registry` (tools)
+  and `:alias-registry` (seats); `migrate-state` splits a preserved v2 registry
+  by entry shape."
+  3)
 
 (defn- new-state []
   (let [scheduler (ScheduledThreadPoolExecutor. 1 (daemon-thread-factory "shuttle-recovery"))
         workers (Executors/newCachedThreadPool (daemon-thread-factory "shuttle-run"))]
     (.setRemoveOnCancelPolicy scheduler true)
     {:harness-registry (atom {})
+     :alias-registry (atom {})
      :backend-registry (atom {})
      ;; run-id -> {:phase :claimed|:running|:deferred-recovery, :process Process}
      :in-flight (atom {})
@@ -114,25 +126,49 @@
                  (when-not (.awaitTermination workers 1000 TimeUnit/MILLISECONDS)
                    (fail! "Shuttle worker executor did not stop" {})))}))
 
+(defn- classify-registry-entry
+  "Classify a preserved registry entry as `:harness` or `:alias` by exact shape
+  match against `::harness-def`/`::alias-def`.
+
+  Fails loudly with the offending `[key def]` in `ex-data` when an entry matches
+  neither or both shapes, so the v2->v3 split never silently drops a corrupt
+  record or misfiles a record that could pass as either kind."
+  [key def]
+  (let [harness? (s/valid? ::harness-def def)
+        alias? (s/valid? ::alias-def def)]
+    (cond
+      (and harness? (not alias?)) :harness
+      (and alias? (not harness?)) :alias
+      :else (fail! "Preserved registry entry matches neither or both registry shapes"
+                   {:entry [key def]
+                    :matches-harness? harness?
+                    :matches-alias? alias?}))))
+
 (defn- migrate-state
   "Reinit a preserved shuttle state whose shape predates `state-version`.
 
-  Durable registries, in-flight tracking, and the set-once override atoms carry
-  over; the executors and close hook are rebuilt fresh so scan!/scheduling never
-  runs against a stale or missing executor. The old recovery scheduler is
-  stopped (best-effort, accepting no new ticks) while the old worker pool is
-  left to drain any in-flight run monitors as daemon threads rather than being
-  interrupted mid-run."
+  The v2 mixed `:harness-registry` is split by entry shape into the v3
+  `:harness-registry` (tools) and `:alias-registry` (seats); backend registry,
+  in-flight tracking, and the set-once override atoms carry over; the executors
+  and close hook are rebuilt fresh so scan!/scheduling never runs against a
+  stale or missing executor. The old recovery scheduler is stopped (best-effort,
+  accepting no new ticks) while the old worker pool is left to drain any
+  in-flight run monitors as daemon threads rather than being interrupted
+  mid-run."
   [old]
   (when-let [scheduler (:recovery-scheduler old)]
     (try (.shutdown ^ScheduledThreadPoolExecutor scheduler)
          (catch Throwable t
            (warn! "Old recovery scheduler shutdown failed during migrate; it may leak"
                   {:exception/message (ex-message t)}))))
-  (merge (new-state)
-         (select-keys old [:harness-registry :backend-registry :in-flight
-                           :preamble-extension :preamble-conflicts
-                           :default-review-contract])))
+  (let [grouped (group-by (fn [[k v]] (classify-registry-entry k v))
+                          @(:harness-registry old))]
+    (merge (new-state)
+           (select-keys old [:backend-registry :in-flight
+                             :preamble-extension :preamble-conflicts
+                             :default-review-contract])
+           {:harness-registry (atom (into {} (:harness grouped)))
+            :alias-registry (atom (into {} (:alias grouped)))})))
 
 (defn- state []
   (runtime/spool-state (rt) ::state
@@ -153,6 +189,7 @@
                {:missing k :present (vec (sort (keys s)))}))))
 
 (defn- harness-registry [] (:harness-registry (state)))
+(defn- alias-registry [] (:alias-registry (state)))
 (defn- backend-registry [] (:backend-registry (state)))
 (defn- in-flight [] (:in-flight (state)))
 (defn- preamble-extension [] (:preamble-extension (state)))
@@ -210,6 +247,41 @@
   (s/or :literal string? :placeholder resume-placeholder-inputs))
 (s/def :skein.spools.shuttle.harness/resume
   (s/coll-of :skein.spools.shuttle.harness/resume-token :kind vector? :min-count 1))
+
+;; Registry entry shapes. `::harness-def` and `::alias-def` are the source of
+;; truth for the "is this a tool or a seat?" distinction: they are consulted by
+;; `defharness!`/`defalias!` and by the migrate split's exactly-one-shape
+;; classification. Mutual exclusivity rides on the required keys — a harness
+;; needs `:argv`, an alias needs `:alias-of`, and the closed key sets forbid a
+;; valid registration carrying both. `:capture`/`:resume` are intentionally left
+;; open here; their splice semantics need the dedicated validators a spec cannot
+;; express.
+(s/def :skein.spools.shuttle.harness/argv (s/coll-of string? :kind vector? :min-count 1))
+(s/def :skein.spools.shuttle.harness/parse parse-strategies)
+(s/def :skein.spools.shuttle.harness/prompt-via prompt-via-strategies)
+(s/def :skein.spools.shuttle.harness/preamble? boolean?)
+(s/def :skein.spools.shuttle.harness/env map?)
+(s/def :skein.spools.shuttle.harness/cwd string?)
+(s/def :skein.spools.shuttle.harness/doc string?)
+(s/def ::harness-def
+  (s/keys :req-un [:skein.spools.shuttle.harness/argv]
+          :opt-un [:skein.spools.shuttle.harness/parse
+                   :skein.spools.shuttle.harness/prompt-via
+                   :skein.spools.shuttle.harness/preamble?
+                   :skein.spools.shuttle.harness/env
+                   :skein.spools.shuttle.harness/cwd
+                   :skein.spools.shuttle.harness/doc]))
+
+(s/def :skein.spools.shuttle.alias/alias-of
+  (s/or :keyword keyword? :symbol symbol? :string (s/and string? (complement str/blank?))))
+(s/def :skein.spools.shuttle.alias/extra-args (s/coll-of string? :kind vector?))
+(s/def :skein.spools.shuttle.alias/prompt-prefix string?)
+(s/def :skein.spools.shuttle.alias/doc string?)
+(s/def ::alias-def
+  (s/keys :req-un [:skein.spools.shuttle.alias/alias-of]
+          :opt-un [:skein.spools.shuttle.alias/extra-args
+                   :skein.spools.shuttle.alias/prompt-prefix
+                   :skein.spools.shuttle.alias/doc]))
 
 (defn- validate-resume-argv!
   "Validate a harness :resume splice: a non-empty vector of literal strings and
@@ -290,21 +362,20 @@
   transcript text to stdout, overriding the backend's scrollback capture.
   Harness capture is the seam for harness-aware transcripts (session logs,
   user hook-written dialogue logs) without the engine knowing any harness's
-  log format; correlate via the SKEIN_RUN_ID env var every session exports."
+  log format; correlate via the SKEIN_RUN_ID env var every session exports.
+
+  Writes only the harness (tool) registry; a same-named seat may coexist in the
+  alias registry and shadows this tool at resolution time. The def shape is the
+  `::harness-def` spec; `:capture`/`:resume` splice semantics keep their
+  dedicated validators."
   [name def]
   (let [key (harness-key name)]
-    (when-not (map? def)
-      (fail! "Harness def must be a map" {:harness key :def def}))
-    (when-let [unknown (seq (remove harness-def-keys (keys def)))]
+    (when-let [unknown (and (map? def) (seq (remove harness-def-keys (keys def))))]
       (fail! "Harness def contains unknown keys" {:harness key :keys (vec unknown)}))
-    (when-not (and (vector? (:argv def)) (seq (:argv def)) (every? string? (:argv def)))
-      (fail! "Harness :argv must be a non-empty vector of strings" {:harness key :argv (:argv def)}))
-    (when-let [parse (:parse def)]
-      (when-not (parse-strategies parse)
-        (fail! "Unknown harness :parse strategy" {:harness key :parse parse :supported parse-strategies})))
-    (when (contains? def :prompt-via)
-      (when-not (prompt-via-strategies (:prompt-via def))
-        (fail! "Unknown harness :prompt-via strategy" {:harness key :prompt-via (:prompt-via def) :supported prompt-via-strategies})))
+    (when-not (s/valid? ::harness-def def)
+      (fail! (str "Harness def does not conform to ::harness-def: "
+                  (s/explain-str ::harness-def def))
+             {:harness key :def def :explain (s/explain-data ::harness-def def)}))
     (when (contains? def :capture)
       (validate-op-argv! key :capture (:capture def)))
     (when (contains? def :resume)
@@ -313,55 +384,115 @@
     {:harness key :def def}))
 
 (defn defalias!
-  "Register `name` as an alias layered over another harness or alias.
+  "Register `name` as an alias (seat) layered over another harness or alias.
 
   Alias defs take `:alias-of` (required), `:extra-args` appended to the base
   argv before the prompt, `:prompt-prefix` prepended to the run prompt, and
-  `:doc`. Aliases are how userland exposes its own named agent types."
+  `:doc`. Aliases are how userland exposes its own named agent seats.
+
+  Writes only the alias (seat) registry, independent of the harness registry, so
+  a seat may intentionally carry a tool's name — `defalias! :pi {:alias-of :pi}`
+  is a lawful shadow that resolves through the seat and terminates at the tool.
+  The def shape is the `::alias-def` spec."
   [name def]
   (let [key (harness-key name)]
-    (when-not (map? def)
-      (fail! "Alias def must be a map" {:alias key :def def}))
-    (when-let [unknown (seq (remove alias-def-keys (keys def)))]
+    (when-let [unknown (and (map? def) (seq (remove alias-def-keys (keys def))))]
       (fail! "Alias def contains unknown keys" {:alias key :keys (vec unknown)}))
-    (when-not (:alias-of def)
-      (fail! "Alias def requires :alias-of" {:alias key :def def}))
-    (swap! (harness-registry) assoc key def)
+    (when-not (s/valid? ::alias-def def)
+      (fail! (str "Alias def does not conform to ::alias-def: "
+                  (s/explain-str ::alias-def def))
+             {:alias key :def def :explain (s/explain-data ::alias-def def)}))
+    (swap! (alias-registry) assoc key def)
     {:alias key :def def}))
 
 (defn resolve-harness
-  "Return the effective harness definition for `name`, flattening alias layers."
+  "Return the effective harness definition for `name`, flattening alias layers.
+
+  Resolution is alias-first: at each hop an unvisited alias shadows a same-named
+  harness, so `defalias! :pi {:alias-of :pi}` resolves through the seat and
+  terminates at the `pi` tool; otherwise the harness registry answers, otherwise
+  the name is missing. A missing name fails `:error-class \"harness-not-found\"`
+  and lists both registries' available names (recovery deferral keys off that
+  class). A genuine alias cycle fails with a distinct `:error-class
+  \"alias-cycle\"` so a real configuration bug never masquerades as the
+  transient not-found reload race."
   [name]
-  (loop [key (harness-key name)
-         seen #{}
-         extra-args []
-         prompt-prefix ""]
-    (when (contains? seen key)
-      (fail! "Harness alias chain contains a cycle" {:harness (harness-key name) :cycle (conj seen key)}))
-    (let [def (or (get @(harness-registry) key)
-                  (fail! "Harness not found" {:error-class "harness-not-found"
-                                                :harness key
-                                                :available (sort (keys @(harness-registry)))}))]
-      (if-let [base (:alias-of def)]
-        (recur (harness-key base)
-               (conj seen key)
-               (into (vec (:extra-args def)) extra-args)
-               (str (:prompt-prefix def) prompt-prefix))
-        (assoc def
+  (let [alias-defs @(alias-registry)
+        harness-defs @(harness-registry)]
+    (loop [key (harness-key name)
+           seen #{}
+           extra-args []
+           prompt-prefix ""]
+      (cond
+        (and (not (contains? seen key)) (contains? alias-defs key))
+        (let [def (get alias-defs key)]
+          (recur (harness-key (:alias-of def))
+                 (conj seen key)
+                 (into (vec (:extra-args def)) extra-args)
+                 (str (:prompt-prefix def) prompt-prefix)))
+
+        (contains? harness-defs key)
+        (assoc (get harness-defs key)
                :name key
                :extra-args extra-args
-               :prompt-prefix prompt-prefix)))))
+               :prompt-prefix prompt-prefix)
+
+        (contains? alias-defs key)
+        (fail! "Harness alias chain contains a cycle"
+               {:error-class "alias-cycle" :harness (harness-key name) :cycle (conj seen key)})
+
+        :else
+        (fail! "Harness not found"
+               {:error-class "harness-not-found"
+                :harness key
+                :available-harnesses (sort (keys harness-defs))
+                :available-aliases (sort (keys alias-defs))})))))
+
+(defn- root-harness
+  "Return `[root-key root-def]` for the alias chain at `key` under the same
+  alias-first rule `resolve-harness` uses, or nil when the chain is dangling or
+  cyclic. The listing stays best-effort here; `resolve-harness` is the loud path
+  a broken chain fails on."
+  [key alias-defs harness-defs]
+  (loop [key key
+         seen #{}]
+    (cond
+      (and (not (contains? seen key)) (contains? alias-defs key))
+      (recur (harness-key (:alias-of (get alias-defs key))) (conj seen key))
+      (contains? harness-defs key)
+      [key (get harness-defs key)]
+      :else nil)))
 
 (defn harnesses
-  "Return registered harness and alias metadata ordered by name."
+  "Return registered harness and alias metadata ordered by name.
+
+  The result is the concatenation of both registries' entries sorted by name,
+  never merged by name — a same-named tool and seat both appear, distinguished
+  by `:kind`. Alias entries carry `:harness` (the resolved root harness name)
+  and that root's doc as `:harness-doc` beside their own `:doc`, so one listing
+  shows tool-level capabilities together with seat-level capabilities without
+  callers re-walking alias chains. Root resolution is best-effort: a broken
+  chain omits the `:harness`/`:harness-doc` keys rather than failing the
+  listing."
   []
-  (mapv (fn [[key def]]
-          (cond-> {:name (name key)
-                   :kind (if (:alias-of def) "alias" "harness")}
-            (:alias-of def) (assoc :alias-of (name (harness-key (:alias-of def))))
-            (:argv def) (assoc :argv (:argv def))
-            (:doc def) (assoc :doc (:doc def))))
-        (sort-by key @(harness-registry))))
+  (let [alias-defs @(alias-registry)
+        harness-defs @(harness-registry)
+        harness-entries
+        (map (fn [[key def]]
+               (cond-> {:name (name key) :kind "harness"}
+                 (:argv def) (assoc :argv (:argv def))
+                 (:doc def) (assoc :doc (:doc def))))
+             harness-defs)
+        alias-entries
+        (map (fn [[key def]]
+               (let [[root-key root-def] (root-harness key alias-defs harness-defs)]
+                 (cond-> {:name (name key) :kind "alias"
+                          :alias-of (name (harness-key (:alias-of def)))}
+                   root-key (assoc :harness (name root-key))
+                   (:doc root-def) (assoc :harness-doc (:doc root-def))
+                   (:doc def) (assoc :doc (:doc def)))))
+             alias-defs)]
+    (vec (sort-by :name (concat harness-entries alias-entries)))))
 
 (defn register-default-harnesses!
   "Register the shipped harness definitions, keeping any existing entries."
@@ -372,7 +503,9 @@
                   :prompt-via :stdin
                   :resume ["--resume" :shuttle/session-id]
                   :doc (fmt/reflow "
-                        |Claude Code headless. The worker prompt rides on stdin (`claude -p` reads
+                        |Claude Code headless: full agentic coding toolset (file edits, shell,
+                        |subagents) plus web search/fetch, from a code-focused model family.
+                        |The worker prompt rides on stdin (`claude -p` reads
                         |it) so it never lands in the process argv, keeping prompts out of `ps` and
                         |out of the blast radius of any `pkill -f` pattern kill. Skips permission
                         |prompts so the run can drive the strand CLI; redefine with your own argv
@@ -383,7 +516,10 @@
               :prompt-via :stdin
               :resume ["--session" :shuttle/session-id]
               :doc (fmt/reflow "
-                    |pi headless in JSON event mode. The worker prompt rides on stdin (`pi -p`
+                    |pi headless in JSON event mode: agentic coding toolset that is
+                    |provider/model-agnostic — aliases pick the model via --provider/--model,
+                    |so model capability notes belong on the aliases.
+                    |The worker prompt rides on stdin (`pi -p`
                     |reads it) so it stays out of the process argv, `ps`, and any `pkill -f`
                     |blast radius. :pi-json captures shuttle/session-id and :resume continues
                     |that specific session with `--session <session-id>` (an existing session,
@@ -1471,11 +1607,13 @@
 (defn- parents-by-run
   "Map run-id -> its parent-of source ids from one bulk incoming-edge fetch,
   so summarising many runs costs a single query instead of one per run."
-  [run-ids]
-  (reduce (fn [m {:keys [from_strand_id to_strand_id]}]
-            (update m to_strand_id (fnil conj []) from_strand_id))
-          {}
-          (graph/incoming-edges (rt) (vec run-ids) "parent-of")))
+  ([run-ids]
+   (parents-by-run run-ids graph/incoming-edges))
+  ([run-ids incoming-edges-fn]
+   (reduce (fn [m {:keys [from_strand_id to_strand_id]}]
+             (update m to_strand_id (fnil conj []) from_strand_id))
+           {}
+           (incoming-edges-fn (rt) (vec run-ids) "parent-of"))))
 
 (defn- run-for-target
   "Return the delegated target for `run` given its parent-of source ids,
@@ -1532,13 +1670,10 @@
            attach (assoc :attach attach)))
        base))))
 
-(defn runs
-  "Return summaries of shuttle runs; opts may filter to `:active` or `:for`.
-  Listing doubles as an interactive liveness checkpoint (there is no
-  background poller): dead sessions are failed here, best-effort."
-  ([] (runs {}))
-  ([{:keys [active for]}]
-   (try (supervise!) (catch Exception _ nil))
+(defn- runs*
+  [opts incoming-edges-fn]
+  (let [{:keys [active for]} opts]
+    (try (supervise!) (catch Exception _ nil))
    (let [run-strands (api/list (rt)
                                (if active [:and [:= :state "active"] run-query] run-query)
                                {})
@@ -1555,11 +1690,19 @@
                                         (= for (attr run :treadle/gate))))
                                   run-strands))
                        run-strands)
-         parents (parents-by-run (mapv :id run-strands))
+         parents (parents-by-run (mapv :id run-strands) incoming-edges-fn)
          summaries (mapv #(run-summary % (get parents (:id %) [])) run-strands)]
-     (if for
-       (filterv #(= for (:for %)) summaries)
-       summaries))))
+      (if for
+        (filterv #(= for (:for %)) summaries)
+        summaries))))
+
+(defn runs
+  "Return summaries of shuttle runs; opts may filter to `:active` or `:for`.
+  Listing doubles as an interactive liveness checkpoint (there is no
+  background poller): dead sessions are failed here, best-effort."
+  ([] (runs {}))
+  ([{:keys [active for]}]
+   (runs* {:active active :for for} graph/incoming-edges)))
 
 (def ^:private terminal-phases #{"done" "failed" "exhausted" "superseded"})
 

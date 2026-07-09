@@ -607,7 +607,7 @@
                       :cwd {:type :string
                             :doc "Working directory for the session (defaults to the workspace root)."}
                       :harness {:type :string
-                                :doc "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-build — the default). Headless harnesses like build/pi-main die in a pane."}
+                                :doc "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-build — the default). Headless harnesses like build/worker die in a pane."}
                       :backend {:type :string
                                 :doc "Multiplexer backend (default tmux)."}}}}
   [ctx]

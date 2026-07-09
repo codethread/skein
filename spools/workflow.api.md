@@ -79,7 +79,7 @@ Advance run-id by one ready step regardless of its kind, returning the
   pass-through `:by`/`:step` opts. When it is a plain step, `:choice` must be
   absent (fail loudly otherwise); `advance!` dispatches to `complete!` with the
   pass-through `:notes`/`:attributes`/`:step`/`:by` opts.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/workflow.clj#L1836-L1864">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/workflow.clj#L1840-L1868">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/archive-run!">`archive-run!`</a>
 ``` clojure
@@ -230,7 +230,7 @@ Record a checkpoint choice for run-id, optionally pour its continuation,
   terminal choice that closes the last inner step beneath a `procedure` join
   closes the join in the same transaction. All validation happens before any
   mutation.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/workflow.clj#L1786-L1834">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/workflow.clj#L1814-L1838">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/compile">`compile`</a>
 ``` clojure
@@ -361,7 +361,7 @@ Return a workflow gate step definition — a step whose completion belongs to
 Function.
 
 Return installation metadata for this alpha workflow spool.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/workflow.clj#L1866-L1901">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/workflow.clj#L1870-L1905">Source</a></sub></p>
 
 ## <a name="skein.spools.workflow/molecule-id">`molecule-id`</a>
 ``` clojure

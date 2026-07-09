@@ -157,40 +157,45 @@
 
   Converts nREPL transport failures, daemon-side exceptions, and missing values
   into ExceptionInfo with client error data."
-  [conn form timeout-ms context]
-  (let [client (nrepl/client conn timeout-ms)
-        session (nrepl/client-session client timeout-ms)
-        responses (try
-                    (doall (nrepl/message session {:op "eval" :code form}))
-                    (catch java.net.SocketTimeoutException e
-                      (throw (ex-info "Weaver nREPL request timed out" (assoc context :type :skein.core.client/timeout) e)))
-                    (catch Exception e
-                      (throw (ex-info "Weaver nREPL request failed" (assoc context :type :skein.core.client/request-failed) e))))
-        statuses (set (mapcat :status responses))]
-    (when (contains? statuses "eval-error")
-      (let [err (some :err responses)]
-        (fail "Weaver API call failed" (assoc context :type :skein.core.client/weaver-error
-                                              :err err
-                                              :responses responses))))
-    (when (contains? statuses "error")
-      (fail "Weaver nREPL returned an error" (assoc context :type :skein.core.client/nrepl-error
-                                                    :responses responses)))
-    (if-let [value (some :value responses)]
-      (let [result (edn/read-string value)]
-        (if (and (map? result) (contains? result :ok))
-          (if (:ok result)
-            (:value result)
-            (fail "Weaver API call failed" (assoc context
-                                                  :type :skein.core.client/weaver-error
-                                                  :weaver-class (:class result)
-                                                  :weaver-message (:message result)
-                                                  :weaver-data (:data result))))
-          result))
-      (if (empty? responses)
-        (fail "Weaver nREPL request timed out" (assoc context :type :skein.core.client/timeout
-                                                      :responses responses))
-        (fail "Weaver nREPL returned no value" (assoc context :type :skein.core.client/no-value
-                                                      :responses responses))))))
+  ([conn form timeout-ms context]
+   (eval-form conn form timeout-ms context {}))
+  ([conn form timeout-ms context {:keys [nrepl-client nrepl-client-session nrepl-message]
+                                  :or {nrepl-client nrepl/client
+                                       nrepl-client-session nrepl/client-session
+                                       nrepl-message nrepl/message}}]
+   (let [client (nrepl-client conn timeout-ms)
+         session (nrepl-client-session client timeout-ms)
+         responses (try
+                     (doall (nrepl-message session {:op "eval" :code form}))
+                     (catch java.net.SocketTimeoutException e
+                       (throw (ex-info "Weaver nREPL request timed out" (assoc context :type :skein.core.client/timeout) e)))
+                     (catch Exception e
+                       (throw (ex-info "Weaver nREPL request failed" (assoc context :type :skein.core.client/request-failed) e))))
+         statuses (set (mapcat :status responses))]
+     (when (contains? statuses "eval-error")
+       (let [err (some :err responses)]
+         (fail "Weaver API call failed" (assoc context :type :skein.core.client/weaver-error
+                                               :err err
+                                               :responses responses))))
+     (when (contains? statuses "error")
+       (fail "Weaver nREPL returned an error" (assoc context :type :skein.core.client/nrepl-error
+                                                     :responses responses)))
+     (if-let [value (some :value responses)]
+       (let [result (edn/read-string value)]
+         (if (and (map? result) (contains? result :ok))
+           (if (:ok result)
+             (:value result)
+             (fail "Weaver API call failed" (assoc context
+                                                   :type :skein.core.client/weaver-error
+                                                   :weaver-class (:class result)
+                                                   :weaver-message (:message result)
+                                                   :weaver-data (:data result))))
+           result))
+       (if (empty? responses)
+         (fail "Weaver nREPL request timed out" (assoc context :type :skein.core.client/timeout
+                                                       :responses responses))
+         (fail "Weaver nREPL returned no value" (assoc context :type :skein.core.client/no-value
+                                                       :responses responses)))))))
 
 (defn- verify-identity!
   "Verify that conn serves the expected weaver runtime metadata."
@@ -210,14 +215,22 @@
                                                                          :actual (:protocol-version actual)}))
     actual))
 
-(defn call-world
-  "Call a weaver API operation in config-dir's world and return Clojure data."
-  [config-dir {:keys [timeout-ms state-dir] :or {timeout-ms default-timeout-ms}} op & args]
+(defn- call-world*
+  [config-dir {:keys [timeout-ms state-dir] :or {timeout-ms default-timeout-ms}} op args transport]
   (let [meta (metadata-for-world config-dir state-dir)]
     (with-open [conn (connect meta timeout-ms)]
       (verify-identity! conn meta timeout-ms)
-      (eval-form conn (fixed-form op args (get-in meta [:endpoint :port])) timeout-ms {:operation op
-                                                                                       :config-dir (:config-dir meta)}))))
+      (eval-form conn
+                 (fixed-form op args (get-in meta [:endpoint :port]))
+                 timeout-ms
+                 {:operation op
+                  :config-dir (:config-dir meta)}
+                 transport))))
+
+(defn call-world
+  "Call a weaver API operation in config-dir's world and return Clojure data."
+  [config-dir {:keys [timeout-ms state-dir] :or {timeout-ms default-timeout-ms}} op & args]
+  (call-world* config-dir {:timeout-ms timeout-ms :state-dir state-dir} op args {}))
 
 (defn- raw-form
   "Return an nREPL form that evaluates code under the connected runtime binding.

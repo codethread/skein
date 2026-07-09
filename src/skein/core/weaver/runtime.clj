@@ -10,7 +10,7 @@
             [skein.core.db :as db])
   (:import [java.lang ProcessHandle]
            [java.time Instant]
-           [java.util.concurrent ArrayBlockingQueue TimeUnit]))
+           [java.util.concurrent ArrayBlockingQueue]))
 
 (def ^:private loopback-host "127.0.0.1")
 
@@ -30,6 +30,11 @@
 (def ^:private recent-event-failure-limit
   "Maximum number of recent event handler failures retained in memory."
   100)
+(def ^:private event-worker-idle-poll-ms
+  "Sleep between empty-queue polls on the single event worker, in ms. The worker
+  claims events with a non-blocking poll so the dispatch-in-progress flag stays
+  down while the lane idles; this bounds the pickup latency of the next event."
+  5)
 
 (declare stop! with-spool-classloader with-runtime-binding)
 
@@ -38,6 +43,10 @@
    :recent-failures (atom [])
    :queue (ArrayBlockingQueue. event-queue-capacity)
    :running? (atom true)
+   ;; Raised before the worker claims an event, lowered after its handlers
+   ;; return, so await-quiescent! never reports settled while a just-claimed
+   ;; dispatch is still in flight (TEN-003).
+   :dispatch-in-progress? (atom false)
    :worker (atom nil)})
 
 (defn stop-event-system!
@@ -53,41 +62,57 @@
   nil)
 
 (defn- run-event-worker! [runtime event-system]
-  (let [worker (Thread.
+  (let [queue ^ArrayBlockingQueue (:queue event-system)
+        running? (:running? event-system)
+        dispatch-in-progress? (:dispatch-in-progress? event-system)
+        worker (Thread.
                 (fn []
                   (try
-                    (while @(:running? event-system)
-                      (when-let [event (.poll ^ArrayBlockingQueue (:queue event-system) 100 TimeUnit/MILLISECONDS)]
-                        (when @(:running? event-system)
-                          (if (= :scheduler/fire (:event/type event))
-                            ;; Clock-triggered wakes share this serialized lane
-                            ;; rather than a second worker. run-fire! records its
-                            ;; own completion/failure history and never throws
-                            ;; into the worker; the guard is defence in depth.
-                            (try
-                              (with-runtime-binding
-                                runtime
-                                #(with-spool-classloader runtime (fn [] (scheduler/run-fire! runtime event))))
-                              (catch Throwable _ nil))
-                            ;; :fn stays un-destructured: a local named `fn` would
-                            ;; shadow the fn macro in the handler thunks below.
-                            (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
-                                    :when (contains? types (:event/type event))]
+                    (while @running?
+                      ;; Raise the flag before claiming so await-quiescent! never
+                      ;; observes an empty queue with the flag down while an event
+                      ;; is mid-dispatch (TEN-003). A non-blocking poll keeps the
+                      ;; flag down while the lane idles, so quiescence stays
+                      ;; observable between events; the finally lowers it even
+                      ;; when a handler throws.
+                      (reset! dispatch-in-progress? true)
+                      (if-let [event (.poll queue)]
+                        (try
+                          (when @running?
+                            (if (= :scheduler/fire (:event/type event))
+                              ;; Clock-triggered wakes share this serialized lane
+                              ;; rather than a second worker. run-fire! records its
+                              ;; own completion/failure history and never throws
+                              ;; into the worker; the guard is defence in depth.
                               (try
                                 (with-runtime-binding
                                   runtime
-                                  #(with-spool-classloader runtime (fn [] (fn-value event))))
-                                (catch Throwable t
-                                  (let [failure {:handler/key key
-                                                 :handler/fn (:fn handler)
-                                                 :event/id (:event/id event)
-                                                 :event/type (:event/type event)
-                                                 :exception/message (ex-message t)
-                                                 :failed/at (str (Instant/now))}]
-                                    (swap! (:recent-failures event-system)
-                                           #(->> (conj % failure)
-                                                 (take-last recent-event-failure-limit)
-                                                 vec))))))))))
+                                  #(with-spool-classloader runtime (fn [] (scheduler/run-fire! runtime event))))
+                                (catch Throwable _ nil))
+                              ;; :fn stays un-destructured: a local named `fn` would
+                              ;; shadow the fn macro in the handler thunks below.
+                              (doseq [{:keys [key types fn-value] :as handler} (vals @(:handler-registry event-system))
+                                      :when (contains? types (:event/type event))]
+                                (try
+                                  (with-runtime-binding
+                                    runtime
+                                    #(with-spool-classloader runtime (fn [] (fn-value event))))
+                                  (catch Throwable t
+                                    (let [failure {:handler/key key
+                                                   :handler/fn (:fn handler)
+                                                   :event/id (:event/id event)
+                                                   :event/type (:event/type event)
+                                                   :exception/message (ex-message t)
+                                                   :failed/at (str (Instant/now))}]
+                                      (swap! (:recent-failures event-system)
+                                             #(->> (conj % failure)
+                                                   (take-last recent-event-failure-limit)
+                                                   vec))))))))
+                          (finally
+                            (reset! dispatch-in-progress? false)))
+                        (do
+                          (reset! dispatch-in-progress? false)
+                          (Thread/sleep ^long event-worker-idle-poll-ms))))
                     (catch InterruptedException _ nil)))
                 "skein-event-worker")]
     (.setDaemon worker true)
@@ -152,6 +177,52 @@
   [runtime f]
   (binding [*runtime* runtime]
     (f)))
+
+;; --- Clock seam (RFC-Dtt-001) ---
+;;
+;; The runtime owns one clock: a `:clock` atom holding a zero-arg fn that returns
+;; the current Instant, defaulting to the real wall clock. Subsystems that time
+;; off it (the scheduler) read `now`; deterministic tests swap the fn via
+;; `skein.test.alpha/set-clock!` and step it with `advance!`. Consumers that arm
+;; real timers register a synchronous due-check pump so `advance!` can drive them
+;; without waiting on wall time.
+
+(defn now
+  "Return the current Instant from runtime's clock seam.
+
+  Defaults to the real wall clock; deterministic tests inject an advanceable
+  clock through `skein.test.alpha/set-clock!`."
+  ^Instant [runtime]
+  ((deref (:clock runtime))))
+
+(defn set-clock!
+  "Replace runtime's clock with `clock-fn`, a zero-arg fn returning an Instant."
+  [runtime clock-fn]
+  (reset! (:clock runtime) clock-fn)
+  nil)
+
+(defn register-clock-pump!
+  "Register `pump-fn` under `key` in runtime's clock-consumer pump registry.
+
+  `pump-fn` takes the runtime and runs a synchronous due-check for a subsystem
+  that arms real timers off the runtime clock, so `skein.test.alpha/advance!` can
+  drive it deterministically after moving the clock. Registration is idempotent
+  per key. Throws when `runtime` carries no `:clock-pumps` registry, so a
+  malformed runtime fails loudly instead of silently disabling deterministic
+  clock pumping."
+  [runtime key pump-fn]
+  (when-not (:clock-pumps runtime)
+    (throw (ex-info "Runtime has no :clock-pumps registry to register a clock pump"
+                    {:key key})))
+  (swap! (:clock-pumps runtime) assoc key pump-fn)
+  nil)
+
+(defn run-clock-pumps!
+  "Run every registered clock-consumer pump synchronously for side effects."
+  [runtime]
+  (doseq [pump-fn (vals @(:clock-pumps runtime))]
+    (pump-fn runtime))
+  nil)
 
 (defn runtime-for-nrepl-port
   "Return the runtime serving an nREPL server port, or fail loudly when unknown."
@@ -344,6 +415,8 @@
                                           :started-at (str (Instant/now))})
            runtime-base {:storage storage
                          :datasource ds
+                         :clock (atom (fn [] (Instant/now)))
+                         :clock-pumps (atom {})
                          :query-registry (atom {})
                          :view-registry (atom {})
                          :pattern-registry (atom {})

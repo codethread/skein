@@ -33,7 +33,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
 
 **Situation.** You want to run a specific coding agent (Claude, Codex, an in-house CLI) from strands, and you want a few named tiers over it — a cheap model for search, a mid model for grunt work, a top model for building — without teaching every caller the underlying flags.
 
-**Composition.** One `defharness!` describes the concrete launcher as plain data: the `:argv`, how output is parsed (`:parse`), and how the prompt reaches the process (`:prompt-via`). Then `defalias!` layers named tiers over it — `:alias-of` plus `:extra-args` that splice into the argv before the prompt. Aliases flatten (an alias may point at another alias), so the tier names are the only vocabulary a caller needs.
+**Composition.** One `defharness!` describes the concrete launcher as plain data: the `:argv`, how output is parsed (`:parse`), and how the prompt reaches the process (`:prompt-via`). Then `defalias!` registers seats in a separate alias registry — `:alias-of` plus `:extra-args` that splice into the argv before the prompt. Resolution checks aliases first, then harnesses, so a seat may intentionally share a tool's name without overwriting the tool. Aliases flatten (an alias may point at another alias), so the tier names are the only vocabulary a caller needs.
 
 ```clojure
 (require '[skein.spools.shuttle :as shuttle])
@@ -61,12 +61,12 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
 
 **Why this shape.**
 
-- **A harness is data, so swapping a provider is one line.** Nothing about a run
-  is compiled in — `defharness!`/`defalias!` register plain maps that the engine
-  reads at launch. Re-point `:build` at a different base and every `:build` run
-  in the workspace follows, no caller change. This is the exact seam the
-  [agents spool](./agents/README.md) builds its cross-harness subagent surface
-  on.
+- **A harness is data, and seats are a separate naming layer.** Nothing about a
+  run is compiled in — `defharness!` registers concrete tools and `defalias!`
+  registers seats the engine reads at launch. Re-point `:build` at a different
+  base and every `:build` run in the workspace follows, no caller change. This
+  is the exact seam the [agents spool](./agents/README.md) builds its
+  cross-harness subagent surface on.
 - **`:prompt-via` is a safety decision, not a detail.** `:arg` appends the
   prompt as the final argv token (the default); `:stdin` pipes it to the
   process. The shipped `:claude`/`:pi` harnesses default to `:stdin` because
@@ -76,7 +76,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
   because its script is a required positional, so the engine cannot move it to
   stdin. A typo'd `:prompt-via` fails loudly at `defharness!` rather than
   silently falling back to the less-safe argv delivery (contract
-  [§3, "Harness registry"](./shuttle/README.md#3-harness-registry)).
+  [§3, "Harness and alias registries"](./shuttle/README.md#3-harness-and-alias-registries)).
 - **Aliases flatten; layering is cheap.** `:extra-args` splice in before the
   prompt, and an alias-of-an-alias resolves the whole chain, so a
   `:fast-reviewer` over `:explore` over `:claude` composes without repetition.

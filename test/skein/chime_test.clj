@@ -7,6 +7,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.events.alpha :as events]
             [skein.api.weaver.alpha :as api]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.runtime :as runtime]
@@ -188,7 +189,11 @@
         ;; titles and bodies land in separate appends, so bodies need their own wait
         (is (eventually #(file-contains? out-file "stacktrace")))
         (testing "parent-completed matches only once the parent closes"
-          (Thread/sleep 150)
+          ;; drain the event lane and join notifier threads so any parent
+          ;; notification would have landed before asserting the still-open
+          ;; parent has fired none
+          (events/await-quiescent! rt)
+          (await-notifier-threads!)
           (is (not (file-contains? out-file "Plan complete: plan p")))
           (api/update rt (:id parent) {:state "closed"})
           (chime/scan! {:strand/id (:id parent)})
@@ -208,7 +213,10 @@
                                         :attributes {"needs-human" "true"}
                                         :edges [{:type "depends-on" :to (:id blocker)}]}))]
           (chime/scan! {:strand/id blocked})
-          (Thread/sleep 150)
+          ;; drain the event lane and join notifier threads so a notification
+          ;; would have landed before asserting the blocked strand fired none
+          (events/await-quiescent! rt)
+          (await-notifier-threads!)
           (is (not (file-contains? out-file "Needs human: Approve blocked")))
           (api/update rt (:id blocker) {:state "closed"})
           (chime/scan! {:strand/id (:id blocker)})
@@ -228,7 +236,10 @@
         (eventually #(file-contains? out-file "---"))
         (let [once (slurp out-file)]
           (chime/scan! {:strand/id (:id run)})
-          (Thread/sleep 150)
+          ;; drain the event lane and join notifier threads so a duplicate
+          ;; notification would have landed before asserting dedup held
+          (events/await-quiescent! rt)
+          (await-notifier-threads!)
           (is (= once (slurp out-file)))
           (is (= {:seen 0} (chime/reset-seen!)))
           (chime/scan! {:strand/id (:id run)})

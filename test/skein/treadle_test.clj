@@ -8,7 +8,8 @@
             [skein.spools.workflow :as workflow]
             [skein.spools.test-support :as test-support :refer [with-runtime]]
             [skein.core.db :as db]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as api]
+            [skein.api.events.alpha :as events]))
 
 (defn- with-treadle [f]
   (with-runtime
@@ -31,6 +32,33 @@
 
 (defn- attr [strand k]
   (get-in strand [:attributes k]))
+
+(defn- await-settled
+  "Poll `pred` (a strand -> truthy fn) against strand `id` for a real
+  off-lane subprocess completion (RFC-Dtt-001.REC7) that lane quiescence
+  alone cannot observe. Once `pred` lands, settle the event lane so
+  treadle's on-lane reaction to that transition (delivery, error,
+  superseded-by stamps) has run before the caller reads dependent state."
+  ([rt id pred] (await-settled rt id pred (test-support/await-budget-ms)))
+  ([rt id pred timeout-ms]
+   (await-eventually #(let [s (api/show rt id)]
+                        (when (pred s)
+                          (events/await-quiescent! rt)
+                          (api/show rt id)))
+                     timeout-ms)))
+
+(defn- await-run-phase
+  "Await run `id` reaching one of `phases` (a terminal `:shuttle/phase`),
+  layered on `await-settled`."
+  ([rt id phases] (await-run-phase rt id phases (test-support/await-budget-ms)))
+  ([rt id phases timeout-ms]
+   (await-settled rt id #(contains? (set phases) (attr % :shuttle/phase)) timeout-ms)))
+
+(defn- await-delivered
+  "Await run `id` stamping `:treadle/delivered`, layered on `await-settled`."
+  ([rt id] (await-delivered rt id (test-support/await-budget-ms)))
+  ([rt id timeout-ms]
+   (await-settled rt id #(some? (attr % :treadle/delivered)) timeout-ms)))
 
 (defn- workflow-with-gate [gate-attrs]
   (workflow/workflow
@@ -63,19 +91,16 @@
                                                     "shuttle/prompt" "echo gate-result"}) {})
       (let [[first-step] (workflow/next-steps "happy")]
         (workflow/complete! "happy" {:step (:id first-step)}))
+      ;; capture gate-id before settling: a fast gate (no subprocess delay)
+      ;; can already be delivered and gone from next-steps by the time the
+      ;; event lane settles.
       (let [gate-id (:id (ready-subagent-gate "happy"))
-            ;; Wait for the terminal treadle signal, not just run close: delivery
-            ;; (gate outcome, notes, the :treadle/delivered stamp, unblocking the
-            ;; next step) runs asynchronously after the run's state flips to
-            ;; closed, so keying on close alone races that propagation. Accept any
-            ;; delivered value here — the assertion below reports a wrong terminal
-            ;; state (e.g. "gate-closed", "error: ...") instead of timing out.
-            run (await-eventually #(some-> (run-for-gate rt gate-id)
-                                           ((fn [r] (let [s (api/show rt (:id r))]
-                                                      (when (some? (attr s :treadle/delivered)) s))))))
+            _ (events/await-quiescent! rt)
+            run-id (:id (run-for-gate rt gate-id))
+            run (await-delivered rt run-id)
             gate (api/show rt (attr run :treadle/gate))
             after (first (workflow/next-steps "happy"))]
-        (is (= "true" (attr (api/show rt (:id run)) :treadle/delivered)))
+        (is (= "true" (attr run :treadle/delivered)))
         (is (= (:id run) (attr gate :workflow/outcome-by)))
         (is (= "gate-result" (attr gate :workflow/notes)))
         (is (= "happy" (attr run :treadle/run-id)))
@@ -97,13 +122,14 @@
                                        :attributes {"shuttle/harness" "sh-tail"
                                                     "shuttle/prompt" "echo later"}))]
         (workflow/start! "blocked" definition {})
-        (Thread/sleep 250)
+        (events/await-quiescent! rt)
         (let [gate-id (:id (first (api/list rt [:= :title "Delegate"] {})))]
           (is (some? gate-id))
           (is (nil? (run-for-gate rt gate-id)))
           (let [[blocker] (workflow/next-steps "blocked")]
             (workflow/complete! "blocked" {:step (:id blocker)}))
-          (is (some? (await-eventually #(run-for-gate rt gate-id)))))))))
+          (events/await-quiescent! rt)
+          (is (some? (run-for-gate rt gate-id))))))))
 
 (deftest missing-harness-stamps-error-and-does-not-retry
   (with-treadle
@@ -112,12 +138,13 @@
                                   "Missing"
                                   (workflow/gate :delegate "Delegate" :subagent
                                                  :attributes {"shuttle/prompt" "echo no"})) {})
+      (events/await-quiescent! rt)
       (let [gate-id (:id (ready-subagent-gate "missing"))
-            gate (await-eventually #(let [g (api/show rt gate-id)] (when (attr g :treadle/error) g)))]
+            gate (api/show rt gate-id)]
         (is (str/includes? (attr gate :treadle/error) "shuttle/harness"))
         (is (nil? (run-for-gate rt gate-id)))
         (api/add rt {:title "unrelated"})
-        (Thread/sleep 250)
+        (events/await-quiescent! rt)
         (is (nil? (run-for-gate rt gate-id)))))))
 
 (deftest failed-run-stays-ready-and-clearing-stamp-spawns-fresh-run
@@ -129,21 +156,21 @@
                                                :attributes {"shuttle/harness" "sh-tail"
                                                             "shuttle/prompt" "exit 7"})
                                 (workflow/step :after "After" :self :depends-on [:delegate])) {})
+      (events/await-quiescent! rt)
       (let [gate-id (:id (ready-subagent-gate "retry"))
-            failed (await-eventually #(when-let [r (run-for-gate rt gate-id)]
-                                        (let [shown (api/show rt (:id r))]
-                                          (when (= "failed" (attr shown :shuttle/phase)) shown))))]
+            run-id (:id (run-for-gate rt gate-id))
+            failed (await-run-phase rt run-id #{"failed"})]
         (is (= "active" (:state failed)))
         (is (= gate-id (attr failed :treadle/gate)))
         (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/next-steps "retry")))))
         (api/update rt gate-id {:attributes {"treadle/run" ""
                                              "shuttle/prompt" "echo recovered"}})
-        (let [fresh (await-eventually #(some (fn [r]
-                                               (when (not= (:id failed) (:id r)) r))
-                                             (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))]
-          (is (= "recovered" (attr (await-eventually #(let [r (api/show rt (:id fresh))]
-                                                        (when (= "closed" (:state r)) r)))
-                                   :shuttle/result))))))))
+        (events/await-quiescent! rt)
+        (let [fresh-id (:id (some (fn [r]
+                                    (when (not= (:id failed) (:id r)) r))
+                                  (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))
+              done (await-run-phase rt fresh-id #{"done"})]
+          (is (= "recovered" (attr done :shuttle/result))))))))
 
 (deftest blank-result-gate-fails-loudly-stays-discoverable-and-recovers
   (with-treadle
@@ -159,10 +186,10 @@
                                                :attributes {"shuttle/harness" "sh-tail"
                                                             "shuttle/prompt" "true"})
                                 (workflow/step :after "After" :self :depends-on [:delegate])) {})
+      (events/await-quiescent! rt)
       (let [gate-id (:id (ready-subagent-gate "blank"))
-            failed (await-eventually #(when-let [r (run-for-gate rt gate-id)]
-                                        (let [shown (api/show rt (:id r))]
-                                          (when (= "failed" (attr shown :shuttle/phase)) shown))))]
+            run-id (:id (run-for-gate rt gate-id))
+            failed (await-run-phase rt run-id #{"failed"})]
         ;; (a) the blank-result run is recorded failed, loud, and stays active
         (is (= "active" (:state failed)))
         (is (str/includes? (attr failed :shuttle/error) "empty result"))
@@ -179,10 +206,10 @@
         ;; (d) recover by clearing the gate's run stamp: the treadle respawns a fresh run
         (api/update rt gate-id {:attributes {"treadle/run" ""
                                              "shuttle/prompt" "echo recovered"}})
-        (let [fresh (await-eventually #(some (fn [r] (when (not= (:id failed) (:id r)) r))
-                                             (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))
-              delivered (await-eventually #(let [r (api/show rt (:id fresh))]
-                                             (when (attr r :treadle/delivered) r)))]
+        (events/await-quiescent! rt)
+        (let [fresh-id (:id (some (fn [r] (when (not= (:id failed) (:id r)) r))
+                                  (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))
+              delivered (await-delivered rt fresh-id)]
           (is (= "true" (attr delivered :treadle/delivered)))
           (is (= "recovered" (attr (api/show rt gate-id) :workflow/notes)))
           (is (= "After" (:title (first (workflow/next-steps "blank"))))))))))
@@ -201,30 +228,31 @@
                                                   :attributes {"shuttle/harness" "sh-tail"
                                                                "shuttle/prompt" "true"})
                                    (workflow/step :after "After" :self :depends-on [:delegate])) {})
+      (events/await-quiescent! rt)
       (let [gate-id (:id (ready-subagent-gate "lockstep"))
-            failed (await-eventually #(when-let [r (run-for-gate rt gate-id)]
-                                        (let [shown (api/show rt (:id r))]
-                                          (when (= "failed" (attr shown :shuttle/phase)) shown))))]
+            run-id (:id (run-for-gate rt gate-id))
+            failed (await-run-phase rt run-id #{"failed"})]
         ;; dead run: predicate and query agree the gate is stalled
         (is (= "failed" (:phase (treadle/gate-stalled? (ready-subagent-gate "lockstep")))))
         (is (some #(= gate-id (:id %)) (api/list-query rt 'stalled-gates {})))
         ;; recover by clearing the stamp; the treadle respawns a slow, healthy run
         (api/update rt gate-id {:attributes {"treadle/run" nil
                                              "shuttle/prompt" "sleep 3; echo recovered"}})
-        (let [fresh (await-eventually #(some (fn [r] (when (not= (:id failed) (:id r)) r))
-                                             (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))]
-          (await-eventually #(= (:id fresh) (attr (api/show rt gate-id) :treadle/run)))
-          (await-eventually #(= "running" (attr (api/show rt (:id fresh)) :shuttle/phase)))
+        (events/await-quiescent! rt)
+        (let [fresh-id (:id (some (fn [r] (when (not= (:id failed) (:id r)) r))
+                                  (api/list rt [:= [:attr "treadle/gate"] gate-id] {})))]
+          ;; the respawn stamps the gate's treadle/run in the same on-lane scan
+          ;; that created the fresh run, so it is already in lockstep here
+          (is (= fresh-id (attr (api/show rt gate-id) :treadle/run)))
+          (await-run-phase rt fresh-id #{"running"})
           ;; the dead run's provenance is repointed at the fresh run
-          (is (= (:id fresh) (attr (api/show rt (:id failed)) :treadle/superseded-by)))
-          (is (nil? (attr (api/show rt (:id fresh)) :treadle/superseded-by)))
+          (is (= fresh-id (attr (api/show rt (:id failed)) :treadle/superseded-by)))
+          (is (nil? (attr (api/show rt fresh-id) :treadle/superseded-by)))
           ;; lockstep while the replacement is healthy: neither surfaces the gate
           (is (nil? (treadle/gate-stalled? (ready-subagent-gate "lockstep"))))
           (is (empty? (filter #(= gate-id (:id %)) (api/list-query rt 'stalled-gates {}))))
           ;; let the healthy run finish so the gate delivers and teardown is clean
-          (is (= "true" (attr (await-eventually #(let [r (api/show rt (:id fresh))]
-                                                   (when (attr r :treadle/delivered) r))
-                                                (test-support/await-budget-ms 15000))
+          (is (= "true" (attr (await-delivered rt fresh-id (test-support/await-budget-ms 15000))
                               :treadle/delivered))))))))
 
 (deftest agent-retry-of-blank-gate-run-supersedes-without-stale-delivery
@@ -237,10 +265,10 @@
                                                      :attributes {"shuttle/harness" "sh-tail"
                                                                   "shuttle/prompt" "true"})
                                       (workflow/step :after "After" :self :depends-on [:delegate])) {})
+      (events/await-quiescent! rt)
       (let [gate-id (:id (ready-subagent-gate "retry-blank"))
-            failed (await-eventually #(when-let [r (run-for-gate rt gate-id)]
-                                        (let [shown (api/show rt (:id r))]
-                                          (when (= "failed" (attr shown :shuttle/phase)) shown))))
+            run-id (:id (run-for-gate rt gate-id))
+            failed (await-run-phase rt run-id #{"failed"})
             retry (agents/agent-op {:op/argv ["retry" (:id failed)]})]
         ;; agent retry supersedes the dead run (closes it) and spawns a fresh run
         (is (= (:id failed) (:superseded retry)))
@@ -276,11 +304,11 @@
                                  (workflow/gate :delegate "Delegate" :subagent
                                                 :attributes {"shuttle/harness" "sh-tail"
                                                              "shuttle/prompt" "sleep 1; echo too-late"})) {})
+      (events/await-quiescent! rt)
       (let [gate-id (:id (ready-subagent-gate "routed"))
-            run (await-eventually #(run-for-gate rt gate-id))]
+            run-id (:id (run-for-gate rt gate-id))]
         (api/update rt gate-id {:state "closed"})
-        (let [done (await-eventually #(let [r (api/show rt (:id run))]
-                                        (when (attr r :treadle/delivered) r)))]
+        (let [done (await-delivered rt run-id)]
           (is (= "gate-closed" (attr done :treadle/delivered))))))))
 
 (deftest unready-gate-blocks-delivery-until-ready-again
@@ -291,20 +319,19 @@
                                (workflow/gate :delegate "Delegate" :subagent
                                               :attributes {"shuttle/harness" "sh-tail"
                                                            "shuttle/prompt" "sleep 1; echo held-result"})) {})
+      (events/await-quiescent! rt)
       (let [gate-id (:id (ready-subagent-gate "held"))
-            run (await-eventually #(run-for-gate rt gate-id))
+            run-id (:id (run-for-gate rt gate-id))
             hold (api/add rt {:title "Hold delivery"})]
         ;; un-ready the gate while its run is in flight: delivery must park
         ;; loudly (write-once treadle/delivery-blocked), not stamp terminal
         ;; state or spin
         (api/update rt gate-id {:edges [{:type "depends-on" :to (:id hold)}]})
-        (let [blocked (await-eventually #(let [r (api/show rt (:id run))]
-                                           (when (attr r :treadle/delivery-blocked) r)))]
+        (let [blocked (await-settled rt run-id #(attr % :treadle/delivery-blocked))]
           (is (= "closed" (:state blocked)))
           (is (nil? (attr blocked :treadle/delivered))))
         (api/update rt (:id hold) {:state "closed"})
-        (let [delivered (await-eventually #(let [r (api/show rt (:id run))]
-                                             (when (attr r :treadle/delivered) r)))]
+        (let [delivered (await-delivered rt run-id)]
           (is (= "true" (attr delivered :treadle/delivered)))
           (is (= "held-result" (attr (api/show rt gate-id) :workflow/notes))))))))
 
@@ -328,9 +355,10 @@
                                         (workflow/gate :delegate "Running delegate" :subagent
                                                        :attributes {"shuttle/harness" "sh-tail"
                                                                     "shuttle/prompt" "sleep 1; echo ok"})) {})
+      (events/await-quiescent! rt)
       (let [running-gate-id (:id (ready-subagent-gate "query-running"))
-            running-run-id (:id (await-eventually #(run-for-gate rt running-gate-id)))]
-        (await-eventually #(= "running" (attr (api/show rt running-run-id) :shuttle/phase)))
+            running-run-id (:id (run-for-gate rt running-gate-id))]
+        (await-run-phase rt running-run-id #{"running"})
         (is (empty? (filter #(= running-gate-id (:id %))
                             (api/list-query rt 'stalled-gates {}))))
         ;; (b) spawn-side error surfaces the gate
@@ -346,14 +374,14 @@
                                        (workflow/gate :delegate "Dead delegate" :subagent
                                                       :attributes {"shuttle/harness" "sh-tail"
                                                                    "shuttle/prompt" "true"})) {})
+        (events/await-quiescent! rt)
         (let [error-gate-id (:id (ready-subagent-gate "query-error"))
-              dead-gate-id (:id (ready-subagent-gate "query-dead"))]
-          (await-eventually #(attr (api/show rt error-gate-id) :treadle/error))
-          (await-eventually #(when-let [r (run-for-gate rt dead-gate-id)]
-                               (= "failed" (attr (api/show rt (:id r)) :shuttle/phase))))
+              dead-gate-id (:id (ready-subagent-gate "query-dead"))
+              dead-run-id (:id (run-for-gate rt dead-gate-id))]
+          (await-run-phase rt dead-run-id #{"failed"})
           (is (= #{error-gate-id dead-gate-id}
                  (set (mapv :id (api/list-query rt 'stalled-gates {})))))
-          (await-eventually #(= "closed" (:state (api/show rt running-run-id)))))))))
+          (await-run-phase rt running-run-id #{"done"}))))))
 
 (deftest non-subagent-gates-are-ignored
   (with-treadle
@@ -364,7 +392,7 @@
                                             :attributes {"shuttle/harness" "sh-tail"
                                                          "shuttle/prompt" "echo ignored"})) {})
       (let [gate-id (:id (first (workflow/next-steps "ci")))]
-        (Thread/sleep 300)
+        (events/await-quiescent! rt)
         (is (nil? (run-for-gate rt gate-id)))
         (is (nil? (attr (api/show rt gate-id) :treadle/run)))))))
 

@@ -690,7 +690,7 @@
         (hooks/register! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
         (events/register! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
         (events/enqueue! rt (test-event :strand/added "before-reload"))
-        (Thread/sleep 250)
+        (events/await-quiescent! rt)
         (is (seq (events/recent-failures rt)))
         (spit (io/file workspace "init.clj")
               (str "(require '[skein.api.current.alpha :as current]\n"
@@ -745,14 +745,14 @@
                (events/register! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event {:purpose :replacement})))
         (is (= [] @delivered-events))
         (events/enqueue! rt (test-event :strand/added "ignored"))
-        (Thread/sleep 100)
+        (events/await-quiescent! rt)
         (is (= [] @delivered-events))
         (events/enqueue! rt (test-event :strand/updated "delivered"))
-        (Thread/sleep 250)
+        (events/await-quiescent! rt)
         (is (= [(test-event :strand/updated "delivered")] @delivered-events))
         (events/register! rt :fails #{:strand/updated} 'skein.weaver-test/failing-event {})
         (events/enqueue! rt (test-event :strand/updated "fails"))
-        (Thread/sleep 250)
+        (events/await-quiescent! rt)
         (let [failure (last (events/recent-failures rt))]
           (is (= :fails (:handler/key failure)))
           (is (= 'skein.weaver-test/failing-event (:handler/fn failure)))
@@ -1067,7 +1067,7 @@
       (api/init rt)
       (let [from (api/add rt {:title "From"})
             to (api/add rt {:title "To"})]
-        (Thread/sleep 100)
+        (events/await-quiescent! rt)
         (reset! hook-contexts [])
         (reset! delivered-events [])
         (events/register! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
@@ -1078,7 +1078,7 @@
               events (wait-for-events 1)
               batch-event (first (filter #(= :batch/applied (:event/type %)) events))
               context (last @hook-contexts)]
-          (Thread/sleep 100)
+          (events/await-quiescent! rt)
           (is (= [:batch/applied] (mapv :event/type @delivered-events)))
           (is (= (:edges result) (:batch/edges batch-event)))
           (is (= [] (:batch/created context) (:batch/updated context) (:batch/burned context)))
@@ -1291,7 +1291,7 @@
           (is (= 'skein.weaver-test/rejecting-normalize-hook (:hook/fn (ex-data e))))
           (is (= "policy/rejected" (:hook/cause-code (ex-data e))))
           (is (= {:code "policy/rejected" :reason :test} (:exception/data (ex-data e))))))
-      (Thread/sleep 100)
+      (events/await-quiescent! rt)
       (is (empty? (api/list rt)))
       (is (empty? @delivered-events))
       (hooks/unregister! rt :reject)
@@ -1309,7 +1309,7 @@
         (hooks/register! rt :reject #{:attributes/normalize} 'skein.weaver-test/rejecting-normalize-hook {})
         (is (thrown? clojure.lang.ExceptionInfo
                      (api/update rt (:id strand) {:attributes {:c "d"}})))
-        (Thread/sleep 100)
+        (events/await-quiescent! rt)
         (is (= {:a "b"} (:attributes (api/show rt (:id strand)))))
         (is (empty? @delivered-events))))))
 
@@ -1345,7 +1345,7 @@
             (is (= :reject-add (:hook/key (ex-data e))))
             (is (= 'skein.weaver-test/rejecting-hook (:hook/fn (ex-data e))))
             (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-        (Thread/sleep 100)
+        (events/await-quiescent! rt)
         (is (nil? (some #(when (= "Rejected" (:title %)) %) (api/list rt))))
         (is (= 1 (count @delivered-events)))
         (hooks/unregister! rt :reject-add)
@@ -1387,7 +1387,7 @@
                 (is (= :strand/update-before-commit (:hook/type (ex-data e))))
                 (is (= :reject-update (:hook/key (ex-data e))))
                 (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-            (Thread/sleep 100)
+            (events/await-quiescent! rt)
             (is (= updated (api/show rt (:id created))))
             (is (empty? (db/execute! (:datasource rt)
                                      ["SELECT 1 FROM strand_edges WHERE from_strand_id = ? AND to_strand_id = ? AND edge_type = 'parent-of'"
@@ -1414,7 +1414,7 @@
               edge-target (api/add rt {:title "Burn edge target"})]
           (api/update rt (:id burn-target) {:edges [{:type "depends-on" :to (:id edge-target)}]})
           (let [burn-target (api/show rt (:id burn-target))]
-            (Thread/sleep 100)
+            (events/await-quiescent! rt)
             (reset! delivered-events [])
             (hooks/register! rt :reject-burn #{:strand/burn-before-commit} 'skein.weaver-test/rejecting-hook {})
             (try
@@ -1425,7 +1425,7 @@
                 (is (= :strand/burn-before-commit (:hook/type (ex-data e))))
                 (is (= :reject-burn (:hook/key (ex-data e))))
                 (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-            (Thread/sleep 100)
+            (events/await-quiescent! rt)
             (is (= burn-target (api/show rt (:id burn-target))))
             (is (= [{:found 1}]
                    (db/execute! (:datasource rt)
@@ -1946,7 +1946,7 @@
         (is (= 1 (count (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"]))))
         ;; a weave is a batch apply: event-driven spools must see the created
         ;; strands without waiting for an unrelated mutation
-        (let [event (do (Thread/sleep 300) (first @delivered-events))]
+        (let [event (do (events/await-quiescent! rt) (first @delivered-events))]
           (is (= :batch/applied (:event/type event)))
           (is (= "dev-task" (str (:pattern/name event))))
           (is (= 2 (count (:batch/created event))))))
@@ -2053,7 +2053,7 @@
           (is (= :batch/apply-before-commit (:hook/type (ex-data e))))
           (is (= :reject-batch (:hook/key (ex-data e))))
           (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-      (Thread/sleep 100)
+      (events/await-quiescent! rt)
       (is (empty? (api/list rt)))
       (is (empty? (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"])))
       (is (empty? @delivered-events)))))

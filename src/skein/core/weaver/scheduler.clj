@@ -59,7 +59,7 @@
 
   Bumping this reinitializes (and closes) any preserved state whose shape no
   longer matches after a reload, per SPEC-004.C95/C96."
-  1)
+  2)
 
 (def ^:private state-key ::state)
 
@@ -77,9 +77,14 @@
 
 (declare dispatch-and-rearm!)
 
-(defn- now-instant ^Instant [state]
-  (let [now-fn @(:clock state)]
-    (now-fn)))
+(defn- now-instant
+  "Current Instant from the runtime clock seam.
+
+  Reads the runtime's `:clock` slot directly rather than via
+  `skein.core.weaver.runtime/now`: runtime requires this scheduler namespace, so
+  a static require back would cycle."
+  ^Instant [runtime]
+  ((deref (:clock runtime))))
 
 (defn- close-state!
   "Cancel the timer and shut the executor down, joining its thread."
@@ -107,7 +112,6 @@
         state {:executor (Executors/newSingleThreadScheduledExecutor factory)
                :timer (atom nil)
                :in-flight (atom #{})
-               :clock (atom (fn [] (Instant/now)))
                :dispatch-failures (atom [])
                :closed? (atom false)
                :lock (Object.)}]
@@ -123,15 +127,6 @@
   [runtime]
   ((requiring-resolve 'skein.api.runtime.alpha/spool-state)
    runtime state-key {:version scheduler-state-version} new-state))
-
-(defn set-clock!
-  "Install a zero-arg clock fn returning the current java.time.Instant.
-
-  Test seam: deterministic runtime tests inject an advanceable clock so due
-  detection and arming do not depend on wall-clock time."
-  [runtime clock-fn]
-  (reset! (:clock (state runtime)) clock-fn)
-  nil)
 
 (defn dispatch-failures
   "Return recent transient (queue-full) dispatch failures, newest last."
@@ -153,6 +148,36 @@
    :scheduler/wake-at-millis (:wake_at wake)
    :scheduler/attempt attempt})
 
+(defn- dispatch-due!*
+  [runtime due-wakes-fn]
+  (let [ds (:datasource runtime)
+        st (state runtime)
+        ^ArrayBlockingQueue queue (get-in runtime [:event-system :queue])
+        due (due-wakes-fn ds (now-instant runtime))]
+    (reduce
+     (fn [acc wake]
+       (let [key (:key wake)]
+         (if (contains? @(:in-flight st) key)
+           acc
+           (do
+             (swap! (:in-flight st) conj key)
+             (let [attempt (inc (:attempts wake))]
+               (if (.offer queue (fire-envelope wake attempt))
+                 (do
+                    ;; Persist the delivery only after a successful enqueue, and
+                    ;; claim the exact generation we selected (key + wake_at). A row
+                    ;; cancelled or rescheduled in the race window returns nil here
+                    ;; (no throw, and the replacement generation is never
+                    ;; incremented); the enqueued envelope is discarded by run-fire!.
+                   (db/mark-wake-attempt! ds key (:wake_at wake))
+                   (update acc :dispatched inc))
+                 (do
+                   (swap! (:in-flight st) disj key)
+                   (record-dispatch-failure! st key "event queue saturated; wake left pending")
+                   (assoc acc :transient? true))))))))
+     {:dispatched 0 :transient? false}
+     due)))
+
 (defn dispatch-due!
   "Enqueue a fire envelope for every due, not-in-flight wake at the current clock.
 
@@ -170,33 +195,7 @@
   attempt 1; the stale envelope is dropped by run-fire!'s generation guard.
   Returns {:dispatched n :transient? bool}."
   [runtime]
-  (let [ds (:datasource runtime)
-        st (state runtime)
-        ^ArrayBlockingQueue queue (get-in runtime [:event-system :queue])
-        due (db/due-wakes ds (now-instant st))]
-    (reduce
-     (fn [acc wake]
-       (let [key (:key wake)]
-         (if (contains? @(:in-flight st) key)
-           acc
-           (do
-             (swap! (:in-flight st) conj key)
-             (let [attempt (inc (:attempts wake))]
-               (if (.offer queue (fire-envelope wake attempt))
-                 (do
-                   ;; Persist the delivery only after a successful enqueue, and
-                   ;; claim the exact generation we selected (key + wake_at). A row
-                   ;; cancelled or rescheduled in the race window returns nil here
-                   ;; (no throw, and the replacement generation is never
-                   ;; incremented); the enqueued envelope is discarded by run-fire!.
-                   (db/mark-wake-attempt! ds key (:wake_at wake))
-                   (update acc :dispatched inc))
-                 (do
-                   (swap! (:in-flight st) disj key)
-                   (record-dispatch-failure! st key "event queue saturated; wake left pending")
-                   (assoc acc :transient? true))))))))
-     {:dispatched 0 :transient? false}
-     due)))
+  (dispatch-due!* runtime db/due-wakes))
 
 (defn- schedule-tick!
   "Schedule the next timer tick after delay-ms, replacing any current timer.
@@ -233,7 +232,7 @@
         (when-let [^ScheduledFuture fut @(:timer st)]
           (.cancel fut false)
           (reset! (:timer st) nil))
-        (let [now-ms (.toEpochMilli (now-instant st))
+        (let [now-ms (.toEpochMilli (now-instant runtime))
               in-flight @(:in-flight st)
               next (first (remove #(contains? in-flight (:key %)) (db/pending-wakes ds)))]
           (when next
@@ -253,29 +252,52 @@
   until the next reload/restart (TEN-003). Ordinary cancel/reschedule races no
   longer throw here — `dispatch-due!` treats a vanished row as a no-op — but the
   guard remains the last-resort net for anything else."
+  ([runtime]
+   (dispatch-and-rearm! runtime {}))
+  ([runtime {:keys [dispatch-due-fn]
+             :or {dispatch-due-fn dispatch-due!}}]
+   (try
+     (if (:transient? (dispatch-due-fn runtime))
+       (schedule-tick! runtime transient-retry-ms)
+       (arm! runtime))
+     (catch Throwable t
+       (record-dispatch-failure! (state runtime) nil (or (ex-message t) (str (class t))))
+       (try
+         (schedule-tick! runtime transient-retry-ms)
+         (catch Throwable _ nil))))))
+
+(defn- register-pump!
+  "Register the scheduler's synchronous due-check with the runtime clock-pump
+  registry so `skein.test.alpha/advance!` can drive dispatch off an injected
+  clock without waiting on the real timer thread.
+
+  Pokes the runtime's `:clock-pumps` slot directly rather than calling
+  `skein.core.weaver.runtime/register-clock-pump!`: runtime requires this
+  namespace, so a static require back would cycle. Throws when the slot is
+  absent so a malformed runtime fails loudly instead of silently disabling
+  deterministic clock pumping."
   [runtime]
-  (try
-    (if (:transient? (dispatch-due! runtime))
-      (schedule-tick! runtime transient-retry-ms)
-      (arm! runtime))
-    (catch Throwable t
-      (record-dispatch-failure! (state runtime) nil (or (ex-message t) (str (class t))))
-      (try
-        (schedule-tick! runtime transient-retry-ms)
-        (catch Throwable _ nil)))))
+  (if-let [pumps (:clock-pumps runtime)]
+    (swap! pumps assoc ::pump dispatch-due!)
+    (throw (ex-info "Runtime has no :clock-pumps registry to register the scheduler pump"
+                    {:pump ::pump})))
+  nil)
 
 (defn rearm!
   "Rebuild scheduler timers from durable pending rows after config load.
 
   Called post-startup and post-reload. Reload clears the event-system queue, so
   any fire envelope already queued is discarded; the in-flight set is therefore
-  reset and rebuilt from pending rows to preserve at-least-once delivery."
+  reset and rebuilt from pending rows to preserve at-least-once delivery. Also
+  (re)registers the clock-consumer pump so deterministic tests can drive due
+  dispatch off the runtime clock."
   [runtime]
   (let [st (state runtime)]
     ;; :lock is the dedicated per-state (Object.) monitor; false positive, see close-state!.
     #_{:splint/disable [lint/locking-object]}
     (locking (:lock st)
       (reset! (:in-flight st) #{})))
+  (register-pump! runtime)
   (arm! runtime))
 
 (defn run-fire!

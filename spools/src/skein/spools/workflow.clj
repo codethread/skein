@@ -1783,6 +1783,34 @@
      :strands (into close-strands (:strands payload))
      :edges (:edges payload)}))
 
+(defn- choose!*
+  [run-id choice input opts apply-batch!]
+  (let [rt (current/runtime)]
+    (require-map! opts [:opts])
+    (let [choice (if (keyword? choice) (name choice) (str choice))
+          step (or (resolve-ready-step rt run-id opts)
+                   (fail! "No ready workflow checkpoint" {:run-id run-id}))]
+      (when-not (map? input)
+        (fail! "Choice input must be a map" {:run-id run-id :choice choice :input input}))
+      (when-not (= "checkpoint" (attr step :workflow/role))
+        (fail! "Current workflow step is not a checkpoint" {:run-id run-id :step (step-view step)}))
+      (let [choices (set (attr step :workflow/choices))]
+        (when-not (contains? choices choice)
+          (fail! "Choice is not valid for checkpoint" {:run-id run-id :choice choice :valid choices})))
+      (validate-choice-input! run-id step choice input)
+      (let [route (route-plan rt run-id step choice input)
+            outcome (cond-> {"workflow/outcome" choice
+                             "workflow/outcome-input" input}
+                      (contains? opts :by) (assoc "workflow/outcome-by" (:by opts)))]
+        (if route
+          (apply-batch! rt (routed-batch rt route step outcome))
+          (apply-batch! rt (close-batch (:id step) outcome
+                                        (cascade-join-ids rt (:id (current-root-with-rt rt run-id)) #{(:id step)}))))
+        ;; also covers a routed continuation that poured no active work, so the
+        ;; new root cannot linger active on a logically finished run
+        (close-run-if-done! rt run-id)
+        (run-result rt run-id)))))
+
 (defn choose!
   "Record a checkpoint choice for run-id, optionally pour its continuation,
   and return the `{:ready [step-view ...] :done boolean}` result shape.
@@ -1807,31 +1835,7 @@
   ([run-id choice input]
    (choose! run-id choice input {}))
   ([run-id choice input opts]
-   (let [rt (current/runtime)]
-     (require-map! opts [:opts])
-     (let [choice (if (keyword? choice) (name choice) (str choice))
-           step (or (resolve-ready-step rt run-id opts)
-                    (fail! "No ready workflow checkpoint" {:run-id run-id}))]
-       (when-not (map? input)
-         (fail! "Choice input must be a map" {:run-id run-id :choice choice :input input}))
-       (when-not (= "checkpoint" (attr step :workflow/role))
-         (fail! "Current workflow step is not a checkpoint" {:run-id run-id :step (step-view step)}))
-       (let [choices (set (attr step :workflow/choices))]
-         (when-not (contains? choices choice)
-           (fail! "Choice is not valid for checkpoint" {:run-id run-id :choice choice :valid choices})))
-       (validate-choice-input! run-id step choice input)
-       (let [route (route-plan rt run-id step choice input)
-             outcome (cond-> {"workflow/outcome" choice
-                              "workflow/outcome-input" input}
-                       (contains? opts :by) (assoc "workflow/outcome-by" (:by opts)))]
-         (if route
-           (batch/apply! rt (routed-batch rt route step outcome))
-           (batch/apply! rt (close-batch (:id step) outcome
-                                         (cascade-join-ids rt (:id (current-root-with-rt rt run-id)) #{(:id step)}))))
-         ;; also covers a routed continuation that poured no active work, so the
-         ;; new root cannot linger active on a logically finished run
-         (close-run-if-done! rt run-id)
-         (run-result rt run-id))))))
+   (choose!* run-id choice input opts batch/apply!)))
 
 (defn advance!
   "Advance run-id by one ready step regardless of its kind, returning the

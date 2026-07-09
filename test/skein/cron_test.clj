@@ -2,36 +2,35 @@
   "Tests for the generic skein.spools.cron timer engine against a real weaver
   runtime: registration/status/deregistration, jittered scheduling bounds, loud
   failure recording that does not stop the cadence, and the versioned
-  spool-state drift alarm."
+  spool-state drift alarm.
+
+  Job fires drive off a manual runtime clock and `skein.test.alpha/advance!`
+  (DELTA-Dtt-001.CC3) rather than real executor-timer waits: cron's
+  clock-consumer pump releases due jobs synchronously, so `advance!` returns
+  only once a job it made due has already run."
   (:require [clojure.test :refer [deftest is testing]]
             [skein.spools.cron :as cron]
-            [skein.spools.test-support :as test-support])
-  (:import [java.util Random]))
+            [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as test-alpha])
+  (:import [java.time Duration Instant]
+           [java.util Random]))
 
-;; Job seams the engine resolves by fully-qualified symbol. A job runs on the
-;; cron executor thread; the test observes the fire through the recorded
-;; last-outcome/last-error status rather than the run! body itself, which the
-;; engine has not finished bookkeeping until run! returns.
+;; Job seams the engine resolves by fully-qualified symbol.
 (defn fire-ok [_runtime] :ok)
 (defn fire-throw [_runtime] (throw (ex-info "boom" {:why :test})))
-(defn immediate [_runtime] 0)
 
 (defn- with-cron [f]
   (test-support/with-runtime
     {:prefix "skein-cron"}
     (fn [rt _config-dir]
+      (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
       (cron/install!)
       (f rt))))
-
-(defn- eventually [pred]
-  (test-support/poll-until pred
-                           {:timeout-ms (test-support/await-budget-ms 5000)
-                            :on-timeout #(throw (ex-info "Timed out waiting for cron condition" {}))}))
 
 (deftest register-lists-and-deregisters
   (with-cron
     (fn [rt]
-      ;; a one-hour interval and no seed keeps the first fire far out of the way
+      ;; a one-hour interval keeps the first fire far out of the way
       (let [status (cron/register! rt {:id :slow
                                        :interval-ms (* 60 60 1000)
                                        :jitter-ms 0
@@ -48,11 +47,12 @@
   (with-cron
     (fn [rt]
       (cron/register! rt {:id :quick
-                          :interval-ms (* 60 60 1000)
+                          :interval-ms 1000
                           :jitter-ms 0
-                          :run! 'skein.cron-test/fire-ok
-                          :initial-delay-fn 'skein.cron-test/immediate})
-      (eventually #(= :ok (:last-outcome (first (cron/jobs rt)))))
+                          :run! 'skein.cron-test/fire-ok})
+      ;; the pump releases the due fire synchronously, so the outcome is
+      ;; already recorded once advance! returns
+      (test-alpha/advance! rt (Duration/ofSeconds 2))
       (let [job (first (cron/jobs rt))]
         (is (= :ok (:last-outcome job)))
         (is (string? (:last-fired-at job)))
@@ -63,13 +63,10 @@
   (with-cron
     (fn [rt]
       (cron/register! rt {:id :boom
-                          :interval-ms (* 60 60 1000)
+                          :interval-ms 1000
                           :jitter-ms 0
-                          :run! 'skein.cron-test/fire-throw
-                          :initial-delay-fn 'skein.cron-test/immediate})
-      ;; last-error is stamped after the failure is logged, so waiting on it
-      ;; guarantees both are recorded.
-      (eventually #(some-> (first (cron/jobs rt)) :last-error))
+                          :run! 'skein.cron-test/fire-throw})
+      (test-alpha/advance! rt (Duration/ofSeconds 2))
       (let [failure (last (cron/failures rt))]
         (is (= :run (:kind failure)))
         (is (= :boom (:job failure)))

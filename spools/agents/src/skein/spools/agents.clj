@@ -221,8 +221,12 @@
                        :help-topic "strand help agent"
                        :verb "harnesses"
                        :semantics ["List configured harnesses and aliases."
+                                   "Docs are capability statements: a harness doc describes the tool surface, an alias doc the model seat. Alias entries carry both — their own doc plus the resolved root's harness/harness-doc — so a supervisor picks the right seat from one listing."
                                    "A harness picks who does the work; validation remains in task attributes and proves the work independently."]
-                       :returns [{"name" "string" "kind" "harness|alias" "alias-of" "optional string" "argv" "optional vector" "doc" "optional string"}]}
+                       :returns [{"name" "string" "kind" "harness|alias" "alias-of" "optional string"
+                                  "harness" "alias entries only: resolved root harness name"
+                                  "harness-doc" "alias entries only: the root harness's doc"
+                                  "argv" "optional vector" "doc" "optional string"}]}
            :backends {:group "engine"
                       :help-topic "strand help agent"
                       :verb "backends"

@@ -20,7 +20,8 @@
             [skein.core.weaver.config :as config]
             [skein.core.weaver.runtime :as runtime])
   (:import [java.nio.file Files Path]
-           [java.nio.file.attribute FileAttribute]))
+           [java.nio.file.attribute FileAttribute]
+           [java.time Duration Instant]))
 
 (def ^:dynamic *weaver-world*
   "Context map for the current `weaver-world-fixture` weaver world, or nil."
@@ -114,22 +115,28 @@
   loudly when the resource is not on the test classpath, is jar-backed, or does
   not come from a directory checkout with the expected layout. This is for tests
   that must approve the real dependency checkout as a `:local/root` in generated
-  `spools.edn` data."
-  [resource-path]
-  (let [resource (io/resource resource-path)]
-    (when-not resource
-      (throw (ex-info "Spool source not on the test classpath"
-                      {:resource resource-path})))
-    (when-not (= "file" (.getProtocol resource))
-      (throw (ex-info "Spool source is not a directory checkout"
-                      {:resource resource-path
-                       :url (str resource)})))
-    (let [resource-file (io/file (.toURI resource))
-          classpath-root (classpath-root-for-resource resource-file resource-path)]
-      (or (matching-deps-checkout-root classpath-root)
-          (throw (ex-info "Spool source is not a directory checkout with a deps.edn :paths entry"
-                          {:resource resource-path
-                           :classpath-root (.getPath classpath-root)}))))))
+  `spools.edn` data.
+
+  The one-argument form resolves `resource-path` with `clojure.java.io/resource`.
+  The two-argument form accepts `resource-loader`, a function from resource path
+  string to `java.net.URL` or nil, for deterministic tests of this resolver."
+  ([resource-path]
+   (spool-checkout-root resource-path io/resource))
+  ([resource-path resource-loader]
+   (let [^java.net.URL resource (resource-loader resource-path)]
+     (when-not resource
+       (throw (ex-info "Spool source not on the test classpath"
+                       {:resource resource-path})))
+     (when-not (= "file" (.getProtocol resource))
+       (throw (ex-info "Spool source is not a directory checkout"
+                       {:resource resource-path
+                        :url (str resource)})))
+     (let [resource-file (io/file (.toURI resource))
+           classpath-root (classpath-root-for-resource resource-file resource-path)]
+       (or (matching-deps-checkout-root classpath-root)
+           (throw (ex-info "Spool source is not a directory checkout with a deps.edn :paths entry"
+                           {:resource resource-path
+                            :classpath-root (.getPath classpath-root)})))))))
 
 (defn- source-checkout
   "Best-effort path of the Skein source checkout on this test JVM's classpath."
@@ -228,6 +235,32 @@
     (run-with-weaver-world opts (fn [ctx]
                                   (binding [*weaver-world* ctx]
                                     (test-fn))))))
+
+(defn set-clock!
+  "Install `clock-fn` as `runtime`'s clock: a zero-arg fn returning an Instant.
+
+  Deterministic tests inject an advanceable clock so subsystems that read the
+  runtime clock seam (the scheduler) resolve due-ness against test time rather
+  than the wall clock. Pair with `advance!` to step it."
+  [runtime clock-fn]
+  (runtime/set-clock! runtime clock-fn))
+
+(defn advance!
+  "Move `runtime`'s clock forward by `duration`, then pump clock consumers.
+
+  `duration` is a `java.time.Duration` and must be strictly positive: advancing
+  by zero or a backwards/negative duration fails loudly. After moving the clock,
+  every registered clock-consumer pump (subsystems that arm real timers off the
+  runtime clock, such as the scheduler) runs synchronously so its due-check
+  observes the new now before `advance!` returns. Returns the new Instant."
+  [runtime ^Duration duration]
+  (when (or (nil? duration) (.isZero duration) (.isNegative duration))
+    (throw (ex-info "advance! requires a strictly positive java.time.Duration"
+                    {:duration duration})))
+  (let [target (.plus ^Instant (runtime/now runtime) duration)]
+    (runtime/set-clock! runtime (constantly target))
+    (runtime/run-clock-pumps! runtime)
+    target))
 
 (defn repl!
   "Evaluate a weaver-routed form against ctx's weaver world and return data.

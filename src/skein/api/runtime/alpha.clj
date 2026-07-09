@@ -32,6 +32,14 @@
   [runtime]
   (runtime/reload-config! runtime))
 
+(defn now
+  "Return the current java.time.Instant from `runtime`'s clock seam.
+
+  Defaults to the real wall clock; deterministic tests inject an advanceable
+  clock through `skein.test.alpha/set-clock!`."
+  [runtime]
+  (runtime/now runtime))
+
 (def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
 
 (defn- validate-use-opts! [key opts]

@@ -124,6 +124,9 @@ Split "a runtime exists in this JVM" from "this process's ambient runtime":
   ordering), `repl-test` (ambient connection + with-redefs), `alpha-test`,
   `core.client-test`, `spools.workflow-test` (with-redefs; may graduate to
   parallel if their with-redefs use is removed).
+  *Amended 2026-07-09 by owner decision: `alpha-test`, `core.client-test`, and
+  `spools.workflow-test` graduated to `parallel-namespaces` after their
+  `with-redefs` seams moved to explicit private test injection points.*
 - **RFC-016.D3.2:** Parallel namespaces run one-per-thread over a bounded
   pool, each with its own `binding` of clojure.test report state and captured
   output, results aggregated into one summary; any failure/error exits

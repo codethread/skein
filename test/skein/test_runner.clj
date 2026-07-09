@@ -1,6 +1,7 @@
 (ns skein.test-runner
   "Explicit test entrypoint with documented serial JVM-global islands,
-  subprocess shards for add-libs suites, and per-namespace timing output."
+  subprocess shards for add-libs suites, a focused in-process mode for named
+  namespaces, and per-namespace timing output."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -13,53 +14,36 @@
   ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test
    'skein.spools.bobbin-test 'skein.spools.carder-test 'skein.spools.loom-test 'skein.spools.selvage-test 'skein.spools.text-search-test
    'skein.guild-test 'skein.agents-test 'skein.test.alpha-test 'skein.api.cli.alpha-test
+   'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
    'skein.spools.batteries-test 'skein.roster-test 'skein.spools.util-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
    ;; pure extractor unit tests over fixture files plus one unpublished
    ;; thread-bound runtime; no JVM-global or real-process state.
-   'skein.bench-metrics-test])
+   'skein.bench-metrics-test
+   ;; each test drives its own unpublished runtime, so the event lane it awaits
+   ;; is per-runtime with no JVM-global or shared-lane state — parallel-safe.
+   'skein.events-quiescence-test
+   ;; Graduated from the serial island: each drives its own unpublished runtime
+   ;; and settles work through deterministic seams — an injected runtime clock
+   ;; for the scheduler and cron timers, event-lane quiescence for the async
+   ;; dispatch suites — so there is no JVM-global timer or shared-lane state.
+   'skein.scheduler-runtime-test 'skein.api.scheduler.alpha-test 'skein.scheduler-e2e-test
+   'skein.cron-test 'skein.treadle-test 'skein.spools.reed-test 'skein.chime-test
+   'skein.weaver-test])
 
 (def serial-namespaces
   "JVM-global namespaces the parent still runs serially outside add-libs shards."
-  [;; ambient REPL connection atoms and with-redefs.
+  [;; ambient REPL connection atoms.
    'skein.repl-test
-   ;; with-redefs for trusted client routing / ambient API behavior.
-   'skein.alpha-test
-   ;; with-redefs for nREPL timeout behavior.
-   'skein.core.client-test
-   ;; with-redefs to force batch failure path.
-   'skein.spools.workflow-test
    ;; module-local bind! is process-global and loud-failure asserts no published runtime.
    'skein.userland-test
    ;; published singleton semantics.
    'skein.weaver-publication-test
    ;; multiple published peer runtimes verify routing semantics.
    'skein.peers-test
-   ;; Event bus order assertions observe process-global delivery under load.
-   'skein.weaver-test
-   ;; Scheduler dispatch rides the shared event worker and arms real executor
-   ;; timers; reuses weaver-test helpers, so it runs beside it serially.
-   'skein.scheduler-runtime-test
-   ;; Blessed scheduler API tests also arm real executor timers via a real
-   ;; runtime for classloader-accurate handler resolution; same reasoning.
-   'skein.api.scheduler.alpha-test
-   ;; End-to-end scheduler coverage drives real weaver stop/start cycles and
-   ;; dispatches graph mutations on the shared lane; same real-timer reasoning.
-   'skein.scheduler-e2e-test
-   ;; notifier binding and process-output assertions mutate runtime-owned chime state but are flaky under parent parallel load.
-   'skein.chime-test
-   ;; arms real cron executor timers and polls for async job fires; same
-   ;; real-timer reasoning as the scheduler suites above.
-   'skein.cron-test
-   ;; Treadle delivers async shuttle gate outcomes through runtime event workers;
-   ;; keep it out of parent parallel load so the hard sleeps remain deterministic.
-   'skein.treadle-test
-   ;; Reed runs :shell gate commands off the event thread and delivers async gate
-   ;; outcomes through runtime event workers; same hard-sleep reasoning as treadle.
-   'skein.spools.reed-test
    ;; publishes an ambient runtime for the judge shuttle run and spawns real
-   ;; container-engine subprocesses on a spool executor; same real-process,
-   ;; published-singleton reasoning as the suites above.
+   ;; container-engine subprocesses on a spool executor; real-process,
+   ;; published-singleton reasoning keeps it off parent parallel load.
    'skein.bench-test])
 
 (def add-libs-shards
@@ -238,18 +222,56 @@
       ;; would otherwise hold the shard JVM (and the parent's waitFor) ~60s.
       (System/exit (if (pos? (+ (:fail summary) (:error summary))) 1 0)))))
 
+(defn- shard-for-ns [ns-sym]
+  (some (fn [[shard-id namespaces]] (when (some #{ns-sym} namespaces) shard-id)) add-libs-shards))
+
+(defn- validate-focused! [namespaces]
+  (let [in-process (set (concat serial-namespaces parallel-namespaces))
+        duplicates (sort (keep (fn [[ns-sym n]] (when (< 1 n) ns-sym)) (frequencies namespaces)))]
+    (when (seq duplicates)
+      (throw (ex-info (str "Duplicate test namespace arguments: " (str/join " " duplicates))
+                      {:duplicates (vec duplicates)})))
+    (doseq [ns-sym namespaces]
+      (when-let [shard-id (shard-for-ns ns-sym)]
+        (throw (ex-info (str ns-sym " is an add-libs shard namespace (shard " shard-id
+                             "); shard namespaces require the full suite in v1")
+                        {:ns ns-sym :shard shard-id})))
+      (when-not (contains? in-process ns-sym)
+        ;; Offer only namespaces focused mode accepts; shard members are
+        ;; rejected above with their own message, so listing them here would
+        ;; steer an operator into a second failure.
+        (throw (ex-info (str "Unknown test namespace: " ns-sym)
+                        {:ns ns-sym :known-namespaces (sort in-process)}))))))
+
+(defn- run-focused [namespaces]
+  (validate-focused! namespaces)
+  ;; Serial-island members first, then parallel members, each in declaration
+  ;; order, all in-process on this thread — focused runs skip both the parallel
+  ;; pool and the add-libs subprocess shards.
+  (let [requested (set namespaces)
+        results (concat (run-serial :focused/serial (filter requested serial-namespaces))
+                        (run-serial :focused/parallel (filter requested parallel-namespaces)))
+        summary (apply merge-summaries (map :summary results))]
+    (doseq [result results] (print-result! result))
+    (println "Aggregate summary:" summary)
+    (flush)
+    (System/exit (if (pos? (+ (:fail summary) (:error summary))) 1 0))))
+
 (defn- parse-args [args]
   (case (first args)
     nil {:mode :parent}
     "--shard" (let [[_ shard & opts] args
                     opt-map (apply hash-map opts)]
                 {:mode :shard :shard shard :summary-file (get opt-map "--summary-file")})
-    (throw (ex-info "Unknown test-runner arguments" {:args args}))))
+    (if (some #(str/starts-with? % "--") args)
+      (throw (ex-info "Unknown test-runner arguments" {:args args}))
+      {:mode :focused :namespaces (mapv symbol args)})))
 
 (defn -main [& args]
-  (let [{:keys [mode shard summary-file]} (parse-args args)]
+  (let [{:keys [mode shard summary-file namespaces]} (parse-args args)]
     (case mode
       :shard (run-shard shard summary-file)
+      :focused (run-focused namespaces)
       :parent (let [shards-result (start-shards-thread!)
                     parent-results (run-parent)
                     shard-outcome @shards-result
