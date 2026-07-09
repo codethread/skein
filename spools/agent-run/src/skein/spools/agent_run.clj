@@ -30,6 +30,19 @@
   recovery deliberately branches to a fresh spawn rather than silently starting
   cold.
 
+  A dead run is succeeded — never mutated in place — through the one primitive
+  `supersede-and-respawn!`: it mints a fresh successor preserving the
+  predecessor's `serves` target, `depends-on` edges, `spawned-by` provenance,
+  and execution shape, closes the predecessor `agent-run/phase \"superseded\"`,
+  and records lineage as a `supersedes` edge (successor → predecessor) plus an
+  `agent-run/supersedes` attr. `runs-serving` resolves the current run for a
+  target as the serving run with no incoming `supersedes` edge. Crash-respawn
+  (`reconcile!`) and session-carrying resume are the same family read two ways:
+  reconcile resets a strand in place so the run id stays stable, and
+  `:continuity :resume` layers the resume link onto a supersession — `resumes`
+  and `supersedes` stay distinct edges and the resolution rule keys on
+  `supersedes` alone.
+
   Interactive runs are the second execution mode: instead of exec-and-wait, the
   engine launches the harness into a user-registered multiplexer backend
   (tmux by default) and supervises it through the graph — the run completes
@@ -1670,6 +1683,80 @@
   carries `parent-of` placement only, no `serves` edge, so this is nil for it."
   [run]
   (first (map :to_strand_id (graph/outgoing-edges (rt) [(:id run)] "serves"))))
+
+(defn runs-serving
+  "Runs currently serving strand `target-id`: those with a `serves` edge to it
+  that have not been superseded. This is the C5 resolution rule — its unique
+  element is the current run serving the target. A run is superseded when it
+  carries an incoming `supersedes` edge, equivalently `agent-run/phase
+  \"superseded\"`; `supersede-and-respawn!` writes edge and phase together so the
+  two criteria stay in lockstep. Read-only helpers carry `parent-of` placement
+  with no `serves` edge, so they never appear here."
+  [target-id]
+  (let [run-ids (mapv :from_strand_id (graph/incoming-edges (rt) [target-id] "serves"))
+        superseded-ids (set (map :to_strand_id (graph/incoming-edges (rt) run-ids "supersedes")))]
+    (->> run-ids
+         (remove superseded-ids)
+         (map #(api/show (rt) %))
+         (remove #(= "superseded" (sattr % "phase"))))))
+
+(defn supersede-and-respawn!
+  "Succeed a dead run `old-run-id` with a fresh successor — the sole succession
+  path in the engine (PROP-Aep-001.C4). Preserved from the predecessor, engine
+  owned: its `serves` target (the successor now serves it), its `depends-on`
+  edges, its `spawned-by` provenance (the parent-of placement plus the
+  `agent-run/spawned-by` attr), and its execution shape (`agent-run/mode`/
+  `backend`/`reap` and the interactive completion target for interactive runs,
+  `agent-run/max-attempts` always). `:prompt` and `:harness` come from the
+  caller, `:cwd` too (else the predecessor's). `:carry-attrs` layers spool-owned
+  structural attrs on top — the primitive stays ignorant of the delegation
+  vocabulary.
+
+  The successor is fresh: a new run id and strand, `agent-run/phase \"pending\"`,
+  no execution residue. `:continuity` (default `:fresh`) severs any session;
+  `:resume` continues the predecessor's session by stamping `:resume` on the
+  spawn (a `resumes` edge plus `agent-run/resumes`, validated by the resume
+  machinery at launch), so `resumes` and `supersedes` stay distinct edges.
+
+  Lineage is recorded in the same call: the predecessor is closed
+  `agent-run/phase \"superseded\"`, and the successor gains a `supersedes` edge
+  to it (successor --supersedes--> predecessor, the catalog direction) plus an
+  `agent-run/supersedes` attr naming it. `runs-serving` keys on the `serves`
+  edge and the absence of an incoming `supersedes` edge, which the `superseded`
+  phase mirrors because this call writes edge and phase together. Returns the
+  successor run strand."
+  [old-run-id {:keys [prompt harness cwd carry-attrs continuity]
+               :or {continuity :fresh}}]
+  (when-not (contains? #{:fresh :resume} continuity)
+    (fail! "supersede-and-respawn! :continuity must be :fresh or :resume"
+           {:run old-run-id :continuity continuity}))
+  (let [predecessor (or (api/show (rt) old-run-id)
+                        (fail! "Supersede predecessor not found" {:run old-run-id}))
+        interactive? (interactive? predecessor)
+        served-target (run-for-target predecessor)
+        deps (mapv :to_strand_id (graph/outgoing-edges (rt) [old-run-id] "depends-on"))
+        successor (spawn-run!
+                   (cond-> {:harness harness
+                            :prompt prompt
+                            :title (:title predecessor)
+                            :cwd (or cwd (sattr predecessor "cwd"))
+                            :depends-on deps}
+                     served-target (assoc :serves served-target)
+                     (sattr predecessor "spawned-by") (assoc :spawned-by (sattr predecessor "spawned-by"))
+                     (sattr predecessor "max-attempts") (assoc :max-attempts (sattr predecessor "max-attempts"))
+                     interactive? (assoc :mode :interactive :backend (sattr predecessor "backend"))
+                     (and interactive? (sattr predecessor "reap")) (assoc :reap (sattr predecessor "reap"))
+                     (and interactive? (sattr predecessor "for")) (assoc :parent (sattr predecessor "for"))
+                     (= :resume continuity) (assoc :resume old-run-id)
+                     (seq carry-attrs) (assoc :attrs carry-attrs)))]
+    ;; Close the predecessor and record lineage only once the successor exists,
+    ;; so a spawn that throws (resume validation, missing target) leaves the
+    ;; predecessor untouched rather than half-succeeded.
+    (api/update (rt) old-run-id {:state "closed" :attributes {"agent-run/phase" "superseded"}})
+    (api/update (rt) (:id successor)
+                {:attributes {"agent-run/supersedes" old-run-id}
+                 :edges [{:type "supersedes" :to old-run-id}]})
+    successor))
 
 (defn- helper-parent
   "Return a helper run's structural target: its `parent-of` parent (from
