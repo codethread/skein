@@ -954,7 +954,7 @@
     (fn [rt]
       (swap! (:spool-state rt) update :skein.spools.agent-run/state
              (fn [s] (with-meta (dissoc s :worker-executor) (meta s))))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Required shuttle spool-state entry is missing"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Required engine spool-state entry is missing"
                             (#'shuttle/worker-executor))))))
 
 (deftest reload-with-changed-state-shape-reinits
