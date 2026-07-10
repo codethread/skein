@@ -1,6 +1,7 @@
 (ns skein.spools.selvage-test
   "Tests for the Selvage attribute vocabulary lint spool."
   (:require [clojure.test :refer [deftest is testing]]
+            [skein.api.vocab.alpha :as vocab]
             [skein.repl :as repl]
             [skein.spools.selvage :as selvage]
             [skein.spools.test-support :refer [assert-state-shape with-runtime]]))
@@ -72,6 +73,29 @@
         (is (= ["agent"]
                (mapv #(get-in (repl/strand (:strand-id %)) [:attributes :owner])
                      (selvage/check-all [:= [:attr :owner] "agent"]))))))))
+
+(deftest undeclared-checks-cross-references-the-ownership-registry
+  (with-runtime
+    (fn [rt _]
+      (clear-vocabs!)
+      (vocab/declare! rt {:kind :attr-namespace :name "agent-run"
+                          :owner :selvage-test/init :doc "agent-run attributes"})
+      (let [vocab-name (unique-vocab)]
+        ;; "agent-run/*" is now declared; "frobnicate/*" and bare "verify-note"
+        ;; are owned by nobody, so their checks surface as undeclared.
+        (selvage/defvocab! vocab-name
+          {:checks [{:attr "agent-run/phase" :enum ["pending" "done"]}
+                    {:attr "frobnicate/level" :kind :int-string}
+                    {:attr "verify-note" :kind :string}]})
+        (is (= [{:vocab vocab-name :attr "frobnicate/level" :namespace "frobnicate"}
+                {:vocab vocab-name :attr "verify-note" :namespace "verify-note"}]
+               (mapv #(select-keys % [:vocab :attr :namespace])
+                     (selvage/undeclared-checks))))
+        (testing "declaring the missing namespace clears its checks"
+          (vocab/declare! rt {:kind :attr-namespace :name "frobnicate"
+                              :owner :selvage-test/init :doc "frobnicate attributes"})
+          (is (= ["verify-note"]
+                 (mapv :attr (selvage/undeclared-checks)))))))))
 
 (deftest watch-records-and-clears-violations
   (with-runtime

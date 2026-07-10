@@ -10,6 +10,7 @@
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.util :refer [fail!]]))
 
@@ -203,6 +204,40 @@
   ([query-form]
    (let [rt (current/runtime)]
      (vec (mapcat check-strand (api/list rt [:and [:= :state "active"] query-form] {}))))))
+
+(defn- attr-namespace
+  "The namespace segment of a selvage check's `:attr` — the part before the first
+  `/`, or the whole attribute when it carries no namespace separator (a bare
+  attribute is its own, typically undeclared, namespace)."
+  [attr]
+  (if-let [i (str/index-of attr "/")]
+    (subs attr 0 i)
+    attr))
+
+(defn undeclared-checks
+  "Return registered selvage checks whose `:attr` namespace no vocabulary
+  declaration owns.
+
+  Opt-in cross-check between selvage's linting vocabularies and the ownership
+  registry (`skein.api.vocab.alpha`): reads the declared `:attr-namespace` names
+  for the active runtime and returns one entry per registered check whose
+  attribute namespace segment is undeclared, as
+  `{:vocab name :attr s :namespace s :check check}` sorted like `vocabs`.
+
+  Read-only composition sugar over `vocabs` — it references the registry, never
+  enforces it. Registered nowhere by default: no watch, no new enforcement path,
+  and no change to selvage's `:enum`/`:kind`/`:required-with` linting model."
+  []
+  (let [declared (into #{} (map :name)
+                       (vocab/declarations (current/runtime) {:kind :attr-namespace}))]
+    (vec (for [{vocab-name :name {:keys [checks]} :spec} (vocabs)
+               check checks
+               :let [ns (attr-namespace (:attr check))]
+               :when (not (contains? declared ns))]
+           {:vocab vocab-name
+            :attr (:attr check)
+            :namespace ns
+            :check check}))))
 
 (defn record-event!
   "Event handler that records violations for strand added/updated events.
