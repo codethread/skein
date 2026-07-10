@@ -6,7 +6,7 @@
 **RFC:** None
 **Root specs:** [../../specs/strand-model.md](../../specs/strand-model.md) (`SPEC-001`)
 **Feature specs:** [./specs/strand-model.delta.md](./specs/strand-model.delta.md) (`DELTA-Nwt-001`, clauses `C1`–`C6`, `J1`, `J2`)
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-10
 
 ## PLAN-Nwt-001.P1 Goal and scope
@@ -15,8 +15,8 @@ Give notes a structural home. A notes *writer* value in `skein.api.notes.alpha` 
 thunk), a default decoration, and an author — becomes the one seam a composition site redirects note targets
 through, so noise stops accreting wherever an emitter happened to point (`PROP-Nwt-001.G1`, `DELTA-Nwt-001.C1`–`C5`).
 The writer serializes to a plain-data ref that ships into subprocesses, and a single renderer turns that ref into
-the "append notes with …" instruction fragment the seven hand-built prompt sites converge on
-(`DELTA-Nwt-001.C4`). Because remote writers are LLMs driving the CLI, the note ops accrete a `--attr key=value`
+the "append notes with …" instruction fragment the six hand-built *write* sites converge on
+(`DELTA-Nwt-001.C4`; the read-side `read-the-board` fragment stays inline per `PLAN-Nwt-001.R2`). Because remote writers are LLMs driving the CLI, the note ops accrete a `--attr key=value`
 decoration passthrough (`PROP-Nwt-001.S2`, `DELTA-Nwt-001.J1`) — the load-bearing boundary a writer-ref crosses.
 
 On the tracking side, kanban gains a task tier (epic > feature > task) whose four statuses are *derived* from the
@@ -71,10 +71,10 @@ findings a home, not a shape).
 
 | ID | Area | Expected change |
 | -- | ---- | --------------- |
-| PLAN-Nwt-001.AA1 | `src/skein/api/notes/alpha.clj` | Accrete `writer`/`write!`/`writer-ref`/`ref->writer`/`writer-ref->prompt` beside the untouched `note!`/`notes` (`DELTA-Nwt-001.C1`–`C4`); validate target-or-thunk, decoration, and author shapes loudly at construction. |
+| PLAN-Nwt-001.AA1 | `src/skein/api/notes/alpha.clj` | Accrete `writer`/`write!`/`writer-ref`/`writer-ref->prompt` beside the untouched `note!`/`notes` (`DELTA-Nwt-001.C1`–`C4`); no `ref->writer` — the constructor reconstructs from a ref. Validate target-or-thunk, decoration, and author shapes loudly at construction, and per-call `:decoration`/consumed refs loudly at use, naming the offending field; cover the negative cases in tests. |
 | PLAN-Nwt-001.AA2 | `src/skein/api/vocab/alpha.clj` | Add `"note/kind"` to the core `note-namespace-declaration` `:keys` (`:103`); the open value set (`activity`/`decision`/`review-dump`/`summary`, absent ⟹ `activity`) is documented, not enum-enforced (`DELTA-Nwt-001.C6`). |
 | PLAN-Nwt-001.AA3 | `spools/src/skein/spools/batteries.clj` | Add an `:attr {:type :map}` flag to `note-arg-spec` (`:465`) and thread it as decoration into `note-op` (`:334`), mirroring `add-arg-spec`'s `:attr` (`DELTA-Nwt-001.J1`). |
-| PLAN-Nwt-001.AA4 | `spools/delegation/src/skein/spools/delegation.clj` | `op-note` (`:1649`) parses repeatable `--attr key=value` into decoration; the seven hand-built `agent note <id>` prompt fragments (worker contract `:101`, `read-the-board`/`post-with-tag` `:926-958`, `review-prompt` `:1010-1020`, `review-synthesis-prompt` `:1037-1053`, `panel-synthesis-prompt` `:1289`) converge on `writer-ref->prompt`; the pass `[tag]` graduates from text prefix to a decoration attr. |
+| PLAN-Nwt-001.AA4 | `spools/delegation/src/skein/spools/delegation.clj` | `op-note` (`:1649`) parses repeatable `--attr key=value` into decoration; the four delegation-side hand-built `agent note <id>` *write* fragments (worker contract `:101`, `post-with-tag` `:945-958` as used by `review-prompt` `:1010-1020`, `review-synthesis-prompt` `:1037-1053`, `panel-synthesis-prompt` `:1289`) converge on `writer-ref->prompt`; the read-side `read-the-board` fragment (`:926-943`) stays inline (`PLAN-Nwt-001.R2`); the pass `[tag]` graduates from text prefix to a decoration attr. |
 | PLAN-Nwt-001.AA5 | `spools/agent-run/src/skein/spools/agent_run.clj` | The headless preamble note line (`:789`) and interactive completion-contract note lines (`:818`) render through `writer-ref->prompt` instead of hand-built strings; `note!`/`notes` wrappers (`:2219-2235`) are unchanged (they already pass opts through). |
 | PLAN-Nwt-001.AA6 | `spools/kanban/src/skein/spools/kanban.clj` | Add `task add`/`task list` subcommands stamping declared task attrs + `parent-of` (+ optional `depends-on`); add pure-graph derived-status computation; add a tasks projection to `card-view` and a doing-task line to the board claimed/in_review lanes; declare task-tier vocab in `install!` (`:859`). Remove the handover primitive and every projection (see AA7). Purge devflow/agent-plan/delegation names → "execution strands" (ns docstring `:13-14`, `about` `:669-672`, `prime` `:722-723,736-737`). |
 | PLAN-Nwt-001.AA7 | `spools/kanban/src/skein/spools/kanban.clj` (handover removal inventory, verified 2026-07-10) | Remove `handover-attr` (`:34`), `--handover` in `note!` (`:327-349`), `card-view` `:latest-handover` join (`:441`), `latest-handover-for` (`:488-494`), board handover join (`:551-560`), `handover-line` + `board-str` uses (`:597-638`), `about`/`prime` `:handover-contract` + handover vocab rows + `:notes-and-handovers` (`:664,673-677,742-753`), and the `note` arg-spec `--handover` flag (`:809`). |
@@ -127,9 +127,11 @@ the next stage's work, not this plan's.
 - **Change:** accrete the writer value family on `skein.api.notes.alpha` per `DELTA-Nwt-001.C1`–`C5` —
   `(writer runtime target-or-thunk {:keys [decoration by]})`, `(write! w text opts)` (per-call decoration
   shallow-merges per key OVER the writer default; `:by` overrides; `:round` passes through), `(writer-ref w)`
-  (resolve the thunk exactly once, freeze `{:target :decoration :by}`), `(ref->writer runtime ref)`, and
+  (resolve the thunk exactly once, freeze `{:target :decoration :by}`), and
   `(writer-ref->prompt ref)` as the single renderer of the `agent note <target> "<text>" --by <by> --attr k=v`
-  fragment. Add `"note/kind"` to the core `note` vocab declaration (`DELTA-Nwt-001.C6`). Add `--attr`
+  fragment. No `ref->writer` ships — the constructor reconstructs from a ref, and accretion-only surface adds
+  no sugar without a named consumer. Malformed refs and per-call decoration maps fail loudly naming the field;
+  tests cover the negative cases. Add `"note/kind"` to the core `note` vocab declaration (`DELTA-Nwt-001.C6`). Add `--attr`
   decoration passthrough to the batteries `note` op and the delegation `agent note` op (repeatable `key=value`,
   same convention as `add`/`update`). Emitting spools *take* writers and never choose their own targets;
   stage-shaped consumers accept stage-keyed writers and fail loudly on a missing key — never a silent card
@@ -137,7 +139,7 @@ the next stage's work, not this plan's.
 - **Validation:** cold `clojure -M:test skein.notes-test skein.spools.batteries-test skein.delegation-test`
   (adjust to the actual namespaces the writer/batteries/delegation tests live in); vocab declaration present via
   the vocab reader; `(cd cli && go test ./...)` + `clojure -M:smoke` because the note arg-specs change.
-- **Done-when:** `writer`/`write!`/`writer-ref`/`ref->writer`/`writer-ref->prompt` live beside the untouched
+- **Done-when:** `writer`/`write!`/`writer-ref`/`writer-ref->prompt` live beside the untouched
   `note!`/`notes`; `write!` merges per-call decoration over the writer default; `writer-ref` resolves a thunk
   once; `writer-ref->prompt` is the sole renderer of the note-writing fragment; `strand note --attr` and
   `strand agent note --attr` round-trip decoration onto the note strand; `note/kind` is declared; focused +
@@ -146,8 +148,9 @@ the next stage's work, not this plan's.
 ### PLAN-Nwt-001.PH2 — kanban task tier (`task add`/`list`, derived status, projections, vocab)
 
 - **Owned files:** `spools/kanban/src/skein/spools/kanban.clj`, `test/skein/kanban_test.clj`.
-- **Depends-on:** PH1 (tasks consume injected writer-refs so review dumps and detail hang off the relevant task,
-  not the feature card — the read-cost fix as well as the routing fix).
+- **Depends-on:** none — PH2 is pure task-graph work with no writer call sites and may run in parallel with PH1
+  on disjoint files. (Tasks are the *targets* writers route to; the wiring that injects writer-refs is PH5's
+  glue concern, not PH2's.)
 - **Change:** add `kanban task add` (stamp declared task attrs + a `parent-of` edge under the feature card, plus
   optional `depends-on` edges — the same edges that are the concurrency DAG) and `kanban task list`. Compute the
   four derived statuses from pure graph + core attrs only (`done` ⟸ `state=closed`; `blocked` ⟸ active with a
@@ -203,11 +206,11 @@ the next stage's work, not this plan's.
   the `*.api.md` regen, and any remaining `spools/kanban.md`/cookbook task-tier prose.
 - **Depends-on:** PH1 (`writer-ref->prompt` must exist) and PH2/PH3 (the coordination guidance references the
   task tier and the retired handover). `delegation.clj` and `agent_run.clj` are disjoint files and fan out.
-- **Change:** converge the seven hand-built `agent note <id>` prompt sites on `writer-ref->prompt`
-  (`PLAN-Nwt-001.AA4`, `AA5`): delegation worker contract (`:101`), `read-the-board`/`post-with-tag` fragments
-  (`:926-958`), `review-prompt` (`:1010-1020`), `review-synthesis-prompt` (`:1037-1053`),
-  `panel-synthesis-prompt` (`:1289`); agent-run headless preamble (`:789`) and interactive completion contract
-  (`:818`). The review/panel pass tag graduates from a `[tag]` text prefix to a decoration attr threaded through
+- **Change:** converge the six hand-built `agent note <id>` *write* sites on `writer-ref->prompt`
+  (`PLAN-Nwt-001.AA4`, `AA5`): delegation worker contract (`:101`), `post-with-tag` (`:945-958`, serving
+  `review-prompt` `:1010-1020`), `review-synthesis-prompt` (`:1037-1053`), `panel-synthesis-prompt` (`:1289`);
+  agent-run headless preamble (`:789`) and interactive completion contract (`:818`). The read-side
+  `read-the-board` fragment (`:926-943`) stays inline (`PLAN-Nwt-001.R2`). The review/panel pass tag graduates from a `[tag]` text prefix to a decoration attr threaded through
   the writer-ref (`PLAN-Nwt-001.R1`). Add the stage-keyed writer wiring guidance to the coordination text:
   "track through kanban; correlate each kanban task to a devflow phase; build one writer per devflow stage
   (`:implementation`/`:review`) targeting the right kanban task; thread the writer-refs into delegated runs at
@@ -217,7 +220,7 @@ the next stage's work, not this plan's.
   ./...)` + `clojure -M:smoke`; `make fmt-check lint reflect-check docs-check` at zero findings; `make api-docs`
   clean; `git status --short` clear of generated SQLite/runtime artifacts.
 - **Done-when:** `writer-ref->prompt` is the single source of the note-writing fragment (no hand-built
-  `agent note <id>` string remains in the seven sites); the pass tag is a decoration attr; the stage-keyed writer
+  `agent note <id>` string remains in the six write sites); the pass tag is a decoration attr; the stage-keyed writer
   convention is documented in the composition site only; api-docs regenerated; all P6 gates green.
 
 ## PLAN-Nwt-001.P6 Validation strategy
@@ -299,10 +302,10 @@ the next stage's work, not this plan's.
   | Phase | Sketch | Depends-on |
   | ----- | ------ | ---------- |
   | PH1 | writer value + ref + prompt renderer; `--attr` on note ops; `note/kind` vocab | — |
-  | PH2 | kanban `task add`/`list` + derived status + projections + task vocab | PH1 |
+  | PH2 | kanban `task add`/`list` + derived status + projections + task vocab | — (parallel with PH1) |
   | PH3 | handover removal inventory + re-homed discipline + resume-path cutover (coordinator) | PH2 |
   | PH4 | devflow-name purge from kanban surface | PH3 |
-  | PH5 | seven prompt sites → `writer-ref->prompt`; stage-keyed glue guidance; api-docs regen | PH1, PH2, PH3 |
+  | PH5 | six write sites → `writer-ref->prompt`; stage-keyed glue guidance; api-docs regen | PH1, PH2, PH3 |
 
 - **PLAN-Nwt-001.TC4 — the coordinator carries the non-worker steps.** The `3tgaj`/`1x2zz` resume-path cutover
   (`PLAN-Nwt-001.CM5`) is a pre-merge coordinator gate, never a worker task. The full locked suite, go tests, and

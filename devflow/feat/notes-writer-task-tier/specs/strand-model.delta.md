@@ -3,7 +3,7 @@
 **Document ID:** `DELTA-Nwt-001`
 **Root spec:** [strand-model.md](../../../specs/strand-model.md)
 **Feature:** [../proposal.md](../proposal.md)
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-10
 
 ## DELTA-Nwt-001.P1 Summary
@@ -38,7 +38,11 @@ kanban task tier — that this feature lands in spool docs, not the root specs.
   `{:target <resolved id> :decoration <merged map> :by <author>}`. A thunk
   resolves exactly once, at ref time, and the ref freezes that id; refs ship into
   subprocesses, so late rebinding across a process boundary is out of scope.
-  `(ref->writer runtime ref)` reconstructs a writer from a ref.
+  There is deliberately no `ref->writer`: the constructor already reconstructs —
+  `(writer runtime (:target ref) {:decoration (:decoration ref) :by (:by ref)})` —
+  and the surface is accretion-only, so no sugar ships without a named consumer.
+  Every surface consuming a ref or per-call `:decoration` validates the shape and
+  fails loudly naming the offending field; malformed refs never write silently.
 
 - **DELTA-Nwt-001.C4 (single prompt renderer):** `(writer-ref->prompt ref)` is
   the one renderer of the note-writing instruction fragment ("append notes with:
