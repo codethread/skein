@@ -10,8 +10,8 @@ change — kept for delta-set completeness **Last Updated:** 2026-07-10
 layer, the terminal write on the existing `finish-run!` seam, the extended `agent-run` registry declaration, and the
 `strand agent spend` read subcommand — lands in userland spool code (`skein.spools.agent-run`,
 `skein.spools.delegation`) and calls the already-blessed vocab registry. None of it touches the weaver runtime,
-transports, registries, storage init, or scheduler `SPEC-004` governs. This file records the disposition explicitly so
-the F-Ru delta set mirrors F3's `SPEC-Np-004` and F4's `SPEC-Vr-004` per-root-spec coverage.
+transports, registries, storage init, or scheduler `SPEC-004` governs. This delta exists to record that F-Ru uses the
+existing runtime write and reload model without changing it.
 
 ## SPEC-Ru-004.P2 Contract changes
 

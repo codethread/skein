@@ -27,8 +27,9 @@ claude-json reads the result object's `total_cost_usd`/`usage` fields (`PROP-Ru-
 cannot see (`PROP-Ru-001.C4`). Capture rides the single `finish-run!` seam on both terminal branches that have parsed
 output — the done path and the terminal-error path, so a usage-limit failure still records its spend
 (`PROP-Ru-001.C5`, `G2`). The four keys are declared through the F4 registry by extending the engine's existing
-`agent-run` declaration (`PROP-Ru-001.C6`, the registry's first post-seed customer). One read surface, `strand agent
-spend`, aggregates the recorded data by run, harness, and period — deriving wall-time from the existing
+`agent-run` declaration (`PROP-Ru-001.C6`, the first extension of the F4 registry after its initial seed). One read
+surface, `strand agent spend`, aggregates the recorded data by run, harness, and period — deriving wall-time from the
+existing
 `started-at`/`finished-at` timestamps so every format including `:raw` reports duration — and never inflates a missing
 figure to zero (`PROP-Ru-001.C7`, `G5`).
 
@@ -61,8 +62,8 @@ runs, no per-turn/per-tool breakdown, no derived pricing, and no new storage.
   stored `0`. `:raw` writes no cost/token attribute at all and contributes only its derived wall-time.
 - **PLAN-Ru-001.A4:** Pin the real provider shapes with committed fixtures. Both parse slices ship a captured-output
   fixture and a test that pins the exact field mapping, so a future provider change fails a test rather than silently
-  mis-capturing (`PROP-Ru-001.R1`, `Q1`). The field names are already verified against real logs — see
-  `PLAN-Ru-001.TC3`.
+  mis-capturing (`PROP-Ru-001.R1`, `Q1`). The field mapping is provisional recon until S1's committed fixtures pin it
+  — see `PLAN-Ru-001.TC3`.
 - **PLAN-Ru-001.A5:** Focused gates during the fan-out; the full locked suite only at acceptance — with one hard
   constraint the proposal understated. The authoritative suite for `agent_run.clj`, `skein.agent-run-test`, is an
   add-libs subprocess shard (shard `B` in `test/skein/test_runner.clj`) that the focused runner **rejects by design**
@@ -78,17 +79,32 @@ runs, no per-turn/per-tool breakdown, no derived pricing, and no new storage.
 
 ## PLAN-Ru-001.P3 Affected areas
 
-| ID | Area | Expected change |
-| -- | ---- | --------------- |
-| PLAN-Ru-001.AA1 | `spools/agent-run/src/skein/spools/agent_run.clj` (parse layer) | `parse-pi-json` folds the per-message `usage` map (`input`/`output`/`cacheRead`/`cacheWrite`/`reasoning`/`totalTokens` + nested `cost.total`) across `assistant-messages` into one run-level `:usage`; `parse-claude-json` reads the result object's `total_cost_usd` + `usage` fields; a shared normalize helper emits the C1 keyword-keyed shape; `parse-output` threads `:usage` for the two formats and omits it for `:raw` (`PROP-Ru-001.C2`–`C5`). |
-| PLAN-Ru-001.AA2 | `spools/agent-run/src/skein/spools/agent_run.clj` (`finish-run!`) | Destructure `:usage` from the parse result and merge the C1 attributes onto the done-branch `update-run!` map and the terminal-error-branch `mark-failed!` `extra` map; write only reported dimensions (`PROP-Ru-001.C5`, `G2`, `R2`). |
-| PLAN-Ru-001.AA3 | `spools/agent-run/src/skein/spools/agent_run.clj` (`install!`) | Add a `usage-attrs` set (`agent-run/cost-usd`, `agent-run/tokens-total`, `agent-run/tokens`, `agent-run/usage-source`) and fold it into the existing `agent-run` `vocab/declare!` `:keys` (`PROP-Ru-001.C6`, `Q2`). |
-| PLAN-Ru-001.AA4 | `spools/agent-run/src/skein/spools/agent_run.clj` (spend read fn) | New pure aggregation fn beside `runs*`/`run-summary`: one bulk query, derive `duration-ms` per run from `started-at`/`finished-at`, group by harness or day, nil-skipping totals (`PROP-Ru-001.C7`, `R4`). |
-| PLAN-Ru-001.AA5 | `spools/delegation/src/skein/spools/delegation.clj` | Add a `"spend"` entry to `agent-arg-spec` `:subcommands` (`--harness`/`--since`/`--until`/`--group-by` flags), an `agent-op` `case` branch calling the AA4 fn, and a `spend` entry in the `strand agent about` manual (`PROP-Ru-001.C7`). |
-| PLAN-Ru-001.AA6 | `test/skein/agent_run_test.clj` + fixtures | New tests + two committed provider fixtures (real pi run, real claude result); authoritative shard-`B` gate (`PROP-Ru-001.P6`). |
-| PLAN-Ru-001.AA7 | `spools/delegation/test/skein/delegation_test.clj` | Focused-runnable test of the `spend` subcommand wiring (totals/groups/nil-skipping). |
-| PLAN-Ru-001.AA8 | `spools/agent-run.cookbook.md`, `spools/delegation.md`, agent-run/delegation docstrings | Reference docs for the usage attrs, per-format capture, and the `strand agent spend` verb; `make api-docs` regenerates `spools/agent-run.api.md` + `spools/delegation.api.md`. |
-| PLAN-Ru-001.AA9 | `devflow/feat/run-usage/specs/*.delta.md` | Four no-change deltas (`SPEC-Ru-001`–`004`); no root-spec edit is owed, so there is no spec-application slice (contrast F4's `PLAN-Vr-001.S9`). |
+- **PLAN-Ru-001.AA1** — `spools/agent-run/src/skein/spools/agent_run.clj` (parse layer). `parse-pi-json` folds the
+  per-message `usage` map (`input`/`output`/`cacheRead`/`cacheWrite`/`reasoning`/`totalTokens` + nested `cost.total`)
+  across `assistant-messages` into one run-level `:usage`; `parse-claude-json` reads the result object's
+  `total_cost_usd` + `usage` fields; a shared normalize helper emits the C1 keyword-keyed shape; `parse-output` threads
+  `:usage` for the two formats and omits it for `:raw` (`PROP-Ru-001.C2`–`C5`).
+- **PLAN-Ru-001.AA2** — `spools/agent-run/src/skein/spools/agent_run.clj` (`finish-run!`). Destructure `:usage` from
+  the parse result and merge the C1 attributes onto the done-branch `update-run!` map and the terminal-error-branch
+  `mark-failed!` `extra` map; write only reported dimensions (`PROP-Ru-001.C5`, `G2`, `R2`).
+- **PLAN-Ru-001.AA3** — `spools/agent-run/src/skein/spools/agent_run.clj` (`install!`). Add a `usage-attrs` set
+  (`agent-run/cost-usd`, `agent-run/tokens-total`, `agent-run/tokens`, `agent-run/usage-source`) and fold it into the
+  existing `agent-run` `vocab/declare!` `:keys` (`PROP-Ru-001.C6`, `Q2`).
+- **PLAN-Ru-001.AA4** — `spools/agent-run/src/skein/spools/agent_run.clj` (spend read fn). New pure aggregation fn
+  beside `runs*`/`run-summary`: one bulk query, derive `duration-ms` per run from `started-at`/`finished-at`, group by
+  harness or day, nil-skipping totals (`PROP-Ru-001.C7`, `R4`).
+- **PLAN-Ru-001.AA5** — `spools/delegation/src/skein/spools/delegation.clj`. Add a `"spend"` entry to `agent-arg-spec`
+  `:subcommands` (`--harness`/`--since`/`--until`/`--group-by` flags), an `agent-op` `case` branch calling the AA4 fn,
+  and a `spend` entry in the `strand agent about` manual (`PROP-Ru-001.C7`).
+- **PLAN-Ru-001.AA6** — `test/skein/agent_run_test.clj` + fixtures. New tests + two committed provider fixtures (one
+  sanitized pi run, one sanitized claude result); authoritative shard-`B` gate (`PROP-Ru-001.P6`).
+- **PLAN-Ru-001.AA7** — `test/skein/delegation_test.clj`. Focused-runnable test of the `spend` subcommand wiring
+  (totals/groups/nil-skipping).
+- **PLAN-Ru-001.AA8** — `spools/agent-run.cookbook.md`, `spools/delegation/README.md`, agent-run/delegation docstrings.
+  Reference docs for the usage attrs, per-format capture, and the `strand agent spend` verb; `make api-docs`
+  regenerates `spools/agent-run.api.md` + `spools/delegation.api.md`.
+- **PLAN-Ru-001.AA9** — `devflow/feat/run-usage/specs/*.delta.md`. Four no-change deltas (`SPEC-Ru-001`–`004`); no
+  root-spec edit is owed, so there is no spec-application slice (contrast F4's `PLAN-Vr-001.S9`).
 
 ## PLAN-Ru-001.P4 Contract and migration impact
 
@@ -97,7 +113,7 @@ runs, no per-turn/per-tool breakdown, no derived pricing, and no new storage.
   pre-feature runs count with `null` cost/tokens, never zero (`PROP-Ru-001.NG2`, `NG3`).
 - **PLAN-Ru-001.CM2:** No durable root-spec change. All four deltas (`SPEC-Ru-001`–`004`) are no-change dispositions:
   the usage keys are concept-vocabulary under the already-rostered `agent-run/*` namespace declared through the F4
-  registry (`SPEC-Ru-001`); `spend` is a subcommand on an existing op, in-contract via `spools/delegation.md`
+  registry (`SPEC-Ru-001`); `spend` is a subcommand on an existing op, in-contract via `spools/delegation/README.md`
   (`SPEC-Ru-002`/`SPEC-Ru-003`); the capture rides the existing runtime write and reload model (`SPEC-Ru-004`). Nothing
   promotes at land beyond marking the deltas as recorded no-change.
 - **PLAN-Ru-001.CM3:** No `skein.core.*` change and no `db.clj` delta (`PROP-Ru-001.NG3`, `SPEC-Ru-004.P3`).
@@ -115,7 +131,8 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
 ### PLAN-Ru-001.S1 — parse-layer usage capture, both formats (foundation) `[serial]`
 
 - **Owned files:** `spools/agent-run/src/skein/spools/agent_run.clj` (parse region), `test/skein/agent_run_test.clj`,
-  two new committed fixtures (a real pi `--mode json` run, a real claude `--output-format json` result).
+  two new committed fixtures — one sanitized pi `--mode json` run and one sanitized claude `--output-format json`
+  result, redacted of private content so they can live in the test tree.
 - **Depends-on:** none (lands first on the spine).
 - **Change:** `parse-pi-json` gains a fold over the `assistant-messages` it already materializes: sum each message's
   `usage` `input`/`output`/`cacheRead`/`cacheWrite`/`reasoning`/`totalTokens` and its nested `cost.total`, producing one
@@ -135,7 +152,10 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
   summed into `tokens-total`; claude cost/token capture from the result object; absent claude field omitted (no zero);
   `:raw` parse carries no `:usage`.
 - **Done-when:** `parse-output` returns the normalized C1 `:usage` for pi-json and claude-json and omits it for `:raw`;
-  both fixtures committed; the delta-fold and no-double-count tests pass in the shard.
+  one sanitized pi-json fixture and one sanitized claude-json fixture are committed into the test tree, and a test
+  asserts the `PLAN-Ru-001.TC3` field mapping against them — this is what pins the mapping, so every later reader and
+  slice depends on the committed fixtures, never on anyone's local logs; the delta-fold and no-double-count tests pass
+  in the shard.
 
 ### PLAN-Ru-001.S2 — `finish-run!` terminal-write seam `[serial, after S1]`
 
@@ -154,7 +174,7 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
 - **Done-when:** `DW1`/`DW2` hold — done and terminal-error runs with parsed usage write the C1 attributes; raw and
   non-zero-exit runs write none; no dimension is zero-filled.
 
-### PLAN-Ru-001.S3 — vocab declaration growth (dogfood F4) `[serial, after S2]`
+### PLAN-Ru-001.S3 — vocab declaration growth `[serial, after S2]`
 
 - **Owned files:** `spools/agent-run/src/skein/spools/agent_run.clj` (`install!` + a new `usage-attrs` def),
   `test/skein/agent_run_test.clj`.
@@ -192,7 +212,7 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
 ### PLAN-Ru-001.S5 — `strand agent spend` subcommand `[after S4; parallel with S6]`
 
 - **Owned files:** `spools/delegation/src/skein/spools/delegation.clj`,
-  `spools/delegation/test/skein/delegation_test.clj`.
+  `test/skein/delegation_test.clj`.
 - **Depends-on:** S4 (calls the aggregation fn); disjoint file from the spine.
 - **Change:** add a `"spend"` entry to `agent-arg-spec` `:subcommands` with `--harness`, `--since`, `--until`, and
   `--group-by` (`harness|day`) flags; add an `agent-op` `case` branch dispatching to the S4 aggregation fn (delegation
@@ -207,12 +227,12 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
 
 ### PLAN-Ru-001.S6 — reference docs `[parallel, after the code each documents]`
 
-- **Owned files:** `spools/agent-run.cookbook.md`, `spools/delegation.md`, and the agent-run/delegation docstrings the
+- **Owned files:** `spools/agent-run.cookbook.md`, `spools/delegation/README.md`, and the agent-run/delegation docstrings the
   api-docs are generated from (`install!`, `parse-pi-json`, `parse-claude-json`, the `agent` op spend subcommand).
 - **Depends-on:** S1–S5 for accuracy (doc-only; lands with the set).
 - **Change:** document the new `agent-run/*` usage attributes and per-format capture in the agent-run docstrings; add a
   short "reading run spend" entry to `spools/agent-run.cookbook.md`; document the `strand agent spend` subcommand
-  (flags, JSON shape) in `spools/delegation.md` and the `strand agent about` manual. Prose passes the docs-style gate.
+  (flags, JSON shape) in `spools/delegation/README.md` and the `strand agent about` manual. Prose passes the docs-style gate.
 - **Validation:** `make docs-check` at zero findings; `make api-docs` regen deferred to S7.
 - **Done-when:** the usage attrs, per-format capture, and the spend verb are documented in the userland reference docs;
   `make docs-check` clean.
@@ -265,8 +285,8 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
   is limited. Mitigation: this is the natural dependency order (parse → write → declare → aggregate); one worker carries
   the spine in sequence, and the disjoint `delegation.clj` (S5) plus doc slices (S6) fan out after it.
 - **PLAN-Ru-001.Q1:** No open questions block task generation. The proposal's five design questions
-  (`PROP-Ru-001.Q1`–`Q5`) are all resolved; the field mappings are verified against real logs (`PLAN-Ru-001.TC3`); the
-  four spec deltas are settled no-change dispositions.
+  (`PROP-Ru-001.Q1`–`Q5`) are all resolved; the field mappings are provisional recon that S1 pins with committed
+  fixtures (`PLAN-Ru-001.TC3`); the four spec deltas are settled no-change dispositions.
 
 ## PLAN-Ru-001.P8 Task context
 
@@ -279,17 +299,21 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
   gate. **No cutover slice, no HITL slice, no spec-application slice** — the landing is purely additive
   (`PROP-Ru-001.C10`) and all four spec deltas are no-change (`PLAN-Ru-001.CM2`), so unlike F4 there is no
   `PLAN-Vr-001.S9`-style spec-merge step.
-- **PLAN-Ru-001.TC3:** Field mappings verified against real weaver run logs (`~/.local/state/skein/weavers/*/shuttle/*.out`),
-  so task authors need not re-derive them:
+- **PLAN-Ru-001.TC3:** Provisional field mapping — verified at authoring against local weaver run logs
+  (`~/.local/state/skein/weavers/*/shuttle/*.out`), which are private and session-local and will not exist for future
+  readers, reviewers, CI, or another checkout. Treat the shapes below as a recon starting point, not settled evidence:
+  S1 turns them into durable fact by committing sanitized fixtures and asserting this mapping against them
+  (`PLAN-Ru-001.S1` Done-when), and from that point the fixtures are the source of truth, not these notes or any local
+  log.
   - **claude-json** result object (single JSON): `total_cost_usd` (e.g. `1.4548964999999998`) and a `usage` sub-map
     with `input_tokens`, `output_tokens`, `cache_creation_input_tokens` (→ `cache-write`), `cache_read_input_tokens`
-    (→ `cache-read`). There is **no** `reasoning` field in claude usage; `tokens-total` is the sum of the four counts.
+    (→ `cache-read`). No `reasoning` field was observed in claude usage; `tokens-total` is the sum of the four counts.
     (The object also carries `duration_ms`/`modelUsage`/etc. that F-Ru ignores — wall-time is derived from strand
     timestamps, `PROP-Ru-001.C4`.)
   - **pi-json** per-assistant-message `usage`: `{input, output, cacheRead, cacheWrite, totalTokens, cost {input,
     output, cacheRead, cacheWrite, total}}` — a nested `cost` map (run cost = sum of each message's `cost.total`), and
     `totalTokens = input + output + cacheRead` per message (deltas, summed). `reasoning` appears in some runs' `usage`
-    and is already inside `totalTokens`, so it is recorded in the breakdown only (`PROP-Ru-001.C2`). The captured
+    and is already inside `totalTokens`, so it is recorded in the breakdown only (`PROP-Ru-001.C2`). The committed
     fixture must be a run whose messages carry non-zero usage so the fold is actually exercised.
 - **PLAN-Ru-001.TC4:** Seam sites (function anchors, re-verify against the current tree, not line numbers):
   `parse-pi-json`/`parse-claude-json`/`parse-output` and `finish-run!` (with its `update-run!` done branch and

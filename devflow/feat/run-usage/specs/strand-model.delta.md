@@ -12,8 +12,8 @@ captured at completion by the agent-run engine. These are new *keys* under the `
 model already names, not a new namespace, relation, acyclic edge, or storage kind. `SPEC-001` governs the shape of the
 attribute-namespace vocabulary and its ownership discipline, neither of which moves: the keys are JSON `TEXT` on the
 existing `attributes` table (`PROP-Ru-001.NG3`), declared through the F4 registry the strand model already names
-(`SPEC-Vr-001.CC1`; `PROP-Ru-001.C6`). This file records the disposition explicitly so the F-Ru delta set carries a
-per-root-spec coverage entry, mirroring F4's `SPEC-Vr-003` and F3's `SPEC-Np-004`.
+(`SPEC-Vr-001.CC1`; `PROP-Ru-001.C6`). This delta exists to record that the new `agent-run/*` keys fit the existing
+strand model without changing it.
 
 ## SPEC-Ru-001.P2 Contract changes
 
