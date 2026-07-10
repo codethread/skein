@@ -1,0 +1,66 @@
+tasks:
+  - id: 1
+    description: "PH1a: notes writer value/ref/prompt renderer on skein.api.notes.alpha (+ negative-case tests, no ref->writer)"
+    task_file: tasks/001-notes-writer-surface.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: "PH1b: batteries note --attr decoration passthrough + note/kind vocab key (+ tests)"
+    task_file: tasks/002-batteries-attr-and-note-kind.md
+    status: pending
+    blocked_by: []
+  - id: 3
+    description: "PH1c: delegation agent-note --attr decoration passthrough (op-note parse only) (+ tests)"
+    task_file: tasks/003-delegation-op-note-attr.md
+    status: pending
+    blocked_by: []
+  - id: 4
+    description: "PH2a: kanban task add/list + pure-graph derived status + task-tier vocab (+ tests)"
+    task_file: tasks/004-kanban-task-tier-core.md
+    status: pending
+    blocked_by: []
+  - id: 5
+    description: "PH2b: kanban card-view tasks lane + board doing-task line (+ tests)"
+    task_file: tasks/005-kanban-task-projections.md
+    status: pending
+    blocked_by: [4]
+  - id: 6
+    description: "PH3a: handover removal in kanban.clj + tests + re-homed prime/about discipline"
+    task_file: tasks/006-handover-removal-kanban.md
+    status: pending
+    blocked_by: [5]
+  - id: 7
+    description: "PH3b: handover prose/config removal (.skein config+workflows, CLAUDE/AGENTS, kanban.md/cookbooks) + config-test lockstep"
+    task_file: tasks/007-handover-removal-docs-config.md
+    status: pending
+    blocked_by: [5]
+  - id: 8
+    description: "[HITL] PH3: pre-merge resume-path cutover for cards 3tgaj/1x2zz (coordinator gate)"
+    task_file: tasks/008-resume-path-cutover-hitl.md
+    status: blocked
+    blocked_by: [6, 7]
+  - id: 9
+    description: "PH4: devflow/agent-plan/delegation name purge from kanban surface (kanban.clj + kanban.md + cookbook)"
+    task_file: tasks/009-devflow-purge-kanban.md
+    status: pending
+    blocked_by: [6, 7]
+  - id: 10
+    description: "PH5a: delegation write fragments -> writer-ref->prompt; [tag]->decoration attr; frozen-test lockstep"
+    task_file: tasks/010-delegation-write-fragments.md
+    status: pending
+    blocked_by: [1, 3]
+  - id: 11
+    description: "PH5b: agent-run preambles -> writer-ref->prompt (+ tests)"
+    task_file: tasks/011-agent-run-preambles.md
+    status: pending
+    blocked_by: [1]
+  - id: 12
+    description: "PH5c: stage-keyed writer glue guidance (CLAUDE/AGENTS) + kanban.md task-tier prose + make api-docs regen"
+    task_file: tasks/012-glue-guidance-and-api-docs.md
+    status: pending
+    blocked_by: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11]
+  - id: 13
+    description: "Final: full-suite queue acceptance (flock lock + go + smoke + fmt/lint/reflect/docs-check + separation greps)"
+    task_file: tasks/013-acceptance-gate.md
+    status: pending
+    blocked_by: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12]

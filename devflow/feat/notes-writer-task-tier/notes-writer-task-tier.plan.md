@@ -315,6 +315,46 @@ the next stage's work, not this plan's.
   next-stage `TASK-Nwt-*` files (execution contracts). Vocabulary (strands, edges, notes, spools, writers) is
   defined in `docs/skein.md` and the spool docs, not re-derived here; every point ID is a grepable anchor.
 
+- **PLAN-Nwt-001.TC6 — task queue authored (2026-07-10, `tasks/`).** The queue cuts the five phases into
+  13 slices (`tasks/index.yml`, `TASK-Nwt-001`–`013`), each independently cold-test verifiable and small
+  enough for one agent run; dependencies flow only through `blocked_by`, no cycles. AFK is the default; the
+  single HITL slice is the coordinator resume-path cutover. Slice → phase → dependency:
+
+  | # | Slice | Phase | Type | `blocked_by` |
+  | - | ----- | ----- | ---- | ------------ |
+  | 1 | notes writer value/ref/`writer-ref->prompt` (+ negative tests, no `ref->writer`) | PH1a | AFK | — |
+  | 2 | batteries `note --attr` + `note/kind` vocab key | PH1b | AFK | — |
+  | 3 | delegation `agent note --attr` (op-note parse only) | PH1c | AFK | — |
+  | 4 | kanban `task add`/`list` + pure-graph derived status + task vocab | PH2a | AFK | — |
+  | 5 | kanban `card-view` tasks lane + board doing-task line | PH2b | AFK | 4 |
+  | 6 | handover removal in `kanban.clj` + tests + re-homed `prime`/`about` | PH3a | AFK | 5 |
+  | 7 | handover prose/config removal (.skein, CLAUDE/AGENTS, kanban docs) + config-test | PH3b | AFK | 5 |
+  | 8 | [HITL] resume-path cutover `3tgaj`/`1x2zz` (coordinator gate) | PH3 | HITL | 6, 7 |
+  | 9 | devflow-name purge from kanban surface | PH4 | AFK | 6, 7 |
+  | 10 | delegation write fragments → `writer-ref->prompt`; `[tag]`→attr; frozen-test lockstep | PH5a | AFK | 1, 3 |
+  | 11 | agent-run preambles → `writer-ref->prompt` | PH5b | AFK | 1 |
+  | 12 | stage-keyed writer glue (CLAUDE/AGENTS) + kanban.md task-tier prose + `make api-docs` | PH5c | AFK | 1–7, 9, 10, 11 |
+  | 13 | full-suite queue acceptance (flock + go + smoke + quality + separation/round-trip proofs) | acceptance | AFK | 1–7, 9, 10, 11, 12 |
+
+- **PLAN-Nwt-001.TC7 — slicing judgment calls (queue stage).**
+  - **PH1 (b)/(c) are independent of (a).** The `--attr` verb parses (Tasks 2/3) and the `note/kind` vocab
+    key do not consume the writer fns, so they are `blocked_by: []` and fan out with Task 1, per the phase
+    guidance — only the prompt-site absorption (Tasks 10/11) consumes `writer-ref->prompt`.
+  - **`kanban.clj` is a strict same-file chain 4→5→6→9.** PH2a/PH2b/PH3a/PH4 all edit `kanban.clj`; they
+    serialize (`PLAN-Nwt-001.A6`), never two workers at once. PH3b (Task 7) is disjoint doc/config files, so
+    it runs parallel to PH3a (both gated on Task 5).
+  - **PH5a kept alone and gated on Task 3.** Task 10 is the riskiest slice (frozen roster prompts,
+    `PLAN-Nwt-001.R1`); it renders `--attr` fragments and edits `delegation.clj`, so it is `blocked_by` both
+    Task 1 (the renderer) and Task 3 (the op-note `--attr` parse in the same file) — the fragment text,
+    tag-as-attr graduation, and `delegation_test.clj:370-374` assertions move in one lockstep slice.
+  - **HITL cutover gated on the removal slices, not the acceptance gate.** Task 8 is a coordinator pre-merge
+    decision (`PLAN-Nwt-001.CM5`, `R3`); it is `blocked_by [6, 7]` (the surfaces that drop projection) and
+    runs beside — not before — the full-suite acceptance (Task 13). The card set is re-verified at merge.
+  - **Doc/glue tail (Task 12) blocks on everything it documents** so `make api-docs` regenerates over final
+    docstrings and the CLAUDE/AGENTS/kanban.md prose edits do not race Tasks 7/9 on the same files.
+  - **`.skein/CLAUDE.md` does not exist (`PLAN-Nwt-001.R4`):** the stage-keyed writer guidance lands in the
+    repo-root `CLAUDE.md`/`AGENTS.md` coordination section, flagged in Task 12.
+
 ## PLAN-Nwt-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
