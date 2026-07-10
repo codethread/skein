@@ -18,6 +18,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
+            [skein.api.notes.alpha :as notes]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as api]
@@ -322,34 +323,26 @@
 ;; notes and handovers
 ;; ---------------------------------------------------------------------------
 
-(defn- note-title
-  "Return a compact strand title for a note's text."
-  [handover? text]
-  (let [prefix (if handover? "Handover: " "Note: ")
-        line (first (str/split-lines text))]
-    (str prefix (if (> (count line) 90) (str (subs line 0 90) "...") line))))
-
 (defn note!
-  "Append a note (or `--handover` note) as a closed child strand of a card.
+  "Append a note (or `--handover` note) to a card via the blessed notes relation.
 
-  Notes are strands rather than attributes so concurrent agents never race a
-  read-merge-write cycle and every note keeps its own timestamp and author.
-  A handover note is the crash/stop contract: record what is done, what is
-  next, validation state, and gotchas so any agent can resume from
-  `kanban card <id>` alone."
+  The note rides the shared `notes` edge (`skein.api.notes.alpha/note!`) with
+  `kanban/note`, `kind`, and optional `kanban/handover`/`author` as decorating
+  attrs, so concurrent agents never race a read-merge-write cycle and every note
+  keeps its own timestamp and author. A handover note is the crash/stop
+  contract: record what is done, what is next, validation state, and gotchas so
+  any agent can resume from `kanban card <id>` alone."
   [id text flags]
   (let [card (card-strand (require-non-blank! :id id))
         text (require-non-blank! :text text)
         handover? (boolean (get flags "--handover"))
         rt (current/runtime)
-        note (api/add rt {:title (note-title handover? text)
-                          :state "closed"
-                          :attributes (cond-> {note-attr "true"
-                                               :kind "note"
-                                               :body text}
-                                        handover? (assoc handover-attr "true")
-                                        (get flags "--author") (assoc :author (get flags "--author")))})]
-    (api/update rt (:id card) {:edges [{:type "parent-of" :to (:id note)}]})
+        decorating (cond-> {note-attr "true"
+                            :kind "note"}
+                     handover? (assoc handover-attr "true")
+                     (get flags "--author") (assoc :author (get flags "--author")))
+        {note-id :id} (notes/note! rt (:id card) text decorating)
+        note (api/show rt note-id)]
     {:operation "kanban note"
      :card (:id card)
      :note (select-keys note [:id :title :state :attributes])}))
@@ -359,7 +352,7 @@
   [strand]
   (cond-> {:id (:id strand)
            :title (:title strand)
-           :body (attr-value strand :body)
+           :body (attr-value strand :note/text)
            :created_at (:created_at strand)
            :handover (= "true" (attr-value strand handover-attr))}
     (attr-value strand :author) (assoc :author (attr-value strand :author))))
@@ -411,20 +404,20 @@
                  {:relation relation :strand (summarize-strand (by-id other))})))))
 
 (defn- card-subtree
-  "Return the card's parent-of subgraph split into notes and work strands."
+  "Return the card's notes and its parent-of work strands.
+
+  Notes source from the card's incoming `notes` edges (the blessed note
+  relation), newest first; work is the card's `parent-of` subgraph. The two
+  relations are disjoint, so notes no longer overload `parent-of`."
   [rt card]
-  (let [{:keys [strands edges]} (graph/subgraph rt [(:id card)] {:type "parent-of"})
-        child-ids (->> edges
-                       (filter #(= (:id card) (:from_strand_id %)))
-                       (map :to_strand_id)
-                       set)
-        others (remove #(= (:id card) (:id %)) strands)
-        notes (->> others
-                   (filter #(and (note-strand? %) (contains? child-ids (:id %))))
-                   (sort-by (juxt :created_at :id))
+  (let [note-ids (mapv :from_strand_id (graph/incoming-edges rt [(:id card)] "notes"))
+        notes (->> (graph/strands-by-ids rt note-ids)
+                   (sort-by (juxt #(attr-value % :note/at) :created_at :id))
                    reverse
                    vec)
-        work (->> others
+        {:keys [strands]} (graph/subgraph rt [(:id card)] {:type "parent-of"})
+        work (->> strands
+                  (remove #(= (:id card) (:id %)))
                   (remove note-strand?)
                   (sort-by :id)
                   vec)]
@@ -666,7 +659,7 @@
                 type-attr "feature (default) | epic (grouping; parent-of its features)"
                 status-attr "refinement|pending|claimed|in_review|<outcome>"
                 priority-attr "p1|p2|p3|p4 (default p3); orders lanes and `kanban next`"
-                note-attr "true on note strands (closed parent-of children of a card)"
+                note-attr "true on note strands (closed notes-relation children of a card)"
                 handover-attr "true on handover notes"
                 :kanban/source "optional path or URL for design context"
                 :owner "claimant, required at claim"
