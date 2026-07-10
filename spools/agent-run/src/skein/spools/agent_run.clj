@@ -833,7 +833,14 @@
   "Parse pi --mode json output: a stream of JSON event lines; the run result is
   the last assistant message carrying text. `:result` is always a string:
   tool_execution_end events also carry a top-level \"result\" holding a tool
-  output object, so the bare result-key fallback accepts strings only."
+  output object, so the bare result-key fallback accepts strings only.
+
+  A terminal provider failure (usage limit, auth, transport) surfaces as
+  `stopReason \"error\"` plus `errorMessage` on the last assistant message while
+  pi itself still exits 0; return it as `:error` so the caller can fail the run
+  instead of closing a hollow done (live incident: runs m5i8k/mdxnn,
+  2026-07-10). For an event stream with no assistant text `:result` is blank —
+  never the raw stream — so the exit-0 blank-result guard stays reachable."
   [stdout]
   (let [lines (->> (str/split-lines stdout)
                    (map str/trim)
@@ -849,18 +856,26 @@
                        (filter #(= "text" (get % "type")))
                        (map #(get % "text"))
                        (str/join "\n")))
-        assistant-text (->> events
-                            (filter #(= "assistant" (get-in % ["message" "role"])))
-                            (keep #(not-empty (text-of (get % "message"))))
-                            last)]
+        assistant-messages (->> events
+                                (keep #(get % "message"))
+                                (filter #(= "assistant" (get % "role"))))
+        assistant-text (->> assistant-messages
+                            (keep #(not-empty (text-of %)))
+                            last)
+        terminal-error (let [message (last assistant-messages)]
+                         (when (or (= "error" (get message "stopReason"))
+                                   (not-empty (get message "errorMessage")))
+                           (or (not-empty (get message "errorMessage"))
+                               "pi turn ended with stopReason error")))]
     (if (seq events)
-      {:result (or assistant-text
-                   (some #(let [r (get % "result")] (when (string? r) r)) (reverse events))
-                   (str/trim stdout))
-       :session-id (some #(or (when (= "session" (get % "type")) (get % "id"))
-                              (get % "session_id")
-                              (get % "sessionId"))
-                         events)}
+      (cond-> {:result (or assistant-text
+                           (some #(let [r (get % "result")] (when (string? r) r)) (reverse events))
+                           "")
+               :session-id (some #(or (when (= "session" (get % "type")) (get % "id"))
+                                      (get % "session_id")
+                                      (get % "sessionId"))
+                                 events)}
+        terminal-error (assoc :error terminal-error))
       {:result (str/trim stdout)})))
 
 (defn- parse-output [strategy stdout]
@@ -1091,13 +1106,24 @@
     (swap! (in-flight) dissoc id)
     (when-not (= "failed" (sattr current "phase"))
       (if (zero? exit)
-      (let [{:keys [result session-id parse-error]}
+      (let [{:keys [result session-id parse-error error]}
             (try
               (parse-output (:parse harness) stdout)
               (catch Exception e
                 {:result (str/trim stdout)
                  :parse-error (str (ex-message e))}))]
-        (if (str/blank? result)
+        (cond
+          ;; exit 0 but the harness's own event stream reports a terminal
+          ;; provider failure (usage limit, auth, transport): the process
+          ;; exiting cleanly does not make the turn a success. Fail loudly and
+          ;; retryably instead of closing a done run with no real report.
+          error
+          (mark-failed! id
+                        (str "harness exited 0 but the final turn errored: " error)
+                        (cond-> {"agent-run/exit-code" exit}
+                          session-id (assoc "agent-run/session-id" session-id)))
+
+          (str/blank? result)
           ;; exit 0 but no result text: the harness died silently (a transport
           ;; drop mid-turn writes nothing yet still exits 0). A run's result is
           ;; the worker's report, so an empty one is not success — record it
@@ -1112,6 +1138,8 @@
                                (when-not (str/blank? stderr) (str "; stderr: " (tail stderr 2000))))
                           (cond-> {"agent-run/exit-code" exit}
                             session-id (assoc "agent-run/session-id" session-id))))
+
+          :else
           (update-run! id (cond-> {"agent-run/phase" "done"
                                    "agent-run/exit-code" exit
                                    "agent-run/result" result
