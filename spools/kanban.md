@@ -37,7 +37,6 @@ Card state lives under the `kanban/*` attribute topic:
 | `kanban/priority` | `p1`, `p2`, `p3` (default), or `p4`; cards without the attribute read as `p3`. |
 | `kanban/source` | Optional path or URL for design context (RFC, feature folder). |
 | `kanban/note` | `"true"` decoration on strands linked to a card by the blessed `notes` relation. |
-| `kanban/handover` | `"true"` decoration on note strands that are handovers. |
 | `owner` | Who is driving the work; required at claim. |
 | `branch` | The work branch; required at claim. |
 | `worktree` | Optional worktree path. |
@@ -48,21 +47,20 @@ The card is the **work root**: feature plans, devflow runs, review strands, and 
 
 **Viewing work in a branch.** `strand branches "$(git branch --show-current)"` shows the feature cards and their substrands stamped on the current branch.
 
-## Notes, handovers, and crash recovery
+## Notes and resume
 
 Notes are strands linked to their target by the blessed `notes` relation, not card attributes or `parent-of` children. Kanban marks its notes with
-`kanban/note` and marks handovers with `kanban/handover`; those attributes are decoration for board views. Concurrent agents do not race a
+`kanban/note`; that attribute is decoration for board views. Concurrent agents do not race a
 read-merge-write cycle, and every note keeps its own timestamp and author:
 
 ```sh
 strand kanban note <id> "Decided X because Y" --author claude
-strand kanban note <id> --handover --author claude "Done: impl+tests. Next: docs. Validation: clojure -M:test green. Gotcha: reload weaver after merge."
 ```
 
-A **handover** note is the stop/interruption contract: what is done, what is next, validation state, gotchas, and where the work lives. The resume path for a cold agent needs no prior context:
+Note as you go, not at the end: record what is done, what is next, validation state, and gotchas on the doing-task as you reach them. The resume surface is the card's task tier plus those notes, so a cold agent resumes from the doing-task and its latest note with no prior context. Even with no notes the doing-task still carries its body, deps, and lane:
 
-1. `strand kanban board` — claimed cards show owner, branch, worktree, and their latest handover.
-2. `strand kanban card <id>` — the full card: notes (newest first), latest handover, active work subtree, and the ready frontier.
+1. `strand kanban board` — claimed cards show owner, branch, worktree, and their doing-task.
+2. `strand kanban card <id>` — the full card: tasks with their derived statuses, notes (newest first), active work subtree, and the ready frontier.
 
 ## CLI op
 
@@ -78,17 +76,17 @@ strand kanban next
 strand kanban priority <id> <p1|p2|p3|p4>
 strand kanban promote <id>
 strand kanban claim <id> --owner <name> --branch <branch> [--worktree /path]
-strand kanban note <id> <text> [--author <name>] [--handover]
+strand kanban note <id> <text> [--author <name>]
 strand kanban review <id>
 strand kanban rework <id>
 strand kanban finish <id> [--outcome done|abandoned]
 ```
 
-`prime` is the agent onboarding surface: a superset of `about` that adds the working discipline (work under a claimed card, the pick-up-next flow, notes/handover contract, adjacent-work awareness, and branch visibility) so repo agent docs point at it instead of duplicating conventions that then drift from the spool. `about` stays the terse command manual.
+`prime` is the agent onboarding surface: a superset of `about` that adds the working discipline (work under a claimed card, the pick-up-next flow, the note-as-you-go/resume-from-task contract, adjacent-work awareness, and branch visibility) so repo agent docs point at it instead of duplicating conventions that then drift from the spool. `about` stays the terse command manual.
 
 `board` returns the grouped snapshot (epics, refinement/pending/claimed/in_review lanes sorted p1-first then oldest, closed count); active cards with a status outside the known lanes surface in `unknown-status` rather than being hidden. It also returns `needs-review`: a vector aggregated across claimed and in-review feature cards of `{:card :item}` entries (plus `:branch` from the claim stamp), one per card descendant that is active, in the engine ready frontier, and marks human review (`hitl`/`workflow/hitl` true, or `kind` `review`), sorted by card id then item id — the always-present cross-card review queue. `next` returns the highest-priority (p1 first) oldest active pending feature (epics are never served). `priority` restamps an active card's `kanban/priority` and fails loudly on unknown values or closed cards. `promote` is the explicit human command that moves a refinement card into the pending lane. `claim` fails loudly without `--owner` and `--branch` and refuses epics; `--worktree` is optional for direct work in the main checkout. `review` moves a claimed card to `in_review`; `rework` moves it back to `claimed`; `finish` closes a claimed or in-review card with the outcome status.
 
-`card` returns the resume view (card, notes, latest handover, active work, ready frontier) plus `related`: a vector of `{:relation :strand}` entries for every `depends-on` edge touching the card — `depends-on` when the card is the dependent, `depended-on-by` when it is the dependency — sorted by other-endpoint id.
+`card` returns the resume view (card, tasks with derived statuses, notes, active work, ready frontier) plus `related`: a vector of `{:relation :strand}` entries for every `depends-on` edge touching the card — `depends-on` when the card is the dependent, `depended-on-by` when it is the dependency — sorted by other-endpoint id.
 
 For bulk authoring, the `kanban-batch` weave pattern creates pending feature cards with bodies and `depends-on` edges atomically:
 
@@ -104,7 +102,7 @@ The CLI stays JSON-only (TEN-006); the human rendering lives on the REPL surface
 printf "(do (require 'skein.spools.kanban) (skein.spools.kanban/print-board!))\n" | mill weaver repl --stdin
 ```
 
-`print-board!` prints a stacked-lane ASCII board (epics, refinement, pending, claimed and in_review with owner/branch and latest handover, needs-review); `board-str` is the pure renderer over the `board` result for reuse.
+`print-board!` prints a stacked-lane ASCII board (epics, refinement, pending, claimed and in_review with owner/branch and doing-task, needs-review); `board-str` is the pure renderer over the `board` result for reuse.
 
 ## Queries
 

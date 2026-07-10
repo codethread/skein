@@ -32,7 +32,7 @@ Each recipe cites the honest source it was distilled from — the spool source, 
 
 **Situation.** You're an agent sitting down to work with a user. There's a queue of pending features; you need to take the right one, make the work discoverable to everyone else, and leave it resumable if you're interrupted.
 
-**Composition.** The usual loop is `next`, `claim`, work under `parent-of`, and `note --handover`. When the work is ready for review, run `review`. If review asks for changes, run `rework`; when the work has landed, `finish` closes it out.
+**Composition.** The usual loop is `next`, `claim`, work under `parent-of`, and `note` as you go. When the work is ready for review, run `review`. If review asks for changes, run `rework`; when the work has landed, `finish` closes it out.
 
 ```sh
 # 1. Take the highest-priority (p1 first) oldest pending feature.
@@ -42,11 +42,9 @@ card=$(strand kanban next | jq -r '.next.id')
 strand kanban claim "$card" --owner claude --branch kanban-spool --worktree /path/to/wt
 
 # 3. Do the work under the card (see the parent-of recipe below), noting
-#    decisions as you go.
+#    decisions and progress as you reach them, not at the end.
 strand kanban note "$card" "Chose lane names over statuses because X" --author claude
-
-# 4. Before stopping, leave the stop contract.
-strand kanban note "$card" --author claude --handover \
+strand kanban note "$card" --author claude \
   "Done: impl + tests. Next: docs. Validation: clojure -M:test green. Gotcha: reload the weaver after merge."
 
 # 5. Move it through review. Rework returns it to claimed when needed.
@@ -74,9 +72,10 @@ strand kanban finish "$card" --outcome done
 - **The card is the audit root, not a status field.** Claiming moves the card to
   the `claimed` lane and `next` stops serving it, so two agents can't both pull
   the same feature.
-- **The handover is the interruption contract.** A crash, a context limit, or a
+- **Note as you go is the interruption contract.** A crash, a context limit, or a
   handoff to another agent all resolve the same way: whoever picks up reads the
-  latest handover. Writing it *before* you stop, not after, is the whole point.
+  doing-task and its latest note. Writing progress *as* you work, not after, is
+  the whole point — the resume point exists before you stop.
 - **`review` and `rework` keep review visible.** `review` moves the card to
   `in_review`, so board readers can see work waiting on review. `rework` moves it
   back to `claimed` when the branch needs changes.
@@ -193,7 +192,7 @@ strand update "$card" --edge parent-of:"$plan"
   the card by `parent-of`, the card view joins the card to its active work and
   the *ready frontier* of that subtree — an agent resuming the card sees exactly
   which tasks are unblocked without a separate query (`card-view` /
-  `card-subtree`; `kanban-notes-handover-and-card-view`).
+  `card-subtree`; the card-view test in `kanban_test.clj`).
 - **The claim stamp cascades by reachability.** Only the card carries `branch`
   and `owner`; every descendant is discoverable *through* the card, so you never
   re-stamp each task. That's the same active-work-root convention `strand
@@ -207,20 +206,21 @@ Honest source: the spool `prime` working-agreement and branch-visibility blocks,
 
 **Situation.** You wake up with no context. A previous agent hit a context limit, crashed, or handed off mid-card, and you need to continue without them.
 
-**Composition.** Two reads, top-down. `board` shows the claimed lane with each card's latest handover; `card <id>` is the full resume view — notes newest-first, the latest handover, active work, the ready frontier, and related cards.
+**Composition.** Two reads, top-down. `board` shows the claimed lane with each card's doing-task; `card <id>` is the full resume view — tasks with their derived statuses, notes newest-first, active work, the ready frontier, and related cards.
 
 ```sh
-strand kanban board                 # claimed cards show owner, branch, and latest handover
-strand kanban card "$card"          # notes, latest handover, active work, ready frontier, related
+strand kanban board                 # claimed cards show owner, branch, and doing-task
+strand kanban card "$card"          # tasks, notes, active work, ready frontier, related
 ```
 
 **Why this shape.**
 
-- **Handover is self-contained by contract.** A handover note records what's
-  done, what's next, the validation state, gotchas, and where the work lives, so
-  the resume path needs no prior conversation. The cold-start read is literally
-  `board` → `card` → latest handover (`note!` docstring; contract
-  [Notes, handovers, and crash recovery](./kanban.md#notes-handovers-and-crash-recovery)).
+- **The task tier is the resume point.** The doing-task carries its body, deps,
+  and lane, and its latest note records what's done, what's next, the validation
+  state, and gotchas — so the resume path needs no prior conversation. The
+  cold-start read is `board` → `card` → doing-task and its latest note; even with
+  no notes the doing-task alone tells you where the work stands (`card-view`;
+  contract [Notes and resume](./kanban.md#notes-and-resume)).
 - **Notes are closed child strands, not an attribute.** Each note keeps its own
   timestamp and author, and concurrent agents appending notes never race a
   read-merge-write cycle on one attribute. That's why two agents can both leave
@@ -230,9 +230,9 @@ strand kanban card "$card"          # notes, latest handover, active work, ready
   tasks you can actually start, not the whole history. `related` surfaces
   `depends-on` edges in both directions, so a blocker on another card shows up
   before you start down a dead end (`card-view`;
-  `kanban-notes-handover-and-card-view`, `kanban-card-related-both-directions`).
+  `kanban-card-related-both-directions`).
 
-Honest source: the `note!`/`card-view` source, the spool `prime` `:notes-and-handovers` block, and the card-view and board handover assertions in `kanban_test.clj`.
+Honest source: the `note!`/`card-view` source, the spool `prime` notes block, and the card-view and board assertions in `kanban_test.clj`.
 
 ---
 
@@ -285,7 +285,7 @@ Honest source: `needs-review-entries` / `board` in the spool source, the `:stayi
 - [`kanban.api.md`](./kanban.api.md) — generated signatures and docstrings for
   every verb and helper referenced above.
 - `strand kanban prime` — the live, spool-authored working discipline (working
-  agreement, pick-up flow, notes/handover contract, adjacent-work awareness,
+  agreement, pick-up flow, note-as-you-go/resume-from-task contract, adjacent-work awareness,
   branch visibility). The single source these recipes distil.
 - `strand kanban about` — the terse command manual.
 - `strand pattern explain kanban-batch` — the batch pattern's input contract.

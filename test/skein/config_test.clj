@@ -232,7 +232,7 @@
                         :purpose "Temporary parent-owned strands burned via a userland attribute."}
                        {:namespace "skein.spools.kanban"
                         :doc "spools/kanban.md"
-                        :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes, notes, and handovers."}]
+                        :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
               :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
                     {:name "branches" :help "strand help branches"}
                     {:name "devflow-start" :help "strand help devflow-start"}

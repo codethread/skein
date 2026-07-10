@@ -272,8 +272,9 @@
                   :attributes {"workflow/action-ref" "land.abort.record"
                                "workflow/instruction"
                                (format-alpha/reflow
-                                "|Record the abort reason on the kanban card and work root, leave a
-                                 |handover note, then stop. Do NOT merge or push — nothing has landed;
+                                "|Record the abort reason on the kanban card and work root, then stop.
+                                 |Note as you go on the doing-task so a cold agent resumes from that
+                                 |task plus its latest note. Do NOT merge or push — nothing has landed;
                                  |the branch and worktree stay for follow-up.")})))
 
 (defn land-workflow

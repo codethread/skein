@@ -172,7 +172,7 @@ Honest source: verified end to end against a live weaver — `strand add --attr`
 
 ## Recipe: Knowing when *not* to reach for ephemeral
 
-**Situation.** You have a result in hand — a decision you made, a summary of what a run produced, a handover for the next agent — and you're tempted to jot it as an ephemeral strand because it's quick.
+**Situation.** You have a result in hand — a decision you made, a summary of what a run produced, a note for the next agent — and you're tempted to jot it as an ephemeral strand because it's quick.
 
 **Composition.** Don't. A durable outcome is an ordinary strand (or a note on the strand it belongs to). Reserve `ephemeral!` for state that is worthless once the current run ends.
 
@@ -194,7 +194,7 @@ Honest source: verified end to end against a live weaver — `strand add --attr`
 - **`burn-ephemeral!` is indiscriminate.** It clears the whole active ephemeral
   class in one call. Anything you'd regret losing to that call does not belong in
   it — the burn is exactly why durable outcomes stay out.
-- **Provenance wants a real strand.** Decisions, handovers, and run summaries are
+- **Provenance wants a real strand.** Decisions, resume notes, and run summaries are
   what a reviewer or successor reads later; a bobbin context pack surfaces notes
   and ordinary descendants, not burned scratch (see
   [`bobbin.cookbook.md`](./bobbin.cookbook.md)).
