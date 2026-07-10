@@ -35,7 +35,6 @@
 (def ^:private lean-attribute-byte-floor 1024)
 (def ^:private default-read-limit 500)
 (def ^:private readable-states #{"active" "closed" "replaced"})
-(def ^:private vocab-kinds #{"attr-namespace" "edge"})
 
 (defn- validate-generic-state
   "Return state when it is active|closed, else fail loudly (mutations)."
@@ -62,12 +61,14 @@
   limit)
 
 (defn- validate-vocab-kind
-  "Return the --kind value as its declaration-kind keyword, else fail loudly."
+  "Return the --kind value as its declaration-kind keyword, else fail loudly.
+  Reuses the vocab registry's own `:kind` enum as the allow-list."
   [kind]
-  (when-not (vocab-kinds kind)
-    (throw (ex-info "vocab --kind must be attr-namespace or edge"
-                    {:kind kind :allowed (vec (sort vocab-kinds))})))
-  (keyword kind))
+  (let [k (keyword kind)]
+    (when-not (contains? vocab/declaration-kinds k)
+      (throw (ex-info "vocab --kind must be attr-namespace or edge"
+                      {:kind kind :allowed (mapv name (sort vocab/declaration-kinds))})))
+    k))
 
 (defn- read-limit-state [rt]
   (runtime-api/spool-state rt ::read-limit #(atom default-read-limit)))

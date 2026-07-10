@@ -30,7 +30,7 @@ Signatures live only in the generated API doc; contracts and cookbooks link to t
 
 | Spool | Contract doc | API reference | Purpose |
 |---|---|---|---|
-| `skein.spools.batteries` | [batteries.md](./batteries.md) | [batteries.api.md](./batteries.api.md) · [cookbook](./batteries.cookbook.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave` and the `query`/`pattern` registry-introspection reads, all parser-backed. |
+| `skein.spools.batteries` | [batteries.md](./batteries.md) | [batteries.api.md](./batteries.api.md) · [cookbook](./batteries.cookbook.md) | Shipped core strand command surface as registered ops: add/update/show/supersede/burn/list/ready/subgraph plus `weave` and the `query`/`pattern`/`vocab` registry-introspection reads, all parser-backed. |
 | `skein.spools.workflow` | [workflow.md](./workflow.md) | [workflow.api.md](./workflow.api.md) · [cookbook](./workflow.cookbook.md) | Workflow engine: plain-data definitions compiled to strand batches, with loops, gates, checkpoints, routing, and rebindable tool bindings. |
 | `skein.spools.ephemeral` | [ephemeral.md](./ephemeral.md) | [ephemeral.api.md](./ephemeral.api.md) · [cookbook](./ephemeral.cookbook.md) | Small helper for temporary, parent-owned strands marked and burned via a userland attribute. |
 | `skein.spools.guild` | [guild.md](./guild.md) | [guild.api.md](./guild.api.md) · [cookbook](./guild.cookbook.md) | Versioned public weaver op API declarations, `guild.describe` introspection, and loud structured deprecation for local peer coordination. |

@@ -56,7 +56,7 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
                               (vocab/declare! rt (assoc (attr-decl "x" :o) :extra true)))))
       (testing "missing required keys"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing required keys"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (vocab/declare! rt {:kind :attr-namespace :name "x"}))))
       (testing "unknown read opt key"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
@@ -77,6 +77,23 @@
         (let [replaced (assoc (attr-decl "widget" :owner-a) :doc "revised")]
           (is (= replaced (vocab/declare! rt replaced)))
           (is (= "revised" (:doc (vocab/declaration rt :attr-namespace "widget")))))))))
+
+(deftest declare-conflict-check-is-atomic
+  ;; Regression for the cross-owner TOCTOU window: the owner-conflict check must
+  ;; live inside the swap! update fn, so a conflicting write that lands after
+  ;; this declarer's read still throws instead of silently overwriting. swap!
+  ;; runs exactly this fn, so exercising it directly against a registry map that
+  ;; already carries owner-a proves the guard is on the swap path — deterministic
+  ;; and thread-free.
+  (let [k [:attr-namespace "widget"]
+        registered {k (attr-decl "widget" :owner-a)}
+        loser (attr-decl "widget" :owner-b)
+        ex (try (#'vocab/register-declaration registered k loser)
+                (catch clojure.lang.ExceptionInfo e e))]
+    (is (some? ex) "the swap update fn throws on a cross-owner write")
+    (is (= {:name "widget" :kind :attr-namespace
+            :existing-owner :owner-a :declaring-owner :owner-b}
+           (ex-data ex)))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for vocab's versioned spool-state: a key added to new-state

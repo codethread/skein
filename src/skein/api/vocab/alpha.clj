@@ -15,16 +15,18 @@
   Callers own runtime selection and pass the target weaver runtime as the first
   argument, per the blessed-namespace convention; nothing here reads the
   published ambient runtime."
-  (:require [clojure.string :as str]
+  (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [skein.api.relations.alpha :as relations]
             [skein.api.runtime.alpha :as runtime]
-            [skein.spools.util :refer [fail! reject-unknown-keys!]]))
+            [skein.spools.util :refer [fail! reject-unknown-keys! require-valid!]]))
 
 ;; --- C1 declaration shape ------------------------------------------------
 
-(def ^:private declaration-kinds
+(def declaration-kinds
   "The two vocabulary kinds a declaration may describe: an attribute namespace
-  segment or an edge (relation) type."
+  segment or an edge (relation) type. This set is the `::kind` spec enum and the
+  single source of the `vocab --kind` allow-list reused by the batteries op."
   #{:attr-namespace :edge})
 
 (def ^:private common-declaration-keys
@@ -34,22 +36,39 @@
 (def ^:private allowed-keys-by-kind
   "Full permitted key set per kind. `:attr-namespace` adds the advisory `:keys`
   list; `:edge` adds the catalog-reflected `:family`/`:direction`/
-  `:declared-acyclic?`."
+  `:declared-acyclic?`. Drives the reject-unknown-keys pass that `clojure.spec`
+  cannot express."
   {:attr-namespace (conj common-declaration-keys :keys)
    :edge (into common-declaration-keys [:family :direction :declared-acyclic?])})
 
-(def ^:private required-keys-by-kind
-  "Keys that must be present per kind. `:keys` stays optional (advisory); the
-  edge catalog fields are required because an edge declaration is only
-  meaningful with them."
-  {:attr-namespace common-declaration-keys
-   :edge (into common-declaration-keys [:family :direction :declared-acyclic?])})
+(defn- non-blank-string? [x]
+  (and (string? x) (not (str/blank? x))))
+
+(s/def ::kind declaration-kinds)
+(s/def ::name non-blank-string?)
+(s/def ::owner (s/or :keyword keyword? :symbol symbol? :string string?))
+(s/def ::doc string?)
+(s/def ::keys (s/coll-of string? :kind sequential?))
+(s/def ::family keyword?)
+(s/def ::direction non-blank-string?)
+(s/def ::declared-acyclic? boolean?)
+
+(defmulti ^:private declaration-shape
+  "Dispatch the C1 declaration map spec on its `:kind`: an attribute namespace
+  carries the advisory `:keys`, an edge the required catalog fields."
+  :kind)
+(defmethod declaration-shape :attr-namespace [_]
+  (s/keys :req-un [::kind ::name ::owner ::doc] :opt-un [::keys]))
+(defmethod declaration-shape :edge [_]
+  (s/keys :req-un [::kind ::name ::owner ::doc ::family ::direction ::declared-acyclic?]))
+(s/def ::declaration (s/multi-spec declaration-shape :kind))
 
 (defn- validate-declaration!
   "Return `declaration` after validating the C1 shape, or fail loudly.
 
-  Rejects a non-map, an unknown `:kind`, unknown keys for that kind, and missing
-  required keys, then type-checks the identity/description fields. This is the
+  Rejects a non-map, an unknown `:kind`, and unknown keys for that kind up front
+  (`clojure.spec` cannot reject extra keys), then validates the required fields
+  and their types against the `::declaration` data spec. This is the
   validate-then-record half of the selvage validate-then-record pattern."
   [declaration]
   (when-not (map? declaration)
@@ -58,17 +77,8 @@
     (when-not (contains? declaration-kinds kind)
       (fail! "Vocabulary declaration :kind must be :attr-namespace or :edge"
              {:kind kind :allowed (vec (sort declaration-kinds)) :declaration declaration}))
-    (reject-unknown-keys! "vocab/declare!" (allowed-keys-by-kind kind) declaration)
-    (when-let [missing (seq (remove #(contains? declaration %) (required-keys-by-kind kind)))]
-      (fail! "Vocabulary declaration is missing required keys"
-             {:missing (vec (sort missing)) :kind kind :declaration declaration}))
-    (when-not (and (string? (:name declaration)) (not (str/blank? (:name declaration))))
-      (fail! "Vocabulary declaration :name must be a non-blank string" {:declaration declaration}))
-    (when-not (or (keyword? (:owner declaration)) (symbol? (:owner declaration)) (string? (:owner declaration)))
-      (fail! "Vocabulary declaration :owner must be a keyword, symbol, or string" {:declaration declaration}))
-    (when-not (string? (:doc declaration))
-      (fail! "Vocabulary declaration :doc must be a string" {:declaration declaration})))
-  declaration)
+    (reject-unknown-keys! "vocab/declare!" (allowed-keys-by-kind kind) declaration))
+  (require-valid! ::declaration declaration "Vocabulary declaration has an invalid shape"))
 
 ;; --- Core seed -----------------------------------------------------------
 
@@ -130,6 +140,22 @@
 
 ;; --- Public surface ------------------------------------------------------
 
+(defn- register-declaration
+  "Registry `swap!` update fn: record `declaration` under key `k`, unless a
+  *different* `:owner` already holds that `[:kind :name]` — then throw the
+  owner-conflict `ex-info`. Living inside the `swap!` keeps the conflict check
+  and the write atomic, so two racing cross-owner declarations cannot both clear
+  a stale read and let the later write silently win."
+  [reg-map k declaration]
+  (when-let [existing (get reg-map k)]
+    (when (not= (:owner existing) (:owner declaration))
+      (throw (ex-info "Vocabulary declaration owner conflict"
+                      {:name (:name declaration)
+                       :kind (:kind declaration)
+                       :existing-owner (:owner existing)
+                       :declaring-owner (:owner declaration)}))))
+  (assoc reg-map k declaration))
+
 (defn declare!
   "Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
 
@@ -137,20 +163,14 @@
   required keys). Recording is keyed by `[:kind :name]`: a re-declaration by the
   *same* `:owner` is an idempotent replace, while a *different* owner throws
   `ex-info` carrying `:name`/`:kind`/`:existing-owner`/`:declaring-owner`, so
-  ownership of a namespace or edge type is a hard, single-owner edge."
+  ownership of a namespace or edge type is a hard, single-owner edge. The
+  conflict check runs inside the `swap!`, so concurrent cross-owner declarations
+  cannot race past it."
   [runtime declaration]
   (let [declaration (validate-declaration! declaration)
-        {kind :kind decl-name :name owner :owner} declaration
-        k [kind decl-name]
-        reg (registry runtime)]
-    (when-let [existing (get @reg k)]
-      (when (not= (:owner existing) owner)
-        (throw (ex-info "Vocabulary declaration owner conflict"
-                        {:name decl-name
-                         :kind kind
-                         :existing-owner (:owner existing)
-                         :declaring-owner owner}))))
-    (swap! reg assoc k declaration)
+        {kind :kind decl-name :name} declaration
+        k [kind decl-name]]
+    (swap! (registry runtime) register-declaration k declaration)
     declaration))
 
 (defn declarations
