@@ -127,6 +127,26 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer"
                               (agents/agent-op {:op/argv ["await" "id" "--timeout-secs" "soon"]})))))))
 
+(deftest agent-note-attr-decoration-round-trips
+  (with-agents
+    (fn [rt]
+      (testing "--attr decorates the note strand and reads back intact beside --by"
+        (let [target (api/add rt {:title "note target"})]
+          (agents/agent-op {:op/argv ["note" (:id target) "decision recorded"
+                                      "--attr" "note/kind=decision"
+                                      "--attr" "review/pass=p1"
+                                      "--by" "run-x"]})
+          (let [[note] (agents/agent-op {:op/argv ["notes" (:id target)]})
+                strand (api/show rt (:id note))]
+            (is (= "decision recorded" (:note note)))
+            (is (= "run-x" (:by note)))
+            (is (= "decision" (get-in strand [:attributes :note/kind])))
+            (is (= "p1" (get-in strand [:attributes :review/pass]))))))
+      (testing "a --attr spec without key=value fails loudly"
+        (let [target (api/add rt {:title "bad attr target"})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed --attr"
+                                (agents/agent-op {:op/argv ["note" (:id target) "x" "--attr" "novalue"]}))))))))
+
 (deftest agent-spend-aggregates-recorded-usage
   (with-agents
     (fn [rt]

@@ -1646,12 +1646,26 @@
              :turns (:turns result)}
       (:synthesizer result) (assoc :synthesizer (:synthesizer result))))))
 
+(defn- parse-attr-decoration
+  "Parse repeatable `--attr key=value` specs into a decoration map of string
+  key → string value, the same key=value convention as `add`/`update`. A spec
+  without `=`, or with a blank key, fails loudly; each key lands as an ordinary
+  decorating attr on the note strand via `note!`'s opt fold."
+  [specs]
+  (reduce (fn [m spec]
+            (let [idx (str/index-of spec "=")]
+              (when (or (nil? idx) (zero? idx))
+                (fail! "Malformed --attr; expected key=value" {:attr spec}))
+              (assoc m (subs spec 0 idx) (subs spec (inc idx)))))
+          {}
+          specs))
+
 (defn- op-note [argv]
-  (let [{:keys [positional flags]} (parse-argv argv {"--by" :single "--round" :single})]
+  (let [{:keys [positional flags]} (parse-argv argv {"--by" :single "--round" :single "--attr" :multi})]
     (when-not (= 2 (count positional))
       (fail! "note requires <strand-id> <text>" {:got positional}))
     (notes/note! (rt) (first positional) (second positional)
-                 (cond-> {}
+                 (cond-> (parse-attr-decoration (get flags "--attr"))
                    (get flags "--by") (assoc :by (get flags "--by"))
                    (get flags "--round") (assoc :round (parse-int! "--round" (get flags "--round")))))))
 
@@ -1918,7 +1932,8 @@
               :positionals [{:name :root-id :doc "Optional plan or task root id."}]}
     "note" {:doc "Append an immutable note to a strand."
             :flags {:by {:doc "Author run id."}
-                    :round {:type :int :doc "Council round."}}
+                    :round {:type :int :doc "Council round."}
+                    :attr {:repeat? true :doc "Decorating attr key=value on the note strand; repeatable."}}
             :positionals [{:name :strand-id :required? true :doc "Target strand id."}
                           {:name :text :required? true :doc "Note text."}]}
     "notes" {:doc "Read a strand's notes."
