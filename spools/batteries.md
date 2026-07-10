@@ -13,7 +13,7 @@
 `skein.spools.batteries` is the shipped *core strand command surface*, expressed as registered
 weaver ops. It registers the everyday strand operations — `add`, `update`, `show`, `supersede`,
 `burn`, `note`, `list`, `ready`, `notes`, `subgraph`, the create-only `weave` op, and the read-only
-registry-introspection ops `query` and `pattern` — as `register-op!` ops whose `:arg-spec` is parsed
+registry-introspection ops `query`, `pattern`, and `vocab` — as `register-op!` ops whose `:arg-spec` is parsed
 by the blessed argv parser `skein.api.cli.alpha` (see [cli.md](../devflow/specs/cli.md) and
 [repl-api.md](../devflow/specs/repl-api.md)).
 
@@ -264,24 +264,40 @@ input spec, plus optional `doc`). Registry names are canonical strings (e.g. `"t
 missing/blank name on `explain` and unknown pattern names fail loudly. Pattern *registration* stays
 a trusted config/REPL workflow — never exposed here.
 
+#### `vocab` — BAT-C18 (vocabulary introspection)
+
+```
+strand vocab [--kind attr-namespace|edge]
+```
+
+Read-only introspection of the runtime vocabulary registry. `--kind` is optional; when present it must
+be `attr-namespace` or `edge`. Any other value fails loudly before an empty result can hide a typo.
+The handler delegates to `skein.api.vocab.alpha/declarations`, passing `{:kind :attr-namespace}` or
+`{:kind :edge}` when the flag is present.
+
+The result is one JSON array ordered like `declarations`: by declaration kind and then by declaration
+name. Each entry is a C1 declaration map, string-keyed at the wire boundary. Attribute namespace
+rows carry `kind`, `name`, `owner`, and `doc`. Edge rows carry those keys plus `acyclic`; relation
+edges may also carry `category`.
+
 ## 4. Attribute and edge flag semantics
 
 Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
 
-- **BAT-C16:** `--attr key=value` — repeatable, highest-precedence string map.
+- **BAT-C19:** `--attr key=value` — repeatable, highest-precedence string map.
   Values may be payload references. Duplicate keys within a single op's `--attr`
   set fail loudly (old C6e), enforced in the handler by recovering flag keys
   from the raw argv (the parser's `:map` type silently collapses duplicates).
-- **BAT-C17:** `--attributes <ref>` — a payload reference to one JSON object of
+- **BAT-C20:** `--attributes <ref>` — a payload reference to one JSON object of
   typed bulk attributes, lowest precedence, `add`-only. Cross-priority duplicate
   keys resolve by precedence (`--attr` wins); JSON value types are preserved.
-- **BAT-C18:** `--edge edge-type:to-id` — repeatable outgoing edge on `add` /
+- **BAT-C21:** `--edge edge-type:to-id` — repeatable outgoing edge on `add` /
   `update`; malformed specs fail loudly.
-- **BAT-C19:** The `notes` edge is the note primitive's storage link: note
+- **BAT-C22:** The `notes` edge is the note primitive's storage link: note
   strand to target strand. `note` projects its `target` output from that edge,
   and `notes` walks that edge back from the target. Callers must not read or
   write `target` as a stored note attribute.
-- **BAT-C20:** `--param key=value` — repeatable named-query parameter on
+- **BAT-C23:** `--param key=value` — repeatable named-query parameter on
   `list` / `ready`; last-wins collapse (matching the old CLI's non-dedup
   `parseKV`), restricted to the query's declared param names.
 
@@ -290,18 +306,18 @@ Reproducing old SPEC-002.C6–C8 (see SPEC-002-D004.R2):
 | Old clause (cli.md) | Batteries | Equivalence / difference |
 |---|---|---|
 | SPEC-002.C6 `add` | BAT-C5 | Equivalent. |
-| SPEC-002.C6a `--attr` | BAT-C16 | Equivalent. |
-| SPEC-002.C6b `--attr-file` | BAT-C2/C16 | Replaced by `--attr key=:payload/x`. |
-| SPEC-002.C6c `--attr-stdin` | BAT-C2/C16 | Replaced by `--attr key=:stdin`. |
-| SPEC-002.C6d `--attributes-stdin` | BAT-C2/C17 | Replaced by `--attributes :stdin` (JSON-object parse). |
-| SPEC-002.C6e precedence + dup loudness | BAT-C16/C17 | Equivalent; the mutual-exclusion of two stdin sources dissolves — payloads are named, not a single stdin. |
+| SPEC-002.C6a `--attr` | BAT-C19 | Equivalent. |
+| SPEC-002.C6b `--attr-file` | BAT-C2/C19 | Replaced by `--attr key=:payload/x`. |
+| SPEC-002.C6c `--attr-stdin` | BAT-C2/C19 | Replaced by `--attr key=:stdin`. |
+| SPEC-002.C6d `--attributes-stdin` | BAT-C2/C20 | Replaced by `--attributes :stdin` (JSON-object parse). |
+| SPEC-002.C6e precedence + dup loudness | BAT-C19/C20 | Equivalent; the mutual-exclusion of two stdin sources dissolves — payloads are named, not a single stdin. |
 | SPEC-002.C7 `update` | BAT-C6 | Equivalent; `--attributes` stays add-only. |
-| SPEC-002.C8 `--edge` | BAT-C18 | Equivalent. |
+| SPEC-002.C8 `--edge` | BAT-C21 | Equivalent. |
 | SPEC-002.C9 normalized JSON | BAT-C4 | Equivalent. |
 | SPEC-002.C9a `supersede` | BAT-C7 | Equivalent. |
 | SPEC-002.C9b `burn` | BAT-C8 | Equivalent. |
 | SPEC-002.C10 `ready` | BAT-C13 | Equivalent. |
-| SPEC-002.C11 `list`/`ready` queries + `--state` | BAT-C12/C13/C20 | Equivalent. |
+| SPEC-002.C11 `list`/`ready` queries + `--state` | BAT-C12/C13/C23 | Equivalent. |
 | SPEC-002.C11a `graph subgraph` | BAT-C15 | Equivalent; the `graph` command group is gone — it is the root op `subgraph`. |
 | SPEC-002.C13a `weave` | BAT-C10 | Behavior-equivalent; strict single-JSON parse moved handler-side (see divergence note). |
 | SPEC-002.C13aa `query list` | BAT-C16 | Equivalent payload; now a registered read op, not a builtin. |
