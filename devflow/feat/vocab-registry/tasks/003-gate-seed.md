@@ -8,10 +8,12 @@
 
 Type: AFK
 
-Seed the `gate/*` attribute namespace from the subagent gate executor's `install!`, owned by its
-`.skein/init.clj` use-key `:skein/spools-treadle` (`PROP-Vr-001.C5`). The activation module, not the
-file location, is the owner: `gate/*` source sits in the agent-run package but the treadle executor owns
-it. Enumerate any residual treadle-era survivor namespace from the live tree — do not guess
+Seed the `gate/*` attribute namespace from the subagent gate executor's `install!` (a spool's startup
+activation hook, run once when the runtime loads or reloads that spool), owned by its
+`.skein/init.clj` use-key `:skein/spools-treadle` — the treadle executor, the agent-run subsystem that
+drives gate/handoff runs. The activation module (the spool an `init.clj` use-key registers, not the
+file's directory) is the owner: `gate/*` source sits in the agent-run package but the treadle executor
+owns it. Enumerate any residual treadle-era survivor namespace from the live tree — do not guess
 (`PROP-Vr-001.C5`, `Q4`, `PLAN-Vr-001.R2`). Disjoint file from the other five S2 seeds and S3/S4/S5 —
 parallel after Task 1 (`PLAN-Vr-001.A3`).
 
@@ -22,15 +24,16 @@ parallel after Task 1 (`PLAN-Vr-001.A3`).
 
 Per `PROP-Vr-001.C5` (seed table):
 
-- **TASK-Vr-003.MI1:** Add one `vocab/declare!` call to the existing `install!` (`subagent.clj:236`)
+- **TASK-Vr-003.MI1:** Add one `vocab/declare!` call to the existing `install!` in `subagent.clj`
   declaring `:kind :attr-namespace`, `:name "gate"`, `:owner :skein/spools-treadle`, `:keys` enumerating
-  the known keys `deliver-run!`/`spawn-for-gate!` stamp (`subagent.clj:114,184`; keys advisory,
+  the known keys `deliver-run!`/`spawn-for-gate!` stamp (keys advisory,
   `PROP-Vr-001.C1`, `C8`), and a one-line `:doc`.
 - **TASK-Vr-003.MI2:** Enumerate any residual treadle-era survivor durable namespace from the live tree
-  (`PROP-Vr-001.C5`, `Q4`). Declare each confirmed survivor with owner `:skein/spools-treadle`.
-  Deliberately exclude the non-durable namespaces `PROP-Vr-001.C5` names — `peer/*` (error codes),
-  `batch/*`/`mutation/*` (event payload keys), `handle/*` (in-memory backend handles) — they are not
-  durable strand attributes.
+  (durable = a namespace persisted as a strand attribute, as opposed to a transient in-memory or
+  event-payload key) (`PROP-Vr-001.C5`, `Q4`). Declare each confirmed survivor with owner
+  `:skein/spools-treadle`. Deliberately exclude the non-durable namespaces `PROP-Vr-001.C5` names —
+  `peer/*` (error codes), `batch/*`/`mutation/*` (event payload keys), `handle/*` (in-memory backend
+  handles) — they are not durable strand attributes.
 - **TASK-Vr-003.MI3:** Owner is `:skein/spools-treadle` — the single verified use-key; no task chooses
   an owner (`PLAN-Vr-001.S2`, `PROP-Vr-001.R2`).
 - **TASK-Vr-003.MI4:** Add a focused assertion to `skein.executors.subagent-test` that the install

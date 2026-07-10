@@ -11,40 +11,43 @@ Type: AFK
 Create the runtime-owned vocabulary registry so every seed and consumer slice can declare into it and
 read from it (`PROP-Vr-001.C2`–`C5`, `PLAN-Vr-001.A2`). This is the serial foundation — it lands first
 and blocks every other code slice (`PLAN-Vr-001.S1`, `TC2`). The `new-state` init-fn carries the core
-seed (reflected edges + core-owned `note/*`); no seed lives in an `install!` hook here.
+seed (reflected edges + core-owned `note/*`); no seed lives in an `install!` hook here (`install!` is a
+spool's startup activation hook, run once when the runtime loads or reloads that spool).
 
 **Owned files (disjoint):**
 - `src/skein/api/vocab/alpha.clj` (new)
 - `test/skein/vocab_test.clj` (new)
-- `test/skein/test_runner.clj` (register `skein.vocab-test` in `parallel-namespaces`, `:14`)
+- `test/skein/test_runner.clj` (register `skein.vocab-test` in `parallel-namespaces`)
 
 ## TASK-Vr-001.P2 Must implement exactly
 
 Per `PROP-Vr-001.C1`–`C5`:
 
-- **TASK-Vr-001.MI1:** Define the C1 declaration shape (`PROP-Vr-001.C1`, `alpha.clj:11-15` idiom): a
+- **TASK-Vr-001.MI1:** Define the C1 declaration shape (`PROP-Vr-001.C1`): a
   map of `:kind` (`:attr-namespace` | `:edge`), `:name` (namespace segment or edge-type name), `:owner`
   (declaring module — a spool `init.clj` use-key, or `:skein/core` / the owning `skein.api.*.alpha` ns),
   `:keys` (known keys, `:attr-namespace` only, advisory), and `:doc` (one-line note). Edge declarations
   additionally carry `:family`/`:direction`/`:declared-acyclic?` reflected from the catalog.
 - **TASK-Vr-001.MI2:** `(vocab/declare! runtime declaration)` — validate the C1 shape (fail loud on
-  unknown/missing keys via `skein.spools.util/reject-unknown-keys!`/`fail!`, the selvage pattern at
-  `selvage.clj:60-95`), record under `[:kind :name]`; throw `ex-info` with `:name`/`:kind`/
+  unknown/missing keys via `skein.spools.util/reject-unknown-keys!`/`fail!` — the `skein.spools.util`
+  validators that throw on an unexpected or absent key — the same validate-then-record selvage pattern
+  selvage uses to parse its check specs), record under `[:kind :name]`; throw `ex-info` with `:name`/`:kind`/
   `:existing-owner`/`:declaring-owner` on a *different* owner; idempotent replace (no throw) for the
   *same* owner (`PROP-Vr-001.C3`, the reload invariant `R1`).
-- **TASK-Vr-001.MI3:** Read surface (`PROP-Vr-001.C4`, `alpha.clj:72-85` idiom), all runtime-first:
+- **TASK-Vr-001.MI3:** Read surface (`PROP-Vr-001.C4`), all runtime-first:
   `(vocab/declarations runtime)` (all, sorted by `[:kind :name]`, full C1 maps),
   `(vocab/declarations runtime {:kind …})` (narrowed), `(vocab/declaration runtime kind name)` (one
-  entry or `nil` when undeclared). No ambient-singleton path.
-- **TASK-Vr-001.MI4:** Back the store with `runtime/spool-state` (`runtime.alpha.clj:251`), versioned
-  per the shape-drift discipline: a `state-version` beside `new-state` (`selvage.clj:16-29` precedent,
-  `PROP-Vr-001.C2`).
+  entry or `nil` when undeclared). No ambient-singleton path — never read the published runtime singleton;
+  every read takes `runtime` explicitly (the blessed-namespace convention).
+- **TASK-Vr-001.MI4:** Back the store with `runtime/spool-state` (`skein.api.runtime.alpha/spool-state` —
+  runtime-owned per-spool state that survives reload), versioned per the shape-drift discipline: a
+  `state-version` beside `new-state` (selvage's `new-state`/`state-version` precedent, `PROP-Vr-001.C2`).
 - **TASK-Vr-001.MI5:** The `new-state` init-fn is the seed site (`PROP-Vr-001.C5`): it returns the
   initial registry already carrying the core seed — one `:edge` declaration per `relations.alpha/catalog`
   entry (owner `:skein/core`, preserving `:family`/`:direction`/`:declared-acyclic?`) plus the core-owned
   `note/*` `:attr-namespace` (owner `skein.api.notes.alpha`), each a valid C1 map. Reflect the catalog;
   do not re-list the edge set in `vocab.alpha` source (`PROP-Vr-001.NG3`, `Q3`). No `install!` hook.
-- **TASK-Vr-001.MI6:** Register `skein.vocab-test` in `parallel-namespaces` (`test_runner.clj:14`,
+- **TASK-Vr-001.MI6:** Register `skein.vocab-test` in `parallel-namespaces` (in `test_runner.clj`,
   beside `skein.notes-test`) so the whole queue's focused gates can name it (`PLAN-Vr-001.TC4`).
 - **TASK-Vr-001.MI7:** Every `ns` gets a docstring describing its purpose (repo rule).
 
@@ -61,8 +64,8 @@ Per `PROP-Vr-001.C1`–`C5`:
 - **TASK-Vr-001.DW3:** Cold focused run `clojure -M:test skein.vocab-test` green (focused-runnable,
   `PLAN-Vr-001.TC4`). Tests cover: fresh-runtime core seed present before any `install!`; declare/query
   round-trip; cross-owner throw; same-owner idempotent replace (`PROP-Vr-001.R1`, the reload invariant);
-  the `(assert-state-shape #'vocab/new-state #{…})` drift test (`selvage_test.clj:114` precedent,
-  `PROP-Vr-001.R4`).
+  the `(assert-state-shape #'vocab/new-state #{…})` drift test (`assert-state-shape` in
+  `skein.spools.selvage-test` precedent, `PROP-Vr-001.R4`).
 - **TASK-Vr-001.DW4:** `make fmt-check lint reflect-check` pass. The edge set is not duplicated in
   source (reflected from `relations.alpha`).
 

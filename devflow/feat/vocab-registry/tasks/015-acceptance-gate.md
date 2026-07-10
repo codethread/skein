@@ -40,17 +40,20 @@ No `vocab.api.md`: `vocab.alpha` is a `src/` blessed namespace, outside the `spo
 - **TASK-Vr-015.DW1:** `PROP-Vr-001.DW1`–`DW6` proven — `vocab.alpha` exists and is in `SPEC-005.C2`;
   the core seed (edges + `note/*`) and the spool seeds are live and single-owner; `strand vocab` is a
   batteries read op with `--kind`; carder has the `undeclared` section and selvage the opt-in helper,
-  neither blocking a write; the prefix rule is in `writing-shared-spools.md` and `strand-model.md:34/:56`
-  names the registry; all P6 gates green in one atomic, additive landing — no migration, no cutover, no
-  weaver restart.
+  neither blocking a write; the prefix rule is in `writing-shared-spools.md` and `strand-model.md`
+  names the registry (per `SPEC-Vr-001.CC1`/`CC2`); all P6 gates green in one atomic, additive landing —
+  no migration, no cutover, no weaver restart.
 - **TASK-Vr-015.DW2:** Results recorded (gate-by-gate) in the task result so the coordinator can verify
   against ground truth.
 
 ## TASK-Vr-015.P4 Out of scope
 
 - **TASK-Vr-015.OS1:** Landing/merging (coordinator land pipeline). There is no HITL cutover and no
-  weaver restart — the landing is purely additive; the canonical world picks the changes up via
-  `reload!` per the pickup ladder after landing (`PROP-Vr-001.C12`, `PLAN-Vr-001.CM4`).
+  weaver restart — the landing is purely additive. F4 has no `cli/` Go change, so `make build` is not the
+  pickup path; the canonical world picks the changes up through the pickup ladder after landing — reload
+  each changed already-loaded namespace with `(require 'the.ns :reload)` first, then `runtime-alpha/reload!`
+  re-runs activation so the `vocab` op registers and the seeds re-declare (`PROP-Vr-001.C12`,
+  `PLAN-Vr-001.CM4`).
 - **TASK-Vr-015.OS2:** Fixing failures beyond mechanical regen: a red gate means stop and report, not
   improvise scope.
 

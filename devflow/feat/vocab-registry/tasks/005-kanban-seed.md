@@ -8,7 +8,8 @@
 
 Type: AFK
 
-Seed the `kanban/*` attribute namespace from the kanban spool's `install!`, owned by its
+Seed the `kanban/*` attribute namespace from the kanban spool's `install!` (a spool's startup activation
+hook, run once when the runtime loads or reloads that spool), owned by its
 `.skein/init.clj` use-key `:skein/spools-kanban` (`PROP-Vr-001.C5`). Disjoint file from the other five
 S2 seeds and S3/S4/S5 — parallel after Task 1.
 
@@ -19,10 +20,10 @@ S2 seeds and S3/S4/S5 — parallel after Task 1.
 
 Per `PROP-Vr-001.C5` (seed table):
 
-- **TASK-Vr-005.MI1:** Add one `vocab/declare!` call to the existing `install!` (`kanban.clj:852`)
+- **TASK-Vr-005.MI1:** Add one `vocab/declare!` call to the existing `install!` in `kanban.clj`
   declaring `:kind :attr-namespace`, `:name "kanban"`, `:owner :skein/spools-kanban`, `:keys`
-  enumerating the known keys `add!` writes as card attributes (`kanban.clj:150`, builder `:85`;
-  advisory, `PROP-Vr-001.C1`, `C8`), and a one-line `:doc`.
+  enumerating the known keys `add!` writes as card attributes (advisory, `PROP-Vr-001.C1`, `C8`), and a
+  one-line `:doc`.
 - **TASK-Vr-005.MI2:** Owner is `:skein/spools-kanban` — the single verified use-key; no task chooses an
   owner (`PLAN-Vr-001.S2`, `PROP-Vr-001.R2`).
 - **TASK-Vr-005.MI3:** Add a focused assertion to `skein.kanban-test` that the install declares

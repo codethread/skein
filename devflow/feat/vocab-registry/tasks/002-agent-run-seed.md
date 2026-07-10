@@ -8,7 +8,8 @@
 
 Type: AFK
 
-Seed the `agent-run/*` attribute namespace from the agent-run spool's own `install!`, owned by its
+Seed the `agent-run/*` attribute namespace from the agent-run spool's own `install!` (a spool's startup
+activation hook, run once when the runtime loads or reloads that spool), owned by its
 `.skein/init.clj` use-key `:skein/spools-shuttle` (`PROP-Vr-001.C5`). Disjoint file from the other five
 S2 seeds and from S3/S4/S5 — parallel after Task 1 (`PLAN-Vr-001.A3`).
 
@@ -19,9 +20,9 @@ S2 seeds and from S3/S4/S5 — parallel after Task 1 (`PLAN-Vr-001.A3`).
 
 Per `PROP-Vr-001.C5` (seed table):
 
-- **TASK-Vr-002.MI1:** Add one `vocab/declare!` call to the existing `install!` (`agent_run.clj:1974`)
+- **TASK-Vr-002.MI1:** Add one `vocab/declare!` call to the existing `install!` in `agent_run.clj`
   declaring `:kind :attr-namespace`, `:name "agent-run"`, `:owner :skein/spools-shuttle`, `:keys`
-  enumerating the known keys `spawn-run!` reserves (`agent_run.clj:1611`; keys advisory, carder flags by
+  enumerating the known keys `spawn-run!` reserves (keys advisory, carder flags by
   namespace not exact key, `PROP-Vr-001.C1`, `C8`), and a one-line `:doc`.
 - **TASK-Vr-002.MI2:** Owner is `:skein/spools-shuttle` — the single verified use-key; no task chooses
   an owner (`PLAN-Vr-001.S2`, `PROP-Vr-001.R2`).

@@ -22,8 +22,8 @@ Per `PROP-Vr-001.C7`, `NG4`:
 
 - **TASK-Vr-009.MI1:** Add one read-only helper (e.g. `undeclared-checks`) that lists the declared
   attribute namespaces via `vocab/declarations runtime {:kind :attr-namespace}` and returns the selvage
-  checks whose `:attr` namespace has no declaration — composition sugar over `check`/`vocabs`
-  (`selvage.clj:180,111`), reusing `vocab.alpha` explicit-runtime reads.
+  checks whose `:attr` namespace has no declaration — composition sugar over `check`/`vocabs` in
+  `selvage.clj`, reusing `vocab.alpha` explicit-runtime reads.
 - **TASK-Vr-009.MI2:** Registered nowhere by default — no watch behaviour, no new enforcement path.
   Selvage's `:enum`/`:kind`/`:required-with` value-linting model is unchanged (`PROP-Vr-001.NG4`).
 

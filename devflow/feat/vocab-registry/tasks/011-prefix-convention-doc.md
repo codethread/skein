@@ -36,7 +36,7 @@ Per `PROP-Vr-001.C9`:
 
 ## TASK-Vr-011.P4 Out of scope
 
-- **TASK-Vr-011.OS1:** The `strand-model.md:34` referent naming the registry (Task 14, spec deltas).
+- **TASK-Vr-011.OS1:** The `strand-model.md` referent naming the registry (Task 14, spec deltas, `SPEC-Vr-001.CC1`).
 - **TASK-Vr-011.OS2:** The registry code and its `declare!` hard edge (Task 1).
 
 ## TASK-Vr-011.P5 Commit

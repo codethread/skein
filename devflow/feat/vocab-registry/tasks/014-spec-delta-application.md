@@ -23,16 +23,17 @@ alpha-surface); two are no-change dispositions kept for delta-set completeness (
 
 ## TASK-Vr-014.P2 Must implement exactly
 
-- **TASK-Vr-014.MI1:** Apply `SPEC-Vr-001.CC1` (`strand-model.md:34`): the attribute-namespace prose
+- **TASK-Vr-014.MI1:** Apply `SPEC-Vr-001.CC1` to the `strand-model.md` attribute-namespace prose: it
   gains a concrete referent — name `skein.api.vocab.alpha` as the runtime registry that records
   ownership, and note the third-party-prefix rule is backed by its duplicate-owner install failure.
-  Exactly per the delta's Old/New fragments.
-- **TASK-Vr-014.MI2:** Apply `SPEC-Vr-001.CC2` (`strand-model.md:56`): the relations advisory-catalog
-  paragraph gains one sentence noting `vocab.alpha` reflects the edge catalog as owned `:edge`
-  declarations. Exactly per the delta. The `SPEC-001.P5` shipped declared-acyclic enumeration (line 48)
-  stays untouched — unlike `SPEC-Np-001.CC1`, this feature declares no relation.
-- **TASK-Vr-014.MI3:** Apply `SPEC-Vr-002.CC1` (`alpha-surface.md:12`): add `vocab` to the enumerated
-  blessed set (alphabetical) plus the extended parenthetical. Exactly per the delta's Old/New fragments.
+  Locate the target by the delta's Old fragment; apply exactly per its Old/New fragments.
+- **TASK-Vr-014.MI2:** Apply `SPEC-Vr-001.CC2` to the `strand-model.md` relations advisory-catalog
+  paragraph: it gains one sentence noting `vocab.alpha` reflects the edge catalog as owned `:edge`
+  declarations. Locate by the delta's Old fragment; apply exactly per it. The `SPEC-001.P5` shipped
+  declared-acyclic enumeration stays untouched — unlike `SPEC-Np-001.CC1`, this feature declares no relation.
+- **TASK-Vr-014.MI3:** Apply `SPEC-Vr-002.CC1` to the `alpha-surface.md` enumerated blessed set: add
+  `vocab` (alphabetical) plus the extended parenthetical. Locate by the delta's Old fragment; apply
+  exactly per its Old/New fragments.
 - **TASK-Vr-014.MI4:** Flip `SPEC-Vr-001` and `SPEC-Vr-002` Status to Merged; confirm `SPEC-Vr-003`
   (cli, No change) and `SPEC-Vr-004` (daemon-runtime, No change) remain the recorded no-change
   dispositions (`PLAN-Vr-001.CM2`). Each applied delta fragment must verify against the edited root spec

@@ -8,7 +8,8 @@
 
 Type: AFK
 
-Seed both `review/*` and `panel/*` from the delegation spool's `install!`, both owned by its
+Seed both `review/*` and `panel/*` from the delegation spool's `install!` (a spool's startup activation
+hook, run once when the runtime loads or reloads that spool), both owned by its
 `.skein/init.clj` use-key `:skein/spools-agents` (`PROP-Vr-001.C5`). `delegation.clj` owns both
 namespaces — same file, one slice, two `declare!` calls, not two tasks (`PLAN-Vr-001.A3`). Disjoint file
 from the other five S2 seeds and S3/S4/S5 — parallel after Task 1.
@@ -20,13 +21,13 @@ from the other five S2 seeds and S3/S4/S5 — parallel after Task 1.
 
 Per `PROP-Vr-001.C5` (seed table):
 
-- **TASK-Vr-004.MI1:** Add a `vocab/declare!` call to the existing `install!` (`delegation.clj:2014`)
+- **TASK-Vr-004.MI1:** Add a `vocab/declare!` call to the existing `install!` in `delegation.clj`
   declaring `:kind :attr-namespace`, `:name "review"`, `:owner :skein/spools-agents`, `:keys`
-  enumerating the known keys `roster-review-specs` builds (`delegation.clj:1071-1073`; advisory,
+  enumerating the known keys `roster-review-specs` builds (advisory,
   `PROP-Vr-001.C1`, `C8`), and a one-line `:doc`.
 - **TASK-Vr-004.MI2:** Add a second `vocab/declare!` call in the same `install!` declaring
   `:kind :attr-namespace`, `:name "panel"`, `:owner :skein/spools-agents`, `:keys` enumerating the known
-  keys `panel-specs` writes (`delegation.clj:1320-1321`, `panel/seat`/`panel/turn`; advisory), and a
+  keys `panel-specs` writes (`panel/seat`/`panel/turn`; advisory), and a
   one-line `:doc`.
 - **TASK-Vr-004.MI3:** Owner is `:skein/spools-agents` for both — the single verified use-key; no task
   chooses an owner (`PLAN-Vr-001.S2`, `PROP-Vr-001.R2`).

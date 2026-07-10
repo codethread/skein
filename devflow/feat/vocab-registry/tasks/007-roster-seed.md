@@ -8,7 +8,8 @@
 
 Type: AFK
 
-Seed the `roster/*` attribute namespace from the roster spool's `install!`, owned by its
+Seed the `roster/*` attribute namespace from the roster spool's `install!` (a spool's startup activation
+hook, run once when the runtime loads or reloads that spool), owned by its
 `.skein/init.clj` use-key `:skein/spools-roster` (`PROP-Vr-001.C5`). Disjoint file from the other five
 S2 seeds and S3/S4/S5 — parallel after Task 1.
 
@@ -19,9 +20,9 @@ S2 seeds and S3/S4/S5 — parallel after Task 1.
 
 Per `PROP-Vr-001.C5` (seed table):
 
-- **TASK-Vr-007.MI1:** Add one `vocab/declare!` call to the existing `install!` (`roster.clj:759`)
+- **TASK-Vr-007.MI1:** Add one `vocab/declare!` call to the existing `install!` in `roster.clj`
   declaring `:kind :attr-namespace`, `:name "roster"`, `:owner :skein/spools-roster`, `:keys`
-  enumerating the known keys `track-attributes` builds (`roster.clj:97`; advisory, `PROP-Vr-001.C1`,
+  enumerating the known keys `track-attributes` builds (advisory, `PROP-Vr-001.C1`,
   `C8`), and a one-line `:doc`.
 - **TASK-Vr-007.MI2:** Owner is `:skein/spools-roster` — the single verified use-key; no task chooses an
   owner (`PLAN-Vr-001.S2`, `PROP-Vr-001.R2`).
@@ -40,7 +41,7 @@ Per `PROP-Vr-001.C5` (seed table):
 
 - **TASK-Vr-007.OS1:** The other five S2 seeds (disjoint files).
 - **TASK-Vr-007.OS2:** `devflow/*` — written only by the external `codethread/devflow` spool
-  (`roster.clj:420,424`), out of scope for the feature (F5, `PROP-Vr-001.C5`); the roster seed is
+  (its write sites in `roster.clj`), out of scope for the feature (F5, `PROP-Vr-001.C5`); the roster seed is
   `roster/*` only.
 
 ## TASK-Vr-007.P5 Commit

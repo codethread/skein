@@ -8,7 +8,7 @@
 
 Type: AFK
 
-Add the hygiene section that would have surfaced the bare-`notes` strays within a day: flag active
+Add the hygiene section that surfaces undeclared-namespace strays: flag active
 strands whose attribute namespace is declared by nobody (`PROP-Vr-001.C8`, `G4`). Carder mutates
 nothing. Disjoint file from the S2 seeds and from S3/S4 — parallel after Task 1 (`PLAN-Vr-001.A3`).
 
@@ -19,14 +19,14 @@ nothing. Disjoint file from the S2 seeds and from S3/S4 — parallel after Task 
 
 Per `PROP-Vr-001.C8`:
 
-- **TASK-Vr-010.MI1:** Add an `undeclared` report section in the shape of the existing sections
-  (`carder.clj:191-207`): read the declared set via `vocab/declarations runtime {:kind :attr-namespace}`,
-  walk `active-strands` (`carder.clj:72`), and flag each strand → attribute key whose *namespace segment*
+- **TASK-Vr-010.MI1:** Add an `undeclared` report section in the shape of the existing `report`
+  sections: read the declared set via `vocab/declarations runtime {:kind :attr-namespace}`,
+  walk `active-strands`, and flag each strand → attribute key whose *namespace segment*
   is absent from the declared set.
 - **TASK-Vr-010.MI2:** Flag by *namespace*, not exact key (`PROP-Vr-001.C1`, `R3`): `review/newfield`
   under declared `review/*` is clean, while a bare `verify-note` or an unowned `frobnicate/*` is flagged.
-- **TASK-Vr-010.MI3:** Join `report` (`carder.clj:191`) as a fourth section beside `stale`/`orphans`/
-  `blocked-by-failure`; carder still mutates nothing (`carder.clj:7`, `NG1`).
+- **TASK-Vr-010.MI3:** Join `report` as a fourth section beside `stale`/`orphans`/
+  `blocked-by-failure`; carder still mutates nothing (the read-only carder contract, `NG1`).
 
 ## TASK-Vr-010.P3 Done when
 

@@ -8,7 +8,8 @@
 
 Type: AFK
 
-Seed the `workflow/*` attribute namespace from the workflow spool's `install!`, owned by its
+Seed the `workflow/*` attribute namespace from the workflow spool's `install!` (a spool's startup
+activation hook, run once when the runtime loads or reloads that spool), owned by its
 `.skein/init.clj` use-key `:skein/spools-workflow` (`PROP-Vr-001.C5`). Disjoint file from the other five
 S2 seeds and S3/S4/S5 — parallel after Task 1.
 
@@ -19,10 +20,10 @@ S2 seeds and S3/S4/S5 — parallel after Task 1.
 
 Per `PROP-Vr-001.C5` (seed table):
 
-- **TASK-Vr-006.MI1:** Add one `vocab/declare!` call to the existing `install!` (`workflow.clj:1870`)
+- **TASK-Vr-006.MI1:** Add one `vocab/declare!` call to the existing `install!` in `workflow.clj`
   declaring `:kind :attr-namespace`, `:name "workflow"`, `:owner :skein/spools-workflow`, `:keys`
-  enumerating the known keys `step-strand`/molecule build inside `compile` (`workflow.clj:518,771`;
-  advisory, `PROP-Vr-001.C1`, `C8`), and a one-line `:doc`.
+  enumerating the known keys `step-strand`/molecule build inside `compile` (advisory, `PROP-Vr-001.C1`,
+  `C8`), and a one-line `:doc`.
 - **TASK-Vr-006.MI2:** Owner is `:skein/spools-workflow` — the single verified use-key; no task chooses
   an owner (`PLAN-Vr-001.S2`, `PROP-Vr-001.R2`).
 - **TASK-Vr-006.MI3:** Add a focused assertion to `skein.spools.workflow-test` that the install declares

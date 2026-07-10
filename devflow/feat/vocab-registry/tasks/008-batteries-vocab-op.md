@@ -21,18 +21,21 @@ Per `PROP-Vr-001.C6`:
 
 - **TASK-Vr-008.MI1:** Add `vocab-arg-spec` with one optional flag `--kind`
   (`attr-namespace`|`edge`).
-- **TASK-Vr-008.MI2:** Add `vocab-op` reading the runtime from `:op/runtime` (`batteries.clj:204,207`
+- **TASK-Vr-008.MI2:** Add `vocab-op` reading the runtime from `:op/runtime` (the existing batteries-op
   pattern) and delegating to `skein.api.vocab.alpha/declarations`, threading the runtime first and
   passing `{:kind …}` when `--kind` is present.
-- **TASK-Vr-008.MI3:** Append one entry to `op-registrations` (`batteries.clj:462`, after the `notes`
-  entry `:476`): `['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]`.
+- **TASK-Vr-008.MI3:** Append one entry to `op-registrations` after the existing `notes` entry:
+  `['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]`.
 - **TASK-Vr-008.MI4:** JSON output is an ordered array of declaration maps (the C1 shape, string-keyed
   at the wire boundary), optionally narrowed by `--kind` (`PROP-Vr-001.C6`).
 
 ## TASK-Vr-008.P3 Done when
 
-- **TASK-Vr-008.DW1:** `strand vocab` registers as a batteries read op with `--kind`; its output is the
-  ordered declaration array; `strand help vocab` renders the arg-spec (generated, `SPEC-002.C39`).
+- **TASK-Vr-008.DW1:** `strand vocab` registers as a batteries read op with `--kind`; on a fresh world
+  with no seed-site activations it already lists the Task 1 core seed (the reflected `relations.alpha`
+  edges plus the core-owned `note/*`) — the CLI-level proof of the seed the Task 1 Done-when checked only
+  at the API level, since the op did not exist there; its output is the ordered declaration array;
+  `strand help vocab` renders the arg-spec (generated, `SPEC-002.C39`).
 - **TASK-Vr-008.DW2:** Cold focused run `clojure -M:test skein.spools.batteries-test` green
   (focused-runnable, `PLAN-Vr-001.TC4`).
 - **TASK-Vr-008.DW3:** `make fmt-check lint reflect-check` pass. `make api-docs` regen is deferred to

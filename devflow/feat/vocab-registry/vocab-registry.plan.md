@@ -34,10 +34,14 @@ exactly as today (`PROP-Vr-001.NG1`, `C13`).
 
 The landing is **purely additive** (`PROP-Vr-001.G6`, `C12`): no migration, no data rewrite, no cutover, no HITL ceremony,
 and no weaver restart. The registry reads installed code, not stored strands, so there is no historical concern — the
-epic's F3 HISTORY-rewrite/cutover shape does not recur here. The canonical `.skein` world picks up the new namespaces, the
-`strand vocab` op, and any repo-policy declaration through `runtime-alpha/reload!` per the pickup ladder
-(`PROP-Vr-001.C12`); any `.skein` config change is smoke-tested in a disposable world first, never by restarting the
-canonical weaver.
+epic's F3 HISTORY-rewrite/cutover shape does not recur here. The whole change set is JVM-side Clojure (the new
+`skein.api.vocab.alpha`, the batteries `vocab` op registration, the six `install!` seed calls, and the selvage/carder
+consumers) plus docs — there is no `cli/` Go change, so `strand vocab` is a batteries op the running weaver registers,
+not a rebuilt binary. The canonical `.skein` world picks the feature up through the pickup ladder (CLAUDE.md), not a
+restart: reload each changed already-loaded namespace with a targeted `(require 'the.ns :reload)` first —
+`runtime-alpha/reload!` alone skips already-loaded namespaces — then `runtime-alpha/reload!` re-runs activation so the new
+op registers and each `install!` re-declares into the surviving registry (`PROP-Vr-001.C12`). Any `.skein` config change
+is smoke-tested in a disposable world first, never by restarting the canonical weaver.
 
 Deliberately not built (`PROP-Vr-001.C13`, `NG1`–`NG5`): no write-time enforcement beyond the cross-owner install failure,
 no value schema (that stays selvage's opt-in `:enum`/`:kind`/`:required-with` checks), no durable storage of declarations
@@ -64,8 +68,8 @@ from `relations.alpha`, not re-listed).
   proves green together at `PLAN-Vr-001.S10` before the branch merges.
 - **PLAN-Vr-001.A5:** Focused gates during the fan-out; the full locked suite only at acceptance. Every seed and consumer
   slice gates on a focused-runnable namespace (`PLAN-Vr-001.TC4`). The one exception is the `agent_run.clj` seed
-  (`PLAN-Vr-001.S2a`): its authoritative suite `skein.agent-run-test` is a full-suite-only add-libs shard (`B`,
-  `test_runner.clj:54`), so it gates on the focused-runnable `skein.delegation-test` as a non-regression proxy and defers
+  (`PLAN-Vr-001.S2a`): its authoritative suite `skein.agent-run-test` is a full-suite-only add-libs shard (shard `B` in
+  `test_runner.clj`), so it gates on the focused-runnable `skein.delegation-test` as a non-regression proxy and defers
   its authoritative proof to S10 — the F3 S3 pattern.
 - **PLAN-Vr-001.A6:** The one reload subtlety is C3's idempotency. `reload!` re-runs every `install!` against the surviving
   spool-state registry (`SPEC-004.C95`/`C96`), so a same-owner re-declaration must replace (no-op-shaped), never
@@ -77,18 +81,18 @@ from `relations.alpha`, not re-listed).
 | ID | Area | Expected change |
 | -- | ---- | --------------- |
 | PLAN-Vr-001.AA1 | `src/skein/api/vocab/alpha.clj` (new) | The registry: the C1 declaration shape, `declare!` (validate + record under `[:kind :name]`, cross-owner throw, same-owner idempotent replace), `declarations`/`declaration` reads (runtime-first), and a versioned `new-state`/`state-version` whose init-fn seeds the core registry — `:edge` declarations reflected from `relations.alpha/catalog` (owner `:skein/core`) plus the core-owned `note/*` declaration (owner `skein.api.notes.alpha`) — reached by the first read or `declare!`, with no `install!` hook (`PROP-Vr-001.C1`–`C5`). |
-| PLAN-Vr-001.AA2 | `test/skein/vocab_test.clj` (new), `test/skein/test_runner.clj` | `skein.vocab-test`: fresh-runtime core seed (reflected edges + core-owned `note/*`) present before any `install!`, declare/query, cross-owner throw, same-owner idempotent, and the `assert-state-shape` drift test; register `skein.vocab-test` in `parallel-namespaces` (`test_runner.clj:14`, beside `skein.notes-test`). |
-| PLAN-Vr-001.AA3 | `spools/agent-run/src/skein/spools/agent_run.clj`, `.../executors/subagent.clj` | `install!` declares `agent-run/*` (owner `:skein/spools-shuttle`, `agent_run.clj:1974`) and `gate/*` (owner `:skein/spools-treadle`, `subagent.clj:236`); enumerate any residual treadle-era survivor from the live tree (`PROP-Vr-001.C5`, `Q4`). |
-| PLAN-Vr-001.AA4 | `spools/delegation/src/skein/spools/delegation.clj` | `install!` (`:2014`) declares `review/*` and `panel/*`, both owner `:skein/spools-agents` (`PROP-Vr-001.C5`). |
-| PLAN-Vr-001.AA5 | `spools/kanban/src/skein/spools/kanban.clj` | `install!` (`:852`) declares `kanban/*`, owner `:skein/spools-kanban` (`PROP-Vr-001.C5`). |
-| PLAN-Vr-001.AA6 | `spools/src/skein/spools/workflow.clj`, `spools/src/skein/spools/roster.clj` | `install!` declares `workflow/*` (owner `:skein/spools-workflow`, `workflow.clj:1870`) and `roster/*` (owner `:skein/spools-roster`, `roster.clj:759`) (`PROP-Vr-001.C5`). |
-| PLAN-Vr-001.AA7 | `spools/src/skein/spools/batteries.clj` | Add `vocab-arg-spec` (flag `--kind`) and `vocab-op` (runtime from `:op/runtime`), append one `op-registrations` entry `['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]` (`:462`, after the `notes` entry `:476`); JSON is an ordered array of declaration maps (`PROP-Vr-001.C6`). |
+| PLAN-Vr-001.AA2 | `test/skein/vocab_test.clj` (new), `test/skein/test_runner.clj` | `skein.vocab-test`: fresh-runtime core seed (reflected edges + core-owned `note/*`) present before any `install!`, declare/query, cross-owner throw, same-owner idempotent, and the `assert-state-shape` drift test; register `skein.vocab-test` in `parallel-namespaces` (`test_runner.clj`, beside `skein.notes-test`). |
+| PLAN-Vr-001.AA3 | `spools/agent-run/src/skein/spools/agent_run.clj`, `.../executors/subagent.clj` | `install!` declares `agent-run/*` (owner `:skein/spools-shuttle`, in `agent_run.clj`) and `gate/*` (owner `:skein/spools-treadle`, in `subagent.clj`); enumerate any residual treadle-era survivor from the live tree (`PROP-Vr-001.C5`, `Q4`). |
+| PLAN-Vr-001.AA4 | `spools/delegation/src/skein/spools/delegation.clj` | `install!` declares `review/*` and `panel/*`, both owner `:skein/spools-agents` (`PROP-Vr-001.C5`). |
+| PLAN-Vr-001.AA5 | `spools/kanban/src/skein/spools/kanban.clj` | `install!` declares `kanban/*`, owner `:skein/spools-kanban` (`PROP-Vr-001.C5`). |
+| PLAN-Vr-001.AA6 | `spools/src/skein/spools/workflow.clj`, `spools/src/skein/spools/roster.clj` | `install!` declares `workflow/*` (owner `:skein/spools-workflow`, in `workflow.clj`) and `roster/*` (owner `:skein/spools-roster`, in `roster.clj`) (`PROP-Vr-001.C5`). |
+| PLAN-Vr-001.AA7 | `spools/src/skein/spools/batteries.clj` | Add `vocab-arg-spec` (flag `--kind`) and `vocab-op` (runtime from `:op/runtime`), append one `op-registrations` entry `['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]` after the existing `notes` entry; JSON is an ordered array of declaration maps (`PROP-Vr-001.C6`). |
 | PLAN-Vr-001.AA8 | `spools/src/skein/spools/selvage.clj` | One opt-in read helper (e.g. `undeclared-checks`) returning selvage checks whose `:attr` namespace has no `vocab` declaration; composition over `check`/`vocabs`, registered nowhere by default (`PROP-Vr-001.C7`, `NG4`). |
-| PLAN-Vr-001.AA9 | `spools/src/skein/spools/carder.clj` | One report section, `undeclared` — active strands with an attribute whose namespace is declared by nobody; joins `report` as a fourth section beside `stale`/`orphans`/`blocked-by-failure` (`:191`), flags by namespace not exact key, mutates nothing (`PROP-Vr-001.C8`, `carder.clj:7`). |
+| PLAN-Vr-001.AA9 | `spools/src/skein/spools/carder.clj` | One report section, `undeclared` — active strands with an attribute whose namespace is declared by nobody; joins `report` as a fourth section beside `stale`/`orphans`/`blocked-by-failure`, flags by namespace not exact key, mutates nothing (`PROP-Vr-001.C8`, the read-only carder contract). |
 | PLAN-Vr-001.AA10 | `docs/writing-shared-spools.md` | The third-party prefix subsection: a shared spool declares its namespaces via `vocab/declare!` from `install!`, qualifies them with a project prefix (`acme/…`), and a colliding claim fails loudly at install (`PROP-Vr-001.C9`). |
 | PLAN-Vr-001.AA11 | `spools/batteries.md` | Per-command contract for `strand vocab` following the existing entries — `--kind`, JSON output shape (`PROP-Vr-001.C6`, `C10`). |
 | PLAN-Vr-001.AA12 | `spools/selvage.md`, `spools/carder.md` | The opt-in cross-check helper and the undeclared hygiene section in each spool's Surface table (`PROP-Vr-001.C10`). |
-| PLAN-Vr-001.AA13 | `devflow/specs/strand-model.md`, `devflow/specs/alpha-surface.md`, feature deltas | Apply `SPEC-Vr-001` (the `vocab.alpha` referent at `:34`, the catalog-reflection sentence at `:56`) and `SPEC-Vr-002` (the `vocab` enumeration + parenthetical at `:12`); flip both to Merged; confirm `SPEC-Vr-003`/`SPEC-Vr-004` no-change. |
+| PLAN-Vr-001.AA13 | `devflow/specs/strand-model.md`, `devflow/specs/alpha-surface.md`, feature deltas | Apply `SPEC-Vr-001` (the `vocab.alpha` referent `SPEC-Vr-001.CC1`, the catalog-reflection sentence `SPEC-Vr-001.CC2`) and `SPEC-Vr-002` (the `vocab` enumeration + parenthetical `SPEC-Vr-002.CC1`), each against the delta's Old/New fragments; flip both to Merged; confirm `SPEC-Vr-003`/`SPEC-Vr-004` no-change. |
 | PLAN-Vr-001.AA14 | `spools/batteries.api.md`, `spools/selvage.api.md`, `spools/carder.api.md` | `make api-docs` regen after the docstring changes (`PROP-Vr-001.P6`). No `vocab.api.md`: `vocab.alpha` is a `src/` blessed namespace, outside the `spools/*.api.md` scope `docs-check` diffs. |
 
 ## PLAN-Vr-001.P4 Contract and migration impact
@@ -106,9 +110,13 @@ from `relations.alpha`, not re-listed).
   `shipped-acyclic-relations`), the registry declares no relation and adds no acyclic edge — it reflects the existing
   `relations.alpha` catalog. There is no storage-semantics change (`PROP-Vr-001.C11`, `SPEC-Vr-001.P3`).
 - **PLAN-Vr-001.CM4:** No cutover, no HITL, no weaver restart (`PROP-Vr-001.C12`, `C13`). The whole set lands in one
-  additive branch merge; the canonical world picks the config/spool changes up via `reload!` after landing (Go CLI change
-  for `strand vocab` needs only `make build`; a repo-policy `.skein` declaration is a `reload!` pickup, smoke-tested in a
-  disposable world first). The pickup ladder — not a restart — is the deployment step.
+  additive branch merge; the canonical world picks the changes up through the pickup ladder (CLAUDE.md), not a restart.
+  F4 has no `cli/` Go change — `strand vocab` is a batteries op the weaver registers, so `make build` is not its pickup
+  path. Each changed already-loaded Clojure namespace (the touched spool `install!` files, `batteries.clj`, `selvage.clj`,
+  `carder.clj`) needs a targeted `(require 'the.ns :reload)` before `runtime-alpha/reload!` — which alone skips
+  already-loaded namespaces — then `reload!` re-runs activation so the op registers and every `install!` re-declares. A
+  repo-policy `.skein` declaration is smoke-tested in a disposable world first. The pickup ladder — not a restart — is the
+  deployment step.
 
 ## PLAN-Vr-001.P5 Implementation slices
 
@@ -119,7 +127,7 @@ siblings share no file.
 ### PLAN-Vr-001.S1 — `skein.api.vocab.alpha` registry + core seed (foundation) `[serial]`
 
 - **Owned files:** `src/skein/api/vocab/alpha.clj` (new), `test/skein/vocab_test.clj` (new),
-  `test/skein/test_runner.clj` (register the new ns in `parallel-namespaces`, `:14`).
+  `test/skein/test_runner.clj` (register the new ns in `parallel-namespaces`).
 - **Depends-on:** none (lands first).
 - **Change:** create `skein.api.vocab.alpha` (`PROP-Vr-001.C1`–`C5`). The C1 declaration shape
   (`:kind`/`:name`/`:owner`/`:keys`/`:doc`). `declare!` takes `runtime` first, validates the shape (fail loud on
@@ -128,7 +136,7 @@ siblings share no file.
   an idempotent replace for the *same* owner (`PROP-Vr-001.C3`). `declarations`/`declaration` read runtime-first, sorted by
   `[:kind :name]`, `{:kind …}`-narrowable, `nil` for an undeclared entry (`PROP-Vr-001.C4`). Backing store is
   `runtime/spool-state` with a `state-version` beside `new-state`, versioned per the shape-drift discipline
-  (`selvage.clj:16-29` precedent, `PROP-Vr-001.C2`). The `new-state` init-fn is the seed site: it returns the initial
+  (selvage's `new-state`/`state-version` precedent, `PROP-Vr-001.C2`). The `new-state` init-fn is the seed site: it returns the initial
   registry already carrying the core seed — one `:edge` declaration per `relations.alpha/catalog` entry (owner `:skein/core`,
   preserving `:family`/`:direction`/`:declared-acyclic?`) plus the core-owned `note/*` `:attr-namespace` (owner
   `skein.api.notes.alpha`), each a valid C1 map — so the first read or `declare!` on a fresh runtime already sees it, with no
@@ -138,11 +146,13 @@ siblings share no file.
   run, `(vocab/declarations runtime)` already returns the core seed — the reflected `relations.alpha/catalog` edges as owned
   `:edge` maps plus the core-owned `note/*` `:attr-namespace`; declare + query round-trip; cross-owner `declare!` throws;
   same-owner re-declare is an idempotent replace (`PROP-Vr-001.R1`); `(assert-state-shape #'vocab/new-state #{…})` drift test
-  (`selvage_test.clj:114` precedent).
-- **Done-when:** `skein.api.vocab.alpha` exists and is in `SPEC-005.C2` (applied at S9); in a fresh disposable world with no
-  seed-site spool activations, `strand vocab` already lists the core seed — the reflected `relations.alpha` edges plus the
-  core-owned `note/*` (owner `skein.api.notes.alpha`) — because the seed lives in the `new-state` init-fn, not an `install!`
-  hook; `declare!` records a C1 declaration, throws cross-owner, is idempotent same-owner; `declarations`/`declaration` read
+  (`assert-state-shape` in `skein.spools.selvage-test` precedent).
+- **Done-when:** `skein.api.vocab.alpha` exists and is in `SPEC-005.C2` (applied at S9); on a fresh runtime with no
+  seed-site spool activations, `(vocab/declarations runtime)` already returns the core seed — the reflected
+  `relations.alpha` edges plus the core-owned `note/*` (owner `skein.api.notes.alpha`) — because the seed lives in the
+  `new-state` init-fn, not an `install!` hook. The CLI-level `strand vocab` proof of the same seed lands at S3/Task 8 once
+  the op exists, and again at the S10 acceptance gate; S1 does not assert `strand vocab`, which does not exist yet.
+  `declare!` records a C1 declaration, throws cross-owner, is idempotent same-owner; `declarations`/`declaration` read
   runtime-first; the edge set is not duplicated in source; `vocab-test` green and registered in the focused runner.
 
 ### PLAN-Vr-001.S2 — per-spool attribute-namespace seed declarations `[parallel fan-out, after S1]`
@@ -176,13 +186,15 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
 - **Owned files:** `spools/src/skein/spools/batteries.clj`.
 - **Depends-on:** S1 (disjoint file from S2/S4/S5).
 - **Change:** per `PROP-Vr-001.C6`: add `vocab-arg-spec` (optional flag `--kind` `attr-namespace`|`edge`) and `vocab-op`
-  reading the runtime from `:op/runtime` (`batteries.clj:204,207` pattern) and delegating to
-  `skein.api.vocab.alpha/declarations`; append one entry to `op-registrations` (`:462`, after the `notes` entry `:476`):
+  reading the runtime from `:op/runtime` (the existing batteries-op pattern) and delegating to
+  `skein.api.vocab.alpha/declarations`; append one entry to `op-registrations` after the existing `notes` entry:
   `['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]`. JSON output is an ordered array of declaration maps
   (C1 shape, string-keyed at the wire boundary), optionally narrowed by `--kind`.
 - **Validation:** `clojure -M:test skein.spools.batteries-test` green (focused-runnable).
-- **Done-when:** `strand vocab` registers as a batteries read op with `--kind`; its output is the ordered declaration
-  array; `strand help vocab` renders the arg-spec (`SPEC-002.C39`, generated).
+- **Done-when:** `strand vocab` registers as a batteries read op with `--kind`; on a fresh world with no seed-site
+  activations it already lists the S1 core seed (the reflected `relations.alpha` edges plus the core-owned `note/*`) — the
+  CLI-level proof the S1 Done-when deferred to the op; its output is the ordered declaration array; `strand help vocab`
+  renders the arg-spec (`SPEC-002.C39`, generated).
 
 ### PLAN-Vr-001.S4 — selvage opt-in cross-check helper `[parallel, after S1]`
 
@@ -190,7 +202,7 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
 - **Depends-on:** S1 (disjoint file from S2/S3/S5).
 - **Change:** per `PROP-Vr-001.C7`, `NG4`: add one read-only helper (e.g. `undeclared-checks`) that lists declared
   attribute namespaces (`vocab/declarations runtime {:kind :attr-namespace}`) and returns the selvage checks whose `:attr`
-  namespace has no declaration — composition sugar over `check`/`vocabs` (`selvage.clj:180,111`), registered nowhere by
+  namespace has no declaration — composition sugar over `check`/`vocabs` in `selvage.clj`, registered nowhere by
   default, reusing `vocab.alpha` explicit-runtime reads, adding no watch behaviour. Selvage's value-linting model is
   unchanged.
 - **Validation:** `clojure -M:test skein.spools.selvage-test` green (focused-runnable).
@@ -202,11 +214,11 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
 - **Owned files:** `spools/src/skein/spools/carder.clj`.
 - **Depends-on:** S1 (disjoint file from S2/S3/S4).
 - **Change:** per `PROP-Vr-001.C8`: add an `undeclared` report section in the shape of the existing sections — read
-  `vocab/declarations runtime {:kind :attr-namespace}` for the declared set, walk `active-strands` (`carder.clj:72`), and
+  `vocab/declarations runtime {:kind :attr-namespace}` for the declared set, walk `active-strands`, and
   flag each strand → attribute key whose *namespace segment* is absent from the declared set (so `review/newfield` under
   declared `review/*` is clean while an unowned `frobnicate/*` is flagged, `PROP-Vr-001.C1`, `R3`). Join `report`
-  (`carder.clj:191`) as a fourth section beside `stale`/`orphans`/`blocked-by-failure`; carder still mutates nothing
-  (`carder.clj:7`).
+  (the `report` builder) as a fourth section beside `stale`/`orphans`/`blocked-by-failure`; carder still mutates nothing
+  (the read-only carder contract).
 - **Validation:** `clojure -M:test skein.spools.carder-test` green (focused-runnable).
 - **Done-when:** `report` carries an `undeclared` section flagging active strands with an attribute in no declared
   namespace, flagged by namespace not exact key; no write is blocked (`NG1`).
@@ -246,10 +258,11 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
 
 - **Owned files:** `devflow/specs/strand-model.md`, `devflow/specs/alpha-surface.md`, the four `specs/*.delta.md` files.
 - **Depends-on:** none (doc-only; lands with the set).
-- **Change:** apply `SPEC-Vr-001.CC1` (the `vocab.alpha` referent + duplicate-owner-backed prefix rule,
-  `strand-model.md:34`) and `SPEC-Vr-001.CC2` (the catalog-reflection sentence, `strand-model.md:56`), each verified
-  against the delta's Old/New fragments; apply `SPEC-Vr-002.CC1` (the `vocab` enumeration entry + extended parenthetical,
-  `alpha-surface.md:12`) the same way; flip `SPEC-Vr-001`/`SPEC-Vr-002` Status to Merged and confirm
+- **Change:** apply `SPEC-Vr-001.CC1` (the `vocab.alpha` referent + duplicate-owner-backed prefix rule in the
+  strand-model attribute-namespace prose) and `SPEC-Vr-001.CC2` (the catalog-reflection sentence in the relations
+  advisory-catalog paragraph), each verified against the delta's Old/New fragments; apply `SPEC-Vr-002.CC1` (the `vocab`
+  enumeration entry + extended parenthetical in the alpha-surface blessed-set list) the same way; flip
+  `SPEC-Vr-001`/`SPEC-Vr-002` Status to Merged and confirm
   `SPEC-Vr-003`/`SPEC-Vr-004` remain the recorded no-change dispositions.
 - **Validation:** `make docs-check`; each delta fragment verified against the edited root spec.
 - **Done-when:** `strand-model.md` names `skein.api.vocab.alpha` as the ownership registry and states the catalog
@@ -270,17 +283,17 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   `devflow/*` stays undeclared by design (F5, card `2mp13`).
 - **Done-when:** `PROP-Vr-001.DW1`–`DW6` proven — `vocab.alpha` exists and is in `SPEC-005.C2`; the core seed (edges +
   `note/*`) and the spool seeds are live and single-owner; `strand vocab` is a batteries read op with `--kind`; carder has the `undeclared` section and selvage the
-  opt-in helper, neither blocking a write; the prefix rule is in `writing-shared-spools.md` and `strand-model.md:34/:56`
-  names the registry; all P6 gates green in one atomic, additive landing — no migration, no cutover, no weaver restart.
+  opt-in helper, neither blocking a write; the prefix rule is in `writing-shared-spools.md` and `strand-model.md`
+  names the registry (per `SPEC-Vr-001.CC1`/`CC2`); all P6 gates green in one atomic, additive landing — no migration, no cutover, no weaver restart.
 
 ## PLAN-Vr-001.P6 Validation strategy
 
 - **PLAN-Vr-001.V1:** Focused per-namespace gates during the fan-out, full locked suite once at `PLAN-Vr-001.S10`.
-  Focused-runnable (in-process `parallel-namespaces`, `test_runner.clj:14-34`): `skein.vocab-test` (S1, new),
+  Focused-runnable (in-process `parallel-namespaces` in `test_runner.clj`): `skein.vocab-test` (S1, new),
   `skein.spools.batteries-test` (S3), `skein.spools.selvage-test` (S4), `skein.spools.carder-test` (S5),
   `skein.delegation-test` (S2a proxy, S2c), `skein.executors.subagent-test` (S2b), `skein.kanban-test` (S2d),
   `skein.spools.workflow-test` (S2e), `skein.roster-test` (S2f). Full-suite-only add-libs shard: `skein.agent-run-test`
-  (shard `B`, `:54`) is the authoritative agent-run seed proof, gated at S10; S2a's focused proxy is `skein.delegation-test`.
+  (shard `B`) is the authoritative agent-run seed proof, gated at S10; S2a's focused proxy is `skein.delegation-test`.
 - **PLAN-Vr-001.V2:** The C3 hard edge is proven directly in `skein.vocab-test` (S1): a cross-owner `declare!` throws with
   `:existing-owner`/`:declaring-owner`, and a same-owner re-declare is an idempotent replace — the reload invariant
   (`PROP-Vr-001.R1`), so `reload!`'s re-run of every `install!` never self-collides.
@@ -309,14 +322,15 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   discipline (S1) with a `state-version` and an `assert-state-shape` drift test, exactly as selvage does.
 - **PLAN-Vr-001.Q1:** No open owner questions remain; the two formerly-deferred namespaces are settled contract, so no task
   chooses an owner:
-  - **`note/*` — core seed, closed.** The durable writer is `skein.api.notes.alpha/note!` (`notes/alpha.clj:52`); the
+  - **`note/*` — core seed, closed.** The durable writer is `skein.api.notes.alpha/note!`; the
     batteries `note` op is one delegating caller, not the owner. `note/*` is declared as core-owned by `skein.api.notes.alpha`
     from `vocab.alpha`'s `new-state` init-fn, alongside the reflected edges (S1). No S2/S3 task decides its owner.
   - **`devflow/*` — cross-feature dependency, out of scope.** It is written only by the external `codethread/devflow` spool
-    (`roster.clj:420,424`); the pinned spool (`.skein/spools.edn` sha `3bcc78b`) has no `vocab/declare!` site, so F4 cannot
-    seed it truthfully. After F4 lands, `devflow/*` appears in the carder hygiene report (S5) as undeclared — deliberately,
-    that is the report doing its job. The declaration plus the `devflow.spool` sha re-pin belong to F5 (card `2mp13`, which
-    already owns that re-pin). F4 adds no core row for it.
+    (its write sites in `roster.clj`); the pinned spool (`.skein/spools.edn` sha `3bcc78b`) has no `vocab/declare!` site, so
+    F4 cannot seed it truthfully. After F4 lands, any inspected workspace whose active strands carry `devflow/*` attributes
+    surfaces `devflow/*` in the carder hygiene report (S5) as undeclared — deliberately, that is the report doing its job.
+    The declaration plus the `devflow.spool` sha re-pin belong to F5 (card `2mp13`, which already owns that re-pin). F4 adds
+    no core row for it.
 
 ## PLAN-Vr-001.P8 Task context
 
@@ -328,7 +342,8 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   S5 (`carder.clj`) — with **no same-file serial chain**. Doc slices S6 (independent), S7 (after S3), S8 (after S4/S5), and
   S9 (spec deltas, independent) fan out with their code. S10 is the coordinator-adjacent acceptance gate. **No cutover
   slice and no HITL slice** — the landing is purely additive (`PROP-Vr-001.C12`); the canonical world picks up the changes
-  via `reload!` after landing, per the pickup ladder, with no weaver restart.
+  through the pickup ladder after landing — a targeted `(require 'the.ns :reload)` for each changed already-loaded
+  namespace, then `runtime-alpha/reload!` — with no weaver restart.
 - **PLAN-Vr-001.TC3:** AFK task-queue sketch (one slice → one task; the six S2 sub-slices are six disjoint tasks):
 
   | Slice | Sketch | Depends-on | ~Tasks |
@@ -352,11 +367,11 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   Total: **15 tasks across 10 slices** (S2 is a six-way parallel fan-out). S1 is the only serial foundation; the six S2
   seeds plus S3/S4/S5 fan out on disjoint files after S1; the doc slices parallelize after their code slices; S10 is the
   coordinator-adjacent acceptance gate. No HITL, no cutover.
-- **PLAN-Vr-001.TC4:** Test tiering (`test/skein/test_runner.clj`). Focused-runnable (in-process `parallel-namespaces`,
-  `:14-34`): `skein.vocab-test` (S1, new — registered there), `skein.spools.batteries-test` (S3),
+- **PLAN-Vr-001.TC4:** Test tiering (`test/skein/test_runner.clj`). Focused-runnable (in-process `parallel-namespaces`):
+  `skein.vocab-test` (S1, new — registered there), `skein.spools.batteries-test` (S3),
   `skein.spools.selvage-test` (S4), `skein.spools.carder-test` (S5), `skein.delegation-test` (S2a proxy + S2c),
   `skein.executors.subagent-test` (S2b), `skein.kanban-test` (S2d), `skein.spools.workflow-test` (S2e),
-  `skein.roster-test` (S2f). Full-suite-only add-libs shard: `skein.agent-run-test` (shard `B`, `:54`) is the authoritative
+  `skein.roster-test` (S2f). Full-suite-only add-libs shard: `skein.agent-run-test` (shard `B`) is the authoritative
   agent-run seed proof (S2a) and only runs inside the full locked suite, so S10 is its gate.
 - **PLAN-Vr-001.TC5:** Reading map. Brief (scope contract) → `PROP-Vr-001` C-clauses (design contract; single source of
   truth per TC1) → this plan's slices S1–S10 (sequencing) → `TASK-Vr-*` files (execution contracts; the TC3 table is the
@@ -383,7 +398,7 @@ Append notes here. Do not rewrite earlier notes.
   code chain — no same-file serial chain among the code slices (`PLAN-Vr-001.A3`, `TC2`). Verified
   forward-only (every `blocked_by` id is strictly less than its task id) and acyclic.
 - Per-slice validation gates use only the focused-runnable namespaces `PLAN-Vr-001.TC4` names —
-  `skein.vocab-test` (S1, new, registered in `test_runner.clj:14` by Task 1), `skein.delegation-test`
+  `skein.vocab-test` (S1, new, registered in `test_runner.clj` by Task 1), `skein.delegation-test`
   (S2a proxy + S2c), `skein.executors.subagent-test` (S2b), `skein.kanban-test` (S2d),
   `skein.spools.workflow-test` (S2e), `skein.roster-test` (S2f), `skein.spools.batteries-test` (S3),
   `skein.spools.selvage-test` (S4), `skein.spools.carder-test` (S5). The authoritative
@@ -393,3 +408,23 @@ Append notes here. Do not rewrite earlier notes.
   `clojure -M:smoke` + `make fmt-check lint reflect-check docs-check` + `make api-docs` regen (the three
   touched `spools/*.api.md`; no `vocab.api.md` — `vocab.alpha` is a `src/` namespace outside the
   `docs-check` diff scope, `PLAN-Vr-001.AA14`).
+
+### PLAN-Vr-001.DN2 docs-review-88c46d78 fix round — 2026-07-10
+
+- **Pickup ladder corrected (finding 1).** DN1's first bullet said the canonical world picks the changes
+  up "via `reload!` after landing" — that under-specifies the ladder. The accurate path (P1, `CM4`, `TC2`):
+  F4 has no `cli/` Go change, so `make build` is not the pickup path — `strand vocab` is a batteries op the
+  running weaver registers. The registry namespace, the op registration, the six `install!` seeds, and the
+  selvage/carder consumers are all already-loaded Clojure namespaces; picking them up needs a targeted
+  `(require 'the.ns :reload)` per changed namespace **before** `runtime-alpha/reload!` (which alone skips
+  already-loaded namespaces), then `reload!` re-runs activation. No weaver restart.
+- **Citations stabilized (finding 2).** Load-bearing `file.clj:NN` line refs in the durable slice/task
+  prose were replaced with the function/op/def anchors already named beside them (or the proposal/spec
+  clause id); re-verify by searching for the named anchor against the current tree, not a line number.
+  Task 1 no longer cites line ranges of the `vocab/alpha.clj` file it creates.
+- **S1 Done-when narrowed (finding 3).** S1 asserts the core seed at the API level
+  (`(vocab/declarations runtime)`); the CLI-level `strand vocab` proof of the same seed moved to S3/Task 8
+  (where the op exists) and the S10 acceptance gate.
+- **Glosses + contingent claims (findings 4/5).** First-use glosses added for project-internal terms in
+  the task docs a cold worker reads in isolation; the `devflow/*` carder-report claim is now conditional on
+  the inspected workspace carrying those attributes, and the carder timing anecdote is dropped.
