@@ -852,7 +852,17 @@
       (usage-figure tokens-total) (assoc :tokens-total (usage-figure tokens-total))
       (seq tokens) (assoc :tokens tokens))))
 
-(defn- parse-claude-json [stdout]
+(defn- parse-claude-json
+  "Parse Claude `--output-format json` output and keep the final result,
+  session id, and normalized run usage.
+
+  Claude reports usage on the single result object. Capture
+  `total_cost_usd` as `:cost-usd`, sum the reported input/output/cache token
+  fields into `:tokens-total`, keep the token breakdown under `:tokens`, and
+  mark `:usage-source` as `\"claude-json\"`. Missing fields are omitted rather
+  than stored as zero. Raw runs do not pass through this parser and record no
+  cost or token usage."
+  [stdout]
   (let [data (json/read-str (str/trim stdout))]
     (when-not (map? data)
       (fail! "claude JSON output was not an object" {:output (subs stdout 0 (min 400 (count stdout)))}))
@@ -904,6 +914,14 @@
   the last assistant message carrying text. `:result` is always a string:
   tool_execution_end events also carry a top-level \"result\" holding a tool
   output object, so the bare result-key fallback accepts strings only.
+
+  Pi reports per-message usage deltas. Fold assistant `message_end` usage into
+  one run-level `:usage`: `cost.total` becomes `:cost-usd`, `totalTokens`
+  becomes `:tokens-total`, `input`/`output`/`cacheRead`/`cacheWrite`/`reasoning`
+  become the `:tokens` breakdown, and `:usage-source` is `\"pi-json\"`.
+  `reasoning` is recorded only in the breakdown because pi already counts it in
+  `totalTokens`. Missing dimensions are omitted rather than stored as zero. Raw
+  runs do not pass through this parser and record no cost or token usage.
 
   A terminal provider failure (usage limit, auth, transport) surfaces as
   `stopReason \"error\"` plus `errorMessage` on the last assistant message while
@@ -2211,7 +2229,13 @@
 (defn install!
   "Install the agent-run engine into the active weaver: default harnesses, the graph
   event listener, crash reconciliation, and a first scan, and declare the
-  `agent-run/*` attribute-namespace vocabulary this spool owns."
+  `agent-run/*` attribute-namespace vocabulary this spool owns.
+
+  The declaration includes the usage attributes written when parsed runs finish:
+  `agent-run/cost-usd`, `agent-run/tokens-total`, `agent-run/tokens`, and
+  `agent-run/usage-source`. Pi JSON folds per-message usage deltas; Claude JSON
+  reads the final result object's usage fields; raw output records no cost or
+  token attributes."
   []
   (let [runtime (rt)]
     (register-default-harnesses!)
@@ -2221,7 +2245,7 @@
                      :name "agent-run"
                      :owner :skein/spools-shuttle
                      :keys (vec (sort (into control-attrs usage-attrs)))
-                     :doc "Agent-run engine control attributes on run strands, reserved by spawn-run! and the spawn/supervision engine, plus the usage attributes finish-run! records at completion."})
+                     :doc "Agent-run engine control attributes reserved by spawn-run! and the supervision engine, plus usage attributes finish-run! records at completion."})
     (events/register! runtime :agent-run/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}

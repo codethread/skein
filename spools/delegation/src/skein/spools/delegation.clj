@@ -1881,7 +1881,7 @@
     "ps" {:doc "List agent run summaries."
           :flags {:active {:type :boolean :doc "Only active run strands."}
                   :for {:doc "Runs serving this strand plus its structural (parent-of) helpers."}}}
-    "spend" {:doc "Aggregate recorded agent-run spend by run, harness, and period."
+    "spend" {:doc "Aggregate recorded agent-run spend into JSON totals, groups, and per-run rows."
              :flags {:harness {:doc "Restrict to one harness or alias name."}
                      :since {:doc "Lower ISO-instant bound on a run's started-at (inclusive)."}
                      :until {:doc "Upper ISO-instant bound on a run's started-at (inclusive)."}

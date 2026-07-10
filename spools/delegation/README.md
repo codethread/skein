@@ -119,6 +119,19 @@ agent ps [--active] [--for <strand-id>]
 List run summaries. Listing doubles as an interactive liveness check: a dead session is failed here. Interactive summaries add `mode`, `backend`, `session`, and the `attach` command to hand the human. → `[{"id","title","state","phase","harness","for"?,"spawned-by"?,"attempt"?,"result"?,"error"?,"mode"?,"backend"?,"session"?,"attach"?}]`
 
 ```
+agent spend [--harness <name>] [--since <iso>] [--until <iso>] [--group-by harness|day]
+```
+Aggregate recorded run usage. With no flags it reads all runs and groups by harness. `--harness` narrows to one harness or alias.
+`--since` and `--until` window on the run's `agent-run/started-at` timestamp, using inclusive ISO instants.
+`--group-by day` buckets by the started-at date; `--group-by harness` is the default.
+
+Output is JSON only:
+`{"operation":"agent-spend","filters":{...},"totals":{"runs","cost-usd","tokens-total","duration-ms"},"groups":[...],"runs":[...]}`.
+Each run row includes `id`, `harness`, `phase`, `cost-usd`, `tokens-total`, optional `tokens`, `duration-ms`, `started-at`, and `finished-at`.
+Pi and Claude JSON runs record cost and tokens when the harness reports them. Raw runs, and older runs with no usage attributes, keep `null` cost and token fields.
+Every run can still contribute count and timestamp-derived duration, and totals skip null cost or token values rather than treating them as zero.
+
+```
 agent await <run-id>... [--under <root-id>] [--timeout-secs n]
 ```
 Block until every listed run is terminal (closed, failed, or exhausted); default timeout 300s. `--under <root-id>` instead awaits every **non-terminal** run (pending or running) in the delegation tree beneath root (a plan or task id). Run ids and `--under` are mutually exclusive; passing both fails loudly. → `{"timed-out":false,"runs":[<ps summary shape, including result/error>]}` A finished helper's findings are in `result` right here — you rarely need logs for success cases.

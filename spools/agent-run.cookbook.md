@@ -372,6 +372,31 @@ Honest source: the shipped `:tmux` backend in [`agent-run/README.md`](./agent-ru
 
 ---
 
+## Recipe: Reading run spend
+
+**Situation.** You want to see what completed agent runs cost, how many tokens they reported, and how long they ran.
+
+**Composition.** Use the delegation spool's read surface:
+
+```sh
+strand agent spend
+strand agent spend --harness worker --group-by day
+strand agent spend --since 2026-07-10T00:00:00Z --until 2026-07-11T00:00:00Z
+```
+
+The report has `totals`, `groups`, and per-run `runs`. Each run includes `id`, `harness`, `phase`,
+`cost-usd`, `tokens-total`, optional `tokens`, `duration-ms`, `started-at`, and `finished-at`.
+
+**Why this shape.** `pi-json` folds per-message usage deltas into one run total. `claude-json` reads
+Claude's final result object. Raw harness output records no cost or token usage, but still reports
+wall time because the spend reader derives `duration-ms` from the run timestamps. Missing cost or
+token figures stay null and sums skip them; the engine never writes a fake zero.
+
+Honest source: `skein.spools.agent-run/spend` and the `strand agent spend` subcommand in the
+delegation spool.
+
+---
+
 ## See also
 
 - [`agent-run/README.md`](./agent-run/README.md) — the contract: run lifecycle, the
