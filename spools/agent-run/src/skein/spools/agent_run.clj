@@ -74,6 +74,7 @@
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.vocab.alpha :as vocab]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! attr-get]])
   (:import [java.lang ProcessBuilder$Redirect ProcessHandle]
@@ -2010,11 +2011,18 @@
 
 (defn install!
   "Install the agent-run engine into the active weaver: default harnesses, the graph
-  event listener, crash reconciliation, and a first scan."
+  event listener, crash reconciliation, and a first scan, and declare the
+  `agent-run/*` attribute-namespace vocabulary this spool owns."
   []
   (let [runtime (rt)]
     (register-default-harnesses!)
     (register-default-backends!)
+    (vocab/declare! runtime
+                    {:kind :attr-namespace
+                     :name "agent-run"
+                     :owner :skein/spools-shuttle
+                     :keys (vec (sort control-attrs))
+                     :doc "Agent-run engine control attributes on run strands, reserved by spawn-run! and the spawn/supervision engine."})
     (events/register! runtime :agent-run/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}
