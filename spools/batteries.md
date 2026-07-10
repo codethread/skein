@@ -277,8 +277,8 @@ The handler delegates to `skein.api.vocab.alpha/declarations`, passing `{:kind :
 
 The result is one JSON array ordered like `declarations`: by declaration kind and then by declaration
 name. Each entry is a C1 declaration map, string-keyed at the wire boundary. Attribute namespace
-rows carry `kind`, `name`, `owner`, and `doc`. Edge rows carry those keys plus `acyclic`; relation
-edges may also carry `category`.
+rows carry `kind`, `name`, `owner`, `doc`, and an advisory `keys` list. Edge rows carry `kind`, `name`,
+`owner`, `doc` plus the catalog-reflected `family`, `direction`, and `declared-acyclic?`.
 
 ## 4. Attribute and edge flag semantics
 
