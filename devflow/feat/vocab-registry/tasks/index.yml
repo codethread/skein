@@ -1,0 +1,106 @@
+tasks:
+  - id: 1
+    description: "S1: skein.api.vocab.alpha registry + declare!/reads + versioned state + core seed (edges + note/*) + vocab-test"
+    task_file: tasks/001-vocab-registry-foundation.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: []
+  - id: 2
+    description: "S2a: agent-run install! declares agent-run/* (agent_run.clj)"
+    task_file: tasks/002-agent-run-seed.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 3
+    description: "S2b: subagent install! declares gate/* + residual treadle survivor sweep (subagent.clj)"
+    task_file: tasks/003-gate-seed.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 4
+    description: "S2c: delegation install! declares review/*, panel/* (delegation.clj)"
+    task_file: tasks/004-delegation-seed.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 5
+    description: "S2d: kanban install! declares kanban/* (kanban.clj)"
+    task_file: tasks/005-kanban-seed.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 6
+    description: "S2e: workflow install! declares workflow/* (workflow.clj)"
+    task_file: tasks/006-workflow-seed.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 7
+    description: "S2f: roster install! declares roster/* (roster.clj)"
+    task_file: tasks/007-roster-seed.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 8
+    description: "S3: batteries strand vocab read op + arg-spec (batteries.clj)"
+    task_file: tasks/008-batteries-vocab-op.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 9
+    description: "S4: selvage opt-in cross-check helper (selvage.clj)"
+    task_file: tasks/009-selvage-cross-check.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 10
+    description: "S5: carder undeclared-namespace hygiene section (carder.clj)"
+    task_file: tasks/010-carder-undeclared.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 11
+    description: "S6: docs/writing-shared-spools.md third-party prefix convention"
+    task_file: tasks/011-prefix-convention-doc.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: []
+  - id: 12
+    description: "S7: spools/batteries.md strand vocab command contract"
+    task_file: tasks/012-batteries-doc.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [8]
+  - id: 13
+    description: "S8: spools/selvage.md + spools/carder.md surface entries"
+    task_file: tasks/013-consumer-spool-docs.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: [9, 10]
+  - id: 14
+    description: "S9: apply SPEC-Vr-001/SPEC-Vr-002 to root specs; mark deltas"
+    task_file: tasks/014-spec-delta-application.md
+    status: pending
+    harness: worker
+    type: AFK
+    blocked_by: []
+  - id: 15
+    description: "S10: acceptance / atomic-landing gate (api-docs + full locked suite + go + smoke + quality)"
+    task_file: tasks/015-acceptance-gate.md
+    status: pending
+    harness: build
+    type: AFK
+    blocked_by: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]

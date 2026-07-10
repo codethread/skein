@@ -15,7 +15,7 @@
 [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) (`SPEC-Vr-004`, no change)
 **Contract:** [proposal.md](./proposal.md) clauses `PROP-Vr-001.C1`–`C13` — the approved contract; this plan sequences it
 and never widens it.
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-10
 
 ## PLAN-Vr-001.P1 Goal and scope
@@ -367,3 +367,29 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
 ## PLAN-Vr-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
+
+### PLAN-Vr-001.DN1 Task queue authored — 2026-07-10
+
+- Queue = the `PLAN-Vr-001.TC3` slice→task map: **15 tasks across 10 slices** (Tasks 1–15 ↔ S1, the six
+  S2 sub-slices, S3–S10). **No HITL task and no cutover task** — the landing is purely additive
+  (`PROP-Vr-001.C12`, `PLAN-Vr-001.CM4`); the acceptance slice (Task 15, build) is the last task and the
+  canonical world picks up the changes via `reload!` after landing, per the pickup ladder, with no
+  weaver restart. This is the deliberate divergence from F3, which carried a Task 13 HITL cutover.
+- Harness routing per precedent: **build** for the code slices (Tasks 1–10 and the Task 15 acceptance
+  gate — S1, the six S2 seeds, S3/S4/S5), **worker** for the doc-only slices (Tasks 11–14 — S6/S7/S8/S9).
+- Dependency seams as encoded (blocked_by): 1←[]; 2/3/4/5/6/7←[1] (the six S2 seeds, disjoint files,
+  fully parallel after the foundation); 8/9/10←[1] (S3/S4/S5, disjoint files, parallel with the seeds);
+  11←[] and 14←[] (doc-only, parallel-safe); 12←[8]; 13←[9,10]; 15←[1..14]. S1→S2 is the only serial
+  code chain — no same-file serial chain among the code slices (`PLAN-Vr-001.A3`, `TC2`). Verified
+  forward-only (every `blocked_by` id is strictly less than its task id) and acyclic.
+- Per-slice validation gates use only the focused-runnable namespaces `PLAN-Vr-001.TC4` names —
+  `skein.vocab-test` (S1, new, registered in `test_runner.clj:14` by Task 1), `skein.delegation-test`
+  (S2a proxy + S2c), `skein.executors.subagent-test` (S2b), `skein.kanban-test` (S2d),
+  `skein.spools.workflow-test` (S2e), `skein.roster-test` (S2f), `skein.spools.batteries-test` (S3),
+  `skein.spools.selvage-test` (S4), `skein.spools.carder-test` (S5). The authoritative
+  `skein.agent-run-test` is a full-suite-only add-libs shard (`B`), so Task 15 is its gate; the S2a seed
+  gates on `skein.delegation-test` as a non-regression proxy meanwhile (`PLAN-Vr-001.A5`).
+- Task 15 acceptance runs the full locked suite under bare `flock` + `(cd cli && go test ./...)` +
+  `clojure -M:smoke` + `make fmt-check lint reflect-check docs-check` + `make api-docs` regen (the three
+  touched `spools/*.api.md`; no `vocab.api.md` — `vocab.alpha` is a `src/` namespace outside the
+  `docs-check` diff scope, `PLAN-Vr-001.AA14`).
