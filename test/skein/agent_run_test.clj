@@ -11,6 +11,7 @@
             [next.jdbc :as jdbc]
             [skein.spools.agent-run :as shuttle]
             [skein.api.graph.alpha :as graph]
+            [skein.api.notes.alpha :as notes-alpha]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
@@ -950,6 +951,22 @@
           (is (= "worker contract A" (:previous (first conflicts))))
           (is (= "worker contract B" (:replacement (first conflicts))))
           (is (string? (:at (first conflicts)))))))))
+
+(deftest interactive-preamble-renders-completion-note-through-single-renderer
+  ;; TASK-Nwt-011.DW1: the for-id completion-contract note line converges on the
+  ;; single writer-ref->prompt renderer (DELTA-Nwt-001.C4), so the preamble
+  ;; carries that exact fragment; the target-less no-for-id branch stays
+  ;; hand-written because a writer-ref needs one resolved target.
+  (with-shuttle
+    (fn [_rt]
+      (let [preamble (#'shuttle/interactive-preamble
+                      {:id "run-1" :attributes {:agent-run/for "tgt-1"}})
+            fragment (notes-alpha/writer-ref->prompt {:target "tgt-1" :by "run-1"})]
+        (is (str/includes? preamble fragment)
+            "the completion-contract note line renders through writer-ref->prompt")
+        (testing "the no-for-id branch renders no note fragment"
+          (let [no-for (#'shuttle/interactive-preamble {:id "run-2" :attributes {}})]
+            (is (not (str/includes? no-for "agent note ")))))))))
 
 (deftest in-flight-run-ids-reflects-tracked-runs
   ;; The parked-run detector uses this to tell a genuinely parked ready run from

@@ -815,7 +815,10 @@
          "- Complete manual for spawning/awaiting/notes: " cmd " agent about\n"
          (if for-id
            (str "- You serve strand " for-id ". Completion contract, in this exact order:\n"
-                "  1) leave a durable summary note: " cmd " agent note " for-id " \"<summary>\" --by " id "\n"
+                "  1) leave a durable summary note: " cmd " "
+                ;; single renderer of the note-writing fragment; the concrete
+                ;; served target is already resolved, so a plain-data ref renders it
+                (notes-alpha/writer-ref->prompt {:target for-id :by id}) "\n"
                 "  2) say goodbye to the user in this session\n"
                 "  3) as your LITERAL LAST action, close it: " cmd " update " for-id " --state closed\n"
                 "  Closing that strand tears this session down; nothing you do after it will run.\n")
