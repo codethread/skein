@@ -1061,6 +1061,14 @@
                             "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"errorMessage\":\"transport dropped\"}}"])
           parsed (#'shuttle/parse-pi-json stdout)]
       (is (= "transport dropped" (:error parsed)))))
+  (testing "a non-string errorMessage fails the run instead of throwing into the parse-error path"
+    ;; a thrown parse lands in finish-run!'s catch, whose raw-stdout :result
+    ;; would drive the run to done — the exact hollow-success class this guards.
+    (let [stdout (str/join "\n"
+                           ["{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"error\",\"errorMessage\":429}}"])
+          parsed (#'shuttle/parse-pi-json stdout)]
+      (is (= "429" (:error parsed)))
+      (is (str/blank? (:result parsed)))))
   (testing "earlier assistant text is preserved as :result alongside :error"
     (let [stdout (str/join "\n"
                            ["{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"partial progress\"}]}}"

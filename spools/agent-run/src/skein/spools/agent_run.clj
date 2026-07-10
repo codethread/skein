@@ -862,11 +862,18 @@
         assistant-text (->> assistant-messages
                             (keep #(not-empty (text-of %)))
                             last)
-        terminal-error (let [message (last assistant-messages)]
+        terminal-error (let [message (last assistant-messages)
+                             em (get message "errorMessage")
+                             ;; errorMessage is not contractually a string; a
+                             ;; non-string value must still fail the run, not
+                             ;; throw into the parse-error path (which would
+                             ;; recreate the hollow done this guards against).
+                             em-str (cond (string? em) em (some? em) (pr-str em))]
                          (when (or (= "error" (get message "stopReason"))
-                                   (not-empty (get message "errorMessage")))
-                           (or (not-empty (get message "errorMessage"))
-                               "pi turn ended with stopReason error")))]
+                                   (not (str/blank? em-str)))
+                           (if (str/blank? em-str)
+                             "pi turn ended with stopReason error"
+                             em-str)))]
     (if (seq events)
       (cond-> {:result (or assistant-text
                            (some #(let [r (get % "result")] (when (string? r) r)) (reverse events))
@@ -1118,10 +1125,12 @@
           ;; exiting cleanly does not make the turn a success. Fail loudly and
           ;; retryably instead of closing a done run with no real report.
           error
-          (mark-failed! id
-                        (str "harness exited 0 but the final turn errored: " error)
-                        (cond-> {"agent-run/exit-code" exit}
-                          session-id (assoc "agent-run/session-id" session-id)))
+          (let [stderr (str/trim (read-file-safe err-file))]
+            (mark-failed! id
+                          (str "harness exited 0 but the final turn errored: " error
+                               (when-not (str/blank? stderr) (str "; stderr: " (tail stderr 2000))))
+                          (cond-> {"agent-run/exit-code" exit}
+                            session-id (assoc "agent-run/session-id" session-id))))
 
           (str/blank? result)
           ;; exit 0 but no result text: the harness died silently (a transport
