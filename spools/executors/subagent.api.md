@@ -27,7 +27,7 @@ Bridge workflow subagent gates to agent-run runs.
 
 
 Runtime captured for asynchronous subagent-executor scans.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L32-L34">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L33-L35">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.subagent/gate-stalled?">`gate-stalled?`</a>
 ``` clojure
@@ -43,7 +43,7 @@ Return durable stall detail for a ready subagent gate view, or nil.
   so its fresh successor is the current server; the gate stays discoverable only
   while that server is itself dead, with no re-link step. No wall-clock hang
   policy is applied.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L217-L234">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L218-L235">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.subagent/install!">`install!`</a>
 ``` clojure
@@ -55,7 +55,7 @@ Install the subagent executor's event handler and perform an initial scan.
 
   Fails loudly unless `skein.spools.agent-run/install!` has already registered
   the agent-run engine in this weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L236-L271">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L237-L284">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.subagent/on-event">`on-event`</a>
 ``` clojure
@@ -64,7 +64,7 @@ Install the subagent executor's event handler and perform an initial scan.
 Function.
 
 Weaver event handler: graph changes may finish or unblock subagent executor work.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L212-L215">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L213-L216">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.subagent/scan!">`scan!`</a>
 ``` clojure
@@ -73,4 +73,4 @@ Weaver event handler: graph changes may finish or unblock subagent executor work
 Function.
 
 Deliver finished agent-run runs and spawn ready workflow subagent gates.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L200-L210">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L201-L211">Source</a></sub></p>
