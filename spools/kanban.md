@@ -61,7 +61,7 @@ Task status is **derived, never stored**: a pure function of the core strand gra
 | `doing` | active, every dependency closed, and an `owner` stamped. |
 | `ready` | active, every dependency closed, and no `owner`. |
 
-Because nothing writes the status it cannot drift the way a stored field would: delete every delegation and agent-run record and the derivation still computes. The `depends-on` edges that split `blocked` from `ready` are the same DAG that orders concurrent work, so no second structure tracks it. The first `doing` task under a card is its **doing-task** — the board's live resume signal.
+Because nothing writes the status it cannot drift the way a stored field would: delete every execution-engine record and the derivation still computes. The `depends-on` edges that split `blocked` from `ready` are the same DAG that orders concurrent work, so no second structure tracks it. The first `doing` task under a card is its **doing-task** — the board's live resume signal.
 
 ## Notes and resume
 

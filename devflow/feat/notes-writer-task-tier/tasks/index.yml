@@ -62,5 +62,5 @@ tasks:
   - id: 13
     description: "Final: full-suite queue acceptance (flock lock + go + smoke + fmt/lint/reflect/docs-check + separation greps)"
     task_file: tasks/013-acceptance-gate.md
-    status: in_progress
+    status: done
     blocked_by: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12]
