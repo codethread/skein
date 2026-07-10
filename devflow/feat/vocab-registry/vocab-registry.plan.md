@@ -326,7 +326,7 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
     batteries `note` op is one delegating caller, not the owner. `note/*` is declared as core-owned by `skein.api.notes.alpha`
     from `vocab.alpha`'s `new-state` init-fn, alongside the reflected edges (S1). No S2/S3 task decides its owner.
   - **`devflow/*` — cross-feature dependency, out of scope.** It is written only by the external `codethread/devflow` spool
-    (its write sites in `roster.clj`); the pinned spool (`.skein/spools.edn` sha `3bcc78b`) has no `vocab/declare!` site, so
+    (its write sites in `roster.clj`); the pinned spool (see the `codethread/devflow` entry's `:git/sha` in `.skein/spools.edn` for the current pin) has no `vocab/declare!` site, so
     F4 cannot seed it truthfully. After F4 lands, any inspected workspace whose active strands carry `devflow/*` attributes
     surfaces `devflow/*` in the carder hygiene report (S5) as undeclared — deliberately, that is the report doing its job.
     The declaration plus the `devflow.spool` sha re-pin belong to F5 (card `2mp13`, which already owns that re-pin). F4 adds

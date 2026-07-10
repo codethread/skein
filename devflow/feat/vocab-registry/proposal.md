@@ -204,7 +204,7 @@ Two sources, no duplication.
 
   **`devflow/*` is out of scope for this feature — a named cross-feature dependency, not an implementation TODO.** It is not
   written in this tree: the external `codethread/devflow` spool writes it and this repo only reads it (`roster.clj:420,424`).
-  The pinned spool (`.skein/spools.edn`, sha `3bcc78b`) has no `vocab/declare!` site, so F4 cannot seed it truthfully. After
+  The pinned spool (see the `codethread/devflow` entry's `:git/sha` in `.skein/spools.edn` for the current pin) has no `vocab/declare!` site, so F4 cannot seed it truthfully. After
   F4 lands, `devflow/*` shows up in the carder hygiene section (C8) as undeclared — deliberately; that is the report doing
   its job. The declaration plus the `devflow.spool` sha re-pin belong to F5 (card `2mp13`, which already owns that re-pin);
   F4 adds no core row for it.

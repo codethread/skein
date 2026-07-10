@@ -15,7 +15,7 @@
          ;; while the weaver consumes the spools.edn coordinate.
          :extra-deps {io.github.codethread/devflow.spool
                       {:git/url "https://github.com/codethread/devflow.spool.git"
-                       :git/sha "3bcc78bbe25ac70825f55af0563781de8d332645"}
+                       :git/sha "22a5968321165e9297ef65d323472bd75bdf432c"}
                       ;; Test-only ergonomics: readable nested-map/JSON assertions
                       ;; (match?) and spec-driven property tests (defspec). Kept
                       ;; off the main src/weaver classpath.
