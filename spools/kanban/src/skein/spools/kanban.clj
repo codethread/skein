@@ -134,6 +134,17 @@
       (throw (ex-info "Strand is not an epic card" {:id id :type (card-type strand)})))
     strand))
 
+(defn- feature-strand
+  "Return id's feature card strand, failing loudly for non-feature cards.
+
+  Only features bear tasks; an epic parent fails here rather than silently
+  parenting a task under the wrong tier."
+  [id]
+  (let [strand (card-strand id)]
+    (when-not (= "feature" (card-type strand))
+      (throw (ex-info "Strand is not a feature card" {:id id :type (card-type strand)})))
+    strand))
+
 (defn add!
   "Create a kanban card in the pending (or refinement) lane.
 
@@ -391,7 +402,7 @@
   are the concurrency DAG and drive the derived `blocked`/`ready` split; task
   status is never stored."
   [feature-id title flags]
-  (let [feature (card-strand (require-non-blank! :feature feature-id))
+  (let [feature (feature-strand (require-non-blank! :feature feature-id))
         title (require-non-blank! :title title)
         rt (current/runtime)
         deps (get flags "--depends-on")
@@ -410,7 +421,7 @@
   "Project a feature card's tasks with their derived statuses."
   [feature-id]
   (let [rt (current/runtime)
-        feature (card-strand (require-non-blank! :feature feature-id))]
+        feature (feature-strand (require-non-blank! :feature feature-id))]
     {:operation "kanban task list"
      :feature (:id feature)
      :tasks (tasks-with-status rt (feature-tasks rt (:id feature)))}))
@@ -508,8 +519,10 @@
   "Return the card's notes and its parent-of work strands.
 
   Notes source from the card's incoming `notes` edges (the blessed note
-  relation), newest first; work is the card's `parent-of` subgraph. The two
-  relations are disjoint, so notes no longer overload `parent-of`."
+  relation), newest first; work is the card's `parent-of` subgraph. Notes and
+  tasks both ride `parent-of` but own their own projections (`:notes` and the
+  derived-status `:tasks` lane), so both are split out of the generic work set
+  — task status has one source of truth in `:tasks`."
   [rt card]
   (let [note-ids (mapv :from_strand_id (graph/incoming-edges rt [(:id card)] "notes"))
         notes (->> (graph/strands-by-ids rt note-ids)
@@ -520,6 +533,7 @@
         work (->> strands
                   (remove #(= (:id card) (:id %)))
                   (remove note-strand?)
+                  (remove task-strand?)
                   (sort-by :id)
                   vec)]
     {:notes notes :work work}))

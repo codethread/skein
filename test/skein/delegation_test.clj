@@ -145,7 +145,13 @@
       (testing "a --attr spec without key=value fails loudly"
         (let [target (api/add rt {:title "bad attr target"})]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed --attr"
-                                (agents/agent-op {:op/argv ["note" (:id target) "x" "--attr" "novalue"]}))))))))
+                                (agents/agent-op {:op/argv ["note" (:id target) "x" "--attr" "novalue"]})))))
+      (testing "a repeated --attr key fails loudly, matching strand note's contract"
+        (let [target (api/add rt {:title "dup attr target"})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Duplicate attribute key in --attr"
+                                (agents/agent-op {:op/argv ["note" (:id target) "x"
+                                                            "--attr" "note/kind=a"
+                                                            "--attr" "note/kind=b"]}))))))))
 
 (deftest agent-spend-aggregates-recorded-usage
   (with-agents

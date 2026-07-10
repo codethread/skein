@@ -1661,14 +1661,19 @@
 (defn- parse-attr-decoration
   "Parse repeatable `--attr key=value` specs into a decoration map of string
   key → string value, the same key=value convention as `add`/`update`. A spec
-  without `=`, or with a blank key, fails loudly; each key lands as an ordinary
+  without `=`, or with a blank key, fails loudly; a repeated key fails loudly
+  too, matching `strand note`'s duplicate-key contract so both note surfaces
+  reject dupes rather than silently last-winning. Each key lands as an ordinary
   decorating attr on the note strand via `note!`'s opt fold."
   [specs]
   (reduce (fn [m spec]
             (let [idx (str/index-of spec "=")]
               (when (or (nil? idx) (zero? idx))
                 (fail! "Malformed --attr; expected key=value" {:attr spec}))
-              (assoc m (subs spec 0 idx) (subs spec (inc idx)))))
+              (let [k (subs spec 0 idx)]
+                (when (contains? m k)
+                  (fail! (str "Duplicate attribute key in --attr: " k) {:key k}))
+                (assoc m k (subs spec (inc idx))))))
           {}
           specs))
 

@@ -394,7 +394,13 @@
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a kanban card"
                                   (op! rt "task" "add" (:id orphan) "x"))))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"action must be add or list"
-                                (op! rt "task" "bogus" feature-id))))))))
+                                (op! rt "task" "bogus" feature-id))))
+        (testing "task add/list reject an epic parent — only features bear tasks"
+          (let [epic-id (get-in (op! rt "add" "Epic theme" "--type" "epic") [:card :id])]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a feature card"
+                                  (op! rt "task" "add" epic-id "x")))
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a feature card"
+                                  (op! rt "task" "list" epic-id)))))))))
 
 (deftest kanban-task-status-derives-from-graph-and-owner
   ;; Self-contained DAG (DELTA-Nwt-001.J2): the four statuses derive from
@@ -437,6 +443,13 @@
             (is (= #{ready-id doing-id} (set (map :id tasks))))
             (is (= {ready-id "ready" doing-id "doing"}
                    (into {} (map (juxt :id :status)) tasks)))))
+        (testing "tasks stay out of the generic work projections — status has one source of truth"
+          ;; the derived-doing task must not leak into :active-work/:ready, where
+          ;; a caller hunting unclaimed work would misread an already-owned task
+          (let [view (op! rt "card" feature-id)
+                task-ids #{ready-id doing-id}]
+            (is (empty? (filter task-ids (map :id (:active-work view)))))
+            (is (empty? (filter task-ids (map :id (:ready view)))))))
         (testing "a card with no task tier projects an empty tasks lane"
           (let [plain-id (get-in (op! rt "add" "No tasks here") [:card :id])]
             (is (= [] (:tasks (op! rt "card" plain-id))))))))))

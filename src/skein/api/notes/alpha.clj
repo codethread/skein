@@ -20,8 +20,13 @@
   `writer-ref` freezes the writer to a plain-data ref that ships into
   subprocesses; and `writer-ref->prompt` is the single renderer of the
   note-writing CLI instruction fragment. There is deliberately no `ref->writer`
-  — the constructor reconstructs from a ref."
-  (:require [clojure.string :as str]
+  — the constructor reconstructs from a ref.
+
+  The writer and writer-ref shapes are specced (`::writer`, `::writer-ref`) and
+  every entry validates through one boundary (`check-shape!`), so the family has
+  a single fail-loud, field-named contract instead of hand-rolled checks."
+  (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]))
@@ -106,21 +111,34 @@
                    (note-attr note "by") (assoc :by (note-attr note "by"))
                    (note-attr note "round") (assoc :round (note-attr note "round"))))))))
 
-(defn- validate-decoration
-  "Return `decoration` when nil or a map of string attr-key → string value;
-  otherwise fail loudly naming `field`. Decoration keys are ordinary strand
-  attrs on the note strand, so both key and value must already be strings — no
-  silent coercion."
-  [decoration field]
-  (when (some? decoration)
-    (when-not (map? decoration)
-      (throw (ex-info (str field " must be a map of string attr-key → string value")
-                      {:field field :value decoration :type (type decoration)})))
-    (doseq [[k v] decoration]
-      (when-not (and (string? k) (string? v))
-        (throw (ex-info (str field " keys and values must be strings")
-                        {:field field :entry [k v]})))))
-  decoration)
+;; Decoration keys are ordinary strand attrs on the note strand, so both key and
+;; value must already be strings — no silent coercion. A writer target may be a
+;; strand-id string or a 0-arg thunk; a writer-ref target is always the resolved
+;; string. Both keep the unqualified key `:target` so one boundary check names it.
+(s/def :skein.api.notes.alpha.writer/target (s/or :id string? :thunk fn?))
+(s/def :skein.api.notes.alpha.writer-ref/target string?)
+(s/def ::decoration (s/nilable (s/map-of string? string?)))
+(s/def ::by (s/nilable string?))
+(s/def ::writer
+  (s/keys :req-un [:skein.api.notes.alpha.writer/target]
+          :opt-un [::decoration ::by]))
+(s/def ::writer-ref
+  (s/keys :req-un [:skein.api.notes.alpha.writer-ref/target]
+          :opt-un [::decoration ::by]))
+
+(defn- check-shape!
+  "Validate `value` against `spec`, failing loudly and naming the offending
+  field. The writer family's single validation boundary: writer/write!/
+  writer-ref->prompt route here so a malformed shape throws one consistent,
+  field-named ex-info instead of each entry hand-rolling predicate checks. The
+  explain string always names the failing field (path or missing key), so the
+  historical fail-loud named-field contract survives; `label` prefixes it."
+  [spec label value]
+  (when-not (s/valid? spec value)
+    (let [problem (first (::s/problems (s/explain-data spec value)))]
+      (throw (ex-info (str label " shape invalid: " (s/explain-str spec value))
+                      {:field (first (:in problem)) :value value}))))
+  value)
 
 (defn- resolve-target
   "Resolve a writer target to a strand-id string, calling a thunk each time.
@@ -145,13 +163,10 @@
   shapes and fails loudly naming the offending field. `note!`/`notes` are
   untouched; the writer wraps the low-level primitive."
   [runtime target-or-thunk {:keys [decoration by]}]
-  (when-not (or (string? target-or-thunk) (fn? target-or-thunk))
-    (throw (ex-info "writer target must be a strand-id string or a 0-arg fn"
-                    {:field :target :value target-or-thunk :type (type target-or-thunk)})))
-  (validate-decoration decoration :decoration)
-  (when-not (or (nil? by) (string? by))
-    (throw (ex-info "writer :by must be a string author or nil"
-                    {:field :by :value by :type (type by)})))
+  (check-shape! ::writer "writer"
+                (cond-> {:target target-or-thunk}
+                  (some? decoration) (assoc :decoration decoration)
+                  (some? by) (assoc :by by)))
   {:runtime runtime
    :target target-or-thunk
    :decoration (or decoration {})
@@ -165,7 +180,7 @@
   resolves at each call; a missing or deleted target fails loudly with the
   primitive's \"Note target strand not found\"."
   [w text {:keys [decoration by round]}]
-  (validate-decoration decoration :decoration)
+  (check-shape! ::decoration "write! :decoration" decoration)
   (let [target (resolve-target (:target w))
         merged (merge (:decoration w) (or decoration {}))
         author (or by (:by w))]
@@ -196,16 +211,8 @@
   the offending field; a malformed ref never renders silently. Renders only the
   write instruction — no read/`agent notes` string."
   [ref]
-  (when-not (map? ref)
-    (throw (ex-info "writer-ref must be a map" {:field :ref :value ref :type (type ref)})))
+  (check-shape! ::writer-ref "writer-ref" ref)
   (let [{:keys [target decoration by]} ref]
-    (when-not (string? target)
-      (throw (ex-info "writer-ref :target must be a resolved strand-id string"
-                      {:field :target :value target :type (type target)})))
-    (validate-decoration decoration :decoration)
-    (when-not (or (nil? by) (string? by))
-      (throw (ex-info "writer-ref :by must be a string author or nil"
-                      {:field :by :value by :type (type by)})))
     (str "agent note " target " \"<text>\""
          (when by (str " --by " by))
          ;; sort keeps the rendered flags deterministic across map orderings
