@@ -11,8 +11,9 @@
             [next.jdbc.result-set :as rs]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
-            [skein.spools.util :refer [fail! attr-get]])
+            [skein.spools.util :refer [fail! attr-get attr-key->str]])
   (:import [java.time Duration Instant LocalDateTime ZoneOffset]))
 
 (def default-days
@@ -188,23 +189,67 @@
           (sort-by :id)
           vec))))
 
+(defn- declared-attr-namespaces [rt]
+  (into #{} (map :name) (vocab/declarations rt {:kind :attr-namespace})))
+
+(defn- attr-namespace-segment [k]
+  (if (keyword? k)
+    (namespace k)
+    (let [s (str k)
+          idx (str/index-of s "/")]
+      (when idx (subs s 0 idx)))))
+
+(defn- undeclared-attr-keys [declared strand]
+  (->> (:attributes strand)
+       (keep (fn [[k _]]
+               (when-not (contains? declared (attr-namespace-segment k))
+                 (attr-key->str k))))
+       sort
+       vec))
+
+(defn undeclared
+  "Return active strands carrying an attribute whose namespace segment is owned
+  by no vocabulary declaration.
+
+  Flags by namespace, not exact key: a fresh key under a declared attribute
+  namespace is clean, while a bare key or an unowned namespace is flagged. The
+  declared set comes from `vocab/declarations`; each row is a compact strand
+  summary plus `:undeclared-attrs`, the sorted vector of offending attribute
+  keys in their string wire form. Read-only — it surfaces strays, never blocks a
+  write."
+  ([]
+   (undeclared {}))
+  ([opts]
+   (let [rt (runtime)
+         opts (normalize-opts opts :undeclared)
+         declared (declared-attr-namespaces rt)]
+     (->> (active-strands opts)
+          (keep (fn [strand]
+                  (let [strays (undeclared-attr-keys declared strand)]
+                    (when (seq strays)
+                      (assoc (summary strand) :undeclared-attrs strays)))))
+          (sort-by :id)
+          vec))))
+
 (defn report
   "Return a JSON-compatible aggregate graph hygiene report.
 
   Options are passed to all sections. The result includes each section's rows and
-  count under `:stale`, `:orphans`, and `:blocked-by-failure`."
+  count under `:stale`, `:orphans`, `:blocked-by-failure`, and `:undeclared`."
   ([]
    (report {}))
   ([opts]
    (let [opts (normalize-opts opts :report)
          stale-rows (stale opts)
          orphan-rows (orphans opts)
-         blocked-rows (blocked-by-failure opts)]
+         blocked-rows (blocked-by-failure opts)
+         undeclared-rows (undeclared opts)]
      {:opts {:days (days-opt opts)
              :include-plumbing? (boolean (:include-plumbing? opts))}
       :stale {:count (count stale-rows) :rows stale-rows}
       :orphans {:count (count orphan-rows) :rows orphan-rows}
-      :blocked-by-failure {:count (count blocked-rows) :rows blocked-rows}})))
+      :blocked-by-failure {:count (count blocked-rows) :rows blocked-rows}
+      :undeclared {:count (count undeclared-rows) :rows undeclared-rows}})))
 
 (defn install!
   "Return carder installation metadata for trusted registration by name."
@@ -214,6 +259,7 @@
    :carder {:stale 'skein.spools.carder/stale
             :orphans 'skein.spools.carder/orphans
             :blocked-by-failure 'skein.spools.carder/blocked-by-failure
+            :undeclared 'skein.spools.carder/undeclared
             :report 'skein.spools.carder/report
             :default-days default-days
             :read-only true}})

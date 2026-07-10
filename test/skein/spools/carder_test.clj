@@ -2,6 +2,7 @@
   "Tests for the read-only carder graph hygiene spool."
   (:require [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
+            [skein.api.vocab.alpha :as vocab]
             [skein.repl :as repl]
             [skein.spools.carder :as carder]
             [skein.spools.test-support :refer [with-runtime]]))
@@ -72,6 +73,32 @@
           (is (= {:days 1 :include-plumbing? true} (:opts included-report)))
           (is (contains? default-report :orphans))
           (is (contains? default-report :blocked-by-failure)))))))
+
+(deftest undeclared-flags-strays-by-namespace-not-exact-key
+  (with-runtime
+    (fn [rt _]
+      (vocab/declare! rt {:kind :attr-namespace
+                          :name "review"
+                          :owner :carder-test
+                          :doc "Declared for the false-positive-avoidance proof."})
+      (let [clean (repl/strand! "New key under declared namespace" {"review/newfield" "ok"})
+            bare (repl/strand! "Bare unowned key" {"verify-note" "stray"})
+            unowned (repl/strand! "Unowned namespace" {"frobnicate/flag" "stray"})
+            plain (repl/strand! "No namespaced attributes")
+            by-id (into {} (map (juxt :id identity)) (carder/undeclared))]
+        (testing "a fresh key under a declared namespace is clean (R3)"
+          (is (not (contains? by-id (:id clean)))))
+        (testing "a bare unowned attribute is flagged by its missing namespace"
+          (is (= ["verify-note"] (:undeclared-attrs (by-id (:id bare))))))
+        (testing "an unowned namespace is flagged"
+          (is (= ["frobnicate/flag"] (:undeclared-attrs (by-id (:id unowned))))))
+        (testing "a strand with no namespaced attributes is clean"
+          (is (not (contains? by-id (:id plain)))))
+        (testing "report carries the undeclared section without blocking a write"
+          (let [section (:undeclared (carder/report))]
+            (is (= #{(:id bare) (:id unowned)}
+                   (set (map :id (:rows section)))))
+            (is (= (count (:rows section)) (:count section)))))))))
 
 (deftest report-rejects-unknown-options
   (with-runtime
