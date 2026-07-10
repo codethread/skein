@@ -2,7 +2,7 @@
 
 **Document ID:** `SPEC-Vr-002` **Root spec:** [alpha-surface.md](../../../specs/alpha-surface.md) (`SPEC-005`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-Vr-001`) **Contract:** [../brief.md](../brief.md) **Status:**
-Proposed — applied at `PLAN-Vr-001.S9` **Last Updated:** 2026-07-10
+Merged — applied at `PLAN-Vr-001.S9` **Last Updated:** 2026-07-10
 
 ## SPEC-Vr-002.P1 Summary
 
