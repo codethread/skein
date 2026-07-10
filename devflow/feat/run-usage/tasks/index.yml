@@ -30,7 +30,7 @@ tasks:
   - id: 5
     description: "S5: strand agent spend subcommand — arg-spec + op branch + about manual (delegation.clj)"
     task_file: tasks/005-spend-subcommand.md
-    status: pending
+    status: complete
     harness: build
     type: AFK
     blocked_by: [4]
