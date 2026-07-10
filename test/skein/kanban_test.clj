@@ -131,7 +131,7 @@
         (testing "prime carries the working discipline about does not"
           (is (seq (:working-agreement prime)))
           (is (seq (:pick-up-next-card prime)))
-          (is (seq (:notes-and-handovers prime)))
+          (is (seq (:note-discipline prime)))
           (is (seq (:staying-aware prime)))
           (is (string? (:branch-visibility prime)))
           (is (nil? (:working-agreement about))))
@@ -245,7 +245,7 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not an epic"
                                 (op! rt "add" "Bad parent" "--epic" feat-id))))))))
 
-(deftest kanban-notes-handover-and-card-view
+(deftest kanban-notes-and-card-view
   (with-kanban
     (fn [rt]
       (let [card-id (get-in (op! rt "add" "Crashable feature") [:card :id])]
@@ -256,26 +256,19 @@
                                           {:type "parent-of" :to (:id review)}]})
           (api/update rt (:id review) {:edges [{:type "depends-on" :to (:id task)}]})
           (op! rt "note" card-id "Decided to keep lane names" "--author" "agent-a")
-          (let [handover (op! rt "note" card-id
-                              "Done: impl. Next: review. Validation: tests green."
-                              "--author" "agent-a" "--handover")]
-            (is (= "true" (get-in handover [:note :attributes :kanban/handover])))
-            (is (= "closed" (get-in handover [:note :state]))))
-          (testing "card view joins notes, latest handover, work, and frontier"
+          (op! rt "note" card-id
+               "Done: impl. Next: review. Validation: tests green."
+               "--author" "agent-a")
+          (testing "card view joins notes newest-first, work, and frontier"
             (let [view (op! rt "card" card-id)]
               (is (= card-id (get-in view [:card :id])))
               (is (= 2 (count (:notes view))))
-              (is (true? (get-in view [:latest-handover :handover])))
               (is (= "Done: impl. Next: review. Validation: tests green."
-                     (get-in view [:latest-handover :body])))
+                     (:body (first (:notes view)))))
               (is (= #{(:id task) (:id review)}
                      (set (map :id (:active-work view)))))
               ;; review depends on the task, so only the task is ready
               (is (= [(:id task)] (mapv :id (:ready view))))))
-          (testing "board surfaces the latest handover on claimed cards"
-            (let [claimed (first (:claimed (op! rt "board")))]
-              (is (= card-id (:id claimed)))
-              (is (true? (get-in claimed [:latest-handover :handover])))))
           (testing "notes reject non-card targets and missing text"
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a kanban card"
                                   (op! rt "note" (:id task) "text")))
@@ -358,7 +351,6 @@
             _idea (op! rt "add" long-title "--status" "refinement")
             working-id (get-in (op! rt "add" "Working card") [:card :id])]
         (op! rt "claim" working-id "--owner" "agent-a" "--branch" "feature-x")
-        (op! rt "note" working-id "Done: half. Next: rest." "--handover")
         (let [rendered ((requiring-resolve 'skein.spools.kanban/board-str) (op! rt "board"))
               lines (str/split-lines rendered)]
           (is (str/includes? rendered "REFINEMENT (1)"))
@@ -366,7 +358,6 @@
           (is (str/includes? rendered "CLAIMED / WIP (1)"))
           (is (str/includes? rendered "IN REVIEW (0)"))
           (is (str/includes? rendered "[p3 @feature-x agent-a] Working card"))
-          (is (str/includes? rendered "Done: half. Next: rest."))
           (is (str/includes? rendered "NEEDS REVIEW (0)"))
           (testing "rows are clipped to the board width"
             (is (every? #(<= (count %) 100) lines))))))))

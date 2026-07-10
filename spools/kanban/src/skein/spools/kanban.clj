@@ -12,9 +12,9 @@
   Cards are work roots: claiming stamps `owner`/`branch`/`worktree`, and
   plans, devflow runs, and task DAGs hang beneath the card with `parent-of`
   edges — the kanban spool complements those workflows, it does not replace
-  them. Notes and handovers are closed child note strands, so a cold agent
-  can self-discover in-flight work: `kanban board` -> `kanban card <id>` ->
-  latest handover."
+  them. Notes are closed child note strands, so a cold agent can
+  self-discover in-flight work: `kanban board` -> `kanban card <id>` ->
+  the doing-task and its latest note."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
@@ -31,7 +31,6 @@
 (def ^:private type-attr :kanban/type)
 (def ^:private priority-attr :kanban/priority)
 (def ^:private note-attr :kanban/note)
-(def ^:private handover-attr :kanban/handover)
 (def ^:private task-attr :kanban/task)
 
 (def ^:private addable-statuses #{"pending" "refinement"})
@@ -427,26 +426,23 @@
                     {:action action :allowed ["add" "list"]}))))
 
 ;; ---------------------------------------------------------------------------
-;; notes and handovers
+;; notes
 ;; ---------------------------------------------------------------------------
 
 (defn note!
-  "Append a note (or `--handover` note) to a card via the blessed notes relation.
+  "Append a note to a card via the blessed notes relation.
 
   The note rides the shared `notes` edge (`skein.api.notes.alpha/note!`) with
-  `kanban/note`, `kind`, and optional `kanban/handover`/`author` as decorating
-  attrs, so concurrent agents never race a read-merge-write cycle and every note
-  keeps its own timestamp and author. A handover note is the crash/stop
-  contract: record what is done, what is next, validation state, and gotchas so
-  any agent can resume from `kanban card <id>` alone."
+  `kanban/note`, `kind`, and optional `author` as decorating attrs, so
+  concurrent agents never race a read-merge-write cycle and every note keeps
+  its own timestamp and author. Note as you go — a resuming agent reads the
+  doing-task and its latest note from `kanban card <id>` alone."
   [id text flags]
   (let [card (card-strand (require-non-blank! :id id))
         text (require-non-blank! :text text)
-        handover? (boolean (get flags "--handover"))
         rt (current/runtime)
         decorating (cond-> {note-attr "true"
                             :kind "note"}
-                     handover? (assoc handover-attr "true")
                      (get flags "--author") (assoc :author (get flags "--author")))
         {note-id :id} (notes/note! rt (:id card) text decorating)
         note (api/show rt note-id)]
@@ -460,8 +456,7 @@
   (cond-> {:id (:id strand)
            :title (:title strand)
            :body (attr-value strand :note/text)
-           :created_at (:created_at strand)
-           :handover (= "true" (attr-value strand handover-attr))}
+           :created_at (:created_at strand)}
     (attr-value strand :author) (assoc :author (attr-value strand :author))))
 
 (defn- summarize-strand
@@ -531,7 +526,7 @@
     {:notes notes :work work}))
 
 (defn card-view
-  "Return one card joined to its notes, latest handover, tasks, work, and frontier.
+  "Return one card joined to its notes, tasks, work, and frontier.
 
   This is the resume entry point: everything an agent needs to continue a
   card lives here. `:tasks` projects the feature card's child tasks with the
@@ -545,7 +540,6 @@
         ready (filterv #(contains? work-ids (:id %)) (api/ready rt))]
     {:operation "kanban card"
      :card (select-keys card [:id :title :state :attributes :created_at :updated_at])
-     :latest-handover (some->> notes (filter #(= "true" (attr-value % handover-attr))) first compact-note)
      :tasks (tasks-with-status rt (feature-tasks rt (:id card)))
      :notes (mapv compact-note notes)
      :active-work (mapv summarize-strand active-work)
@@ -593,14 +587,6 @@
                          (map (fn [edge] [(:to_strand_id edge) (:id epic)]))))))
         epics))
 
-(defn- latest-handover-for
-  "Return the compact latest handover note for a card, or nil."
-  [rt card]
-  (some->> (:notes (card-subtree rt card))
-           (filter #(= "true" (attr-value % handover-attr)))
-           first
-           compact-note))
-
 (defn- doing-task-for
   "Return the compact derived-`doing` task for a card, or nil.
 
@@ -636,10 +622,10 @@
 (defn board
   "Return the grouped board snapshot: epics, feature lanes, closed count.
 
-  Claimed and in-review cards carry their doing-task and latest handover so a
-  cold agent can see in one call who is working where and how to pick up
-  interrupted work. `:needs-review` aggregates the human-review frontier across
-  claimed and in-review cards."
+  Claimed and in-review cards carry their doing-task so a cold agent can see in
+  one call who is working where and how to pick up interrupted work.
+  `:needs-review` aggregates the human-review frontier across claimed and
+  in-review cards."
   []
   (let [rt (current/runtime)
         all (cards)
@@ -668,15 +654,11 @@
              :pending (lane "pending")
              :claimed (mapv (fn [card]
                               (cond-> (with-epic card)
-                                (latest-handover-for rt card)
-                                (assoc :latest-handover (latest-handover-for rt card))
                                 (doing-task-for rt card)
                                 (assoc :doing-task (doing-task-for rt card))))
                             (by-priority claimed-features))
              :in_review (mapv (fn [card]
                                 (cond-> (with-epic card)
-                                  (latest-handover-for rt card)
-                                  (assoc :latest-handover (latest-handover-for rt card))
                                   (doing-task-for rt card)
                                   (assoc :doing-task (doing-task-for rt card))))
                               (by-priority review-features))
@@ -716,14 +698,6 @@
           (mapv row-fn entries)
           ["  (none)"])))
 
-(defn- handover-line
-  "Return the indented latest-handover row for a claimed card, or nil."
-  [{:keys [latest-handover]}]
-  (when latest-handover
-    (str "         " (clip (- board-width 9)
-                           (str (:created_at latest-handover) "  "
-                                (first (str/split-lines (or (:body latest-handover) ""))))))))
-
 (defn- doing-task-line
   "Return the indented doing-task row for a claimed/in-review card, or nil."
   [{:keys [doing-task]}]
@@ -733,9 +707,9 @@
 
 (defn- wip-row
   "Return the ASCII rows for a claimed/in-review card: the card line plus its
-  doing-task and latest-handover signal lines when present."
+  doing-task signal line when present."
   [card]
-  (->> [(card-line card) (doing-task-line card) (handover-line card)]
+  (->> [(card-line card) (doing-task-line card)]
        (remove nil?)
        (str/join "\n")))
 
@@ -790,7 +764,6 @@
                 status-attr "refinement|pending|claimed|in_review|<outcome>"
                 priority-attr "p1|p2|p3|p4 (default p3); orders lanes and `kanban next`"
                 note-attr "true on note strands (closed notes-relation children of a card)"
-                handover-attr "true on handover notes"
                 task-attr "true on task strands (parent-of children of a feature card; status derived)"
                 :kanban/source "optional path or URL for design context"
                 :owner "claimant, required at claim"
@@ -800,11 +773,12 @@
                  |The card is the work root: claim stamps owner/branch, and plans, devflow runs, and
                  |task DAGs hang under it with parent-of. Kanban complements devflow and delegation;
                  |it never tracks agent-run runs directly.")
-   :handover-contract (fmt/reflow "
-                        |Before stopping (or at any interruption risk), write `kanban note <id> --handover`
-                        |covering: what is done, what is next, validation state, gotchas, and where the
-                        |work lives (branch/worktree). Resume path for a cold agent: `kanban board` ->
-                        |`kanban card <id>` -> latest handover.")
+   :note-discipline (fmt/reflow "
+                      |Note as you go: `kanban note <id> \"...\" --author <name>` records each
+                      |significant decision, step, and gotcha while the work is fresh. Tasks are the
+                      |resume point — a cold agent resumes from the doing-task and its latest note
+                      |via `kanban board` -> `kanban card <id>`. Even with no notes yet, the
+                      |doing-task's body, deps, and lane name the next move.")
    :discovery {:help "strand help kanban"
                :prime "strand kanban prime"
                :batch-pattern "strand pattern explain kanban-batch"}
@@ -817,7 +791,7 @@
               {:verb "priority" :purpose "Change a card's p1..p4 ordering priority."}
               {:verb "promote" :purpose "Move a refinement card into the pending lane."}
               {:verb "claim" :purpose "Move a card into claimed and stamp owner/branch/worktree."}
-              {:verb "note" :purpose "Append an immutable card note, optionally marked as handover."}
+              {:verb "note" :purpose "Append an immutable card note."}
               {:verb "task" :purpose "Add or list a feature card's tasks with their derived statuses."}
               {:verb "review" :purpose "Move a claimed card into in_review."}
               {:verb "rework" :purpose "Move an in_review card back to claimed."}
@@ -837,7 +811,7 @@
   point here (`strand kanban prime`) rather than duplicating conventions that
   then drift from the spool. A superset of `about` — it reuses the same lane,
   attribute, command, and pattern surface and adds the working agreement,
-  pick-up flow, notes/handover discipline, adjacent-work awareness, and branch
+  pick-up flow, note discipline, adjacent-work awareness, and branch
   visibility that an agent needs before touching the board."
   []
   (assoc (about)
@@ -870,18 +844,17 @@
                |
                |`kanban review <id>` when work enters review, `kanban rework <id>` when it needs changes, and `kanban finish <id> [--outcome done|abandoned]` after merge, archive, or
                |explicit abandonment.")
-         :notes-and-handovers
+         :note-discipline
          (fmt/fill "
-               |Record significant decisions as you go: `kanban note <id> \"...\" --author
-               |<name>`.
+               |Note as you go: `kanban note <id> \"...\" --author <name>` records each
+               |significant decision, step, and gotcha while the work is fresh — do not save it
+               |for a stopping point.
                |
-               |Always leave a `--handover` note before stopping or at any interruption risk,
-               |covering: what is done, what is next, validation state, gotchas, and where the
-               |work lives (branch/worktree).
-               |
-               |Crash recovery is self-discovering: `kanban board` shows claimed and in-review
-               |cards with their latest handover; `kanban card <id>` returns the card, notes,
-               |active work, and ready frontier.")
+               |Tasks are the resume point. A cold agent resumes from the doing-task and its
+               |latest note: `kanban board` shows claimed and in-review cards with their
+               |doing-task; `kanban card <id>` returns the card, its tasks, notes, active work,
+               |and ready frontier. Even with no notes yet, the doing-task's body, deps, and
+               |lane name the next move.")
          :staying-aware
          (fmt/fill "
                |`kanban board` returns `needs-review`: the human-review frontier aggregated
@@ -935,9 +908,8 @@
                      :branch {:doc "Work branch (required by handler)."}
                      :worktree {:doc "Optional worktree path."}}
              :positionals [{:name :id :required? true :doc "Kanban card id."}]}
-    "note" {:doc "Append a note or handover as a closed child strand."
-            :flags {:author {:doc "Note author."}
-                    :handover {:type :boolean :doc "Mark this note as a handover."}}
+    "note" {:doc "Append a note as a closed child strand."
+            :flags {:author {:doc "Note author."}}
             :positionals [{:name :id :required? true :doc "Kanban card id."}
                           {:name :text
                            :required? true
