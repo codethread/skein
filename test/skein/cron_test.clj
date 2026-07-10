@@ -189,4 +189,4 @@
   (test-support/assert-state-shape
    ;; white-box read of the private new-state builder var, intentional here.
    #'cron/new-state
-   #{:executor :jobs :failure-log :rng :in-flight-count :idle-monitor :close-fn}))
+   #{:executor :jobs :failure-log :rng :in-flight-count :close-fn}))

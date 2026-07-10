@@ -62,11 +62,9 @@
      :failure-log (atom [])
      :rng (Random.)
      ;; In-flight offloaded-job latch: a count incremented on the event lane in
-     ;; `fire-wake` before submit and decremented in the executor task's finally,
-     ;; with a monitor `await-idle!` waits on. `:idle-monitor` is a dedicated
-     ;; per-state Object, held for both the count check and the wait.
+     ;; `fire-wake` before submit and decremented in the executor task's finally.
+     ;; `await-idle!` polls this atom to zero.
      :in-flight-count (atom 0)
-     :idle-monitor (Object.)
      :close-fn (fn []
                  (.shutdownNow executor)
                  (when-not (.awaitTermination executor 1000 TimeUnit/MILLISECONDS)
@@ -160,15 +158,7 @@
   (swap! (in-flight-count runtime) inc))
 
 (defn- dec-in-flight! [runtime]
-  (let [st (state runtime)
-        monitor (:idle-monitor st)]
-    (swap! (:in-flight-count st) dec)
-    ;; :idle-monitor is the dedicated per-state (Object.) monitor; the rule only
-    ;; recognises bare-symbol locks and cannot see the stable Object behind the
-    ;; local, so it warns on an intentional, correct monitor.
-    #_{:splint/disable [lint/locking-object]}
-    (locking monitor
-      (.notifyAll ^Object monitor))))
+  (swap! (in-flight-count runtime) dec))
 
 (defn- execute-job!
   "Run job `id`'s resolved `:run!` on the execution executor, recording the
@@ -231,30 +221,28 @@
   The deterministic join for tests: because job bodies run off the event lane,
   `skein.api.events.alpha/await-quiescent!` returns before a job completes. The
   in-flight latch is incremented on the event lane in `fire-wake` before submit,
-  so once the lane has quiesced any offloaded job is already counted. Blocks on
-  the latch monitor until the count reaches zero or the budget expires, throwing
-  loudly on timeout (TEN-003). The default budget comes from
-  `skein.spools.test-support/await-budget-ms`; override it with `:timeout-ms`."
+  so once the lane has quiesced any offloaded job is already counted. Polls the
+  latch atom until the count reaches zero or the budget expires, throwing loudly
+  on timeout (TEN-003), mirroring the event-lane join in
+  `skein.api.events.alpha/await-quiescent!`. `opts` accepts `:timeout-ms` (a
+  positive integer); unknown keys are rejected loudly. The default budget comes
+  from `skein.spools.test-support/await-budget-ms`."
   ([runtime] (await-idle! runtime {}))
-  ([runtime {:keys [timeout-ms]}]
-   (let [st (state runtime)
-         counter (:in-flight-count st)
-         monitor (:idle-monitor st)
+  ([runtime {:keys [timeout-ms] :as opts}]
+   (reject-unknown-keys! "await-idle!" #{:timeout-ms} opts)
+   (let [counter (in-flight-count runtime)
          timeout-ms (or timeout-ms
                         ((requiring-resolve 'skein.spools.test-support/await-budget-ms)))]
-     (when-not (and (integer? timeout-ms) (pos? timeout-ms))
-       (fail! "await-idle! :timeout-ms must be a positive integer" {:timeout-ms timeout-ms}))
+     (require-valid! ::timeout-ms timeout-ms
+                     "await-idle! :timeout-ms must be a positive integer")
      (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-       ;; :idle-monitor is the dedicated per-state (Object.) monitor; see dec-in-flight!.
-       #_{:splint/disable [lint/locking-object]}
-       (locking monitor
-         (loop []
-           (let [remaining (- deadline (System/currentTimeMillis))]
-             (cond
-               (zero? @counter) runtime
-               (<= remaining 0) (fail! "Timed out awaiting cron idle"
-                                       {:timeout-ms timeout-ms :in-flight @counter})
-               :else (do (.wait ^Object monitor remaining) (recur))))))))))
+       (loop []
+         (cond
+           (zero? @counter) runtime
+           (> (System/currentTimeMillis) deadline)
+           (fail! "Timed out awaiting cron idle"
+                  {:timeout-ms timeout-ms :in-flight @counter})
+           :else (do (Thread/sleep 5) (recur))))))))
 
 ;; Public seam shape (clojure.spec)
 ;;
@@ -273,6 +261,9 @@
 (s/def ::jitter-ms nat-int?)
 (s/def ::run! qualified-symbol?)
 (s/def ::job (s/keys :req-un [::id ::interval-ms ::run!] :opt-un [::jitter-ms]))
+
+;; `await-idle!`'s single opt: the poll budget in milliseconds.
+(s/def ::timeout-ms pos-int?)
 
 (def ^:private job-keys
   "The closed key set of a `register!` job map (see `::job`)."
