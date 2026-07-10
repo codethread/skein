@@ -10,9 +10,8 @@
   lanes and `kanban next`.
 
   Cards are work roots: claiming stamps `owner`/`branch`/`worktree`, and
-  plans, devflow runs, and task DAGs hang beneath the card with `parent-of`
-  edges — the kanban spool complements those workflows, it does not replace
-  them. Notes are closed child note strands, so a cold agent can
+  execution strands hang beneath the card with `parent-of` edges — the kanban
+  spool complements the engines that produce them, it does not replace them. Notes are closed child note strands, so a cold agent can
   self-discover in-flight work: `kanban board` -> `kanban card <id>` ->
   the doing-task and its latest note."
   (:require [clojure.spec.alpha :as s]
@@ -345,7 +344,7 @@
   "Derive a task's status from core graph state and the core `owner` attr only.
 
   `dep-states` is the seq of `:state` values of the task's `depends-on` targets.
-  Reads no delegation or agent-run vocabulary: `done` on a closed strand,
+  Reads no execution-engine vocabulary: `done` on a closed strand,
   `blocked` while any dependency is unclosed, then `doing`/`ready` split on
   whether an `owner` is stamped."
   [task dep-states]
@@ -770,9 +769,9 @@
                 :branch "work branch, required at claim"
                 :worktree "optional worktree path"}
    :convention (fmt/reflow "
-                 |The card is the work root: claim stamps owner/branch, and plans, devflow runs, and
-                 |task DAGs hang under it with parent-of. Kanban complements devflow and delegation;
-                 |it never tracks agent-run runs directly.")
+                 |The card is the work root: claim stamps owner/branch, and execution strands hang
+                 |under it with parent-of. Kanban complements the engines that produce them; it never
+                 |tracks their runs directly.")
    :note-discipline (fmt/reflow "
                       |Note as you go: `kanban note <id> \"...\" --author <name>` records each
                       |significant decision, step, and gotcha while the work is fresh. Tasks are the
@@ -824,8 +823,8 @@
                |Every agent working directly with the user works under a claimed card — claim
                |before starting user work.
                |
-               |Kanban complements devflow, agent plans, and delegation; those hang beneath a
-               |card via `parent-of`. Kanban never tracks agent-run runs directly.
+               |Execution strands hang beneath a card via `parent-of` — kanban complements the
+               |engines that produce them, it never tracks their runs directly.
                |
                |Half-formed ideas go to the refinement lane (`kanban add \"...\" --status
                |refinement`); they stay inert until a human `kanban promote`s them.")
@@ -839,7 +838,7 @@
                |<path>]` — owner and branch are mandatory; the claim is what makes branch work
                |discoverable.
                |
-               |Create feature plans, devflow runs, or task DAGs under the card via `parent-of`.
+               |Create the feature's execution strands under the card via `parent-of`.
                |The card is the parent/audit root; child strands are the executable work.
                |
                |`kanban review <id>` when work enters review, `kanban rework <id>` when it needs changes, and `kanban finish <id> [--outcome done|abandoned]` after merge, archive, or
@@ -872,7 +871,7 @@
                |Every piece of work on a branch has exactly one active work root strand stamped
                |`branch` (plus `owner`, and `worktree` when one exists), with execution strands
                |beneath it via `parent-of`. `kanban claim` stamps card roots; for non-card roots
-               |(ad hoc agent-plan roots, coordination strands) stamp them yourself: `strand
+               |(ad hoc execution roots, coordination strands) stamp them yourself: `strand
                |update <root-id> --attr branch=<branch> --attr owner=<name>`. Children are
                |reachable from the root and need no `branch` attr of their own.")))
 

@@ -158,38 +158,35 @@ Honest source: `add!`'s `--type`/`--epic` handling and `kanban-epics-group-featu
 
 ---
 
-## Recipe: Hang a devflow run or agent plan under a card
+## Recipe: Hang execution strands under a card
 
-**Situation.** The user's request is approved and it's real work — a devflow lifecycle, or an `agent-plan` task DAG. You don't want two competing trackers fighting over the same feature.
+**Situation.** The user's request is approved and it's real work — a task DAG of execution strands. You don't want two competing trackers fighting over the same feature.
 
-**Composition.** Claim the card, build the plan or run as usual, then connect its root to the card with a `parent-of` edge. The card becomes the audit root; the plan's strands are the executable work beneath it.
+**Composition.** Claim the card, build the execution strands as usual, then connect their root to the card with a `parent-of` edge. The card becomes the audit root; the execution strands are the work beneath it.
 
 ```sh
 strand kanban claim "$card" --owner claude --branch board-rewrite
 
-# Build the executable work however you normally would — here, an agent-plan.
-plan=$(printf '%s' '{
-  "feature":"board-rewrite",
-  "title":"Feature: board rewrite",
-  "tasks":[
-    {"key":"impl","title":"Implement","validation":["clojure -M:test"]},
-    {"key":"review","kind":"review","title":"Review","depends_on":["impl"]}
-  ]
-}' | strand weave --pattern agent-plan | jq -r '.refs["board-rewrite"] // .root')
+# Build the execution strands however you normally would; capture their shared root.
+root=$(strand add "Feature: board rewrite" | jq -r '.id')
+impl=$(strand add "Implement" | jq -r '.id')
+review=$(strand add "Review" --attr kind=review | jq -r '.id')
+strand update "$root" --edge parent-of:"$impl" --edge parent-of:"$review"
+strand update "$review" --edge depends-on:"$impl"
 
-# Adopt the plan root under the card.
-strand update "$card" --edge parent-of:"$plan"
+# Adopt the execution root under the card.
+strand update "$card" --edge parent-of:"$root"
 ```
 
 **Why this shape.**
 
-- **One work root, not two.** Kanban complements devflow, agent plans, and
-  delegation — it doesn't replace them. Hanging the plan beneath the card means
-  the card stays the single place a human looks, while the lifecycle engine still
-  owns the execution graph (spool `prime` `:working-agreement`; contract
+- **One work root, not two.** Kanban complements the engines that build the
+  execution strands — it doesn't replace them. Hanging the execution root beneath
+  the card means the card stays the single place a human looks, while the engine
+  still owns the execution graph (spool `prime` `:working-agreement`; contract
   [Model](./kanban.md#model)).
-- **`card <id>` reads straight through the subtree.** Because the plan hangs off
-  the card by `parent-of`, the card view joins the card to its active work and
+- **`card <id>` reads straight through the subtree.** Because the execution strands
+  hang off the card by `parent-of`, the card view joins the card to its active work and
   the *ready frontier* of that subtree — an agent resuming the card sees exactly
   which tasks are unblocked without a separate query (`card-view` /
   `card-subtree`; the card-view test in `kanban_test.clj`).
@@ -270,7 +267,7 @@ strand update "$review" --edge depends-on:"$impl"   # stays out of the queue unt
   claim-time `branch` rides along on every entry, so a reviewer knows which
   worktree to check out before reading the diff.
 - **What counts as review is a small, open vocabulary.** `kind: review`, `hitl`,
-  or `workflow/hitl` all qualify, which is why devflow review gates and ad-hoc
+  or `workflow/hitl` all qualify, which is why engine review gates and ad-hoc
   review strands both show up in the same queue without kanban knowing about
   either (`review-item?`; spool `prime` `:staying-aware`).
 

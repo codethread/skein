@@ -8,7 +8,7 @@
 > runnable flow, the API doc when you want an exact signature, and this doc for
 > what the board guarantees.
 
-The kanban spool is the user-facing work board held entirely in Skein strands. It tracks **user↔agent** work: everything a user asks for becomes a `feature` card (occasionally grouped under an `epic`), and every agent working directly with a user works under a claimed card. It complements — never replaces — devflow runs, agent plans, and delegation, which all hang beneath cards.
+The kanban spool is the user-facing work board held entirely in Skein strands. It tracks **user↔agent** work: everything a user asks for becomes a `feature` card (occasionally grouped under an `epic`), and every agent working directly with a user works under a claimed card. It complements — never replaces — the execution strands that hang beneath cards.
 
 ## Model
 
@@ -41,7 +41,7 @@ Card state lives under the `kanban/*` attribute topic:
 | `branch` | The work branch; required at claim. |
 | `worktree` | Optional worktree path. |
 
-The card is the **work root**: feature plans, devflow runs, review strands, and task DAGs hang under it with `parent-of` edges, and the claim-time `branch`/`owner`/`worktree` stamp makes the whole subtree discoverable by branch (see the repo's `strand branches` convention). Agent-run runs are never tracked by kanban directly, but because delegated work hangs under card descendants, `strand subgraph <card-id>` (and future queries) can project every agent working under a feature.
+The card is the **work root**: execution strands hang under it with `parent-of` edges, and the claim-time `branch`/`owner`/`worktree` stamp makes the whole subtree discoverable by branch (see the repo's `strand branches` convention). Kanban never tracks execution runs directly, but because they hang under card descendants, `strand subgraph <card-id>` (and future queries) can project every strand working under a feature.
 
 **Relating work.** Relate cards or tasks to each other with `depends-on` edges (`strand update <a> --edge depends-on:<b>`); agents check the `:related` list in `kanban card <id>` when claiming or resuming so blockers and dependents surface without extra queries.
 
@@ -69,7 +69,7 @@ Install registers one declared-subcommand operation. `strand help kanban` shows 
 ```sh
 strand kanban prime
 strand kanban about
-strand kanban add "Feature idea" [--body "Longer context"] [--source devflow/rfcs/...] [--status pending|refinement] [--type feature|epic] [--epic <epic-id>] [--priority p1|p2|p3|p4]
+strand kanban add "Feature idea" [--body "Longer context"] [--source docs/rfcs/...] [--status pending|refinement] [--type feature|epic] [--epic <epic-id>] [--priority p1|p2|p3|p4]
 strand kanban board
 strand kanban card <id>
 strand kanban next
