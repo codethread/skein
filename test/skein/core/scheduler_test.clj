@@ -144,12 +144,12 @@
       (is (nil? (db/get-pending-wake ds "cancel-me")))
       (is (= ["cancel-me"] (mapv :key (db/recent-cancellations ds))))
 
-      (let [completed (db/complete-wake! ds "complete-me")]
+      (let [completed (db/complete-wake! ds (db/get-pending-wake ds "complete-me"))]
         (is (= "completed" (:status completed))))
       (is (nil? (db/get-pending-wake ds "complete-me")))
       (is (= ["complete-me"] (mapv :key (db/recent-fires ds))))
 
-      (let [failed (db/fail-wake! ds "fail-me" "boom: handler threw")]
+      (let [failed (db/fail-wake! ds (db/get-pending-wake ds "fail-me") "boom: handler threw")]
         (is (= "failed" (:status failed)))
         (is (= "boom: handler threw" (:error failed))))
       (is (nil? (db/get-pending-wake ds "fail-me")))
@@ -157,21 +157,60 @@
 
       (is (empty? (db/pending-wakes ds)))
 
+      ;; Cancel stays key-based and loud on a truly missing key.
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not found"
                             (db/cancel-wake! ds "cancel-me")))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not found"
-                            (db/complete-wake! ds "missing")))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not found"
-                            (db/fail-wake! ds "missing" "err")))
+      ;; fail-wake! validates its error text before touching the row's generation.
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string"
-                            (db/fail-wake! ds "complete-me" ""))))))
+                            (db/fail-wake! ds {:key "complete-me" :wake_at 1000} ""))))))
+
+(deftest retirement-is-generation-aware
+  (with-db
+    (fn [ds]
+      ;; (a) completing a delivered generation while a same-key replacement is
+      ;; already pending retires only the delivered generation; the replacement
+      ;; survives and the delivered fire lands in completed history.
+      (db/schedule-wake! ds {:key "self" :wake-at (instant 100) :handler 'a/b :payload {:n 1}})
+      (let [delivered (db/get-pending-wake ds "self")]
+        (db/schedule-wake! ds {:key "self" :wake-at (instant 200) :handler 'a/b :payload {:n 2}})
+        (let [completed (db/complete-wake! ds delivered)]
+          (is (= "completed" (:status completed)))
+          (is (= 100000 (:wake_at completed)) "history records the delivered generation"))
+        (let [pending (db/get-pending-wake ds "self")]
+          (is (= 200000 (:wake_at pending)) "the replacement generation survives retirement")
+          (is (= {:n 2} (db/<-json (:payload pending)))))
+        (is (= ["self"] (mapv :key (db/recent-fires ds)))))
+
+      ;; (b) the failing path proves the same under a recorded error.
+      (db/schedule-wake! ds {:key "self-fail" :wake-at (instant 100) :handler 'a/b})
+      (let [delivered (db/get-pending-wake ds "self-fail")]
+        (db/schedule-wake! ds {:key "self-fail" :wake-at (instant 200) :handler 'a/b})
+        (let [failed (db/fail-wake! ds delivered "boom")]
+          (is (= "failed" (:status failed)))
+          (is (= "boom" (:error failed)))
+          (is (= 100000 (:wake_at failed))))
+        (is (= 200000 (:wake_at (db/get-pending-wake ds "self-fail")))
+            "the replacement generation survives a failing retirement")
+        (is (= ["self-fail"] (mapv :key (db/recent-failures ds)))))
+
+      ;; (c) retiring a delivered generation that has already been superseded/removed
+      ;; deletes no pending row yet still records the delivered fire in history.
+      (db/schedule-wake! ds {:key "gone" :wake-at (instant 100) :handler 'a/b})
+      (let [delivered (db/get-pending-wake ds "gone")]
+        (db/cancel-wake! ds "gone")
+        (is (nil? (db/get-pending-wake ds "gone")))
+        (let [completed (db/complete-wake! ds delivered)]
+          (is (= "completed" (:status completed)))
+          (is (= 100000 (:wake_at completed))))
+        (is (nil? (db/get-pending-wake ds "gone")) "retiring a vanished generation adds no pending row")
+        (is (contains? (set (mapv :key (db/recent-fires ds))) "gone"))))))
 
 (deftest recent-history-is-newest-first-per-category
   (with-db
     (fn [ds]
       (doseq [k ["first" "second" "third"]]
         (db/schedule-wake! ds {:key k :wake-at (instant 1) :handler 'a/b})
-        (db/complete-wake! ds k))
+        (db/complete-wake! ds (db/get-pending-wake ds k)))
       (is (= ["third" "second" "first"] (mapv :key (db/recent-fires ds)))))))
 
 (deftest history-pruning-keeps-latest-100-per-category
@@ -183,7 +222,7 @@
           (db/cancel-wake! ds k)))
       ;; A single failure/completion category is unaffected by cancellations.
       (db/schedule-wake! ds {:key "only-failure" :wake-at (instant 1) :handler 'a/b})
-      (db/fail-wake! ds "only-failure" "err")
+      (db/fail-wake! ds (db/get-pending-wake ds "only-failure") "err")
 
       (let [cancellations (db/recent-cancellations ds)]
         (is (= 100 (count cancellations)))

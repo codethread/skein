@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: Generation-aware wake retirement (PH0)
     task_file: tasks/001-generation-aware-retirement.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: Cron rides the scheduler — core rewrite (PH1)

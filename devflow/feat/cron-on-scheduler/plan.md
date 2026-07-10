@@ -393,3 +393,25 @@ intended `git status --short`.
 - Delta promotion (`SPEC-004.C102`/`.C102b`) is deferred to the acceptance slice
   (7) per `CM1`'s "promoted at finish", alongside the `SPEC-004.C1a` stale-cron
   cleanup flagged in `DN1`.
+
+### PLAN-cron-on-scheduler-001.DN4 Task cftdu: PH0 generation-aware retirement implemented — 2026-07-10
+
+- `db/retire-wake!` now takes the delivered `row` (read before the handler ran),
+  DELETEs `WHERE key = ? AND wake_at = ?`, and records history via a shared
+  `record-retirement!` helper sourced from that row. `complete-wake!`/`fail-wake!`
+  forward the row; `cancel-wake!` keeps its own key-based delete + loud
+  `require-pending-wake` throw. Signature change: `complete-wake!`/`fail-wake!`
+  take a row, not a key — the "missing key throws" contract now applies only to
+  cancel; a superseded delivery retirement records history and deletes nothing.
+- `scheduler/run-fire!` passes the delivered `row` into the post-handler
+  `complete-wake!`/`fail-wake!`. The resolution-failure catch re-reads the key and
+  only records a failure when the current pending row is still the delivered
+  generation (`envelope`'s `:scheduler/wake-at-millis`), so a replacement is never
+  mis-attributed a resolution failure.
+- Note for later slices: `scheduler_wakes.key` is unique (`ON CONFLICT(key)`), so a
+  same-key "replacement" is the same row updated to a new `wake_at`; the
+  generation delete simply misses the superseded instant rather than skipping a
+  sibling row. Tests exploit this directly.
+- Gate green: `clojure -M:test skein.core.scheduler-test skein.scheduler-runtime-test
+  skein.api.scheduler.alpha-test skein.scheduler-e2e-test` (33 tests, 183 assertions,
+  0 fail); `make fmt-check lint` clean for touched sources.

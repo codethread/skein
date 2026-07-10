@@ -343,17 +343,19 @@
                            :attempt (:scheduler/attempt envelope)
                            :handler handler-sym
                            :payload (db/<-json (:payload row))})
-              (db/complete-wake! ds key)
+              (db/complete-wake! ds row)
               (catch Throwable t
-                (db/fail-wake! ds key (or (ex-message t) (str (class t)))))))))
+                (db/fail-wake! ds row (or (ex-message t) (str (class t)))))))))
       (catch Throwable t
         ;; Handler resolution failure (or a lost race with cancel/complete):
-        ;; record it as a failed fire when the row is still pending, so the
-        ;; failure is visible without crashing the lane.
-        (when (db/get-pending-wake ds key)
-          (try
-            (db/fail-wake! ds key (or (ex-message t) (str (class t))))
-            (catch Throwable _ nil))))
+        ;; record it as a failed fire against the delivered generation when that
+        ;; generation is still pending, so the failure is visible without
+        ;; crashing the lane.
+        (when-let [current (db/get-pending-wake ds key)]
+          (when (= (:scheduler/wake-at-millis envelope) (:wake_at current))
+            (try
+              (db/fail-wake! ds current (or (ex-message t) (str (class t))))
+              (catch Throwable _ nil)))))
       (finally
         (swap! (:in-flight st) disj key)
         (arm! runtime)))

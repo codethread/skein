@@ -1507,43 +1507,66 @@
                 )"
              status status scheduler-history-limit]))
 
-(defn- retire-wake! [ds key status error]
-  (require-valid! :skein.scheduler-wake/key key "Scheduler key must be a non-blank string")
-  (jdbc/with-transaction [tx ds]
-    (let [row (require-pending-wake tx key)]
-      (execute! tx ["DELETE FROM scheduler_wakes WHERE key = ?" key])
-      (let [history-row (execute-one! tx
-                                      [(str "INSERT INTO scheduler_history
-                                                (key, wake_at, handler, payload, status, attempts, error)
-                                              VALUES (?, ?, ?, ?, ?, ?, ?)
-                                              RETURNING " scheduler-history-columns)
-                                       (:key row) (:wake_at row) (:handler row) (:payload row)
-                                       status (:attempts row) error])]
-        (prune-history! tx status)
-        history-row))))
+(defn- record-retirement! [tx row status error]
+  (let [history-row (execute-one! tx
+                                  [(str "INSERT INTO scheduler_history
+                                            (key, wake_at, handler, payload, status, attempts, error)
+                                          VALUES (?, ?, ?, ?, ?, ?, ?)
+                                          RETURNING " scheduler-history-columns)
+                                   (:key row) (:wake_at row) (:handler row) (:payload row)
+                                   status (:attempts row) error])]
+    (prune-history! tx status)
+    history-row))
+
+(defn- retire-wake!
+  "Retire the delivered generation of a wake and record its history from `row`.
+
+  `row` is the delivered wake read before the handler ran. The delete is
+  generation-specific — key AND the delivered `wake_at` — mirroring the claim in
+  `mark-wake-attempt!`, so a same-key replacement armed during delivery (a
+  distinct generation) is left untouched. When the delivered generation no longer
+  holds the key, no pending row is removed, but history is still recorded from
+  `row` so at-least-once delivery stays observable."
+  [ds row status error]
+  (let [key (:key row)
+        wake-at (:wake_at row)]
+    (require-valid! :skein.scheduler-wake/key key "Scheduler key must be a non-blank string")
+    (when-not (integer? wake-at)
+      (throw (ex-info "Scheduler wake-at generation must be epoch millis" {:key key :wake-at wake-at})))
+    (jdbc/with-transaction [tx ds]
+      (execute! tx ["DELETE FROM scheduler_wakes WHERE key = ? AND wake_at = ?" key wake-at])
+      (record-retirement! tx row status error))))
 
 (defn cancel-wake!
   "Cancel a pending wake by key, recording cancellation history, and return the history row.
 
-  Missing keys throw."
+  Cancellation is key-based — it removes whichever generation currently holds the
+  key, unlike the generation-aware delivery retirements. Missing keys throw."
   [ds key]
-  (retire-wake! ds key "cancelled" nil))
+  (require-valid! :skein.scheduler-wake/key key "Scheduler key must be a non-blank string")
+  (jdbc/with-transaction [tx ds]
+    (let [row (require-pending-wake tx key)]
+      (execute! tx ["DELETE FROM scheduler_wakes WHERE key = ?" key])
+      (record-retirement! tx row "cancelled" nil))))
 
 (defn complete-wake!
-  "Record a pending wake as fired-and-completed, removing it from pending, and return the history row.
+  "Record a delivered wake generation as fired-and-completed and return the history row.
 
-  Missing keys throw."
-  [ds key]
-  (retire-wake! ds key "completed" nil))
+  `row` is the delivered wake read before the handler ran. Retirement is
+  generation-aware (see `retire-wake!`): a same-key replacement armed during
+  delivery survives, and an already-superseded generation records history only."
+  [ds row]
+  (retire-wake! ds row "completed" nil))
 
 (defn fail-wake!
-  "Record a pending wake as failed with error text, removing it from pending, and return the history row.
+  "Record a delivered wake generation as failed with error text and return the history row.
 
-  Missing keys throw."
-  [ds key error]
+  `row` is the delivered wake read before the handler ran; retirement is
+  generation-aware (see `retire-wake!`)."
+  [ds row error]
   (when-not (and (string? error) (not (str/blank? error)))
-    (throw (ex-info "Scheduler failure error must be a non-blank string" {:key key :error error})))
-  (retire-wake! ds key "failed" error))
+    (throw (ex-info "Scheduler failure error must be a non-blank string" {:key (:key row) :error error})))
+  (retire-wake! ds row "failed" error))
 
 (defn- recent-history [ds status]
   (execute! ds
