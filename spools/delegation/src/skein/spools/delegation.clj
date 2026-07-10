@@ -9,6 +9,7 @@
             [skein.api.runtime.alpha :as runtime]
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.agent-run :as agent-run]
@@ -2016,6 +2017,18 @@
   []
   (let [runtime (rt)]
     (agent-run/set-preamble-extension! worker-contract)
+    (vocab/declare! runtime
+                    {:kind :attr-namespace
+                     :name "review"
+                     :owner :skein/spools-agents
+                     :keys ["review/target" "review/roster" "review/pass" "review/focus" "review/synthesis"]
+                     :doc "Reviewer-shape run attrs stamped by roster-review-specs (advisory key list)."})
+    (vocab/declare! runtime
+                    {:kind :attr-namespace
+                     :name "panel"
+                     :owner :skein/spools-agents
+                     :keys ["panel/seat" "panel/turn"]
+                     :doc "Panel/council seat-shape run attrs stamped by panel-specs (advisory key list)."})
     {:installed true
      :namespace 'skein.spools.delegation
      :op (api/register-op! runtime 'agent

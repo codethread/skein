@@ -7,6 +7,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.delegation :as agents]
             [skein.spools.agent-run :as shuttle]
@@ -48,6 +49,27 @@
               (str "arg-spec subcommands missing from about-doc: " (sort (set/difference declared-verbs manual-verbs))))
           (is (contains? review-flags :commit-range))
           (is (contains? review-flags :changed-files)))))))
+
+(deftest agents-install-declares-review-and-panel-vocab
+  (with-agents
+    (fn [rt]
+      (let [review (vocab/declaration rt :attr-namespace "review")
+            panel (vocab/declaration rt :attr-namespace "panel")]
+        (is (= :skein/spools-agents (:owner review))
+            "review/* is owned by the delegation spool's use-key")
+        (is (= :skein/spools-agents (:owner panel))
+            "panel/* is owned by the delegation spool's use-key")
+        (is (contains? (set (:keys review)) "review/target"))
+        (is (contains? (set (:keys panel)) "panel/seat"))))))
+
+(deftest agent-run-install-declares-agent-run-vocab
+  (with-agents
+    (fn [rt]
+      (let [decl (vocab/declaration rt :attr-namespace "agent-run")]
+        (is (= :attr-namespace (:kind decl)))
+        (is (= :skein/spools-shuttle (:owner decl))
+            "agent-run/* is owned by the agent-run spool's use-key")
+        (is (contains? (set (:keys decl)) "agent-run/run"))))))
 
 (deftest agent-op-dispatches-and-fails-loudly
   (with-agents
