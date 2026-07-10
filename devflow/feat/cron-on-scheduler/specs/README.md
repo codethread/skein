@@ -2,7 +2,8 @@
 
 **Feature:** `cron-on-scheduler`
 **Proposal:** [../proposal.md](../proposal.md) (`PROP-cron-on-scheduler-001`)
-**Decision:** No root spec deltas.
+**Decision:** One root spec delta — [`daemon-runtime.delta.md`](./daemon-runtime.delta.md)
+(`DELTA-cron-on-scheduler-runtime-001`), staging a `SPEC-004` amendment.
 
 ## What was checked
 
@@ -10,16 +11,23 @@
 `devflow/specs/daemon-runtime.md` (SPEC-004.P10d, `.C1a`, `.C91a`, `.C95`,
 `.C97`–`.C105`) were read against the accepted proposal.
 
-## Why no delta
+## The one delta
 
-The cron spool is explicitly userland, not shipped alpha surface
-(`SPEC-005.C4` names `spools/cron` among repo-local approved spools whose
-README/docs are their own contract). Cron's contract therefore lives in
-`spools/cron/README.md` + `spools/cron.api.md`, not in a root spec, so its
-rewrite carries no root-contract change. The scheduler primitive it now rides
-is untouched per `PROP-cron-on-scheduler-001.NG1`: this feature *consumes*
-`SPEC-004.P10d` unchanged, and `SPEC-004.C101` already blesses the exact move —
-"a userland handler may schedule its own next wake." No contract in SPEC-003,
+The cron spool itself is userland, not shipped alpha surface (`SPEC-005.C4`
+names `spools/cron` among repo-local approved spools whose README/docs are
+their own contract), so cron's own contract lives in `spools/cron/README.md`
++ `spools/cron.api.md`, not in a root spec — its rewrite carries no root change.
+
+Building cron on the scheduler, however, surfaced a latent primitive defect
+that the proposal folds in one narrow fix for (`PROP-cron-on-scheduler-001.NG1`,
+`.P1`): scheduler wake retirement is key-only, so a `SPEC-004.C101`-blessed
+handler that schedules its own next same-key wake loses that replacement the
+instant its delivery completes. The fix — generation-aware retirement, mirroring
+the generation-specific delivery-attempt increment `SPEC-004.C102` already
+defines — is a change to the shipped scheduler contract, so it is staged as
+[`daemon-runtime.delta.md`](./daemon-runtime.delta.md): amend `SPEC-004.C102`
+and add `SPEC-004.C102b`. The delta is promoted into the root spec at finish
+(see `PLAN-cron-on-scheduler-001.PH0` / `.V6`). No other contract in SPEC-003,
 SPEC-004, or SPEC-005 changes shape.
 
 ## One finish-time cleanup (not a delta)

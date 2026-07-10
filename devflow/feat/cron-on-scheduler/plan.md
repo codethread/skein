@@ -4,8 +4,8 @@
 **Feature:** `cron-on-scheduler`
 **Proposal:** [proposal.md](./proposal.md) (`PROP-cron-on-scheduler-001`)
 **RFC:** [RFC-009 Weaver Scheduler Primitive](../../rfcs/2026-06-29-weaver-scheduler.md)
-**Root specs:** [daemon-runtime.md](../../specs/daemon-runtime.md) (SPEC-004.P10d, consumed unchanged), [alpha-surface.md](../../specs/alpha-surface.md) (SPEC-005.C4, cron is userland)
-**Feature specs:** [specs/README.md](./specs/README.md) — no root deltas
+**Root specs:** [daemon-runtime.md](../../specs/daemon-runtime.md) (SPEC-004.P10d, consumed unchanged but for the generation-aware-retirement fix in `SPEC-004.C102`/new `.C102b`), [alpha-surface.md](../../specs/alpha-surface.md) (SPEC-005.C4, cron is userland)
+**Feature specs:** [specs/README.md](./specs/README.md), [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) (`DELTA-cron-on-scheduler-runtime-001`)
 **Status:** Draft
 **Last Updated:** 2026-07-10
 
@@ -50,7 +50,14 @@ this matters; scope boundaries are its non-goals (`.NG1`–`.NG6`).
   This realizes the wake-delivery vs job-completion split
   (`PROP-cron-on-scheduler-001.S5`): a wake is delivered and the next fire
   persisted the moment the run is handed off; the run's own success/failure is
-  recorded cron-side and never interrupts cadence.
+  recorded cron-side and never interrupts cadence. **Prerequisite:** this
+  self-reschedule (a same-key replacement wake armed from inside the handler,
+  step 3) only survives once the primitive retires the *delivered* generation
+  rather than the key alone — the generation-aware-retirement fix in `.PH0`.
+  Against the as-shipped retire-by-key primitive, `complete-wake!`/`fail-wake!`
+  would delete the freshly armed replacement the instant `fire-wake` returns and
+  cadence would die after one fire, so `.PH0` lands before this handler is
+  built.
 
 - **PLAN-cron-on-scheduler-001.A3 — execution executor, not a timing executor.**
   Cron's `ScheduledThreadPoolExecutor` (timing) becomes a plain, execution-only
@@ -134,13 +141,21 @@ this matters; scope boundaries are its non-goals (`.NG1`–`.NG6`).
 | PLAN-cron-on-scheduler-001.AA6 | `test/skein` (new e2e ns)         | Restart-durability e2e + lane-hygiene test for a cron job.                       |
 | PLAN-cron-on-scheduler-001.AA7 | `.skein/nvd_scan.clj`             | Drop seed machinery; register without `:initial-delay-fn`.                       |
 | PLAN-cron-on-scheduler-001.AA8 | `test/skein/nvd_scan_test.clj`    | Delete the seed-delay test; keep lock-flow coverage.                             |
+| PLAN-cron-on-scheduler-001.AA9 | `src/skein/core/db.clj`           | Generation-aware retirement (`.PH0`): `retire-wake!` retires by key + delivered `wake_at` and records history from the passed delivered row; `cancel-wake!` stays key-based. |
+| PLAN-cron-on-scheduler-001.AA10 | `src/skein/core/weaver/scheduler.clj` | `run-fire!` passes the delivered generation (envelope `wake-at-millis`) and the re-read delivered row into `complete-wake!`/`fail-wake!` (`.PH0`). |
+| PLAN-cron-on-scheduler-001.AA11 | scheduler test suites | Focused primitive tests (`.PH0`): handler self-reschedule (same key) — replacement survives completion and the fire is recorded in history; failure path the same; a superseded/vanished generation retires nothing but still records history. |
 
 ## PLAN-cron-on-scheduler-001.P4 Contract and migration impact
 
-- **PLAN-cron-on-scheduler-001.CM1:** No root spec change — cron is userland
-  (`SPEC-005.C4`) and the scheduler primitive is consumed unchanged
-  (`PROP-cron-on-scheduler-001.NG1`); rationale recorded in
-  [specs/README.md](./specs/README.md). The durable contract change is entirely in
+- **PLAN-cron-on-scheduler-001.CM1:** One root spec change — cron itself is
+  userland (`SPEC-005.C4`), but building it on the scheduler exposed a latent
+  primitive defect, so this feature stages a single narrow `SPEC-004` delta:
+  generation-aware wake retirement (`DELTA-cron-on-scheduler-runtime-001` in
+  [specs/daemon-runtime.delta.md](./specs/daemon-runtime.delta.md) — amend
+  `SPEC-004.C102`, add `SPEC-004.C102b`), promoted at finish (`.PH0`, `.V6`).
+  The scheduler's wake model, storage, and API surface are otherwise consumed
+  unchanged (`PROP-cron-on-scheduler-001.NG1`); rationale recorded in
+  [specs/README.md](./specs/README.md). The durable contract change is otherwise in
   the cron spool docs: cadence is now durable across restart/reload, delivery is
   at-least-once (handlers must be idempotent), and `:initial-delay-fn` is removed
   from `register!`. No SQLite migration — cron adds no tables and reuses the
@@ -148,6 +163,29 @@ this matters; scope boundaries are its non-goals (`.NG1`–`.NG6`).
   dropping its seed function.
 
 ## PLAN-cron-on-scheduler-001.P5 Implementation phases
+
+### PLAN-cron-on-scheduler-001.PH0 Generation-aware wake retirement (primitive fix)
+
+Outcome: the scheduler primitive retires the *delivered* generation, not the key,
+so a `SPEC-004.C101`-blessed handler that schedules its own next same-key wake
+keeps that replacement. In `src/skein/core/db.clj`, `retire-wake!` (and its
+`complete-wake!`/`fail-wake!` callers) retire by key **and** the delivered wake
+instant and record history from a passed-in delivered row rather than a fresh
+key lookup; a vanished or superseded generation retires no pending row but still
+records the delivered fire in history; `cancel-wake!` stays key-based. In
+`src/skein/core/weaver/scheduler.clj`, `run-fire!` passes the delivered
+generation (the envelope's `wake-at-millis`) and the row it already re-read
+pre-invoke into `complete-wake!`/`fail-wake!`. Focused scheduler-test additions:
+a handler that schedules a same-key replacement — the replacement survives
+completion and the fire is recorded in history; the failure path proves the same
+under a throwing handler; a superseded/vanished generation at retirement time
+retires nothing yet still records the delivered fire. This is the retirement
+half of the `SPEC-004.C102` generation discipline and is staged as
+`DELTA-cron-on-scheduler-runtime-001` (amend `SPEC-004.C102`, add `.C102b`).
+Diffs to the primitive are limited to the retirement mechanic and its tests.
+Gate: `clojure -M:test` over the scheduler suites (`skein.core.scheduler-test`,
+`skein.scheduler-runtime-test`, `skein.api.scheduler.alpha-test`,
+`skein.scheduler-e2e-test`) green.
 
 ### PLAN-cron-on-scheduler-001.PH1 Cron rides the scheduler
 
@@ -212,10 +250,14 @@ intended `git status --short`.
   the next wake is armed (`S5`).
 - **PLAN-cron-on-scheduler-001.V5 — Q2 semantics.** Same-config re-register leaves
   the pending wake's `wake-at` unchanged; a changed interval/jitter/run! resets it.
-- **PLAN-cron-on-scheduler-001.V6 — scheduler untouched.** The scheduler suites
-  (`skein.core.scheduler-test`, `skein.scheduler-runtime-test`,
-  `skein.api.scheduler.alpha-test`, `skein.scheduler-e2e-test`) run green with no
-  source diffs to the primitive (`NG1`).
+- **PLAN-cron-on-scheduler-001.V6 — scheduler diffs bounded to the retirement
+  fix.** The scheduler suites (`skein.core.scheduler-test`,
+  `skein.scheduler-runtime-test`, `skein.api.scheduler.alpha-test`,
+  `skein.scheduler-e2e-test`) run green, and the only source diffs to the
+  primitive are the generation-aware-retirement mechanic (`.PH0`, `AA9`/`AA10`)
+  plus its focused tests (`AA11`) — no other reshaping (`NG1`). The staged
+  `SPEC-004` delta (`DELTA-cron-on-scheduler-runtime-001`) is promoted into the
+  root spec at finish.
 - **PLAN-cron-on-scheduler-001.V7 — acceptance gate.** Full locked suite, Go tests,
   smoke, and quality gates green with a clean `git status --short` (only the
   intended regenerated api-doc).
@@ -233,7 +275,10 @@ intended `git status --short`.
   just-scheduled next wake (resetting `wake-at` to a fresh `now+interval+jitter`)
   and offloads `:run!` again. This is within the at-least-once/idempotent contract
   (`NG5`); document it as duplicate-tolerance guidance rather than engineering
-  exactly-once.
+  exactly-once. Generation-aware retirement (`.PH0`) keeps this well-behaved: each
+  duplicate delivery retires only its own delivered generation, so a duplicate that
+  fires after the replacement is already armed completes its own generation without
+  clobbering the pending replacement.
 - **PLAN-cron-on-scheduler-001.R3 — executor rejection during offload.** If the
   execution executor rejects a submit (shutdown/reload race), cadence must still
   continue. Mitigation: schedule the next wake before submit (`.A2`), and record a
@@ -281,3 +326,27 @@ intended `git status --short`.
   in-memory config), and replaced on any change; `:initial-delay-fn` removed.
 - Deterministic join chosen in `.A5`: `cron/await-idle!` over an execution-executor
   in-flight latch, counted on the event lane inside `fire-wake` before submit.
+
+### PLAN-cron-on-scheduler-001.DN2 Task x559f: generation-aware retirement folded in — 2026-07-10
+
+- Coordinator-verified finding: `.A2`'s in-handler self-reschedule dies against
+  the as-shipped primitive. `db/retire-wake!` (`src/skein/core/db.clj` ~1510)
+  DELETEs `WHERE key = ?` and re-reads the pending row by key, and
+  `scheduler/run-fire!` calls `complete-wake!`/`fail-wake!` post-handler — so the
+  handler-persisted same-key replacement is deleted and recorded completed the
+  moment the handler returns. Cadence dies after one fire; `fail-wake!` shares it.
+  `SPEC-004.C101` blesses the self-reschedule and `SPEC-004.C102` already made the
+  delivery-attempt increment generation-specific; retirement was simply never
+  given the same discipline.
+- Delta chosen: amend `SPEC-004.C102` (name retirement as the second
+  generation-sensitive transition) and add a new clause **`SPEC-004.C102b`** —
+  retirement retires exactly the delivered generation (key + delivered wake
+  instant), records history from the delivered row, leaves a same-key replacement
+  untouched, records history even for a vanished/superseded generation, and keeps
+  cancel-by-key key-based. Staged as `DELTA-cron-on-scheduler-runtime-001` in
+  `specs/daemon-runtime.delta.md`; `specs/README.md` reversed from "no deltas" to
+  one delta.
+- Plan revision: primitive fix sequenced as `.PH0` (before `.PH1`, keeping
+  `PH1`–`PH5` ids stable), `.A2` marks it a prerequisite, `AA9`–`AA11` added,
+  `CM1` and `V6` updated, `R2` notes the duplicate-delivery interaction.
+  `NG1`/`.P1` in the proposal carry the narrow-exception framing.
