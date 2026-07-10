@@ -29,7 +29,10 @@
                 "edge declaration reflects catalog family/direction/acyclicity")))
         (let [note (vocab/declaration rt :attr-namespace "note")]
           (is (= 'skein.api.notes.alpha (:owner note)))
-          (is (= :attr-namespace (:kind note))))))))
+          (is (= :attr-namespace (:kind note)))
+          ;; note/kind is declared as an open, guidance-only advisory key — a
+          ;; :keys entry, never a registry-enforced enum of its value set.
+          (is (contains? (set (:keys note)) "note/kind")))))))
 
 (deftest declare-and-read-round-trip
   (with-runtime

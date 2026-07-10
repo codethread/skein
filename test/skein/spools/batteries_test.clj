@@ -386,7 +386,18 @@
                                 (api/op! rt 'note [(:id target)]))))
         (testing "blank text fails loudly in the primitive"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
-                                (api/op! rt 'note [(:id target) "   "]))))))))
+                                (api/op! rt 'note [(:id target) "   "]))))
+        (testing "--attr decoration round-trips as ordinary attrs on the note strand"
+          (let [written (api/op! rt 'note [(:id target) "decision text"
+                                           "--by" "gpt" "--attr" "note/kind=decision"])
+                stored (:attributes (api/show rt (:id written)))]
+            (is (= "decision" (:note/kind stored)))
+            (is (= "gpt" (:note/by stored)))
+            (is (= "decision text" (:note/text stored)))))
+        (testing "duplicate --attr key fails loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Duplicate attribute key"
+                                (api/op! rt 'note [(:id target) "t"
+                                                   "--attr" "k=a" "--attr" "k=b"]))))))))
 
 (deftest notes-op-reads-every-writer-in-order
   (with-batteries
@@ -431,7 +442,7 @@
                            rows)]
             (is (some? note))
             (is (= "skein.api.notes.alpha" (get note "owner")))
-            (is (= ["note/text" "note/at" "note/by" "note/round"] (get note "keys")))))
+            (is (= ["note/text" "note/at" "note/by" "note/round" "note/kind"] (get note "keys")))))
         (testing "--kind narrows to one declaration kind"
           (is (= (set (map :relation relations/catalog))
                  (set (map #(get % "name") (api/op! rt 'vocab ["--kind" "edge"])))))

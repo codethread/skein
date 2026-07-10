@@ -337,8 +337,11 @@
   Returns the primitive's `{:id :target}` shape, where `target` is a projection
   of the `notes` edge rather than a stored attribute."
   [ctx]
-  (let [{:keys [id text by round]} (:op/args ctx)]
-    (notes-api/note! (:op/runtime ctx) id text {:by by :round round})))
+  (let [{:keys [id text by round attr]} (:op/args ctx)]
+    (check-attr-duplicates! (:op/argv ctx))
+    ;; note! folds every non-:by/:round opt into decorating attrs, so the
+    ;; string-keyed --attr map lands as ordinary strand attrs on the note.
+    (notes-api/note! (:op/runtime ctx) id text (merge (or attr {}) {:by by :round round}))))
 
 (defn notes-op
   "Return a target strand's notes from every primitive writer in note/at order,
@@ -468,7 +471,9 @@
    :flags {:by {:type :string
                 :doc "Author attribution recorded on the note."}
            :round {:type :int
-                   :doc "Review round the note belongs to."}}
+                   :doc "Review round the note belongs to."}
+           :attr {:type :map
+                  :doc "Decorating attribute key=value on the note strand (e.g. note/kind); repeatable. Values may be payload references."}}
    :positionals [{:name :id :type :string :required? true :doc "Target strand id."}
                  {:name :text :type :string :required? true :doc "Note text."}]})
 
