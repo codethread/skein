@@ -1,0 +1,50 @@
+tasks:
+  - id: 1
+    description: "S1: parse-layer usage capture, both formats + committed fixtures (agent_run.clj parse region)"
+    task_file: tasks/001-parse-usage-capture.md
+    status: complete
+    harness: build
+    type: AFK
+    blocked_by: []
+  - id: 2
+    description: "S2: finish-run! terminal-write seam — done + error branches (agent_run.clj)"
+    task_file: tasks/002-finish-run-seam.md
+    status: complete
+    harness: build
+    type: AFK
+    blocked_by: [1]
+  - id: 3
+    description: "S3: vocab declaration growth — usage-attrs folded into agent-run declare! (agent_run.clj)"
+    task_file: tasks/003-vocab-declaration.md
+    status: complete
+    harness: build
+    type: AFK
+    blocked_by: [2]
+  - id: 4
+    description: "S4: spend aggregation read fn beside runs*/run-summary (agent_run.clj)"
+    task_file: tasks/004-spend-aggregation.md
+    status: complete
+    harness: build
+    type: AFK
+    blocked_by: [3]
+  - id: 5
+    description: "S5: strand agent spend subcommand — arg-spec + op branch + about manual (delegation.clj)"
+    task_file: tasks/005-spend-subcommand.md
+    status: complete
+    harness: build
+    type: AFK
+    blocked_by: [4]
+  - id: 6
+    description: "S6: reference docs + api-docs regen — usage attrs, per-format capture, spend verb (cookbook + README + docstrings + spools/*.api.md)"
+    task_file: tasks/006-reference-docs.md
+    status: complete
+    harness: worker
+    type: AFK
+    blocked_by: [5]
+  - id: 7
+    description: "S7: acceptance / atomic-landing gate (full locked suite + go tests + smoke + quality gates)"
+    task_file: tasks/007-acceptance-gate.md
+    status: complete
+    harness: build
+    type: AFK
+    blocked_by: [1, 2, 3, 4, 5, 6]

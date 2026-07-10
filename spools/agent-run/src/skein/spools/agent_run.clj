@@ -707,6 +707,13 @@
     "agent-run/session" "agent-run/session-id" "agent-run/resumes" "agent-run/error-class"
     "agent-run/recovered-at" "agent-run/recovery-deferred-until"})
 
+(def ^:private usage-attrs
+  "Usage attributes written onto a run at completion by finish-run! — distinct
+  from control-attrs, which spawn reserves. Declared through the same F4 vocab
+  entry but never part of the spawn-time reservation set."
+  #{"agent-run/cost-usd" "agent-run/tokens-total" "agent-run/tokens"
+    "agent-run/usage-source"})
+
 (defn- interactive? [run]
   (= "interactive" (sattr run "mode")))
 
@@ -823,18 +830,111 @@
 ;; ---------------------------------------------------------------------------
 ;; Output parsing
 
-(defn- parse-claude-json [stdout]
+(defn- usage-figure
+  "Coerce one usage dimension `n` (keyed by `k` for diagnostics) to a stored
+  figure or absence. A missing figure (nil) is an absent key and a reported zero
+  is dropped rather than stored, so every recorded dimension is one the harness
+  actually spent — a reader never mistakes a silent zero for a captured figure
+  (PROP-Ru-001.A3, G3, R3). A present but non-numeric value is schema drift, not
+  absence: fail loudly naming the key and value so bad budget data can never
+  masquerade as unreported usage (TEN-003)."
+  [k n]
+  (cond
+    (nil? n) nil
+    (number? n) (when-not (zero? n) n)
+    :else (fail! "usage figure is not a number"
+                 {:key k :value n :expected "number"})))
+
+(defn- normalize-usage
+  "Fold a raw per-format usage tally into the run-level C1 `:usage` shape
+  `{:cost-usd, :tokens-total, :tokens {…}, :usage-source}`, dropping nil/zero
+  dimensions so the map carries only what the harness reported. `:tokens-total`
+  is the harness's own total; a `:reasoning` breakdown figure rides in `:tokens`
+  but is never folded into it, since pi already counts reasoning inside
+  `totalTokens` (the double-count trap, PROP-Ru-001.C1, C2)."
+  [{:keys [usage-source cost-usd tokens-total tokens]}]
+  (let [tokens (reduce-kv (fn [m k v] (if-let [v (usage-figure k v)] (assoc m k v) m)) {} tokens)
+        cost-usd (usage-figure :cost-usd cost-usd)
+        tokens-total (usage-figure :tokens-total tokens-total)]
+    (cond-> {:usage-source usage-source}
+      cost-usd (assoc :cost-usd cost-usd)
+      tokens-total (assoc :tokens-total tokens-total)
+      (seq tokens) (assoc :tokens tokens))))
+
+(defn- parse-claude-json
+  "Parse Claude `--output-format json` output and keep the final result,
+  session id, and normalized run usage.
+
+  Claude reports usage on the single result object. Capture
+  `total_cost_usd` as `:cost-usd`, sum the reported input/output/cache token
+  fields into `:tokens-total`, keep the token breakdown under `:tokens`, and
+  mark `:usage-source` as `\"claude-json\"`. Missing fields are omitted rather
+  than stored as zero. Raw runs do not pass through this parser and record no
+  cost or token usage."
+  [stdout]
   (let [data (json/read-str (str/trim stdout))]
     (when-not (map? data)
       (fail! "claude JSON output was not an object" {:output (subs stdout 0 (min 400 (count stdout)))}))
-    {:result (or (get data "result") "")
-     :session-id (get data "session_id")}))
+    (let [usage (get data "usage")
+          ;; validate each reported count as it is read, so a non-numeric field
+          ;; fails loudly naming the key rather than throwing an opaque cast
+          ;; inside the total; a version that omits a count drops it rather than
+          ;; being read as zero.
+          tokens (reduce-kv (fn [m json-key tok-key]
+                              (if-let [v (usage-figure tok-key (get usage json-key))]
+                                (assoc m tok-key v) m))
+                            {}
+                            {"input_tokens" :input
+                             "output_tokens" :output
+                             "cache_creation_input_tokens" :cache-write
+                             "cache_read_input_tokens" :cache-read})]
+      {:result (or (get data "result") "")
+       :session-id (get data "session_id")
+       :usage (normalize-usage
+               {:usage-source "claude-json"
+                :cost-usd (get data "total_cost_usd")
+                :tokens-total (when (seq tokens) (reduce + (vals tokens)))
+                :tokens tokens})})))
+
+(defn- pi-usage
+  "Fold pi's per-turn usage deltas across an event stream into one run-level
+  `:usage` tally. Only `message_end` assistant events carry a turn's finalized
+  `usage`, so summing those is the run total; `message_start`/`message_update`
+  (cumulative *within* a turn) and `turn_end` (a duplicate of the turn's
+  `message_end`) are skipped by design — folding them in would double-count.
+  These are deltas summed across turns, never a cumulative take-last
+  (PROP-Ru-001.C2, R1). `reasoning` is folded into the breakdown only, never
+  `totalTokens` (PROP-Ru-001.C1)."
+  [events]
+  (let [usages (->> events
+                    (filter #(= "message_end" (get % "type")))
+                    (keep #(get % "message"))
+                    (filter #(= "assistant" (get % "role")))
+                    (keep #(get % "usage")))
+        sum (fn [f] (reduce (fn [acc u] (if-let [v (f u)] (+ (or acc 0) v) acc)) nil usages))]
+    (normalize-usage
+     {:usage-source "pi-json"
+      :cost-usd (sum #(get-in % ["cost" "total"]))
+      :tokens-total (sum #(get % "totalTokens"))
+      :tokens {:input (sum #(get % "input"))
+               :output (sum #(get % "output"))
+               :cache-read (sum #(get % "cacheRead"))
+               :cache-write (sum #(get % "cacheWrite"))
+               :reasoning (sum #(get % "reasoning"))}})))
 
 (defn- parse-pi-json
   "Parse pi --mode json output: a stream of JSON event lines; the run result is
   the last assistant message carrying text. `:result` is always a string:
   tool_execution_end events also carry a top-level \"result\" holding a tool
   output object, so the bare result-key fallback accepts strings only.
+
+  Pi reports per-message usage deltas. Fold assistant `message_end` usage into
+  one run-level `:usage`: `cost.total` becomes `:cost-usd`, `totalTokens`
+  becomes `:tokens-total`, `input`/`output`/`cacheRead`/`cacheWrite`/`reasoning`
+  become the `:tokens` breakdown, and `:usage-source` is `\"pi-json\"`.
+  `reasoning` is recorded only in the breakdown because pi already counts it in
+  `totalTokens`. Missing dimensions are omitted rather than stored as zero. Raw
+  runs do not pass through this parser and record no cost or token usage.
 
   A terminal provider failure (usage limit, auth, transport) surfaces as
   `stopReason \"error\"` plus `errorMessage` on the last assistant message while
@@ -882,9 +982,11 @@
                :session-id (some #(or (when (= "session" (get % "type")) (get % "id"))
                                       (get % "session_id")
                                       (get % "sessionId"))
-                                 events)}
+                                 events)
+               :usage (pi-usage events)}
         terminal-error (assoc :error terminal-error))
-      {:result (str/trim stdout)})))
+      {:result (str/trim stdout)
+       :usage (pi-usage events)})))
 
 (defn- parse-output [strategy stdout]
   (case (or strategy :raw)
@@ -1107,6 +1209,20 @@
 (defn- tail [s n]
   (if (> (count s) n) (subs s (- (count s) n)) s))
 
+(defn- usage->attrs
+  "Render the parse layer's keyword-keyed C1 `:usage` map into the string-keyed
+  `agent-run/*` completion attributes, carrying only the dimensions the harness
+  actually reported. normalize-usage has already dropped every nil/zero figure,
+  so an absent key here is spend the run never made — never a stored 0
+  (PROP-Ru-001.R3). `:tokens` rides as the nested breakdown map. A run with no
+  parsed usage (a `:raw` run) yields no attributes."
+  [{:keys [usage-source cost-usd tokens-total tokens]}]
+  (cond-> {}
+    usage-source (assoc "agent-run/usage-source" usage-source)
+    cost-usd (assoc "agent-run/cost-usd" cost-usd)
+    tokens-total (assoc "agent-run/tokens-total" tokens-total)
+    (seq tokens) (assoc "agent-run/tokens" tokens)))
+
 (defn- finish-run! [id process harness out-file err-file]
   (let [exit (.waitFor ^Process process)
         stdout (read-file-safe out-file)
@@ -1114,12 +1230,13 @@
     (swap! (in-flight) dissoc id)
     (when-not (= "failed" (sattr current "phase"))
       (if (zero? exit)
-      (let [{:keys [result session-id parse-error error]}
+      (let [{:keys [result session-id parse-error error usage]}
             (try
               (parse-output (:parse harness) stdout)
               (catch Exception e
                 {:result (str/trim stdout)
-                 :parse-error (str (ex-message e))}))]
+                 :parse-error (str (ex-message e))}))
+            usage-attrs (usage->attrs usage)]
         (cond
           ;; exit 0 but the harness's own event stream reports a terminal
           ;; provider failure (usage limit, auth, transport): the process
@@ -1130,8 +1247,9 @@
             (mark-failed! id
                           (str "harness exited 0 but the final turn errored: " error
                                (when-not (str/blank? stderr) (str "; stderr: " (tail stderr 2000))))
-                          (cond-> {"agent-run/exit-code" exit}
-                            session-id (assoc "agent-run/session-id" session-id))))
+                          (merge (cond-> {"agent-run/exit-code" exit}
+                                   session-id (assoc "agent-run/session-id" session-id))
+                                 usage-attrs)))
 
           (str/blank? result)
           ;; exit 0 but no result text: the harness died silently (a transport
@@ -1139,23 +1257,27 @@
           ;; the worker's report, so an empty one is not success — record it
           ;; failed (loud, retryable via agent-failures/retry) rather than
           ;; closing a hollow `done` that dodges every recovery path (TEN-003).
-          ;; session-id is preserved for forensics; the failure is deliberately
-          ;; not resume-classed, so a plain retry respawns fresh.
+          ;; session-id and any captured usage are preserved for forensics — a
+          ;; tool-only pi-json turn spent tokens even with no result text, so its
+          ;; spend must not vanish; the failure is deliberately not resume-classed,
+          ;; so a plain retry respawns fresh.
           (let [stderr (str/trim (read-file-safe err-file))]
             (mark-failed! id
                           (str "harness exited 0 with an empty result"
                                (when parse-error (str " (parse error: " parse-error ")"))
                                (when-not (str/blank? stderr) (str "; stderr: " (tail stderr 2000))))
-                          (cond-> {"agent-run/exit-code" exit}
-                            session-id (assoc "agent-run/session-id" session-id))))
+                          (merge (cond-> {"agent-run/exit-code" exit}
+                                   session-id (assoc "agent-run/session-id" session-id))
+                                 usage-attrs)))
 
           :else
-          (update-run! id (cond-> {"agent-run/phase" "done"
-                                   "agent-run/exit-code" exit
-                                   "agent-run/result" result
-                                   "agent-run/finished-at" (now)}
-                            session-id (assoc "agent-run/session-id" session-id)
-                            parse-error (assoc "agent-run/parse-error" parse-error))
+          (update-run! id (merge (cond-> {"agent-run/phase" "done"
+                                          "agent-run/exit-code" exit
+                                          "agent-run/result" result
+                                          "agent-run/finished-at" (now)}
+                                   session-id (assoc "agent-run/session-id" session-id)
+                                   parse-error (assoc "agent-run/parse-error" parse-error))
+                                 usage-attrs)
                        {:state "closed"})))
         (let [stderr (str/trim (read-file-safe err-file))
               detail (if (str/blank? stderr) (str/trim stdout) stderr)]
@@ -1890,6 +2012,138 @@
   ([{:keys [active for]}]
    (runs* {:active active :for for} graph/incoming-edges)))
 
+;; ---------------------------------------------------------------------------
+;; Spend aggregation
+
+(defn- run-duration-ms
+  "Wall-time in milliseconds between a run's `started-at` and `finished-at`
+  timestamps, or nil when either is absent. Duration is derived from the engine's
+  own timestamps for every format including `:raw` (PROP-Ru-001.C4), so a run that
+  recorded no cost or tokens still reports how long it ran; a run with no
+  `finished-at` (never completed) derives no duration."
+  [run]
+  (let [started (sattr run "started-at")
+        finished (sattr run "finished-at")]
+    (when (and started finished)
+      (- (.toEpochMilli (Instant/parse finished))
+         (.toEpochMilli (Instant/parse started))))))
+
+(defn- spend-row
+  "Project a run strand into the C7 per-run spend row: identity and phase, the
+  recorded usage figures (an unreported dimension stays nil, never 0), the nested
+  token breakdown, and the timestamp-derived wall-time."
+  [run]
+  {:id (:id run)
+   :harness (sattr run "harness")
+   :phase (sattr run "phase")
+   :cost-usd (sattr run "cost-usd")
+   :tokens-total (sattr run "tokens-total")
+   :tokens (sattr run "tokens")
+   :duration-ms (run-duration-ms run)
+   :started-at (sattr run "started-at")
+   :finished-at (sattr run "finished-at")})
+
+(defn- sum-present
+  "Sum the non-nil values, or nil when none is present. A wholly-unreported
+  dimension stays null rather than collapsing to 0, so spend is never inflated
+  (PROP-Ru-001.R3)."
+  [xs]
+  (let [present (remove nil? xs)]
+    (when (seq present) (reduce + present))))
+
+(defn- spend-totals
+  "Aggregate spend rows into `{:runs :cost-usd :tokens-total :duration-ms}`. The
+  run count is every row; each figure sums only its non-nil contributors, so a
+  raw/pre-feature run adds to the count and (when timed) the duration without
+  faking a cost or token figure it never reported."
+  [rows]
+  {:runs (count rows)
+   :cost-usd (sum-present (map :cost-usd rows))
+   :tokens-total (sum-present (map :tokens-total rows))
+   :duration-ms (sum-present (map :duration-ms rows))})
+
+(defn- spend-group-key
+  "The grouping bucket for a row: its harness, or its started-at calendar day
+  (the ISO date prefix) when grouping by day."
+  [group-dim row]
+  (case group-dim
+    :harness (:harness row)
+    :day (some-> (:started-at row) (subs 0 10))))
+
+(defn- parse-window-bound
+  "Parse a `--since`/`--until` filter bound into an `Instant`, failing loudly on
+  malformed input so a bad bound surfaces its value instead of silently skewing
+  the window (TEN-003). nil stays nil (an absent bound)."
+  [flag v]
+  (when (some? v)
+    (try
+      (Instant/parse v)
+      (catch java.time.format.DateTimeParseException _
+        (fail! "spend window bound is not an ISO-8601 instant"
+               {:flag flag :value v :expected "ISO-8601 instant, e.g. 2026-07-10T00:00:00Z"})))))
+
+(defn- in-window?
+  "True when `started` (an ISO instant string) falls in the optional
+  `[since until]` window of parsed `Instant` bounds (both inclusive). Comparing
+  instants — not raw strings — keeps mixed precision (e.g. a fractional-second
+  started-at) from mis-ordering. A row with no started-at is outside any bounded
+  window."
+  [since until started]
+  (if (and (nil? since) (nil? until))
+    true
+    (when-let [t (some-> started Instant/parse)]
+      (and (or (nil? since) (not (.isBefore t since)))
+           (or (nil? until) (not (.isAfter t until)))))))
+
+(defn- spend*
+  [opts list-fn]
+  (let [{:keys [harness since until] gb :group-by} opts
+        group-dim (keyword (or gb :harness))
+        _ (when-not (contains? #{:harness :day} group-dim)
+            (fail! "spend :group-by must be :harness or :day" {:group-by gb}))
+        since-inst (parse-window-bound :since since)
+        until-inst (parse-window-bound :until until)
+        rows (->> (list-fn (rt) run-query {})
+                  (map spend-row)
+                  (filter (fn [row]
+                            (and (or (nil? harness) (= harness (:harness row)))
+                                 (in-window? since-inst until-inst (:started-at row)))))
+                  (sort-by (juxt (comp str :started-at) :id))
+                  vec)
+        groups (->> rows
+                    (group-by #(spend-group-key group-dim %))
+                    (map (fn [[k grp]] (assoc (spend-totals grp) :key k)))
+                    (sort-by (comp str :key))
+                    vec)]
+    {:operation "agent-spend"
+     :filters (cond-> {:group-by group-dim}
+                harness (assoc :harness harness)
+                since (assoc :since since)
+                until (assoc :until until))
+     :totals (spend-totals rows)
+     :groups groups
+     :runs rows}))
+
+(defn spend
+  "Aggregate recorded agent-run spend into the C7 read shape (PROP-Ru-001.C7):
+  `{:operation \"agent-spend\", :filters, :totals, :groups, :runs}`. Optional
+  opts filter and shape the report:
+
+    :harness   restrict to one harness/alias name
+    :since     lower ISO-8601 instant bound on the run's started-at (inclusive)
+    :until     upper ISO-8601 instant bound on the run's started-at (inclusive)
+    :group-by  :harness (default) or :day (buckets by the started-at date)
+
+  A malformed :since/:until fails loudly naming the value rather than silently
+  yielding an empty or skewed window.
+
+  Every run contributes its count and its timestamp-derived duration for every
+  format including `:raw`; a run that recorded no cost/tokens contributes null for
+  those, and every sum skips nils so a missing figure is never inflated to 0. The
+  read costs one bulk query for many runs, never one per run (PROP-Ru-001.R4)."
+  ([] (spend {}))
+  ([opts] (spend* opts api/list)))
+
 (def ^:private terminal-phases #{"done" "failed" "exhausted" "superseded"})
 
 (defn- terminal? [run]
@@ -2012,7 +2266,13 @@
 (defn install!
   "Install the agent-run engine into the active weaver: default harnesses, the graph
   event listener, crash reconciliation, and a first scan, and declare the
-  `agent-run/*` attribute-namespace vocabulary this spool owns."
+  `agent-run/*` attribute-namespace vocabulary this spool owns.
+
+  The declaration includes the usage attributes written when parsed runs finish:
+  `agent-run/cost-usd`, `agent-run/tokens-total`, `agent-run/tokens`, and
+  `agent-run/usage-source`. Pi JSON folds per-message usage deltas; Claude JSON
+  reads the final result object's usage fields; raw output records no cost or
+  token attributes."
   []
   (let [runtime (rt)]
     (register-default-harnesses!)
@@ -2021,8 +2281,8 @@
                     {:kind :attr-namespace
                      :name "agent-run"
                      :owner :skein/spools-shuttle
-                     :keys (vec (sort control-attrs))
-                     :doc "Agent-run engine control attributes on run strands, reserved by spawn-run! and the spawn/supervision engine."})
+                     :keys (vec (sort (into control-attrs usage-attrs)))
+                     :doc "Agent-run engine control attributes reserved by spawn-run! and the supervision engine, plus usage attributes finish-run! records at completion."})
     (events/register! runtime :agent-run/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}

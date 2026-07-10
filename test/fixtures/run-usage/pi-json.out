@@ -1,0 +1,14 @@
+{"type":"session","id":"pi-sess-fixture"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"assistant","content":[],"usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"reasoning":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}}
+{"type":"message_update","message":{"role":"assistant","content":[{"type":"text","text":"Sanitized partial output."}],"usage":{"input":8000,"output":300,"cacheRead":0,"cacheWrite":0,"reasoning":200,"totalTokens":8300,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0.02}}}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Sanitized turn one reply."}],"usage":{"input":15586,"output":668,"cacheRead":0,"cacheWrite":0,"reasoning":516,"totalTokens":16254,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0.04898500000000001}}}}
+{"type":"turn_end","message":{"role":"assistant","content":[],"usage":{"input":15586,"output":668,"cacheRead":0,"cacheWrite":0,"reasoning":516,"totalTokens":16254,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0.04898500000000001}}},"toolResults":[]}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Sanitized turn two reply."}],"usage":{"input":4151,"output":792,"cacheRead":15360,"cacheWrite":0,"reasoning":516,"totalTokens":20303,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0.0260975}}}}
+{"type":"turn_end","message":{"role":"assistant","content":[],"usage":{"input":4151,"output":792,"cacheRead":15360,"cacheWrite":0,"reasoning":516,"totalTokens":20303,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0.0260975}}},"toolResults":[]}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Sanitized final summary."}],"usage":{"input":1384,"output":235,"cacheRead":18944,"cacheWrite":0,"reasoning":23,"totalTokens":20563,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0.011720999999999999}}}}
+{"type":"turn_end","message":{"role":"assistant","content":[],"usage":{"input":1384,"output":235,"cacheRead":18944,"cacheWrite":0,"reasoning":23,"totalTokens":20563,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0.011720999999999999}}},"toolResults":[]}
+{"type":"agent_end","willRetry":false}

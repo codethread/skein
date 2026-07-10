@@ -191,6 +191,35 @@
                            "result" "optional string" "error" "optional string"
                            "mode" "optional interactive" "backend" "optional string"
                            "session" "optional string" "attach" "optional string"}]}
+           :spend {:group "engine"
+                   :help-topic "strand help agent"
+                   :verb "spend"
+                   :semantics (fmt/fill "
+                                |Aggregate recorded agent-run usage into a spend report: per-run
+                                |rows, grouped totals, and an overall total.
+                                |
+                                |Every run contributes its count and its timestamp-derived duration
+                                |for every format including raw; a run that recorded no cost or
+                                |tokens contributes null for those, and every sum skips nulls, so a
+                                |missing figure is never inflated to 0.
+                                |
+                                |--harness restricts to one harness or alias; --since/--until window
+                                |on the run's started-at (inclusive ISO-8601 instants, e.g.
+                                |2026-07-10T00:00:00Z); --group-by buckets by harness (default) or day.")
+                   :fails ["--group-by other than harness or day"
+                           "--since/--until not an ISO-8601 instant"]
+                   :returns {"operation" "agent-spend"
+                             "filters" {"group-by" "harness|day" "harness" "optional string"
+                                        "since" "optional ISO instant" "until" "optional ISO instant"}
+                             "totals" {"runs" "integer" "cost-usd" "number|null"
+                                       "tokens-total" "integer|null" "duration-ms" "integer|null"}
+                             "groups" [{"key" "harness name or ISO date" "runs" "integer"
+                                        "cost-usd" "number|null" "tokens-total" "integer|null"
+                                        "duration-ms" "integer|null"}]
+                             "runs" [{"id" "run id" "harness" "string" "phase" "string"
+                                      "cost-usd" "number|null" "tokens-total" "integer|null"
+                                      "tokens" "optional breakdown map" "duration-ms" "integer|null"
+                                      "started-at" "ISO instant" "finished-at" "optional ISO instant"}]}}
            :await {:group "engine"
                    :help-topic "strand help agent"
                    :verb "await"
@@ -1853,6 +1882,11 @@
     "ps" {:doc "List agent run summaries."
           :flags {:active {:type :boolean :doc "Only active run strands."}
                   :for {:doc "Runs serving this strand plus its structural (parent-of) helpers."}}}
+    "spend" {:doc "Aggregate recorded agent-run spend into JSON totals, groups, and per-run rows."
+             :flags {:harness {:doc "Restrict to one harness or alias name."}
+                     :since {:doc "Lower ISO-instant bound on a run's started-at (inclusive)."}
+                     :until {:doc "Upper ISO-instant bound on a run's started-at (inclusive)."}
+                     :group-by {:doc "Group buckets by harness (default) or day."}}}
     "await" {:doc "Wait for run ids, or non-terminal runs under a root, to finish."
              :flags {:timeout-secs {:type :int :doc "Maximum seconds to wait."}
                      :under {:doc "Root strand whose descendant runs should be awaited."}}
@@ -1940,6 +1974,11 @@
       "spawn" (op-spawn (parsed->legacy-argv args []))
       "ps" (agent-run/runs (cond-> {:active (boolean (:active args))}
                            (:for args) (assoc :for (:for args))))
+      "spend" (agent-run/spend (cond-> {}
+                                 (:harness args) (assoc :harness (:harness args))
+                                 (:since args) (assoc :since (:since args))
+                                 (:until args) (assoc :until (:until args))
+                                 (:group-by args) (assoc :group-by (:group-by args))))
       "await" (op-await (parsed->legacy-argv args [:ids]))
       "logs" (op-logs (parsed->legacy-argv args [:run-id]))
       "kill" (agent-run/kill! (:run-id args))

@@ -28,6 +28,21 @@
       (agents/install!)
       (f rt))))
 
+(defn- seed-run!
+  "Add a completed agent-run strand carrying the usage attributes the spend
+  aggregation reads. A nil cost-usd/tokens-total/tokens value is omitted, so the
+  seeded run models a format that reported no figure for that dimension."
+  [rt {:keys [harness phase cost-usd tokens-total tokens started finished]}]
+  (api/add rt {:title (str harness " run")
+               :attributes (cond-> {:agent-run/run "true"
+                                    :agent-run/harness harness
+                                    :agent-run/phase (or phase "done")
+                                    :agent-run/started-at started
+                                    :agent-run/finished-at finished}
+                             (some? cost-usd) (assoc :agent-run/cost-usd cost-usd)
+                             (some? tokens-total) (assoc :agent-run/tokens-total tokens-total)
+                             (some? tokens) (assoc :agent-run/tokens tokens))}))
+
 (deftest agents-install-registers-op-pattern-query
   (with-agents
     (fn [rt]
@@ -35,7 +50,7 @@
       (is (map? (agents/agent-op {:op/argv ["about"]})))
       (let [detail (api/resolve-op rt 'agent)]
         (is (not (contains? detail :raw-envelope)))
-        (is (= ["about" "await" "backends" "council" "delegate" "harnesses" "kill" "logs" "note" "notes" "ps" "retry" "review" "rosters" "spawn" "status"]
+        (is (= ["about" "await" "backends" "council" "delegate" "harnesses" "kill" "logs" "note" "notes" "ps" "retry" "review" "rosters" "spawn" "spend" "status"]
                (sort (keys (get-in detail [:arg-spec :subcommands])))))
         (let [review-flags (get-in detail [:arg-spec :subcommands "review" :flags])
               manual-entries (->> agents/about-doc :verbs vals)
@@ -111,6 +126,70 @@
                               (agents/agent-op {:op/argv ["spawn" "--prompt" "x"]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer"
                               (agents/agent-op {:op/argv ["await" "id" "--timeout-secs" "soon"]})))))))
+
+(deftest agent-spend-aggregates-recorded-usage
+  (with-agents
+    (fn [rt]
+      (seed-run! rt {:harness "claude" :cost-usd 1.5 :tokens-total 1000
+                     :tokens {:input 600 :output 400}
+                     :started "2026-07-01T10:00:00Z" :finished "2026-07-01T10:05:00Z"})
+      (seed-run! rt {:harness "claude" :cost-usd 0.5 :tokens-total 200
+                     :started "2026-07-02T09:00:00Z" :finished "2026-07-02T09:01:00Z"})
+      (seed-run! rt {:harness "pi" :cost-usd 2.0 :tokens-total 500
+                     :started "2026-07-01T11:00:00Z" :finished "2026-07-01T11:10:00Z"})
+      ;; a raw run reports no cost/tokens, only its timestamp-derived duration
+      (seed-run! rt {:harness "raw"
+                     :started "2026-07-03T08:00:00Z" :finished "2026-07-03T08:02:00Z"})
+      (testing "default report groups by harness and totals every run"
+        (let [report (agents/agent-op {:op/argv ["spend"]})
+              groups (into {} (map (juxt :key identity)) (:groups report))]
+          (is (= "agent-spend" (:operation report)))
+          (is (= :harness (get-in report [:filters :group-by])))
+          (is (= 4 (get-in report [:totals :runs])))
+          (is (== 4.0 (get-in report [:totals :cost-usd])))
+          (is (== 1700 (get-in report [:totals :tokens-total])))
+          (is (== 1080000 (get-in report [:totals :duration-ms])))
+          (is (= 4 (count (:runs report))))
+          (is (= 2 (get-in groups ["claude" :runs])))
+          (is (== 2.0 (get-in groups ["claude" :cost-usd])))
+          (is (== 2.0 (get-in groups ["pi" :cost-usd])))))
+      (testing "a run missing cost/tokens contributes null, never 0"
+        (let [report (agents/agent-op {:op/argv ["spend" "--harness" "raw"]})]
+          (is (= 1 (get-in report [:totals :runs])))
+          (is (nil? (get-in report [:totals :cost-usd]))
+              "an absent cost is null, not a summed 0")
+          (is (nil? (get-in report [:totals :tokens-total])))
+          (is (== 120000 (get-in report [:totals :duration-ms]))
+              "duration is derived from timestamps even with no cost/tokens")))
+      (testing "--harness narrows to one harness"
+        (let [report (agents/agent-op {:op/argv ["spend" "--harness" "claude"]})]
+          (is (= "claude" (get-in report [:filters :harness])))
+          (is (= 2 (get-in report [:totals :runs])))
+          (is (== 2.0 (get-in report [:totals :cost-usd])))))
+      (testing "--since/--until window on started-at"
+        (let [report (agents/agent-op {:op/argv ["spend"
+                                                 "--since" "2026-07-02T00:00:00Z"
+                                                 "--until" "2026-07-02T23:59:59Z"]})]
+          (is (= "2026-07-02T00:00:00Z" (get-in report [:filters :since])))
+          (is (= "2026-07-02T23:59:59Z" (get-in report [:filters :until])))
+          (is (= 1 (get-in report [:totals :runs])))
+          (is (== 0.5 (get-in report [:totals :cost-usd])))))
+      (testing "--group-by day rebuckets by calendar day"
+        (let [report (agents/agent-op {:op/argv ["spend" "--group-by" "day"]})
+              groups (into {} (map (juxt :key identity)) (:groups report))]
+          (is (= :day (get-in report [:filters :group-by])))
+          (is (= 2 (get-in groups ["2026-07-01" :runs])))
+          (is (== 3.5 (get-in groups ["2026-07-01" :cost-usd])))
+          (is (= 1 (get-in groups ["2026-07-02" :runs])))
+          (is (= 1 (get-in groups ["2026-07-03" :runs])))))
+      (testing "an unknown --group-by fails loudly"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"group-by"
+                              (agents/agent-op {:op/argv ["spend" "--group-by" "week"]}))))
+      (testing "a malformed --since/--until fails loudly instead of a silent lexical window"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ISO-8601 instant"
+                              (agents/agent-op {:op/argv ["spend" "--since" "yesterday"]})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ISO-8601 instant"
+                              (agents/agent-op {:op/argv ["spend" "--until" "2026-07-02"]})))))))
 
 (deftest spawn-for-creates-task-edge
   (with-agents

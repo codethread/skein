@@ -11,6 +11,7 @@
             [next.jdbc :as jdbc]
             [skein.spools.agent-run :as shuttle]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
@@ -38,6 +39,21 @@
     {:timeout-ms timeout-ms
      :on-timeout #(throw (ex-info "Timed out waiting for matching attribute"
                                   {:id id :attr k :strand (api/show rt id)}))})))
+
+(deftest install-declares-usage-attrs-in-agent-run-vocab
+  (with-shuttle
+    (fn [rt]
+      (let [decl (vocab/declaration rt :attr-namespace "agent-run")
+            keys (set (:keys decl))]
+        (is (= :skein/spools-shuttle (:owner decl))
+            "the agent-run namespace stays owned by :skein/spools-shuttle")
+        (testing "the four completion-time usage keys are declared"
+          (doseq [k ["agent-run/cost-usd" "agent-run/tokens-total"
+                     "agent-run/tokens" "agent-run/usage-source"]]
+            (is (contains? keys k) (str k " is listed in the agent-run vocab"))))
+        (testing "re-installing is idempotent for the same owner (survives reload!)"
+          (shuttle/install!)
+          (is (= decl (vocab/declaration rt :attr-namespace "agent-run"))))))))
 
 (deftest harness-registry-validates-and-resolves-aliases
   (with-shuttle
@@ -1083,6 +1099,121 @@
       (is (nil? (:error parsed)))
       (is (= "all done" (:result parsed))))))
 
+;; ---------------------------------------------------------------------------
+;; Usage capture (TASK-Ru-001): the committed fixtures under
+;; test/fixtures/run-usage/ are the source of truth for the field mapping — a
+;; future provider shape change fails one of these rather than silently
+;; mis-capturing spend. Never assert against a local weaver log.
+
+(defn- fixture [name]
+  (slurp (io/resource (str "fixtures/run-usage/" name))))
+
+(defn- about= [expected actual]
+  (< (Math/abs (double (- expected actual))) 1e-9))
+
+(deftest parse-pi-json-folds-usage-deltas
+  ;; The fixture carries three per-turn message_end deltas plus the traps a
+  ;; naive fold would fall into: zero-usage message_start/message_update events
+  ;; (cumulative *within* a turn) and turn_end duplicates of each message_end.
+  ;; Summing only the message_end deltas is the run total; take-last or a fold
+  ;; that swept in the updates/turn_ends would produce different numbers.
+  (let [{:keys [usage]} (#'shuttle/parse-pi-json (fixture "pi-json.out"))
+        {:keys [tokens]} usage]
+    (is (= "pi-json" (:usage-source usage)))
+    (testing "cost is the sum of each turn's nested cost.total delta"
+      (is (about= 0.0868035 (:cost-usd usage))))
+    (testing "tokens-total is the sum of per-turn deltas, not take-last/cumulative"
+      (is (= 57120 (:tokens-total usage)))
+      (is (not= 20563 (:tokens-total usage))
+          "20563 is the last turn's totalTokens — a take-last fold would report it")
+      (is (not= 16254 (:tokens-total usage))
+          "16254 is the first turn only — a per-turn-overwrite fold would report it"))
+    (testing "breakdown dims are summed across turns; a reported-zero dim is dropped"
+      (is (= 21121 (:input tokens)))
+      (is (= 1695 (:output tokens)))
+      (is (= 34304 (:cache-read tokens)))
+      (is (not (contains? tokens :cache-write))
+          "cacheWrite is zero in every turn, so it is absent, never a stored 0"))))
+
+(deftest parse-pi-json-reasoning-in-breakdown-not-total
+  ;; pi already counts reasoning inside totalTokens, so folding it into
+  ;; tokens-total again would double-count it (PROP-Ru-001.C1/C2).
+  (let [{:keys [usage]} (#'shuttle/parse-pi-json (fixture "pi-json.out"))]
+    (is (= 1055 (get-in usage [:tokens :reasoning]))
+        "reasoning is recorded in the breakdown")
+    (is (= 57120 (:tokens-total usage))
+        "tokens-total is the summed totalTokens; reasoning is not added on top")
+    (is (not= (+ 57120 1055) (:tokens-total usage))
+        "a reasoning double-count would show 58175")))
+
+(deftest parse-claude-json-captures-usage-from-result-object
+  (let [{:keys [usage]} (#'shuttle/parse-claude-json (fixture "claude-json.out"))
+        {:keys [tokens]} usage]
+    (is (= "claude-json" (:usage-source usage)))
+    (is (about= 1.4548964999999998 (:cost-usd usage)))
+    (testing "tokens-total is the sum of the four reported counts"
+      (is (= (+ 3219 19587 65548 587293) (:tokens-total usage)))
+      (is (= 675647 (:tokens-total usage))))
+    (testing "usage sub-map fields map onto the C1 breakdown"
+      (is (= 3219 (:input tokens)))
+      (is (= 19587 (:output tokens)))
+      (is (= 65548 (:cache-write tokens)))
+      (is (= 587293 (:cache-read tokens))))
+    (testing "claude reports no reasoning, so the dim is absent"
+      (is (not (contains? tokens :reasoning))))))
+
+(deftest parse-claude-json-omits-absent-field
+  ;; A claude version that does not report a token dimension omits the key
+  ;; rather than reading it as zero (PROP-Ru-001.C3, G3).
+  (let [stdout (str "{\"result\":\"ok\",\"session_id\":\"s\",\"total_cost_usd\":0.5,"
+                    "\"usage\":{\"input_tokens\":100,\"output_tokens\":40,"
+                    "\"cache_read_input_tokens\":900}}")
+        {:keys [usage]} (#'shuttle/parse-claude-json stdout)
+        {:keys [tokens]} usage]
+    (is (not (contains? tokens :cache-write))
+        "cache_creation_input_tokens was absent, so cache-write is omitted, not 0")
+    (is (= 100 (:input tokens)))
+    (is (= 40 (:output tokens)))
+    (is (= 900 (:cache-read tokens)))
+    (is (= (+ 100 40 900) (:tokens-total usage))
+        "tokens-total sums only the reported counts")))
+
+(deftest parse-claude-json-non-numeric-usage-fails-loudly
+  ;; A provider schema drift that reports a usage field as a string/object/null
+  ;; must fail loudly, not silently drop the dimension — bad budget data can
+  ;; never masquerade as a legitimately unreported figure (TEN-003, PROP-Ru-001).
+  (testing "a non-numeric token count throws naming the key and value"
+    (let [stdout (str "{\"result\":\"ok\",\"session_id\":\"s\",\"total_cost_usd\":0.5,"
+                      "\"usage\":{\"input_tokens\":\"lots\",\"output_tokens\":40}}")]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"usage figure is not a number"
+                            (#'shuttle/parse-claude-json stdout)))
+      (try
+        (#'shuttle/parse-claude-json stdout)
+        (catch clojure.lang.ExceptionInfo e
+          (is (= :input (:key (ex-data e))) "the failing dimension is named")
+          (is (= "lots" (:value (ex-data e))) "the offending value is reported")))))
+  (testing "a non-numeric total_cost_usd throws"
+    (let [stdout (str "{\"result\":\"ok\",\"session_id\":\"s\",\"total_cost_usd\":\"free\","
+                      "\"usage\":{\"input_tokens\":100}}")]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"usage figure is not a number"
+                            (#'shuttle/parse-claude-json stdout)))))
+  (testing "an absent usage object stays absent, never a thrown drift"
+    (let [parsed (#'shuttle/parse-claude-json "{\"result\":\"ok\",\"session_id\":\"s\"}")]
+      (is (not (contains? (:usage parsed) :tokens-total)))
+      (is (not (contains? (:usage parsed) :cost-usd))))))
+
+(deftest parse-output-threads-usage-per-format
+  (testing ":raw records nothing it cannot see — no :usage key"
+    (let [parsed (#'shuttle/parse-output :raw "plain text output")]
+      (is (= "plain text output" (:result parsed)))
+      (is (not (contains? parsed :usage)))))
+  (testing ":pi-json threads the folded usage"
+    (let [parsed (#'shuttle/parse-output :pi-json (fixture "pi-json.out"))]
+      (is (= "pi-json" (get-in parsed [:usage :usage-source])))))
+  (testing ":claude-json threads the folded usage"
+    (let [parsed (#'shuttle/parse-output :claude-json (fixture "claude-json.out"))]
+      (is (= "claude-json" (get-in parsed [:usage :usage-source]))))))
+
 (deftest pi-json-terminal-error-run-fails-loudly
   (with-shuttle
     (fn [rt]
@@ -1103,3 +1234,250 @@
           (is (str/includes? (get-in failed [:attributes :agent-run/error]) "usage limit"))
           (is (= "sess-err" (get-in failed [:attributes :agent-run/session-id]))
               "session id is preserved for forensics"))))))
+
+;; ---------------------------------------------------------------------------
+;; Terminal-write seam (TASK-Ru-002): finish-run! writes the captured :usage
+;; onto both terminal branches that have parsed output — the done branch and the
+;; terminal-error branch — so a usage-limit failure still records its spend. A
+;; :raw run and any unreported dimension write nothing (never a stored 0).
+
+(deftest pi-json-completing-run-records-usage
+  (with-shuttle
+    (fn [rt]
+      ;; sh stands in for pi: exit 0 with a clean event stream carrying a
+      ;; message_end usage delta and its nested cost.total.
+      (shuttle/defharness! :sh-pi-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (let [stream (str "printf '%s\\n' "
+                        "'{\"type\":\"session\",\"id\":\"sess-u\"}' "
+                        "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\","
+                        "\"content\":[{\"type\":\"text\",\"text\":\"all done\"}],"
+                        "\"usage\":{\"input\":100,\"output\":20,\"cacheRead\":5,"
+                        "\"totalTokens\":125,\"cost\":{\"total\":0.0123}}}}'")
+            run (shuttle/spawn-run! {:harness :sh-pi-usage :prompt stream})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "closed" (:state done)))
+        (is (= "all done" (:agent-run/result attrs)))
+        (is (= "pi-json" (:agent-run/usage-source attrs)))
+        (is (about= 0.0123 (:agent-run/cost-usd attrs)))
+        (is (= 125 (:agent-run/tokens-total attrs)))
+        (is (= 100 (get-in attrs [:agent-run/tokens :input])))
+        (is (= 20 (get-in attrs [:agent-run/tokens :output])))
+        (is (= 5 (get-in attrs [:agent-run/tokens :cache-read])))))))
+
+(deftest claude-json-completing-run-records-usage-from-result-object
+  (with-shuttle
+    (fn [rt]
+      (shuttle/defharness! :sh-claude-usage {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
+      (let [obj (str "{\"result\":\"all done\",\"session_id\":\"sc\","
+                     "\"total_cost_usd\":0.5,"
+                     "\"usage\":{\"input_tokens\":100,\"output_tokens\":40,"
+                     "\"cache_read_input_tokens\":900}}")
+            run (shuttle/spawn-run! {:harness :sh-claude-usage :prompt (str "printf '%s' '" obj "'")})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "claude-json" (:agent-run/usage-source attrs)))
+        (is (about= 0.5 (:agent-run/cost-usd attrs)))
+        (is (= (+ 100 40 900) (:agent-run/tokens-total attrs)))
+        (is (= 100 (get-in attrs [:agent-run/tokens :input])))
+        (is (= 900 (get-in attrs [:agent-run/tokens :cache-read])))
+        (is (not (contains? (:agent-run/tokens attrs) :cache-write))
+            "cache_creation_input_tokens was absent, so cache-write is never zero-filled")))))
+
+(deftest pi-json-terminal-error-run-still-records-its-cost
+  (with-shuttle
+    (fn [rt]
+      ;; the highest-value runs to capture are exactly the usage-limit failures:
+      ;; the turn errors (stopReason error) yet still reports the spend it made,
+      ;; so mark-failed!'s extra map carries the usage onto the failed record.
+      (shuttle/defharness! :sh-pi-err-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (let [stream (str "printf '%s\\n' "
+                        "'{\"type\":\"session\",\"id\":\"se\"}' "
+                        "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],"
+                        "\"stopReason\":\"error\",\"errorMessage\":\"usage limit reached\","
+                        "\"usage\":{\"input\":50,\"output\":10,\"totalTokens\":60,\"cost\":{\"total\":0.02}}}}'")
+            run (shuttle/spawn-run! {:harness :sh-pi-err-usage :prompt stream})
+            failed (await-phase rt (:id run) #{"failed"})
+            attrs (:attributes failed)]
+        (is (= "active" (:state failed)) "still loud and retryable")
+        (is (= "failed" (:agent-run/phase attrs)))
+        (is (= "pi-json" (:agent-run/usage-source attrs)))
+        (is (about= 0.02 (:agent-run/cost-usd attrs)))
+        (is (= 60 (:agent-run/tokens-total attrs)))))))
+
+(deftest pi-json-blank-result-run-preserves-its-usage
+  (with-shuttle
+    (fn [rt]
+      ;; a tool-only assistant turn: pi exits 0 and reports usage but writes no
+      ;; result text, so the run is failed as a hollow done. The tokens it spent
+      ;; must still land, exactly like the done and terminal-error branches — a
+      ;; textless run that burned budget can't be invisible to `agent spend`.
+      (shuttle/defharness! :sh-pi-toolonly {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (let [stream (str "printf '%s\\n' "
+                        "'{\"type\":\"session\",\"id\":\"st\"}' "
+                        "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\","
+                        "\"content\":[{\"type\":\"toolcall\",\"id\":\"t1\"}],"
+                        "\"usage\":{\"input\":80,\"output\":15,\"totalTokens\":95,\"cost\":{\"total\":0.03}}}}'")
+            run (shuttle/spawn-run! {:harness :sh-pi-toolonly :prompt stream})
+            failed (await-phase rt (:id run) #{"failed"})
+            attrs (:attributes failed)]
+        (is (= "active" (:state failed)) "loud and retryable")
+        (is (= "failed" (:agent-run/phase attrs)))
+        (is (str/includes? (:agent-run/error attrs) "empty result"))
+        (is (= "pi-json" (:agent-run/usage-source attrs))
+            "usage survives the blank-result branch")
+        (is (about= 0.03 (:agent-run/cost-usd attrs)))
+        (is (= 95 (:agent-run/tokens-total attrs)))))))
+
+(deftest raw-completing-run-records-no-usage
+  (with-shuttle
+    (fn [rt]
+      ;; the shipped :sh harness is :parse :raw — it sees no usage object, so it
+      ;; records none rather than synthesizing zeros.
+      (let [run (shuttle/spawn-run! {:harness :sh :prompt "echo plain-result"})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "plain-result" (:agent-run/result attrs)))
+        (is (not (contains? attrs :agent-run/usage-source)))
+        (is (not (contains? attrs :agent-run/cost-usd)))
+        (is (not (contains? attrs :agent-run/tokens-total)))
+        (is (not (contains? attrs :agent-run/tokens)))))))
+
+(deftest completing-run-with-nil-cost-omits-the-key-never-zero
+  (with-shuttle
+    (fn [rt]
+      ;; a claude result object that reports tokens but no total_cost_usd: the
+      ;; cost dimension is absent, so the key is omitted — never a stored 0.
+      (shuttle/defharness! :sh-claude-nocost {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
+      (let [obj (str "{\"result\":\"done\",\"session_id\":\"sn\","
+                     "\"usage\":{\"input_tokens\":100,\"output_tokens\":40}}")
+            run (shuttle/spawn-run! {:harness :sh-claude-nocost :prompt (str "printf '%s' '" obj "'")})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (not (contains? attrs :agent-run/cost-usd))
+            "no total_cost_usd reported → the cost key is absent, never a stored 0")
+        (is (= (+ 100 40) (:agent-run/tokens-total attrs)) "tokens are still captured")
+        (is (= "claude-json" (:agent-run/usage-source attrs)))))))
+
+;; ---------------------------------------------------------------------------
+;; Spend aggregation (PROP-Ru-001.C7)
+
+(defn- add-spend-run!
+  "Add a completed agent-run strand carrying the given spend attributes so the
+  pure `spend` aggregation reads it without spawning a real harness process. A
+  run with no :cost/:tokens-total is a raw/pre-feature run: it records only its
+  timestamps."
+  [rt {:keys [harness started finished cost tokens-total tokens]}]
+  (api/add rt {:title (str harness "-run")
+               :state "closed"
+               :attributes (cond-> {"agent-run/run" "true"
+                                    "agent-run/harness" harness
+                                    "agent-run/phase" "done"
+                                    "agent-run/started-at" started
+                                    "agent-run/finished-at" finished}
+                             cost (assoc "agent-run/cost-usd" cost)
+                             tokens-total (assoc "agent-run/tokens-total" tokens-total)
+                             tokens (assoc "agent-run/tokens" tokens))}))
+
+(deftest spend-aggregates-totals-and-groups-by-harness
+  (with-shuttle
+    (fn [rt]
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:04Z"
+                          :cost 0.10 :tokens-total 100 :tokens {"input" 60 "output" 40}})
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:10:00Z" :finished "2026-07-08T10:10:06Z"
+                          :cost 0.20 :tokens-total 200})
+      (add-spend-run! rt {:harness "claude" :started "2026-07-08T10:20:00Z" :finished "2026-07-08T10:20:01Z"
+                          :cost 0.05 :tokens-total 50})
+      (let [{:keys [operation totals groups runs]} (shuttle/spend)
+            by-key (into {} (map (juxt :key identity) groups))]
+        (is (= "agent-spend" operation))
+        (testing "totals sum every run's cost, tokens, and derived duration"
+          (is (= 3 (:runs totals)))
+          (is (about= 0.35 (:cost-usd totals)))
+          (is (= 350 (:tokens-total totals)))
+          (is (= 11000 (:duration-ms totals)))
+          (is (= 3 (count runs))))
+        (testing "the default grouping is per-harness"
+          (is (= #{"pi" "claude"} (set (keys by-key))))
+          (is (= 2 (get-in by-key ["pi" :runs])))
+          (is (about= 0.30 (get-in by-key ["pi" :cost-usd])))
+          (is (= 300 (get-in by-key ["pi" :tokens-total])))
+          (is (= 10000 (get-in by-key ["pi" :duration-ms])))
+          (is (= 1 (get-in by-key ["claude" :runs])))
+          (is (about= 0.05 (get-in by-key ["claude" :cost-usd]))))
+        (testing "a per-run row carries its nested token breakdown"
+          (is (some :tokens runs)))))))
+
+(deftest spend-raw-run-contributes-duration-and-count-with-null-cost
+  (with-shuttle
+    (fn [rt]
+      (add-spend-run! rt {:harness "raw" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:02Z"})
+      (add-spend-run! rt {:harness "priced" :started "2026-07-08T10:10:00Z" :finished "2026-07-08T10:10:03Z"
+                          :cost 0.10 :tokens-total 100})
+      (let [{:keys [totals groups runs]} (shuttle/spend)
+            by-key (into {} (map (juxt :key identity) groups))
+            raw-row (first (filter #(= "raw" (:harness %)) runs))]
+        (testing "the raw run adds its count and duration but no cost/tokens"
+          (is (= 2 (:runs totals)))
+          (is (about= 0.10 (:cost-usd totals)) "sums skip the raw run's absent cost")
+          (is (= 100 (:tokens-total totals)))
+          (is (= 5000 (:duration-ms totals))))
+        (testing "the raw per-run row reports null cost/tokens, never 0"
+          (is (nil? (:cost-usd raw-row)))
+          (is (nil? (:tokens-total raw-row)))
+          (is (= 2000 (:duration-ms raw-row))))
+        (testing "a group of only raw runs sums to null cost, not 0"
+          (is (nil? (get-in by-key ["raw" :cost-usd])))
+          (is (nil? (get-in by-key ["raw" :tokens-total])))
+          (is (= 2000 (get-in by-key ["raw" :duration-ms])))
+          (is (about= 0.10 (get-in by-key ["priced" :cost-usd]))))))))
+
+(deftest spend-buckets-by-day-and-windows-on-started-at
+  (with-shuttle
+    (fn [rt]
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:01Z"
+                          :cost 0.10 :tokens-total 10})
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T22:00:00Z" :finished "2026-07-08T22:00:02Z"
+                          :cost 0.20 :tokens-total 20})
+      (add-spend-run! rt {:harness "claude" :started "2026-07-09T09:00:00Z" :finished "2026-07-09T09:00:03Z"
+                          :cost 0.30 :tokens-total 30})
+      (testing ":group-by :day buckets by the started-at date"
+        (let [by-key (into {} (map (juxt :key identity) (:groups (shuttle/spend {:group-by :day}))))]
+          (is (= #{"2026-07-08" "2026-07-09"} (set (keys by-key))))
+          (is (= 2 (get-in by-key ["2026-07-08" :runs])))
+          (is (about= 0.30 (get-in by-key ["2026-07-08" :cost-usd])))
+          (is (= 3000 (get-in by-key ["2026-07-08" :duration-ms])))
+          (is (= 1 (get-in by-key ["2026-07-09" :runs])))))
+      (testing ":since windows on started-at"
+        (let [{:keys [totals runs]} (shuttle/spend {:since "2026-07-09T00:00:00Z"})]
+          (is (= 1 (:runs totals)))
+          (is (= "claude" (:harness (first runs))))))
+      (testing ":until windows on started-at"
+        (is (= 2 (:runs (:totals (shuttle/spend {:until "2026-07-08T23:59:59Z"}))))))
+      (testing ":harness narrows to one harness"
+        (is (= 2 (:runs (:totals (shuttle/spend {:harness "pi"})))))
+        (is (zero? (:runs (:totals (shuttle/spend {:harness "absent"})))))))))
+
+(deftest spend-scales-by-one-bulk-query-not-per-run
+  ;; regression guard mirroring ps-summary-building-does-not-scale...: the spend
+  ;; aggregation must read every run from a single bulk query, never one per run,
+  ;; so its cost is independent of how many runs or unrelated strands exist
+  ;; (PROP-Ru-001.R4).
+  (with-shuttle
+    (fn [rt]
+      (dotimes [i 12]
+        (add-spend-run! rt {:harness "pi"
+                            :started (format "2026-07-08T10:%02d:00Z" i)
+                            :finished (format "2026-07-08T10:%02d:01Z" i)
+                            :cost 0.01 :tokens-total 10}))
+      ;; unrelated strands the aggregation must never touch per-strand
+      (dotimes [i 150] (api/add rt {:title (str "noise-" i)}))
+      (let [list-calls (atom 0)
+            real-list api/list
+            counting-list (fn [& args]
+                            (swap! list-calls inc)
+                            (apply real-list args))
+            result (#'shuttle/spend* {} counting-list)]
+        (is (= 12 (:runs (:totals result))))
+        (is (= 1 @list-calls)
+            "one bulk query resolves every run's spend, independent of strand count")))))
