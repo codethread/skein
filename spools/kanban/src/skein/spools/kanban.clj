@@ -32,6 +32,7 @@
 (def ^:private priority-attr :kanban/priority)
 (def ^:private note-attr :kanban/note)
 (def ^:private handover-attr :kanban/handover)
+(def ^:private task-attr :kanban/task)
 
 (def ^:private addable-statuses #{"pending" "refinement"})
 (def ^:private active-lanes #{"refinement" "pending" "claimed" "in_review"})
@@ -319,6 +320,111 @@
     (let [updated (update-card! strand {status-attr outcome} "closed")]
       {:operation "kanban finish"
        :card (select-keys updated [:id :title :state :attributes])})))
+
+;; ---------------------------------------------------------------------------
+;; task tier: execution strands under a feature card
+;; ---------------------------------------------------------------------------
+
+(defn- task-strand?
+  "Return true when strand is a kanban task."
+  [strand]
+  (= "true" (attr-value strand task-attr)))
+
+(defn- feature-tasks
+  "Return a feature card's direct `parent-of` task strands, sorted by id.
+
+  Closed tasks are kept (they read as `done`); only the marker attr selects a
+  task, so non-task children (plans, reviews, notes) never leak in."
+  [rt feature-id]
+  (let [task-ids (mapv :to_strand_id (graph/outgoing-edges rt [feature-id] "parent-of"))]
+    (->> (graph/strands-by-ids rt task-ids)
+         (filter task-strand?)
+         (sort-by :id)
+         vec)))
+
+(defn- derive-task-status
+  "Derive a task's status from core graph state and the core `owner` attr only.
+
+  `dep-states` is the seq of `:state` values of the task's `depends-on` targets.
+  Reads no delegation or agent-run vocabulary: `done` on a closed strand,
+  `blocked` while any dependency is unclosed, then `doing`/`ready` split on
+  whether an `owner` is stamped."
+  [task dep-states]
+  (cond
+    (= "closed" (:state task)) "done"
+    (some #(not= "closed" %) dep-states) "blocked"
+    (some? (attr-value task :owner)) "doing"
+    :else "ready"))
+
+(defn- compact-task
+  "Return the compact task shape used in `task list` output."
+  [strand]
+  (cond-> {:id (:id strand)
+           :title (:title strand)
+           :state (:state strand)}
+    (attr-value strand :owner) (assoc :owner (attr-value strand :owner))
+    (attr-value strand :body) (assoc :body (attr-value strand :body))))
+
+(defn- tasks-with-status
+  "Return compact tasks decorated with their derived status.
+
+  Batches the `depends-on` frontier: one edge lookup across every task, one
+  state lookup across every dependency, so status derives without a per-task
+  round trip."
+  [rt tasks]
+  (let [dep-edges (graph/outgoing-edges rt (mapv :id tasks) "depends-on")
+        target-state (into {}
+                           (map (juxt :id :state))
+                           (graph/strands-by-ids rt (into [] (map :to_strand_id) dep-edges)))
+        deps-by-task (reduce (fn [m {:keys [from_strand_id to_strand_id]}]
+                               (update m from_strand_id (fnil conj []) to_strand_id))
+                             {} dep-edges)]
+    (mapv (fn [task]
+            (assoc (compact-task task)
+                   :status (derive-task-status
+                            task
+                            (map target-state (get deps-by-task (:id task))))))
+          tasks)))
+
+(defn task-add!
+  "Create a task strand under a feature card via a `parent-of` edge.
+
+  `--depends-on <id>` is repeatable and lays the same `depends-on` edges that
+  are the concurrency DAG and drive the derived `blocked`/`ready` split; task
+  status is never stored."
+  [feature-id title flags]
+  (let [feature (card-strand (require-non-blank! :feature feature-id))
+        title (require-non-blank! :title title)
+        rt (current/runtime)
+        deps (get flags "--depends-on")
+        task (api/add rt {:title title
+                          :attributes (cond-> {task-attr "true"
+                                               :kind "task"}
+                                        (get flags "--body") (assoc :body (get flags "--body")))})]
+    (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
+    (when (seq deps)
+      (api/update rt (:id task) {:edges (mapv (fn [dep] {:type "depends-on" :to dep}) deps)}))
+    {:operation "kanban task add"
+     :feature (:id feature)
+     :task (select-keys (api/show rt (:id task)) [:id :title :state :attributes])}))
+
+(defn task-list
+  "Project a feature card's tasks with their derived statuses."
+  [feature-id]
+  (let [rt (current/runtime)
+        feature (card-strand (require-non-blank! :feature feature-id))]
+    {:operation "kanban task list"
+     :feature (:id feature)
+     :tasks (tasks-with-status rt (feature-tasks rt (:id feature)))}))
+
+(defn task-op
+  "Dispatch a parsed `kanban task ...` action, failing loudly on an unknown one."
+  [{:keys [action feature title]} flags]
+  (case action
+    "add" (task-add! feature (str/join " " title) flags)
+    "list" (task-list feature)
+    (throw (ex-info "kanban task action must be add or list"
+                    {:action action :allowed ["add" "list"]}))))
 
 ;; ---------------------------------------------------------------------------
 ;; notes and handovers
@@ -662,6 +768,7 @@
                 priority-attr "p1|p2|p3|p4 (default p3); orders lanes and `kanban next`"
                 note-attr "true on note strands (closed notes-relation children of a card)"
                 handover-attr "true on handover notes"
+                task-attr "true on task strands (parent-of children of a feature card; status derived)"
                 :kanban/source "optional path or URL for design context"
                 :owner "claimant, required at claim"
                 :branch "work branch, required at claim"
@@ -688,6 +795,7 @@
               {:verb "promote" :purpose "Move a refinement card into the pending lane."}
               {:verb "claim" :purpose "Move a card into claimed and stamp owner/branch/worktree."}
               {:verb "note" :purpose "Append an immutable card note, optionally marked as handover."}
+              {:verb "task" :purpose "Add or list a feature card's tasks with their derived statuses."}
               {:verb "review" :purpose "Move a claimed card into in_review."}
               {:verb "rework" :purpose "Move an in_review card back to claimed."}
               {:verb "finish" :purpose "Close a card with an explicit outcome."}
@@ -812,6 +920,15 @@
                            :required? true
                            :variadic? true
                            :doc "Note text words."}]}
+    "task" {:doc "Manage a feature card's tasks: `add <feature> <title...>` or `list <feature>`."
+            :flags {:body {:doc "Longer task context (add only)."}
+                    :depends-on {:repeat? true
+                                 :doc "Task/strand id this task depends on (repeatable; add only)."}}
+            :positionals [{:name :action :required? true :doc "Task action: add or list."}
+                          {:name :feature :required? true :doc "Feature card id the tasks hang under."}
+                          {:name :title
+                           :variadic? true
+                           :doc "Task title words (add only)."}]}
     "review" {:doc "Move a claimed card into the in_review lane."
               :positionals [{:name :id :required? true :doc "Kanban card id."}]}
     "rework" {:doc "Move an in_review card back to claimed for rework."
@@ -827,7 +944,7 @@
         (keep (fn [[k v]]
                 (when (and (not= k :subcommand)
                            (some? v)
-                           (not (contains? #{:id :title :text} k)))
+                           (not (contains? #{:id :title :text :action :feature} k)))
                   [(str "--" (name k)) v])))
         args))
 
@@ -845,6 +962,7 @@
       "priority" (set-priority! (:id args) (:priority args))
       "promote" (promote! (:id args))
       "claim" (claim! (:id args) flags)
+      "task" (task-op args flags)
       "review" (request-review! (:id args))
       "rework" (rework! (:id args))
       "note" (note! (:id args) (str/join " " (:text args)) flags)
@@ -860,7 +978,7 @@
                                 :name "kanban"
                                 :owner :skein/spools-kanban
                                 :keys ["kanban/card" "kanban/status" "kanban/type"
-                                       "kanban/priority" "kanban/source"]
+                                       "kanban/priority" "kanban/source" "kanban/task"]
                                 :doc "Kanban card state attributes written by skein.spools.kanban/add!."})
      :ops [(api/register-op! rt 'kanban
                              {:doc "Manage the user-facing kanban work board. Run `strand kanban about` for the convention manual."

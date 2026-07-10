@@ -34,7 +34,9 @@
         (is (= :skein/spools-kanban (:owner decl))
             "kanban/* is owned by the single verified use-key :skein/spools-kanban")
         (is (every? #(str/starts-with? % "kanban/") (:keys decl))
-            "advisory :keys all live under the kanban/ prefix")))))
+            "advisory :keys all live under the kanban/ prefix")
+        (is (contains? (set (:keys decl)) "kanban/task")
+            "the task-tier marker attr is declared in the vocab registry")))))
 
 (deftest kanban-about-commands-match-declared-subcommands
   (with-kanban
@@ -102,7 +104,7 @@
               alias (op! rt "help")
               verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
           (is (= detail alias))
-          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote" "review" "rework"] verbs))
+          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote" "review" "rework" "task"] verbs))
           (is (some #(= "about" (:name %)) (get-in alias [:arg-spec :subcommands])))))
       (testing "missing and unknown verbs fail during parser routing with available names"
         (let [missing (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing subcommand"
@@ -111,7 +113,7 @@
                                             (op! rt "bogus")))]
           (is (= :missing-subcommand (:reason (ex-data missing))))
           (is (= :unknown-subcommand (:reason (ex-data unknown))))
-          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote" "review" "rework"]
+          (is (= ["about" "add" "board" "card" "claim" "finish" "next" "note" "prime" "priority" "promote" "review" "rework" "task"]
                  (:available-subcommands (ex-data missing))))
           (is (= (:available-subcommands (ex-data missing))
                  (:available-subcommands (ex-data unknown)))))))))
@@ -368,6 +370,69 @@
           (is (str/includes? rendered "NEEDS REVIEW (0)"))
           (testing "rows are clipped to the board width"
             (is (every? #(<= (count %) 100) lines))))))))
+
+(deftest kanban-task-add-and-list-project-tasks-under-feature
+  (with-kanban
+    (fn [rt]
+      (let [feature-id (get-in (op! rt "add" "Task-bearing feature") [:card :id])
+            added (op! rt "task" "add" feature-id "Implement" "the" "core" "--body" "context")
+            task-id (get-in added [:task :id])]
+        (testing "task add stamps the marker + kind and parents under the feature"
+          (is (= "kanban task add" (:operation added)))
+          (is (= feature-id (:feature added)))
+          (let [stored (api/show rt task-id)]
+            (is (= "Implement the core" (:title stored)))
+            (is (= "true" (get-in stored [:attributes :kanban/task])))
+            (is (= "task" (get-in stored [:attributes :kind])))
+            (is (= "context" (get-in stored [:attributes :body]))))
+          (let [edges (:edges (graph/subgraph rt [feature-id] {:type "parent-of"}))]
+            (is (some #(and (= feature-id (:from_strand_id %))
+                            (= task-id (:to_strand_id %))) edges))))
+        (testing "task list projects only marked tasks, not other parent-of children"
+          ;; a bare strand parented under the feature is not a task (marker-selected)
+          (let [plain (api/add rt {:title "Not a task"})]
+            (api/update rt feature-id {:edges [{:type "parent-of" :to (:id plain)}]})
+            (let [listed (op! rt "task" "list" feature-id)]
+              (is (= "kanban task list" (:operation listed)))
+              (is (= [task-id] (mapv :id (:tasks listed))))
+              (is (= "ready" (:status (first (:tasks listed))))))))
+        (testing "task add fails loudly on a missing title, non-card feature, and unknown action"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"title must be a non-blank"
+                                (op! rt "task" "add" feature-id)))
+          (let [orphan (api/add rt {:title "Loose strand"})]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a kanban card"
+                                  (op! rt "task" "add" (:id orphan) "x"))))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"action must be add or list"
+                                (op! rt "task" "bogus" feature-id))))))))
+
+(deftest kanban-task-status-derives-from-graph-and-owner
+  ;; Self-contained DAG (DELTA-Nwt-001.J2): the four statuses derive from
+  ;; state=closed, the depends-on frontier, and the owner attr only — never a
+  ;; delegation or agent-run attribute is set, so the litmus (delete delegation,
+  ;; the derivation still computes) holds.
+  (with-kanban
+    (fn [rt]
+      (let [feature-id (get-in (op! rt "add" "DAG feature") [:card :id])
+            ready-id (get-in (op! rt "task" "add" feature-id "Ready task") [:task :id])
+            doing-id (get-in (op! rt "task" "add" feature-id "Doing task") [:task :id])
+            done-id (get-in (op! rt "task" "add" feature-id "Done task") [:task :id])
+            blocked-id (get-in (op! rt "task" "add" feature-id "Blocked task"
+                                    "--depends-on" ready-id) [:task :id])
+            status-of (fn [] (into {} (map (juxt :id :status))
+                                   (:tasks (op! rt "task" "list" feature-id))))]
+        (api/update rt doing-id {:attributes {:owner "agent-a"}})
+        (api/update rt done-id {:state "closed"})
+        (testing "the four statuses derive purely from graph + core attrs"
+          (let [status (status-of)]
+            (is (= "ready" (status ready-id)) "active, deps met, no owner")
+            (is (= "doing" (status doing-id)) "active, deps met, owner present")
+            (is (= "done" (status done-id)) "closed strand")
+            (is (= "blocked" (status blocked-id)) "active with an unmet depends-on target")))
+        (testing "closing the dependency unblocks its dependent"
+          (api/update rt ready-id {:state "closed"})
+          (let [status (status-of)]
+            (is (= "done" (status ready-id)) "the closed dependency reads as done")
+            (is (= "ready" (status blocked-id)) "dependency closed, no owner -> ready")))))))
 
 (deftest kanban-batch-weave-creates-cards-and-dependencies
   (with-kanban
