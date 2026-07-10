@@ -3,7 +3,7 @@
 **Document ID:** `PROP-Nwt-001`
 **Last Updated:** 2026-07-10
 **Related RFCs:** None (prior feature context: [`devflow/feat/note-primitive/`](../note-primitive/) — the `notes` relation and `note!` this builds on)
-**Related root specs:** [`devflow/specs/strand-model.md`](../../specs/strand-model.md) (`notes` relation, ~line 52); [`devflow/specs/alpha-surface.md`](../../specs/alpha-surface.md) (SPEC-005.C2, the blessed `skein.api.*.alpha` tier)
+**Related root specs:** [`devflow/specs/strand-model.md`](../../specs/strand-model.md) (SPEC-001.P5 Edges — the `notes` relation); [`devflow/specs/alpha-surface.md`](../../specs/alpha-surface.md) (SPEC-005.C2, the blessed `skein.api.*.alpha` tier)
 
 ## PROP-Nwt-001.P1 Problem
 
@@ -38,7 +38,8 @@ structural causes are what this feature addresses:
 - **PROP-Nwt-001.G4:** Purge devflow/agent-plan/delegation references from the kanban
   surface so kanban stays implementation-agnostic.
 - **PROP-Nwt-001.G5:** A glue wiring convention — stage-keyed writer wiring lives in the
-  composition sites (`.skein`/CLAUDE.md), not in kanban or devflow.
+  composition sites (this repo's `.skein/` config files and the root `CLAUDE.md`
+  coordination guidance), not in kanban or devflow.
 
 ## PROP-Nwt-001.P3 Non-goals
 
@@ -86,6 +87,11 @@ structural causes are what this feature addresses:
   declared in the F4 vocab registry; kanban's registration is the natural home.
 
 ## PROP-Nwt-001.P5 Open questions
+
+Both questions must be resolved in the spec/plan stage before tasking; the writer/ref
+contract detail (ref shape, thunk resolution time, missing-target failure mode,
+decoration merge semantics) and the `note/kind` value set are likewise spec-delta
+material staged under `specs/` in that stage, not proposal scope.
 
 - **PROP-Nwt-001.Q1:** Task authoring surface — new kanban subcommands (`kanban task
   add`/`list`) versus bare `strand add` plus kanban-declared attrs; and how card/board
