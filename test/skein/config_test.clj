@@ -198,6 +198,20 @@
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
 
+(deftest devflow-spool-sha-pin-is-synced-across-spools-edn-and-deps-edn
+  ;; the weaver resolves codethread/devflow from .skein/spools.edn while
+  ;; config_test loads deps.edn's :test :extra-deps io.github.codethread/devflow.spool
+  ;; in-process (deps.edn:13-15 calls this out); a one-sided sha bump would
+  ;; silently split the two processes onto different devflow.spool revisions.
+  (let [spools-edn (edn/read-string (slurp ".skein/spools.edn"))
+        deps-edn (edn/read-string (slurp "deps.edn"))
+        spools-sha (get-in spools-edn [:spools 'codethread/devflow :git/sha])
+        deps-sha (get-in deps-edn [:aliases :test :extra-deps
+                                   'io.github.codethread/devflow.spool :git/sha])]
+    (is (= spools-sha deps-sha)
+        (str "codethread/devflow :git/sha in .skein/spools.edn (" spools-sha ") must match "
+             "io.github.codethread/devflow.spool :git/sha in deps.edn :test :extra-deps (" deps-sha ")"))))
+
 (deftest devflow-conventions-op-lists-repo-conventions
   ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
   ;; :ops stays the RFC-020.Q2 hand-authored fallback (PLAN-Srm-001.DN1). This
