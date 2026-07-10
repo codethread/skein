@@ -30,7 +30,7 @@ The surface is deliberately built from words coding agents are already trained o
 - **status** — the coordinator dashboard (`agent status`): what's ready, running, failed, or awaiting your verification.
 - **harness / alias** — which agent tool runs the work (`worker`, `explore`, `build`, …).
 - **worker contract** — the standing rules every delegated agent is handed automatically.
-- **notes** — durable, append-only memory attached to any strand.
+- **notes** — durable, append-only memory linked to any strand by the blessed `notes` relation.
 
 ### How to prompt effectively
 
@@ -203,7 +203,9 @@ The coordinator dashboard. `root-id` is a plan or task id; no root = every activ
 ```
 agent note <strand-id> "text" [--by <run-id>] [--round n]
 ```
-Append an immutable note to any strand's memory (`--round` only matters inside councils). Notes are append-only memory, not mutation: a worker may note any strand, including parents, without violating its contract. → `{"id":"<note-id>","note-for":"<strand-id>"}`
+Append an immutable note to any strand's memory (`--round` only matters inside councils). The note strand links to its target with the blessed
+`notes` relation; any `:by` or `:round` fields are facets on the note, not the linkage. Notes are append-only memory, not mutation: a worker may
+note any strand, including parents, without violating its contract. → `{"id":"<note-id>","note-for":"<strand-id>"}`
 
 ```
 agent notes <strand-id> [--round n]
@@ -323,7 +325,8 @@ Injected automatically into every delegated run's preamble (shown here for refer
 
 1. **Provision working directories first.** Worktree management is deliberately not this tool's job — use your worktree tooling. Shared worktree = pass the same `cwd` to coupled tasks (readiness serializes the writes: the blocker task runs alone, then disjoint-file siblings run concurrently). Isolate siblings that are not compile-coupled.
 2. **Weave an agent-plan.** Every body is a complete contract; set per-task `harness` (and `cwd` when not uniform).
-3. **`agent delegate --ready <plan-id>`** — and read the `skipped` list, not just `delegated`: a task skipped as `hitl` or `has-active-run` stalls the plan until you act on it.
+3. **`agent delegate --ready <plan-id>`** — and read the `skipped` list as well as `delegated`: a task skipped as `hitl` or `has-active-run`
+   stalls the plan until you act on it.
 4. **`agent await --under <plan-id>`** (or await the run ids from step 3).
 5. **Verify each task in status's `awaiting_verification` yourself.** `strand show <task-id>` re-fetches its contract; re-run its validation commands in its cwd and inspect the diff — do not trust `status=implemented` alone. Then close it: `strand update <task-id> --state closed`. Closing is what unblocks dependents.
 6. **Anything in status's `failed`:** `agent logs <run-id>` → diagnose → fix the task body or environment → `agent retry <task-id>`.
@@ -354,7 +357,9 @@ A panel is plain data, validated loudly against the **`:skein.spools.delegation/
 
 - **Turn-as-run.** Seat *s* on turn *r* is one run, stamped `agent-run/panel-seat`, `agent-run/panel-turn`, `agent-run/review-target`, and `agent-run/review-pass`, so the deliberation structure is queryable from *run* attributes (notes keep the existing `{:by :round}` + tag-in-text convention — no new note facets).
 - **Barriers.** Turn row *r* `depends-on` every seat's turn *r−1* run, so a round completes before the next opens.
-- **Blackboards.** `:target` (default) reads the supplied target strand via `show` — the review shape, single-round only (a target board hosts no peer posts, so `:rounds > 1` on `:target` fails loudly; use `:fresh`). `:fresh` mints a new shared board strand (role `panel`) that seats post to and read via `notes` — the deliberation shape.
+- **Blackboards.** `:target` (default) reads the supplied target strand via `show` — the review shape, single-round only (a target board hosts no peer
+  posts, so `:rounds > 1` on `:target` fails loudly; use `:fresh`). `:fresh` mints a new shared board strand (role `panel`) that seats post to
+  and read via `agent notes`; those posts are linked to the board by the `notes` relation.
 - **Continuity and both prompt forms.** Every turn *r>1* spec carries **both** a full-brief prompt (the whole brief, for a fresh process) and a short continuation `resume-prompt` (only the coordinates a resumed session can't infer). A seat defaults to `:continuity :fresh` — each turn is a fresh process on the full brief. `:continuity :resume` threads turn *r>1* onto the seat's previous-turn run via agent-run `:resume` (requiring a resume-declaring harness); because a session can't be resumed before it exists, `panel!` awaits the previous row to completion before spawning a resuming row, while `:fresh`-continuity rounds spawn upfront behind their barriers. A resuming run stamps its full-brief form as `agent-run/fresh-prompt`, which is exactly what `agent retry --fresh` cold-starts from.
 - **Pass tags.** Each compile mints a `:review-pass` tag (override with `:review-id`), stamped `agent-run/review-pass` on every run, so repeated passes on one board stay separable without run ids — which don't exist at compile/pour time.
 

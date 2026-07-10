@@ -23,7 +23,7 @@ Each card is one strand whose `kanban/status` places it in a board lane:
 Every card also carries a `kanban/priority` that orders lanes and `kanban next` (oldest first within a priority):
 
 - **p1** — immediate blocker; must be done first (e.g. anything requiring a mill/weaver restart or a breaking change).
-- **p2** — high value bug fixes or high leverage features.
+- **p2** — high value bug fixes or high-impact features.
 - **p3** — the default: most things.
 - **p4** — maybe one day; the never-ending someday list.
 
@@ -36,8 +36,8 @@ Card state lives under the `kanban/*` attribute topic:
 | `kanban/status` | `refinement`, `pending`, `claimed`, `in_review`, or an explicit closed outcome. |
 | `kanban/priority` | `p1`, `p2`, `p3` (default), or `p4`; cards without the attribute read as `p3`. |
 | `kanban/source` | Optional path or URL for design context (RFC, feature folder). |
-| `kanban/note` | `"true"` on note strands (closed `parent-of` children of a card). |
-| `kanban/handover` | `"true"` on handover notes. |
+| `kanban/note` | `"true"` decoration on strands linked to a card by the blessed `notes` relation. |
+| `kanban/handover` | `"true"` decoration on note strands that are handovers. |
 | `owner` | Who is driving the work; required at claim. |
 | `branch` | The work branch; required at claim. |
 | `worktree` | Optional worktree path. |
@@ -50,7 +50,9 @@ The card is the **work root**: feature plans, devflow runs, review strands, and 
 
 ## Notes, handovers, and crash recovery
 
-Notes are closed child strands rather than attributes, so concurrent agents never race a read-merge-write cycle and every note keeps its own timestamp and author:
+Notes are strands linked to their target by the blessed `notes` relation, not card attributes or `parent-of` children. Kanban marks its notes with
+`kanban/note` and marks handovers with `kanban/handover`; those attributes are decoration for board views. Concurrent agents do not race a
+read-merge-write cycle, and every note keeps its own timestamp and author:
 
 ```sh
 strand kanban note <id> "Decided X because Y" --author claude
