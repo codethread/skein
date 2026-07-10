@@ -1,39 +1,44 @@
 # Skein Cron Spool — Cookbook
 
-Composition recipes for `skein.spools.cron`: how to put spool-owned work on a timer, and *why* each shape is the right one.
+Composition recipes for `skein.spools.cron`: how to put spool-owned work on a
+durable cadence, and why each shape is the right one.
 
-This is the **how/why** half of the cron docs. The other two halves are:
+This is the how/why half of the cron docs. The other two halves are:
 
-- [`cron/README.md`](./cron/README.md) — the **contract**: the job shape, the
-  interval+jitter cadence, seeding, and the last-outcome/failure guarantees. Read
-  it for what the engine promises.
-- [`cron.api.md`](./cron.api.md) — the **generated reference**: every public fn's
+- [`cron/README.md`](./cron/README.md) — the contract: job shape, durable
+  cadence, at-least-once delivery, and status/failure guarantees.
+- [`cron.api.md`](./cron.api.md) — the generated reference: every public fn's
   signature, arity, and docstring, produced from source.
 
-Division of truth: signatures and argument lists live in the generated API doc; narrative and composition live here and in the contract. This cookbook never restates a fn signature — it links to them. When a recipe needs an exact arity, follow the link.
+Signatures and argument lists live in the generated API doc. Narrative and
+composition live here and in the contract.
 
 ## How to read a recipe
 
-Every recipe has the same four parts, so you can skim to the one that matches your situation and lift the snippet:
+Every recipe has four parts:
 
-1. **Situation** — the shape of problem you're staring at.
+1. **Situation** — the problem shape.
 2. **Composition** — which pieces combine, and how.
-3. **Snippet** — a complete, runnable form (assume
-   `(require '[skein.spools.cron :as cron])`).
-4. **Why this shape** — the reasoning: why cron is built this way, and what the
-   alternative would cost.
+3. **Snippet** — a complete form, assuming
+   `(require '[skein.spools.cron :as cron])`.
+4. **Why this shape** — the tradeoff behind the recipe.
 
-Each recipe cites the honest source it was distilled from — this repo's own `:nvd-scan` job, or the cron test suite — so you can read the load-bearing version.
-
-The one idea under all of it: **cron owns the timing, your job owns the work.** The engine ships no jobs and spawns no processes. A caller registers a job by fully-qualified `:run!` symbol; cron owns only the cadence, the status listing, and a loud failure log. Everything below is about writing a good job and handing it to that engine.
+The core idea: cron owns recurrence, your job owns the work. Cron stores a
+durable scheduler wake for each registered job. When that wake is delivered,
+cron persists the next wake and offloads the job body. The scheduler remains the
+single timing view.
 
 ---
 
 ## Recipe: Register a job that fires on an interval
 
-**Situation.** You have periodic work — a report, a cleanup, a scan — that should run every so often for the lifetime of the weaver, and you want spread so many weavers (or many jobs) don't all fire on the same tick.
+**Situation.** You have periodic work — a report, cleanup, or scan — that should
+run every so often for the lifetime of the weaver. You also want spread so many
+weavers or many jobs do not fire on the same tick.
 
-**Composition.** One `register!` call taking `:interval-ms` (the base period), `:jitter-ms` (each fire offset uniformly in ±jitter), and a `:run!` symbol resolving to `(fn [runtime] ..)`. Register it from trusted startup config, after cron's `install!` has created the executor.
+**Composition.** Call `register!` with `:interval-ms`, optional `:jitter-ms`, and
+a `:run!` symbol resolving to `(fn [runtime] ..)`. Register from trusted startup
+config after cron's `install!` has created the execution executor.
 
 ```clojure
 (ns my.jobs
@@ -58,95 +63,48 @@ The one idea under all of it: **cron owns the timing, your job owns the work.** 
 
 **Why this shape.**
 
-- **`:run!` is a symbol, not a function value.** Cron resolves it at fire time, so
-  a job registered from a startup file stays valid across a reload that reloads
-  the namespace — the timer keeps pointing at the current definition. A raw
-  function value would pin the old one.
-- **Jitter is a first-class knob because synchronised timers are a hazard.** Many
-  weavers all firing the same expensive job on the same tick is a thundering herd;
-  `:jitter-ms` spreads each fire uniformly across ±jitter so they scatter. For a
-  single local job the jitter can be small or zero; for anything shared across
-  machines it earns its keep (see the lock recipe below).
-- **Re-registering the same `:id` is idempotent.** It cancels the existing job's
-  pending fire first, so re-running startup config on reload replaces the job
-  cleanly instead of stacking a second timer.
+- **`:run!` is a symbol, not a function value.** Cron resolves it at fire time,
+  so a reload can update the namespace and the next fire sees the current var.
+- **Jitter spreads load.** Many weavers firing the same expensive job on the same
+  tick can stampede. `:jitter-ms` spreads each fire uniformly across ±jitter.
+- **Re-registering unchanged config preserves the pending wake.** Startup config
+  can run again on reload without resetting the countdown. If interval, jitter,
+  or `:run!` changes, cron replaces the wake so the new cadence takes effect from
+  now.
 
-Honest source: the job shape in [`cron/README.md`](./cron/README.md) and `register-lists-and-deregisters` / `fires-and-records-last-outcome` in [`test/skein/cron_test.clj`](../test/skein/cron_test.clj), which register a job, assert it fires, and read `:last-outcome` back off the status listing.
-
----
-
-## Recipe: Seed the first fire from external state
-
-**Situation.** The interval is right for the steady state, but the *first* fire shouldn't be a full interval away — it should be computed from when the work last actually happened, which lives outside the weaver (a file, a database row, a GitHub issue's timestamp).
-
-**Composition.** Add `:initial-delay-fn`, a fully-qualified symbol resolving to `(fn [runtime] -> delay-ms)`. It runs once, at registration, to compute the delay until the first fire. Reuse `cron/jitter-offset-ms` inside it so the seed shares the engine's single jitter definition. Keep the arithmetic pure and inject the external read, so the seed is unit-testable without I/O.
-
-```clojure
-(defn seed-delay-ms
-  "Pure first-fire delay: ms from now until (last-run or now) + interval + jitter.
-  A computed past instant floors to a near-immediate fire."
-  [^java.time.Instant now ^java.time.Instant last-run ^java.util.Random rng]
-  (let [base   (or last-run now)
-        jitter (cron/jitter-offset-ms (* 60 60 1000) rng)
-        target (-> base (.plusMillis (* 24 60 60 1000)) (.plusMillis jitter))]
-    (max 0 (- (.toEpochMilli target) (.toEpochMilli now)))))
-
-(defn seed-delay
-  "cron :initial-delay-fn — reads the external last-run marker, then defers to the
-  pure calculation above."
-  [_runtime]
-  (seed-delay-ms (java.time.Instant/now)
-                 (read-last-run-from-somewhere)   ; the injected external read
-                 (java.util.Random.)))
-
-(cron/register! (current/runtime)
-  {:id :nightly-report
-   :interval-ms (* 24 60 60 1000)
-   :jitter-ms   (* 60 60 1000)
-   :run!  'my.jobs/emit-report
-   :initial-delay-fn 'my.jobs/seed-delay})
-```
-
-**Why this shape.**
-
-- **The seed decides *when to start*, the interval decides *how often*.** Without
-  a seed the first fire is a whole interval out — wrong when a weaver restarts an
-  hour after the last run and shouldn't wait a full cadence. `:initial-delay-fn`
-  lets "resume where we left off" fall out of the external timestamp.
-- **A bad seed degrades, it doesn't crash.** A throw or a non-delay result is
-  recorded loudly in `failures` and the engine falls back to plain
-  interval+jitter, so a flaky external read never takes down weaver startup.
-- **Split pure math from the external read for testability.** Keeping the
-  arithmetic in a pure `seed-delay-ms` (now, last-run, and an injected `Random`
-  in; ms out) means the "past instant floors to immediate", "recent run defers
-  the remaining time" cases test without any I/O — the `:initial-delay-fn` is a
-  thin wrapper that only supplies the real clock and read.
-
-Honest source: this repo's `nvd-seed-delay-ms` / `nvd-seed-delay` in [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj), seeded from the most recent `scan-lock running` GitHub issue's creation time; the pure calculation's cases are pinned by `seed-delay-computes-first-fire` in [`test/skein/nvd_scan_test.clj`](../test/skein/nvd_scan_test.clj).
+Honest source: the job shape in [`cron/README.md`](./cron/README.md) and
+`register-lists-and-deregisters` / `fires-and-records-last-outcome` in
+[`test/skein/cron_test.clj`](../test/skein/cron_test.clj).
 
 ---
 
 ## Recipe: Give the job its own startup module, out of test-loaded config
 
-**Situation.** Your job's first act is a real side effect — a `gh` call, a network read to seed the schedule. But your main config file's `install!` also runs under test, and you do not want a config-loading unit test to fire that side effect against the real world.
+**Situation.** Your job's first act is a real side effect, such as a `gh` call or
+network read. Your main config file's `install!` also runs under test, and you do
+not want that test to touch the real world.
 
-**Composition.** Give the job a dedicated startup-file module. Cron's own `install!` (a module `:call` in startup config) only creates the executor and registers no jobs. The job file holds the `run!`/seed fns *and* an `install!` that performs the `register!` call; `init.clj` wires it as its own module. A test that loads your main config file and calls its `install!` never touches the timer, and a test of the job's logic loads the job file alone — loading defines vars only.
+**Composition.** Give the job a dedicated startup-file module. Cron's own
+`install!` only creates the execution executor and registers no jobs. The job
+file holds `run!` plus an `install!` that performs the `register!` call.
+`init.clj` wires it as its own module.
 
 ```clojure
-;; report_job.clj (ns report-job) — the job's run!/seed fns and its
-;; registration live together in one dedicated module:
+;; report_job.clj (ns report-job) — the job's run! and registration live together.
+(defn report-tick [runtime]
+  ;; ... do the work ...
+  {:outcome :reported})
+
 (defn- register-report-job! []
   (cron/register! (current/runtime)
     {:id :nightly-report
      :interval-ms (* 24 60 60 1000)
      :jitter-ms   (* 60 60 1000)
-     :run!  'report-job/report-tick
-     :initial-delay-fn 'report-job/report-seed}))
+     :run!        'report-job/report-tick}))
 
 (defn install! [] {:jobs (register-report-job!)})
 
-;; init.clj — cron is synced (its install! builds the executor) before the
-;; job module loads; the module's install! performs the registration:
+;; init.clj — cron is synced and activated before the job module registers.
 (runtime-alpha/use! runtime :skein/spools-cron
   {:ns 'skein.spools.cron :spools ['skein.spools/cron]
    :call 'skein.spools.cron/install! :required? true})
@@ -157,27 +115,30 @@ Honest source: this repo's `nvd-seed-delay-ms` / `nvd-seed-delay` in [`.skein/nv
 
 **Why this shape.**
 
-- **Your main config's `install!` is a test entry point; the job module is not.**
-  The config test loads `config.clj` and calls `install!` to check registration
-  wiring. If the cron `register!` lived there, that test would fire the job's
-  startup seed — a real `gh` call — against the live repo. A dedicated module
-  draws the line exactly where the test stops.
-- **The `:run!`/seed fns and the registration stay together.** One file holds
-  what the job does *and* when it runs, instead of splitting behaviour and
-  wiring across files.
-- **It stays idempotent on reload.** Startup modules re-run on reload, and
-  re-registering the same `:id` cancels the prior pending fire, so the module's
-  `install!` re-seeds and re-registers cleanly every time.
+- **The main config test stops before job registration.** Keeping the `register!`
+  call in the job module avoids accidental real-world side effects in broad
+  config tests.
+- **Behavior and cadence stay together.** One file holds what the job does and
+  when it runs.
+- **Reloads keep cadence.** Re-running the same registration after reload
+  restores in-memory job config while preserving the durable pending wake.
 
-Honest source: this repo's [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj) (`register-nvd-scan-job!` wrapped by its `install!`), wired as the `:nvd-scan` module in [`.skein/init.clj`](../.skein/init.clj) with the explicit comment that it is kept out of `config.clj` so `config_test` never triggers the startup `gh` seed; [`test/skein/nvd_scan_test.clj`](../test/skein/nvd_scan_test.clj) loads the job file alone to test the pure fns.
+Honest source: this repo's [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj), wired
+as `:nvd-scan` in [`.skein/init.clj`](../.skein/init.clj).
 
 ---
 
-## Recipe: Coordinate many weavers with a best-effort lock, and raise a card on findings
+## Recipe: Coordinate many weavers with a best-effort lock, and raise a card
 
-**Situation.** The same job runs on every maintainer's weaver, and the work is expensive enough that you'd rather not have all of them do it at once — but a double-run is harmless, so you want cheap coordination, not a real distributed lock. When the job finds something, a human needs a durable to-do, not a log line.
+**Situation.** The same job runs on every maintainer's weaver. The work is
+expensive enough that you want to avoid common double-runs, but a rare duplicate
+is harmless. When the job finds something, a human needs a durable to-do.
 
-**Composition.** Use shared external state as a best-effort lock: check for an open marker (a GitHub issue with a known title) at the top of the tick and skip if another weaver holds it; otherwise create the marker, do the work, and release it in a `finally`. Lean on jitter so the weavers rarely reach the check together. On a finding, call a kanban `add!` to raise a card — before any further external call, so a later failure can't drop the alert.
+**Composition.** Use shared external state as a best-effort lock: check for an
+open marker at the top of the tick and skip if another weaver holds it. Otherwise
+create the marker, do the work, and release it in a `finally`. Lean on jitter so
+weavers rarely reach the check together. On a finding, call kanban `add!` before
+any later external call.
 
 ```clojure
 (defn run-scan!
@@ -185,24 +146,22 @@ Honest source: this repo's [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj) (`reg
   :run-cmd runs the external tool + lock calls; :raise-card! files a kanban card."
   [{:keys [run-cmd raise-card!]}]
   (cond
-    (open-lock-held? run-cmd)                 ; another weaver is running right now
+    (open-lock-held? run-cmd)
     {:outcome :skipped-locked}
 
     :else
-    (let [lock (acquire-lock! run-cmd)]       ; create the marker issue
+    (let [lock (acquire-lock! run-cmd)]
       (try
         (let [findings (do-the-work run-cmd)]
           (when (seq findings)
-            ;; raise the card first: it is the alert of record, so a later
-            ;; comment/close failure must not be able to drop it
             (raise-card! {:title "Scan: findings" :body (report findings)}))
           {:outcome :scanned :findings findings})
         (finally
-          (release-lock! run-cmd lock))))))    ; always release, even on throw
+          (release-lock! run-cmd lock))))))
 
 (defn scan-tick [runtime]
   (run-scan!
-    {:run-cmd  run-command
+    {:run-cmd run-command
      :raise-card! (fn [card]
                     (current/with-runtime runtime
                       ((requiring-resolve 'skein.spools.kanban/add!)
@@ -211,67 +170,99 @@ Honest source: this repo's [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj) (`reg
 
 **Why this shape.**
 
-- **Best-effort is the honest promise.** An open marker issue means "someone is
-  scanning now"; jitter keeps two weavers from checking on the same tick. A
-  genuine double-scan is harmless, so paying for a real distributed lock would be
-  over-engineering. The design accepts the rare double-run and only prevents the
-  common stampede.
-- **Release in a `finally`, acquire before the work.** The lock is created before
-  the expensive step and released whether it succeeds or throws, so a crashed scan
-  can't leave a stale marker wedging every other weaver out forever.
-- **The card is the alert of record, raised first.** Filing the kanban card before
-  any follow-up external call (a comment, a close) means a `gh` hiccup afterward
-  can't swallow the finding — the durable human to-do already exists on the local
-  weaver's board. This is why the side effects are injected: `raise-card!` and
-  `run-cmd` are seams, so the ordering and the skip/fail/raise branches all test
-  without shelling out or touching GitHub.
-- **The job fails loudly on a real error.** A missing API key or a `gh` error
-  throws, which cron records in `failures` — coordination is best-effort, but a
-  broken scan is never silently read as a clean one.
+- **Best-effort is the honest promise.** Cron delivery is at-least-once, and
+  external locks can race. The job must tolerate a duplicate tick.
+- **Release in a `finally`.** A failed scan should not leave a stale marker that
+  blocks future work.
+- **The card is the alert of record.** Filing the card before comments or cleanup
+  means a later `gh` failure cannot swallow the finding.
+- **A real error still fails loudly.** Missing credentials or command failures
+  throw; cron records them in `failures` and keeps the cadence.
 
-Honest source: this repo's `:nvd-scan` job — `run-nvd-scan!`, `nvd-scan-tick`, the `scan-lock running` issue lock, and the p1-card raise — in [`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj); the skip-when-locked, fail-without-key, and findings-raise-a-card branches are covered by `run-skips-when-open-lock-held`, `run-fails-loudly-without-key`, and `run-findings-raise-p1-card-and-still-close` in [`test/skein/nvd_scan_test.clj`](../test/skein/nvd_scan_test.clj).
+Honest source: this repo's `:nvd-scan` job in
+[`.skein/nvd_scan.clj`](../.skein/nvd_scan.clj) and its lock/finding tests in
+[`test/skein/nvd_scan_test.clj`](../test/skein/nvd_scan_test.clj).
 
 ---
 
-## Recipe: See when a job last fired, and what failed
+## Recipe: Test an offloaded cron job without sleeps
 
-**Situation.** A scheduled job is quiet and you want to know whether it has fired, what it last returned, and whether anything threw — without adding logging to the job itself.
+**Situation.** A test advances a manual clock and expects a cron job's side
+effect. The scheduler event lane can quiesce before the offloaded job body
+finishes, so `events/await-quiescent!` alone is not enough.
 
-**Composition.** Read the two inspection fns. `(cron/jobs runtime)` lists every registered job's status (id, interval, jitter, `:run!` symbol, `:next-fire-at`, and once fired `:last-outcome`/`:last-fired-at`/`:last-error`). `(cron/failures runtime)` returns the recorded seed and execution failures, oldest first.
+**Composition.** Use the deterministic join sequence: advance the manual clock,
+wait for the event lane, then wait for cron's execution executor to go idle.
 
 ```clojure
-(cron/jobs runtime)
-;; => [{:id :nvd-scan :interval-ms 518400000 :jitter-ms 3600000
-;;      :run! nvd-scan/nvd-scan-tick :next-fire-at "..." :last-outcome {...}}]
+(require '[skein.api.events.alpha :as events]
+         '[skein.spools.cron :as cron]
+         '[skein.test.alpha :as test-alpha])
 
-(cron/failures runtime)
-;; => [{:kind :run :job :nvd-scan :message "..." :at "..."}]
+(test-alpha/advance! runtime java.time.Duration/ofMinutes 10)
+(events/await-quiescent! runtime)
+(cron/await-idle! runtime)
 
-(cron/deregister! runtime :nvd-scan)   ; cancel the pending fire and remove it
+;; Now assert the job's side effect or cron status.
 ```
 
 **Why this shape.**
 
-- **A throw is recorded, never fatal (TEN-003).** A job whose `:run!` throws stays
-  scheduled and keeps its cadence; the failure lands in `failures` and the error
-  string on the job's `:last-error`. So "the job is gone" and "the job is failing"
-  are distinguishable: check `jobs` for presence and `next-fire-at`, `failures`
-  for why the last run went wrong.
-- **Status is a read, not a side effect.** `jobs` and `failures` project the
-  runtime's own job table and failure log, so you can poll them from a REPL or a
-  dashboard without perturbing the schedule.
-- **State is runtime-owned.** Two runtimes in one JVM keep independent executors,
-  job tables, and failure logs, so a test weaver's jobs never bleed into the real
-  one's listing — pass the runtime you mean.
+- **Wake delivery and job completion are separate.** `fire-wake` persists the
+  next wake and offloads the job body, then returns. The event lane can be idle
+  while the job is still running.
+- **`await-idle!` counts jobs before offload.** Once the event lane has quiesced,
+  any job submitted by a delivered wake is already in cron's in-flight latch.
+- **No sleeps or wall waits.** Manual clock advancement releases the scheduler
+  wake; the two awaits join the two execution stages.
 
-Honest source: the status and failure shapes in [`cron/README.md`](./cron/README.md) and `records-run-failure-without-stopping-cadence` in [`test/skein/cron_test.clj`](../test/skein/cron_test.clj), which fires a throwing job and reads both the `failures` entry and the `:last-error` on its status.
+Honest source: `fires-and-records-last-outcome`, failure cases in
+[`test/skein/cron_test.clj`](../test/skein/cron_test.clj), and the restart/lane
+checks in [`test/skein/cron_e2e_test.clj`](../test/skein/cron_e2e_test.clj).
+
+---
+
+## Recipe: See job status and recorded failures
+
+**Situation.** A scheduled job is quiet and you want to know whether it has
+fired, what it last returned, and whether anything threw.
+
+**Composition.** Read cron for job status and failures. Read scheduler pending
+wakes for next-fire timing.
+
+```clojure
+(cron/jobs runtime)
+;; => [{:id :nvd-scan :interval-ms 518400000 :jitter-ms 3600000
+;;      :run! nvd-scan/nvd-scan-tick :last-outcome {...}}]
+
+(skein.api.scheduler.alpha/pending runtime)
+;; => includes {:key "cron/nvd-scan" :wake-at "..." ...}
+
+(cron/failures runtime)
+;; => [{:kind :run :job :nvd-scan :message "..." :at "..."}]
+
+(cron/deregister! runtime :nvd-scan)
+```
+
+**Why this shape.**
+
+- **Scheduler is the timing surface.** Cron's listing is a job-status projection,
+  not a second source of next-fire truth.
+- **A throw is recorded, never fatal.** A job whose `:run!` throws stays scheduled
+  and records the error in `failures` and on its status.
+- **State is runtime-owned.** Two runtimes in one JVM keep independent executors,
+  job tables, and failure logs.
+
+Honest source: the status and failure shapes in [`cron/README.md`](./cron/README.md)
+and `records-run-failure-without-stopping-cadence` in
+[`test/skein/cron_test.clj`](../test/skein/cron_test.clj).
 
 ---
 
 ## See also
 
 - [`cron/README.md`](./cron/README.md) — the contract: job shape, cadence,
-  seeding, status, and failure semantics.
+  delivery, status, and failure semantics.
 - [`cron.api.md`](./cron.api.md) — generated signatures and docstrings for every
   fn referenced above.
 - [`chime.cookbook.md`](./chime.cookbook.md) — the sibling engine's recipes; cron

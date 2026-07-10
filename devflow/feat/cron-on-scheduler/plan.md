@@ -513,3 +513,15 @@ intended `git status --short`.
   before execution because `skein.nvd-scan-test` belongs to add-libs shard C. Ran
   the cold shard gate instead: `clojure -M:test --shard C --summary-file <tmp>`
   (includes `skein.nvd-scan-test`) — green; `make fmt-check lint` green.
+
+### PLAN-cron-on-scheduler-001.DN9 Task dp272: PH4 cron docs and API regen — 2026-07-10
+
+- Rewrote `spools/cron/README.md` around scheduler-backed durable cadence:
+  at-least-once delivery, the wake-delivery/job-completion split, duplicate
+  tolerance for idempotent handlers, and scheduler pending wakes as the single
+  next-fire timing view.
+- Updated `spools/cron.cookbook.md` recipes to registration-over-wakes, removed
+  the old first-fire seed recipe, and added the deterministic test join sequence
+  `advance!` → `events/await-quiescent!` → `cron/await-idle!`.
+- Regenerated `spools/cron.api.md` with `make api-docs` after confirming cron
+  docstrings no longer surface the removed seed/timer wording.

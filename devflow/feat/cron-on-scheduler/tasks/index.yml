@@ -27,7 +27,7 @@ tasks:
   - id: 6
     description: Cron docs and API regen (PH4)
     task_file: tasks/006-cron-docs-api-regen.md
-    status: pending
+    status: complete
     blocked_by: [3]
   - id: 7
     description: Acceptance and SPEC-004 delta promotion (PH5)
