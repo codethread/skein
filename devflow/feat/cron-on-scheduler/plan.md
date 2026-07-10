@@ -452,3 +452,17 @@ intended `git status --short`.
   here per OS3.
 - Gate green: `clojure -M:test skein.cron-test` (6 tests, 1030 assertions, 0 fail);
   `make fmt-check lint reflect-check` clean for touched sources.
+
+### PLAN-cron-on-scheduler-001.DN6 Task mfvo2: Q2 re-register preserve/replace implemented — 2026-07-10
+
+- `register!` now uses the Q2 tuple `[interval-ms jitter-ms run!]` after
+  defaulting `:jitter-ms` to `0`. It reads the existing `cron/<id>` wake through
+  `scheduler/pending`: no pending wake arms a fresh one; a pending wake plus an
+  old in-memory config with a changed tuple replaces it; a pending wake with no
+  old config or an equal tuple preserves the existing wake and only installs the
+  in-memory job config.
+- Added focused Q2 assertions to `skein.cron-test`: equal tuple preserves
+  `wake_at`; interval, jitter, and `:run!` changes reset from current runtime
+  time; re-registering after the pending wake is cancelled arms a fresh wake.
+- Gate green: `clojure -M:test skein.cron-test` (7 tests, 1036 assertions, 0 fail);
+  `make fmt-check lint` clean for touched Clojure sources.

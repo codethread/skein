@@ -20,6 +20,7 @@
 
 ;; Job seams the engine resolves by fully-qualified symbol.
 (defn fire-ok [_runtime] :ok)
+(defn fire-other [_runtime] :other)
 (defn fire-throw [_runtime] (throw (ex-info "boom" {:why :test})))
 
 (defn- with-cron [f]
@@ -64,6 +65,49 @@
         (is (= [] (cron/jobs rt)))
         (is (nil? (cron-wake rt "cron/slow")) "deregister cancels the wake")
         (is (= {:deregistered nil} (cron/deregister! rt :slow)))))))
+
+(deftest register-preserves-or-replaces-pending-wake-by-config-tuple
+  (with-cron
+    (fn [rt]
+      (cron/register! rt {:id :steady
+                          :interval-ms 1000
+                          :run! 'skein.cron-test/fire-ok})
+      (let [first-wake-at (:wake_at (cron-wake rt "cron/steady"))]
+        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 10000)))
+        (cron/register! rt {:id :steady
+                            :interval-ms 1000
+                            :jitter-ms 0
+                            :run! 'skein.cron-test/fire-ok})
+        (is (= first-wake-at (:wake_at (cron-wake rt "cron/steady")))
+            "unchanged [interval jitter run!] preserves the pending countdown")
+        (cron/register! rt {:id :steady
+                            :interval-ms 2000
+                            :jitter-ms 0
+                            :run! 'skein.cron-test/fire-ok})
+        (is (= 12000 (:wake_at (cron-wake rt "cron/steady")))
+            "changed interval resets wake-at from now")
+        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 30000)))
+        (cron/register! rt {:id :steady
+                            :interval-ms 2000
+                            :jitter-ms 10
+                            :run! 'skein.cron-test/fire-ok})
+        (is (<= 31990 (:wake_at (cron-wake rt "cron/steady")) 32010)
+            "changed jitter replaces the pending wake from now")
+        (test-alpha/set-clock! rt (constantly (Instant/ofEpochMilli 40000)))
+        (cron/register! rt {:id :steady
+                            :interval-ms 2000
+                            :jitter-ms 0
+                            :run! 'skein.cron-test/fire-other})
+        (is (= 42000 (:wake_at (cron-wake rt "cron/steady")))
+            "changed run! symbol resets wake-at from now"))
+      (scheduler/cancel! rt "cron/steady")
+      (is (nil? (cron-wake rt "cron/steady")))
+      (cron/register! rt {:id :steady
+                          :interval-ms 3000
+                          :jitter-ms 0
+                          :run! 'skein.cron-test/fire-other})
+      (is (= 43000 (:wake_at (cron-wake rt "cron/steady")))
+          "re-register with no pending wake arms a fresh one"))))
 
 (deftest fires-records-outcome-and-continues-cadence
   (with-cron

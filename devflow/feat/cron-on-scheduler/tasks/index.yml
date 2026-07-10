@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Cron Q2 preserve/replace on re-register (PH1)
     task_file: tasks/003-cron-q2-preserve-replace.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 4
     description: Cron restart-durability and lane-hygiene e2e (PH2)

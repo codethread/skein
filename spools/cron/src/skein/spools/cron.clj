@@ -133,6 +133,9 @@
                                   :handler 'skein.spools.cron/fire-wake
                                   :payload {:job (name id)}})))
 
+(defn- config-tuple [job]
+  [(:interval-ms job) (:jitter-ms job) (:run! job)])
+
 (defn deregister!
   "Cancel a cron job's pending wake and remove it from `runtime`.
 
@@ -253,8 +256,7 @@
   "Register (or replace) a named cron job on `runtime` as a durable wake.
 
   `job` keys:
-  - `:id` — keyword or non-blank string identifying the job. Re-registering the
-    same id replaces the `cron/<id>` wake.
+  - `:id` — keyword or non-blank string identifying the job.
   - `:interval-ms` — positive integer base period between fires.
   - `:jitter-ms` — non-negative integer; each fire is offset by a uniform value
     in [-jitter, +jitter]. Optional, default 0.
@@ -262,8 +264,11 @@
     every fire. Its return value is recorded as `:last-outcome`; a thrown
     exception is recorded in `failures` and does not stop the cadence.
 
-  Stores the in-memory job config and arms a fresh `cron/<id>` wake at
-  `now + interval + jitter`. Returns the job's status map."
+  Re-registration preserves a pending `cron/<id>` wake when the cadence-defining
+  `[interval-ms jitter-ms run!]` tuple is unchanged, or when the runtime has no
+  in-memory config yet (fresh JVM adopting a durable wake). A changed tuple arms
+  a fresh wake at `now + interval + jitter`; a missing pending wake also arms a
+  fresh wake. Returns the job's status map."
   [runtime job]
   (let [id (job-id (:id job))
         interval (:interval-ms job)
@@ -273,10 +278,16 @@
     (when-not (and (integer? jitter) (not (neg? jitter)))
       (fail! "Cron job :jitter-ms must be a non-negative integer" {:id id :jitter-ms jitter}))
     (resolve-symbol :run! (:run! job))
-    (let [entry {:id id :interval-ms interval :jitter-ms jitter :run! (:run! job)}]
+    (let [key (wake-key id)
+          old-entry (get @(jobs-atom runtime) id)
+          pending? (some #(= key (:key %)) (scheduler/pending runtime))
+          entry {:id id :interval-ms interval :jitter-ms jitter :run! (:run! job)}
+          replace? (or (not pending?)
+                       (and old-entry (not= (config-tuple old-entry) (config-tuple entry))))]
       (swap! (jobs-atom runtime) assoc id entry)
-      (arm-wake! runtime id interval jitter))
-    (get @(jobs-atom runtime) id)))
+      (when replace?
+        (arm-wake! runtime id interval jitter))
+      (get @(jobs-atom runtime) id))))
 
 (defn jobs
   "Return the cron jobs registered on `runtime` as status maps, sorted by id.
