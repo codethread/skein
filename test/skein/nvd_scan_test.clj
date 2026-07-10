@@ -1,14 +1,12 @@
 (ns skein.nvd-scan-test
   "Tests for the scheduled NVD deep-scan job defined in .skein/nvd_scan.clj.
 
-  Covers the pure seed-delay/jitter computation and the injected-seam lock flow
-  (skip when locked / fail loud without a key / clean scan / findings raise a
-  p1 card) entirely through fakes, so the suite never shells out to real gh."
+  Covers the injected-seam lock flow (skip when locked / fail loud without a key
+  / clean scan / findings raise a p1 card) entirely through fakes, so the suite
+  never shells out to real gh."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing use-fixtures]])
-  (:import [java.time Instant]
-           [java.util Random]))
+            [clojure.test :refer [deftest is testing use-fixtures]]))
 
 ;; nvd_scan.clj is a .skein weaver file (ns `nvd-scan`), not a classpath
 ;; namespace, so load it once exactly as config_test does and resolve its
@@ -24,26 +22,6 @@
   "Resolve a var in the loaded `nvd-scan` namespace by unqualified name."
   [name]
   (requiring-resolve (symbol "nvd-scan" name)))
-
-(def ^:private interval-ms (* 6 24 60 60 1000))
-(def ^:private jitter-ms (* 60 60 1000))
-
-(deftest seed-delay-computes-first-fire
-  (let [seed (cfn "nvd-seed-delay-ms")
-        now (Instant/parse "2026-07-06T00:00:00Z")]
-    (testing "no prior lock issue: first fire is now + interval, +/- jitter"
-      (dotimes [_ 200]
-        (let [delay (seed now nil (Random.))]
-          (is (<= (- interval-ms jitter-ms) delay (+ interval-ms jitter-ms))))))
-    (testing "recent lock: first fire is created + interval, measured from now"
-      (let [created (.minusMillis now (* 2 24 60 60 1000)) ; scanned two days ago
-            remaining (* 4 24 60 60 1000)]                 ; created + 6d = now + 4d
-        (dotimes [_ 200]
-          (let [delay (seed now created (Random.))]
-            (is (<= (- remaining jitter-ms) delay (+ remaining jitter-ms)))))))
-    (testing "a stale lock deep in the past floors to an immediate fire"
-      (let [created (.minusMillis now (* 30 24 60 60 1000))]
-        (is (zero? (seed now created (Random. 1))))))))
 
 (deftest parses-scan-findings
   (let [watson-count (cfn "clj-watson-vuln-count")

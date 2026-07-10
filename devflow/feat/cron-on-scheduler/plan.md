@@ -498,3 +498,18 @@ intended `git status --short`.
   `make fmt-check lint` clean; `git status --short` shows only the intended edits
   (new test ns, runner registration, index.yml) with no generated SQLite/runtime
   artifacts.
+
+### PLAN-cron-on-scheduler-001.DN8 Task 22hh8: PH3 nvd_scan seed removal implemented — 2026-07-10
+
+- `.skein/nvd_scan.clj` now registers `:nvd-scan` with only `:id`,
+  `:interval-ms`, `:jitter-ms`, and `:run!`; the durable scheduler wake is the
+  sole first-fire authority. Deleted `nvd-seed-delay-ms`, `nvd-seed-delay`, and
+  `most-recent-lock-created`. The open `scan-lock running` check in
+  `run-nvd-scan!` is unchanged as runtime coordination.
+- `test/skein/nvd_scan_test.clj` dropped `seed-delay-computes-first-fire` and its
+  unique imports/constants; the lock-flow coverage remains intact.
+- Validation note: the task's literal focused command
+  `clojure -M:test skein.nvd-scan-test` is rejected by the current test runner
+  before execution because `skein.nvd-scan-test` belongs to add-libs shard C. Ran
+  the cold shard gate instead: `clojure -M:test --shard C --summary-file <tmp>`
+  (includes `skein.nvd-scan-test`) — green; `make fmt-check lint` green.

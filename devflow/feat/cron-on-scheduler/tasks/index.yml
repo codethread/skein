@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: nvd_scan migration off initial-delay-fn (PH3)
     task_file: tasks/005-nvd-scan-migration.md
-    status: pending
+    status: complete
     blocked_by: [3]
   - id: 6
     description: Cron docs and API regen (PH4)

@@ -11,15 +11,12 @@
   lands loudly in `(cron/failures)`.
 
   Every side effect (gh, the login-shell scan, the kanban card) is injected
-  into `run-nvd-scan!` so the seed/jitter/lock flow is unit-testable without
-  shelling out — see test/skein/nvd_scan_test.clj. This is its own init.clj
-  module (not part of config.clj) so config_test's direct config.clj load
-  never registers the job or seeds against real gh."
+  into `run-nvd-scan!` so the lock flow is unit-testable without shelling out —
+  see test/skein/nvd_scan_test.clj. This is its own init.clj module (not part of
+  config.clj) so config_test's direct config.clj load never registers the job."
   (:require [clojure.data.json :as json]
             [skein.api.current.alpha :as current]
-            [skein.spools.cron :as cron])
-  (:import [java.time Instant]
-           [java.util Random]))
+            [skein.spools.cron :as cron]))
 
 (def ^:private nvd-scan-interval-ms
   "Base cadence: 6 days between NVD deep scans."
@@ -64,29 +61,6 @@
       (throw (ex-info "gh issue list failed" {:state state :exit exit :out out})))
     (->> (json/read-str out :key-fn keyword)
          (filter #(= scan-lock-title (:title %))))))
-
-(defn nvd-seed-delay-ms
-  "Pure first-fire delay: ms from `now` until the first scan.
-
-  first fire = (`last-created` or `now`) + interval + jitter. A computed past
-  instant floors to a near-immediate fire (a maintainer has not scanned in over
-  a cadence). `last-created` may be nil (no lock issue ever); `rng` seeds the
-  jitter deterministically for tests."
-  [^Instant now ^Instant last-created ^Random rng]
-  (let [base (or last-created now)
-        jitter (cron/jitter-offset-ms nvd-scan-jitter-ms rng)
-        target (-> base (.plusMillis nvd-scan-interval-ms) (.plusMillis jitter))]
-    (max 0 (- (.toEpochMilli target) (.toEpochMilli now)))))
-
-(defn- most-recent-lock-created
-  "Return the created-at Instant of the most recently created lock issue (any
-  state), or nil when none exists, via the injected `run-cmd`."
-  [run-cmd]
-  (some->> (lock-issues run-cmd "all" "title,createdAt")
-           (sort-by :createdAt)
-           last
-           :createdAt
-           Instant/parse))
 
 (defn- nvd-key-present?
   "Return true when CLJ_WATSON_NVD_API_KEY is set in the login shell env."
@@ -195,14 +169,6 @@
         (finally
           (close-issue! run-cmd number))))))
 
-(defn nvd-seed-delay
-  "cron `:initial-delay-fn`: ms until the first scan, seeded from the most recent
-  lock issue's creation time via real gh."
-  [_runtime]
-  (nvd-seed-delay-ms (Instant/now)
-                     (most-recent-lock-created run-command)
-                     (Random.)))
-
 (defn nvd-scan-tick
   "cron `:run!`: run one NVD deep scan with the real gh, login-shell, and kanban
   seams. `runtime` scopes the kanban card write so it lands in the right world."
@@ -218,14 +184,13 @@
 
   Shared across every maintainer's weaver; the +/-1h jitter and the 'scan-lock
   running' issue lock keep concurrent maintainer weavers from all scanning at
-  once. Re-run on reload it re-seeds and re-registers idempotently."
+  once. Re-run on reload it re-registers idempotently."
   []
   {:nvd-scan (cron/register! (current/runtime)
                              {:id :nvd-scan
                               :interval-ms nvd-scan-interval-ms
                               :jitter-ms nvd-scan-jitter-ms
-                              :run! 'nvd-scan/nvd-scan-tick
-                              :initial-delay-fn 'nvd-scan/nvd-seed-delay})})
+                              :run! 'nvd-scan/nvd-scan-tick})})
 
 (defn install!
   "Register the scheduled NVD deep-scan cron job."
