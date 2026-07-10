@@ -10,11 +10,15 @@
 
 ## 1. Overview
 
-`skein.spools.selvage` is a reference spool for opt-in attribute vocabulary linting. Skein intentionally keeps strand attributes loose and userland-owned; Selvage lets a workspace register the attribute invariants it cares about and check them on demand or after mutations.
+`skein.spools.selvage` is a reference spool for opt-in attribute vocabulary linting. Skein intentionally keeps strand attributes loose and userland-owned.
+Selvage lets a workspace register the attribute invariants it cares about and check them on demand or after mutations.
 
-It is deliberately userland convention, not an engine schema. Vocabularies are weaver-lifetime data, checks are ordinary maps, and violations are returned as data. Invalid vocabulary specs fail loudly at registration time.
+It is deliberately userland convention, not an engine schema. Vocabularies are weaver-lifetime data, checks are ordinary maps, and violations are returned as data.
+Invalid vocabulary specs fail loudly at registration time.
 
-Watch mode is post-hoc **detection**, not rejection. It uses asynchronous `skein.api.events.alpha` handlers on `:strand/added` and `:strand/updated`, so a bad mutation has already committed by the time a violation is recorded. Skein also exposes synchronous lifecycle hooks, but this spool ships only the minimal lint/detection surface.
+Watch mode is post-hoc **detection**, not rejection. It uses asynchronous `skein.api.events.alpha` handlers on `:strand/added` and `:strand/updated`.
+A bad mutation has already committed by the time a violation is recorded.
+Skein also exposes synchronous lifecycle hooks, but this spool ships only the minimal lint/detection surface.
 
 ## 2. Usage
 
@@ -49,11 +53,12 @@ Watch mode is post-hoc **detection**, not rejection. It uses asynchronous `skein
 
 | Fn | Behavior |
 |---|---|
-| `(defvocab! name spec)` | Register or replace one weaver-lifetime vocabulary. `name` must be a keyword, symbol, or string. `spec` supports `:checks` and optional `:doc`; unknown spec/check keys fail with allowed sets in `ex-data`. |
+| `(defvocab! name spec)` | Register or replace one weaver-lifetime vocabulary. Unknown spec/check keys fail with allowed sets in `ex-data`. |
 | `(vocabs)` | Return registered vocabulary metadata, sorted deterministically. |
 | `(remove-vocab! name)` | Remove a vocabulary; absent names fail loudly. |
 | `(check strand-or-id)` | Return violation maps for a strand map or id. Missing ids fail loudly. |
 | `(check-all)` / `(check-all query-form)` | Check all active strands, or only active strands selected by a predicate DSL query form. |
+| `(undeclared-checks)` | Cross-check registered checks against declared attribute namespaces. Read-only, registered nowhere by default, no behavior change. |
 | `(watch!)` | Register the asynchronous event handler for `:strand/added` and `:strand/updated`. Duplicate calls replace the same handler key. |
 | `(violations)` | Return watch-mode violations recorded so far, in delivery order. |
 | `(clear-violations!)` | Reset recorded watch-mode violations. |
@@ -89,7 +94,8 @@ Supported check forms:
 | `{:attr s :kind k}` | If attribute `s` is present, its value must match `k`, one of `:string`, `:number`, `:boolean`, `:map`, or `:int-string`. |
 | `{:attr s :required-with t}` | If attribute `t` is present, attribute `s` must also be present. |
 
-Attributes are addressed by string names like `"agent-run/phase"`, matching how JSON-backed attributes appear at the CLI boundary. In Clojure strand maps these are keyword keys such as `:agent-run/phase`.
+Attributes are addressed by string names like `"agent-run/phase"`, matching how JSON-backed attributes appear at the CLI boundary.
+In Clojure strand maps these are keyword keys such as `:agent-run/phase`.
 
 ## 5. See also
 

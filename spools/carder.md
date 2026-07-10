@@ -10,11 +10,15 @@
 
 ## 1. Overview
 
-`skein.spools.carder` is a read-only reference spool for graph hygiene and triage. Long-lived strand graphs can accumulate stale active work, unconnected active strands, and work blocked behind failed agent runs. Carder reports those conditions as JSON-compatible data and mutates nothing.
+`skein.spools.carder` is a read-only reference spool for graph hygiene and triage. Long-lived strand graphs can accumulate stale active work,
+unconnected active strands, and work blocked behind failed agent runs. Carder reports those conditions as JSON-compatible data and mutates nothing.
 
 The name follows the textile metaphor: carding untangles fibers before spinning.
 
-`orphans`, `blocked-by-failure`, and `report` inspect `strand_edges` directly through the active runtime's datasource, because the public graph helpers expose relation-scoped traversal rather than a workspace-wide edge listing. They therefore require an **in-process weaver runtime** — trusted startup config, the weaver's own nREPL, or an in-process test runtime — and fail loudly with `ex-info` when none is active. `stale` composes only the public strand-listing surface.
+`orphans`, `blocked-by-failure`, and `report` inspect `strand_edges` directly through the active runtime's datasource.
+The public graph helpers expose relation-scoped traversal rather than a workspace-wide edge listing.
+These sections require an **in-process weaver runtime**: trusted startup config, the weaver's own nREPL, or an in-process test runtime.
+They fail loudly with `ex-info` when none is active. `stale` composes only the public strand-listing surface.
 
 ## 2. Usage
 
@@ -42,10 +46,11 @@ The name follows the textile metaphor: carding untangles fibers before spinning.
 | Fn / var | Behavior |
 |---|---|
 | `default-days` | Default stale threshold: `14`. |
-| `(stale)` / `(stale opts)` | Active strands whose `updated_at` is at least `:days` days old. Rows carry compact strand fields plus `:days-stale`. `:days` must be a positive integer. |
-| `(orphans)` / `(orphans opts)` | Active strands with zero incoming or outgoing edges in any relation in `strand_edges`, and no attribute whose key is in the `workflow/*` namespace. |
-| `(blocked-by-failure)` / `(blocked-by-failure opts)` | Active strands with at least one active `depends-on` blocker whose `agent-run/phase` string is `"failed"` or `"exhausted"`. Rows include `:blockers` with compact blocker details and any `agent-run/phase` / `agent-run/error` values. |
-| `(report)` / `(report opts)` | Aggregate map with `:opts` plus `:stale`, `:orphans`, and `:blocked-by-failure` sections, each carrying `:count` and `:rows`. |
+| `(stale)` / `(stale opts)` | Active strands whose `updated_at` is at least `:days` days old. Rows include `:days-stale`. |
+| `(orphans)` / `(orphans opts)` | Active strands with no incident `strand_edges` rows and no attribute in the `workflow/*` namespace. |
+| `(blocked-by-failure)` / `(blocked-by-failure opts)` | Active strands with active failed or exhausted `depends-on` blockers. Rows include compact `:blockers` details. |
+| `(undeclared)` / `(undeclared opts)` | Active strands carrying an attribute in no declared attribute namespace. Checks namespaces, not exact keys, and blocks no write. |
+| `(report)` / `(report opts)` | Aggregate map with `:opts` plus `:stale`, `:orphans`, `:blocked-by-failure`, and `:undeclared` sections. |
 | `(install!)` | Installation metadata: function symbols, default threshold, and `:read-only true` for trusted registration by name. |
 
 Options accepted by all report functions:
