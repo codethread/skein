@@ -11,6 +11,7 @@
             [skein.api.batch.alpha :as batch]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]))
@@ -1868,8 +1869,25 @@
            (complete! run-id (select-keys opts [:notes :attributes :step :by]))))))))
 
 (defn install!
-  "Return installation metadata for this alpha workflow spool."
+  "Return installation metadata for this alpha workflow spool.
+
+  Also seeds the `workflow/*` attribute namespace into the runtime vocabulary
+  registry, owned by this spool's use-key, so the workflow attributes `compile`
+  and the step/gate/checkpoint builders write are discoverable data."
   []
+  (vocab/declare! (current/runtime)
+                  {:kind :attr-namespace
+                   :name "workflow"
+                   :owner :skein/spools-workflow
+                   :keys ["workflow/role" "workflow/phase" "workflow/run-id"
+                          "workflow/family" "workflow/definition" "workflow/context"
+                          "workflow/wisp" "workflow/gate" "workflow/checkpoint"
+                          "workflow/checkpoint-kind" "workflow/hitl" "workflow/choices"
+                          "workflow/choice-details" "workflow/procedure" "workflow/outcome"
+                          "workflow/outcome-by" "workflow/outcome-notes" "workflow/outcome-input"
+                          "workflow/summary" "workflow/stage-params" "workflow/squashed-root"
+                          "workflow/squashed-count"]
+                   :doc "Workflow molecule/wisp attributes written by the workflow spool's compile and builders."})
   {:installed true
    :namespace 'skein.spools.workflow
    :workflow {:builder 'skein.spools.workflow/workflow

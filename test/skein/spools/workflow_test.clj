@@ -4,9 +4,19 @@
   run-driving surface (start!/complete!/choose!, gates, checkpoints, bonds)."
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.spools.test-support :refer [with-runtime]]
             [skein.spools.workflow :as workflow]
             [skein.repl :as repl]))
+
+(deftest workflow-install-declares-workflow-attr-namespace
+  (with-runtime
+    (fn [rt _]
+      (workflow/install!)
+      (let [decl (vocab/declaration rt :attr-namespace "workflow")]
+        (is (= :attr-namespace (:kind decl)))
+        (is (= :skein/spools-workflow (:owner decl))
+            "workflow install! owns the workflow/* namespace via its use-key")))))
 
 (deftest workflow-spool-explains-public-input-shapes
   (let [contract (workflow/explain)]
