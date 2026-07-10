@@ -35,14 +35,14 @@ tasks:
     type: AFK
     blocked_by: [4]
   - id: 6
-    description: "S6: reference docs — usage attrs, per-format capture, spend verb (cookbook + README + docstrings)"
+    description: "S6: reference docs + api-docs regen — usage attrs, per-format capture, spend verb (cookbook + README + docstrings + spools/*.api.md)"
     task_file: tasks/006-reference-docs.md
     status: pending
     harness: worker
     type: AFK
     blocked_by: [5]
   - id: 7
-    description: "S7: api-docs regen + acceptance / atomic-landing gate (full locked suite)"
+    description: "S7: acceptance / atomic-landing gate (full locked suite + go tests + smoke + quality gates)"
     task_file: tasks/007-acceptance-gate.md
     status: pending
     harness: build

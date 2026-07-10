@@ -8,10 +8,11 @@
 
 Type: AFK
 
-Add the pure spend aggregation read fn beside `runs*` (`agent_run.clj:1858`) / `run-summary`
-(`agent_run.clj:1822`) — one bulk query, per-run wall-time derived from the timestamps, harness/day
-grouping, nil-skipping totals (`PROP-Ru-001.C7`, `R4`). Last of the same-file spine: serial after Task 3;
-needs runs carrying usage to aggregate (`PLAN-Ru-001.S4`, `A2`).
+Add the pure spend aggregation read fn beside `runs*` / `run-summary` (find them with
+`rg -n "defn-? run(s\*|-summary)" spools/agent-run/src/skein/spools/agent_run.clj`) — one bulk query,
+per-run wall-time derived from the timestamps, harness/day grouping, nil-skipping totals
+(`PROP-Ru-001.C7`, `R4`). Last of the same-file spine: serial after Task 3; needs runs carrying usage to
+aggregate (`PLAN-Ru-001.S4`, `A2`).
 
 **Owned files (disjoint):**
 - `spools/agent-run/src/skein/spools/agent_run.clj` (new read fn beside `runs*`/`run-summary`)
@@ -26,8 +27,9 @@ Per `PROP-Ru-001.C7`, `C4`, `R3`, `R4`, `Q5`:
   :totals {runs, cost-usd, tokens-total, duration-ms},
   :groups [{key, runs, cost-usd, tokens-total, duration-ms} …],
   :runs [{id, harness, phase, cost-usd, tokens-total, tokens, duration-ms, started-at, finished-at} …]}`.
-- **TASK-Ru-004.MI2:** Reuse the bulk single-query discipline of `runs*`/`parents-by-run`
-  (`agent_run.clj:1691-1700`) — one query for many runs, never one per run (`PROP-Ru-001.R4`).
+- **TASK-Ru-004.MI2:** Reuse the bulk single-query discipline of `runs*`/`parents-by-run` (find the latter
+  with `rg -n "defn-? parents-by-run" spools/agent-run/src/skein/spools/agent_run.clj`) — one query for
+  many runs, never one per run (`PROP-Ru-001.R4`).
 - **TASK-Ru-004.MI3:** Derive `duration-ms` per run from `agent-run/started-at`/`finished-at` for **every
   format including raw** (`PROP-Ru-001.C4`, `Q5`).
 - **TASK-Ru-004.MI4:** `--since`/`--until` window on `started-at`; `--group-by` defaults `harness`, `day`
@@ -35,8 +37,8 @@ Per `PROP-Ru-001.C7`, `C4`, `R3`, `R4`, `Q5`:
   duration and count with `null` cost/tokens, never `0` (`PROP-Ru-001.R3`, `NG2`).
 - **TASK-Ru-004.MI5:** New tests: totals and per-harness/per-day groups; a raw/pre-feature run contributes
   duration + count with `null` cost/tokens and sums skip it; the aggregation uses the bulk path, not one
-  query per run — reuse the existing scan-scaling guard
-  (`ps-summary-building-does-not-scale-graph-scans-with-strand-count`, `agent_run_test.clj:247`;
+  query per run — reuse the existing scan-scaling guard (the `ps-summary-building-does-not-scale-graph-scans-with-strand-count`
+  deftest, find it with `rg -n "deftest ps-summary-building-does-not-scale" test/skein/agent_run_test.clj`;
   `PROP-Ru-001.R4`).
 
 ## TASK-Ru-004.P3 Done when

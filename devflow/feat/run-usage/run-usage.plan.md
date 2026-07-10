@@ -209,7 +209,7 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
 - **Done-when:** the aggregation fn returns the C7 shape with derived per-run `duration-ms`, harness/day grouping,
   window filters, and nil-skipping totals; it scales by one bulk query, not per-run scans.
 
-### PLAN-Ru-001.S5 — `strand agent spend` subcommand `[after S4; parallel with S6]`
+### PLAN-Ru-001.S5 — `strand agent spend` subcommand `[serial, after S4]`
 
 - **Owned files:** `spools/delegation/src/skein/spools/delegation.clj`,
   `test/skein/delegation_test.clj`.
@@ -225,32 +225,35 @@ Done-when. `[serial]` slices block dependents; `[parallel]` siblings share no fi
   totals; supports the three filters; derives `duration-ms` for every run including raw; never inflates missing figures
   to zero; `strand help agent`/`strand agent help` render the subcommand (generated, `SPEC-002.C39`).
 
-### PLAN-Ru-001.S6 — reference docs `[parallel, after the code each documents]`
+### PLAN-Ru-001.S6 — reference docs + api-docs regen `[serial, after S5]`
 
-- **Owned files:** `spools/agent-run.cookbook.md`, `spools/delegation/README.md`, and the agent-run/delegation docstrings the
-  api-docs are generated from (`install!`, `parse-pi-json`, `parse-claude-json`, the `agent` op spend subcommand).
-- **Depends-on:** S1–S5 for accuracy (doc-only; lands with the set).
+- **Owned files:** `spools/agent-run.cookbook.md`, `spools/delegation/README.md`, the agent-run/delegation docstrings the
+  api-docs are generated from (`install!`, `parse-pi-json`, `parse-claude-json`, the `agent` op spend subcommand), and
+  the regenerated `spools/agent-run.api.md`/`spools/delegation.api.md`.
+- **Depends-on:** S1–S5 for accuracy (doc-only; serial after S5 — `make docs-check` itself runs `make api-docs` and
+  diffs the result, so a docstring edit and its regen must land together in the same slice, not split across S6/S7).
 - **Change:** document the new `agent-run/*` usage attributes and per-format capture in the agent-run docstrings; add a
   short "reading run spend" entry to `spools/agent-run.cookbook.md`; document the `strand agent spend` subcommand
-  (flags, JSON shape) in `spools/delegation/README.md` and the `strand agent about` manual. Prose passes the docs-style gate.
-- **Validation:** `make docs-check` at zero findings; `make api-docs` regen deferred to S7.
+  (flags, JSON shape) in `spools/delegation/README.md` and the `strand agent about` manual; run `make api-docs` and
+  commit the regenerated `*.api.md` alongside the docstring edits, per the repo rule pairing regen with any spool
+  docstring touch. Prose passes the docs-style gate.
+- **Validation:** `make docs-check` at zero findings.
 - **Done-when:** the usage attrs, per-format capture, and the spend verb are documented in the userland reference docs;
-  `make docs-check` clean.
+  `spools/agent-run.api.md`/`spools/delegation.api.md` are regenerated and committed; `make docs-check` clean.
 
-### PLAN-Ru-001.S7 — api-docs regen + acceptance / atomic landing gate `[coordinator-adjacent, after S1–S6]`
+### PLAN-Ru-001.S7 — acceptance / atomic landing gate `[coordinator-adjacent, after S1–S6]`
 
-- **Owned files:** none new; regenerates `spools/agent-run.api.md`, `spools/delegation.api.md`; marks
-  `SPEC-Ru-001`–`004` as recorded no-change (no root-spec edit).
-- **Depends-on:** S1–S6.
-- **Change:** `make api-docs` (clean regen; `git status --short` shows only the two expected `*.api.md` changes); prove
-  the whole set green in one place, including the authoritative `skein.agent-run-test` shard.
+- **Owned files:** none new; marks `SPEC-Ru-001`–`004` as recorded no-change (no root-spec edit).
+- **Depends-on:** S1–S6 (S6 has already regenerated and committed the touched `*.api.md`).
+- **Change:** prove the whole set green in one place, including the authoritative `skein.agent-run-test` shard. No
+  api-docs regen here — S6 owns pairing the docstring edits with their regen.
 - **Validation (all green, `PROP-Ru-001.P6`):** `make build`; `flock -w 3600 /tmp/skein-test.lock clojure -M:test`
   (full locked suite — the authoritative gate for the `skein.agent-run-test` shard `B`); `(cd cli && go test ./...)`;
-  `clojure -M:smoke`; `make fmt-check lint reflect-check docs-check` at zero findings; `make api-docs` clean;
-  `git status --short` clear of generated SQLite/runtime artifacts. End-to-end: a completing pi-json run records the
-  four usage keys, a claude-json run records the same from its result object, a raw run records none; a pi
-  terminal-error run records its cost; `strand vocab` lists the four keys under `agent-run`; `strand agent spend`
-  returns the C7 JSON with derived per-run duration and harness/day grouping.
+  `clojure -M:smoke`; `make fmt-check lint reflect-check docs-check` at zero findings; `git status --short` clear of
+  generated SQLite/runtime artifacts. End-to-end: a completing pi-json run records the four usage keys, a claude-json
+  run records the same from its result object, a raw run records none; a pi terminal-error run records its cost;
+  `strand vocab` lists the four keys under `agent-run`; `strand agent spend` returns the C7 JSON with derived per-run
+  duration and harness/day grouping.
 - **Done-when:** `PROP-Ru-001.DW1`–`DW5` proven in one atomic, additive landing — no migration, no backfill, no
   cutover, no weaver restart.
 
@@ -370,3 +373,19 @@ Append notes here. Do not rewrite earlier notes.
 - `index.yml` carries the F3/F4 sibling schema (`harness` + `type` beside the canonical
   id/description/task_file/status/blocked_by) for consistency with the other features in this devflow
   tree; the AFK loop reads `harness` to route each task.
+
+### PLAN-Ru-001.DN3 docs-review-cd817e93 fix round — 2026-07-10
+
+- **S6/S7 api-docs split corrected (finding 1).** S6 deferred `make api-docs` regen to S7 while gating on
+  `make docs-check`, which itself runs `make api-docs` and diffs the result — S6 could never go green as
+  written. Fixed by moving the regen (and committing the touched `spools/*.api.md`) into S6 alongside the
+  docstring edits it pairs with; S7 keeps the full acceptance gate (build, full locked suite, go tests,
+  smoke, quality gates, tree checks) with no regen step of its own. `TASK-Ru-006`/`007` and `index.yml`
+  now match.
+- **S5/S6 dependency story synced (finding 2).** The S5 slice heading still read "parallel with S6" though
+  S6's own Depends-on line, `index.yml`, and `TASK-Ru-006` already serialized S6 after S5 for doc accuracy
+  (`DN2`). S5 and S6 now both read `[serial]` so the plan and the queue tell the same story.
+- **Line-number citations replaced with semantic anchors (finding 3, should-fix).** `TASK-Ru-001`–`005`
+  cited bare `file.clj:NN` locations for functions the serial spine edits repeatedly on the same files;
+  those numbers rot after the first slice lands. Replaced with the function/test name plus an `rg -n`
+  hint to relocate it in the current tree, matching `PLAN-Ru-001.TC4`'s own anchor discipline.

@@ -8,10 +8,10 @@
 
 Type: AFK
 
-Write the captured usage onto the terminal run record at the single `finish-run!`
-(`agent_run.clj:1110`) seam, on **both** branches that have parsed output — so a usage-limit failure still
-records its spend (`PROP-Ru-001.C5`, `G2`, `R2`). Serial after Task 1: same file, and it needs `:usage`
-on the parse result (`PLAN-Ru-001.S2`, `A2`).
+Write the captured usage onto the terminal run record at the single `finish-run!` seam (find it with
+`rg -n "defn-? finish-run!" spools/agent-run/src/skein/spools/agent_run.clj`), on **both** branches that
+have parsed output — so a usage-limit failure still records its spend (`PROP-Ru-001.C5`, `G2`, `R2`).
+Serial after Task 1: same file, and it needs `:usage` on the parse result (`PLAN-Ru-001.S2`, `A2`).
 
 **Owned files (disjoint):**
 - `spools/agent-run/src/skein/spools/agent_run.clj` (`finish-run!` only)

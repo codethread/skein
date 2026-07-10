@@ -8,7 +8,8 @@
 
 Type: AFK
 
-Wire `strand agent spend` — a new read subcommand on the existing `agent` op (`delegation.clj:1837`),
+Wire `strand agent spend` — a new read subcommand on the existing `agent` op (`agent-arg-spec` and
+`agent-op`, find them with `rg -n "agent-arg-spec|defn agent-op" spools/delegation/src/skein/spools/delegation.clj`),
 alongside `ps`/`status`/`logs` — to the Task 4 aggregation fn (`PROP-Ru-001.C7`). Disjoint file from the
 spine; fans out after Task 4, which it calls (delegation already depends on agent-run;
 `PLAN-Ru-001.S5`, `A2`, `TC2`). No `cli/` Go change: this is arg-spec data on a weaver-registered op, so

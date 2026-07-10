@@ -16,9 +16,9 @@ shapes are provisional recon verified against private local logs; this task turn
 by committing sanitized fixtures — from here the fixtures are the source of truth, not `TC3` or any log.
 
 **Owned files (disjoint):**
-- `spools/agent-run/src/skein/spools/agent_run.clj` (parse region only — `parse-pi-json`
-  `agent_run.clj:833`, `parse-claude-json` `agent_run.clj:826`, `parse-output`, and a new shared
-  normalize helper)
+- `spools/agent-run/src/skein/spools/agent_run.clj` (parse region only — `parse-pi-json`,
+  `parse-claude-json`, `parse-output`, and a new shared normalize helper; find them with
+  `rg -n "defn-? parse-(pi-json|claude-json|output)" spools/agent-run/src/skein/spools/agent_run.clj`)
 - `test/skein/agent_run_test.clj`
 - `test/fixtures/run-usage/pi-json.out` (new — one sanitized pi `--mode json` run)
 - `test/fixtures/run-usage/claude-json.out` (new — one sanitized claude `--output-format json` result)

@@ -9,9 +9,10 @@
 Type: AFK
 
 Declare the four usage keys through the F4 registry by extending the engine's existing `agent-run`
-declaration in `install!` (`agent_run.clj:2012`) — the first extension of the F4 registry after its
-initial seed (`PROP-Ru-001.C6`, `Q2`). Logically independent of S1/S2 (the keys are advisory — the engine
-writes them regardless), but same file: serial after Task 2 (`PLAN-Ru-001.S3`, `A2`).
+declaration in `install!` (`rg -n "defn install!" spools/agent-run/src/skein/spools/agent_run.clj`) — the
+first extension of the F4 registry after its initial seed (`PROP-Ru-001.C6`, `Q2`). Logically independent
+of S1/S2 (the keys are advisory — the engine writes them regardless), but same file: serial after Task 2
+(`PLAN-Ru-001.S3`, `A2`).
 
 **Owned files (disjoint):**
 - `spools/agent-run/src/skein/spools/agent_run.clj` (`install!` + a new `usage-attrs` def)
