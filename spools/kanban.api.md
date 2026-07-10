@@ -16,9 +16,9 @@ User-facing kanban board over Skein strands.
   Cards are work roots: claiming stamps `owner`/`branch`/`worktree`, and
   plans, devflow runs, and task DAGs hang beneath the card with `parent-of`
   edges — the kanban spool complements those workflows, it does not replace
-  them. Notes and handovers are closed child note strands, so a cold agent
-  can self-discover in-flight work: `kanban board` -> `kanban card <id>` ->
-  latest handover.
+  them. Notes are closed child note strands, so a cold agent can
+  self-discover in-flight work: `kanban board` -> `kanban card <id>` ->
+  the doing-task and its latest note.
 
 
 
@@ -30,7 +30,7 @@ User-facing kanban board over Skein strands.
 Function.
 
 Return the kanban convention and installed helper surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L645-L700">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L748-L805">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/add!">`add!`</a>
 ``` clojure
@@ -52,11 +52,11 @@ Function.
 
 Return the grouped board snapshot: epics, feature lanes, closed count.
 
-  Claimed cards carry their latest handover so a cold agent can see in one
-  call who is working where and how to pick up interrupted work.
+  Claimed and in-review cards carry their doing-task so a cold agent can see in
+  one call who is working where and how to pick up interrupted work.
   `:needs-review` aggregates the human-review frontier across claimed and
   in-review cards.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L518-L564">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L622-L668">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/board-str">`board-str`</a>
 ``` clojure
@@ -65,7 +65,7 @@ Return the grouped board snapshot: epics, feature lanes, closed count.
 Function.
 
 Render a `board` result map as a stacked-lane ASCII board string.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L611-L638">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L722-L741">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/card-view">`card-view`</a>
 ``` clojure
@@ -73,11 +73,12 @@ Render a `board` result map as a stacked-lane ASCII board string.
 ```
 Function.
 
-Return one card joined to its notes, latest handover, work, and frontier.
+Return one card joined to its notes, tasks, work, and frontier.
 
   This is the resume entry point: everything an agent needs to continue a
-  card lives here.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L427-L445">Source</a></sub></p>
+  card lives here. `:tasks` projects the feature card's child tasks with the
+  four derived statuses (empty for cards that carry no task tier).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L528-L547">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/claim!">`claim!`</a>
 ``` clojure
@@ -109,7 +110,7 @@ Close a claimed or in_review kanban card with an explicit outcome status.
 Function.
 
 Install the kanban op, batch pattern, and board queries into the active weaver.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L853-L879">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L966-L992">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/kanban-batch">`kanban-batch`</a>
 ``` clojure
@@ -133,7 +134,7 @@ Create pending feature cards with bodies and depends-on edges.
 Function.
 
 Dispatch parsed `strand kanban ...` subcommands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L834-L851">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L946-L964">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/next-card">`next-card`</a>
 ``` clojure
@@ -142,7 +143,7 @@ Dispatch parsed `strand kanban ...` subcommands.
 Function.
 
 Return the highest-priority (p1 first) oldest active pending feature card, or nil.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L466-L475">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L568-L577">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/note!">`note!`</a>
 ``` clojure
@@ -150,15 +151,14 @@ Return the highest-priority (p1 first) oldest active pending feature card, or ni
 ```
 Function.
 
-Append a note (or `--handover` note) to a card via the blessed notes relation.
+Append a note to a card via the blessed notes relation.
 
   The note rides the shared `notes` edge (`skein.api.notes.alpha/note!`) with
-  `kanban/note`, `kind`, and optional `kanban/handover`/`author` as decorating
-  attrs, so concurrent agents never race a read-merge-write cycle and every note
-  keeps its own timestamp and author. A handover note is the crash/stop
-  contract: record what is done, what is next, validation state, and gotchas so
-  any agent can resume from `kanban card <id>` alone.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L327-L349">Source</a></sub></p>
+  `kanban/note`, `kind`, and optional `author` as decorating attrs, so
+  concurrent agents never race a read-merge-write cycle and every note keeps
+  its own timestamp and author. Note as you go — a resuming agent reads the
+  doing-task and its latest note from `kanban card <id>` alone.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L432-L451">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/prime">`prime`</a>
 ``` clojure
@@ -172,9 +172,9 @@ Return the full agent-priming payload for working the kanban board.
   point here (`strand kanban prime`) rather than duplicating conventions that
   then drift from the spool. A superset of `about` — it reuses the same lane,
   attribute, command, and pattern surface and adds the working agreement,
-  pick-up flow, notes/handover discipline, adjacent-work awareness, and branch
+  pick-up flow, note discipline, adjacent-work awareness, and branch
   visibility that an agent needs before touching the board.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L702-L773">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L807-L877">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/print-board!">`print-board!`</a>
 ``` clojure
@@ -183,7 +183,7 @@ Return the full agent-priming payload for working the kanban board.
 Function.
 
 Print the live board as ASCII; the human view for `mill weaver repl`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L640-L643">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L743-L746">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/promote!">`promote!`</a>
 ``` clojure
@@ -220,3 +220,34 @@ Function.
 
 Set an active card's priority (p1 highest urgency .. p4 someday).
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L258-L268">Source</a></sub></p>
+
+## <a name="skein.spools.kanban/task-add!">`task-add!`</a>
+``` clojure
+(task-add! feature-id title flags)
+```
+Function.
+
+Create a task strand under a feature card via a `parent-of` edge.
+
+  `--depends-on <id>` is repeatable and lays the same `depends-on` edges that
+  are the concurrency DAG and drive the derived `blocked`/`ready` split; task
+  status is never stored.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L388-L408">Source</a></sub></p>
+
+## <a name="skein.spools.kanban/task-list">`task-list`</a>
+``` clojure
+(task-list feature-id)
+```
+Function.
+
+Project a feature card's tasks with their derived statuses.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L410-L417">Source</a></sub></p>
+
+## <a name="skein.spools.kanban/task-op">`task-op`</a>
+``` clojure
+(task-op {:keys [action feature title]} flags)
+```
+Function.
+
+Dispatch a parsed `kanban task ...` action, failing loudly on an unknown one.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L419-L426">Source</a></sub></p>

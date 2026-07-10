@@ -35,7 +35,7 @@ Register the batteries core strand ops into a weaver runtime.
 
   The no-arg arity registers into the active runtime for `use!`-style
   installation; the explicit-runtime arity is for tests and trusted callers.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L505-L520">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L510-L525">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/add-op">`add-op`</a>
 ``` clojure
@@ -74,7 +74,7 @@ Append an immutable note to a target strand's memory via the note primitive.
 
   Returns the primitive's `{:id :target}` shape, where `target` is a projection
   of the `notes` edge rather than a stored attribute.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L334-L341">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L334-L344">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/notes-op">`notes-op`</a>
 ``` clojure
@@ -84,7 +84,7 @@ Function.
 
 Return a target strand's notes from every primitive writer in note/at order,
   optionally filtered to one review round.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L343-L348">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L346-L351">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/pattern-op">`pattern-op`</a>
 ``` clojure
@@ -178,7 +178,7 @@ Function.
 
 List the runtime's vocabulary declarations as an ordered array of C1 maps,
   string-keyed at the wire boundary, optionally narrowed to one --kind.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L350-L357">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/batteries.clj#L353-L360">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/weave-op">`weave-op`</a>
 ``` clojure
