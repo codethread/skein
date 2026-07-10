@@ -51,7 +51,7 @@
       (is (= #{"from_strand_id" "to_strand_id" "edge_type" "attributes"}
              (set (map :name (db/execute! ds ["PRAGMA table_info(strand_edges)"])))))
       (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'indexed_attr_keys'"])))
-      (is (= #{"depends-on" "parent-of" "serves" "supersedes"}
+      (is (= #{"depends-on" "parent-of" "serves" "supersedes" "notes"}
              (set (db/list-acyclic-relations ds))))
       (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('tasks', 'task_edges')"]))))))
 

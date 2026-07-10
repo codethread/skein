@@ -11,7 +11,7 @@
     -  [`kanban-batch`](#skein.spools.kanban/kanban-batch) - Create pending feature cards with bodies and depends-on edges.
     -  [`kanban-op`](#skein.spools.kanban/kanban-op) - Dispatch parsed <code>strand kanban ...</code> subcommands.
     -  [`next-card`](#skein.spools.kanban/next-card) - Return the highest-priority (p1 first) oldest active pending feature card, or nil.
-    -  [`note!`](#skein.spools.kanban/note!) - Append a note (or <code>--handover</code> note) as a closed child strand of a card.
+    -  [`note!`](#skein.spools.kanban/note!) - Append a note (or <code>--handover</code> note) to a card via the blessed notes relation.
     -  [`prime`](#skein.spools.kanban/prime) - Return the full agent-priming payload for working the kanban board.
     -  [`print-board!`](#skein.spools.kanban/print-board!) - Print the live board as ASCII; the human view for <code>mill weaver repl</code>.
     -  [`promote!`](#skein.spools.kanban/promote!) - Move a refinement card into the pending lane (an explicit human act).
@@ -50,7 +50,7 @@ User-facing kanban board over Skein strands.
 Function.
 
 Return the kanban convention and installed helper surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L651-L706">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L644-L699">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/add!">`add!`</a>
 ``` clojure
@@ -62,7 +62,7 @@ Create a kanban card in the pending (or refinement) lane.
 
   `--type epic` creates a grouping epic; `--epic <id>` hangs a new feature
   under an existing epic with a parent-of edge.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L136-L154">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L137-L155">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/board">`board`</a>
 ``` clojure
@@ -76,7 +76,7 @@ Return the grouped board snapshot: epics, feature lanes, closed count.
   call who is working where and how to pick up interrupted work.
   `:needs-review` aggregates the human-review frontier across claimed and
   in-review cards.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L524-L570">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L517-L563">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/board-str">`board-str`</a>
 ``` clojure
@@ -85,7 +85,7 @@ Return the grouped board snapshot: epics, feature lanes, closed count.
 Function.
 
 Render a `board` result map as a stacked-lane ASCII board string.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L617-L644">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L610-L637">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/card-view">`card-view`</a>
 ``` clojure
@@ -97,7 +97,7 @@ Return one card joined to its notes, latest handover, work, and frontier.
 
   This is the resume entry point: everything an agent needs to continue a
   card lives here.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L433-L451">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L426-L444">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/claim!">`claim!`</a>
 ``` clojure
@@ -111,7 +111,7 @@ Claim a pending feature card, stamping the work-root attributes.
   driving it and on which branch; `--worktree` is optional (direct work in the
   main checkout has no separate worktree). Epics group work and are never
   claimed themselves.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L268-L288">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L269-L289">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/finish!">`finish!`</a>
 ``` clojure
@@ -120,7 +120,7 @@ Claim a pending feature card, stamping the work-root attributes.
 Function.
 
 Close a claimed or in_review kanban card with an explicit outcome status.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L306-L319">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L307-L320">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/install!">`install!`</a>
 ``` clojure
@@ -129,7 +129,7 @@ Close a claimed or in_review kanban card with an explicit outcome status.
 Function.
 
 Install the kanban op, batch pattern, and board queries into the active weaver.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L859-L879">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L852-L872">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/kanban-batch">`kanban-batch`</a>
 ``` clojure
@@ -144,7 +144,7 @@ Create pending feature cards with bodies and depends-on edges.
   :deps ["sibling-key-or-existing-strand-id"]}]}. `deps` values matching sibling
   keys become batch-local edges; all other values are treated as durable strand
   ids and fail loudly if absent.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L192-L219">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L193-L220">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/kanban-op">`kanban-op`</a>
 ``` clojure
@@ -153,7 +153,7 @@ Create pending feature cards with bodies and depends-on edges.
 Function.
 
 Dispatch parsed `strand kanban ...` subcommands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L840-L857">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L833-L850">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/next-card">`next-card`</a>
 ``` clojure
@@ -162,7 +162,7 @@ Dispatch parsed `strand kanban ...` subcommands.
 Function.
 
 Return the highest-priority (p1 first) oldest active pending feature card, or nil.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L472-L481">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L465-L474">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/note!">`note!`</a>
 ``` clojure
@@ -170,14 +170,15 @@ Return the highest-priority (p1 first) oldest active pending feature card, or ni
 ```
 Function.
 
-Append a note (or `--handover` note) as a closed child strand of a card.
+Append a note (or `--handover` note) to a card via the blessed notes relation.
 
-  Notes are strands rather than attributes so concurrent agents never race a
-  read-merge-write cycle and every note keeps its own timestamp and author.
-  A handover note is the crash/stop contract: record what is done, what is
-  next, validation state, and gotchas so any agent can resume from
-  `kanban card <id>` alone.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L332-L355">Source</a></sub></p>
+  The note rides the shared `notes` edge (`skein.api.notes.alpha/note!`) with
+  `kanban/note`, `kind`, and optional `kanban/handover`/`author` as decorating
+  attrs, so concurrent agents never race a read-merge-write cycle and every note
+  keeps its own timestamp and author. A handover note is the crash/stop
+  contract: record what is done, what is next, validation state, and gotchas so
+  any agent can resume from `kanban card <id>` alone.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L326-L348">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/prime">`prime`</a>
 ``` clojure
@@ -193,7 +194,7 @@ Return the full agent-priming payload for working the kanban board.
   attribute, command, and pattern surface and adds the working agreement,
   pick-up flow, notes/handover discipline, adjacent-work awareness, and branch
   visibility that an agent needs before touching the board.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L708-L779">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L701-L772">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/print-board!">`print-board!`</a>
 ``` clojure
@@ -202,7 +203,7 @@ Return the full agent-priming payload for working the kanban board.
 Function.
 
 Print the live board as ASCII; the human view for `mill weaver repl`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L646-L649">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L639-L642">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/promote!">`promote!`</a>
 ``` clojure
@@ -211,7 +212,7 @@ Print the live board as ASCII; the human view for `mill weaver repl`.
 Function.
 
 Move a refinement card into the pending lane (an explicit human act).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L248-L254">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L249-L255">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/request-review!">`request-review!`</a>
 ``` clojure
@@ -220,7 +221,7 @@ Move a refinement card into the pending lane (an explicit human act).
 Function.
 
 Move a claimed kanban card into the in_review lane.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L290-L296">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L291-L297">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/rework!">`rework!`</a>
 ``` clojure
@@ -229,7 +230,7 @@ Move a claimed kanban card into the in_review lane.
 Function.
 
 Move an in_review kanban card back to claimed for rework.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L298-L304">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L299-L305">Source</a></sub></p>
 
 ## <a name="skein.spools.kanban/set-priority!">`set-priority!`</a>
 ``` clojure
@@ -238,4 +239,4 @@ Move an in_review kanban card back to claimed for rework.
 Function.
 
 Set an active card's priority (p1 highest urgency .. p4 someday).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L256-L266">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/kanban/src/skein/spools/kanban.clj#L257-L267">Source</a></sub></p>

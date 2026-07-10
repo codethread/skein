@@ -8,6 +8,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.graph.alpha :as graph]
+            [skein.api.notes.alpha :as notes]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.agent-run :as agent-run]
@@ -352,7 +353,7 @@
                   :semantics ["Append an immutable note to any strand memory."
                               "Notes are append-only memory, not mutation; workers may note any strand, including parents, without violating their contract."
                               "--round is for councils."]
-                  :returns {"id" "note id" "note-for" "strand id"}}
+                  :returns {"id" "note id" "target" "strand id"}}
            :notes {:group "memory-review"
                    :help-topic "strand help agent"
                    :verb "notes"
@@ -1619,18 +1620,18 @@
   (let [{:keys [positional flags]} (parse-argv argv {"--by" :single "--round" :single})]
     (when-not (= 2 (count positional))
       (fail! "note requires <strand-id> <text>" {:got positional}))
-    (agent-run/note! (first positional) (second positional)
-                   (cond-> {}
-                     (get flags "--by") (assoc :by (get flags "--by"))
-                     (get flags "--round") (assoc :round (parse-int! "--round" (get flags "--round")))))))
+    (notes/note! (rt) (first positional) (second positional)
+                 (cond-> {}
+                   (get flags "--by") (assoc :by (get flags "--by"))
+                   (get flags "--round") (assoc :round (parse-int! "--round" (get flags "--round")))))))
 
 (defn- op-notes [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--round" :single})]
     (when-not (= 1 (count positional))
       (fail! "notes requires <strand-id>" {:got positional}))
-    (agent-run/notes (first positional)
-                   (cond-> {}
-                     (get flags "--round") (assoc :round (parse-int! "--round" (get flags "--round")))))))
+    (notes/notes (rt) (first positional)
+                 (cond-> {}
+                   (get flags "--round") (assoc :round (parse-int! "--round" (get flags "--round")))))))
 
 (defn- split-csv [s]
   (when s

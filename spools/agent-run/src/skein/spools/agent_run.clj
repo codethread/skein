@@ -11,7 +11,7 @@
   Runs survive weaver crashes because the strands are durable: `reconcile!`
   respawns still-active running strands on install, bounded by
   `agent-run/max-attempts`. Run memory is append-only note strands linked by
-  `notes` annotation edges plus `note/for` attributes.
+  `notes` annotation edges — the edge is the sole linkage.
 
   Delegation semantics ride a `serves` edge (run → target): a serving run is a
   delegation of that target's own work. This is distinct from the `parent-of`
@@ -69,6 +69,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
+            [skein.api.notes.alpha :as notes-alpha]
             [skein.api.weaver.alpha :as api]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
@@ -238,13 +239,6 @@
   "Read the `agent-run/<k>` attribute from a normalized strand."
   [strand k]
   (attr-get strand (keyword "agent-run" k)))
-
-(defn- nattr
-  "Read the `note/<k>` note-memory attribute from a normalized strand. Note
-  strands carry their own attribute family, distinct from the run attributes
-  `sattr` reads."
-  [strand k]
-  (attr-get strand (keyword "note" k)))
 
 (defn- now [] (str (Instant/now)))
 
@@ -1931,45 +1925,22 @@
       {:id id :path path :text (slurp path)})))
 
 (defn note!
-  "Append an immutable note strand to `target-id`'s memory.
+  "Append an immutable note strand to `target-id`'s memory via the blessed
+  `skein.api.notes.alpha/note!`, threading this spool's runtime.
 
-  The note is born closed (it is memory, not work), carries
-  `note/for`, optional `note/by` and `note/round`
-  attributes, and a `notes` annotation edge to the target."
+  The note is born closed (memory, not work), linked to the target by a `notes`
+  edge alone — no `note/for` attribute — and carries optional `note/by`/`note/round`."
   ([target-id text] (note! target-id text {}))
-  ([target-id text {:keys [by round]}]
-   (when (str/blank? text)
-     (fail! "Note text must be non-blank" {}))
-   (when-not (api/show (rt) target-id)
-     (fail! "Note target strand not found" {:id target-id}))
-   (let [note (api/add (rt) {:title (truncate text 72)
-                             :state "closed"
-                             ;; note/at carries sub-second precision; the
-                             ;; core created_at column only has seconds, which
-                             ;; cannot order a burst of notes.
-                             :attributes (cond-> {"note/for" target-id
-                                                  "note/text" text
-                                                  "note/at" (now)}
-                                           by (assoc "note/by" by)
-                                           round (assoc "note/round" round))
-                             :edges [{:type "notes" :to target-id}]})]
-     {:id (:id note) :note-for target-id})))
+  ([target-id text opts] (notes-alpha/note! (rt) target-id text opts)))
 
 (defn notes
-  "Return `target-id`'s notes in creation order, optionally one `:round`."
+  "Return `target-id`'s notes in `note/at` order, optionally one `:round`, via
+  the blessed `skein.api.notes.alpha/notes` threading this spool's runtime.
+
+  Walks the incoming `notes` edges to the target, so it reads every writer's
+  notes regardless of decorating attrs."
   ([target-id] (notes target-id {}))
-  ([target-id {:keys [round]}]
-   (->> (api/list (rt)
-                  (cond-> [:and [:= [:attr "note/for"] target-id]]
-                    round (conj [:= [:attr "note/round"] round]))
-                  {})
-        (sort-by (juxt #(nattr % "at") :created_at :id))
-        (mapv (fn [note]
-                (cond-> {:id (:id note)
-                         :note (nattr note "text")
-                         :at (or (nattr note "at") (:created_at note))}
-                  (nattr note "by") (assoc :by (nattr note "by"))
-                  (nattr note "round") (assoc :round (nattr note "round"))))))))
+  ([target-id opts] (notes-alpha/notes (rt) target-id opts)))
 
 ;; ---------------------------------------------------------------------------
 ;; Review contract state

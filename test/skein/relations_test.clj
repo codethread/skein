@@ -6,7 +6,7 @@
 (deftest catalog-shape-and-lookups
   (is (= #{"related-to" "duplicates" "references" "implements" "verifies" "tracks" "caused-by"}
          (set (map :relation (relations/annotation-relations)))))
-  (is (= #{"depends-on" "parent-of" "supersedes" "serves"}
+  (is (= #{"depends-on" "parent-of" "supersedes" "serves" "notes"}
          (set (map :relation (relations/operational-relations)))))
   (is (= "replacement --supersedes--> replaced"
          (:direction (relations/relation "supersedes"))))
