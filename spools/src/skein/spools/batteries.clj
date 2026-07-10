@@ -25,6 +25,7 @@
             [skein.api.notes.alpha :as notes-api]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime-api]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.core.query :as query]
             [skein.core.specs :as specs])
@@ -34,6 +35,7 @@
 (def ^:private lean-attribute-byte-floor 1024)
 (def ^:private default-read-limit 500)
 (def ^:private readable-states #{"active" "closed" "replaced"})
+(def ^:private vocab-kinds #{"attr-namespace" "edge"})
 
 (defn- validate-generic-state
   "Return state when it is active|closed, else fail loudly (mutations)."
@@ -58,6 +60,14 @@
     (throw (ex-info "Read result limit must be a positive integer"
                     {:limit limit :explain (s/explain-str ::specs/read-limit limit)})))
   limit)
+
+(defn- validate-vocab-kind
+  "Return the --kind value as its declaration-kind keyword, else fail loudly."
+  [kind]
+  (when-not (vocab-kinds kind)
+    (throw (ex-info "vocab --kind must be attr-namespace or edge"
+                    {:kind kind :allowed (vec (sort vocab-kinds))})))
+  (keyword kind))
 
 (defn- read-limit-state [rt]
   (runtime-api/spool-state rt ::read-limit #(atom default-read-limit)))
@@ -336,6 +346,15 @@
   (let [{:keys [id round]} (:op/args ctx)]
     (notes-api/notes (:op/runtime ctx) id {:round round})))
 
+(defn vocab-op
+  "List the runtime's vocabulary declarations as an ordered array of C1 maps,
+  string-keyed at the wire boundary, optionally narrowed to one --kind."
+  [ctx]
+  (let [rt (:op/runtime ctx)
+        {:keys [kind]} (:op/args ctx)]
+    (json-safe-value
+     (vocab/declarations rt (when kind {:kind (validate-vocab-kind kind)})))))
+
 ;; --- arg-specs --------------------------------------------------------------
 
 (def ^:private add-arg-spec
@@ -459,6 +478,12 @@
                    :doc "Filter to notes from one review round."}}
    :positionals [{:name :id :type :string :required? true :doc "Target strand id."}]})
 
+(def ^:private vocab-arg-spec
+  {:op "vocab"
+   :doc "List the declared attribute-namespace and edge vocabulary."
+   :flags {:kind {:type :string
+                  :doc "Narrow to one declaration kind: attr-namespace or edge."}}})
+
 (def ^:private op-registrations
   "Each shipped op: [op-name arg-spec hook-class handler-symbol]."
   [['add add-arg-spec :mutating 'skein.spools.batteries/add-op]
@@ -473,7 +498,8 @@
    ['query query-arg-spec :read 'skein.spools.batteries/query-op]
    ['pattern pattern-arg-spec :read 'skein.spools.batteries/pattern-op]
    ['note note-arg-spec :mutating 'skein.spools.batteries/note-op]
-   ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]])
+   ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]
+   ['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]])
 
 (defn activate!
   "Register the batteries core strand ops into a weaver runtime.

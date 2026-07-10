@@ -11,6 +11,8 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes-api]
             [skein.api.patterns.alpha :as patterns]
+            [skein.api.relations.alpha :as relations]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.core.specs :as specs]
             [skein.spools.batteries :as batteries]
@@ -40,7 +42,7 @@
     (fn [rt]
       (testing "all shipped ops are registered under batteries provenance"
         (doseq [op-name ['add 'update 'show 'supersede 'burn 'list 'ready 'subgraph
-                         'weave 'query 'pattern 'note 'notes]]
+                         'weave 'query 'pattern 'note 'notes 'vocab]]
           (let [entry (op-entry rt op-name)]
             (is (some? entry) (str op-name " should be registered"))
             (is (= 'skein.spools.batteries (:provenance entry)))
@@ -59,7 +61,8 @@
         (is (= :read (:hook-class (op-entry rt 'query))))
         (is (= :read (:hook-class (op-entry rt 'pattern))))
         (is (= :mutating (:hook-class (op-entry rt 'note))))
-        (is (= :read (:hook-class (op-entry rt 'notes))))))))
+        (is (= :read (:hook-class (op-entry rt 'notes))))
+        (is (= :read (:hook-class (op-entry rt 'vocab))))))))
 
 (deftest add-happy-path-and-json-shape
   (with-batteries
@@ -407,3 +410,36 @@
         (testing "missing required id fails in the parser"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required"
                                 (api/op! rt 'notes []))))))))
+
+(deftest vocab-lists-seed-declarations-string-keyed
+  (with-batteries
+    (fn [rt]
+      (let [rows (api/op! rt 'vocab [])]
+        (testing "output is an ordered, string-keyed array of every declaration"
+          (is (vector? rows))
+          (is (= (count (vocab/declarations rt)) (count rows)))
+          (is (= rows (sort-by (juxt #(get % "kind") #(get % "name")) rows)))
+          (is (every? #(every? string? (keys %)) rows)))
+        (testing "the fresh-world seed is present: reflected edges plus core note/*"
+          (let [edges (filter #(= "edge" (get % "kind")) rows)]
+            (is (= (set (map :relation relations/catalog))
+                   (set (map #(get % "name") edges))))
+            (is (every? #(= "skein/core" (get % "owner")) edges)))
+          (let [note (some #(when (and (= "attr-namespace" (get % "kind"))
+                                       (= "note" (get % "name")))
+                              %)
+                           rows)]
+            (is (some? note))
+            (is (= "skein.api.notes.alpha" (get note "owner")))
+            (is (= ["note/text" "note/at" "note/by" "note/round"] (get note "keys")))))
+        (testing "--kind narrows to one declaration kind"
+          (is (= (set (map :relation relations/catalog))
+                 (set (map #(get % "name") (api/op! rt 'vocab ["--kind" "edge"])))))
+          (is (every? #(= "attr-namespace" (get % "kind"))
+                      (api/op! rt 'vocab ["--kind" "attr-namespace"]))))
+        (testing "an invalid --kind fails loudly instead of returning empty"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"attr-namespace or edge"
+                                (api/op! rt 'vocab ["--kind" "bogus"]))))
+        (testing "vocab help renders the generated --kind arg-spec"
+          (let [detail (api/op! rt 'help ["vocab"])]
+            (is (contains? (set (map :name (get-in detail [:arg-spec :flags]))) "kind"))))))))
