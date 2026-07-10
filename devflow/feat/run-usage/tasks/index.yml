@@ -16,7 +16,7 @@ tasks:
   - id: 3
     description: "S3: vocab declaration growth — usage-attrs folded into agent-run declare! (agent_run.clj)"
     task_file: tasks/003-vocab-declaration.md
-    status: pending
+    status: complete
     harness: build
     type: AFK
     blocked_by: [2]
