@@ -32,5 +32,5 @@ tasks:
   - id: 7
     description: Acceptance and SPEC-004 delta promotion (PH5)
     task_file: tasks/007-acceptance-delta-promotion.md
-    status: pending
+    status: complete
     blocked_by: [4, 5, 6]

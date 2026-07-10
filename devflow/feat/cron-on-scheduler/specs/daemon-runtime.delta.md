@@ -1,6 +1,6 @@
 # Cron-on-Scheduler Runtime Delta
 
-**Document ID:** `DELTA-cron-on-scheduler-runtime-001` **Status:** Staged (targets `SPEC-004.C102`; adds `SPEC-004.C102b`) **Feature:** `cron-on-scheduler` **Root spec:** [`SPEC-004 Weaver Runtime`](../../../specs/daemon-runtime.md) **Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../../rfcs/2026-06-29-weaver-scheduler.md) **Related proposal:** [`PROP-cron-on-scheduler-001`](../proposal.md)
+**Document ID:** `DELTA-cron-on-scheduler-runtime-001` **Status:** Promoted (`SPEC-004.C102` amended; `SPEC-004.C102b` added — `PLAN-cron-on-scheduler-001.PH5`/`.V6`) **Feature:** `cron-on-scheduler` **Root spec:** [`SPEC-004 Weaver Runtime`](../../../specs/daemon-runtime.md) **Related RFCs:** [`RFC-009 Weaver Scheduler Primitive`](../../../rfcs/2026-06-29-weaver-scheduler.md) **Related proposal:** [`PROP-cron-on-scheduler-001`](../proposal.md)
 
 ## DELTA-cron-on-scheduler-runtime-001.P1 Summary
 

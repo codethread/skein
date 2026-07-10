@@ -525,3 +525,24 @@ intended `git status --short`.
   `advance!` → `events/await-quiescent!` → `cron/await-idle!`.
 - Regenerated `spools/cron.api.md` with `make api-docs` after confirming cron
   docstrings no longer surface the removed seed/timer wording.
+
+### PLAN-cron-on-scheduler-001.DN10 Task sw7qm: PH5 acceptance + SPEC-004 delta promotion — 2026-07-10
+
+- Promoted `DELTA-cron-on-scheduler-runtime-001` into `devflow/specs/daemon-runtime.md`:
+  amended `SPEC-004.C102` to name retirement as the second generation-sensitive
+  transition (cross-ref `SPEC-004.C102b`) and added `SPEC-004.C102b`
+  (generation-aware retirement; cancel-by-key stays key-based), per `.CC1`/`.CC2`.
+  Placed `C102b` after `C102a` to keep the bullet order lexical.
+- Reconciled the `DN1` finish-time cleanup: dropped the stale `; the userland cron
+  spool` mention from `SPEC-004.C1a`'s non-normative parenthetical, and rewrote the
+  feature `specs/README.md` one-delta record to past-tense (delta promoted, cleanup
+  done). Marked the delta doc `Status: Promoted`.
+- `V6` confirmed: the only primitive source diffs vs the feature base (`2c2c985`)
+  are `src/skein/core/db.clj` and `src/skein/core/weaver/scheduler.clj`, both the
+  PH0 generation-aware-retirement mechanic (`AA9`/`AA10`) — no other reshaping.
+- `V7`/`DW1` gates all green cold: full locked suite (`flock … clojure -M:test` —
+  784 tests, 5350 assertions, 0 fail/0 error; the four scheduler suites + cron
+  suites green), `(cd cli && go test ./...)`, `clojure -M:smoke`,
+  `make fmt-check lint reflect-check docs-check`. `DW3` clean: `git status --short`
+  shows only the four intended spec/index doc edits — no generated SQLite/runtime
+  artifacts (task 6 already committed `spools/cron.api.md`).
