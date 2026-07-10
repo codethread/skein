@@ -15,7 +15,15 @@ Extend the generation discipline that `SPEC-004.C102` already gives the delivery
 
 ### DELTA-cron-on-scheduler-runtime-001.D1 Retire the delivered generation, not the key
 
-`SPEC-004.C102a` already teaches the scheduler that a `(key, wake instant)` pair identifies a wake generation, and `SPEC-004.C102` already scopes the delivery-attempt increment to it. Retirement is the mirror transition and was the one place the key-only shortcut survived. Scoping the completing/failing delete to `(key, delivered wake instant)` — and sourcing the history row from the already-re-read delivered row rather than a fresh key lookup — closes the self-reschedule clobber without touching the wake model, storage layout, or API surface. The delivered row is available at retirement because due dispatch re-reads it before invoking the handler; retirement reuses that row rather than reading the key again.
+`SPEC-004.C102` already identifies a wake generation by its `(key, wake instant)`
+pair and scopes the delivery-attempt increment to exactly that generation.
+Retirement is the mirror transition and was the one place the key-only shortcut
+survived. Scoping the completing/failing delete to `(key, delivered wake
+instant)` — and sourcing the history row from the already-re-read delivered row
+rather than a fresh key lookup — closes the self-reschedule clobber without
+touching the wake model, storage layout, or API surface. The delivered row is
+available at retirement because due dispatch re-reads it before invoking the
+handler; retirement reuses that row rather than reading the key again.
 
 ### DELTA-cron-on-scheduler-runtime-001.D2 Cancel-by-key stays key-based
 

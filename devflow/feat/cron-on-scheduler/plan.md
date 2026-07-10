@@ -227,7 +227,8 @@ regenerated api-doc as intended, nothing else generated.
 ### PLAN-cron-on-scheduler-001.PH5 Acceptance
 
 Outcome: full locked suite, Go tests, and smoke green; the scheduler suites are
-untouched and green. Gate:
+green, with primitive diffs limited to the PH0 retirement mechanic and its
+focused tests (`V6`). Gate:
 `flock -w 3600 /tmp/skein-test.lock clojure -M:test`, `(cd cli && go test ./...)`,
 `clojure -M:smoke`, `make fmt-check lint reflect-check docs-check`, with a clean
 intended `git status --short`.
@@ -308,11 +309,12 @@ intended `git status --short`.
   `docs/writing-shared-spools.md` ("Versioned spool state") and SPEC-004.C95 — bump
   the version whenever `new-state`'s key set changes, or a post-upgrade reload
   reuses a stale map and schedules against a nil resource.
-- **PLAN-cron-on-scheduler-001.TC5:** Do not touch the scheduler primitive
-  (`NG1`), add cron-syntax/calendar expressions (`NG2`), push jitter into the
-  primitive (`NG3`), add workflow timer gates (`NG4`), attempt exactly-once
-  (`NG5`), or add a public mutating cron CLI verb (`NG6`). Registration stays
-  trusted config/REPL.
+- **PLAN-cron-on-scheduler-001.TC5:** The only permitted primitive change is the
+  PH0 generation-aware retirement fix scoped by `NG1` and the staged delta; do
+  not otherwise touch the scheduler primitive, add cron-syntax/calendar
+  expressions (`NG2`), push jitter into the primitive (`NG3`), add workflow
+  timer gates (`NG4`), attempt exactly-once (`NG5`), or add a public mutating
+  cron CLI verb (`NG6`). Registration stays trusted config/REPL.
 
 ## PLAN-cron-on-scheduler-001.P9 Developer Notes
 

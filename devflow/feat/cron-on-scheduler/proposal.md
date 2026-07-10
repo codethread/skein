@@ -18,10 +18,10 @@ The cost surfaces downstream and in operator ergonomics:
 - Cron never adopted the primitive's at-least-once delivery framing, so job authors have no stated contract for duplicate tolerance.
 
 A latent primitive defect surfaced during plan review, exposed by cron as the
-first real consumer of the blessed self-reschedule pattern. The scheduler retires
+first real consumer of the self-reschedule pattern. The scheduler retires
 a delivered wake by key alone (`retire-wake!` DELETEs `WHERE key = ?`), so when a
-fire-handler follows the `SPEC-004.C101`-blessed move and schedules its own next
-`cron/<id>` wake from inside the handler (same key, replace semantics), that
+fire-handler schedules its own next `cron/<id>` wake from inside the handler
+(same key, replace semantics — the pattern `SPEC-004.C101` explicitly allows), that
 freshly persisted replacement is deleted the instant the handler returns and the
 delivery completes — cadence dies after a single fire, and the failure path
 (`fail-wake!`) shares the defect. Retirement was simply never given the
@@ -40,7 +40,7 @@ survives.
 
 ## PROP-cron-on-scheduler-001.P3 Non-goals
 
-- **PROP-cron-on-scheduler-001.NG1:** No reshaping of the scheduler primitive. `skein.api.scheduler.alpha` and its durable wake storage and dispatch (RFC-009) stay as shipped in model and surface; this feature consumes them, it does not reshape them — with one narrow, spec-consistent exception. Wake retirement (`complete`/`fail`) becomes generation-aware, mirroring the generation-specific delivery-attempt increment `SPEC-004.C102` already defines, because the `SPEC-004.C101`-blessed self-reschedule pattern this feature is the first to use exposes a latent retire-by-key defect (`.P1`). That is a bug fix inside the existing contract, not a new capability; it is staged as a `SPEC-004` delta (see [`specs/`](./specs/)) and lands in its own plan phase, and the primitive's model, storage, and API surface are otherwise untouched.
+- **PROP-cron-on-scheduler-001.NG1:** No reshaping of the scheduler primitive. `skein.api.scheduler.alpha` and its durable wake storage and dispatch (RFC-009) stay as shipped in model and surface; this feature consumes them, it does not reshape them — with one narrow, spec-consistent exception. Wake retirement (`complete`/`fail`) becomes generation-aware, mirroring the generation-specific delivery-attempt increment `SPEC-004.C102` already defines, because the self-reschedule pattern `SPEC-004.C101` explicitly allows — which this feature is the first to use — exposes a latent retire-by-key defect (`.P1`). That is a bug fix inside the existing contract, not a new capability; it is staged as a `SPEC-004` delta (see [`specs/`](./specs/)) and lands in its own plan phase, and the primitive's model, storage, and API surface are otherwise untouched.
 - **PROP-cron-on-scheduler-001.NG2:** No cron-syntax or calendar expressions. Cadence stays interval-plus-jitter; DST/calendar semantics remain out of scope (RFC-009.NG2).
 - **PROP-cron-on-scheduler-001.NG3:** Jitter stays a cron-side userland concern; it is not pushed into the primitive (RFC-009.NG2).
 - **PROP-cron-on-scheduler-001.NG4:** No workflow timer or deadline gates. Those remain the `RFC-009.C8` follow-up and layer on the primitive separately.
