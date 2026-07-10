@@ -74,6 +74,35 @@
         (testing ":round filters to one writer's notes"
           (is (= ["first by at"] (mapv :note (notes/notes rt target {:round 2})))))))))
 
+(deftest note-round-is-single-typed-and-ordering-is-chronological
+  ;; regression (change-review-1a1d1cc7): a string round written through one
+  ;; surface silently missed the other surface's int-round filter, and
+  ;; lexicographic note/at comparison misordered mixed-precision timestamps
+  ;; (Instant/toString drops trailing zero fraction digits).
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [clock (atom nil)
+            _ (fixed-clock! rt clock)
+            target (target! rt)]
+        (testing "a non-integer round fails loudly on write and on read"
+          (reset! clock (Instant/parse "2026-01-01T00:00:00.100Z"))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer"
+                                (notes/note! rt target "typed" {:round "2"})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer"
+                                (notes/notes rt target {:round "2"}))))
+        (testing "mixed fractional precision still sorts chronologically"
+          ;; 00:00:01Z stringifies with no fraction; lexicographically
+          ;; "2026-01-01T00:00:01Z" > "2026-01-01T00:00:01.900Z" is false but
+          ;; "...:01Z" vs "...:01.100Z": 'Z' (0x5A) > '.' (0x2E), so the
+          ;; fraction-less earlier-written 01Z would sort AFTER 01.100Z only
+          ;; chronologically-wrongly under string compare when it is earlier.
+          (reset! clock (Instant/parse "2026-01-01T00:00:01.100Z"))
+          (notes/note! rt target "later with fraction" {})
+          (reset! clock (Instant/parse "2026-01-01T00:00:01Z"))
+          (notes/note! rt target "earlier without fraction" {})
+          (is (= ["earlier without fraction" "later with fraction"]
+                 (mapv :note (notes/notes rt target {})))))))))
+
 (deftest target-deletion-cascades-the-edge-leaving-no-dangling-read
   (with-runtime
     (fn [rt _config-dir]

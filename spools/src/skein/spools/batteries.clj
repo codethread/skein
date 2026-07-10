@@ -447,7 +447,7 @@
    :doc "Append an immutable note to a target strand's memory."
    :flags {:by {:type :string
                 :doc "Author attribution recorded on the note."}
-           :round {:type :string
+           :round {:type :int
                    :doc "Review round the note belongs to."}}
    :positionals [{:name :id :type :string :required? true :doc "Target strand id."}
                  {:name :text :type :string :required? true :doc "Note text."}]})
@@ -455,7 +455,7 @@
 (def ^:private notes-arg-spec
   {:op "notes"
    :doc "Return a target strand's notes in note/at order from every writer."
-   :flags {:round {:type :string
+   :flags {:round {:type :int
                    :doc "Filter to notes from one review round."}}
    :positionals [{:name :id :type :string :required? true :doc "Target strand id."}]})
 

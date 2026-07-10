@@ -28,18 +28,41 @@
   [note k]
   (get (:attributes note) (keyword "note" k)))
 
+(defn- require-int-round
+  "Return `round` when it is an integer (or nil); otherwise fail loudly.
+
+  `note/round` is single-typed by contract: every writer stores an integer and
+  the read filter compares integers, so a round written through one surface is
+  always visible through another."
+  [round]
+  (when (and (some? round) (not (integer? round)))
+    (throw (ex-info "note/round must be an integer" {:round round :type (type round)})))
+  round)
+
+(defn- at-instant
+  "Chronological sort key for a note: its `note/at` parsed as an Instant, else
+  epoch. `Instant/toString` varies in fractional precision, so lexicographic
+  comparison misorders notes; parsing restores chronological order."
+  [note]
+  (if-let [at (note-attr note "at")]
+    (try (java.time.Instant/parse at)
+         (catch Exception _ java.time.Instant/EPOCH))
+    java.time.Instant/EPOCH))
+
 (defn note!
   "Append an immutable note strand to `target-id`'s memory and return its id.
 
   The note is born closed, carries `note/text`, a sub-second `note/at`
   timestamp, optional `note/by`/`note/round`, and any caller-supplied decorating
   attrs, and links to the target by an outgoing `notes` edge — never a
-  `note/for` attribute. Fails loudly on blank text or a missing target."
+  `note/for` attribute. Fails loudly on blank text, a missing target, or a
+  non-integer `:round` (the `note/round` contract is single-typed)."
   [runtime target-id text {:keys [by round] :as opts}]
   (when (str/blank? text)
     (throw (ex-info "Note text must be non-blank" {})))
   (when-not (weaver/show runtime target-id)
     (throw (ex-info "Note target strand not found" {:id target-id})))
+  (require-int-round round)
   (let [decorating (dissoc opts :by :round)
         note (weaver/add runtime
                          {:title (truncate text 72)
@@ -59,12 +82,15 @@
 
   Walks the incoming `notes` edges to the target, so it returns notes from every
   writer that used the primitive regardless of their decorating attrs. Projects
-  each note as `{:id :note :at}` plus `:by`/`:round` when present."
+  each note as `{:id :note :at}` plus `:by`/`:round` when present. `:round` must
+  be an integer (fails loudly otherwise); ordering parses `note/at` so mixed
+  fractional-precision timestamps still sort chronologically."
   [runtime target-id {:keys [round]}]
+  (require-int-round round)
   (let [note-ids (mapv :from_strand_id (graph/incoming-edges runtime [target-id] "notes"))]
     (->> (graph/strands-by-ids runtime note-ids)
          (filter (fn [note] (or (nil? round) (= round (note-attr note "round")))))
-         (sort-by (juxt #(note-attr % "at") :created_at :id))
+         (sort-by (juxt at-instant :created_at :id))
          (mapv (fn [note]
                  (cond-> {:id (:id note)
                           :note (note-attr note "text")

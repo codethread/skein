@@ -393,11 +393,13 @@
         ;; decorating attrs — the read walks the edge regardless of writer.
         (api/op! rt 'note [(:id target) "verb note" "--by" "opus" "--round" "1"])
         (notes-api/note! rt (:id target) "primitive note"
-                         {:by "gpt" :round "2" "reviewer/seat" "panel"})
+                         {:by "gpt" :round 2 "reviewer/seat" "panel"})
         (let [rows (api/op! rt 'notes [(:id target)])]
           (testing "both writers' notes come back, in note/at order"
-            (is (match? [{:id string? :note "verb note" :at string? :by "opus" :round "1"}
-                         {:id string? :note "primitive note" :at string? :by "gpt" :round "2"}]
+            ;; rounds are integers from both surfaces (change-review-1a1d1cc7):
+            ;; the CLI flag parses to int and the primitive rejects strings.
+            (is (match? [{:id string? :note "verb note" :at string? :by "opus" :round 1}
+                         {:id string? :note "primitive note" :at string? :by "gpt" :round 2}]
                         rows))
             (is (every? #(= #{:id :note :at :by :round} (set (keys %))) rows)))
           (testing "--round filters to one review round"

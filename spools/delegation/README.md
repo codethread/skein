@@ -205,7 +205,7 @@ agent note <strand-id> "text" [--by <run-id>] [--round n]
 ```
 Append an immutable note to any strand's memory (`--round` only matters inside councils). The note strand links to its target with the blessed
 `notes` relation; any `:by` or `:round` fields are facets on the note, not the linkage. Notes are append-only memory, not mutation: a worker may
-note any strand, including parents, without violating its contract. → `{"id":"<note-id>","note-for":"<strand-id>"}`
+note any strand, including parents, without violating its contract. → `{"id":"<note-id>","target":"<strand-id>"}` (`target` is projected from the `notes` edge)
 
 ```
 agent notes <strand-id> [--round n]
