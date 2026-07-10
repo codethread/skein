@@ -79,8 +79,8 @@ vocabulary."
 ## PROP-Vr-001.P4 Approach
 
 The work is a set of design clauses (C1..C13). C1 fixes the declaration shape; C2 places the registry; C3 defines `declare!`
-and the one hard edge; C4 the queryable read; C5 the seed (edges from `relations.alpha`, attr namespaces from each owning
-spool's `install!`); C6 the `strand vocab` verb; C7–C8 the two opt-in consumers; C9 the third-party prefix convention; C10
+and the one hard edge; C4 the queryable read; C5 the seed (core-owned edges and `note/*` from `vocab.alpha`'s own init-fn,
+spool attr namespaces from each owning spool's `install!`); C6 the `strand vocab` verb; C7–C8 the two opt-in consumers; C9 the third-party prefix convention; C10
 spec/doc deltas; C11 the alpha-surface disposition; C12 atomic additive landing and the pickup ladder; C13 what is
 deliberately not built. Each clause names the exact call sites it touches so the plan can be verified against the tree.
 
@@ -92,15 +92,18 @@ two fields that catalog lacks — `:owner` and, for namespaces, `:keys`:
 ```clojure
 {:kind      :attr-namespace          ; or :edge
  :name      "review"                 ; the namespace segment, or the edge-type name
- :owner     :skein/spools-agents     ; the module-use key of the declaring spool (init.clj)
+ :owner     :skein/spools-agents     ; declaring module: a spool's init.clj use-key; core-owned uses :skein/core or the owning skein.api.*.alpha ns
  :keys      ["review/target" "review/roster" "review/pass"]  ; known keys, :attr-namespace only
  :doc       "Review pass bookkeeping written by the delegation review flow."}
 ```
 
 - **`:kind`** is `:attr-namespace` or `:edge`. Namespaces name the concept, never the spool (`strand-model.md:34`); the owner
   is a separate field, exactly as the spec prescribes.
-- **`:owner`** is the declaring module's use-key (the keyword `init.clj` registers with, e.g. `:skein/spools-agents`). It is
-  the collision key for the hard edge (C3) and the attribution shown by `strand vocab` (C6).
+- **`:owner`** is the declaring module. A spool-owned namespace is owned by the spool's use-key — the keyword `init.clj`
+  registers with, e.g. `:skein/spools-agents`. A core-owned declaration is owned by its declaring core module: the reflected
+  shipped edges by `:skein/core` (the engine relation set from `relations.alpha`), and a core primitive's own namespace by
+  the owning `skein.api.*.alpha` namespace, e.g. `note/*` by `skein.api.notes.alpha`. It is the collision key for the hard
+  edge (C3) and the attribution shown by `strand vocab` (C6).
 - **`:keys`** enumerates the known keys of an `:attr-namespace` (advisory — a namespace may grow keys the declaration has not
   caught up with; the carder consumer flags by *namespace*, not by exact key, so an undeclared key under a declared
   namespace is not a stray). Omitted for `:edge`, which is a single relation name.
@@ -126,7 +129,9 @@ The backing store is per-runtime state via `runtime/spool-state` (`runtime.alpha
 for its vocabularies (`selvage.clj:28-29`). It is versioned per the shape-drift discipline (`selvage.clj:16-22`,
 `docs/writing-shared-spools.md` "Versioned spool state"): a `state-version` next to the `new-state` builder, pinned by a
 `skein.spools.test-support/assert-state-shape` drift test, so a post-upgrade reload reinits rather than reusing a
-shape-mismatched map. This is in-memory only — no new table, no migration (NG2).
+shape-mismatched map. This is in-memory only — no new table, no migration (NG2). The `new-state` builder is also the seed
+site (C5): it returns the initial registry already carrying the core-owned declarations, so the seed is reached by the first
+read or `declare!` on a fresh runtime, with no `install!` hook.
 
 ## PROP-Vr-001.C3 — `declare!` and the one hard edge
 
@@ -164,14 +169,19 @@ ambient-singleton path.
 
 Two sources, no duplication.
 
-- **Edges are seeded from `relations.alpha` (NG3).** At its own `install!`, `vocab.alpha` reads `relations.alpha/catalog`
-  and wraps each entry as an `:edge` declaration owned by `:skein/core` (the shipped engine set — the one owner that is not
-  a spool use-key), preserving `:family`/`:direction`/`:declared-acyclic?`. `relations.alpha` stays the single source of
-  shipped-edge truth (depends-on, parent-of, supersedes, serves, notes as operational acyclic; related-to, duplicates,
-  references, implements, verifies, tracks, caused-by as annotation), and `vocab.alpha` reflects it rather than re-listing
-  it. This keeps the edge vocabulary from forking (Q3, adopted).
+- **Edges are seeded from `relations.alpha` (NG3).** The `vocab.alpha` spool-state init-fn (`new-state`) reads
+  `relations.alpha/catalog` and wraps each entry as an `:edge` declaration owned by `:skein/core` (the shipped engine set —
+  the one owner that is not a spool use-key), preserving `:family`/`:direction`/`:declared-acyclic?`. `relations.alpha` stays
+  the single source of shipped-edge truth (depends-on, parent-of, supersedes, serves, notes as operational acyclic;
+  related-to, duplicates, references, implements, verifies, tracks, caused-by as annotation), and `vocab.alpha` reflects it
+  rather than re-listing it. This keeps the edge vocabulary from forking (Q3, adopted).
+- **`note/*` is seeded with the edges, core-owned.** The durable writer is `skein.api.notes.alpha/note!`
+  (`notes/alpha.clj:52`) — core F3 code with no spool use-key; the batteries `note` op is one delegating caller, not the
+  owner. So the same `new-state` init-fn that reflects the edges also declares `note/*` as an `:attr-namespace` owned by the
+  owning core namespace `skein.api.notes.alpha`, exactly parallel to the edge seed. It is part of the core seed, not a spool
+  `install!` declaration; nothing in S2 chooses its owner.
 - **Attribute namespaces are declared by each owning spool's `install!`.** Each spool that writes a durable namespace calls
-  `vocab/declare!` from its existing `install!`, owned by that module's use-key from `.skein/init.clj`. The confirmed core
+  `vocab/declare!` from its existing `install!`, owned by that module's use-key from `.skein/init.clj`. The confirmed spool
   seed carries exactly one owner per namespace, each pinned to a real write site in this tree:
 
   | Namespace | Owner (init.clj use-key) | Declaring module | Write site (stable ref; line as-verified) |
@@ -192,14 +202,12 @@ Two sources, no duplication.
   keys, `chime.clj`/`graph/alpha.clj`), `handle/*` (in-memory run backend handles written under `agent-run/handle.*`,
   `agent_run.clj`) — are deliberately excluded from the seed.
 
-  **Resolve at implementation (not in the confirmed seed).** Two brief-named namespaces cannot be pinned to a single
-  `.skein/init.clj` use-key from this tree. Because a duplicate/ambiguous owner is the feature's one hard edge (C3), the
-  seed must not encode the ambiguity; the planner declares each only once its open point is closed:
-
-  | Namespace | Written by (this tree) | Open point to resolve |
-  | --- | --- | --- |
-  | `note/*` | core `note!` in `skein.api.notes.alpha` (`notes/alpha.clj:73-76`) | Core F3 code with no spool use-key: decide whether the batteries `note` op declares it under `:skein/spools-batteries` or core declares a `:skein/core`-owned entry at `notes.alpha` activation. |
-  | `devflow/*` | not written here — external `codethread/devflow` spool; this repo only reads it (`roster.clj:420,424`) | The external spool declares its own namespace under `:skein/spools-devflow` from *its* `install!`; nothing in this feature seeds it, so confirm the external declaration rather than adding a core row. |
+  **`devflow/*` is out of scope for this feature — a named cross-feature dependency, not an implementation TODO.** It is not
+  written in this tree: the external `codethread/devflow` spool writes it and this repo only reads it (`roster.clj:420,424`).
+  The pinned spool (`.skein/spools.edn`, sha `3bcc78b`) has no `vocab/declare!` site, so F4 cannot seed it truthfully. After
+  F4 lands, `devflow/*` shows up in the carder hygiene section (C8) as undeclared — deliberately; that is the report doing
+  its job. The declaration plus the `devflow.spool` sha re-pin belong to F5 (card `2mp13`, which already owns that re-pin);
+  F4 adds no core row for it.
 
 ## PROP-Vr-001.C6 — the `strand vocab` read verb
 
@@ -304,9 +312,10 @@ backed by the duplicate-owner edge, consistent with the guidance-not-enforcement
   a same-owner re-declaration as a collision, every `reload!` (and the second cold-start pass in some flows) would abort
   activation. Mitigation: the collision is defined strictly cross-owner and is the first tested case (P6).
 - **PROP-Vr-001.R2 — seed/owner accuracy.** A wrong `:owner` on a seed namespace would mislead `strand vocab` and could
-  create a phantom collision if two spools both claim it. Mitigation: each namespace is declared from the single spool that
-  writes it, owner = that spool's use-key, with the write site verified (C5 table); the treadle-era survivor set is
-  enumerated from the live tree at implementation, not guessed (Q4).
+  create a phantom collision if two modules both claim it. Mitigation: each spool namespace is declared from the single spool
+  that writes it, owner = that spool's use-key, with the write site verified (C5 table); the core seed (edges, `note/*`) is
+  declared once from `vocab.alpha`'s init-fn against its owning core module; the treadle-era survivor set is enumerated from
+  the live tree at implementation, not guessed (Q4).
 - **PROP-Vr-001.R3 — carder false positives.** Flagging by exact key rather than namespace would flag every legitimate new
   key under a declared namespace. Mitigation: C8 flags by namespace segment; a declaration's `:keys` are advisory (C1).
 - **PROP-Vr-001.R4 — state-shape drift.** `spool-state` survives reload, so a later shape change to the registry map could
@@ -332,10 +341,11 @@ All green in one landing:
 
 - **PROP-Vr-001.DW1:** `skein.api.vocab.alpha` exists and is in SPEC-005.C2; `declare!` records a C1 declaration, throws on
   a cross-owner claim, and is idempotent for the same owner; `declarations`/`declaration` read it with explicit runtime.
-- **PROP-Vr-001.DW2:** The seed is live — `strand vocab` lists the confirmed F1–F3 attribute namespaces (agent-run, gate,
-  review, panel, kanban, workflow, roster), each with a single owner, plus the edge types reflected from `relations.alpha`;
-  `note/*` and `devflow/*` are declared once their resolve-at-implementation owner (C5) is closed. The edge set is not
-  duplicated in `vocab.alpha` source (Q3).
+- **PROP-Vr-001.DW2:** The seed is live — `strand vocab` lists the confirmed F1–F3 spool namespaces (agent-run, gate,
+  review, panel, kanban, workflow, roster), each with a single owner, plus the core seed carried by `vocab.alpha`'s init-fn:
+  the edge types reflected from `relations.alpha` and the core-owned `note/*` (owner `skein.api.notes.alpha`). `devflow/*` is
+  out of scope (F5, card `2mp13`) and stays undeclared here by design. The edge set is not duplicated in `vocab.alpha` source
+  (Q3).
 - **PROP-Vr-001.DW3:** `strand vocab` exists as a batteries read op with `--kind`, contracted in `spools/batteries.md`.
 - **PROP-Vr-001.DW4:** Carder's report carries an `undeclared` section flagging active strands with an attribute in no
   declared namespace; selvage exposes the opt-in cross-check helper. Neither blocks any write (NG1).

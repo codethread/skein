@@ -49,9 +49,9 @@ from `relations.alpha`, not re-listed).
 - **PLAN-Vr-001.A1:** Slice for one worker context window each, disjoint files parallel, same-file serial (the F1–F3
   lesson). No slice rewrites a whole engine file; every seed edit is a small self-contained addition to an existing
   `install!`.
-- **PLAN-Vr-001.A2:** Foundation-first. The registry namespace, its `declare!`/`declarations`/`declaration` surface, the
-  versioned spool-state, and the edge seed must exist before any spool declares into it or any consumer reads it
-  (`PROP-Vr-001.C2`–`C5`), so `PLAN-Vr-001.S1` lands first and blocks every other code slice.
+- **PLAN-Vr-001.A2:** Foundation-first. The registry namespace, its `declare!`/`declarations`/`declaration` surface, and the
+  versioned spool-state whose init-fn carries the core seed (edges + `note/*`) must exist before any spool declares into it
+  or any consumer reads it (`PROP-Vr-001.C2`–`C5`), so `PLAN-Vr-001.S1` lands first and blocks every other code slice.
 - **PLAN-Vr-001.A3:** Disjoint files fan out; same-file slices serialize. Once S1 lands, the six seed sites
   (`agent_run.clj`, `subagent.clj`, `delegation.clj`, `kanban.clj`, `workflow.clj`, `roster.clj`), the batteries op
   (`batteries.clj`), the selvage helper (`selvage.clj`), and the carder section (`carder.clj`) are all disjoint files and
@@ -76,8 +76,8 @@ from `relations.alpha`, not re-listed).
 
 | ID | Area | Expected change |
 | -- | ---- | --------------- |
-| PLAN-Vr-001.AA1 | `src/skein/api/vocab/alpha.clj` (new) | The registry: the C1 declaration shape, `declare!` (validate + record under `[:kind :name]`, cross-owner throw, same-owner idempotent replace), `declarations`/`declaration` reads (runtime-first), versioned `new-state`/`state-version`, and an `install!` that seeds `:edge` declarations from `relations.alpha/catalog` owned `:skein/core` (`PROP-Vr-001.C1`–`C5`). |
-| PLAN-Vr-001.AA2 | `test/skein/vocab_test.clj` (new), `test/skein/test_runner.clj` | `skein.vocab-test`: declare/query, cross-owner throw, same-owner idempotent, seed reflects `relations.alpha`, and the `assert-state-shape` drift test; register `skein.vocab-test` in `parallel-namespaces` (`test_runner.clj:14`, beside `skein.notes-test`). |
+| PLAN-Vr-001.AA1 | `src/skein/api/vocab/alpha.clj` (new) | The registry: the C1 declaration shape, `declare!` (validate + record under `[:kind :name]`, cross-owner throw, same-owner idempotent replace), `declarations`/`declaration` reads (runtime-first), and a versioned `new-state`/`state-version` whose init-fn seeds the core registry — `:edge` declarations reflected from `relations.alpha/catalog` (owner `:skein/core`) plus the core-owned `note/*` declaration (owner `skein.api.notes.alpha`) — reached by the first read or `declare!`, with no `install!` hook (`PROP-Vr-001.C1`–`C5`). |
+| PLAN-Vr-001.AA2 | `test/skein/vocab_test.clj` (new), `test/skein/test_runner.clj` | `skein.vocab-test`: fresh-runtime core seed (reflected edges + core-owned `note/*`) present before any `install!`, declare/query, cross-owner throw, same-owner idempotent, and the `assert-state-shape` drift test; register `skein.vocab-test` in `parallel-namespaces` (`test_runner.clj:14`, beside `skein.notes-test`). |
 | PLAN-Vr-001.AA3 | `spools/agent-run/src/skein/spools/agent_run.clj`, `.../executors/subagent.clj` | `install!` declares `agent-run/*` (owner `:skein/spools-shuttle`, `agent_run.clj:1974`) and `gate/*` (owner `:skein/spools-treadle`, `subagent.clj:236`); enumerate any residual treadle-era survivor from the live tree (`PROP-Vr-001.C5`, `Q4`). |
 | PLAN-Vr-001.AA4 | `spools/delegation/src/skein/spools/delegation.clj` | `install!` (`:2014`) declares `review/*` and `panel/*`, both owner `:skein/spools-agents` (`PROP-Vr-001.C5`). |
 | PLAN-Vr-001.AA5 | `spools/kanban/src/skein/spools/kanban.clj` | `install!` (`:852`) declares `kanban/*`, owner `:skein/spools-kanban` (`PROP-Vr-001.C5`). |
@@ -116,7 +116,7 @@ Each slice names its owned files (disjoint between parallel siblings), its `depe
 Done-when. Slices are directly convertible to task-queue tasks. `[serial]` slices block their dependents; `[parallel]`
 siblings share no file.
 
-### PLAN-Vr-001.S1 — `skein.api.vocab.alpha` registry + edge seed (foundation) `[serial]`
+### PLAN-Vr-001.S1 — `skein.api.vocab.alpha` registry + core seed (foundation) `[serial]`
 
 - **Owned files:** `src/skein/api/vocab/alpha.clj` (new), `test/skein/vocab_test.clj` (new),
   `test/skein/test_runner.clj` (register the new ns in `parallel-namespaces`, `:14`).
@@ -128,16 +128,22 @@ siblings share no file.
   an idempotent replace for the *same* owner (`PROP-Vr-001.C3`). `declarations`/`declaration` read runtime-first, sorted by
   `[:kind :name]`, `{:kind …}`-narrowable, `nil` for an undeclared entry (`PROP-Vr-001.C4`). Backing store is
   `runtime/spool-state` with a `state-version` beside `new-state`, versioned per the shape-drift discipline
-  (`selvage.clj:16-29` precedent, `PROP-Vr-001.C2`). `install!` seeds one `:edge` declaration per `relations.alpha/catalog`
-  entry, owner `:skein/core`, preserving `:family`/`:direction`/`:declared-acyclic?` (`PROP-Vr-001.C5`); it re-declares its
-  own seed idempotently on reload.
-- **Validation:** `clojure -M:test skein.vocab-test` green (focused-runnable). Tests: declare + query round-trip;
-  cross-owner `declare!` throws; same-owner re-declare is an idempotent replace (`PROP-Vr-001.R1`); the edge seed reflects
-  `relations.alpha/catalog` as owned `:edge` maps; `(assert-state-shape #'vocab/new-state #{…})` drift test
+  (`selvage.clj:16-29` precedent, `PROP-Vr-001.C2`). The `new-state` init-fn is the seed site: it returns the initial
+  registry already carrying the core seed — one `:edge` declaration per `relations.alpha/catalog` entry (owner `:skein/core`,
+  preserving `:family`/`:direction`/`:declared-acyclic?`) plus the core-owned `note/*` `:attr-namespace` (owner
+  `skein.api.notes.alpha`), each a valid C1 map — so the first read or `declare!` on a fresh runtime already sees it, with no
+  `install!` hook (`PROP-Vr-001.C5`). The seed lives in `spool-state` and survives reload; the same-owner idempotent replace
+  (`PROP-Vr-001.C3`) covers the spool `install!` re-declarations that `reload!` re-runs, not the seed.
+- **Validation:** `clojure -M:test skein.vocab-test` green (focused-runnable). Tests: on a fresh runtime with no `install!`
+  run, `(vocab/declarations runtime)` already returns the core seed — the reflected `relations.alpha/catalog` edges as owned
+  `:edge` maps plus the core-owned `note/*` `:attr-namespace`; declare + query round-trip; cross-owner `declare!` throws;
+  same-owner re-declare is an idempotent replace (`PROP-Vr-001.R1`); `(assert-state-shape #'vocab/new-state #{…})` drift test
   (`selvage_test.clj:114` precedent).
-- **Done-when:** `skein.api.vocab.alpha` exists and is in `SPEC-005.C2` (applied at S9); `declare!` records a C1
-  declaration, throws cross-owner, idempotent same-owner; `declarations`/`declaration` read runtime-first; the edge seed is
-  live and not duplicated in source; `vocab-test` green and registered in the focused runner.
+- **Done-when:** `skein.api.vocab.alpha` exists and is in `SPEC-005.C2` (applied at S9); in a fresh disposable world with no
+  seed-site spool activations, `strand vocab` already lists the core seed — the reflected `relations.alpha` edges plus the
+  core-owned `note/*` (owner `skein.api.notes.alpha`) — because the seed lives in the `new-state` init-fn, not an `install!`
+  hook; `declare!` records a C1 declaration, throws cross-owner, is idempotent same-owner; `declarations`/`declaration` read
+  runtime-first; the edge set is not duplicated in source; `vocab-test` green and registered in the focused runner.
 
 ### PLAN-Vr-001.S2 — per-spool attribute-namespace seed declarations `[parallel fan-out, after S1]`
 
@@ -161,9 +167,9 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   assertion lands in `skein.agent-run-test`, shard `B`, proven at S10).
 - **Validation:** each sub-slice's focused gate green (table). S2a additionally deferred to the full suite at S10.
 - **Done-when:** each named `install!` declares its namespace(s) with the single correct owner; `strand vocab
-  --kind attr-namespace` lists the confirmed F1–F3 namespaces after install (proven end-to-end at S10). **Resolve at
-  implementation** the two `PROP-Vr-001.C5` deferred namespaces — `note/*` and `devflow/*` — per `PLAN-Vr-001.Q1` before
-  declaring them; do not encode an ambiguous owner into the seed.
+  --kind attr-namespace` lists the confirmed F1–F3 spool namespaces after install (proven end-to-end at S10). `note/*` is not
+  a spool seed — it ships in the core seed from `vocab.alpha`'s init-fn (S1); `devflow/*` is out of scope (F5, card
+  `2mp13`). No S2 task chooses an owner.
 
 ### PLAN-Vr-001.S3 — batteries `strand vocab` read op `[parallel, after S1]`
 
@@ -260,9 +266,10 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   (full locked suite — the authoritative gate for the `skein.agent-run-test` shard); `(cd cli && go test ./...)`;
   `clojure -M:smoke`; `make fmt-check lint reflect-check docs-check` at zero findings; `make api-docs` clean;
   `git status --short` clear of generated SQLite/runtime artifacts. End-to-end: `strand vocab` lists the confirmed F1–F3
-  attribute namespaces (each single-owner) plus the reflected `relations.alpha` edge set.
-- **Done-when:** `PROP-Vr-001.DW1`–`DW6` proven — `vocab.alpha` exists and is in `SPEC-005.C2`; the seed is live and
-  single-owner; `strand vocab` is a batteries read op with `--kind`; carder has the `undeclared` section and selvage the
+  spool namespaces (each single-owner), the core-owned `note/*` seed, and the reflected `relations.alpha` edge set;
+  `devflow/*` stays undeclared by design (F5, card `2mp13`).
+- **Done-when:** `PROP-Vr-001.DW1`–`DW6` proven — `vocab.alpha` exists and is in `SPEC-005.C2`; the core seed (edges +
+  `note/*`) and the spool seeds are live and single-owner; `strand vocab` is a batteries read op with `--kind`; carder has the `undeclared` section and selvage the
   opt-in helper, neither blocking a write; the prefix rule is in `writing-shared-spools.md` and `strand-model.md:34/:56`
   names the registry; all P6 gates green in one atomic, additive landing — no migration, no cutover, no weaver restart.
 
@@ -300,17 +307,16 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   declared namespace. Mitigation: S5 flags by namespace segment; a declaration's `:keys` are advisory.
 - **PLAN-Vr-001.R4:** State-shape drift (`PROP-Vr-001.R4`). `spool-state` survives reload. Mitigation: the versioned-state
   discipline (S1) with a `state-version` and an `assert-state-shape` drift test, exactly as selvage does.
-- **PLAN-Vr-001.Q1:** The two `PROP-Vr-001.C5` deferred namespaces are the only open points, and neither blocks task
-  generation — each is resolved inside S2 before its declaration is written, not encoded ambiguously into the seed:
-  - **`note/*`** — written by core `note!` in `skein.api.notes.alpha` (no spool use-key). Resolve in S2/S3: either the
-    batteries `note` op declares it under `:skein/spools-batteries` (declared from `batteries.clj` install, S3 scope), or
-    core declares a `:skein/core`-owned entry at `notes.alpha` activation. The batteries-owned path is the lighter reading
-    (the durable writer path is the batteries verb), but the choice is the implementer's per C5; pick one owner, declare
-    once.
-  - **`devflow/*`** — not written in this repo (external `codethread/devflow` spool; this tree only reads it,
-    `roster.clj:420,424`). The external spool declares its own namespace under `:skein/spools-devflow` from *its*
-    `install!`; nothing in this feature seeds it. Resolve by confirming the external declaration exists, not by adding a
-    core row.
+- **PLAN-Vr-001.Q1:** No open owner questions remain; the two formerly-deferred namespaces are settled contract, so no task
+  chooses an owner:
+  - **`note/*` — core seed, closed.** The durable writer is `skein.api.notes.alpha/note!` (`notes/alpha.clj:52`); the
+    batteries `note` op is one delegating caller, not the owner. `note/*` is declared as core-owned by `skein.api.notes.alpha`
+    from `vocab.alpha`'s `new-state` init-fn, alongside the reflected edges (S1). No S2/S3 task decides its owner.
+  - **`devflow/*` — cross-feature dependency, out of scope.** It is written only by the external `codethread/devflow` spool
+    (`roster.clj:420,424`); the pinned spool (`.skein/spools.edn` sha `3bcc78b`) has no `vocab/declare!` site, so F4 cannot
+    seed it truthfully. After F4 lands, `devflow/*` appears in the carder hygiene report (S5) as undeclared — deliberately,
+    that is the report doing its job. The declaration plus the `devflow.spool` sha re-pin belong to F5 (card `2mp13`, which
+    already owns that re-pin). F4 adds no core row for it.
 
 ## PLAN-Vr-001.P8 Task context
 
@@ -327,7 +333,7 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
 
   | Slice | Sketch | Depends-on | ~Tasks |
   | ----- | ------ | ---------- | -----: |
-  | S1 | `skein.api.vocab.alpha` registry + `declare!`/reads + versioned state + edge seed + `vocab-test` | — | 1 |
+  | S1 | `skein.api.vocab.alpha` registry + `declare!`/reads + versioned state + core seed (edges + `note/*`) + `vocab-test` | — | 1 |
   | S2a | agent-run `install!` declares `agent-run/*` | S1 | 1 |
   | S2b | subagent `install!` declares `gate/*` (+ residual survivor sweep) | S1 | 1 |
   | S2c | delegation `install!` declares `review/*`, `panel/*` | S1 | 1 |
