@@ -1083,6 +1083,97 @@
       (is (nil? (:error parsed)))
       (is (= "all done" (:result parsed))))))
 
+;; ---------------------------------------------------------------------------
+;; Usage capture (TASK-Ru-001): the committed fixtures under
+;; test/fixtures/run-usage/ are the source of truth for the field mapping — a
+;; future provider shape change fails one of these rather than silently
+;; mis-capturing spend. Never assert against a local weaver log.
+
+(defn- fixture [name]
+  (slurp (io/resource (str "fixtures/run-usage/" name))))
+
+(defn- about= [expected actual]
+  (< (Math/abs (double (- expected actual))) 1e-9))
+
+(deftest parse-pi-json-folds-usage-deltas
+  ;; The fixture carries three per-turn message_end deltas plus the traps a
+  ;; naive fold would fall into: zero-usage message_start/message_update events
+  ;; (cumulative *within* a turn) and turn_end duplicates of each message_end.
+  ;; Summing only the message_end deltas is the run total; take-last or a fold
+  ;; that swept in the updates/turn_ends would produce different numbers.
+  (let [{:keys [usage]} (#'shuttle/parse-pi-json (fixture "pi-json.out"))
+        {:keys [tokens]} usage]
+    (is (= "pi-json" (:usage-source usage)))
+    (testing "cost is the sum of each turn's nested cost.total delta"
+      (is (about= 0.0868035 (:cost-usd usage))))
+    (testing "tokens-total is the sum of per-turn deltas, not take-last/cumulative"
+      (is (= 57120 (:tokens-total usage)))
+      (is (not= 20563 (:tokens-total usage))
+          "20563 is the last turn's totalTokens — a take-last fold would report it")
+      (is (not= 16254 (:tokens-total usage))
+          "16254 is the first turn only — a per-turn-overwrite fold would report it"))
+    (testing "breakdown dims are summed across turns; a reported-zero dim is dropped"
+      (is (= 21121 (:input tokens)))
+      (is (= 1695 (:output tokens)))
+      (is (= 34304 (:cache-read tokens)))
+      (is (not (contains? tokens :cache-write))
+          "cacheWrite is zero in every turn, so it is absent, never a stored 0"))))
+
+(deftest parse-pi-json-reasoning-in-breakdown-not-total
+  ;; pi already counts reasoning inside totalTokens, so folding it into
+  ;; tokens-total again would double-count it (PROP-Ru-001.C1/C2).
+  (let [{:keys [usage]} (#'shuttle/parse-pi-json (fixture "pi-json.out"))]
+    (is (= 1055 (get-in usage [:tokens :reasoning]))
+        "reasoning is recorded in the breakdown")
+    (is (= 57120 (:tokens-total usage))
+        "tokens-total is the summed totalTokens; reasoning is not added on top")
+    (is (not= (+ 57120 1055) (:tokens-total usage))
+        "a reasoning double-count would show 58175")))
+
+(deftest parse-claude-json-captures-usage-from-result-object
+  (let [{:keys [usage]} (#'shuttle/parse-claude-json (fixture "claude-json.out"))
+        {:keys [tokens]} usage]
+    (is (= "claude-json" (:usage-source usage)))
+    (is (about= 1.4548964999999998 (:cost-usd usage)))
+    (testing "tokens-total is the sum of the four reported counts"
+      (is (= (+ 3219 19587 65548 587293) (:tokens-total usage)))
+      (is (= 675647 (:tokens-total usage))))
+    (testing "usage sub-map fields map onto the C1 breakdown"
+      (is (= 3219 (:input tokens)))
+      (is (= 19587 (:output tokens)))
+      (is (= 65548 (:cache-write tokens)))
+      (is (= 587293 (:cache-read tokens))))
+    (testing "claude reports no reasoning, so the dim is absent"
+      (is (not (contains? tokens :reasoning))))))
+
+(deftest parse-claude-json-omits-absent-field
+  ;; A claude version that does not report a token dimension omits the key
+  ;; rather than reading it as zero (PROP-Ru-001.C3, G3).
+  (let [stdout (str "{\"result\":\"ok\",\"session_id\":\"s\",\"total_cost_usd\":0.5,"
+                    "\"usage\":{\"input_tokens\":100,\"output_tokens\":40,"
+                    "\"cache_read_input_tokens\":900}}")
+        {:keys [usage]} (#'shuttle/parse-claude-json stdout)
+        {:keys [tokens]} usage]
+    (is (not (contains? tokens :cache-write))
+        "cache_creation_input_tokens was absent, so cache-write is omitted, not 0")
+    (is (= 100 (:input tokens)))
+    (is (= 40 (:output tokens)))
+    (is (= 900 (:cache-read tokens)))
+    (is (= (+ 100 40 900) (:tokens-total usage))
+        "tokens-total sums only the reported counts")))
+
+(deftest parse-output-threads-usage-per-format
+  (testing ":raw records nothing it cannot see — no :usage key"
+    (let [parsed (#'shuttle/parse-output :raw "plain text output")]
+      (is (= "plain text output" (:result parsed)))
+      (is (not (contains? parsed :usage)))))
+  (testing ":pi-json threads the folded usage"
+    (let [parsed (#'shuttle/parse-output :pi-json (fixture "pi-json.out"))]
+      (is (= "pi-json" (get-in parsed [:usage :usage-source])))))
+  (testing ":claude-json threads the folded usage"
+    (let [parsed (#'shuttle/parse-output :claude-json (fixture "claude-json.out"))]
+      (is (= "claude-json" (get-in parsed [:usage :usage-source]))))))
+
 (deftest pi-json-terminal-error-run-fails-loudly
   (with-shuttle
     (fn [rt]

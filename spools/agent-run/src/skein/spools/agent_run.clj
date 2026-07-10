@@ -823,12 +823,74 @@
 ;; ---------------------------------------------------------------------------
 ;; Output parsing
 
+(defn- usage-figure
+  "Keep a usage dimension only when it is a present, non-zero measure. A missing
+  figure is an absent key and a reported zero is dropped rather than stored, so
+  every recorded dimension is one the harness actually spent — a reader never
+  mistakes a silent zero for a captured figure (PROP-Ru-001.A3, G3, R3)."
+  [n]
+  (when (and (number? n) (not (zero? n))) n))
+
+(defn- normalize-usage
+  "Fold a raw per-format usage tally into the run-level C1 `:usage` shape
+  `{:cost-usd, :tokens-total, :tokens {…}, :usage-source}`, dropping nil/zero
+  dimensions so the map carries only what the harness reported. `:tokens-total`
+  is the harness's own total; a `:reasoning` breakdown figure rides in `:tokens`
+  but is never folded into it, since pi already counts reasoning inside
+  `totalTokens` (the double-count trap, PROP-Ru-001.C1, C2)."
+  [{:keys [usage-source cost-usd tokens-total tokens]}]
+  (let [tokens (reduce-kv (fn [m k v] (if-let [v (usage-figure v)] (assoc m k v) m)) {} tokens)]
+    (cond-> {:usage-source usage-source}
+      (usage-figure cost-usd) (assoc :cost-usd (usage-figure cost-usd))
+      (usage-figure tokens-total) (assoc :tokens-total (usage-figure tokens-total))
+      (seq tokens) (assoc :tokens tokens))))
+
 (defn- parse-claude-json [stdout]
   (let [data (json/read-str (str/trim stdout))]
     (when-not (map? data)
       (fail! "claude JSON output was not an object" {:output (subs stdout 0 (min 400 (count stdout)))}))
-    {:result (or (get data "result") "")
-     :session-id (get data "session_id")}))
+    (let [usage (get data "usage")
+          ;; the four token counts claude reports; a version that omits one
+          ;; drops out of the sum rather than being read as zero.
+          counts (keep #(get usage %)
+                       ["input_tokens" "output_tokens"
+                        "cache_creation_input_tokens" "cache_read_input_tokens"])]
+      {:result (or (get data "result") "")
+       :session-id (get data "session_id")
+       :usage (normalize-usage
+               {:usage-source "claude-json"
+                :cost-usd (get data "total_cost_usd")
+                :tokens-total (when (seq counts) (reduce + counts))
+                :tokens {:input (get usage "input_tokens")
+                         :output (get usage "output_tokens")
+                         :cache-write (get usage "cache_creation_input_tokens")
+                         :cache-read (get usage "cache_read_input_tokens")}})})))
+
+(defn- pi-usage
+  "Fold pi's per-turn usage deltas across an event stream into one run-level
+  `:usage` tally. Only `message_end` assistant events carry a turn's finalized
+  `usage`, so summing those is the run total; `message_start`/`message_update`
+  (cumulative *within* a turn) and `turn_end` (a duplicate of the turn's
+  `message_end`) are skipped by design — folding them in would double-count.
+  These are deltas summed across turns, never a cumulative take-last
+  (PROP-Ru-001.C2, R1). `reasoning` is folded into the breakdown only, never
+  `totalTokens` (PROP-Ru-001.C1)."
+  [events]
+  (let [usages (->> events
+                    (filter #(= "message_end" (get % "type")))
+                    (keep #(get % "message"))
+                    (filter #(= "assistant" (get % "role")))
+                    (keep #(get % "usage")))
+        sum (fn [f] (reduce (fn [acc u] (if-let [v (f u)] (+ (or acc 0) v) acc)) nil usages))]
+    (normalize-usage
+     {:usage-source "pi-json"
+      :cost-usd (sum #(get-in % ["cost" "total"]))
+      :tokens-total (sum #(get % "totalTokens"))
+      :tokens {:input (sum #(get % "input"))
+               :output (sum #(get % "output"))
+               :cache-read (sum #(get % "cacheRead"))
+               :cache-write (sum #(get % "cacheWrite"))
+               :reasoning (sum #(get % "reasoning"))}})))
 
 (defn- parse-pi-json
   "Parse pi --mode json output: a stream of JSON event lines; the run result is
@@ -882,9 +944,11 @@
                :session-id (some #(or (when (= "session" (get % "type")) (get % "id"))
                                       (get % "session_id")
                                       (get % "sessionId"))
-                                 events)}
+                                 events)
+               :usage (pi-usage events)}
         terminal-error (assoc :error terminal-error))
-      {:result (str/trim stdout)})))
+      {:result (str/trim stdout)
+       :usage (pi-usage events)})))
 
 (defn- parse-output [strategy stdout]
   (case (or strategy :raw)
