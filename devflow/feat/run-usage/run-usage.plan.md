@@ -345,3 +345,28 @@ Append notes here. Do not rewrite earlier notes.
   S1–S4 must not encode `clojure -M:test skein.agent-run-test` as a runnable gate.
 - Slice count: **7 slices** (S1–S4 same-file serial spine on `agent_run.clj`; S5 disjoint `delegation.clj`; S6 docs;
   S7 acceptance). No HITL, no cutover, no spec-application slice.
+
+### PLAN-Ru-001.DN2 Task queue authored (TASK-Ru-001..007) — 2026-07-10
+
+- The queue is **1:1 with the slices**: `TASK-Ru-001`→S1 … `TASK-Ru-007`→S7, a strict serial chain
+  (`blocked_by` 1←2←3←4←5←6, with 7 blocked on 1–6). No branch fans out: the S1–S4 spine shares
+  `agent_run.clj` (serial by data + file), S5 depends on S4's fn, and S6 documents S5's landed
+  subcommand, so the plan's optimistic "S5 ∥ S6" collapses to serial for doc accuracy
+  (`PLAN-Ru-001.S6` Depends-on: S1–S5). All seven are **AFK**; none is HITL — the landing is purely
+  additive with no cutover (`PROP-Ru-001.C10`).
+- **S1 kept as one task, not split** into pi-vs-claude capture (the task-body option): the two parse fns
+  share one normalize helper and both thread through `parse-output`, all in one file — a split would be
+  same-file serial anyway (no parallelism won) while risking a contested shared helper. A worker that
+  finds S1 too large should split pi-capture from claude-capture in place before starting, keeping the
+  shared normalize helper on the first of the two.
+- **Focused-gate discipline encoded per task** (`PLAN-Ru-001.A5`, `R1`): every S1–S4 spine task gates on
+  `clojure -M:test skein.delegation-test` (proxy) and explicitly forbids `clojure -M:test
+  skein.agent-run-test` (shard `B`, rejected by `validate-focused!`) and the full suite; S5 gates on the
+  focused-runnable, authoritative `skein.delegation-test`; the full locked suite runs **only** in
+  `TASK-Ru-007`.
+- **Fixtures pin the mapping in S1** (`PLAN-Ru-001.TC3`): `TASK-Ru-001` commits sanitized
+  `test/fixtures/run-usage/{pi-json,claude-json}.out` and asserts the field mapping against them, so no
+  later slice depends on a private local log.
+- `index.yml` carries the F3/F4 sibling schema (`harness` + `type` beside the canonical
+  id/description/task_file/status/blocked_by) for consistency with the other features in this devflow
+  tree; the AFK loop reads `harness` to route each task.
