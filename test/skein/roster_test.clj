@@ -3,6 +3,7 @@
   `roster` op/named query."
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.events.alpha :as events]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.roster :as roster]
             [skein.spools.test-support :as test-support :refer [with-runtime]])
@@ -241,6 +242,14 @@
           (is (contains? ids (:id tracked)))
           (is (not (contains? ids (:id other))))
           (is (= [(:id tracked)] (mapv :id (api/list-query rt 'roster {})))))))))
+
+(deftest install-declares-the-roster-attribute-namespace
+  (with-runtime
+    (fn [rt _]
+      (roster/install!)
+      (let [decl (vocab/declaration rt :attr-namespace "roster")]
+        (is (some? decl))
+        (is (= :skein/spools-roster (:owner decl)))))))
 
 (deftest roster-declared-subcommands-help-and-parser-errors
   (with-runtime

@@ -28,6 +28,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! reject-unknown-keys! attr-key->str attr-get poll-until-deadline!]])
@@ -756,11 +757,24 @@
                            :timeout-ms {:type :int :doc "Optional timeout in milliseconds."}
                            :stale-after-ms {:type :int :doc "Override the staleness threshold in milliseconds."}}}}})
 
+(def ^:private roster-namespace-declaration
+  "The roster-owned `roster/*` attribute namespace stamped onto entry strands by
+  `track-attributes`. `:keys` is advisory."
+  {:kind :attr-namespace
+   :name "roster"
+   :owner :skein/spools-roster
+   :keys ["roster/entry" "roster/feature" "roster/owner" "roster/status"
+          "roster/started-at" "roster/heartbeat-at" "roster/branch"
+          "roster/worktree" "roster/engine" "roster/run-id" "roster/source-id"
+          "roster/body"]
+   :doc "Active-work roster entry attributes written by skein.spools.roster/track!."})
+
 (defn install!
   "Install the roster op and named query into the active weaver."
   []
   (let [rt (current/runtime)]
     (watch! rt)
+    (vocab/declare! rt roster-namespace-declaration)
     {:installed true
      :namespace 'skein.spools.roster
      :watcher integration-event-key
