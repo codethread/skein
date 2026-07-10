@@ -208,6 +208,8 @@
         spools-sha (get-in spools-edn [:spools 'codethread/devflow :git/sha])
         deps-sha (get-in deps-edn [:aliases :test :extra-deps
                                    'io.github.codethread/devflow.spool :git/sha])]
+    (is (string? spools-sha) "codethread/devflow :git/sha missing from .skein/spools.edn — lookup path broken")
+    (is (string? deps-sha) "io.github.codethread/devflow.spool :git/sha missing from deps.edn :test :extra-deps — lookup path broken")
     (is (= spools-sha deps-sha)
         (str "codethread/devflow :git/sha in .skein/spools.edn (" spools-sha ") must match "
              "io.github.codethread/devflow.spool :git/sha in deps.edn :test :extra-deps (" deps-sha ")"))))
