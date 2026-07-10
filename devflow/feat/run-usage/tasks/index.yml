@@ -23,7 +23,7 @@ tasks:
   - id: 4
     description: "S4: spend aggregation read fn beside runs*/run-summary (agent_run.clj)"
     task_file: tasks/004-spend-aggregation.md
-    status: pending
+    status: complete
     harness: build
     type: AFK
     blocked_by: [3]
