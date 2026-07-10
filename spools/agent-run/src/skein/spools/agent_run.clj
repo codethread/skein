@@ -831,12 +831,19 @@
 ;; Output parsing
 
 (defn- usage-figure
-  "Keep a usage dimension only when it is a present, non-zero measure. A missing
-  figure is an absent key and a reported zero is dropped rather than stored, so
-  every recorded dimension is one the harness actually spent — a reader never
-  mistakes a silent zero for a captured figure (PROP-Ru-001.A3, G3, R3)."
-  [n]
-  (when (and (number? n) (not (zero? n))) n))
+  "Coerce one usage dimension `n` (keyed by `k` for diagnostics) to a stored
+  figure or absence. A missing figure (nil) is an absent key and a reported zero
+  is dropped rather than stored, so every recorded dimension is one the harness
+  actually spent — a reader never mistakes a silent zero for a captured figure
+  (PROP-Ru-001.A3, G3, R3). A present but non-numeric value is schema drift, not
+  absence: fail loudly naming the key and value so bad budget data can never
+  masquerade as unreported usage (TEN-003)."
+  [k n]
+  (cond
+    (nil? n) nil
+    (number? n) (when-not (zero? n) n)
+    :else (fail! "usage figure is not a number"
+                 {:key k :value n :expected "number"})))
 
 (defn- normalize-usage
   "Fold a raw per-format usage tally into the run-level C1 `:usage` shape
@@ -846,10 +853,12 @@
   but is never folded into it, since pi already counts reasoning inside
   `totalTokens` (the double-count trap, PROP-Ru-001.C1, C2)."
   [{:keys [usage-source cost-usd tokens-total tokens]}]
-  (let [tokens (reduce-kv (fn [m k v] (if-let [v (usage-figure v)] (assoc m k v) m)) {} tokens)]
+  (let [tokens (reduce-kv (fn [m k v] (if-let [v (usage-figure k v)] (assoc m k v) m)) {} tokens)
+        cost-usd (usage-figure :cost-usd cost-usd)
+        tokens-total (usage-figure :tokens-total tokens-total)]
     (cond-> {:usage-source usage-source}
-      (usage-figure cost-usd) (assoc :cost-usd (usage-figure cost-usd))
-      (usage-figure tokens-total) (assoc :tokens-total (usage-figure tokens-total))
+      cost-usd (assoc :cost-usd cost-usd)
+      tokens-total (assoc :tokens-total tokens-total)
       (seq tokens) (assoc :tokens tokens))))
 
 (defn- parse-claude-json
@@ -867,21 +876,25 @@
     (when-not (map? data)
       (fail! "claude JSON output was not an object" {:output (subs stdout 0 (min 400 (count stdout)))}))
     (let [usage (get data "usage")
-          ;; the four token counts claude reports; a version that omits one
-          ;; drops out of the sum rather than being read as zero.
-          counts (keep #(get usage %)
-                       ["input_tokens" "output_tokens"
-                        "cache_creation_input_tokens" "cache_read_input_tokens"])]
+          ;; validate each reported count as it is read, so a non-numeric field
+          ;; fails loudly naming the key rather than throwing an opaque cast
+          ;; inside the total; a version that omits a count drops it rather than
+          ;; being read as zero.
+          tokens (reduce-kv (fn [m json-key tok-key]
+                              (if-let [v (usage-figure tok-key (get usage json-key))]
+                                (assoc m tok-key v) m))
+                            {}
+                            {"input_tokens" :input
+                             "output_tokens" :output
+                             "cache_creation_input_tokens" :cache-write
+                             "cache_read_input_tokens" :cache-read})]
       {:result (or (get data "result") "")
        :session-id (get data "session_id")
        :usage (normalize-usage
                {:usage-source "claude-json"
                 :cost-usd (get data "total_cost_usd")
-                :tokens-total (when (seq counts) (reduce + counts))
-                :tokens {:input (get usage "input_tokens")
-                         :output (get usage "output_tokens")
-                         :cache-write (get usage "cache_creation_input_tokens")
-                         :cache-read (get usage "cache_read_input_tokens")}})})))
+                :tokens-total (when (seq tokens) (reduce + (vals tokens)))
+                :tokens tokens})})))
 
 (defn- pi-usage
   "Fold pi's per-turn usage deltas across an event stream into one run-level
@@ -1244,15 +1257,18 @@
           ;; the worker's report, so an empty one is not success — record it
           ;; failed (loud, retryable via agent-failures/retry) rather than
           ;; closing a hollow `done` that dodges every recovery path (TEN-003).
-          ;; session-id is preserved for forensics; the failure is deliberately
-          ;; not resume-classed, so a plain retry respawns fresh.
+          ;; session-id and any captured usage are preserved for forensics — a
+          ;; tool-only pi-json turn spent tokens even with no result text, so its
+          ;; spend must not vanish; the failure is deliberately not resume-classed,
+          ;; so a plain retry respawns fresh.
           (let [stderr (str/trim (read-file-safe err-file))]
             (mark-failed! id
                           (str "harness exited 0 with an empty result"
                                (when parse-error (str " (parse error: " parse-error ")"))
                                (when-not (str/blank? stderr) (str "; stderr: " (tail stderr 2000))))
-                          (cond-> {"agent-run/exit-code" exit}
-                            session-id (assoc "agent-run/session-id" session-id))))
+                          (merge (cond-> {"agent-run/exit-code" exit}
+                                   session-id (assoc "agent-run/session-id" session-id))
+                                 usage-attrs)))
 
           :else
           (update-run! id (merge (cond-> {"agent-run/phase" "done"
@@ -2054,14 +2070,30 @@
     :harness (:harness row)
     :day (some-> (:started-at row) (subs 0 10))))
 
+(defn- parse-window-bound
+  "Parse a `--since`/`--until` filter bound into an `Instant`, failing loudly on
+  malformed input so a bad bound surfaces its value instead of silently skewing
+  the window (TEN-003). nil stays nil (an absent bound)."
+  [flag v]
+  (when (some? v)
+    (try
+      (Instant/parse v)
+      (catch java.time.format.DateTimeParseException _
+        (fail! "spend window bound is not an ISO-8601 instant"
+               {:flag flag :value v :expected "ISO-8601 instant, e.g. 2026-07-10T00:00:00Z"})))))
+
 (defn- in-window?
   "True when `started` (an ISO instant string) falls in the optional
-  `[since until]` window. ISO-8601 UTC instants order lexicographically, so a
-  string compare is the window test; a row with no started-at is outside any
-  bounded window."
+  `[since until]` window of parsed `Instant` bounds (both inclusive). Comparing
+  instants — not raw strings — keeps mixed precision (e.g. a fractional-second
+  started-at) from mis-ordering. A row with no started-at is outside any bounded
+  window."
   [since until started]
-  (and (or (nil? since) (and started (<= 0 (compare started since))))
-       (or (nil? until) (and started (>= 0 (compare started until))))))
+  (if (and (nil? since) (nil? until))
+    true
+    (when-let [t (some-> started Instant/parse)]
+      (and (or (nil? since) (not (.isBefore t since)))
+           (or (nil? until) (not (.isAfter t until)))))))
 
 (defn- spend*
   [opts list-fn]
@@ -2069,11 +2101,13 @@
         group-dim (keyword (or gb :harness))
         _ (when-not (contains? #{:harness :day} group-dim)
             (fail! "spend :group-by must be :harness or :day" {:group-by gb}))
+        since-inst (parse-window-bound :since since)
+        until-inst (parse-window-bound :until until)
         rows (->> (list-fn (rt) run-query {})
                   (map spend-row)
                   (filter (fn [row]
                             (and (or (nil? harness) (= harness (:harness row)))
-                                 (in-window? since until (:started-at row)))))
+                                 (in-window? since-inst until-inst (:started-at row)))))
                   (sort-by (juxt (comp str :started-at) :id))
                   vec)
         groups (->> rows
@@ -2096,9 +2130,12 @@
   opts filter and shape the report:
 
     :harness   restrict to one harness/alias name
-    :since     lower ISO-instant bound on the run's started-at (inclusive)
-    :until     upper ISO-instant bound on the run's started-at (inclusive)
+    :since     lower ISO-8601 instant bound on the run's started-at (inclusive)
+    :until     upper ISO-8601 instant bound on the run's started-at (inclusive)
     :group-by  :harness (default) or :day (buckets by the started-at date)
+
+  A malformed :since/:until fails loudly naming the value rather than silently
+  yielding an empty or skewed window.
 
   Every run contributes its count and its timestamp-derived duration for every
   format including `:raw`; a run that recorded no cost/tokens contributes null for

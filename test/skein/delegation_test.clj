@@ -184,7 +184,12 @@
           (is (= 1 (get-in groups ["2026-07-03" :runs])))))
       (testing "an unknown --group-by fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"group-by"
-                              (agents/agent-op {:op/argv ["spend" "--group-by" "week"]})))))))
+                              (agents/agent-op {:op/argv ["spend" "--group-by" "week"]}))))
+      (testing "a malformed --since/--until fails loudly instead of a silent lexical window"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ISO-8601 instant"
+                              (agents/agent-op {:op/argv ["spend" "--since" "yesterday"]})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ISO-8601 instant"
+                              (agents/agent-op {:op/argv ["spend" "--until" "2026-07-02"]})))))))
 
 (deftest spawn-for-creates-task-edge
   (with-agents

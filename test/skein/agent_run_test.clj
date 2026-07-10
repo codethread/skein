@@ -1178,6 +1178,30 @@
     (is (= (+ 100 40 900) (:tokens-total usage))
         "tokens-total sums only the reported counts")))
 
+(deftest parse-claude-json-non-numeric-usage-fails-loudly
+  ;; A provider schema drift that reports a usage field as a string/object/null
+  ;; must fail loudly, not silently drop the dimension — bad budget data can
+  ;; never masquerade as a legitimately unreported figure (TEN-003, PROP-Ru-001).
+  (testing "a non-numeric token count throws naming the key and value"
+    (let [stdout (str "{\"result\":\"ok\",\"session_id\":\"s\",\"total_cost_usd\":0.5,"
+                      "\"usage\":{\"input_tokens\":\"lots\",\"output_tokens\":40}}")]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"usage figure is not a number"
+                            (#'shuttle/parse-claude-json stdout)))
+      (try
+        (#'shuttle/parse-claude-json stdout)
+        (catch clojure.lang.ExceptionInfo e
+          (is (= :input (:key (ex-data e))) "the failing dimension is named")
+          (is (= "lots" (:value (ex-data e))) "the offending value is reported")))))
+  (testing "a non-numeric total_cost_usd throws"
+    (let [stdout (str "{\"result\":\"ok\",\"session_id\":\"s\",\"total_cost_usd\":\"free\","
+                      "\"usage\":{\"input_tokens\":100}}")]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"usage figure is not a number"
+                            (#'shuttle/parse-claude-json stdout)))))
+  (testing "an absent usage object stays absent, never a thrown drift"
+    (let [parsed (#'shuttle/parse-claude-json "{\"result\":\"ok\",\"session_id\":\"s\"}")]
+      (is (not (contains? (:usage parsed) :tokens-total)))
+      (is (not (contains? (:usage parsed) :cost-usd))))))
+
 (deftest parse-output-threads-usage-per-format
   (testing ":raw records nothing it cannot see — no :usage key"
     (let [parsed (#'shuttle/parse-output :raw "plain text output")]
@@ -1280,6 +1304,30 @@
         (is (= "pi-json" (:agent-run/usage-source attrs)))
         (is (about= 0.02 (:agent-run/cost-usd attrs)))
         (is (= 60 (:agent-run/tokens-total attrs)))))))
+
+(deftest pi-json-blank-result-run-preserves-its-usage
+  (with-shuttle
+    (fn [rt]
+      ;; a tool-only assistant turn: pi exits 0 and reports usage but writes no
+      ;; result text, so the run is failed as a hollow done. The tokens it spent
+      ;; must still land, exactly like the done and terminal-error branches — a
+      ;; textless run that burned budget can't be invisible to `agent spend`.
+      (shuttle/defharness! :sh-pi-toolonly {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (let [stream (str "printf '%s\\n' "
+                        "'{\"type\":\"session\",\"id\":\"st\"}' "
+                        "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\","
+                        "\"content\":[{\"type\":\"toolcall\",\"id\":\"t1\"}],"
+                        "\"usage\":{\"input\":80,\"output\":15,\"totalTokens\":95,\"cost\":{\"total\":0.03}}}}'")
+            run (shuttle/spawn-run! {:harness :sh-pi-toolonly :prompt stream})
+            failed (await-phase rt (:id run) #{"failed"})
+            attrs (:attributes failed)]
+        (is (= "active" (:state failed)) "loud and retryable")
+        (is (= "failed" (:agent-run/phase attrs)))
+        (is (str/includes? (:agent-run/error attrs) "empty result"))
+        (is (= "pi-json" (:agent-run/usage-source attrs))
+            "usage survives the blank-result branch")
+        (is (about= 0.03 (:agent-run/cost-usd attrs)))
+        (is (= 95 (:agent-run/tokens-total attrs)))))))
 
 (deftest raw-completing-run-records-no-usage
   (with-shuttle

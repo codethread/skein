@@ -204,9 +204,10 @@
                                 |missing figure is never inflated to 0.
                                 |
                                 |--harness restricts to one harness or alias; --since/--until window
-                                |on the run's started-at (inclusive ISO instants); --group-by buckets
-                                |by harness (default) or day.")
-                   :fails ["--group-by other than harness or day"]
+                                |on the run's started-at (inclusive ISO-8601 instants, e.g.
+                                |2026-07-10T00:00:00Z); --group-by buckets by harness (default) or day.")
+                   :fails ["--group-by other than harness or day"
+                           "--since/--until not an ISO-8601 instant"]
                    :returns {"operation" "agent-spend"
                              "filters" {"group-by" "harness|day" "harness" "optional string"
                                         "since" "optional ISO instant" "until" "optional ISO instant"}
