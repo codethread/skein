@@ -31,8 +31,10 @@ strands" so kanban stays implementation-agnostic. Litmus: delete devflow, the ka
 
 ## TASK-Nwt-009.P3 Done when
 
-- **TASK-Nwt-009.DW1:** `rg -i 'devflow|agent-plan|delegation' spools/kanban*` returns only the allowed
-  phrase "execution strands" (`PLAN-Nwt-001.A5`, `V4`, `PH4`).
+- **TASK-Nwt-009.DW1:** `rg -i 'devflow|agent-plan|delegation' spools/kanban* -g '!*.api.md'` returns only
+  the allowed phrase "execution strands" — the generated `kanban.api.md` regenerates in Task 12, so this
+  slice's gate excludes it; the unexcluded grep is Task 13's final proof after api-docs regen
+  (`PLAN-Nwt-001.A5`, `V4`, `PH4`; change-review-758179fb finding 2).
 - **TASK-Nwt-009.DW2:** Cold focused gate green: `clojure -M:test skein.kanban-test` (docstring edits do
   not change behavior but keep the suite honest — `PLAN-Nwt-001.PH4`).
 - **TASK-Nwt-009.DW3:** `make docs-check` at zero findings for the prose edits; run the `docs-style` gate

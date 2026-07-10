@@ -53,8 +53,10 @@ the keystone — the CLI passthrough (Tasks 2/3), task tier (Tasks 4/5), and eve
   ships (`DELTA-Nwt-001.C1`–`C5`).
 - **TASK-Nwt-001.DW2:** Tests cover the negative cases: `writer` rejects a non-string/non-fn target and a
   non-map decoration; `write!`/`writer-ref->prompt` reject a malformed decoration/ref naming the field;
-  `write!` on a missing thunk target throws "Note target strand not found"; `writer-ref` thunk resolves
-  once (`DELTA-Nwt-001.C3`, `PLAN-Nwt-001.AA1`, `AA9`).
+  a thunk returning a non-string (nil, keyword, number) fails loudly at resolution — in both `write!` and
+  `writer-ref` — naming the bad return, not later in downstream `note!`/`show` calls; `write!` on a
+  missing thunk target throws "Note target strand not found"; `writer-ref` thunk resolves once
+  (`DELTA-Nwt-001.C3`, `PLAN-Nwt-001.AA1`, `AA9`; change-review-758179fb finding 5).
 - **TASK-Nwt-001.DW3:** Cold focused gate green: `clojure -M:test skein.notes-test`.
 - **TASK-Nwt-001.DW4:** `make fmt-check lint reflect-check` pass at zero findings (`PLAN-Nwt-001.V3`).
 

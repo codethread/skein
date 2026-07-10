@@ -25,6 +25,10 @@ prompt fragments that *emit* `agent note` are Task 10 (`DELTA-Nwt-001.J1`, `PROP
 - **TASK-Nwt-003.MI2 (thread):** Thread the parsed decoration into the underlying note write as ordinary
   decorating attrs on the note strand — the agent-run `note!`/`notes` wrappers already pass opts through
   (`agent_run.clj:2219-2235`), so no wrapper change is needed (`PLAN-Nwt-001.A2`, `DN1`).
+- **TASK-Nwt-003.MI3 (declared arg-spec):** Expand the declared `note` subcommand in the agent arg-spec to
+  accept the repeatable `--attr` flag — CLI dispatch validates against the declared spec *before* `op-note`
+  runs, so without this the flag is rejected upstream and MI1 never sees it. Never hand-write usage strings;
+  extend the `:subcommands` declaration (change-review-758179fb finding 1).
 
 ## TASK-Nwt-003.P3 Done when
 

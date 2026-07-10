@@ -18,19 +18,23 @@ of hand-built strings, leaving the `note!`/`notes` wrappers untouched (they alre
 
 ## TASK-Nwt-011.P2 Must implement exactly
 
-- **TASK-Nwt-011.MI1 (headless preamble):** Render the headless preamble note line (`agent_run.clj:789`)
-  through `writer-ref->prompt` instead of a hand-built `agent note <id>` string
-  (`PLAN-Nwt-001.AA5`, `DELTA-Nwt-001.C4`).
-- **TASK-Nwt-011.MI2 (interactive completion contract):** Render the interactive completion-contract note
-  lines (`agent_run.clj:818`) through `writer-ref->prompt` (`PLAN-Nwt-001.AA5`).
+- **TASK-Nwt-011.MI1 (concrete-target lines only):** `writer-ref->prompt` requires one resolved writer
+  target, so only preamble lines with a concrete target render through it: the interactive
+  completion-contract note line when `for-id` exists (`agent_run.clj:818`). The headless preamble's
+  generic guidance (`:789`, "agent note <strand-id>" with a placeholder) and the interactive no-`for-id`
+  branch are intentionally target-less and STAY hand-written — do not force a read of a nonexistent target
+  through the writer surface (change-review-758179fb finding 3).
+- **TASK-Nwt-011.MI2 (interactive completion contract):** Render the `for-id` completion-contract note
+  line (`agent_run.clj:818`) through `writer-ref->prompt` (`PLAN-Nwt-001.AA5`).
 - **TASK-Nwt-011.MI3 (wrappers untouched):** Leave the `note!`/`notes` wrappers (`agent_run.clj:2219-2235`)
   unchanged — they already pass opts through; this task changes only the preamble rendering
   (`PLAN-Nwt-001.A2`, `AA5`).
 
 ## TASK-Nwt-011.P3 Done when
 
-- **TASK-Nwt-011.DW1:** No hand-built `agent note <id>` string remains in the headless preamble or the
-  interactive completion contract; both render through `writer-ref->prompt` (`DELTA-Nwt-001.C4`).
+- **TASK-Nwt-011.DW1:** The `for-id` completion-contract line renders through `writer-ref->prompt`; the
+  target-less headless guidance line (`:789`) and no-`for-id` branch remain hand-written by design
+  (`DELTA-Nwt-001.C4`; change-review-758179fb finding 3).
 - **TASK-Nwt-011.DW2:** The `note!`/`notes` wrappers are byte-identical (`PLAN-Nwt-001.AA5`).
 - **TASK-Nwt-011.DW3:** Cold focused gate green: `clojure -M:test skein.agent-run-test`.
 - **TASK-Nwt-011.DW4:** `make fmt-check lint reflect-check` pass at zero findings. (No arg-spec change —
