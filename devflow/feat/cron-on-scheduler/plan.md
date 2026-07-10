@@ -466,3 +466,35 @@ intended `git status --short`.
   time; re-registering after the pending wake is cancelled arms a fresh wake.
 - Gate green: `clojure -M:test skein.cron-test` (7 tests, 1036 assertions, 0 fail);
   `make fmt-check lint` clean for touched Clojure sources.
+
+### PLAN-cron-on-scheduler-001.DN7 Task kmhnd: PH2 restart-durability + lane-hygiene e2e implemented — 2026-07-10
+
+- New `test/skein/cron_e2e_test.clj` (`skein.cron-e2e-test`), additive over the
+  task-2 rewrite with no cron source changes (`OS1`). Registered in
+  `test/skein/test_runner.clj` `parallel-namespaces` (per-runtime unpublished,
+  deterministic seams — parallel-safe like `cron-test`/`scheduler-e2e-test`) so
+  both the focused runner and full suite accept it.
+- `.V1` restart durability: register on rt1, confirm the durable `cron/survivor`
+  wake is pending, stop rt1; seed the overdue durable row via `db/schedule-wake!`;
+  a fresh rt2 re-runs the identical `register!` (no in-memory config) and adopts
+  the pending wake — asserted by `wake_at` staying the seed instant, not resetting
+  to `now+interval` (`.A4`); then the job fires (`:last-outcome`, joined via
+  `cron/await-idle!`) and the next `cron/<id>` wake is re-armed at fire+interval.
+- Divergence from `scheduler_e2e_test`, noted in the ns docstring: `arm!` schedules
+  a real timer against the runtime clock, so a wall-past seed fires on the startup
+  timer thread *before* `register!` installs the in-memory job (which `fire-wake`
+  needs) — a lost fire. The seed instant is therefore placed in the wall future so
+  the startup timer stays dormant, and the fire is released deterministically off
+  the manual clock via `advance!` after `register!`. This is a test-shape choice,
+  not a cron gap.
+- `.V2` lane hygiene: a `blocking-run` `:run!` (release-latch pattern from
+  `events_quiescence_test`) is offloaded by `fire-wake`, so `await-quiescent!`
+  returns while the body is still blocked, and a subsequently-enqueued marker
+  event dispatches on the free lane; the latch is released and joined via
+  `cron/await-idle!` before teardown.
+- `.V3`: no `Thread/sleep`/wall waits — manual clock + `advance!` +
+  `await-quiescent!` + `await-idle!`, plus signal derefs on latch promises.
+- Gate green: `clojure -M:test skein.cron-e2e-test` (2 tests, 8 assertions, 0 fail);
+  `make fmt-check lint` clean; `git status --short` shows only the intended edits
+  (new test ns, runner registration, index.yml) with no generated SQLite/runtime
+  artifacts.

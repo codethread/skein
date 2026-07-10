@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: Cron restart-durability and lane-hygiene e2e (PH2)
     task_file: tasks/004-cron-durability-lane-e2e.md
-    status: pending
+    status: complete
     blocked_by: [3]
   - id: 5
     description: nvd_scan migration off initial-delay-fn (PH3)
