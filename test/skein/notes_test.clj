@@ -155,7 +155,16 @@
       (let [w (notes/writer rt (target! rt) {})]
         (testing "write! rejects a malformed per-call decoration naming :decoration"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"decoration"
-                                (notes/write! w "x" {:decoration {:kw "v"}}))))))))
+                                (notes/write! w "x" {:decoration {:kw "v"}})))))
+      (testing "a top-level non-map names :root, never a nil field"
+        (doseq [bad-ref [nil "not-a-map" [:vec]]]
+          (let [ex (try (notes/writer-ref->prompt bad-ref)
+                        (catch clojure.lang.ExceptionInfo e e))]
+            (is (= :root (:field (ex-data ex))))))
+        (let [w (notes/writer rt (target! rt) {})
+              ex (try (notes/write! w "x" {:decoration "not-a-map"})
+                      (catch clojure.lang.ExceptionInfo e e))]
+          (is (= :root (:field (ex-data ex)))))))))
 
 (deftest writer-thunk-resolution-fails-loudly-on-a-non-string-return
   (with-runtime

@@ -132,12 +132,14 @@
   writer-ref->prompt route here so a malformed shape throws one consistent,
   field-named ex-info instead of each entry hand-rolling predicate checks. The
   explain string always names the failing field (path or missing key), so the
-  historical fail-loud named-field contract survives; `label` prefixes it."
+  historical fail-loud named-field contract survives; `label` prefixes it. A
+  top-level non-map (nil, string, vector) has an empty problem path, so `:field`
+  is `:root` there — never nil."
   [spec label value]
   (when-not (s/valid? spec value)
     (let [problem (first (::s/problems (s/explain-data spec value)))]
       (throw (ex-info (str label " shape invalid: " (s/explain-str spec value))
-                      {:field (first (:in problem)) :value value}))))
+                      {:field (or (first (:in problem)) :root) :value value}))))
   value)
 
 (defn- resolve-target
