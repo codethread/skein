@@ -531,10 +531,11 @@
     {:notes notes :work work}))
 
 (defn card-view
-  "Return one card joined to its notes, latest handover, work, and frontier.
+  "Return one card joined to its notes, latest handover, tasks, work, and frontier.
 
   This is the resume entry point: everything an agent needs to continue a
-  card lives here."
+  card lives here. `:tasks` projects the feature card's child tasks with the
+  four derived statuses (empty for cards that carry no task tier)."
   [id]
   (let [rt (current/runtime)
         card (card-strand (require-non-blank! :id id))
@@ -545,6 +546,7 @@
     {:operation "kanban card"
      :card (select-keys card [:id :title :state :attributes :created_at :updated_at])
      :latest-handover (some->> notes (filter #(= "true" (attr-value % handover-attr))) first compact-note)
+     :tasks (tasks-with-status rt (feature-tasks rt (:id card)))
      :notes (mapv compact-note notes)
      :active-work (mapv summarize-strand active-work)
      :ready (mapv summarize-strand ready)
@@ -599,6 +601,16 @@
            first
            compact-note))
 
+(defn- doing-task-for
+  "Return the compact derived-`doing` task for a card, or nil.
+
+  The doing task is the board's live resume signal: the first active,
+  deps-met, owned task under the feature card."
+  [rt card]
+  (some->> (tasks-with-status rt (feature-tasks rt (:id card)))
+           (filter #(= "doing" (:status %)))
+           first))
+
 (defn- needs-review-entries
   "Return review-frontier entries across review-relevant feature cards.
 
@@ -624,10 +636,10 @@
 (defn board
   "Return the grouped board snapshot: epics, feature lanes, closed count.
 
-  Claimed cards carry their latest handover so a cold agent can see in one
-  call who is working where and how to pick up interrupted work.
-  `:needs-review` aggregates the human-review frontier across claimed and
-  in-review cards."
+  Claimed and in-review cards carry their doing-task and latest handover so a
+  cold agent can see in one call who is working where and how to pick up
+  interrupted work. `:needs-review` aggregates the human-review frontier across
+  claimed and in-review cards."
   []
   (let [rt (current/runtime)
         all (cards)
@@ -657,12 +669,16 @@
              :claimed (mapv (fn [card]
                               (cond-> (with-epic card)
                                 (latest-handover-for rt card)
-                                (assoc :latest-handover (latest-handover-for rt card))))
+                                (assoc :latest-handover (latest-handover-for rt card))
+                                (doing-task-for rt card)
+                                (assoc :doing-task (doing-task-for rt card))))
                             (by-priority claimed-features))
              :in_review (mapv (fn [card]
                                 (cond-> (with-epic card)
                                   (latest-handover-for rt card)
-                                  (assoc :latest-handover (latest-handover-for rt card))))
+                                  (assoc :latest-handover (latest-handover-for rt card))
+                                  (doing-task-for rt card)
+                                  (assoc :doing-task (doing-task-for rt card))))
                               (by-priority review-features))
              :needs-review (needs-review-entries rt (concat claimed-features review-features))
              :closed {:count (count (filter #(= "closed" (:state %)) all))}}
@@ -708,6 +724,21 @@
                            (str (:created_at latest-handover) "  "
                                 (first (str/split-lines (or (:body latest-handover) ""))))))))
 
+(defn- doing-task-line
+  "Return the indented doing-task row for a claimed/in-review card, or nil."
+  [{:keys [doing-task]}]
+  (when doing-task
+    (str "         " (clip (- board-width 9)
+                           (str "doing: " (:title doing-task))))))
+
+(defn- wip-row
+  "Return the ASCII rows for a claimed/in-review card: the card line plus its
+  doing-task and latest-handover signal lines when present."
+  [card]
+  (->> [(card-line card) (doing-task-line card) (handover-line card)]
+       (remove nil?)
+       (str/join "\n")))
+
 (defn- review-line
   "Return one ASCII row for a needs-review entry."
   [{:keys [card branch item]}]
@@ -726,17 +757,9 @@
           [""]
           (lane-lines "PENDING" pending card-line)
           [""]
-          (lane-lines "CLAIMED / WIP" claimed
-                      (fn [card]
-                        (if-let [handover (handover-line card)]
-                          (str (card-line card) "\n" handover)
-                          (card-line card))))
+          (lane-lines "CLAIMED / WIP" claimed wip-row)
           [""]
-          (lane-lines "IN REVIEW" in_review
-                      (fn [card]
-                        (if-let [handover (handover-line card)]
-                          (str (card-line card) "\n" handover)
-                          (card-line card))))
+          (lane-lines "IN REVIEW" in_review wip-row)
           [""]
           (lane-lines "NEEDS REVIEW" needs-review review-line)
           (when (seq unknown-status)

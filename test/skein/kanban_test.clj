@@ -434,6 +434,41 @@
             (is (= "done" (status ready-id)) "the closed dependency reads as done")
             (is (= "ready" (status blocked-id)) "dependency closed, no owner -> ready")))))))
 
+(deftest kanban-card-view-projects-tasks-lane
+  (with-kanban
+    (fn [rt]
+      (let [feature-id (get-in (op! rt "add" "Card-view task feature") [:card :id])
+            ready-id (get-in (op! rt "task" "add" feature-id "Ready task") [:task :id])
+            doing-id (get-in (op! rt "task" "add" feature-id "Doing task") [:task :id])]
+        (api/update rt doing-id {:attributes {:owner "agent-a"}})
+        (testing "card view lists child tasks with their derived statuses"
+          (let [tasks (:tasks (op! rt "card" feature-id))]
+            (is (= #{ready-id doing-id} (set (map :id tasks))))
+            (is (= {ready-id "ready" doing-id "doing"}
+                   (into {} (map (juxt :id :status)) tasks)))))
+        (testing "a card with no task tier projects an empty tasks lane"
+          (let [plain-id (get-in (op! rt "add" "No tasks here") [:card :id])]
+            (is (= [] (:tasks (op! rt "card" plain-id))))))))))
+
+(deftest kanban-board-surfaces-doing-task-on-wip-lanes
+  (with-kanban
+    (fn [rt]
+      (let [feature-id (get-in (op! rt "add" "Doing-task feature") [:card :id])]
+        (op! rt "claim" feature-id "--owner" "agent-a" "--branch" "doing-branch")
+        (let [doing-id (get-in (op! rt "task" "add" feature-id "Wire the thing") [:task :id])]
+          (api/update rt doing-id {:attributes {:owner "agent-a"}})
+          (testing "the claimed lane carries the derived doing-task title"
+            (let [claimed (some #(when (= feature-id (:id %)) %) (:claimed (op! rt "board")))]
+              (is (= "Wire the thing" (get-in claimed [:doing-task :title])))
+              (is (= "doing" (get-in claimed [:doing-task :status])))))
+          (testing "the in_review lane carries the doing-task title too"
+            (op! rt "review" feature-id)
+            (let [reviewing (some #(when (= feature-id (:id %)) %) (:in_review (op! rt "board")))]
+              (is (= "Wire the thing" (get-in reviewing [:doing-task :title])))))
+          (testing "board-str renders the doing-task line"
+            (let [rendered ((requiring-resolve 'skein.spools.kanban/board-str) (op! rt "board"))]
+              (is (str/includes? rendered "doing: Wire the thing")))))))))
+
 (deftest kanban-batch-weave-creates-cards-and-dependencies
   (with-kanban
     (fn [rt]
