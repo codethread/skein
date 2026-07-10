@@ -1035,4 +1035,71 @@
                            ["{\"type\":\"session\",\"id\":\"sess-2\"}"
                             "{\"type\":\"tool_execution_end\",\"toolCallId\":\"t1\",\"result\":{\"output\":\"obj\"}}"])
           parsed (#'shuttle/parse-pi-json stdout)]
-      (is (string? (:result parsed))))))
+      (is (string? (:result parsed)))
+      (is (str/blank? (:result parsed))
+          "a text-less event stream is a blank result, never the raw stream"))))
+
+(deftest parse-pi-json-terminal-error-surfaces-as-error
+  ;; live incident (runs m5i8k/mdxnn, 2026-07-10): a provider usage limit ends
+  ;; the turn with stopReason "error" + errorMessage on the final assistant
+  ;; message while pi itself exits 0. The old parse fell back to the raw event
+  ;; stream as :result, so the runs closed done with zero findings and dodged
+  ;; every recovery path.
+  (testing "stopReason error on the last assistant message returns :error"
+    (let [stdout (str/join "\n"
+                           ["{\"type\":\"session\",\"id\":\"sess-3\"}"
+                            "{\"type\":\"message_end\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"do the review\"}]}}"
+                            "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"error\",\"errorMessage\":\"Codex error: The usage limit has been reached\"}}"
+                            "{\"type\":\"turn_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"error\",\"errorMessage\":\"Codex error: The usage limit has been reached\"}}"])
+          parsed (#'shuttle/parse-pi-json stdout)]
+      (is (= "Codex error: The usage limit has been reached" (:error parsed)))
+      (is (str/blank? (:result parsed)))
+      (is (= "sess-3" (:session-id parsed)))))
+  (testing "an errorMessage without stopReason still surfaces as :error"
+    (let [stdout (str/join "\n"
+                           ["{\"type\":\"session\",\"id\":\"sess-4\"}"
+                            "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"errorMessage\":\"transport dropped\"}}"])
+          parsed (#'shuttle/parse-pi-json stdout)]
+      (is (= "transport dropped" (:error parsed)))))
+  (testing "a non-string errorMessage fails the run instead of throwing into the parse-error path"
+    ;; a thrown parse lands in finish-run!'s catch, whose raw-stdout :result
+    ;; would drive the run to done — the exact hollow-success class this guards.
+    (let [stdout (str/join "\n"
+                           ["{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"error\",\"errorMessage\":429}}"])
+          parsed (#'shuttle/parse-pi-json stdout)]
+      (is (= "429" (:error parsed)))
+      (is (str/blank? (:result parsed)))))
+  (testing "earlier assistant text is preserved as :result alongside :error"
+    (let [stdout (str/join "\n"
+                           ["{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"partial progress\"}]}}"
+                            "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],\"stopReason\":\"error\",\"errorMessage\":\"boom\"}}"])
+          parsed (#'shuttle/parse-pi-json stdout)]
+      (is (= "boom" (:error parsed)))
+      (is (= "partial progress" (:result parsed)))))
+  (testing "a clean final assistant message carries no :error"
+    (let [stdout (str/join "\n"
+                           ["{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"all done\"}],\"stopReason\":\"stop\"}}"])
+          parsed (#'shuttle/parse-pi-json stdout)]
+      (is (nil? (:error parsed)))
+      (is (= "all done" (:result parsed))))))
+
+(deftest pi-json-terminal-error-run-fails-loudly
+  (with-shuttle
+    (fn [rt]
+      (testing "a :pi-json harness whose turn errors is failed, not closed done"
+        ;; sh stands in for pi: exit 0 while the event stream reports the
+        ;; provider failure — exactly the live usage-limit incident shape.
+        (shuttle/defharness! :sh-pi-err {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+        (let [stream (str "printf '%s\\n' "
+                          "'{\"type\":\"session\",\"id\":\"sess-err\"}' "
+                          "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],"
+                          "\"stopReason\":\"error\",\"errorMessage\":\"Codex error: The usage limit has been reached\"}}'")
+              run (shuttle/spawn-run! {:harness :sh-pi-err :prompt stream})
+              failed (await-phase rt (:id run) #{"failed"})]
+          (is (= "active" (:state failed)) "stays active so it is loud and retryable")
+          (is (= "failed" (get-in failed [:attributes :agent-run/phase])))
+          (is (zero? (get-in failed [:attributes :agent-run/exit-code])))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "final turn errored"))
+          (is (str/includes? (get-in failed [:attributes :agent-run/error]) "usage limit"))
+          (is (= "sess-err" (get-in failed [:attributes :agent-run/session-id]))
+              "session id is preserved for forensics"))))))
