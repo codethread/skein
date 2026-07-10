@@ -1171,6 +1171,20 @@
 (defn- tail [s n]
   (if (> (count s) n) (subs s (- (count s) n)) s))
 
+(defn- usage->attrs
+  "Render the parse layer's keyword-keyed C1 `:usage` map into the string-keyed
+  `agent-run/*` completion attributes, carrying only the dimensions the harness
+  actually reported. normalize-usage has already dropped every nil/zero figure,
+  so an absent key here is spend the run never made — never a stored 0
+  (PROP-Ru-001.R3). `:tokens` rides as the nested breakdown map. A run with no
+  parsed usage (a `:raw` run) yields no attributes."
+  [{:keys [usage-source cost-usd tokens-total tokens]}]
+  (cond-> {}
+    usage-source (assoc "agent-run/usage-source" usage-source)
+    cost-usd (assoc "agent-run/cost-usd" cost-usd)
+    tokens-total (assoc "agent-run/tokens-total" tokens-total)
+    (seq tokens) (assoc "agent-run/tokens" tokens)))
+
 (defn- finish-run! [id process harness out-file err-file]
   (let [exit (.waitFor ^Process process)
         stdout (read-file-safe out-file)
@@ -1178,12 +1192,13 @@
     (swap! (in-flight) dissoc id)
     (when-not (= "failed" (sattr current "phase"))
       (if (zero? exit)
-      (let [{:keys [result session-id parse-error error]}
+      (let [{:keys [result session-id parse-error error usage]}
             (try
               (parse-output (:parse harness) stdout)
               (catch Exception e
                 {:result (str/trim stdout)
-                 :parse-error (str (ex-message e))}))]
+                 :parse-error (str (ex-message e))}))
+            usage-attrs (usage->attrs usage)]
         (cond
           ;; exit 0 but the harness's own event stream reports a terminal
           ;; provider failure (usage limit, auth, transport): the process
@@ -1194,8 +1209,9 @@
             (mark-failed! id
                           (str "harness exited 0 but the final turn errored: " error
                                (when-not (str/blank? stderr) (str "; stderr: " (tail stderr 2000))))
-                          (cond-> {"agent-run/exit-code" exit}
-                            session-id (assoc "agent-run/session-id" session-id))))
+                          (merge (cond-> {"agent-run/exit-code" exit}
+                                   session-id (assoc "agent-run/session-id" session-id))
+                                 usage-attrs)))
 
           (str/blank? result)
           ;; exit 0 but no result text: the harness died silently (a transport
@@ -1214,12 +1230,13 @@
                             session-id (assoc "agent-run/session-id" session-id))))
 
           :else
-          (update-run! id (cond-> {"agent-run/phase" "done"
-                                   "agent-run/exit-code" exit
-                                   "agent-run/result" result
-                                   "agent-run/finished-at" (now)}
-                            session-id (assoc "agent-run/session-id" session-id)
-                            parse-error (assoc "agent-run/parse-error" parse-error))
+          (update-run! id (merge (cond-> {"agent-run/phase" "done"
+                                          "agent-run/exit-code" exit
+                                          "agent-run/result" result
+                                          "agent-run/finished-at" (now)}
+                                   session-id (assoc "agent-run/session-id" session-id)
+                                   parse-error (assoc "agent-run/parse-error" parse-error))
+                                 usage-attrs)
                        {:state "closed"})))
         (let [stderr (str/trim (read-file-safe err-file))
               detail (if (str/blank? stderr) (str/trim stdout) stderr)]

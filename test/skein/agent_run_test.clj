@@ -1194,3 +1194,103 @@
           (is (str/includes? (get-in failed [:attributes :agent-run/error]) "usage limit"))
           (is (= "sess-err" (get-in failed [:attributes :agent-run/session-id]))
               "session id is preserved for forensics"))))))
+
+;; ---------------------------------------------------------------------------
+;; Terminal-write seam (TASK-Ru-002): finish-run! writes the captured :usage
+;; onto both terminal branches that have parsed output — the done branch and the
+;; terminal-error branch — so a usage-limit failure still records its spend. A
+;; :raw run and any unreported dimension write nothing (never a stored 0).
+
+(deftest pi-json-completing-run-records-usage
+  (with-shuttle
+    (fn [rt]
+      ;; sh stands in for pi: exit 0 with a clean event stream carrying a
+      ;; message_end usage delta and its nested cost.total.
+      (shuttle/defharness! :sh-pi-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (let [stream (str "printf '%s\\n' "
+                        "'{\"type\":\"session\",\"id\":\"sess-u\"}' "
+                        "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\","
+                        "\"content\":[{\"type\":\"text\",\"text\":\"all done\"}],"
+                        "\"usage\":{\"input\":100,\"output\":20,\"cacheRead\":5,"
+                        "\"totalTokens\":125,\"cost\":{\"total\":0.0123}}}}'")
+            run (shuttle/spawn-run! {:harness :sh-pi-usage :prompt stream})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "closed" (:state done)))
+        (is (= "all done" (:agent-run/result attrs)))
+        (is (= "pi-json" (:agent-run/usage-source attrs)))
+        (is (about= 0.0123 (:agent-run/cost-usd attrs)))
+        (is (= 125 (:agent-run/tokens-total attrs)))
+        (is (= 100 (get-in attrs [:agent-run/tokens :input])))
+        (is (= 20 (get-in attrs [:agent-run/tokens :output])))
+        (is (= 5 (get-in attrs [:agent-run/tokens :cache-read])))))))
+
+(deftest claude-json-completing-run-records-usage-from-result-object
+  (with-shuttle
+    (fn [rt]
+      (shuttle/defharness! :sh-claude-usage {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
+      (let [obj (str "{\"result\":\"all done\",\"session_id\":\"sc\","
+                     "\"total_cost_usd\":0.5,"
+                     "\"usage\":{\"input_tokens\":100,\"output_tokens\":40,"
+                     "\"cache_read_input_tokens\":900}}")
+            run (shuttle/spawn-run! {:harness :sh-claude-usage :prompt (str "printf '%s' '" obj "'")})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "claude-json" (:agent-run/usage-source attrs)))
+        (is (about= 0.5 (:agent-run/cost-usd attrs)))
+        (is (= (+ 100 40 900) (:agent-run/tokens-total attrs)))
+        (is (= 100 (get-in attrs [:agent-run/tokens :input])))
+        (is (= 900 (get-in attrs [:agent-run/tokens :cache-read])))
+        (is (not (contains? (:agent-run/tokens attrs) :cache-write))
+            "cache_creation_input_tokens was absent, so cache-write is never zero-filled")))))
+
+(deftest pi-json-terminal-error-run-still-records-its-cost
+  (with-shuttle
+    (fn [rt]
+      ;; the highest-value runs to capture are exactly the usage-limit failures:
+      ;; the turn errors (stopReason error) yet still reports the spend it made,
+      ;; so mark-failed!'s extra map carries the usage onto the failed record.
+      (shuttle/defharness! :sh-pi-err-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (let [stream (str "printf '%s\\n' "
+                        "'{\"type\":\"session\",\"id\":\"se\"}' "
+                        "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],"
+                        "\"stopReason\":\"error\",\"errorMessage\":\"usage limit reached\","
+                        "\"usage\":{\"input\":50,\"output\":10,\"totalTokens\":60,\"cost\":{\"total\":0.02}}}}'")
+            run (shuttle/spawn-run! {:harness :sh-pi-err-usage :prompt stream})
+            failed (await-phase rt (:id run) #{"failed"})
+            attrs (:attributes failed)]
+        (is (= "active" (:state failed)) "still loud and retryable")
+        (is (= "failed" (:agent-run/phase attrs)))
+        (is (= "pi-json" (:agent-run/usage-source attrs)))
+        (is (about= 0.02 (:agent-run/cost-usd attrs)))
+        (is (= 60 (:agent-run/tokens-total attrs)))))))
+
+(deftest raw-completing-run-records-no-usage
+  (with-shuttle
+    (fn [rt]
+      ;; the shipped :sh harness is :parse :raw — it sees no usage object, so it
+      ;; records none rather than synthesizing zeros.
+      (let [run (shuttle/spawn-run! {:harness :sh :prompt "echo plain-result"})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "plain-result" (:agent-run/result attrs)))
+        (is (not (contains? attrs :agent-run/usage-source)))
+        (is (not (contains? attrs :agent-run/cost-usd)))
+        (is (not (contains? attrs :agent-run/tokens-total)))
+        (is (not (contains? attrs :agent-run/tokens)))))))
+
+(deftest completing-run-with-nil-cost-omits-the-key-never-zero
+  (with-shuttle
+    (fn [rt]
+      ;; a claude result object that reports tokens but no total_cost_usd: the
+      ;; cost dimension is absent, so the key is omitted — never a stored 0.
+      (shuttle/defharness! :sh-claude-nocost {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
+      (let [obj (str "{\"result\":\"done\",\"session_id\":\"sn\","
+                     "\"usage\":{\"input_tokens\":100,\"output_tokens\":40}}")
+            run (shuttle/spawn-run! {:harness :sh-claude-nocost :prompt (str "printf '%s' '" obj "'")})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (not (contains? attrs :agent-run/cost-usd))
+            "no total_cost_usd reported → the cost key is absent, never a stored 0")
+        (is (= (+ 100 40) (:agent-run/tokens-total attrs)) "tokens are still captured")
+        (is (= "claude-json" (:agent-run/usage-source attrs)))))))
