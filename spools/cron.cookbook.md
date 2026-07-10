@@ -73,7 +73,8 @@ config after cron's `install!` has created the execution executor.
   now.
 
 Honest source: the job shape in [`cron/README.md`](./cron/README.md) and
-`register-lists-and-deregisters` / `fires-and-records-last-outcome` in
+`register-persists-wake-lists-and-deregisters` /
+`fires-records-outcome-and-continues-cadence` in
 [`test/skein/cron_test.clj`](../test/skein/cron_test.clj).
 
 ---
@@ -216,7 +217,7 @@ wait for the event lane, then wait for cron's execution executor to go idle.
 - **No sleeps or wall waits.** Manual clock advancement releases the scheduler
   wake; the two awaits join the two execution stages.
 
-Honest source: `fires-and-records-last-outcome`, failure cases in
+Honest source: `fires-records-outcome-and-continues-cadence`, failure cases in
 [`test/skein/cron_test.clj`](../test/skein/cron_test.clj), and the restart/lane
 checks in [`test/skein/cron_e2e_test.clj`](../test/skein/cron_e2e_test.clj).
 

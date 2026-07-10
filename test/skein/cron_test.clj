@@ -158,11 +158,12 @@
   (let [rng (Random. 42)
         bound 1000]
     (dotimes [_ 1000]
-      (let [offset (cron/jitter-offset-ms bound rng)]
+      ;; white-box read of the private jitter helper, as with new-state below.
+      (let [offset (#'cron/jitter-offset-ms bound rng)]
         (is (<= (- bound) offset bound))))
     (testing "a zero or negative bound yields no jitter"
-      (is (zero? (cron/jitter-offset-ms 0 (Random. 1))))
-      (is (zero? (cron/jitter-offset-ms -5 (Random. 1)))))))
+      (is (zero? (#'cron/jitter-offset-ms 0 (Random. 1))))
+      (is (zero? (#'cron/jitter-offset-ms -5 (Random. 1)))))))
 
 (deftest register-validates-inputs
   (with-cron
@@ -175,7 +176,11 @@
                                        :run! 'skein.cron-test/fire-ok})))
       (is (thrown? Exception
                    (cron/register! rt {:id :bad :interval-ms 1000
-                                       :run! 'not-qualified}))))))
+                                       :run! 'not-qualified})))
+      (testing "a typo'd (unknown) key is rejected loudly, not silently dropped"
+        (is (thrown? Exception
+                     (cron/register! rt {:id :bad :interva-ms 1000
+                                         :run! 'skein.cron-test/fire-ok})))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for cron's versioned spool-state: a key added to new-state

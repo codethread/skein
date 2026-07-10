@@ -5,7 +5,6 @@
     -  [`failures`](#skein.spools.cron/failures) - Return recorded cron failures for this runtime's weaver lifetime, oldest first.
     -  [`fire-wake`](#skein.spools.cron/fire-wake) - Scheduler wake handler for a <code>cron/&lt;id&gt;</code> fire, run on the shared event lane.
     -  [`install!`](#skein.spools.cron/install!) - Activate cron on the current runtime, creating the execution executor.
-    -  [`jitter-offset-ms`](#skein.spools.cron/jitter-offset-ms) - Return a uniform jitter offset in the range [-bound-ms, bound-ms].
     -  [`jobs`](#skein.spools.cron/jobs) - Return the cron jobs registered on <code>runtime</code> as status maps, sorted by id.
     -  [`register!`](#skein.spools.cron/register!) - Register (or replace) a named cron job on <code>runtime</code> as a durable wake.
 
@@ -58,7 +57,7 @@ Block until every offloaded cron job on `runtime` has finished, then return
   the latch monitor until the count reaches zero or the budget expires, throwing
   loudly on timeout (TEN-003). The default budget comes from
   `skein.spools.test-support/await-budget-ms`; override it with `:timeout-ms`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L223-L253">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L227-L257">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/deregister!">`deregister!`</a>
 ``` clojure
@@ -73,7 +72,7 @@ Cancel a cron job's pending wake and remove it from `runtime`.
   fails loudly on an unknown key, so the cancel is guarded behind a `pending`
   check for `cron/<id>` — a missing wake is tolerated while genuine scheduler
   errors still surface (`PLAN-cron-on-scheduler-001.R1`).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L139-L154">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L140-L155">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/failures">`failures`</a>
 ``` clojure
@@ -84,7 +83,7 @@ Function.
 Return recorded cron failures for this runtime's weaver lifetime, oldest
   first. Each entry carries `:kind` (`:run` for a `:run!` throw, `:offload` for
   an execution-executor rejection), `:job`, a `:message`, and `:at`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L87-L92">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L88-L93">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/fire-wake">`fire-wake`</a>
 ``` clojure
@@ -103,7 +102,7 @@ Scheduler wake handler for a `cron/<id>` fire, run on the shared event lane.
   cron-owned execution executor, recording an executor rejection loudly cron-side
   without throwing; (5) return so the scheduler completes the delivered wake. The
   job body never runs on the lane.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L196-L221">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L197-L225">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/install!">`install!`</a>
 ``` clojure
@@ -116,19 +115,7 @@ Activate cron on the current runtime, creating the execution executor.
   Registers no jobs — trusted config registers jobs with `register!`. Cron owns
   no timer or clock pump; the scheduler primitive drives every `cron/<id>` wake.
   Called as a no-arg module `:call` at startup/reload.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L302-L313">Source</a></sub></p>
-
-## <a name="skein.spools.cron/jitter-offset-ms">`jitter-offset-ms`</a>
-``` clojure
-(jitter-offset-ms bound-ms rng)
-```
-Function.
-
-Return a uniform jitter offset in the range [-bound-ms, bound-ms].
-
-  `rng` is a `java.util.Random`; pass a seeded one for deterministic tests. A
-  zero or negative bound yields 0.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L94-L102">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L339-L350">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/jobs">`jobs`</a>
 ``` clojure
@@ -142,7 +129,7 @@ Return the cron jobs registered on `runtime` as status maps, sorted by id.
   (once fired) `:last-outcome`/`:last-fired-at`/`:last-error`. When a job next
   fires lives in its durable `cron/<id>` wake — read scheduler introspection
   (`skein.api.scheduler.alpha/pending`), the single timing view.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L292-L300">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L329-L337">Source</a></sub></p>
 
 ## <a name="skein.spools.cron/register!">`register!`</a>
 ``` clojure
@@ -151,6 +138,10 @@ Return the cron jobs registered on `runtime` as status maps, sorted by id.
 Function.
 
 Register (or replace) a named cron job on `runtime` as a durable wake.
+
+  The `job` map is validated against the `::job` spec (a keyword/non-blank
+  `:id`, positive `:interval-ms`, optional non-negative `:jitter-ms`, and a
+  fully-qualified `:run!` symbol); unknown keys are rejected loudly.
 
   `job` keys:
   - `:id` — keyword or non-blank string identifying the job.
@@ -166,4 +157,4 @@ Register (or replace) a named cron job on `runtime` as a durable wake.
   in-memory config yet (fresh JVM adopting a durable wake). A changed tuple arms
   a fresh wake at `now + interval + jitter`; a missing pending wake also arms a
   fresh wake. Returns the job's status map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L255-L290">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L281-L327">Source</a></sub></p>

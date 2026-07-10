@@ -23,15 +23,16 @@
   The in-memory job table carries no cadence: it is repopulated by trusted
   config re-running `register!` after each startup/reload, while the durable
   wake in SQLite is the sole authority for when a job next fires."
-  (:require [clojure.string :as str]
+  (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.scheduler.alpha :as scheduler]
-            [skein.spools.util :refer [fail!]])
+            [skein.spools.util :refer [fail! reject-unknown-keys! require-valid!]])
   (:import [java.time Instant]
            [java.util Random]
            [java.util.concurrent ExecutorService Executors
-            RejectedExecutionException ThreadFactory TimeUnit]))
+            ThreadFactory TimeUnit]))
 
 (declare execute-job!)
 
@@ -91,7 +92,7 @@
   [runtime]
   @(failure-log runtime))
 
-(defn jitter-offset-ms
+(defn- jitter-offset-ms
   "Return a uniform jitter offset in the range [-bound-ms, bound-ms].
 
   `rng` is a `java.util.Random`; pass a seeded one for deterministic tests. A
@@ -212,10 +213,13 @@
       (inc-in-flight! runtime)
       (try
         (.submit (executor runtime) ^Runnable (fn [] (execute-job! runtime id)))
-        (catch RejectedExecutionException t
-          ;; Executor shutdown/reload race: the next wake is already armed, so
-          ;; record the dropped run loudly and release the latch we took rather
-          ;; than throwing into the lane (`PLAN-cron-on-scheduler-001.R3`).
+        (catch Throwable t
+          ;; Any submit-time failure — the expected executor shutdown/reload race
+          ;; (RejectedExecutionException) or an unexpected throw from a corrupt
+          ;; executor — means `execute-job!` never runs to release the latch in its
+          ;; finally. The next wake is already armed, so balance the increment we
+          ;; took, record the dropped run loudly, and return rather than throwing
+          ;; into the lane (`PLAN-cron-on-scheduler-001.R3`).
           (dec-in-flight! runtime)
           (record-failure! runtime {:kind :offload :job id :message (ex-message t)})))))
   nil)
@@ -252,8 +256,34 @@
                                        {:timeout-ms timeout-ms :in-flight @counter})
                :else (do (.wait ^Object monitor remaining) (recur))))))))))
 
+;; Public seam shape (clojure.spec)
+;;
+;; `::job` is the declared, discoverable source of truth for `register!`'s job
+;; map — the contract downstream config authors write against — matching the
+;; sibling reference spools (roster, delegation). `register!` gates each field
+;; through `require-valid!` so the specs own the shape while the contextual
+;; loud messages survive (failing value + allowed shape, TEN-003), and closes
+;; the key set with `reject-unknown-keys!` since `s/keys` stays open. `:id`
+;; accepts a keyword or non-blank string (coerced by `job-id`); `:run!` only
+;; asserts a fully-qualified symbol here — `resolve-symbol` layers the
+;; requiring-resolve check spec cannot express.
+(s/def ::id (s/or :keyword keyword?
+                  :string (s/and string? (complement str/blank?))))
+(s/def ::interval-ms pos-int?)
+(s/def ::jitter-ms nat-int?)
+(s/def ::run! qualified-symbol?)
+(s/def ::job (s/keys :req-un [::id ::interval-ms ::run!] :opt-un [::jitter-ms]))
+
+(def ^:private job-keys
+  "The closed key set of a `register!` job map (see `::job`)."
+  #{:id :interval-ms :jitter-ms :run!})
+
 (defn register!
   "Register (or replace) a named cron job on `runtime` as a durable wake.
+
+  The `job` map is validated against the `::job` spec (a keyword/non-blank
+  `:id`, positive `:interval-ms`, optional non-negative `:jitter-ms`, and a
+  fully-qualified `:run!` symbol); unknown keys are rejected loudly.
 
   `job` keys:
   - `:id` — keyword or non-blank string identifying the job.
@@ -270,13 +300,20 @@
   a fresh wake at `now + interval + jitter`; a missing pending wake also arms a
   fresh wake. Returns the job's status map."
   [runtime job]
+  (when-not (map? job)
+    (fail! "Cron register! job must be a map" {:job job}))
+  (reject-unknown-keys! "Cron register!" job-keys job)
+  (require-valid! ::id (:id job)
+                  "Cron job :id must be a keyword or non-blank string")
+  (require-valid! ::interval-ms (:interval-ms job)
+                  "Cron job :interval-ms must be a positive integer")
+  (require-valid! ::jitter-ms (or (:jitter-ms job) 0)
+                  "Cron job :jitter-ms must be a non-negative integer")
+  (require-valid! ::run! (:run! job)
+                  "Cron job :run! must be a fully-qualified symbol")
   (let [id (job-id (:id job))
         interval (:interval-ms job)
         jitter (or (:jitter-ms job) 0)]
-    (when-not (and (integer? interval) (pos? interval))
-      (fail! "Cron job :interval-ms must be a positive integer" {:id id :interval-ms interval}))
-    (when-not (and (integer? jitter) (not (neg? jitter)))
-      (fail! "Cron job :jitter-ms must be a non-negative integer" {:id id :jitter-ms jitter}))
     (resolve-symbol :run! (:run! job))
     (let [key (wake-key id)
           old-entry (get @(jobs-atom runtime) id)
