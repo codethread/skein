@@ -11,6 +11,7 @@
             [next.jdbc :as jdbc]
             [skein.spools.agent-run :as shuttle]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
@@ -38,6 +39,21 @@
     {:timeout-ms timeout-ms
      :on-timeout #(throw (ex-info "Timed out waiting for matching attribute"
                                   {:id id :attr k :strand (api/show rt id)}))})))
+
+(deftest install-declares-usage-attrs-in-agent-run-vocab
+  (with-shuttle
+    (fn [rt]
+      (let [decl (vocab/declaration rt :attr-namespace "agent-run")
+            keys (set (:keys decl))]
+        (is (= :skein/spools-shuttle (:owner decl))
+            "the agent-run namespace stays owned by :skein/spools-shuttle")
+        (testing "the four completion-time usage keys are declared"
+          (doseq [k ["agent-run/cost-usd" "agent-run/tokens-total"
+                     "agent-run/tokens" "agent-run/usage-source"]]
+            (is (contains? keys k) (str k " is listed in the agent-run vocab"))))
+        (testing "re-installing is idempotent for the same owner (survives reload!)"
+          (shuttle/install!)
+          (is (= decl (vocab/declaration rt :attr-namespace "agent-run"))))))))
 
 (deftest harness-registry-validates-and-resolves-aliases
   (with-shuttle

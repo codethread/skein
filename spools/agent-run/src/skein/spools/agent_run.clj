@@ -707,6 +707,13 @@
     "agent-run/session" "agent-run/session-id" "agent-run/resumes" "agent-run/error-class"
     "agent-run/recovered-at" "agent-run/recovery-deferred-until"})
 
+(def ^:private usage-attrs
+  "Usage attributes written onto a run at completion by finish-run! — distinct
+  from control-attrs, which spawn reserves. Declared through the same F4 vocab
+  entry but never part of the spawn-time reservation set."
+  #{"agent-run/cost-usd" "agent-run/tokens-total" "agent-run/tokens"
+    "agent-run/usage-source"})
+
 (defn- interactive? [run]
   (= "interactive" (sattr run "mode")))
 
@@ -2102,8 +2109,8 @@
                     {:kind :attr-namespace
                      :name "agent-run"
                      :owner :skein/spools-shuttle
-                     :keys (vec (sort control-attrs))
-                     :doc "Agent-run engine control attributes on run strands, reserved by spawn-run! and the spawn/supervision engine."})
+                     :keys (vec (sort (into control-attrs usage-attrs)))
+                     :doc "Agent-run engine control attributes on run strands, reserved by spawn-run! and the spawn/supervision engine, plus the usage attributes finish-run! records at completion."})
     (events/register! runtime :agent-run/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}
