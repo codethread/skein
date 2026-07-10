@@ -9,7 +9,8 @@
             [skein.spools.test-support :as test-support :refer [with-runtime]]
             [skein.core.db :as db]
             [skein.api.weaver.alpha :as api]
-            [skein.api.events.alpha :as events]))
+            [skein.api.events.alpha :as events]
+            [skein.api.vocab.alpha :as vocab]))
 
 (defn- with-treadle [f]
   (with-runtime
@@ -397,6 +398,17 @@
       (let [gate-id (:id (first (workflow/next-steps "ci")))]
         (events/await-quiescent! rt)
         (is (nil? (run-for-gate rt gate-id)))))))
+
+(deftest install-declares-gate-vocabulary
+  ;; The treadle's install! owns the `gate/*` namespace — the sole treadle-era
+  ;; durable survivor — under the single use-key :skein/spools-treadle.
+  (with-treadle
+    (fn [rt]
+      (let [decl (vocab/declaration rt :attr-namespace "gate")]
+        (is (= :attr-namespace (:kind decl)))
+        (is (= "gate" (:name decl)))
+        (is (= :skein/spools-treadle (:owner decl)))
+        (is (contains? (set (:keys decl)) "gate/delivered"))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for the treadle's versioned spool-state: a key added to

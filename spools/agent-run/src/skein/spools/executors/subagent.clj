@@ -14,7 +14,8 @@
             [skein.api.weaver.alpha :as api]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
-            [skein.api.runtime.alpha :as runtime]))
+            [skein.api.runtime.alpha :as runtime]
+            [skein.api.vocab.alpha :as vocab]))
 
 (def ^:private event-types
   #{:strand/added :strand/updated :batch/applied :strand/burned :strand/superseded})
@@ -243,6 +244,18 @@
         handlers (set (map :key (events/handlers runtime)))]
     (when-not (contains? handlers :agent-run/engine)
       (fail! "Subagent executor requires the agent-run engine to be installed first" {:handlers handlers}))
+    ;; Own the `gate/*` attribute namespace — the treadle-era survivor this
+    ;; executor still stamps (all other historical `treadle/*` keys were folded
+    ;; into `gate/*`). The activation module owns it, not the file location: the
+    ;; source sits in the agent-run package but `:skein/spools-treadle` is the
+    ;; use-key. `:keys` is advisory (the keys `deliver-run!`/`spawn-for-gate!`
+    ;; stamp), not enforced.
+    (vocab/declare! runtime
+                    {:kind :attr-namespace
+                     :name "gate"
+                     :owner :skein/spools-treadle
+                     :keys ["gate/delivered" "gate/delivery-blocked" "gate/error" "gate/run-id"]
+                     :doc "Subagent-gate delivery and spawn control attributes stamped by the treadle executor."})
     (events/register! runtime :gate/engine event-types
                       'skein.spools.executors.subagent/on-event
                       {:spool "subagent"})
