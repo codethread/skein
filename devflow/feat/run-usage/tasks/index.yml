@@ -44,7 +44,7 @@ tasks:
   - id: 7
     description: "S7: acceptance / atomic-landing gate (full locked suite + go tests + smoke + quality gates)"
     task_file: tasks/007-acceptance-gate.md
-    status: pending
+    status: complete
     harness: build
     type: AFK
     blocked_by: [1, 2, 3, 4, 5, 6]
