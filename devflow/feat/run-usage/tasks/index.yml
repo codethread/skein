@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: "S1: parse-layer usage capture, both formats + committed fixtures (agent_run.clj parse region)"
     task_file: tasks/001-parse-usage-capture.md
-    status: pending
+    status: complete
     harness: build
     type: AFK
     blocked_by: []
