@@ -19,9 +19,12 @@ stop/start (`.V1`), and a blocking `:run!` never holds the shared event lane
   and disposable-world discipline of `test/skein/scheduler_e2e_test.clj`.
 - **TASK-cron-on-scheduler-004.MI2:** Restart-durability test
   (`PLAN-cron-on-scheduler-001.V1`): register a cron job on one weaver, confirm its
-  `cron/<id>` wake is durably pending, stop the weaver; adopt an overdue durable
-  `cron/<id>` wake in a fresh weaver on the same world (as
-  `scheduler_e2e_test`'s restart test seeds an overdue row), and assert the job
+  `cron/<id>` wake is durably pending, stop the weaver; start a fresh weaver on
+  the same world (its `cron/<id>` wake overdue, as `scheduler_e2e_test`'s restart
+  test seeds an overdue row) and re-run the identical `register!` there — the
+  startup-config path (`PLAN-cron-on-scheduler-001.A7`) — asserting the equal
+  config tuple adopts the pending wake instead of resetting it
+  (`PLAN-cron-on-scheduler-001.A4`, slice 003 semantics); then assert the job
   fires (outcome recorded, joined via `cron/await-idle!`) and the next `cron/<id>`
   wake is re-armed (`SPEC-004.C100`).
 - **TASK-cron-on-scheduler-004.MI3:** Lane-hygiene test
