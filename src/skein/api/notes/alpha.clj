@@ -12,7 +12,15 @@
   caller layers on its notes.
 
   Callers own runtime selection and pass the target weaver runtime as the first
-  argument, per the blessed-namespace convention."
+  argument, per the blessed-namespace convention.
+
+  Beside the primitive lives a writer *value* family: `writer` carries a target
+  (or a thunk resolving one), a default decoration, and an author; `write!`
+  appends through `note!` merging per-call decoration over the default;
+  `writer-ref` freezes the writer to a plain-data ref that ships into
+  subprocesses; and `writer-ref->prompt` is the single renderer of the
+  note-writing CLI instruction fragment. There is deliberately no `ref->writer`
+  — the constructor reconstructs from a ref."
   (:require [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime]
@@ -97,3 +105,108 @@
                           :at (or (note-attr note "at") (:created_at note))}
                    (note-attr note "by") (assoc :by (note-attr note "by"))
                    (note-attr note "round") (assoc :round (note-attr note "round"))))))))
+
+(defn- validate-decoration
+  "Return `decoration` when nil or a map of string attr-key → string value;
+  otherwise fail loudly naming `field`. Decoration keys are ordinary strand
+  attrs on the note strand, so both key and value must already be strings — no
+  silent coercion."
+  [decoration field]
+  (when (some? decoration)
+    (when-not (map? decoration)
+      (throw (ex-info (str field " must be a map of string attr-key → string value")
+                      {:field field :value decoration :type (type decoration)})))
+    (doseq [[k v] decoration]
+      (when-not (and (string? k) (string? v))
+        (throw (ex-info (str field " keys and values must be strings")
+                        {:field field :entry [k v]})))))
+  decoration)
+
+(defn- resolve-target
+  "Resolve a writer target to a strand-id string, calling a thunk each time.
+
+  A thunk returning a non-string (nil, keyword, number) fails loudly here,
+  naming the bad return, rather than surfacing later in a downstream `note!` or
+  `show` call against a nonsensical id."
+  [target-or-thunk]
+  (let [id (if (fn? target-or-thunk) (target-or-thunk) target-or-thunk)]
+    (when-not (string? id)
+      (throw (ex-info "writer target must resolve to a strand-id string"
+                      {:field :target :resolved id :type (type id)})))
+    id))
+
+(defn writer
+  "Return a writer value bound to `runtime`, wrapping the `note!` primitive.
+
+  `target-or-thunk` is a strand-id string or a 0-arg fn returning one — the
+  target may not exist at construction time, so a thunk resolves lazily at each
+  `write!`/`writer-ref`. `:decoration` is a map of string attr-key → string
+  value defaulted onto every write; `:by` is the default author. Validates these
+  shapes and fails loudly naming the offending field. `note!`/`notes` are
+  untouched; the writer wraps the low-level primitive."
+  [runtime target-or-thunk {:keys [decoration by]}]
+  (when-not (or (string? target-or-thunk) (fn? target-or-thunk))
+    (throw (ex-info "writer target must be a strand-id string or a 0-arg fn"
+                    {:field :target :value target-or-thunk :type (type target-or-thunk)})))
+  (validate-decoration decoration :decoration)
+  (when-not (or (nil? by) (string? by))
+    (throw (ex-info "writer :by must be a string author or nil"
+                    {:field :by :value by :type (type by)})))
+  {:runtime runtime
+   :target target-or-thunk
+   :decoration (or decoration {})
+   :by by})
+
+(defn write!
+  "Append a note through `w`, returning `note!`'s `{:id :target}`.
+
+  Per-call `:decoration` shallow-merges per key OVER the writer default; per-call
+  `:by` overrides the writer default; `:round` passes through. A thunk target
+  resolves at each call; a missing or deleted target fails loudly with the
+  primitive's \"Note target strand not found\"."
+  [w text {:keys [decoration by round]}]
+  (validate-decoration decoration :decoration)
+  (let [target (resolve-target (:target w))
+        merged (merge (:decoration w) (or decoration {}))
+        author (or by (:by w))]
+    (note! (:runtime w) target text
+           (merge merged
+                  (cond-> {}
+                    author (assoc :by author)
+                    (some? round) (assoc :round round))))))
+
+(defn writer-ref
+  "Freeze `w` to the plain-data ref `{:target :decoration :by}`.
+
+  A thunk target resolves exactly once, here, and the ref freezes that id — refs
+  ship into subprocesses, so late rebinding across a process boundary is out of
+  scope. The constructor reconstructs a writer from this ref, so no `ref->writer`
+  sugar ships."
+  [w]
+  {:target (resolve-target (:target w))
+   :decoration (:decoration w)
+   :by (:by w)})
+
+(defn writer-ref->prompt
+  "Render `ref` as the note-writing CLI instruction fragment.
+
+  This is the single renderer of the write fragment
+  `agent note <target> \"<text>\" --by <author> --attr k=v …` — `<text>` stays a
+  placeholder the agent fills in. Validates the ref shape and fails loudly naming
+  the offending field; a malformed ref never renders silently. Renders only the
+  write instruction — no read/`agent notes` string."
+  [ref]
+  (when-not (map? ref)
+    (throw (ex-info "writer-ref must be a map" {:field :ref :value ref :type (type ref)})))
+  (let [{:keys [target decoration by]} ref]
+    (when-not (string? target)
+      (throw (ex-info "writer-ref :target must be a resolved strand-id string"
+                      {:field :target :value target :type (type target)})))
+    (validate-decoration decoration :decoration)
+    (when-not (or (nil? by) (string? by))
+      (throw (ex-info "writer-ref :by must be a string author or nil"
+                      {:field :by :value by :type (type by)})))
+    (str "agent note " target " \"<text>\""
+         (when by (str " --by " by))
+         ;; sort keeps the rendered flags deterministic across map orderings
+         (str/join (for [[k v] (sort decoration)] (str " --attr " k "=" v))))))

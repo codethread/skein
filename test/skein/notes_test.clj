@@ -2,7 +2,8 @@
   "Tests for the skein.api.notes.alpha cross-spool note primitive: the writer
   links notes by a `notes` edge (never `note/for`) and the reader walks that
   edge, ordered by the sub-second `note/at` stamp."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes]
             [skein.api.weaver.alpha :as weaver]
@@ -114,3 +115,99 @@
           (is (some? (weaver/show rt note-id)))
           (is (empty? (graph/incoming-edges rt [target] "notes")))
           (is (= [] (notes/notes rt target {}))))))))
+
+(deftest writer-write!-merges-per-call-decoration-over-the-default
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [target (target! rt)
+            w (notes/writer rt target {:decoration {"note/kind" "activity"
+                                                    "kanban/card" "true"}
+                                       :by "alice"})]
+        (testing "the writer default decoration and author land on a bare write"
+          (let [{note-id :id} (notes/write! w "default write" {})
+                note (weaver/show rt note-id)]
+            (is (= "activity" (get-in note [:attributes :note/kind])))
+            (is (= "true" (get-in note [:attributes :kanban/card])))
+            (is (= "alice" (get-in note [:attributes :note/by])))))
+        (testing "per-call decoration merges per key over the default; :by/:round override"
+          (let [{note-id :id} (notes/write! w "override write"
+                                            {:decoration {"note/kind" "decision"}
+                                             :by "bob" :round 4})
+                note (weaver/show rt note-id)]
+            ;; per-key merge: kanban/card survives from the default, note/kind is replaced
+            (is (= "decision" (get-in note [:attributes :note/kind])))
+            (is (= "true" (get-in note [:attributes :kanban/card])))
+            (is (= "bob" (get-in note [:attributes :note/by])))
+            (is (= 4 (get-in note [:attributes :note/round])))))))))
+
+(deftest writer-construction-and-use-reject-malformed-shapes
+  (with-runtime
+    (fn [rt _config-dir]
+      (testing "construction rejects a non-string/non-fn target naming :target"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target"
+                              (notes/writer rt :not-a-target {}))))
+      (testing "construction rejects a non-map decoration naming :decoration"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"decoration"
+                              (notes/writer rt "t" {:decoration ["not" "a" "map"]}))))
+      (testing "construction rejects non-string decoration entries"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"decoration"
+                              (notes/writer rt "t" {:decoration {"note/kind" 3}}))))
+      (let [w (notes/writer rt (target! rt) {})]
+        (testing "write! rejects a malformed per-call decoration naming :decoration"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"decoration"
+                                (notes/write! w "x" {:decoration {:kw "v"}}))))))))
+
+(deftest writer-thunk-resolution-fails-loudly-on-a-non-string-return
+  (with-runtime
+    (fn [rt _config-dir]
+      ;; a thunk returning nil/keyword/number must fail at resolution naming the
+      ;; bad return, in both write! and writer-ref, not later in note!/show.
+      (doseq [bad [nil :kw 7]]
+        (let [w (notes/writer rt (fn [] bad) {})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"resolve to a strand-id"
+                                (notes/write! w "x" {})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"resolve to a strand-id"
+                                (notes/writer-ref w))))))))
+
+(deftest writer-write!-on-a-missing-thunk-target-fails-loudly
+  (with-runtime
+    (fn [rt _config-dir]
+      ;; the thunk resolves to a well-formed but nonexistent id, so the primitive
+      ;; not the resolver rejects it — proving write! composes over note!.
+      (let [w (notes/writer rt (fn [] "no-such-strand") {})]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not found"
+                              (notes/write! w "x" {})))))))
+
+(deftest writer-ref-resolves-a-thunk-exactly-once-and-freezes-the-id
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [target (target! rt)
+            calls (atom 0)
+            w (notes/writer rt (fn [] (swap! calls inc) target)
+                            {:decoration {"note/kind" "summary"} :by "alice"})
+            ref (notes/writer-ref w)]
+        (is (= 1 @calls) "thunk resolves exactly once at ref time")
+        (is (= {:target target
+                :decoration {"note/kind" "summary"}
+                :by "alice"}
+               ref))))))
+
+(deftest writer-ref->prompt-renders-only-the-write-fragment
+  (with-runtime
+    (fn [rt _config-dir]
+      (let [target (target! rt)
+            w (notes/writer rt target {:decoration {"note/kind" "decision"
+                                                    "kanban/card" "true"}
+                                       :by "alice"})
+            fragment (notes/writer-ref->prompt (notes/writer-ref w))]
+        (testing "the fragment is the write instruction with a text placeholder"
+          (is (= (str "agent note " target
+                      " \"<text>\" --by alice --attr kanban/card=true --attr note/kind=decision")
+                 fragment)))
+        (testing "no read/agent notes string leaks into the fragment"
+          (is (not (str/includes? fragment "agent notes")))))
+      (testing "a malformed ref fails loudly naming the offending field"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target"
+                              (notes/writer-ref->prompt {:decoration {} :by "x"})))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"decoration"
+                              (notes/writer-ref->prompt {:target "t" :decoration [:bad]})))))))
