@@ -1978,6 +1978,117 @@
   ([{:keys [active for]}]
    (runs* {:active active :for for} graph/incoming-edges)))
 
+;; ---------------------------------------------------------------------------
+;; Spend aggregation
+
+(defn- run-duration-ms
+  "Wall-time in milliseconds between a run's `started-at` and `finished-at`
+  timestamps, or nil when either is absent. Duration is derived from the engine's
+  own timestamps for every format including `:raw` (PROP-Ru-001.C4), so a run that
+  recorded no cost or tokens still reports how long it ran; a run with no
+  `finished-at` (never completed) derives no duration."
+  [run]
+  (let [started (sattr run "started-at")
+        finished (sattr run "finished-at")]
+    (when (and started finished)
+      (- (.toEpochMilli (Instant/parse finished))
+         (.toEpochMilli (Instant/parse started))))))
+
+(defn- spend-row
+  "Project a run strand into the C7 per-run spend row: identity and phase, the
+  recorded usage figures (an unreported dimension stays nil, never 0), the nested
+  token breakdown, and the timestamp-derived wall-time."
+  [run]
+  {:id (:id run)
+   :harness (sattr run "harness")
+   :phase (sattr run "phase")
+   :cost-usd (sattr run "cost-usd")
+   :tokens-total (sattr run "tokens-total")
+   :tokens (sattr run "tokens")
+   :duration-ms (run-duration-ms run)
+   :started-at (sattr run "started-at")
+   :finished-at (sattr run "finished-at")})
+
+(defn- sum-present
+  "Sum the non-nil values, or nil when none is present. A wholly-unreported
+  dimension stays null rather than collapsing to 0, so spend is never inflated
+  (PROP-Ru-001.R3)."
+  [xs]
+  (let [present (remove nil? xs)]
+    (when (seq present) (reduce + present))))
+
+(defn- spend-totals
+  "Aggregate spend rows into `{:runs :cost-usd :tokens-total :duration-ms}`. The
+  run count is every row; each figure sums only its non-nil contributors, so a
+  raw/pre-feature run adds to the count and (when timed) the duration without
+  faking a cost or token figure it never reported."
+  [rows]
+  {:runs (count rows)
+   :cost-usd (sum-present (map :cost-usd rows))
+   :tokens-total (sum-present (map :tokens-total rows))
+   :duration-ms (sum-present (map :duration-ms rows))})
+
+(defn- spend-group-key
+  "The grouping bucket for a row: its harness, or its started-at calendar day
+  (the ISO date prefix) when grouping by day."
+  [group-dim row]
+  (case group-dim
+    :harness (:harness row)
+    :day (some-> (:started-at row) (subs 0 10))))
+
+(defn- in-window?
+  "True when `started` (an ISO instant string) falls in the optional
+  `[since until]` window. ISO-8601 UTC instants order lexicographically, so a
+  string compare is the window test; a row with no started-at is outside any
+  bounded window."
+  [since until started]
+  (and (or (nil? since) (and started (<= 0 (compare started since))))
+       (or (nil? until) (and started (>= 0 (compare started until))))))
+
+(defn- spend*
+  [opts list-fn]
+  (let [{:keys [harness since until] gb :group-by} opts
+        group-dim (keyword (or gb :harness))
+        _ (when-not (contains? #{:harness :day} group-dim)
+            (fail! "spend :group-by must be :harness or :day" {:group-by gb}))
+        rows (->> (list-fn (rt) run-query {})
+                  (map spend-row)
+                  (filter (fn [row]
+                            (and (or (nil? harness) (= harness (:harness row)))
+                                 (in-window? since until (:started-at row)))))
+                  (sort-by (juxt (comp str :started-at) :id))
+                  vec)
+        groups (->> rows
+                    (group-by #(spend-group-key group-dim %))
+                    (map (fn [[k grp]] (assoc (spend-totals grp) :key k)))
+                    (sort-by (comp str :key))
+                    vec)]
+    {:operation "agent-spend"
+     :filters (cond-> {:group-by group-dim}
+                harness (assoc :harness harness)
+                since (assoc :since since)
+                until (assoc :until until))
+     :totals (spend-totals rows)
+     :groups groups
+     :runs rows}))
+
+(defn spend
+  "Aggregate recorded agent-run spend into the C7 read shape (PROP-Ru-001.C7):
+  `{:operation \"agent-spend\", :filters, :totals, :groups, :runs}`. Optional
+  opts filter and shape the report:
+
+    :harness   restrict to one harness/alias name
+    :since     lower ISO-instant bound on the run's started-at (inclusive)
+    :until     upper ISO-instant bound on the run's started-at (inclusive)
+    :group-by  :harness (default) or :day (buckets by the started-at date)
+
+  Every run contributes its count and its timestamp-derived duration for every
+  format including `:raw`; a run that recorded no cost/tokens contributes null for
+  those, and every sum skips nils so a missing figure is never inflated to 0. The
+  read costs one bulk query for many runs, never one per run (PROP-Ru-001.R4)."
+  ([] (spend {}))
+  ([opts] (spend* opts api/list)))
+
 (def ^:private terminal-phases #{"done" "failed" "exhausted" "superseded"})
 
 (defn- terminal? [run]

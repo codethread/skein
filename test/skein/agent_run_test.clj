@@ -1310,3 +1310,126 @@
             "no total_cost_usd reported → the cost key is absent, never a stored 0")
         (is (= (+ 100 40) (:agent-run/tokens-total attrs)) "tokens are still captured")
         (is (= "claude-json" (:agent-run/usage-source attrs)))))))
+
+;; ---------------------------------------------------------------------------
+;; Spend aggregation (PROP-Ru-001.C7)
+
+(defn- add-spend-run!
+  "Add a completed agent-run strand carrying the given spend attributes so the
+  pure `spend` aggregation reads it without spawning a real harness process. A
+  run with no :cost/:tokens-total is a raw/pre-feature run: it records only its
+  timestamps."
+  [rt {:keys [harness started finished cost tokens-total tokens]}]
+  (api/add rt {:title (str harness "-run")
+               :state "closed"
+               :attributes (cond-> {"agent-run/run" "true"
+                                    "agent-run/harness" harness
+                                    "agent-run/phase" "done"
+                                    "agent-run/started-at" started
+                                    "agent-run/finished-at" finished}
+                             cost (assoc "agent-run/cost-usd" cost)
+                             tokens-total (assoc "agent-run/tokens-total" tokens-total)
+                             tokens (assoc "agent-run/tokens" tokens))}))
+
+(deftest spend-aggregates-totals-and-groups-by-harness
+  (with-shuttle
+    (fn [rt]
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:04Z"
+                          :cost 0.10 :tokens-total 100 :tokens {"input" 60 "output" 40}})
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:10:00Z" :finished "2026-07-08T10:10:06Z"
+                          :cost 0.20 :tokens-total 200})
+      (add-spend-run! rt {:harness "claude" :started "2026-07-08T10:20:00Z" :finished "2026-07-08T10:20:01Z"
+                          :cost 0.05 :tokens-total 50})
+      (let [{:keys [operation totals groups runs]} (shuttle/spend)
+            by-key (into {} (map (juxt :key identity) groups))]
+        (is (= "agent-spend" operation))
+        (testing "totals sum every run's cost, tokens, and derived duration"
+          (is (= 3 (:runs totals)))
+          (is (about= 0.35 (:cost-usd totals)))
+          (is (= 350 (:tokens-total totals)))
+          (is (= 11000 (:duration-ms totals)))
+          (is (= 3 (count runs))))
+        (testing "the default grouping is per-harness"
+          (is (= #{"pi" "claude"} (set (keys by-key))))
+          (is (= 2 (get-in by-key ["pi" :runs])))
+          (is (about= 0.30 (get-in by-key ["pi" :cost-usd])))
+          (is (= 300 (get-in by-key ["pi" :tokens-total])))
+          (is (= 10000 (get-in by-key ["pi" :duration-ms])))
+          (is (= 1 (get-in by-key ["claude" :runs])))
+          (is (about= 0.05 (get-in by-key ["claude" :cost-usd]))))
+        (testing "a per-run row carries its nested token breakdown"
+          (is (some :tokens runs)))))))
+
+(deftest spend-raw-run-contributes-duration-and-count-with-null-cost
+  (with-shuttle
+    (fn [rt]
+      (add-spend-run! rt {:harness "raw" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:02Z"})
+      (add-spend-run! rt {:harness "priced" :started "2026-07-08T10:10:00Z" :finished "2026-07-08T10:10:03Z"
+                          :cost 0.10 :tokens-total 100})
+      (let [{:keys [totals groups runs]} (shuttle/spend)
+            by-key (into {} (map (juxt :key identity) groups))
+            raw-row (first (filter #(= "raw" (:harness %)) runs))]
+        (testing "the raw run adds its count and duration but no cost/tokens"
+          (is (= 2 (:runs totals)))
+          (is (about= 0.10 (:cost-usd totals)) "sums skip the raw run's absent cost")
+          (is (= 100 (:tokens-total totals)))
+          (is (= 5000 (:duration-ms totals))))
+        (testing "the raw per-run row reports null cost/tokens, never 0"
+          (is (nil? (:cost-usd raw-row)))
+          (is (nil? (:tokens-total raw-row)))
+          (is (= 2000 (:duration-ms raw-row))))
+        (testing "a group of only raw runs sums to null cost, not 0"
+          (is (nil? (get-in by-key ["raw" :cost-usd])))
+          (is (nil? (get-in by-key ["raw" :tokens-total])))
+          (is (= 2000 (get-in by-key ["raw" :duration-ms])))
+          (is (about= 0.10 (get-in by-key ["priced" :cost-usd]))))))))
+
+(deftest spend-buckets-by-day-and-windows-on-started-at
+  (with-shuttle
+    (fn [rt]
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:01Z"
+                          :cost 0.10 :tokens-total 10})
+      (add-spend-run! rt {:harness "pi" :started "2026-07-08T22:00:00Z" :finished "2026-07-08T22:00:02Z"
+                          :cost 0.20 :tokens-total 20})
+      (add-spend-run! rt {:harness "claude" :started "2026-07-09T09:00:00Z" :finished "2026-07-09T09:00:03Z"
+                          :cost 0.30 :tokens-total 30})
+      (testing ":group-by :day buckets by the started-at date"
+        (let [by-key (into {} (map (juxt :key identity) (:groups (shuttle/spend {:group-by :day}))))]
+          (is (= #{"2026-07-08" "2026-07-09"} (set (keys by-key))))
+          (is (= 2 (get-in by-key ["2026-07-08" :runs])))
+          (is (about= 0.30 (get-in by-key ["2026-07-08" :cost-usd])))
+          (is (= 3000 (get-in by-key ["2026-07-08" :duration-ms])))
+          (is (= 1 (get-in by-key ["2026-07-09" :runs])))))
+      (testing ":since windows on started-at"
+        (let [{:keys [totals runs]} (shuttle/spend {:since "2026-07-09T00:00:00Z"})]
+          (is (= 1 (:runs totals)))
+          (is (= "claude" (:harness (first runs))))))
+      (testing ":until windows on started-at"
+        (is (= 2 (:runs (:totals (shuttle/spend {:until "2026-07-08T23:59:59Z"}))))))
+      (testing ":harness narrows to one harness"
+        (is (= 2 (:runs (:totals (shuttle/spend {:harness "pi"})))))
+        (is (zero? (:runs (:totals (shuttle/spend {:harness "absent"})))))))))
+
+(deftest spend-scales-by-one-bulk-query-not-per-run
+  ;; regression guard mirroring ps-summary-building-does-not-scale...: the spend
+  ;; aggregation must read every run from a single bulk query, never one per run,
+  ;; so its cost is independent of how many runs or unrelated strands exist
+  ;; (PROP-Ru-001.R4).
+  (with-shuttle
+    (fn [rt]
+      (dotimes [i 12]
+        (add-spend-run! rt {:harness "pi"
+                            :started (format "2026-07-08T10:%02d:00Z" i)
+                            :finished (format "2026-07-08T10:%02d:01Z" i)
+                            :cost 0.01 :tokens-total 10}))
+      ;; unrelated strands the aggregation must never touch per-strand
+      (dotimes [i 150] (api/add rt {:title (str "noise-" i)}))
+      (let [list-calls (atom 0)
+            real-list api/list
+            counting-list (fn [& args]
+                            (swap! list-calls inc)
+                            (apply real-list args))
+            result (#'shuttle/spend* {} counting-list)]
+        (is (= 12 (:runs (:totals result))))
+        (is (= 1 @list-calls)
+            "one bulk query resolves every run's spend, independent of strand count")))))
