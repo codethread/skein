@@ -1,0 +1,36 @@
+tasks:
+  - id: 1
+    description: Generation-aware wake retirement (PH0)
+    task_file: tasks/001-generation-aware-retirement.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Cron rides the scheduler — core rewrite (PH1)
+    task_file: tasks/002-cron-rides-scheduler.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: Cron Q2 preserve/replace on re-register (PH1)
+    task_file: tasks/003-cron-q2-preserve-replace.md
+    status: pending
+    blocked_by: [2]
+  - id: 4
+    description: Cron restart-durability and lane-hygiene e2e (PH2)
+    task_file: tasks/004-cron-durability-lane-e2e.md
+    status: pending
+    blocked_by: [2]
+  - id: 5
+    description: nvd_scan migration off initial-delay-fn (PH3)
+    task_file: tasks/005-nvd-scan-migration.md
+    status: pending
+    blocked_by: [2]
+  - id: 6
+    description: Cron docs and API regen (PH4)
+    task_file: tasks/006-cron-docs-api-regen.md
+    status: pending
+    blocked_by: [3]
+  - id: 7
+    description: Acceptance and SPEC-004 delta promotion (PH5)
+    task_file: tasks/007-acceptance-delta-promotion.md
+    status: pending
+    blocked_by: [4, 5, 6]

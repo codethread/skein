@@ -315,6 +315,32 @@ intended `git status --short`.
   expressions (`NG2`), push jitter into the primitive (`NG3`), add workflow
   timer gates (`NG4`), attempt exactly-once (`NG5`), or add a public mutating
   cron CLI verb (`NG6`). Registration stays trusted config/REPL.
+- **PLAN-cron-on-scheduler-001.TC6 — task-queue strategy.** Seven AFK slices in
+  `tasks/`, each gated on the cold focused run over the namespaces it touches
+  (never the warm REPL); no HITL — there are no open human decisions.
+  - **1 (PH0):** generation-aware retirement — `db/retire-wake!`+
+    `complete-wake!`/`fail-wake!` and their sole caller `scheduler/run-fire!`
+    move together (signature change + caller is atomic), plus focused
+    `scheduler-test` proofs. Every cron slice depends on it because `fire-wake`
+    self-reschedules on the same key. PH0 is one slice, not two: the db fix is
+    ~one function and its only caller is `run-fire!`, so splitting them would
+    leave a non-compiling intermediate.
+  - **2 (PH1):** cron core rewrite — `cron.clj` + `cron_test.clj` move together
+    (a half-rewritten spool cannot pass its suite); `register!` here always
+    replaces the wake, deferring Q2 to slice 3 so the seam is clean.
+  - **3 (PH1):** Q2 preserve/replace on re-register — a narrow behavioral
+    refinement of `register!` over slice 2's always-replace, with its own V5
+    proof.
+  - **4 (PH2):** restart-durability + lane-hygiene in a new e2e ns — additive
+    over slice 2, blocked_by 2 (not 3: durability/lane do not depend on Q2).
+  - **5 (PH3):** `nvd_scan` migration off `initial-delay-fn` — blocked_by 2
+    (needs the new `register!` shape), independent of Q2/e2e.
+  - **6 (PH4):** docs + `cron.api.md` regen — blocked_by 3 so docstrings and the
+    regenerated api-doc are final.
+  - **7 (PH5):** acceptance + `SPEC-004` delta promotion — blocked_by 4/5/6
+    (the leaves; 3 is transitive via 6). Runs the full locked suite, Go tests,
+    smoke, and quality gates. Dependency graph is acyclic:
+    1→2→{3,4,5}; 3→6; {4,5,6}→7.
 
 ## PLAN-cron-on-scheduler-001.P9 Developer Notes
 
@@ -352,3 +378,18 @@ intended `git status --short`.
   `PH1`–`PH5` ids stable), `.A2` marks it a prerequisite, `AA9`–`AA11` added,
   `CM1` and `V6` updated, `R2` notes the duplicate-delivery interaction.
   `NG1`/`.P1` in the proposal carry the narrow-exception framing.
+
+### PLAN-cron-on-scheduler-001.DN3 Task qsr4y: AFK task queue authored — 2026-07-10
+
+- Wrote `tasks/index.yml` + seven AFK task files (`001`–`007`); strategy and
+  dependency graph recorded in `TC6`. All slices are AFK (no open human
+  decisions); each gates on the cold focused `clojure -M:test <touched ns>`.
+- Two phases collapsed to single slices against the coordinator's "likely
+  2–3 slices" steer, because the intermediate states would not compile/pass:
+  PH0's db signature change and its sole caller `run-fire!` are atomic (slice 1);
+  the `cron.clj` rewrite and its `cron_test.clj` rewrite are atomic (slice 2).
+  Q2 was split out (slice 3) as a genuine behavioral seam over an always-replace
+  `register!`, giving PH1 two slices as suggested.
+- Delta promotion (`SPEC-004.C102`/`.C102b`) is deferred to the acceptance slice
+  (7) per `CM1`'s "promoted at finish", alongside the `SPEC-004.C1a` stale-cron
+  cleanup flagged in `DN1`.
