@@ -86,16 +86,20 @@ structural causes are what this feature addresses:
 - **PROP-Nwt-001.S6:** New vocabulary (task-tier attrs, `note/kind`, any new edge use) is
   declared in the F4 vocab registry; kanban's registration is the natural home.
 
+The writer/ref contract detail and the `note/kind` value set are specified in
+[`specs/strand-model.delta.md`](./specs/strand-model.delta.md) (`DELTA-Nwt-001`),
+which also records why the CLI decoration passthrough and kanban task tier land
+in spool docs rather than the root specs.
+
 ## PROP-Nwt-001.P5 Open questions
 
-Both questions must be resolved in the spec/plan stage before tasking; the writer/ref
-contract detail (ref shape, thunk resolution time, missing-target failure mode,
-decoration merge semantics) and the `note/kind` value set are likewise spec-delta
-material staged under `specs/` in that stage, not proposal scope.
+Both questions were resolved in the spec/plan stage (2026-07-10, recorded in
+[`specs/strand-model.delta.md`](./specs/strand-model.delta.md) `DELTA-Nwt-001.J2`);
+the writer/ref contract detail and the `note/kind` value set are specified there too.
 
-- **PROP-Nwt-001.Q1:** Task authoring surface — new kanban subcommands (`kanban task
-  add`/`list`) versus bare `strand add` plus kanban-declared attrs; and how card/board
-  views present the task lane.
-- **PROP-Nwt-001.Q2:** The exact stage-key set the glue wires writers for — a flat enum
-  coordinated with the external, sha-pinned `devflow.spool`. The contract is on **key
-  names only**, not payload schemas.
+- **PROP-Nwt-001.Q1 (resolved):** Task authoring surface — kanban gains `task add`/
+  `task list` subcommands stamping declared attrs plus `parent-of`, with bare
+  `strand add` still valid; the card view projects a tasks lane with derived statuses
+  and board claimed/in_review lanes surface the doing-task title.
+- **PROP-Nwt-001.Q2 (resolved):** The glue wires writers for `:implementation` and
+  `:review` initially — a names-only enum, extensible in glue without spool changes.
