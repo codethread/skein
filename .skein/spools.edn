@@ -8,4 +8,4 @@
           ;; Keep this devflow sha exactly synchronized with deps.edn :test
           ;; extra-deps until config_test no longer needs the spool on its JVM classpath.
           codethread/devflow {:git/url "https://github.com/codethread/devflow.spool.git"
-                              :git/sha "22a5968321165e9297ef65d323472bd75bdf432c"}}}
+                              :git/sha "e9b28f5db61820b28a1ac1b590cc87e70c835cac"}}}
