@@ -9,7 +9,7 @@ tasks:
   - id: 2
     description: "S2: finish-run! terminal-write seam — done + error branches (agent_run.clj)"
     task_file: tasks/002-finish-run-seam.md
-    status: pending
+    status: complete
     harness: build
     type: AFK
     blocked_by: [1]
