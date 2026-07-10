@@ -415,3 +415,40 @@ intended `git status --short`.
 - Gate green: `clojure -M:test skein.core.scheduler-test skein.scheduler-runtime-test
   skein.api.scheduler.alpha-test skein.scheduler-e2e-test` (33 tests, 183 assertions,
   0 fail); `make fmt-check lint` clean for touched sources.
+
+### PLAN-cron-on-scheduler-001.DN5 Task jb8su: PH1 cron core rewrite implemented — 2026-07-10
+
+- `cron.clj` rewritten over `skein.api.scheduler.alpha`. `register!` stores the
+  in-memory config and arms a `cron/<id>` wake (`arm-wake!`) at `now + interval +
+  jitter` with handler `skein.spools.cron/fire-wake` and payload `{:job "<id>"}`;
+  it always replaces (Q2 preserve/replace is task 3). `deregister!` drops the
+  in-memory entry and `scheduler/cancel!`s `cron/<id>` guarded behind a
+  `scheduler/pending` check, so a missing wake yields `{:deregistered nil}` while
+  genuine scheduler errors stay loud (`.R1`).
+- `fire-wake` is the tiny event-lane handler: look up the in-memory job (absent →
+  return, deregistered), `arm-wake!` the next wake **before** offload, count the
+  job in-flight, then `.submit` `execute-job!` to a plain
+  `Executors/newSingleThreadExecutor`; a `RejectedExecutionException` releases the
+  latch and records a `:kind :offload` failure without throwing (`.R3`).
+  `execute-job!` records `:last-outcome`/`:last-error` and decrements the latch in
+  a `finally`; it never reschedules.
+- `await-idle!` is the deterministic join: an `:in-flight-count` atom incremented
+  on the lane before submit and decremented in the executor `finally`, plus an
+  `:idle-monitor` Object it `wait`s on until zero or the budget expires (throws on
+  timeout). Test flow is `advance!` → `events/await-quiescent!` → `await-idle!`.
+- Deleted the parallel timing substrate: `schedule-fire!`, `execute-job!`'s
+  reschedule, `:future`/`:next-fire-at`, the clock pump (`fire-due!`, `due?`,
+  `register-pump!`, `::pump`, `install!`'s pump call), and the `initial-delay-fn`
+  path (`initial-delay-ms`, the `:initial-delay-fn` job key + its `register!`
+  handling). `reschedule-delay-ms`/`jitter-offset-ms` kept to place the next wake.
+  State-version bumped 1 → 2; new-state key set is
+  `#{:executor :jobs :failure-log :rng :in-flight-count :idle-monitor :close-fn}`.
+- The scheduler's own clock pump now drives manual-clock tests (cron registers no
+  pump); the in-handler self-reschedule survives thanks to PH0 generation-aware
+  retirement — `fire-wake`'s replacement wake outlives the delivered generation's
+  `complete-wake!`/`fail-wake!`.
+- `.skein/nvd_scan.clj` still passes `:initial-delay-fn` (task 5 scope); the new
+  `register!` simply ignores the now-unused key, so it still compiles. Not touched
+  here per OS3.
+- Gate green: `clojure -M:test skein.cron-test` (6 tests, 1030 assertions, 0 fail);
+  `make fmt-check lint reflect-check` clean for touched sources.

@@ -1,14 +1,17 @@
 (ns skein.cron-test
-  "Tests for the generic skein.spools.cron timer engine against a real weaver
-  runtime: registration/status/deregistration, jittered scheduling bounds, loud
-  failure recording that does not stop the cadence, and the versioned
-  spool-state drift alarm.
+  "Tests for the skein.spools.cron recurrence engine against a real weaver
+  runtime: jobs register as durable `cron/<id>` scheduler wakes, a due wake
+  fires on the shared event lane, offloads its `:run!` to the execution executor,
+  reschedules the next wake, and records outcomes without stopping the cadence.
 
-  Job fires drive off a manual runtime clock and `skein.test.alpha/advance!`
-  (DELTA-Dtt-001.CC3) rather than real executor-timer waits: cron's
-  clock-consumer pump releases due jobs synchronously, so `advance!` returns
-  only once a job it made due has already run."
+  Fires drive off a manual runtime clock and `skein.test.alpha/advance!`: the
+  scheduler's own clock pump releases the due wake onto the event lane, so
+  `advance!` + `events/await-quiescent!` settles the lane and `cron/await-idle!`
+  joins the offloaded job body — no `Thread/sleep` or wall waits
+  (`PLAN-cron-on-scheduler-001.V3`). Cron registers no pump of its own."
   (:require [clojure.test :refer [deftest is testing]]
+            [skein.api.events.alpha :as events]
+            [skein.api.scheduler.alpha :as scheduler]
             [skein.spools.cron :as cron]
             [skein.spools.test-support :as test-support]
             [skein.test.alpha :as test-alpha])
@@ -27,7 +30,20 @@
       (cron/install!)
       (f rt))))
 
-(deftest register-lists-and-deregisters
+(defn- cron-wake
+  "The pending scheduler wake owning `key`, or nil."
+  [rt key]
+  (first (filter #(= key (:key %)) (scheduler/pending rt))))
+
+(defn- release-fire!
+  "Advance the clock past a due `cron/<id>` wake and join both the event lane and
+  the offloaded job body, so a fired job's outcome is observable."
+  [rt]
+  (test-alpha/advance! rt (Duration/ofSeconds 2))
+  (events/await-quiescent! rt)
+  (cron/await-idle! rt))
+
+(deftest register-persists-wake-lists-and-deregisters
   (with-cron
     (fn [rt]
       ;; a one-hour interval keeps the first fire far out of the way
@@ -36,27 +52,39 @@
                                        :jitter-ms 0
                                        :run! 'skein.cron-test/fire-ok})]
         (is (= :slow (:id status)))
-        (is (string? (:next-fire-at status)))
         (is (= 'skein.cron-test/fire-ok (:run! status)))
         (is (= [:slow] (mapv :id (cron/jobs rt))))
+        ;; registration is a durable cron/<id> wake, the single timing view
+        (let [wake (cron-wake rt "cron/slow")]
+          (is (some? wake) "register persists a cron/<id> pending wake")
+          (is (= 'skein.spools.cron/fire-wake (:handler wake)))
+          (is (= {:job "slow"} (:payload wake)))
+          (is (= (* 60 60 1000) (:wake_at wake)) "wake-at is now + interval (jitter 0)"))
         (is (= {:deregistered :slow} (cron/deregister! rt :slow)))
         (is (= [] (cron/jobs rt)))
+        (is (nil? (cron-wake rt "cron/slow")) "deregister cancels the wake")
         (is (= {:deregistered nil} (cron/deregister! rt :slow)))))))
 
-(deftest fires-and-records-last-outcome
+(deftest fires-records-outcome-and-continues-cadence
   (with-cron
     (fn [rt]
+      ;; seed the engine rng (white-box) so the jittered wake bounds are reproducible
+      (.setSeed ^Random (#'cron/rng rt) 42)
       (cron/register! rt {:id :quick
                           :interval-ms 1000
-                          :jitter-ms 0
+                          :jitter-ms 100
                           :run! 'skein.cron-test/fire-ok})
-      ;; the pump releases the due fire synchronously, so the outcome is
-      ;; already recorded once advance! returns
-      (test-alpha/advance! rt (Duration/ofSeconds 2))
+      (release-fire! rt)
       (let [job (first (cron/jobs rt))]
         (is (= :ok (:last-outcome job)))
         (is (string? (:last-fired-at job)))
         (is (nil? (:last-error job))))
+      ;; cadence continues: the next cron/<id> wake is armed within jitter bounds
+      ;; of the fire instant (clock advanced to 2000ms)
+      (let [wake (cron-wake rt "cron/quick")]
+        (is (some? wake) "the next wake is pending after a fire")
+        (is (<= (+ 2000 1000 -100) (:wake_at wake) (+ 2000 1000 100))
+            "the next wake-at is now + interval within jitter bounds"))
       (cron/deregister! rt :quick))))
 
 (deftest records-run-failure-without-stopping-cadence
@@ -66,17 +94,20 @@
                           :interval-ms 1000
                           :jitter-ms 0
                           :run! 'skein.cron-test/fire-throw})
-      (test-alpha/advance! rt (Duration/ofSeconds 2))
+      (release-fire! rt)
       (let [failure (last (cron/failures rt))]
         (is (= :run (:kind failure)))
         (is (= :boom (:job failure)))
         (is (= "boom" (:message failure)))
         (is (string? (:at failure))))
-      ;; the throw is recorded, not fatal: the job stays scheduled and carries
-      ;; the error on its status
+      ;; the throw is recorded, not fatal: the job carries the error on its status
       (let [job (first (cron/jobs rt))]
         (is (= :boom (:id job)))
         (is (= "boom" (:last-error job))))
+      ;; the delivered wake still completes and the next wake is armed (S5, V4)
+      (let [wake (cron-wake rt "cron/boom")]
+        (is (some? wake) "cadence continues past a run failure")
+        (is (= 3000 (:wake_at wake)) "next wake-at is the fire instant + interval"))
       (cron/deregister! rt :boom))))
 
 (deftest jitter-offset-stays-in-bounds
@@ -105,10 +136,8 @@
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for cron's versioned spool-state: a key added to new-state
   ;; without a state-version bump would survive reload! as a stale map and
-  ;; schedule against a nil executor.
+  ;; offload against a nil executor.
   (test-support/assert-state-shape
-   ;; white-box read of a private var: kondo flags cross-ns private access, but
-   ;; #'ns/private is legal and intentional here.
-   #_{:clj-kondo/ignore [:unresolved-var]}
+   ;; white-box read of the private new-state builder var, intentional here.
    #'cron/new-state
-   #{:executor :jobs :failure-log :rng :close-fn}))
+   #{:executor :jobs :failure-log :rng :in-flight-count :idle-monitor :close-fn}))
