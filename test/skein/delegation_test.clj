@@ -389,9 +389,9 @@
             (is (= v (get-in run [:attributes (keyword k)])))))
         (testing "the pass tag threads notes together and separates rounds"
           (is (str/includes? (get (first (:reviewers specs)) :prompt)
-                             (str "[" (:review-pass review) "]")))
+                             (str "--attr review/pass=" (:review-pass review))))
           (is (str/includes? (get-in specs [:synthesizer :prompt])
-                             (str "tagged [" (:review-pass review) "]")))
+                             (str "--attr review/pass=" (:review-pass review))))
           (is (not= (:review-pass (agents/roster-review-specs :composed {:target (:id target)}))
                     (:review-pass (agents/roster-review-specs :composed {:target (:id target)})))
               "each pass mints a distinct tag"))
@@ -465,11 +465,11 @@
                            "agent notes s1"))
         (is (str/includes? (#'agents/read-the-board-fragment {:view :strand :form :continuation :board-id "s1"})
                            "The board is strand s1")))
-      (testing "post-with-tag prefixes the tag and omits it when nil"
+      (testing "post-with-tag threads the tag as a review/pass decoration attr and omits it when nil"
         (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"})
-                           "\"[pass-7] <findings>\""))
-        (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag nil})
-                           "\"<findings>\"")))
+                           "--attr review/pass=pass-7"))
+        (is (not (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag nil})
+                                "--attr review/pass"))))
       (testing "review-prompt is assembled from the shared fragments byte-for-byte"
         (let [prompt (#'agents/review-prompt {:target-id "s1" :contract "C" :note-tag "p1"})]
           (is (str/includes? prompt (#'agents/read-the-board-fragment {:view :strand :board-id "s1"})))

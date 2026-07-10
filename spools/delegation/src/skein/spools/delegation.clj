@@ -74,35 +74,40 @@
   "Worker contract text appended to every run preamble."
   (str "[worker contract]\n- "
        (str/join "\n- "
-                 (fmt/fill "
-                   |Read your assigned strand AND its notes first: strand show <task-id>;
-                   |agent notes <task-id> — the body may be newer than your launch prompt,
-                   |and a predecessor's notes may save you from repeating its mistakes.
-                   |
-                   |Record progress as you go: strand update <task-id> --attr progress=...
-                   |
-                   |Set --attr status=implemented only when your validation gate is green.
-                   |
-                   |Never close your assigned strand. Never mutate sibling or parent
-                   |strands. Never commit unless your contract says so.
-                   |
-                   |Kill processes by PID only — never pkill -f/pattern kills. The shipped
-                   |claude/pi harnesses now deliver the worker prompt on stdin, but
-                   |other/custom harnesses may still pass it in argv (:prompt-via :arg,
-                   |the default), so a pattern kill aimed at a stuck JVM can still strafe
-                   |sibling agents whose prompt quotes the same text (a pkill -f
-                   |\"clojure -M:test\" murdered two delegated runs on 2026-07-05). Find
-                   |the pid and kill it.
-                   |
-                   |Spawn read-only helpers freely: agent spawn --harness explore --prompt
-                   |\"...\" --spawned-by <your-run-id>; then agent await <helper-run-id> —
-                   |the findings are in the returned result.
-                   |
-                   |Leave durable findings for the coordinator and successors: agent note
-                   |<task-id> \"...\" --by <your-run-id>.
-                   |
-                   |Keep delegation shallow; never spawn a second mutator inside your own
-                   |file scope."))))
+                 (concat
+                  (fmt/fill "
+                    |Read your assigned strand AND its notes first: strand show <task-id>;
+                    |agent notes <task-id> — the body may be newer than your launch prompt,
+                    |and a predecessor's notes may save you from repeating its mistakes.
+                    |
+                    |Record progress as you go: strand update <task-id> --attr progress=...
+                    |
+                    |Set --attr status=implemented only when your validation gate is green.
+                    |
+                    |Never close your assigned strand. Never mutate sibling or parent
+                    |strands. Never commit unless your contract says so.
+                    |
+                    |Kill processes by PID only — never pkill -f/pattern kills. The shipped
+                    |claude/pi harnesses now deliver the worker prompt on stdin, but
+                    |other/custom harnesses may still pass it in argv (:prompt-via :arg,
+                    |the default), so a pattern kill aimed at a stuck JVM can still strafe
+                    |sibling agents whose prompt quotes the same text (a pkill -f
+                    |\"clojure -M:test\" murdered two delegated runs on 2026-07-05). Find
+                    |the pid and kill it.
+                    |
+                    |Spawn read-only helpers freely: agent spawn --harness explore --prompt
+                    |\"...\" --spawned-by <your-run-id>; then agent await <helper-run-id> —
+                    |the findings are in the returned result.")
+                  ;; the note-writing instruction renders through the single
+                  ;; `writer-ref->prompt` renderer (skein.api.notes.alpha)
+                  [(str "Leave durable findings for the coordinator and successors: "
+                        (notes/writer-ref->prompt {:target "<task-id>"
+                                                   :by "<your-run-id>"
+                                                   :decoration {}})
+                        ".")]
+                  (fmt/fill "
+                    |Keep delegation shallow; never spawn a second mutator inside your own
+                    |file scope.")))))
 
 (def about-doc
   "Structured manual returned by `agent about`."
@@ -943,19 +948,21 @@
                                   "; read new posts with `" cmd " agent notes " board-id "`.\n")))))
 
 (defn- post-with-tag-fragment
-  "Instruction for appending a tagged contribution to the board strand. The tag
-  keeps one pass/round separable on a strand that accumulates notes across
-  rounds; a nil tag omits the prefix. `:lead`/`:label`/`:placeholder` frame the
-  post for the caller (reviewers post `When finished, append findings with`;
-  deliberating seats post their turn's position). The posting command is the
-  same whether the process is fresh or resumed, so this fragment ignores
-  `:form`."
-  [{:keys [board-id tag lead label placeholder]
-    :or {lead "When finished" label "append findings with" placeholder "<findings>"}}]
+  "Instruction for appending a contribution to the board strand, whose write
+  command renders through the single `writer-ref->prompt` renderer
+  (skein.api.notes.alpha). A non-nil `tag` threads a `review/pass` decoration
+  attr so one pass/round stays separable on a strand that accumulates notes
+  across rounds; a nil tag omits it. `:lead`/`:label` frame the post for the
+  caller (reviewers post `When finished, append findings with`; deliberating
+  seats post their turn's position). The posting command is the same whether the
+  process is fresh or resumed, so this fragment ignores `:form`."
+  [{:keys [board-id tag lead label]
+    :or {lead "When finished" label "append findings with"}}]
   (let [cmd (agent-run/pinned-strand-command)
-        tag-prefix (if tag (str "[" tag "] ") "")]
-    (str lead ", " label ": " cmd " agent note " board-id
-         " \"" tag-prefix placeholder "\" --by <your run-id>\n")))
+        decoration (if tag {"review/pass" tag} {})]
+    (str lead ", " label ": " cmd " "
+         (notes/writer-ref->prompt {:target board-id :by "<your run-id>" :decoration decoration})
+         "\n")))
 
 (defn- independence-fragment
   "Review-style directive: reach an independent judgment without coordinating
@@ -982,6 +989,9 @@
 
 ;; `review-prompt` reproduces the read-the-board and post-with-tag fragments
 ;; byte-for-byte (the frozen roster tests are the compatibility proof); the
+;; post-with-tag write instruction now flows through the single
+;; `writer-ref->prompt` renderer (skein.api.notes.alpha), so its wording and the
+;; `review/pass` decoration attr have exactly one source of truth. The
 ;; review-specific framing (target subtree, focus, scope, notes-only discipline)
 ;; stays inline because it is not part of the shared blackboard vocabulary.
 (defn- change-context-block
@@ -1042,15 +1052,16 @@
          ;; discriminator that exists before any run does, so workflow-composed
          ;; synthesis can isolate its own round too
          (when note-tag
-           (str "This review pass is tagged [" note-tag "]: reviewers prefixed their notes with it;"
-                " synthesize those notes and ignore other rounds.\n"))
+           (str "This review pass is tagged " note-tag ": reviewers decorated their notes with"
+                " `--attr review/pass=" note-tag "`; synthesize those notes and ignore other rounds.\n"))
          (when (seq review-runs)
            (str "Review run ids: " (str/join ", " review-runs) "\n"))
          "De-duplicate by root cause: when several reviewers flag the same underlying defect from "
          "different angles, report it once, name the corroborating reviewers, and keep each distinct "
          "root cause to a single entry rather than repeating overlapping findings.\n"
          "Read target notes with `" cmd " agent notes " target-id "`, append one synthesis note with `"
-         cmd " agent note " target-id " \"<synthesis>\" --by <your run-id>`, then finish with the synthesis.")))
+         cmd " " (notes/writer-ref->prompt {:target target-id :by "<your run-id>" :decoration {}})
+         "`, then finish with the synthesis.")))
 
 (defn roster-review-specs
   "Return a roster's review fan-out as plain, fully-built run specs
@@ -1260,7 +1271,7 @@
     :or {form :full}}]
   (let [post (post-with-tag-fragment {:board-id board-id :tag note-tag
                                       :lead "When you have a position for this turn"
-                                      :label "post it with" :placeholder "<your position>"})
+                                      :label "post it with"})
         read-board? (or (= view :strand) (= directive :deliberate))]
     (case form
       :full (str brief "\n\n"
@@ -1283,10 +1294,11 @@
     (str (when (non-blank? brief) (str brief "\n\n"))
          "Synthesize the panel deliberation on strand " board-id ".\n"
          (when note-tag
-           (str "This panel pass is tagged [" note-tag "]: seats prefixed their posts with it;"
-                " synthesize those posts and ignore other passes.\n"))
+           (str "This panel pass is tagged " note-tag ": seats decorated their posts with"
+                " `--attr review/pass=" note-tag "`; synthesize those posts and ignore other passes.\n"))
          "Read the board with `" cmd " agent notes " board-id "`, append one synthesis note with `"
-         cmd " agent note " board-id " \"<synthesis>\" --by <your run-id>`, then finish with the synthesis.")))
+         cmd " " (notes/writer-ref->prompt {:target board-id :by "<your run-id>" :decoration {}})
+         "`, then finish with the synthesis.")))
 
 (defn panel-specs
   "Compile an **inline panel value** into plain, fully-built run specs
