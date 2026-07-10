@@ -97,6 +97,12 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
    the map entirely. Omit a key you don't want to touch; only set it to `nil`
    when you deliberately mean "remove this attribute".
 
+## Namespace claims
+
+A shared spool declares each namespace it owns from its `install!` path with `vocab/declare!`. Qualify those namespaces with a project prefix, such as
+`acme/priority`, so they do not collide with Skein core or with another author's spool. The prefix is an authoring convention, not a parser rule. The registry
+backs it with the duplicate-owner check: if two owners claim the same namespace, install fails loudly instead of choosing one.
+
 ## Shared helper namespaces
 
 The shipped reference spools share two small helper namespaces. They are part of the spool-authoring contract only where this guide documents them. Prefer these helpers over local copies when writing a shared spool.
