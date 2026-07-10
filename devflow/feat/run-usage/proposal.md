@@ -6,17 +6,21 @@ contract) **Related epic:** `kaans` (agent-layer redesign); this is F-Ru, card `
 parallel-safe with F5 (`2mp13`). **Related root specs:** [Alpha Surface](../../specs/alpha-surface.md),
 [Strand Model](../../specs/strand-model.md), [CLI Surface](../../specs/cli.md) **Related sources:**
 `spools/agent-run/src/skein/spools/agent_run.clj` (`parse-claude-json`, `parse-pi-json`, `parse-output`, `finish-run!`,
-`install!`, `run-summaries`), `spools/delegation/src/skein/spools/delegation.clj` (the `agent` op and its subcommands,
+`install!`, `runs*`, `run-summary`, `parents-by-run`), `spools/delegation/src/skein/spools/delegation.clj` (the `agent` op and its subcommands,
 `register-op!`, the `agent-failures` query), `src/skein/api/vocab/alpha.clj` (`declare!`/`declarations`), `.skein/config.clj`
 (`defquery`/`defop` surface).
 
-**Reading context:** this proposal assumes the Skein vocabulary (strands, agent-run engine, harness output-parse
-strategies, the F4 vocabulary registry) defined in `docs/skein.md`, the spool READMEs, and `PROP-Vr-001` (the registry this
-feature dogfoods), and the devflow document chain: brief (scope contract) → this proposal's C-clauses (design contract) →
-`PLAN-Ru-001` slices → `TASK-Ru-*` execution contracts. Every point ID is a grepable anchor. Source citations name a stable
-site — a function (e.g. `finish-run!` in `skein.spools.agent-run`) — and treat that name as the load-bearing reference. Any
-`file:line` is secondary: verified at authoring in the `run-usage` worktree (forked from `main@d9bc478`; F1–F4 landed) and
-not durable, since line numbers move as nearby code moves.
+**Reading context.** This proposal assumes the Skein vocabulary defined in `docs/skein.md`, the spool READMEs, and
+`PROP-Vr-001` (the F4 vocabulary registry this feature is the first to extend). A few terms used throughout: a *harness* is a
+provider integration (`pi`, `claude`, `raw`) whose output this feature parses; the *agent-run engine* is the code that spawns
+and finishes those runs; a *seam* is the single site in the code where a concern is handled. It also assumes the devflow
+document chain — a fixed sequence of documents that carry a feature from idea to code: the brief (scope contract) → this
+proposal's C-clauses (design contract) → the `PLAN-Ru-001` document that slices the design into work units → the
+`TASK-Ru-*` execution contracts for each slice. The plan and task documents are written after this proposal, in the same
+`devflow/feat/run-usage/` directory. Every point ID is a grepable anchor. Source citations name a stable site — a function
+(e.g. `finish-run!` in `skein.spools.agent-run`) — and treat that function name as the primary reference. Any `file:line` is
+secondary: verified at authoring in the `run-usage` worktree (forked from `main@d9bc478`; F1–F4 landed) and not durable,
+since line numbers move as nearby code moves.
 
 ## PROP-Ru-001.P1 Problem
 
@@ -29,9 +33,10 @@ The harnesses already carry the data and the parse seam already sees it, but dis
 
 - `parse-pi-json` (`agent_run.clj:833`) walks every assistant message in pi's `--mode json` event stream to find the last
   text turn (`assistant-messages`, `agent_run.clj:860`). Those same messages carry a per-message `usage` map
-  (`{input, output, cacheRead, cacheWrite, totalTokens, cost}`, per note `pc2xl`) that the parser never reads.
+  (`{input, output, cacheRead, cacheWrite, reasoning, totalTokens, cost {input, output, cacheRead, cacheWrite, total}}`,
+  empirically confirmed in card note `8fcaa`; C2) that the parser never reads.
 - `parse-claude-json` (`agent_run.clj:826`) reads only `result` and `session_id`; claude's `--output-format json` result
-  object also carries the run's `total_cost_usd` and `usage` token counts, dropped on the floor.
+  object also carries the run's `total_cost_usd` and `usage` token counts, but the parser does not record them.
 - The `:raw` path (codex, `parse-output` default, `agent_run.clj:889-891`) emits no structured usage at all, but the run
   strand already timestamps start and finish, so wall-time is derivable with no new capture.
 
@@ -49,7 +54,8 @@ and no coordinator could answer "what did this feature's runs cost" without grep
   cannot see and contributes wall-time from the timestamps it already has. A missing usage attribute means "this format did
   not report it," never a silent zero.
 - **PROP-Ru-001.G4:** The new keys are declared through the F4 registry (`skein.api.vocab.alpha`) — this is the first
-  post-seed vocabulary addition and dogfoods the registry by growing the already-owned `agent-run/*` declaration.
+  vocabulary addition since the registry was seeded, so it is also the registry's first real customer (the team's own
+  "dogfood" check that the declaration path works), extending the already-owned `agent-run/*` declaration.
 - **PROP-Ru-001.G5:** One read surface — `strand agent spend` — aggregates the recorded data by run, harness, and period,
   JSON-only, so coordinators can see spend without touching storage.
 - **PROP-Ru-001.G6:** Purely additive. No migration, no backfill, no cutover, no weaver restart; picked up by the reload
@@ -85,7 +91,7 @@ spool already owns:
 | --- | --- | --- | --- |
 | `agent-run/cost-usd` | JSON number, US dollars | Total run cost as the harness reported it | pi-json, claude-json |
 | `agent-run/tokens-total` | JSON integer | Total tokens billed for the run | pi-json, claude-json |
-| `agent-run/tokens` | JSON object `{input, output, cache-read, cache-write}`, integer counts | Per-dimension token breakdown, normalized across providers (nil dimension omitted) | pi-json, claude-json |
+| `agent-run/tokens` | JSON object `{input, output, cache-read, cache-write, reasoning}` | Per-dimension token counts; nil dimensions omitted | pi-json, claude-json |
 | `agent-run/usage-source` | JSON string (`"pi-json"` / `"claude-json"`) | Which parser produced the usage; provenance for "why is cost absent" | pi-json, claude-json |
 
 **Flat headline scalars, one nested breakdown — decided, with rationale.** The two figures that aggregate and that a future
@@ -95,7 +101,10 @@ the spend aggregator (C7) sums them without reaching into a map, and so the voca
 are provider-shaped (pi exposes `cacheRead`/`cacheWrite`; claude exposes `cache_creation`/`cache_read`) and normalizing them
 into flat top-level keys would either lose provider nuance or explode the flat namespace with mostly-nil keys. A map holds a
 variable, normalized breakdown cleanly; strand attributes are JSON `TEXT`, so a nested object stores and reads with no
-special handling (NG3). `usage-source` is a one-string provenance key that distinguishes "this format cannot report usage"
+special handling (NG3). The `reasoning` dimension lives in this breakdown map for visibility only: pi's per-message
+`totalTokens` already accounts for reasoning tokens on the output side (`totalTokens = input + output + cacheRead`, verified
+across every event in a real pi run log, card note `8fcaa`), so `reasoning` is recorded but never summed into
+`tokens-total` a second time (C2). `usage-source` is a one-string provenance key that distinguishes "this format cannot report usage"
 (raw → key absent) from a capture regression; it is derivable from the harness's parse strategy but not from the run
 strand's stored `agent-run/harness` alias, so recording it directly is worth one small key.
 
@@ -108,13 +117,18 @@ computed at query time from the ISO-instant attrs the engine already writes (`no
 
 `parse-pi-json` (`agent_run.clj:833`) already materializes `assistant-messages` (`agent_run.clj:860`) to find the last text
 turn. It gains a fold over the same sequence: for each message's `usage` map, sum `input`/`output`/`cacheRead`/`cacheWrite`/
-`totalTokens` and sum `cost`, producing one run-level `:usage` map on the parse result (C5). The dimensions map onto C1 as
-`cacheRead → cache-read`, `cacheWrite → cache-write`, `totalTokens → tokens-total`, `cost → cost-usd`.
+`reasoning`/`totalTokens`, and sum the nested `cost.total`, producing one run-level `:usage` map on the parse result (C5).
+The dimensions map onto C1 as `cacheRead → cache-read`, `cacheWrite → cache-write`, `reasoning → reasoning`,
+`totalTokens → tokens-total`, and `cost.total → cost-usd`. `reasoning` is folded into the `agent-run/tokens` breakdown only;
+because pi already counts it inside `totalTokens` (C1), it is not added to `tokens-total`.
 
-The event stream carries one `usage` map per assistant message, so the run total is a sum across messages — but whether pi's
-per-message `cost` is a per-message delta (sum is correct) or a running cumulative (only the last message's figure is the
-total) is not decidable from this repo's code (pi is external). See PROP-Ru-001.Q1; the implementation verifies against a
-real pi run fixture and the tests pin whichever semantics pi actually emits.
+The maps are per-turn deltas — each message's `usage` reports what that turn spent, so the run total is their sum. This is
+no longer an open question: card note `8fcaa` resolved it empirically against a real pi run log. Across every event,
+`totalTokens` equals that message's `input + output + cacheRead` (`cacheRead` grows turn over turn as each turn re-reads the
+accumulated context, which is genuine per-turn billing and correctly summed), and `cost` is a nested map whose `total` is
+that turn's cost. The implementation still ships a real pi run fixture (captured provider output committed as test data) and
+a test that pins this delta fold, so a future pi
+change that made the maps cumulative would fail the test rather than silently double-count (Q1, R1).
 
 This extends the seam commit `c3c1092` reworked (fail pi-json runs whose final turn errored): usage capture folds over
 `assistant-messages` alongside the existing `terminal-error` detection (`agent_run.clj:866`), so a run that errored on a
@@ -126,7 +140,7 @@ usage limit still records the cost it burned before failing (G2).
 gains reads of that object's usage fields: `total_cost_usd → agent-run/cost-usd`, and the `usage` sub-map's token counts
 (`input_tokens → input`, `output_tokens → output`, `cache_creation_input_tokens → cache-write`,
 `cache_read_input_tokens → cache-read`, their sum → `tokens-total`). Claude's result carries one final cost figure for the
-whole run, so there is no per-turn aggregation and no cumulative-vs-delta ambiguity (contrast C2). Fields absent from a given
+whole run, so there is no per-turn aggregation at all — contrast the per-message delta fold in C2. Fields absent from a given
 claude version are simply omitted from the normalized map — capture never invents a zero (G3). (The repo's claude-json test
 fixture is a minimal `{"result":…,"session_id":…}` fake, `agent_run_test.clj:709`; the implementation adds a fixture
 carrying real `total_cost_usd`/`usage` fields.)
@@ -188,8 +202,8 @@ the same owner (`vocab/alpha.clj:159-174`), so the extended declaration survives
 `logs`. Rationale for the home: spend is a coordinator concern over engine-owned run data, and `strand agent *` is the
 coordinator verb group, so this follows the vocab precedent of putting an engine-data read verb on the shipped reference
 surface rather than in `.skein` config (`PROP-Vr-001.Q5`). The aggregation itself is a pure read fn in
-`skein.spools.agent-run` (the data owner), reusing the bulk-query discipline of `run-summaries`/`parents-by-run` — one query
-for many runs, not one per run (`agent_run.clj:1691-1700`; guarded by `ps-summary-building-does-not-scale-graph-scans-with-strand-count`,
+`skein.spools.agent-run` (the data owner), reusing the bulk-query discipline of `runs*` and its `parents-by-run` helper — one
+query for many runs, not one per run (`agent_run.clj:1691-1700`; guarded by `ps-summary-building-does-not-scale-graph-scans-with-strand-count`,
 `agent_run_test.clj:247`) — and the delegation `agent` op wires the subcommand to it (delegation already depends on
 agent-run).
 
@@ -253,10 +267,12 @@ is the brief's requirement (Q3, considered and rejected).
 
 ## PROP-Ru-001.P5 Sequencing and risks
 
-- **PROP-Ru-001.R1 — pi cost aggregation semantics.** If pi's per-message `cost`/`totalTokens` are cumulative rather than
-  per-message deltas, summing across `assistant-messages` double-counts. This is the one genuinely undecidable-from-code
-  point (Q1). Mitigation: verify against a captured real-pi run fixture at implementation and pin the chosen fold with a
-  test; the C2 fold is a one-line change either way (sum vs take-last).
+- **PROP-Ru-001.R1 — pi cost aggregation semantics.** If pi's per-message `cost`/`totalTokens` were cumulative rather than
+  per-message deltas, summing across `assistant-messages` would double-count. Card note `8fcaa` resolved this empirically —
+  the maps are deltas (Q1) — so the sum fold is correct today. The residual risk is a future pi change flipping the
+  semantics. Mitigation: the implementation ships a real pi run fixture and a test pinning the delta fold, so a switch to
+  cumulative fails the test rather than silently double-counting; the C2 fold is a one-line change either way (sum vs
+  take-last).
 - **PROP-Ru-001.R2 — usage on the error path.** The highest-value runs to capture are the usage-limit failures, which take
   the terminal-error branch, not the done branch. Mitigation: C5 writes usage on *both* terminal branches that have parsed
   output, via `mark-failed!`'s existing `extra` merge; a test asserts a pi terminal-error run still records its cost.
@@ -264,16 +280,17 @@ is the brief's requirement (Q3, considered and rejected).
   free and corrupt any future budget ranking. Mitigation: absent dimensions are omitted keys, not zeros (C1/G3); the spend
   aggregator skips nils (C7).
 - **PROP-Ru-001.R4 — spend query scan cost.** A naive per-run graph query would scale with strand count. Mitigation: the
-  aggregation reuses the bulk single-query discipline of `run-summaries` (`agent_run.clj:1691-1700`), already guarded by the
-  scan-scaling test (`agent_run_test.clj:247`).
+  aggregation reuses the bulk single-query discipline of `runs*`/`parents-by-run` (`agent_run.clj:1691-1700`), already guarded
+  by the scan-scaling test (`agent_run_test.clj:247`).
 
 ## PROP-Ru-001.P6 Validation gates
 
-All green in one landing:
+All green in one landing (each item below is a shell command run from the repo root):
 
 - `make build`
 - `clojure -M:test skein.agent-run-test` for the focused slice; `flock -w 3600 /tmp/skein-test.lock clojure -M:test` at
-  queue acceptance and land. New tests: pi-json usage aggregation (with the Q1 semantics pinned), pi terminal-error run
+  queue acceptance and land. New tests: pi-json usage aggregation (pinning the delta fold against a real pi run fixture,
+  Q1), pi terminal-error run
   still records cost (R2), claude-json cost/token capture, raw run records no usage but has derivable wall-time, the extended
   `agent-run` vocabulary declaration lists the usage keys, and `strand agent spend` totals/groups/nil-skipping (R3) with the
   bulk-query path (R4).
@@ -298,12 +315,17 @@ All green in one landing:
 
 ## PROP-Ru-001.P8 Design decisions
 
-- **PROP-Ru-001.Q1 — pi per-message `cost` semantics: delta or cumulative? (open).** The pi event stream carries a `usage`
-  map per assistant message; whether `cost`/`totalTokens` are per-message deltas (run total = sum) or a running cumulative
-  (run total = last message's figure) is not decidable from this repo — pi is external. **Recommended default:** treat as
-  per-message delta and sum (the natural reading of "usage per message"), and pin it with a test against a captured real-pi
-  run at implementation; flip the C2 fold to take-last if the fixture shows cumulative. This is the one open question; it is
-  a bounded implementation verification, not a design fork.
+- **PROP-Ru-001.Q1 — pi per-message `cost` semantics: delta or cumulative? (resolved).** The pi event stream carries a
+  `usage` map per assistant message; the question was whether `cost`/`totalTokens` are per-message deltas (run total = sum)
+  or a running cumulative (run total = the last message's figure). It is not decidable from this repo — pi is external — so it
+  was resolved empirically against a real pi run log (card note `8fcaa`, from run `votwp`). **Resolution (adopted): the maps
+  are per-turn deltas; sum them.** The evidence, verified across every event in the log: `totalTokens` equals that message's
+  `input + output + cacheRead` (`cacheRead` climbing turn over turn as each turn re-reads the growing context — genuine
+  per-turn billing, correctly summed, not a cumulative running total); `cost` is a nested map `{input, output, cacheRead,
+  cacheWrite, total}`, so run cost is the sum of each message's `cost.total`, not a scalar `cost` field; and each message
+  also carries a `reasoning` token count already included in `totalTokens` (recorded in the breakdown map, never re-added to
+  `tokens-total`; C1). The delta fold is pinned by a fixture test at implementation, so a future pi change to cumulative
+  fails the test rather than silently double-counting (R1).
 - **PROP-Ru-001.Q2 — usage keys in `control-attrs` or a sibling set? (resolved).** The four usage keys must appear in the
   `agent-run` declaration's `:keys` (C6). Whether they join the existing `control-attrs` set (`agent_run.clj:703-708`) or a
   separate `usage-attrs` set merged into `:keys` at declare time is an implementation detail with no contract consequence.
@@ -318,7 +340,7 @@ All green in one landing:
 - **PROP-Ru-001.Q4 — token breakdown: flat keys or a nested map? (resolved).** **Resolution (adopted): flat headline scalars
   (`cost-usd`, `tokens-total`) plus one nested `agent-run/tokens` breakdown map (C1)**, because the two figures that
   aggregate and drive future routing want to be flat and first-class, while the per-dimension detail is provider-shaped and
-  variable and belongs in one normalized map rather than a spray of mostly-nil flat keys.
+  variable and belongs in one normalized map rather than a wider set of mostly-absent top-level keys.
 - **PROP-Ru-001.Q5 — store or derive wall-time? (resolved).** **Resolution (adopted): derive at query time from the existing
   `started-at`/`finished-at` (C1/C4)**, because a stored duration would be redundant and drift-prone, adds nothing to the
   `:raw` path, and deriving keeps every format uniform and gives raw its wall-time for free.
