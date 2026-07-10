@@ -5,6 +5,7 @@
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.kanban :as kanban]
@@ -24,6 +25,16 @@
 
 (defn- op! [rt & argv]
   (api/op! rt 'kanban argv))
+
+(deftest install-declares-kanban-attr-namespace
+  (with-kanban
+    (fn [rt]
+      (let [decl (vocab/declaration rt :attr-namespace "kanban")]
+        (is (some? decl) "install! declares the kanban/* attribute namespace")
+        (is (= :skein/spools-kanban (:owner decl))
+            "kanban/* is owned by the single verified use-key :skein/spools-kanban")
+        (is (every? #(str/starts-with? % "kanban/") (:keys decl))
+            "advisory :keys all live under the kanban/ prefix")))))
 
 (deftest kanban-about-commands-match-declared-subcommands
   (with-kanban

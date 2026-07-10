@@ -21,6 +21,7 @@
             [skein.api.notes.alpha :as notes]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as api]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [attr-get]]))
@@ -855,6 +856,12 @@
   (let [rt (current/runtime)]
     {:installed true
      :namespace 'skein.spools.kanban
+     :vocab (vocab/declare! rt {:kind :attr-namespace
+                                :name "kanban"
+                                :owner :skein/spools-kanban
+                                :keys ["kanban/card" "kanban/status" "kanban/type"
+                                       "kanban/priority" "kanban/source"]
+                                :doc "Kanban card state attributes written by skein.spools.kanban/add!."})
      :ops [(api/register-op! rt 'kanban
                              {:doc "Manage the user-facing kanban work board. Run `strand kanban about` for the convention manual."
                               :arg-spec kanban-arg-spec
