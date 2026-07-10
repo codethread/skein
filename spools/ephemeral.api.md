@@ -1,10 +1,3 @@
-# Table of contents
--  [`skein.spools.ephemeral`](#skein.spools.ephemeral)  - Userland helpers for temporary, parent-owned work strands.
-    -  [`burn-ephemeral!`](#skein.spools.ephemeral/burn-ephemeral!) - Burn all active userland ephemeral strands.
-    -  [`ephemeral!`](#skein.spools.ephemeral/ephemeral!) - Create a userland ephemeral strand under parent-id.
-    -  [`ephemeral-ids`](#skein.spools.ephemeral/ephemeral-ids) - Return active userland ephemeral strand ids.
-    -  [`ephemeral-query`](#skein.spools.ephemeral/ephemeral-query) - Query form selecting active userland ephemeral strands.
-    -  [`install!`](#skein.spools.ephemeral/install!) - Install ephemeral strand helpers into the active weaver.
 
 -----
 # <a name="skein.spools.ephemeral">skein.spools.ephemeral</a>

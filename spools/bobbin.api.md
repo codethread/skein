@@ -1,8 +1,3 @@
-# Table of contents
--  [`skein.spools.bobbin`](#skein.spools.bobbin)  - Assemble compact, self-contained context packs for delegated strand work.
-    -  [`install!`](#skein.spools.bobbin/install!) - Return bobbin installation metadata for trusted registration by name.
-    -  [`pack`](#skein.spools.bobbin/pack) - Return a JSON-compatible bobbin context bundle for strand-id.
-    -  [`render`](#skein.spools.bobbin/render) - Render a bobbin bundle as deterministic prompt text.
 
 -----
 # <a name="skein.spools.bobbin">skein.spools.bobbin</a>

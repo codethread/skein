@@ -1,26 +1,3 @@
-# Table of contents
--  [`skein.spools.bench`](#skein.spools.bench)  - Trusted userland spool for deterministic, containerized benchmarking of coding-agent harnesses.
-    -  [`abort!`](#skein.spools.bench/abort!) - Abort a bench run: kill live containers, fail outstanding entries, and close the judge strand cleanly.
-    -  [`about`](#skein.spools.bench/about) - Return the authored bench manual: purpose, determinism model, run lifecycle, attribute vocabulary, judge protocol summary, and artifact layout.
-    -  [`agents`](#skein.spools.bench/agents) - Return registered agent definitions for <code>runtime</code>, sorted by key.
-    -  [`bench-op`](#skein.spools.bench/bench-op) - Dispatch parsed <code>strand bench ...</code> subcommands to the engine functions.
-    -  [`cross`](#skein.spools.bench/cross) - Return the cross-product of axis maps as an explicit vector of entry cells.
-    -  [`defagent!`](#skein.spools.bench/defagent!) - Register an agent definition under <code>k</code> for this <code>runtime</code>.
-    -  [`defextractor!`](#skein.spools.bench/defextractor!) - Register a metrics extractor <code>f</code> under <code>k</code> for this <code>runtime</code>.
-    -  [`defsuite!`](#skein.spools.bench/defsuite!) - Register a benchmark suite under <code>k</code> for this <code>runtime</code>.
-    -  [`engine`](#skein.spools.bench/engine) - Return the resolved container engine argv prefix, or nil when none is set.
-    -  [`extractors`](#skein.spools.bench/extractors) - Return the registered extractor keys for <code>runtime</code>, sorted.
-    -  [`gc!`](#skein.spools.bench/gc!) - Delete bench artifact directories, keeping strand-side metrics and verdicts.
-    -  [`install!`](#skein.spools.bench/install!) - Activate bench on the current runtime.
-    -  [`judge-spec`](#skein.spools.bench/judge-spec) - Return a bench run's judge fulfilment seam as plain data — the one prompt source every fulfilment mode shares: {:prompt <full judge prompt> :attrs {"bench/judge" ..
-    -  [`reconcile!`](#skein.spools.bench/reconcile!) - Fail entries orphaned by a weaver restart and best-effort kill their containers.
-    -  [`report`](#skein.spools.bench/report) - Return the full comparison document for a bench run (§10): per-entry normalized metrics, extraction warnings, artifact paths, and per-entry judge notes, plus the judge verdict resolved per §8 (the judge strand's <code>bench/verdict</code> attr, else a serving run's <code>agent-run/result</code>) with its <code>:verdict-source</code> (attr|run|none).
-    -  [`retry!`](#skein.spools.bench/retry!) - Re-run one failed entry on a fresh workspace, incrementing <code>bench/attempt</code>.
-    -  [`run!`](#skein.spools.bench/run!) - Pour and start a bench run for <code>suite-name-or-inline</code> on <code>runtime</code>.
-    -  [`runs`](#skein.spools.bench/runs) - Return bench run roots with per-run entry phase counts.
-    -  [`set-engine!`](#skein.spools.bench/set-engine!) - Override the detected container engine with <code>argv</code> (a prefix vector speaking the docker/podman <code>run</code>/<code>inspect</code>/<code>kill</code> dialect), e.g.
-    -  [`status`](#skein.spools.bench/status) - Return a bench run's entries with phase and headline metrics, judge run state, and the slugs of blocking (failed) entries.
-    -  [`suites`](#skein.spools.bench/suites) - Return registered suite definitions for <code>runtime</code>, sorted by key.
 
 -----
 # <a name="skein.spools.bench">skein.spools.bench</a>

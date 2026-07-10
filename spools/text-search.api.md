@@ -1,9 +1,3 @@
-# Table of contents
--  [`skein.spools.text-search`](#skein.spools.text-search)  - UNSAFE: uses skein.core.db for substring search over strand titles and attribute values, including archived rows the query language cannot see.
-    -  [`default-limit`](#skein.spools.text-search/default-limit) - Default row cap for <code>search</code>.
-    -  [`install!`](#skein.spools.text-search/install!) - Install the UNSAFE <code>search</code> op into the active weaver.
-    -  [`search`](#skein.spools.text-search/search) - Return strand rows whose title or an attribute value contains <code>text</code>.
-    -  [`search-op`](#skein.spools.text-search/search-op) - Handle <code>strand search ...</code>, threading parsed args into <code>search</code>.
 
 -----
 # <a name="skein.spools.text-search">skein.spools.text-search</a>

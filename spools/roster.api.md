@@ -1,19 +1,3 @@
-# Table of contents
--  [`skein.spools.roster`](#skein.spools.roster)  - Active-work registry: <code>roster/*</code> attribute vocabulary plus explicit-runtime <code>track!</code>/<code>heartbeat!</code>/<code>finish!</code>/<code>roster</code>/<code>await-quiet!</code> helpers over ordinary strands, installed as the declared-subcommand <code>roster</code> op and a named <code>roster</code> query.
-    -  [`about`](#skein.spools.roster/about) - Return the roster convention and installed helper surface.
-    -  [`await-quiet!`](#skein.spools.roster/await-quiet!) - Block until the selected scope has no active non-stale entries.
-    -  [`default-stale-after-ms`](#skein.spools.roster/default-stale-after-ms) - Default staleness threshold for <code>roster</code>/<code>await-quiet!</code>: fifteen minutes.
-    -  [`default-timeout-ms`](#skein.spools.roster/default-timeout-ms) - Default <code>await-quiet!</code> timeout: thirty minutes, matching <code>workflow/await!</code>'s long-poll default.
-    -  [`finish!`](#skein.spools.roster/finish!) - Close an active roster entry with a final <code>roster/status</code>.
-    -  [`handle-mutation-event!`](#skein.spools.roster/handle-mutation-event!) - Roster's async graph-integration handler (explicit-runtime core).
-    -  [`heartbeat!`](#skein.spools.roster/heartbeat!) - Update <code>roster/heartbeat-at</code> on an active roster entry.
-    -  [`install!`](#skein.spools.roster/install!) - Install the roster op and named query into the active weaver.
-    -  [`mutation-handler`](#skein.spools.roster/mutation-handler) - Registered event-handler entry point: dispatches to <code>handle-mutation-event!</code> under the runtime the event worker bound for this delivery.
-    -  [`prime`](#skein.spools.roster/prime) - Return the full agent-priming payload for using the roster.
-    -  [`roster`](#skein.spools.roster/roster) - Return active roster entries, optionally scoped by <code>:feature</code>, <code>:owner</code>, <code>:branch</code>, <code>:worktree</code>, or <code>:engine</code>.
-    -  [`roster-op`](#skein.spools.roster/roster-op) - Dispatch parsed <code>strand roster ...</code> subcommands.
-    -  [`track!`](#skein.spools.roster/track!) - Create or restamp one roster entry.
-    -  [`watch!`](#skein.spools.roster/watch!) - Register roster's async workflow/devflow graph-integration handler on strand add/update events.
 
 -----
 # <a name="skein.spools.roster">skein.spools.roster</a>

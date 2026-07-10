@@ -1,23 +1,3 @@
-# Table of contents
--  [`skein.spools.kanban`](#skein.spools.kanban)  - User-facing kanban board over Skein strands.
-    -  [`about`](#skein.spools.kanban/about) - Return the kanban convention and installed helper surface.
-    -  [`add!`](#skein.spools.kanban/add!) - Create a kanban card in the pending (or refinement) lane.
-    -  [`board`](#skein.spools.kanban/board) - Return the grouped board snapshot: epics, feature lanes, closed count.
-    -  [`board-str`](#skein.spools.kanban/board-str) - Render a <code>board</code> result map as a stacked-lane ASCII board string.
-    -  [`card-view`](#skein.spools.kanban/card-view) - Return one card joined to its notes, latest handover, work, and frontier.
-    -  [`claim!`](#skein.spools.kanban/claim!) - Claim a pending feature card, stamping the work-root attributes.
-    -  [`finish!`](#skein.spools.kanban/finish!) - Close a claimed or in_review kanban card with an explicit outcome status.
-    -  [`install!`](#skein.spools.kanban/install!) - Install the kanban op, batch pattern, and board queries into the active weaver.
-    -  [`kanban-batch`](#skein.spools.kanban/kanban-batch) - Create pending feature cards with bodies and depends-on edges.
-    -  [`kanban-op`](#skein.spools.kanban/kanban-op) - Dispatch parsed <code>strand kanban ...</code> subcommands.
-    -  [`next-card`](#skein.spools.kanban/next-card) - Return the highest-priority (p1 first) oldest active pending feature card, or nil.
-    -  [`note!`](#skein.spools.kanban/note!) - Append a note (or <code>--handover</code> note) to a card via the blessed notes relation.
-    -  [`prime`](#skein.spools.kanban/prime) - Return the full agent-priming payload for working the kanban board.
-    -  [`print-board!`](#skein.spools.kanban/print-board!) - Print the live board as ASCII; the human view for <code>mill weaver repl</code>.
-    -  [`promote!`](#skein.spools.kanban/promote!) - Move a refinement card into the pending lane (an explicit human act).
-    -  [`request-review!`](#skein.spools.kanban/request-review!) - Move a claimed kanban card into the in_review lane.
-    -  [`rework!`](#skein.spools.kanban/rework!) - Move an in_review kanban card back to claimed for rework.
-    -  [`set-priority!`](#skein.spools.kanban/set-priority!) - Set an active card's priority (p1 highest urgency ..
 
 -----
 # <a name="skein.spools.kanban">skein.spools.kanban</a>

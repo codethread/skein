@@ -1,12 +1,3 @@
-# Table of contents
--  [`skein.spools.carder`](#skein.spools.carder)  - Read-only graph hygiene reports for long-lived Skein strand graphs.
-    -  [`blocked-by-failure`](#skein.spools.carder/blocked-by-failure) - Return active strands blocked by active failed or exhausted depends-on targets.
-    -  [`default-days`](#skein.spools.carder/default-days) - Default age threshold, in days, used by <code>stale</code>.
-    -  [`install!`](#skein.spools.carder/install!) - Return carder installation metadata for trusted registration by name.
-    -  [`orphans`](#skein.spools.carder/orphans) - Return active strands with no incident edges and no <code>workflow/*</code> attributes.
-    -  [`report`](#skein.spools.carder/report) - Return a JSON-compatible aggregate graph hygiene report.
-    -  [`stale`](#skein.spools.carder/stale) - Return active strands older than the configured age threshold.
-    -  [`undeclared`](#skein.spools.carder/undeclared) - Return active strands carrying an attribute whose namespace segment is owned by no vocabulary declaration.
 
 -----
 # <a name="skein.spools.carder">skein.spools.carder</a>

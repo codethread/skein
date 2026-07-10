@@ -1,19 +1,3 @@
-# Table of contents
--  [`skein.spools.delegation`](#skein.spools.delegation)  - Agent coordination spool layered over the agent-run engine.
-    -  [`about-doc`](#skein.spools.delegation/about-doc) - Structured manual returned by <code>agent about</code>.
-    -  [`agent-op`](#skein.spools.delegation/agent-op) - Dispatch parsed <code>strand agent</code> subcommands.
-    -  [`agent-plan`](#skein.spools.delegation/agent-plan) - Create a feature strand plus task/review children for agent work.
-    -  [`council!`](#skein.spools.delegation/council!) - Convene a multi-agent council as a <code>:fresh</code>-blackboard panel (A7): its rounds are turn-as-run barrier rows and seats deliberate by posting to and reading a shared council strand across turns, then a synthesizer weighs the whole deliberation.
-    -  [`defroster!`](#skein.spools.delegation/defroster!) - Register or replace a named reviewer roster (weaver-lifetime state, so trusted startup config re-registers it like harness aliases and queries).
-    -  [`install!`](#skein.spools.delegation/install!) - Install the agents op surface, pattern, query, and worker preamble hook.
-    -  [`panel!`](#skein.spools.delegation/panel!) - Spawn a panel from an inline panel value.
-    -  [`panel-specs`](#skein.spools.delegation/panel-specs) - Compile an **inline panel value** into plain, fully-built run specs (shape: <code>:skein.spools.delegation/panel-specs</code>).
-    -  [`review!`](#skein.spools.delegation/review!) - Spawn independent read-only reviewers for a target strand.
-    -  [`review-contract`](#skein.spools.delegation/review-contract) - Read-only reviewer contract text used as the workspace default for <code>agent review</code>.
-    -  [`roster->panel`](#skein.spools.delegation/roster->panel) - Convert a roster value into an equivalent single-round, target-blackboard panel: each reviewer becomes an independent seat whose contract is the seat brief, and the roster synthesizer (or the first reviewer's harness) becomes the panel synthesis.
-    -  [`roster-review-specs`](#skein.spools.delegation/roster-review-specs) - Return a roster's review fan-out as plain, fully-built run specs (shape: <code>:skein.spools.delegation/review-specs</code>).
-    -  [`rosters`](#skein.spools.delegation/rosters) - List registered reviewer rosters as full plain data.
-    -  [`worker-contract`](#skein.spools.delegation/worker-contract) - Worker contract text appended to every run preamble.
 
 -----
 # <a name="skein.spools.delegation">skein.spools.delegation</a>

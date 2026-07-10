@@ -1,16 +1,3 @@
-# Table of contents
--  [`skein.spools.selvage`](#skein.spools.selvage)  - Attribute vocabulary linting for userland strand conventions.
-    -  [`check`](#skein.spools.selvage/check) - Return vocabulary violations for one strand map or strand id.
-    -  [`check-all`](#skein.spools.selvage/check-all) - Return vocabulary violations across active strands.
-    -  [`clear-violations!`](#skein.spools.selvage/clear-violations!) - Clear recorded watch-mode violations.
-    -  [`defvocab!`](#skein.spools.selvage/defvocab!) - Register or replace an attribute vocabulary for this weaver lifetime.
-    -  [`install!`](#skein.spools.selvage/install!) - Install Selvage watch support into the active weaver and return metadata.
-    -  [`record-event!`](#skein.spools.selvage/record-event!) - Event handler that records violations for strand added/updated events.
-    -  [`remove-vocab!`](#skein.spools.selvage/remove-vocab!) - Remove a registered vocabulary by name.
-    -  [`undeclared-checks`](#skein.spools.selvage/undeclared-checks) - Return registered selvage checks whose <code>:attr</code> namespace no vocabulary declaration owns.
-    -  [`violations`](#skein.spools.selvage/violations) - Return recorded watch-mode violations in delivery order.
-    -  [`vocabs`](#skein.spools.selvage/vocabs) - Return registered vocabulary metadata in deterministic order.
-    -  [`watch!`](#skein.spools.selvage/watch!) - Register the asynchronous mutation watcher for post-hoc violation recording.
 
 -----
 # <a name="skein.spools.selvage">skein.spools.selvage</a>

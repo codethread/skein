@@ -1,17 +1,3 @@
-# Table of contents
--  [`skein.spools.chime`](#skein.spools.chime)  - Human-attention notification bridge for Skein graph events.
-    -  [`*runtime*`](#skein.spools.chime/*runtime*) - Runtime captured for asynchronous notifier worker threads.
-    -  [`defrule!`](#skein.spools.chime/defrule!) - Register or replace a notification rule.
-    -  [`failures`](#skein.spools.chime/failures) - Return recorded notifier, process, and rule failures for this weaver lifetime.
-    -  [`install!`](#skein.spools.chime/install!) - Install chime's event handler into the active weaver.
-    -  [`notifier`](#skein.spools.chime/notifier) - Return the current notifier binding, or nil when none is bound.
-    -  [`notify!`](#skein.spools.chime/notify!) - Send one notification through the current binding.
-    -  [`on-event`](#skein.spools.chime/on-event) - Weaver event handler: scan graph changes for attention notifications.
-    -  [`remove-rule!`](#skein.spools.chime/remove-rule!) - Remove a registered notification rule by name.
-    -  [`reset-seen!`](#skein.spools.chime/reset-seen!) - Clear per-weaver notification deduplication and batch-scan state.
-    -  [`rules`](#skein.spools.chime/rules) - Return registered notification rules ordered by name.
-    -  [`scan!`](#skein.spools.chime/scan!) - Evaluate registered rules against currently affected strands.
-    -  [`set-notifier!`](#skein.spools.chime/set-notifier!) - Bind the local notifier command for this weaver lifetime.
 
 -----
 # <a name="skein.spools.chime">skein.spools.chime</a>

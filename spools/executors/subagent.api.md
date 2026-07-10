@@ -1,10 +1,3 @@
-# Table of contents
--  [`skein.spools.executors.subagent`](#skein.spools.executors.subagent)  - Bridge workflow subagent gates to agent-run runs.
-    -  [`*runtime*`](#skein.spools.executors.subagent/*runtime*) - Runtime captured for asynchronous subagent-executor scans.
-    -  [`gate-stalled?`](#skein.spools.executors.subagent/gate-stalled?) - Return durable stall detail for a ready subagent gate view, or nil.
-    -  [`install!`](#skein.spools.executors.subagent/install!) - Install the subagent executor's event handler and perform an initial scan.
-    -  [`on-event`](#skein.spools.executors.subagent/on-event) - Weaver event handler: graph changes may finish or unblock subagent executor work.
-    -  [`scan!`](#skein.spools.executors.subagent/scan!) - Deliver finished agent-run runs and spawn ready workflow subagent gates.
 
 -----
 # <a name="skein.spools.executors.subagent">skein.spools.executors.subagent</a>

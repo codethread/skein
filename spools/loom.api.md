@@ -1,11 +1,3 @@
-# Table of contents
--  [`skein.spools.loom`](#skein.spools.loom)  - Read-only projections of the active strand graph into work views.
-    -  [`branch-views`](#skein.spools.loom/branch-views) - Group active branch-stamped work roots into per-branch progress views.
-    -  [`flow-status`](#skein.spools.loom/flow-status) - Return workflow flow status by joining history, frontier, gates, runs, and stalls.
-    -  [`gate-chain-mermaid`](#skein.spools.loom/gate-chain-mermaid) - Return a dev-only Mermaid chain showing ready, stalled, and closed gates.
-    -  [`install!`](#skein.spools.loom/install!) - Return loom installation metadata for trusted registration by name.
-    -  [`summarize`](#skein.spools.loom/summarize) - Return the compact strand shape used by read-only projections.
-    -  [`work-dags`](#skein.spools.loom/work-dags) - Return active parent-of work DAGs and their active depends-on edges.
 
 -----
 # <a name="skein.spools.loom">skein.spools.loom</a>

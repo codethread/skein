@@ -1,11 +1,3 @@
-# Table of contents
--  [`skein.spools.guild`](#skein.spools.guild)  - Reference spool for declaring a versioned public weaver operation API.
-    -  [`defop!`](#skein.spools.guild/defop!) - Register a guild operation in the CLI operation registry.
-    -  [`deprecate!`](#skein.spools.guild/deprecate!) - Replace a registered guild operation with a loud deprecation stub.
-    -  [`deprecated-op`](#skein.spools.guild/deprecated-op) - Fail loudly for a deprecated guild operation.
-    -  [`describe-op`](#skein.spools.guild/describe-op) - Return JSON-safe metadata describing the installed guild API.
-    -  [`dispatch-op`](#skein.spools.guild/dispatch-op) - Dispatch a guild-declared operation after parsing and validating input.
-    -  [`install!`](#skein.spools.guild/install!) - Install the built-in <code>guild.describe</code> operation.
 
 -----
 # <a name="skein.spools.guild">skein.spools.guild</a>

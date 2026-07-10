@@ -1,22 +1,3 @@
-# Table of contents
--  [`skein.spools.batteries`](#skein.spools.batteries)  - Shipped core strand command surface as parser-backed weaver ops.
-    -  [`activate!`](#skein.spools.batteries/activate!) - Register the batteries core strand ops into a weaver runtime.
-    -  [`add-op`](#skein.spools.batteries/add-op) - Create a strand with merged attributes, optional state, and outgoing edges.
-    -  [`burn-op`](#skein.spools.batteries/burn-op) - Physically delete one strand by id and return the burn summary.
-    -  [`list-op`](#skein.spools.batteries/list-op) - List lean-projected strands, optionally filtered by lifecycle state and/or a named query.
-    -  [`note-op`](#skein.spools.batteries/note-op) - Append an immutable note to a target strand's memory via the note primitive.
-    -  [`notes-op`](#skein.spools.batteries/notes-op) - Return a target strand's notes from every primitive writer in note/at order, optionally filtered to one review round.
-    -  [`pattern-op`](#skein.spools.batteries/pattern-op) - Introspect registered weave patterns: list all metadata or explain one.
-    -  [`query-op`](#skein.spools.batteries/query-op) - Introspect registered named queries: list all metadata or explain one.
-    -  [`read-limit`](#skein.spools.batteries/read-limit) - Return the runtime's batteries read-result cap for CLI list/ready ops.
-    -  [`ready-op`](#skein.spools.batteries/ready-op) - List lean-projected ready strands, optionally from the result set of a named query.
-    -  [`set-read-limit!`](#skein.spools.batteries/set-read-limit!) - Set the runtime's batteries read-result cap for CLI list/ready ops.
-    -  [`show-op`](#skein.spools.batteries/show-op) - Return one normalized strand by id.
-    -  [`subgraph-op`](#skein.spools.batteries/subgraph-op) - Return a relation-scoped subgraph rooted at one strand.
-    -  [`supersede-op`](#skein.spools.batteries/supersede-op) - Replace one strand with another and return the supersession result.
-    -  [`update-op`](#skein.spools.batteries/update-op) - Patch one strand's title, state, attributes, and outgoing edges.
-    -  [`vocab-op`](#skein.spools.batteries/vocab-op) - List the runtime's vocabulary declarations as an ordered array of C1 maps, string-keyed at the wire boundary, optionally narrowed to one --kind.
-    -  [`weave-op`](#skein.spools.batteries/weave-op) - Apply a registered create-only weave pattern to one JSON input value.
 
 -----
 # <a name="skein.spools.batteries">skein.spools.batteries</a>

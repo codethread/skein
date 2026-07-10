@@ -1,10 +1,3 @@
-# Table of contents
--  [`skein.spools.executors.shell`](#skein.spools.executors.shell)  - Fulfil workflow <code>:shell</code> gates by running their command off the event thread.
-    -  [`*runtime*`](#skein.spools.executors.shell/*runtime*) - Runtime captured for asynchronous shell-executor worker threads.
-    -  [`gate-stalled?`](#skein.spools.executors.shell/gate-stalled?) - Return durable stall detail for a ready <code>:shell</code> gate view, or nil.
-    -  [`install!`](#skein.spools.executors.shell/install!) - Install the shell executor: register its event handler, the <code>:shell</code> workflow executor, and the <code>stalled-shell-gates</code> coordinator query, then perform an initial scan.
-    -  [`on-event`](#skein.spools.executors.shell/on-event) - Weaver event handler: graph changes may make a <code>:shell</code> gate ready.
-    -  [`scan!`](#skein.spools.executors.shell/scan!) - Dispatch every ready <code>:shell</code> gate not already claimed or errored.
 
 -----
 # <a name="skein.spools.executors.shell">skein.spools.executors.shell</a>

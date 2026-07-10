@@ -34,6 +34,12 @@
     ;; public-only link filter, and including private vars would publish
     ;; internals, so use the wikilink detector; these docstrings use backticks,
     ;; which remain code-styled text instead of becoming dead links.
-    :var-pattern :wikilinks}))
+    :var-pattern :wikilinks
+    ;; Suppress quickdoc's in-body "# Table of contents". It emits a leading H1
+    ;; before the namespace H1, and mkdocs-material's right-hand TOC collapses to
+    ;; the first H1's child headings — which for that TOC H1 are none — leaving
+    ;; API pages with an empty sidebar TOC. Dropping it makes the namespace the
+    ;; sole leading H1 so the sidebar lists every var, matching the other docs.
+    :toc false}))
 
 (System/exit 0)
