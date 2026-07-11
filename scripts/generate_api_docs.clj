@@ -13,7 +13,7 @@
    {:name "carder" :source "spools/carder/src/skein/spools/carder.clj" :outfile "spools/carder.api.md"}
    {:name "roster" :source "spools/roster/src/skein/spools/roster.clj" :outfile "spools/roster.api.md"}
    {:name "loom" :source "spools/loom/src/skein/spools/loom.clj" :outfile "spools/loom.api.md"}
-   {:name "text-search" :source "spools/src/skein/spools/text_search.clj" :outfile "spools/text-search.api.md"}
+   {:name "text-search" :source "spools/text-search/src/skein/spools/text_search.clj" :outfile "spools/text-search.api.md"}
    {:name "agent-run" :source "spools/agent-run/src/skein/spools/agent_run.clj" :outfile "spools/agent-run.api.md"}
    {:name "delegation" :source "spools/delegation/src/skein/spools/delegation.clj" :outfile "spools/delegation.api.md"}
    {:name "shell" :source "spools/workflow/src/skein/spools/executors/shell.clj" :outfile "spools/executors/shell.api.md"}

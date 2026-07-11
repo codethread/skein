@@ -41,6 +41,7 @@
 ;; here so the reference stays exercised.
 (runtime/use! runtime :skein/spools-text-search
               {:ns 'skein.spools.text-search
+               :spools ['skein.spools/text-search]
                :call 'skein.spools.text-search/install!})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's

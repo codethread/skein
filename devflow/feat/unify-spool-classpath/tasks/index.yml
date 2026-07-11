@@ -37,7 +37,7 @@ tasks:
   - id: 8
     description: "PH2: move text-search to per-spool root + coordinate + guard"
     task_file: tasks/008-move-text-search.md
-    status: pending
+    status: complete
     blocked_by: [7]
   - id: 9
     description: "PH2: move bobbin reference spool to per-spool root (no coordinate/activation)"

@@ -93,6 +93,8 @@
                           {:local/root (.getCanonicalPath (io/file "spools/loom"))}
                           'skein.spools/carder
                           {:local/root (.getCanonicalPath (io/file "spools/carder"))}
+                          'skein.spools/text-search
+                          {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
                           'skein.spools/delegation
                           {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
