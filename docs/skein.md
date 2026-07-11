@@ -404,6 +404,14 @@ Use reload during development:
 
 Reload clears weaver-lifetime spool sync state, module-use state, named queries, weave patterns, views, custom ops, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads `init.clj` followed by `init.local.clj`. Missing files are skipped; present failures fail loudly.
 
+`reload!` re-runs the startup files but does not unload namespaces or vars it already loaded, and a bare `(require ns :reload)` is classloader-blind to per-spool synced roots — so neither picks up updated code from an already-synced opt-in spool. `reload-spool!` covers that gap. It takes the spool's `spools.edn` coordinate symbol and reloads the coordinate's namespaces in dependency order:
+
+```clojure
+(runtime/reload-spool! (current/runtime) 'skein.spools/kanban)
+```
+
+The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs the startup files so `install!`/`activate!` re-registers ops, queries, and handlers. So the code-bump sequence is `reload-spool! coord` to make the code live, then a targeted re-`use!` of the spool's activation to re-register — or a full `reload!` when the bump changes registrations across the config.
+
 ## Authoring your own spool code
 
 Skein treats runtime extensions as trusted Clojure code. Before writing your own, see the [reference spools](../spools/README.md) — a workflow engine and an ephemeral-strand helper (plus the external, git-distributed devflow lifecycle) that double as worked examples of spool design; all of them load the same opt-in way yours will. A common layout is:

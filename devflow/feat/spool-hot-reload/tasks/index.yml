@@ -17,5 +17,5 @@ tasks:
   - id: 4
     description: Pickup-ladder guidance for reload-spool!
     task_file: tasks/004-pickup-ladder-guidance.md
-    status: pending
+    status: complete
     blocked_by: [3]
