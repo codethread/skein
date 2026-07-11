@@ -128,7 +128,7 @@
                :required? true})
 (runtime/use! runtime :config
               {:file "config.clj"
-               :spools ['skein.spools/workflow 'skein.spools/loom]
+               :spools ['skein.spools/workflow 'skein.spools/loom 'skein.spools/carder]
                :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
                        :skein/spools-loom :skein/spools-shuttle :macros/patterns]
                :call 'config/install!})

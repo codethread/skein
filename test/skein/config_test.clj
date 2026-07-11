@@ -91,6 +91,8 @@
                           {:local/root (.getCanonicalPath (io/file "spools/roster"))}
                           'skein.spools/loom
                           {:local/root (.getCanonicalPath (io/file "spools/loom"))}
+                          'skein.spools/carder
+                          {:local/root (.getCanonicalPath (io/file "spools/carder"))}
                           'skein.spools/delegation
                           {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
@@ -944,7 +946,10 @@
     (doseq [use-id [:skein/spools-workflow :skein/spools-reed]]
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow")))
-    (doseq [use-id [:config :workflows]]
+    (is (= ['skein.spools/workflow 'skein.spools/loom 'skein.spools/carder]
+           (get-in uses [:config :opts :spools]))
+        ":config must opt into skein.spools/workflow, skein.spools/loom, and skein.spools/carder")
+    (doseq [use-id [:workflows]]
       (is (= ['skein.spools/workflow 'skein.spools/loom] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow and skein.spools/loom")))))
 

@@ -32,7 +32,7 @@ tasks:
   - id: 7
     description: "PH2: move carder to per-spool root + coordinate + :config consent edge (no activation)"
     task_file: tasks/007-move-carder.md
-    status: pending
+    status: complete
     blocked_by: [6]
   - id: 8
     description: "PH2: move text-search to per-spool root + coordinate + guard"
