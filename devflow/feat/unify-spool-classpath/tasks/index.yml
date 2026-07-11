@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: "PH1b: delete skein.spools.format, repoint 6 callers to api.format.alpha"
     task_file: tasks/002-delete-format-namespace.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: "PH2: move workflow (+executors/shell) to per-spool root + consent edges"

@@ -28,7 +28,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.bench.exec :as exec]
             [skein.spools.bench.metrics :as metrics]
-            [skein.spools.format :as fmt]
+            [skein.api.format.alpha :as fmt]
             [skein.spools.agent-run :as agent-run]
             [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid! attr-get]])
   (:import [java.io File]

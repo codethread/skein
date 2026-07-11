@@ -6,8 +6,7 @@
   plain newlines soft-wrap, a bare `|` line separates items, and indentation
   past the bar is preserved verbatim for command samples and other intentional
   layout. This is the single implementation; the blessed consumer surface is
-  `skein.api.format.alpha`, and `skein.spools.format` keeps the documented
-  spool-authoring names."
+  `skein.api.format.alpha`."
   (:require [clojure.string :as str]))
 
 (defn- bar-content

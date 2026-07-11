@@ -13,7 +13,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.format :as fmt]
+            [skein.api.format.alpha :as fmt]
             [skein.api.spool.alpha :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]))
 
 (defn- non-blank-string? [value]

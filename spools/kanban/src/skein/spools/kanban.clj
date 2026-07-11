@@ -22,7 +22,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.format :as fmt]
+            [skein.api.format.alpha :as fmt]
             [skein.api.spool.alpha :refer [attr-get]]))
 
 (def ^:private card-attr :kanban/card)
