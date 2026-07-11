@@ -4,7 +4,7 @@
 **Root spec:** [alpha-surface.md](../../../specs/alpha-surface.md) (`SPEC-005`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-usc-001`)
 **Contract:** [../brief.md](../brief.md)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-11
 
 ## DELTA-usc-as-001.P1 Summary
@@ -82,7 +82,5 @@ untouched. This delta states only those changes; it does not restate `SPEC-005`.
 
 ## DELTA-usc-as-001.P4 Open questions
 
-- **DELTA-usc-as-001.Q1:** The exact name of `util`'s blessed home is `skein.api.spool.alpha`
-  (the proposal's suggestion, adopted here). If promotion review prefers a different blessed
-  `skein.api.*.alpha` name, only the namespace token in CC1 and `SPEC-005.C2` changes; the
-  compat commitment and frozen helper set are unaffected.
+- **DELTA-usc-as-001.Q1 (resolved at merge):** `util`'s blessed home shipped as
+  `skein.api.spool.alpha` exactly as drafted; no rename was requested at promotion.

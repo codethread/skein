@@ -4,7 +4,7 @@
 **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (`SPEC-004`)
 **Feature:** [../proposal.md](../proposal.md) (`PROP-usc-001`)
 **Contract:** [../brief.md](../brief.md)
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-11
 
 ## DELTA-usc-dr-001.P1 Summary
@@ -65,6 +65,5 @@ changes.
 
 ## DELTA-usc-dr-001.P4 Open questions
 
-- **DELTA-usc-dr-001.Q1:** Whether `SPEC-004.C50a` should instead be folded as a trailing sentence
-  on `SPEC-004.C50` rather than a new sub-clause. Kept as a distinct ID here so the batteries
-  exception is grepable; promotion may inline it if the spec owner prefers a single clause.
+- **DELTA-usc-dr-001.Q1 (resolved at merge):** `SPEC-004.C50a` was promoted as a distinct
+  sub-clause (`daemon-runtime.md`), keeping the batteries exception grepable.
