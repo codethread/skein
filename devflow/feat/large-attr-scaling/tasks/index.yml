@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: "PH2: full-scale baseline run behind bench lock; numbers + pinned sha + seed into report"
     task_file: tasks/002-baseline-run.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: "PH3: residual-options assessment bounded to EAV+archive/TEN-007; one verdict; Q4 decided"
