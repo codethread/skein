@@ -49,7 +49,8 @@ single local-reproduction surface reused by CI, the land step, and manual runs (
    jobs.
 2. Sha extraction from `deps.edn` at job time so the pins live in exactly one place.
 3. Sibling-layout arrangement so each spool's default `../skein-src` local root resolves to the
-   candidate checkout at HEAD (kanban additionally needs `../skein-src/spools/workflow`).
+   candidate checkout at HEAD (devflow additionally needs `../skein-src/spools/workflow` injected
+   at run time; kanban already carries that root in its own `:test` alias at the pin).
 4. A decision on whether `merge-local-verify` gains the same check, with the cost of omission
    stated.
 5. Failure attribution and a local-reproduction recipe (a make target if warranted).
