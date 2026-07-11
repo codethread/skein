@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: "PH3: residual-options assessment bounded to EAV+archive/TEN-007; one verdict; Q4 decided"
     task_file: tasks/003-options-verdict.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 4
     description: "PH4: re-run usage note + inert-gate sweep (go/smoke/quality) + clean tree"

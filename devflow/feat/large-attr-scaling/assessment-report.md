@@ -77,3 +77,33 @@ Measured through the real shipped code (`weaver/show`, `weaver/list-lean`, `weav
 - **Lean `ready` assembly** (`weaver/ready-lean`, all `250000` strands): median `2157.66 ms`, max `2356.83 ms`. Same `mb-payload` omission as the lean list.
 - **Text-search `LIKE`, hot only** (default, archived excluded): median `209.23 ms`, `100` rows returned (matches `corpus-hot-count`).
 - **Text-search `LIKE`, archived included** (`:archived? true`): median `408.40 ms`, `140` rows returned (`100` hot + `40` archived, matches `corpus-hot-count` + `corpus-archived-count`). **`1.952×`** the hot-only median.
+
+## Residual-options assessment (`S3`)
+
+This section reasons only over the `S2` numbers above (`A7`, `G3`). Options stay inside the settled EAV+archive storage and TEN-007 (`TC5`, `NG1`): the rejected side-table / transparent hot offload / artifacts-as-a-second-concept / event-sourcing / fixed-column alternatives stay rejected and are not reopened here, and no candidate mitigation may make a consumer above `skein.core.*` depend on the physical shape of attribute storage. Any change a mitigation would need is a future feature with its own proposal (`NG2`, `OS1`); this assessment recommends, it does not build.
+
+### Large-list assembly (relates to card `ncso4`)
+
+The lean list assembles all `250000` strands at median `2075.39 ms` and lean `ready` at median `2157.66 ms`. The `1024`-byte omission floor holds on the large-value regime: the `1 MiB` `mb-payload` value is marked `:skein/omitted true` on every row, so value materialization is not what the assembly pays for. The cost is the per-strand row aggregation: `json_group_object` over the attribute rows for each strand, scanning the whole corpus.
+
+The lever the residual question reaches for is the `(strand_id) WHERE archived = 0` partial index `idx_attributes_strand_hot`, and it **already ships** (`A7`, `TC5`); the question is whether it suffices, not whether to add it. The measurements say it does. The gate-reproduction `ready` number came back at `426.57 ms` (`1.685×`, within noise of the accepted `1.69×` baseline), and the bounded-frontier `list`-of-500 assembly at `2.951 ms` (`1.472×`, under the `≤2×` target) — the hot-partition paths the index serves are on their recorded envelope. The `~2.1 s` lean numbers are a whole-population assembly across a quarter-million strands, not a point or frontier read; the cost scales with corpus size as a full scan should, and the bounded-frontier work this cost was left to (card `ncso4`) is done. No new index or assembly change earns a follow-up.
+
+### Full-fidelity point read over archived rows
+
+The `strand-row-by-id` path resolves `500` full-fidelity point reads at median `307.23 ms` (`~0.6 ms` per read; the `1259.61 ms` max is a first-iteration JIT/cache outlier, the remaining four samples `293.85`–`346.41 ms`). This path transparently includes archived rows by design and resolves whole values regardless of size — the general sample strand carried `mb-payload` unomitted, confirming the `1024`-byte floor does not reach here. That is the accepted correct-but-slower behavior: full-fidelity reads must return the full value, and TEN-003 forbids wrong, not slow. Omitting large values or excluding archived rows on this path would change its semantics, not mitigate a cost. At sub-millisecond per read the measured cost is small and bounded, so no mitigation inside EAV+archive and TEN-007 earns a follow-up.
+
+### Text-search over archived rows (`Q4`)
+
+`Q4` asks whether text-search seeing archived rows is a correctness concern worth a follow-up in its own right, or purely a cost question. The numbers decide it (`MI3`, `DW2`). The hot-only default scan returns `100` rows (exactly `corpus-hot-count`) at median `209.23 ms`; the archived-included scan returns `140` rows (`100` hot + `40` archived, exactly `corpus-hot-count` + `corpus-archived-count`) at median `408.40 ms`. Archived rows appear only under the explicit `:archived? true` opt-in and are excluded by default, and when requested the returned count is exactly the hot plus archived corpus. The behavior is correct and predictable: the caller gets the rows the flag asks for, no more and no fewer. `Q4` resolves as **a cost question, not a correctness concern** — the `1.952×` overhead is the cost of scanning the larger opt-in row set, it is bounded, and it is paid only when the caller asks for archived rows. No correctness follow-up is warranted.
+
+## Verdict (`S3`)
+
+**No action. No follow-up feature is recommended.**
+
+The residual read-path costs the EAV design accepted but never measured are all bounded on the `S2` numbers:
+
+- Whole-population lean assembly is `~2.1 s` over `250000` strands, a full-corpus scan cost, and the shipped `idx_attributes_strand_hot` serves the hot-partition and bounded-frontier paths on their recorded envelope (`ready` `1.685×`, `list`-of-500 `1.472×`). The bounded-frontier work (card `ncso4`) is done; the shipped index suffices.
+- Full-fidelity point reads over archived rows cost `~0.6 ms` each and correctly resolve whole values, including inlined `mb-payload` — accepted correct-but-slower behavior, not a defect.
+- Text-search over archived rows is correct (opt-in, default-excluded, exact row counts) and its `1.952×` cost is bounded and paid only on request; `Q4` is a cost question, not a correctness one.
+
+None of the paths crosses into a correctness defect or an unbounded cost, so none earns a storage or read-path change inside the settled EAV+archive design. The recorded `BG1`–`BG4` baseline and these `F2` numbers stand as the durable measurement a future storage change would gate against, per `A5`.
