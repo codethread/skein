@@ -1,5 +1,11 @@
-(ns skein.spools.util
-  "Shared spool-authoring helpers, peer of `skein.spools.format`.
+(ns skein.api.spool.alpha
+  "Blessed spool-authoring helpers: the accretion-compatible home for the shared
+  fail-loud and validation seams every reference spool leans on.
+
+  Living in the `skein.api.*.alpha` tier freezes this helper set (`fail!`,
+  `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`,
+  `poll-until-deadline!`) as a compat commitment, so no blessed namespace has to
+  reach down into a `skein.spools.*` peer to reuse them.
 
   Reference spools all need the same tiny fail-loud and validation seams: throw
   an `ex-info` with a contextual data map (TEN-003), reject unknown option keys,

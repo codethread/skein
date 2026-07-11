@@ -16,7 +16,7 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [skein.spools.util :refer [fail!]])
+            [skein.api.spool.alpha :refer [fail!]])
   (:import [java.io File]
            [java.lang ProcessBuilder$Redirect]
            [java.util Map]

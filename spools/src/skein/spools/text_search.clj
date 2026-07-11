@@ -40,7 +40,7 @@
             ;; skein.api.*.alpha only; this one reaches past the contract on
             ;; purpose (see the ns docstring).
             [skein.core.db :as db]
-            [skein.spools.util :refer [fail!]]))
+            [skein.api.spool.alpha :refer [fail!]]))
 
 (def default-limit
   "Default row cap for `search`. Overflow fails loudly rather than truncating,

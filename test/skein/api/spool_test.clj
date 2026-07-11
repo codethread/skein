@@ -1,9 +1,9 @@
-(ns skein.spools.util-test
-  "Tests for skein.spools.util: the shared fail!/reject-unknown-keys!/
+(ns skein.api.spool-test
+  "Tests for skein.api.spool.alpha: the shared fail!/reject-unknown-keys!/
   require-valid!/attr-key->str/attr-get/poll-until-deadline! seams other
   spools compose from."
   (:require [clojure.test :refer [deftest is]]
-            [skein.spools.util :as util]))
+            [skein.api.spool.alpha :as util]))
 
 (deftest poll-until-deadline!-polls-until-pred-result-then-stops
   (let [calls (atom 0)]

@@ -23,7 +23,7 @@
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
-            [skein.spools.util :refer [attr-get]]))
+            [skein.api.spool.alpha :refer [attr-get]]))
 
 (def ^:private card-attr :kanban/card)
 (def ^:private status-attr :kanban/status)
@@ -60,7 +60,7 @@
 
 (defn- attr-value
   "Return a strand attribute by keyword or string key, via the shared spool-tier
-  tolerant reader (`skein.spools.util/attr-get`)."
+  tolerant reader (`skein.api.spool.alpha/attr-get`)."
   [strand k]
   (attr-get strand k))
 

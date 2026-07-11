@@ -13,7 +13,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
             [skein.spools.agent-run :as agent-run]
-            [skein.spools.util :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
+            [skein.api.spool.alpha :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
 
 (defn- rt
   []

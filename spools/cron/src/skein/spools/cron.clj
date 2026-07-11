@@ -28,7 +28,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.scheduler.alpha :as scheduler]
-            [skein.spools.util :refer [fail! reject-unknown-keys! require-valid!]])
+            [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid!]])
   (:import [java.time Instant]
            [java.util Random]
            [java.util.concurrent ExecutorService Executors

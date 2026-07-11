@@ -9,7 +9,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.util :refer [fail! attr-get attr-key->str]]))
+            [skein.api.spool.alpha :refer [fail! attr-get attr-key->str]]))
 
 (def ^:private section-order [:strand :blockers :dependents :parents :children :notes :workflow])
 (def ^:private selectable-sections (set section-order))

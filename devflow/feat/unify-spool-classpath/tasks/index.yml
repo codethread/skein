@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: "PH1a: promote util to blessed skein.api.spool.alpha (+test rename)"
     task_file: tasks/001-promote-util-blessed-alpha.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: "PH1b: delete skein.spools.format, repoint 6 callers to api.format.alpha"

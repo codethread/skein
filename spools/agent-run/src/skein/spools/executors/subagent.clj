@@ -9,7 +9,7 @@
   (:require [clojure.string :as str]
             [skein.spools.agent-run :as agent-run]
             [skein.spools.workflow :as workflow]
-            [skein.spools.util :refer [fail! attr-get]]
+            [skein.api.spool.alpha :refer [fail! attr-get]]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.events.alpha :as events]
@@ -55,7 +55,7 @@
 
 (defn- attr
   "Read attribute `k` tolerating keyword- or string-keyed maps, via the shared
-  spool-tier tolerant reader (`skein.spools.util/attr-get`)."
+  spool-tier tolerant reader (`skein.api.spool.alpha/attr-get`)."
   [strand k]
   (attr-get strand k))
 

@@ -31,7 +31,7 @@
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
-            [skein.spools.util :refer [fail! reject-unknown-keys! attr-key->str attr-get poll-until-deadline!]])
+            [skein.api.spool.alpha :refer [fail! reject-unknown-keys! attr-key->str attr-get poll-until-deadline!]])
   (:import [java.time Duration Instant]))
 
 (def default-stale-after-ms
@@ -56,7 +56,7 @@
 
 (defn- attr-value
   "Return a strand attribute by keyword or string key, via the shared spool-tier
-  tolerant reader (`skein.spools.util/attr-get`)."
+  tolerant reader (`skein.api.spool.alpha/attr-get`)."
   [strand k]
   (attr-get strand k))
 

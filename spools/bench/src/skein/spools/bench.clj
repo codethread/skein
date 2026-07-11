@@ -30,7 +30,7 @@
             [skein.spools.bench.metrics :as metrics]
             [skein.spools.format :as fmt]
             [skein.spools.agent-run :as agent-run]
-            [skein.spools.util :refer [fail! reject-unknown-keys! require-valid! attr-get]])
+            [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid! attr-get]])
   (:import [java.io File]
            [java.util.concurrent ExecutorService Executors Semaphore ThreadFactory TimeUnit]))
 

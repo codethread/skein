@@ -13,7 +13,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.runtime.alpha :as runtime]
-            [skein.spools.util :refer [fail!]]))
+            [skein.api.spool.alpha :refer [fail!]]))
 
 (defn- state [rt]
   (runtime/spool-state rt ::state

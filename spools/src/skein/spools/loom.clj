@@ -20,7 +20,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.workflow :as workflow]
-            [skein.spools.util :refer [attr-get fail! reject-unknown-keys! require-valid!]]))
+            [skein.api.spool.alpha :refer [attr-get fail! reject-unknown-keys! require-valid!]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Graph primitives

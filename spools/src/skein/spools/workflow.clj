@@ -14,7 +14,7 @@
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
-            [skein.spools.util :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]))
+            [skein.api.spool.alpha :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]))
 
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
@@ -924,7 +924,7 @@
 (defn- attr
   "Read attribute `k` (a keyword such as `:workflow/role`) from `strand`'s
   attribute map, tolerating either keyword- or string-keyed maps, via the shared
-  spool-tier tolerant reader (`skein.spools.util/attr-get`)."
+  spool-tier tolerant reader (`skein.api.spool.alpha/attr-get`)."
   [strand k]
   (attr-get strand k))
 

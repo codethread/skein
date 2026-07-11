@@ -15,7 +15,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.delegation :as agents]
             [skein.spools.loom :as loom]
-            [skein.spools.util :refer [attr-get]]
+            [skein.api.spool.alpha :refer [attr-get]]
             [skein.spools.workflow :as workflow]))
 
 (def ^:private merge-lock-kind

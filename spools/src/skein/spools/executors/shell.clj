@@ -15,7 +15,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.spools.workflow :as workflow]
-            [skein.spools.util :refer [fail! attr-get]]
+            [skein.api.spool.alpha :refer [fail! attr-get]]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.graph.alpha :as graph]
             [skein.api.events.alpha :as events]

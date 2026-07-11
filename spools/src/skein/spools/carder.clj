@@ -13,7 +13,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.util :refer [fail! attr-get attr-key->str]])
+            [skein.api.spool.alpha :refer [fail! attr-get attr-key->str]])
   (:import [java.time Duration Instant LocalDateTime ZoneOffset]))
 
 (def default-days

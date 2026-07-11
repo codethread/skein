@@ -12,7 +12,7 @@
             [skein.api.runtime.alpha :as runtime]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.util :refer [fail!]]))
+            [skein.api.spool.alpha :refer [fail!]]))
 
 (def ^:private state-version
   "Shape version for selvage's runtime spool-state map. Bump whenever `new-state`'s
