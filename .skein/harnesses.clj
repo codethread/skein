@@ -33,24 +33,33 @@
    ;; splices that subcommand ahead of the prompt (the global flags before it
    ;; propagate into resume). Persistence is never required
    ;; (PLAN-Pnl-001.R1/NG4).
+   ;; :codex reports tokens but never dollar cost (subscription auth), so cost
+   ;; rides a hand-authored rate card. These gpt-5.5 rates (USD per 1M tokens)
+   ;; are the base for the gpt-5.5 seats (hard-gpt, patch-gpt); mini-gpt-codex
+   ;; overrides with its own gpt-5.4-mini card below. gpt-5.x models are not in
+   ;; public rate datasets, so the figures are pinned by hand from
+   ;; https://openai.com/api/pricing/ (pinned 2026-07-11); a daily pricing feed
+   ;; is out of scope. Re-pin here when OpenAI changes list prices.
    (shuttle/defharness! :codex
-     {:argv ["codex" "exec" "--skip-git-repo-check" "--color" "never"
+     {:argv ["codex" "exec" "--json" "--skip-git-repo-check" "--color" "never"
              "--dangerously-bypass-approvals-and-sandbox"
              "-c" "shell_environment_policy.inherit=all"]
-      :parse :raw
+      :parse :codex-json
       :resume ["resume" :agent-run/session-id]
+      :cost-rates {:input 1.25 :cache-read 0.125 :output 10.0}
       :doc (format-alpha/reflow
             "|Codex CLI (gpt-5.5) headless: agentic coding seat with the strongest
              |general-purpose web search of the roster — notably better than the
              |Claude seats on consumer-product and general-knowledge research, where
-             |Claude's training is code-focused. Final message prints on stdout
-             |(activity log on stderr), so :raw parses cleanly. Runs bypass any
-             |codex sandbox so workers reach the weaver socket — redefine with
-             |--sandbox workspace-write to tighten — and env inheritance is explicit
-             |because codex's default shell_environment_policy strips the PATH
-             |entries carrying the strand/mill CLIs. :resume is declared but inert
-             |(:raw captures no session id); a resume attempt fails loudly on the
-             |missing id rather than starting cold.")})
+             |Claude's training is code-focused. Final message prints on stdout as a
+             |JSONL event stream (activity log on stderr); :codex-json captures the
+             |agent_message result, thread session id, and cumulative token usage,
+             |and the :cost-rates card derives cost-usd (codex reports no dollar
+             |cost). Runs bypass any codex sandbox so workers reach the weaver
+             |socket — redefine with --sandbox workspace-write to tighten — and env
+             |inheritance is explicit because codex's default
+             |shell_environment_policy strips the PATH entries carrying the
+             |strand/mill CLIs. :resume continues the captured session id.")})
    ;; claude tiers mirror how we use agents: haiku explores, sonnet does
    ;; tests/grunt work, opus builds features and sits on councils
    (shuttle/defalias! :explore
@@ -113,6 +122,10 @@
    (shuttle/defalias! :mini-gpt-codex
      {:alias-of :codex
       :extra-args ["-m" "gpt-5.4-mini" "-c" "model_reasoning_effort=medium"]
+      ;; overrides the :codex gpt-5.5 base card: this seat runs gpt-5.4-mini, so
+      ;; it prices on the mini tier. USD per 1M tokens, hand-pinned from
+      ;; https://openai.com/api/pricing/ (pinned 2026-07-11).
+      :cost-rates {:input 0.25 :cache-read 0.025 :output 2.0}
       :doc (format-alpha/reflow
             "|GPT-5.4-mini via codex exec: cheap seat for low-stakes single-concern
              |review, recon, and validation. Verified only at that scope (bench
