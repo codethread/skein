@@ -12,5 +12,5 @@ tasks:
   - id: 3
     description: Land merge-local-verify extension in .skein/workflows.clj
     task_file: tasks/003-land-merge-local-verify-extension.md
-    status: pending
+    status: complete
     blocked_by: [1]
