@@ -27,7 +27,7 @@
 ;; the behavior contracts stay in the root specs.
 (def alpha-api-docs
   (for [nm ["batch" "cli" "current" "events" "format" "graph" "hooks" "notes"
-            "patterns" "peers" "relations" "runtime" "scheduler" "views"
+            "patterns" "peers" "relations" "runtime" "scheduler" "spool" "views"
             "vocab" "weaver"]]
     {:name nm
      :source (str "src/skein/api/" nm "/alpha.clj")
