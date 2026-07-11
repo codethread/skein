@@ -89,6 +89,8 @@
                           {:local/root (.getCanonicalPath (io/file "spools/ephemeral"))}
                           'skein.spools/roster
                           {:local/root (.getCanonicalPath (io/file "spools/roster"))}
+                          'skein.spools/loom
+                          {:local/root (.getCanonicalPath (io/file "spools/loom"))}
                           'skein.spools/delegation
                           {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
@@ -939,9 +941,12 @@
   "Assert repo startup guards every module that now relies on the workflow coordinate."
   [rt]
   (let [uses (runtime/uses rt)]
-    (doseq [use-id [:skein/spools-workflow :skein/spools-reed :config :workflows]]
+    (doseq [use-id [:skein/spools-workflow :skein/spools-reed]]
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/workflow")))))
+          (str use-id " must opt into skein.spools/workflow")))
+    (doseq [use-id [:config :workflows]]
+      (is (= ['skein.spools/workflow 'skein.spools/loom] (get-in uses [use-id :opts :spools]))
+          (str use-id " must opt into skein.spools/workflow and skein.spools/loom")))))
 
 (defn- assert-ephemeral-spool-consent-edge
   "Assert repo startup guards the activated ephemeral spool with its coordinate."
@@ -957,6 +962,13 @@
     (is (= ['skein.spools/roster] (get-in uses [:skein/spools-roster :opts :spools]))
         ":skein/spools-roster must opt into skein.spools/roster")))
 
+(defn- assert-loom-spool-consent-edge
+  "Assert repo startup guards the activated loom spool with its coordinate."
+  [rt]
+  (let [uses (runtime/uses rt)]
+    (is (= ['skein.spools/loom] (get-in uses [:skein/spools-loom :opts :spools]))
+        ":skein/spools-loom must opt into skein.spools/loom")))
+
 (deftest repo-local-startup-and-reload-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
@@ -965,12 +977,14 @@
       (assert-workflow-spool-consent-edges rt)
       (assert-ephemeral-spool-consent-edge rt)
       (assert-roster-spool-consent-edge rt)
+      (assert-loom-spool-consent-edge rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
       (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-ephemeral-spool-consent-edge rt)
       (assert-roster-spool-consent-edge rt)
+      (assert-loom-spool-consent-edge rt)
       ;; runtime registries reload; the strand graph and run state persist
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))

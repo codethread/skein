@@ -27,7 +27,7 @@ tasks:
   - id: 6
     description: "PH2: move loom to per-spool root + coordinate + guard + fold config/workflows edges"
     task_file: tasks/006-move-loom.md
-    status: pending
+    status: complete
     blocked_by: [5]
   - id: 7
     description: "PH2: move carder to per-spool root + coordinate + :config consent edge (no activation)"

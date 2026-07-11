@@ -2,6 +2,7 @@
           skein.spools/workflow {:local/root "../spools/workflow"}
           skein.spools/ephemeral {:local/root "../spools/ephemeral"}
           skein.spools/roster {:local/root "../spools/roster"}
+          skein.spools/loom {:local/root "../spools/loom"}
           skein.spools/delegation {:local/root "../spools/delegation"}
           skein.spools/chime {:local/root "../spools/chime"}
           skein.spools/kanban {:local/root "../spools/kanban"}

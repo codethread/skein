@@ -23,6 +23,7 @@
 ;; config.clj's current-dags/branches/flow-status ops are thin wrappers over it.
 (runtime/use! runtime :skein/spools-loom
               {:ns 'skein.spools.loom
+               :spools ['skein.spools/loom]
                :call 'skein.spools.loom/install!})
 ;; The shell executor ships in the workflow spool root and fulfils :shell workflow
 ;; gates by running the gate command directly. Its install! runs an initial
@@ -127,7 +128,7 @@
                :required? true})
 (runtime/use! runtime :config
               {:file "config.clj"
-               :spools ['skein.spools/workflow]
+               :spools ['skein.spools/workflow 'skein.spools/loom]
                :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
                        :skein/spools-loom :skein/spools-shuttle :macros/patterns]
                :call 'config/install!})
@@ -143,7 +144,7 @@
 ;; the :config module.
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
-               :spools ['skein.spools/workflow]
+               :spools ['skein.spools/workflow 'skein.spools/loom]
                :after [:skein/spools-workflow :skein/spools-agents :config]
                :call 'workflows/install!
                :required? true})
