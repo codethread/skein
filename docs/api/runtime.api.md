@@ -31,7 +31,7 @@ Return the current java.time.Instant from `runtime`'s clock seam.
 
   Defaults to the real wall clock; deterministic tests inject an advanceable
   clock through `skein.test.alpha/set-clock!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L35-L41">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L56-L62">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/reload!">`reload!`</a>
 ``` clojure
@@ -41,6 +41,29 @@ Function.
 
 Reload startup files from `runtime`'s config dir after clearing registries.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L30-L33">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/reload-spool!">`reload-spool!`</a>
+``` clojure
+(reload-spool! runtime coord)
+```
+Function.
+
+Make `coord`'s latest synced source live in `runtime`.
+
+  `coord` is a `spools.edn` coordinate symbol (e.g. `skein.spools/kanban`) — a
+  spool is many namespaces and sync state is keyed by coordinate, not namespace.
+  Returns a data-first map naming the coordinate, its resolved canonical root, and
+  the namespaces reloaded in reload order with their source files.
+
+  Fills the gap neither existing reload path covers: `reload!` re-runs startup
+  files but does not unload already-loaded namespaces or vars, and a bare `(require
+  ns :reload)` is classloader-blind to per-spool synced roots — so neither picks up
+  updated synced spool code. `reload-spool!` does. It reloads code only and leaves
+  re-registration to the caller (a targeted re-`use!` of the spool's activation, or
+  a full `reload!` when the bump changes registrations across the config).
+
+  Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L35-L54">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/spool-state">`spool-state`</a>
 ``` clojure
@@ -67,7 +90,7 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   once a version is declared. A malformed opts map fails loudly at the call site
   (see `validate-spool-state-opts!`) rather than degrading to the unversioned
   path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L251-L304">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L272-L325">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/sync!">`sync!`</a>
 ``` clojure
@@ -94,7 +117,7 @@ Return `runtime`'s most recent approved-root sync state.
 Function.
 
 Return one module-use registry entry from `runtime` by key.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L166-L169">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L187-L190">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/use!">`use!`</a>
 ``` clojure
@@ -108,7 +131,7 @@ Load a runtime module and record its module-use state under keyword key.
   include `:call` to invoke a no-arg function after load. Returns a registry
   entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
   rethrow after recording failure metadata.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L119-L159">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L140-L180">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/uses">`uses`</a>
 ``` clojure
@@ -117,4 +140,4 @@ Load a runtime module and record its module-use state under keyword key.
 Function.
 
 Return `runtime`'s module-use registry as data-first maps.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L161-L164">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L182-L185">Source</a></sub></p>

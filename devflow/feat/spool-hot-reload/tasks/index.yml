@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Blessed runtime.alpha/reload-spool! verb
     task_file: tasks/003-blessed-alpha-reload-spool-verb.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 4
     description: Pickup-ladder guidance for reload-spool!

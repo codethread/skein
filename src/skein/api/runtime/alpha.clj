@@ -32,6 +32,27 @@
   [runtime]
   (weaver-runtime/reload-config! runtime))
 
+(defn reload-spool!
+  "Make `coord`'s latest synced source live in `runtime`.
+
+  `coord` is a `spools.edn` coordinate symbol (e.g. `skein.spools/kanban`) — a
+  spool is many namespaces and sync state is keyed by coordinate, not namespace.
+  Returns a data-first map naming the coordinate, its resolved canonical root, and
+  the namespaces reloaded in reload order with their source files.
+
+  Fills the gap neither existing reload path covers: `reload!` re-runs startup
+  files but does not unload already-loaded namespaces or vars, and a bare `(require
+  ns :reload)` is classloader-blind to per-spool synced roots — so neither picks up
+  updated synced spool code. `reload-spool!` does. It reloads code only and leaves
+  re-registration to the caller (a targeted re-`use!` of the spool's activation, or
+  a full `reload!` when the bump changes registrations across the config).
+
+  Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data."
+  [runtime coord]
+  (when-not (symbol? coord)
+    (throw (ex-info "Spool coordinate must be a symbol" {:coord coord :class (some-> coord class)})))
+  (spool-sync/reload-synced-spool! runtime coord))
+
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.
 

@@ -1600,3 +1600,40 @@
         (let [result (spool-sync/reload-synced-spool! rt lib)]
           (is (= :v2 ((version))) "the blessed seam load-files the bumped source live")
           (is (= [ns-sym] (mapv :ns (:namespaces result)))))))))
+
+;; TASK-shr-003.MI1: the blessed verb fails loudly before delegating when `coord`
+;; is not a symbol, rather than passing a bad key into the sync-state lookup.
+(deftest reload-spool-verb-rejects-non-symbol-coordinate
+  (with-runtime
+    (fn [rt _config-dir]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be a symbol"
+                            (runtime/reload-spool! rt :demo/keyword-coord))))))
+
+;; TASK-shr-003.MI5: the keystone gap proof exercised *through* the blessed
+;; `runtime/reload-spool!` (runtime passed explicitly, no ambient singleton): a
+;; synced+loaded spool fn returns :v1; after the source is bumped, the blessed
+;; verb makes :v2 live and returns the data-first coordinate/root/namespaces map.
+(deftest reload-spool-verb-makes-bumped-source-live
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.verb-keystone-" suffix))
+            lib (symbol (str "demo/verb-keystone-lib-" suffix))
+            root (io/file config-dir "spools" "verb-keystone")
+            src-file (io/file root "src" "demo" (str "verb_keystone_" suffix ".clj"))
+            version #(requiring-resolve (symbol (str ns-sym "/version")))]
+        (.mkdirs (.getParentFile src-file))
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+        (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v1)\n"))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/verb-keystone"}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (:status (runtime/use! rt (keyword (str "verb-keystone-" suffix))
+                                              {:ns ns-sym :spools [lib]}))))
+        (is (= :v1 ((version))))
+        (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v2)\n"))
+        (let [result (runtime/reload-spool! rt lib)]
+          (is (= :v2 ((version))) "the blessed verb makes the bumped source live")
+          (is (= lib (:coord result)))
+          (is (= (.getCanonicalPath root) (:root result)))
+          (is (= [{:ns ns-sym :file (.getCanonicalPath src-file)}]
+                 (:namespaces result))))))))
