@@ -61,6 +61,7 @@ nav:
   # Generated per-fn reference for the blessed skein.api.*.alpha tier; the
   # behavior contracts remain the specs above (SPEC-005.C2).
   - Alpha API:
+      - Index: docs/api/README.md
       - skein.api.batch.alpha: docs/api/batch.api.md
       - skein.api.cli.alpha: docs/api/cli.api.md
       - skein.api.current.alpha: docs/api/current.api.md
