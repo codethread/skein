@@ -42,6 +42,7 @@ clojure -M:test <ns...>                 # cold focused run — the per-slice Don
 flock -w 3600 /tmp/skein-test.lock clojure -M:test  # full locked suite — queue acceptance + land only; CI-blocking
 (cd cli && go test ./...)               # primary validation, CI-blocking
 clojure -M:smoke                        # primary validation, CI-blocking
+make spool-suite-gate                   # pinned external spool suites vs this checkout — CI-blocking; also runs at land merge-local-verify (GITLIBS=<dir> overrides the gitlibs cache)
 make fmt-check lint reflect-check docs-check   # blocking CI quality gates, held at zero findings
 make api-docs                           # regenerate spools/*.api.md and docs/api/*.api.md after touching any spool or skein.api.*.alpha docstring
 ```
