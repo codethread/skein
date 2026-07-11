@@ -20,6 +20,9 @@
    ;; pure extractor unit tests over fixture files plus one unpublished
    ;; thread-bound runtime; no JVM-global or real-process state.
    'skein.bench-metrics-test
+   ;; large-attr load harness structural smoke: boots its own :publish? false
+   ;; world and hand-SQL fixtures in temp dirs — no JVM-global or shared state.
+   'skein.large-attr-benchmark-test
    ;; each test drives its own unpublished runtime, so the event lane it awaits
    ;; is per-runtime with no JVM-global or shared-lane state — parallel-safe.
    'skein.events-quiescence-test

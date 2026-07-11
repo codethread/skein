@@ -1,24 +1,54 @@
-(ns skein.eav-benchmark
-  "Run the EAV attribute-storage benchmark gate.
+(ns skein.large-attr-benchmark
+  "Durable synthetic large-attribute load harness.
 
-  The harness builds paired SQLite fixtures from one deterministic synthetic
-  dataset: a document-column baseline and the row-backed EAV schema. It measures
-  the merge-blocking workloads from EAS-PLAN-001.P7 and exits non-zero when a
-  target is missed."
-  (:gen-class)
+  Two measurement families answer two different questions from one seed profile:
+
+  Family (a) — gate reproduction (`EAS-PLAN-001.BG1`-`BG4`). Paired synthetic
+  fixtures in hand-SQL (a document-column baseline against the row-backed EAV
+  schema) measure the write-amp, filtered-scan, `list`-of-500 assembly, and
+  `ready`-latency workloads the `eav-attr-storage` merge gate accepted. The
+  document column is gone from shipped code, so this family stays a
+  document-vs-EAV comparison and needs no runtime; its numbers are the recorded
+  durable baseline for any future storage change, not a merge-blocking gate here.
+
+  Family (b) — residual paths (`PROP-LargeAttrScaling-001.F2`). Measures the
+  *absolute* cost of the real shipped read paths — full-fidelity point read
+  (`weaver/show`, archived rows included), lean list/`ready` assembly
+  (`weaver/list-lean`/`ready-lean`), and the text-search `LIKE` spool — through
+  actual `skein.core.db` / `skein.spools.text-search` code on a disposable
+  `:publish? false` world under `with-runtime-binding`, across the `F2` regimes:
+  values straddling the 1024-byte lean floor, inlined payloads to MB scale,
+  populated archived-row volumes, and a text-search corpus.
+
+  Everything here is informational (`PLAN-LargeAttrScaling-001.A5`): this spike
+  ships no storage change, so no scenario is merge-blocking. The only gate is the
+  structural smoke `deftest` in `skein.large-attr-benchmark-test`, which runs one
+  iteration of every scenario at tiny `N` with no wall-clock assertion. The
+  full-scale run is this namespace's `-main`, gated behind
+  `SKEIN_LARGE_ATTR_BENCH_FULL` so the default test suite never triggers it."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
-            [clojure.pprint :as pprint]
+            [clojure.pprint :as pp]
             [clojure.string :as str]
             [next.jdbc :as jdbc]
-            [next.jdbc.result-set :as rs])
-  (:import [java.io File]
-           [java.sql Connection]
+            [next.jdbc.result-set :as rs]
+            [skein.api.weaver.alpha :as weaver]
+            [skein.core.db :as db]
+            [skein.spools.test-support :as ts]
+            [skein.spools.text-search :as text-search])
+  (:import [java.sql Connection]
            [java.time Instant]
            [java.util Random]
            [org.sqlite SQLiteConfig SQLiteConfig$JournalMode SQLiteConfig$Pragma SQLiteDataSource]))
 
-(def ^:private default-options
+(def default-options
+  "Full-scale seed profile (`PLAN-LargeAttrScaling-001.A6`).
+
+  Gate-reproduction knobs (`:n`, `:payload-*`, `:list-size`, `:patch-size`)
+  reproduce the accepted `BG1`-`BG4` baseline; the `F2` knobs
+  (`:near-floor-*`, `:mb-payload-*`, `:archived-fraction`, `:corpus-*`) pin the
+  residual-path regimes. `--out`/`--seed`/`--n` are the only CLI-tunable knobs;
+  the rest are fixed so a later re-run is comparable by construction."
   {:n 250000
    :iterations 5
    :measure-timeout-secs 60
@@ -27,13 +57,46 @@
    :payload-every 50
    :payload-bytes 65536
    :huge-payload-bytes 262144
+   :near-floor-bytes 1100
+   :near-floor-every 40
+   :mb-payload-bytes (* 1 1024 1024)
+   :mb-payload-count 20
+   :archived-fraction 0.2
+   :corpus-hot-count 100
+   :corpus-archived-count 40
+   :corpus-needle "ZZQNEEDLEQZZ"
+   :point-read-sample 500
    :seed 1337
-   :out "target/eav-benchmark"})
+   :out "target/large-attr-benchmark"})
+
+(def smoke-options
+  "Tiny-`N` profile for the structural smoke `deftest`.
+
+  Every scenario runs exactly once at a size that compiles and wires the real
+  read paths without a wall-clock cost; the `deftest` supplies `:out` as a
+  fresh temp dir it tears down."
+  (merge default-options
+         {:n 60
+          :iterations 1
+          :list-size 30
+          :patch-size 1
+          :payload-every 20
+          :payload-bytes 16384
+          :huge-payload-bytes 262144
+          :near-floor-every 10
+          :mb-payload-count 2
+          :corpus-hot-count 3
+          :corpus-archived-count 2
+          :point-read-sample 10}))
 
 (def ^:private usage
   (str/join
    "\n"
-   ["Usage: clojure -M -m skein.eav-benchmark [options]"
+   ["Usage: SKEIN_LARGE_ATTR_BENCH_FULL=1 clojure -M:large-attr-bench [options]"
+    ""
+    "Runs both measurement families at full scale and writes results.edn under --out."
+    "Env-gated: without SKEIN_LARGE_ATTR_BENCH_FULL set, the run refuses (this is an"
+    "informational load harness, not a gate)."
     ""
     "Options:"
     "  --n N                 synthetic strand count (default 250000)"
@@ -45,7 +108,7 @@
     "  --payload-bytes N     payload bytes on payload rows (default 65536)"
     "  --huge-payload-bytes N payload bytes for the 256KiB write-amp bucket (default 262144)"
     "  --seed N              synthetic dataset seed (default 1337)"
-    "  --out DIR             output directory (default target/eav-benchmark)"
+    "  --out DIR             output directory (default target/large-attr-benchmark)"
     "  --help                print this help"]))
 
 (defn- parse-long-option [opts k raw]
@@ -78,8 +141,19 @@
     (throw (ex-info "Benchmark option must be positive" {:option k :value (get opts k)}))))
 
 (defn- validate-options! [opts]
-  (doseq [k [:n :iterations :measure-timeout-secs :list-size :patch-size :payload-every :payload-bytes :huge-payload-bytes]]
+  (doseq [k [:n :iterations :measure-timeout-secs :list-size :patch-size :payload-every
+             :payload-bytes :huge-payload-bytes :near-floor-bytes :near-floor-every
+             :mb-payload-bytes :mb-payload-count :corpus-hot-count :corpus-archived-count
+             :point-read-sample]]
     (require-positive! opts k))
+  (when-not (and (number? (:archived-fraction opts))
+                 (< 0 (:archived-fraction opts) 1))
+    (throw (ex-info "Archived fraction must be a number in (0, 1)"
+                    (select-keys opts [:archived-fraction]))))
+  (when (str/blank? (:corpus-needle opts))
+    (throw (ex-info "Corpus needle must be a non-blank substring" (select-keys opts [:corpus-needle]))))
+  (when (str/blank? (:out opts))
+    (throw (ex-info "Output directory must be a non-blank path" (select-keys opts [:out]))))
   (when (< (:payload-bytes opts) 16384)
     (throw (ex-info "Payload bytes must be at least 16KiB for the structural write-amp gate"
                     (select-keys opts [:payload-bytes]))))
@@ -88,10 +162,56 @@
                     (select-keys opts [:huge-payload-bytes]))))
   (when (< (:n opts) (:list-size opts))
     (throw (ex-info "List size must not exceed strand count" (select-keys opts [:n :list-size]))))
+  (when (< (:n opts) (:point-read-sample opts))
+    (throw (ex-info "Point-read sample must not exceed strand count"
+                    (select-keys opts [:n :point-read-sample]))))
+  (when (< (:n opts) (+ (:corpus-hot-count opts) (:corpus-archived-count opts)))
+    (throw (ex-info "Corpus bands must not exceed strand count"
+                    (select-keys opts [:n :corpus-hot-count :corpus-archived-count]))))
   (when (> (* 2 (:patch-size opts)) (quot (:n opts) (:payload-every opts)))
     (throw (ex-info "Patch size exceeds generated payload-carrying row count"
                     (select-keys opts [:n :patch-size :payload-every]))))
   opts)
+
+;; ---------------------------------------------------------------------------
+;; Shared measurement helpers
+;; ---------------------------------------------------------------------------
+
+(defn- payload [^Random rng payload-bytes]
+  (let [alphabet "abcdefghijklmnopqrstuvwxyz0123456789"
+        n (.length alphabet)
+        sb (StringBuilder. payload-bytes)]
+    (dotimes [_ payload-bytes]
+      (.append sb (.charAt alphabet (.nextInt rng n))))
+    (str sb)))
+
+(defn- median [xs]
+  (let [sorted (vec (sort xs))
+        n (count sorted)]
+    (if (odd? n)
+      (double (nth sorted (quot n 2)))
+      (/ (+ (nth sorted (dec (quot n 2)))
+            (nth sorted (quot n 2)))
+         2.0))))
+
+(defn- timed-ms [f]
+  (let [start (System/nanoTime)
+        result (f)
+        elapsed (/ (double (- (System/nanoTime) start)) 1000000.0)]
+    {:ms elapsed :result result}))
+
+(defn- measure-workload [f opts]
+  (let [samples (vec (for [_ (range (:iterations opts))]
+                       (:ms (timed-ms f))))]
+    {:samples-ms samples
+     :median-ms (median samples)
+     :max-ms (apply max samples)}))
+
+;; ---------------------------------------------------------------------------
+;; Family (a): gate reproduction (BG1-BG4) on paired synthetic fixtures.
+;; Lifted from the eav-attr-storage merge-gate harness; hand-SQL,
+;; document-vs-EAV, needs no runtime.
+;; ---------------------------------------------------------------------------
 
 (defn- sqlite-datasource [path journal-mode]
   (let [config (doto (SQLiteConfig.)
@@ -107,9 +227,6 @@
 
 (defn- execute! [connectable sql-params]
   (jdbc/execute! connectable sql-params {:builder-fn rs/as-unqualified-lower-maps}))
-
-(defn- execute-one! [connectable sql-params]
-  (jdbc/execute-one! connectable sql-params {:builder-fn rs/as-unqualified-lower-maps}))
 
 (defn- delete-file! [path]
   (let [file (io/file path)]
@@ -177,14 +294,6 @@
                "CREATE INDEX idx_eav_edges_from_type ON strand_edges(from_strand_id, edge_type)"]]
     (execute! ds [sql])))
 
-(defn- payload [^Random rng payload-bytes]
-  (let [alphabet "abcdefghijklmnopqrstuvwxyz0123456789"
-        n (.length alphabet)
-        sb (StringBuilder. payload-bytes)]
-    (dotimes [_ payload-bytes]
-      (.append sb (.charAt alphabet (.nextInt rng n))))
-    (str sb)))
-
 (defn- strand-id [i]
   (format "s%06d" i))
 
@@ -243,28 +352,6 @@
                        (zero? (mod i 4)))
               (insert-edge! doc-tx id (strand-id (dec i)))
               (insert-edge! eav-tx id (strand-id (dec i))))))))))
-
-(defn- median [xs]
-  (let [sorted (vec (sort xs))
-        n (count sorted)]
-    (if (odd? n)
-      (double (nth sorted (quot n 2)))
-      (/ (+ (nth sorted (dec (quot n 2)))
-            (nth sorted (quot n 2)))
-         2.0))))
-
-(defn- timed-ms [f]
-  (let [start (System/nanoTime)
-        result (f)
-        elapsed (/ (double (- (System/nanoTime) start)) 1000000.0)]
-    {:ms elapsed :result result}))
-
-(defn- measure-workload [f opts]
-  (let [samples (vec (for [_ (range (:iterations opts))]
-                       (:ms (timed-ms f))))]
-    {:samples-ms samples
-     :median-ms (median samples)
-     :max-ms (apply max samples)}))
 
 (defn- measure-query [ds sql-params opts]
   (measure-workload
@@ -365,7 +452,11 @@
     ORDER BY t.id"])
 
 (def ^:private attribute-assembly-batch-size 30000)
-(def ^:private lean-attribute-byte-floor 1024)
+(def ^:private lean-attribute-byte-floor
+  "The shipped lean-read omission floor (`skein.spools.batteries`), matched here
+  so the residual-path family measures `weaver/list-lean`/`ready-lean` with the
+  production floor value."
+  1024)
 
 (defn- eav-attribute-value-sql [lean?]
   (if lean?
@@ -434,7 +525,7 @@
   (mapv #(strand-id (* (:payload-every opts) (+ offset (inc %)))) (range (:patch-size opts))))
 
 (defn- payload-free-target-ids [opts]
-  (mapv #(strand-id (+ 1 (* (:payload-every opts) %))) (range (:patch-size opts))))
+  (mapv #(strand-id (inc (* (:payload-every opts) %))) (range (:patch-size opts))))
 
 (defn- file-size [path]
   (let [file (io/file path)]
@@ -560,7 +651,7 @@
 (defn- row-count [ds sql-params]
   (count (execute! ds sql-params)))
 
-(defn- run-benchmark [opts]
+(defn- build-gate-result [opts]
   (let [out-dir (io/file (:out opts))
         _ (.mkdirs out-dir)
         doc-path (.getPath (io/file out-dir "document.sqlite"))
@@ -583,7 +674,6 @@
           list-eav (measure-query eav-ds (list-sql :eav list-ids) opts)
           write-amp (measure-write-amp doc-path eav-path opts)]
       {:started-at (str (Instant/now))
-       :options opts
        :generation-ms generated
        :fixture-paths {:document doc-path :eav eav-path}
        :row-counts {:strands (:n opts)
@@ -596,45 +686,271 @@
                    :ready {:document ready-document :eav ready-eav}
                    :list-assembly-500 {:document list-document :eav list-eav}}})))
 
-(defn- pass? [result]
+(defn- gate-checks [result]
   (let [w (get-in result [:workloads :write-amp])
         filtered (get-in result [:workloads :filtered-scan])
         ready (get-in result [:workloads :ready])
-        assembly (get-in result [:workloads :list-assembly-500])
-        checks {:write-amp-payload-ge-16kb (>= (get-in w [:payload-ge-16kb :reduction]) 5.0)
-                :write-amp-payload-independence (<= (:eav-256kb-vs-free-patch-bytes w) 1.5)
-                :filtered-scan (<= (get-in filtered [:eav :median-ms])
-                                   (get-in filtered [:document :median-ms]))
-                :ready (<= (get-in ready [:eav :median-ms])
-                           ;; Accepted 1.69x in EAS plan P7/BG2; ncso4 tracks bounded frontier queries.
-                           (* 1.7 (get-in ready [:document :median-ms])))
-                :list-assembly-500 (<= (get-in assembly [:eav :median-ms])
-                                       (* 2.0 (get-in assembly [:document :median-ms])))}]
+        assembly (get-in result [:workloads :list-assembly-500])]
+    {:write-amp-payload-ge-16kb (>= (get-in w [:payload-ge-16kb :reduction]) 5.0)
+     :write-amp-payload-independence (<= (:eav-256kb-vs-free-patch-bytes w) 1.5)
+     :filtered-scan (<= (get-in filtered [:eav :median-ms])
+                        (get-in filtered [:document :median-ms]))
+     ;; Accepted 1.69x in EAS plan P7/BG2; ncso4 tracks bounded frontier queries.
+     :ready (<= (get-in ready [:eav :median-ms])
+                (* 1.7 (get-in ready [:document :median-ms])))
+     :list-assembly-500 (<= (get-in assembly [:eav :median-ms])
+                            (* 2.0 (get-in assembly [:document :median-ms])))}))
+
+(defn- run-gate-reproduction
+  "Family (a): reproduce the `BG1`-`BG4` gate on paired synthetic fixtures.
+
+  Returns the workloads and row counts plus the informational `:checks` against
+  the recorded durable baseline — the accepted targets are preserved as data,
+  not re-imposed as a merge-blocking gate (`PLAN-LargeAttrScaling-001.A5`)."
+  [opts]
+  (let [result (build-gate-result opts)
+        checks (gate-checks result)]
     (assoc result
            :checks checks
-           :passed? (every? true? (vals checks)))))
+           :meets-recorded-baseline? (every? true? (vals checks)))))
+
+;; ---------------------------------------------------------------------------
+;; Family (b): F2 residual read paths through shipped skein.core.db /
+;; skein.spools.text-search on a disposable :publish? false runtime.
+;; ---------------------------------------------------------------------------
+
+(defn- residual-attributes
+  "Synthetic attribute map for strand `idx` carrying the `F2` regimes.
+
+  Base attrs on every strand; a `:body` payload every `:payload-every`; a
+  `:near-floor` value straddling the 1024-byte lean floor every
+  `:near-floor-every`; an MB-scale `:mb-payload` on the first `:mb-payload-count`
+  strands; and a distinctive `:corpus` needle on the fixed hot + archived text
+  bands so text-search has bounded matches at any `N`."
+  [^Random rng idx opts]
+  (let [{:keys [payload-every payload-bytes near-floor-bytes near-floor-every
+                mb-payload-bytes mb-payload-count corpus-hot-count
+                corpus-archived-count corpus-needle]} opts
+        needle-end (+ corpus-hot-count corpus-archived-count)]
+    (cond-> {:kind (case (mod idx 6)
+                     0 "task"
+                     1 "note"
+                     2 "feature"
+                     3 "gate"
+                     4 "run"
+                     "review")
+             :owner (str "agent-" (mod idx 17))
+             :priority (case (mod idx 4)
+                         0 "low"
+                         1 "normal"
+                         2 "high"
+                         "urgent")
+             :status (if (zero? (mod idx 7)) "blocked" "open")
+             :rank idx}
+      (zero? (mod idx payload-every))
+      (assoc :body (payload rng payload-bytes))
+      (zero? (mod idx near-floor-every))
+      (assoc :near-floor (payload rng near-floor-bytes))
+      (< idx mb-payload-count)
+      (assoc :mb-payload (payload rng mb-payload-bytes))
+      (< idx needle-end)
+      (assoc :corpus (str (payload rng 24) corpus-needle (payload rng 24))))))
+
+(defn- residual-archived?
+  "True when strand `idx` should carry archived rows.
+
+  The fixed needle-archived band is always archived so text-search `--archived`
+  has cold matches; a deterministic fraction of the remaining strands is archived
+  for volume so the archived-included point read scans populated cold data."
+  [idx opts]
+  (let [{:keys [corpus-hot-count corpus-archived-count archived-fraction]} opts
+        needle-end (+ corpus-hot-count corpus-archived-count)]
+    (or (and (>= idx corpus-hot-count) (< idx needle-end))
+        (and (>= idx needle-end)
+             (zero? (mod idx (max 1 (long (/ 1.0 archived-fraction)))))))))
+
+(defn- strand-count [rt]
+  (-> (db/execute-one! (:datasource rt) ["SELECT count(*) AS n FROM strands"]) :n))
+
+(defn- await-world-ready!
+  "Block until the seeded world reports `expected` strands.
+
+  Seeding writes synchronously, so this normally returns on the first poll; it
+  exists so world readiness honors `SKEIN_TEST_AWAIT_SCALE`
+  (`PLAN-LargeAttrScaling-001.V4`) via the shared poll budget."
+  [rt expected]
+  (ts/poll-until
+   #(= expected (strand-count rt))
+   {:timeout-ms (ts/await-budget-ms)
+    :on-timeout #(throw (ex-info "Seeded world did not reach expected strand count"
+                                 {:expected expected :actual (strand-count rt)}))}))
+
+(defn- seed-residual-world!
+  "Seed the disposable world through the shipped storage write path.
+
+  `db/add-strand!` and `db/archive-attributes!` write the exact rows, indexes,
+  and `archived` flags production carries; going through core storage rather than
+  `weaver/add` keeps seeding off the event queue (whose 1024-slot backpressure a
+  250k bulk seed would trip) while measuring storage, not event fanout. Returns
+  seed metadata including the ids sampled for point reads."
+  [rt opts]
+  (let [ds (:datasource rt)
+        rng (Random. (:seed opts))
+        n (:n opts)]
+    (loop [idx 0
+           ids (transient [])
+           archived-ids (transient [])]
+      (if (< idx n)
+        (let [attrs (residual-attributes rng idx opts)
+              created (db/add-strand! ds {:title (str "Synthetic strand " idx)
+                                          :attributes attrs})
+              id (:id created)
+              archived? (residual-archived? idx opts)]
+          (when archived?
+            (db/archive-attributes! ds id))
+          (recur (inc idx)
+                 (conj! ids id)
+                 (if archived? (conj! archived-ids id) archived-ids)))
+        (let [ids (persistent! ids)
+              archived-ids (persistent! archived-ids)]
+          {:strand-count n
+           :ids ids
+           :archived-ids archived-ids
+           :archived-count (count archived-ids)
+           :point-read-ids (vec (take (:point-read-sample opts) ids))})))))
+
+(defn- attribute-keys [strand]
+  (vec (sort (map name (keys (:attributes strand))))))
+
+(defn- measure-point-read
+  "Full-fidelity point read through `weaver/show` (archived rows included)."
+  [rt seed opts]
+  (let [sample-ids (:point-read-ids seed)
+        archived-id (first (:archived-ids seed))
+        m (measure-workload #(mapv (fn [id] (weaver/show rt id)) sample-ids) opts)
+        sample (weaver/show rt (first sample-ids))
+        archived-sample (when archived-id (weaver/show rt archived-id))]
+    (assoc m
+           :scenario :point-read-archived-included
+           :sample-size (count sample-ids)
+           :sample-strand-id (:id sample)
+           :sample-attribute-keys (attribute-keys sample)
+           :archived-sample-strand-id (:id archived-sample)
+           :archived-sample-attribute-keys (when archived-sample (attribute-keys archived-sample)))))
+
+(defn- omitted-descriptor [rows]
+  (some (fn [strand]
+          (some (fn [[k v]] (when (and (map? v) (:skein/omitted v)) [(name k) v]))
+                (:attributes strand)))
+        rows))
+
+(defn- measure-lean-assembly
+  "Lean list/`ready` assembly through the shipped `attribute-json-by-strand-id`
+  path with the production 1024-byte floor."
+  [rt scenario read-fn opts]
+  (let [result (volatile! nil)
+        m (measure-workload #(vreset! result (read-fn rt lean-attribute-byte-floor)) opts)
+        rows @result]
+    (assoc m
+           :scenario scenario
+           :rows (count rows)
+           :omitted-descriptor (omitted-descriptor rows)
+           :sample-attribute-keys (some-> (first rows) attribute-keys))))
+
+(defn- measure-text-search
+  "Text-search `LIKE` scan through the shipped spool.
+
+  `archived?` selects the branch that also scans cold rows the query language
+  cannot see. `:limit` is sized to the fixed corpus bands so a match at any `N`
+  never overflows the loud row cap."
+  [rt archived? opts]
+  (let [needle (:corpus-needle opts)
+        limit (+ (:corpus-hot-count opts) (:corpus-archived-count opts) 50)
+        result (volatile! nil)
+        m (measure-workload
+           #(vreset! result (text-search/search rt (cond-> {:text needle :limit limit}
+                                                     archived? (assoc :archived? true))))
+           opts)
+        rows @result]
+    (assoc m
+           :scenario (if archived? :text-search-like-archived :text-search-like-hot)
+           :archived? (boolean archived?)
+           :rows (count rows)
+           :sample (first rows))))
+
+(defn- run-residual-family
+  "Family (b): boot a disposable `:publish? false` world under
+  `with-runtime-binding`, seed the `F2` regimes through the real write path, and
+  measure every residual read path with the runtime passed explicitly."
+  [opts]
+  (ts/with-runtime
+    {:publish? false :prefix "large-attr-bench"}
+    (fn [rt _config-dir]
+      (let [seed (seed-residual-world! rt opts)]
+        (await-world-ready! rt (:strand-count seed))
+        {:seed (dissoc seed :ids :archived-ids)
+         :point-read (measure-point-read rt seed opts)
+         :lean-list (measure-lean-assembly rt :lean-list-assembly weaver/list-lean opts)
+         :lean-ready (measure-lean-assembly rt :lean-ready-assembly weaver/ready-lean opts)
+         :text-search-hot (measure-text-search rt false opts)
+         :text-search-archived (measure-text-search rt true opts)}))))
+
+;; ---------------------------------------------------------------------------
+;; Combined run + entrypoint
+;; ---------------------------------------------------------------------------
+
+(defn run-all
+  "Run both measurement families for `opts` and return a combined result map.
+
+  `opts` is validated first; the gate-reproduction family writes throwaway
+  SQLite fixtures under `:out`, and the residual-path family boots its own
+  disposable in-process world. The structural smoke and the full-scale `-main`
+  both funnel through here — the smoke at `smoke-options`, the run at
+  `default-options`."
+  [opts]
+  (let [opts (validate-options! opts)]
+    {:started-at (str (Instant/now))
+     :options opts
+     :gate-reproduction (run-gate-reproduction opts)
+     :residual-paths (run-residual-family opts)}))
 
 (defn- write-result! [out-dir result]
   (let [file (io/file out-dir "results.edn")]
-    (spit file (with-out-str (pprint/pprint result)))
+    (.mkdirs (io/file out-dir))
+    (spit file (with-out-str (pp/pprint result)))
     (.getPath file)))
 
-(defn -main [& args]
+(defn -main
+  "Env-gated full-scale entrypoint.
+
+  Refuses unless `SKEIN_LARGE_ATTR_BENCH_FULL` is set (this is an informational
+  load harness, never a gate; the default suite must never trigger a 250k run —
+  `PLAN-LargeAttrScaling-001.A4`/`R2`). Runs both families at the parsed profile,
+  writes `results.edn` under `--out`, and prints the informational baseline
+  checks."
+  [& args]
   (try
     (let [opts (parse-args args)]
-      (if (:help opts)
+      (cond
+        (:help opts)
         (println usage)
-        (let [opts (validate-options! opts)
-              result (pass? (run-benchmark opts))
+
+        (str/blank? (or (System/getenv "SKEIN_LARGE_ATTR_BENCH_FULL") ""))
+        (binding [*out* *err*]
+          (println "Refusing the full-scale large-attr benchmark: set SKEIN_LARGE_ATTR_BENCH_FULL=1.")
+          (println "This is an informational load harness, not a merge gate (see PLAN-LargeAttrScaling-001.A4).")
+          (System/exit 3))
+
+        :else
+        (let [result (run-all opts)
               result-path (write-result! (:out opts) result)]
-          (println "EAV benchmark result:" (if (:passed? result) "PASS" "FAIL"))
+          (println "Large-attr benchmark complete.")
           (println "Result file:" result-path)
-          (pprint/pprint (:checks result))
-          (when-not (:passed? result)
-            (System/exit 1)))))
+          (println "Gate-reproduction baseline checks (informational):")
+          (pp/pprint (get-in result [:gate-reproduction :checks])))))
     (catch Throwable t
       (binding [*out* *err*]
         (println (.getMessage t))
         (when-let [data (ex-data t)]
-          (pprint/pprint data)))
+          (pp/pprint data)))
       (System/exit 2))))
