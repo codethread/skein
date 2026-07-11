@@ -62,7 +62,7 @@ tasks:
   - id: 13
     description: "PH4: batteries classpath exception + require-fallback removal + bootstrap"
     task_file: tasks/013-batteries-exception-fallback-removal.md
-    status: pending
+    status: complete
     blocked_by: [12]
   - id: 14
     description: "PH5: docs restructure + spec-delta promotion + api-docs regen"

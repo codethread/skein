@@ -4,6 +4,11 @@
 (def runtime (current/runtime))
 
 (runtime/sync! runtime)
+;; batteries is the one classpath spool: its source ships on :paths rather than
+;; through a synced spool root, so it is required explicitly before its use!.
+;; The require loads the namespace, so use!'s load-synced-namespace! short-circuits
+;; at its find-ns guard and needs no :spools guard (documented exception).
+(require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
               {:ns 'skein.spools.batteries
                :call 'skein.spools.batteries/activate!})

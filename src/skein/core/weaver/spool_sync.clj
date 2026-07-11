@@ -541,12 +541,11 @@
      :searched-roots (mapv #(.getCanonicalPath ^java.io.File %) roots)}))
 
 (defn load-synced-namespace!
-  "Load `ns-sym` from `runtime`'s synced spool roots, or fall back to `require`.
+  "Load `ns-sym` from `runtime`'s synced spool roots.
 
   An already-loaded namespace is a no-op. Otherwise the source is located under
-  the synced approved roots and `load-file`d; when no root holds it a plain
-  `require` is the last resort, and a genuinely missing namespace fails loudly
-  with the roots that were searched."
+  the synced approved roots and `load-file`d; a namespace whose source is in no
+  root fails loudly with the roots that were searched."
   [runtime ns-sym]
   (if (find-ns ns-sym)
     {:ns ns-sym}
@@ -555,11 +554,7 @@
         (do
           (load-file file)
           {:ns ns-sym :file file})
-        (try
-          (require ns-sym)
-          {:ns ns-sym}
-          (catch java.io.FileNotFoundException _
-            (throw (ex-info "Could not locate namespace source in synced spool roots"
-                            {:ns ns-sym
-                             :relative-path relative-path
-                             :searched-roots searched-roots}))))))))
+        (throw (ex-info "Could not locate namespace source in synced spool roots"
+                        {:ns ns-sym
+                         :relative-path relative-path
+                         :searched-roots searched-roots}))))))

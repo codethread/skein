@@ -4,7 +4,7 @@
 (def git-branch "main")
 
 (def spool-docs
-  [{:name "batteries" :source "spools/src/skein/spools/batteries.clj" :outfile "spools/batteries.api.md"}
+  [{:name "batteries" :source "spools/batteries/src/skein/spools/batteries.clj" :outfile "spools/batteries.api.md"}
    {:name "workflow" :source "spools/workflow/src/skein/spools/workflow.clj" :outfile "spools/workflow.api.md"}
    {:name "ephemeral" :source "spools/ephemeral/src/skein/spools/ephemeral.clj" :outfile "spools/ephemeral.api.md"}
    {:name "guild" :source "spools/guild/src/skein/spools/guild.clj" :outfile "spools/guild.api.md"}
