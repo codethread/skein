@@ -14,6 +14,26 @@ Design implications:
 - Do not persist runtime behavior unless the feature explicitly calls for durable storage.
 - Keep user-authored behavior data-first where possible, and fail loudly when a CLI worker references daemon state that has not been loaded.
 
+## No harness is home
+
+Skein assumes several agent harnesses and privileges none. A harness is a replaceable seat; coordination lives above it, in workspace config and spools, so switching provider changes a config entry, not the process.
+
+Design implications:
+
+- Core and spools never depend on a specific provider's features or file formats; harness names are data in workspace config.
+- Anything a harness must know arrives as strand data — instructions, notes, gates — not as harness-specific prompt files.
+- No feature may require a particular harness; the surface stays drivable by any JSON-capable client.
+
+## Prose guides, code decides
+
+Instruction prose cannot be tested or debugged, so it must not carry critical behavior. Load-bearing behavior is code — ops with declared arg-specs, workflows compiled to strands, spools with test suites — and prose is guidance around that code.
+
+Design implications:
+
+- A convention that matters ships as a function or declared data with tests, not as a paragraph an agent may skip.
+- Step instructions are data on the strands that own them, versioned with the workflow.
+- When prose and registered behavior disagree, one of them is the bug; fix it at the source rather than patching both.
+
 ## The work record is not the source of truth
 
 The code and its documentation are the durable record of a project. Skein's strands are a working memory beside them: they let a returning human or a cold agent pick up where work stopped. Some trackers (beads, for example) treat their own database as the project's truth; skein does not.
