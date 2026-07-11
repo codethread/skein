@@ -47,7 +47,7 @@ tasks:
   - id: 10
     description: "PH2: move guild reference spool to per-spool root (no coordinate/activation)"
     task_file: tasks/010-move-guild.md
-    status: pending
+    status: complete
     blocked_by: [9]
   - id: 11
     description: "PH2: move selvage reference spool to per-spool root (no coordinate/activation)"
