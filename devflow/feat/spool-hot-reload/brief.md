@@ -52,8 +52,8 @@ classloader-mechanism-agnostic and must stay so.
   coordinate symbol; `use!` `:ns` is keyed by namespace. `reload-spool!` takes the coordinate (a spool
   is many namespaces), so it cannot reuse the `:ns` loader shape.
 - **Reason-keyword vocabulary already exists.** `use-spool-skip` emits `:not-approved`/`:not-synced`/
-  `:sync-failed`; `sync-failed` emits `:missing-root`. New failure ex-infos should reuse this
-  vocabulary, not invent parallel words.
+  `:sync-failed`; `sync-approved-spool!` emits `:missing-root` (`spool_sync.clj:455`). New failure
+  ex-infos should reuse this vocabulary, not invent parallel words.
 - **Ordering across the spool's own namespaces.** Cross-namespace macros expand at compile time, so a
   consumer namespace must be reloaded *after* the namespace that defines a macro it uses; arbitrary or
   alphabetical `load-file` order silently ships stale macroexpansions. The design must justify how it

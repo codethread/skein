@@ -1,11 +1,12 @@
 # Spool hot-reload: a blessed verb for bumping an active spool's code
 
-**Document ID:** `PROP-shr-001` **Last Updated:** 2026-07-11 **Related brief:** [brief.md](./brief.md) (scope is
-the contract) **Kanban:** card `sae7i`. **Related root specs:** [REPL API](../../specs/repl-api.md)
-(SPEC-003.C17/C18/C19 the `runtime.alpha` surface, `:112-121` the `sync!`/`reload!`/`use!` loader), [Alpha
-Surface](../../specs/alpha-surface.md) (SPEC-005.C2 the blessed `skein.api.*.alpha` tier, C9 change discipline),
-[Weaver Runtime](../../specs/daemon-runtime.md) (the spool classloader and `:local/root` sync). **Related sources:**
-`src/skein/api/runtime/alpha.clj` (`sync!:20`, `reload!:30`, `use!:119`, `with-spool-classloader` use at `:135`),
+**Document ID:** `PROP-shr-001` **Last Updated:** 2026-07-11 **Related RFCs:** None. **Related brief:**
+[brief.md](./brief.md) (scope is the contract) **Kanban:** card `sae7i`. **Related root specs:** [REPL
+API](../../specs/repl-api.md) (SPEC-003.C17/C18/C19 the `runtime.alpha` surface, `:112-121` the
+`sync!`/`reload!`/`use!` loader), [Alpha Surface](../../specs/alpha-surface.md) (SPEC-005.C2 the blessed
+`skein.api.*.alpha` tier, C9 change discipline), [Weaver Runtime](../../specs/daemon-runtime.md) (the spool
+classloader and `:local/root` sync). **Related sources:** `src/skein/api/runtime/alpha.clj` (`sync!:20`,
+`reload!:30`, `use!:119`, `with-spool-classloader` use at `:135`),
 `src/skein/core/weaver/spool_sync.clj` (`root-paths:168`, `synced-root-paths:525`, `ns-relative-path:519`,
 `load-synced-namespace!:543`, `sync-approved-spool!:446`, `approved-spool-syncs:495`),
 `src/skein/core/weaver/access.clj` (`with-spool-classloader:72`, `approved-spool-sync-state:57`),
@@ -51,7 +52,7 @@ deliberately short-circuits on `(find-ns ns-sym)` (`spool_sync.clj:550`) — a c
 `use!` activation, and exactly the wrong behavior for reload. It is also keyed by namespace, where a spool is many
 namespaces addressed by one coordinate.
 
-## PROP-shr-001.G Goals
+## PROP-shr-001.P2 Goals
 
 - **PROP-shr-001.G1:** One blessed verb, `skein.api.runtime.alpha/reload-spool!`, taking an explicit runtime
   (SPEC-003.C18) and a spool **coordinate symbol**, that `load-file`s the coordinate's synced-root namespace
@@ -68,7 +69,7 @@ namespaces addressed by one coordinate.
   identity and "make its latest synced source live" is the promise; the load-file/classloader mechanics stay out of
   the contract.
 
-## PROP-shr-001.NG Non-goals
+## PROP-shr-001.P3 Non-goals
 
 - **PROP-shr-001.NG1:** No classloader ownership redesign (separate card). This rides the current tools.deps
   `add-libs` spool classloader; `reload-spool!` becomes that redesign's natural API, not its casualty.
@@ -83,18 +84,40 @@ namespaces addressed by one coordinate.
   customization belongs in trusted startup files and REPL workflows"), driven from `mill weaver repl`, not the
   JSON control surface.
 
+## PROP-shr-001.P4 Proposed scope
+
+- **PROP-shr-001.S1:** A blessed `skein.api.runtime.alpha/reload-spool!` verb — explicit runtime plus a
+  `spools.edn` coordinate symbol — that makes the coordinate's latest synced source live in a running weaver and
+  returns a data-first result naming what it reloaded.
+- **PROP-shr-001.S2:** A fail-loud failure contract for every unresolvable coordinate (unapproved, unsynced,
+  sync-failed, missing root, no namespace sources), reusing the runtime's existing reason-keyword vocabulary rather
+  than inventing parallel words.
+- **PROP-shr-001.S3:** Correct cross-namespace reload ordering (dependencies first) so a bumped macro is live for
+  the namespaces that consume it.
+- **PROP-shr-001.S4:** Re-registration left to the caller: `reload-spool!` reloads code only and composes with
+  `reload!` or a targeted re-`use!`, never triggering a global reload of its own, and adds no CLI op.
+- **PROP-shr-001.S5:** Root-spec and guidance deltas — the `repl-api.md` `runtime.alpha` accretion delta, a
+  reaffirmation that `alpha-surface.md` and `daemon-runtime.md` need no change, and the CLAUDE.md/`docs/skein.md`
+  pickup-ladder correction.
+- **PROP-shr-001.S6:** Cold-focused tests in the sync/`use!` test home over a disposable `:publish? false` runtime,
+  plus a clean `make api-docs` regen.
+
+## PROP-shr-001.P5 Open questions
+
+None block planning; the design decisions and their rejected alternatives are recorded in the decisions ledger
+(DL1-DL5) and the design sections (C1-C6). Two choices are deliberately deferred to the spec-plan:
+
+- **PROP-shr-001.Q1:** Whether the dependency-ordering logic warrants an isolated `skein.runtime-reload-test`
+  sibling or stays in the `skein.spools-test` integration home (V).
+- **PROP-shr-001.Q2:** Whether `daemon-runtime.md` gains the optional one-line cross-reference that the spool
+  classloader also backs `reload-spool!`, or is left reaffirmed-unchanged (C6).
+
 ## PROP-shr-001.C1 — signature and placement (design question 1)
 
 **`(skein.api.runtime.alpha/reload-spool! runtime coord)`** — explicit runtime first (SPEC-003.C18), `coord` the
-`spools.edn` coordinate symbol (e.g. `skein.spools/kanban`, `demo/lib`). It returns a data-first map:
-
-```clojure
-{:coord      coord
- :root       "/abs/canonical/spool/root"
- :namespaces [skein.spools.a skein.spools.b]     ; reload order, dependencies first
- :reloaded   [{:ns skein.spools.a :file "…/a.clj"}
-              {:ns skein.spools.b :file "…/b.clj"}]}
-```
+`spools.edn` coordinate symbol (e.g. `skein.spools/kanban`, `demo/lib`). It returns a data-first map naming the
+coordinate, its resolved canonical root, the namespaces in reload order (dependencies first), and what was reloaded
+(each namespace with its source file); the exact key set is plan territory.
 
 The blessed fn stays thin (TEN-006 "keep the CLI thin", and the same discipline for the alpha tier over core): it
 validates that `coord` is a symbol and delegates the mechanics to a new **`skein.core.weaver.spool-sync/reload-
@@ -110,26 +133,26 @@ loader/config helpers live, and this is one. The docstring names the gap it fill
 ## PROP-shr-001.C2 — resolving the synced root and the failure modes (design question 2)
 
 `reload-synced-spool!` resolves the root from *sync state*, not from the approved config alone, because a coordinate
-can be approved yet unsynced or sync-failed. It reads `@(approved-spool-sync-state runtime)` (the same atom
-`synced-root-paths` reads, `spool_sync.clj:525`) and the approved allowlist `(approved-spools runtime)`, and fails
-loudly at the first unmet precondition. **The ex-info reasons reuse the vocabulary already in the code** —
-`use-spool-skip` emits `:not-approved`/`:not-synced`/`:sync-failed` (`alpha.clj:88`) and `sync-failed` emits
-`:missing-root` (`spool_sync.clj:162`) — so operators and tests see one consistent reason set:
+can be approved yet unsynced or sync-failed. It reads the runtime's approved-spool sync state (the same atom
+`synced-root-paths` reads, `spool_sync.clj:525`) and the approved allowlist, and fails loudly at the first unmet
+precondition. **The failure reasons reuse the vocabulary already in the code** — `use-spool-skip` emits
+`:not-approved`/`:not-synced`/`:sync-failed` (`alpha.clj:88`) and `sync-approved-spool!` emits `:missing-root`
+(`spool_sync.clj:455`) — so operators and tests see one consistent reason set:
 
-| precondition | check | reason | ex-info data |
-| --- | --- | --- | --- |
-| `coord` is a symbol | `(symbol? coord)` | — | `{:coord coord}` msg "reload-spool! coordinate must be a symbol" |
-| approved | `coord` ∈ `(:spools (approved-spools runtime))` | `:not-approved` | `{:coord coord :approved (sorted keys)}` |
-| synced | `coord` ∈ `@sync-state` | `:not-synced` | `{:coord coord :synced (sorted keys)}` |
-| sync succeeded | entry `:status` ∈ `#{:loaded :already-available}` | `:sync-failed` | `{:coord coord :status … :sync entry}` |
-| root on disk | `(.isDirectory (io/file (:root entry)))` | `:missing-root` | `{:coord coord :root …}` |
-| has sources | `(seq namespace-decls)` | `:no-namespaces` | `{:coord coord :root … :searched-roots …}` |
+| precondition | reason |
+| --- | --- |
+| `coord` is a symbol | — (input guard) |
+| coordinate is approved | `:not-approved` |
+| coordinate is synced | `:not-synced` |
+| its sync succeeded | `:sync-failed` |
+| its root is on disk | `:missing-root` |
+| the root has namespace sources | `:no-namespaces` |
 
-Every throw is `(ex-info "<message>" (assoc data :reason <kw>))`, mirroring `sync-failed`'s
-`{:status :failed :reason …}` shape so a caller can `(:reason (ex-data e))`-dispatch. The `:status` gate uses the
+Each throw carries its `:reason` in ex-data so a caller can dispatch on it, mirroring `sync-failed`'s existing
+`{:status :failed :reason …}` shape (the exact ex-info data is plan territory). The sync-success gate reuses the
 *same* `#{:loaded :already-available}` set `synced-root-paths` (`spool_sync.clj:527`) already treats as "root is on
-the classpath" — reusing that predicate keeps reload's notion of "synced" identical to the loader's, so a root
-`reload-spool!` accepts is exactly a root whose namespaces `use!` could have loaded.
+the classpath" — keeping reload's notion of "synced" identical to the loader's, so a root `reload-spool!` accepts is
+exactly a root whose namespaces `use!` could have loaded.
 
 **The `:no-namespaces` case fails loudly rather than returning an empty reload.** A synced spool root with zero
 `.clj` under its `:paths` is almost certainly a misconfigured root or a `:deps/root` typo, not a legitimate no-op;
@@ -150,17 +173,16 @@ reloading `b` cannot retroactively fix `a`'s expansion. So `a` must be reloaded 
 dependencies first. Alphabetical order is a coin-flip on this; "any order + let `require` drive it" is the same
 coin-flip because `require` never re-runs an already-loaded dependency.
 
-**Recommendation: order by an intra-root dependency graph via `org.clojure/tools.namespace`.** Use its
-`clojure.tools.namespace.find`/`parse` to read each source's `ns` declaration and its `clojure.tools.namespace.
-dependency`/`track` to topologically sort *the namespaces within this root only* (external requires — `clojure.*`,
-blessed `skein.api.*`, other spools — are edges out of the set and are not reloaded), then `load-file` in that
-order. We drive `load-file` ourselves under the spool classloader; we do **not** use tools.namespace `refresh`,
-because `refresh` tracks the whole classpath against file mtimes on the base loader and is blind to spool-
-classloader roots — the exact failure mode of `require :reload` (C1/P1). tools.namespace is the battle-tested `ns`-
-form parser (prefix lists, `:require`/`:use`, reader conditionals, string-vs-symbol libspecs); re-implementing that
-parser in core is more surface we own and must make robust, against TEN-004. It is a single well-established
-`org.clojure` dependency added to the weaver's own `deps.edn` (not a spool dep), proportionate to the parsing it
-saves. See Q3 for the hand-rolled alternative and its cost.
+**Recommendation: order by an intra-root dependency graph via `org.clojure/tools.namespace`.** Read each source's
+`ns` declaration and topologically sort *the namespaces within this root only* (external requires — `clojure.*`,
+blessed `skein.api.*`, other spools — are edges out of the set and are not reloaded), then reload in that order
+under the spool classloader. We drive the reload ourselves; we do **not** use tools.namespace `refresh`, because
+`refresh` tracks the whole classpath against file mtimes on the base loader and is blind to spool-classloader
+roots — the exact failure mode of `require :reload` (C1/P1). tools.namespace is the battle-tested `ns`-form parser
+(prefix lists, `:require`/`:use`, reader conditionals, string-vs-symbol libspecs); re-implementing that parser in
+core is more surface we own and must make robust, against TEN-004. It is a single well-established `org.clojure`
+dependency added to the weaver's own `deps.edn` (not a spool dep), proportionate to the parsing it saves. See DL3
+for the hand-rolled alternative and its cost.
 
 **Load-file, not `require :reload`.** Each ordered namespace is loaded with `load-file` on its located source path,
 inside `skein.core.weaver.access/with-spool-classloader` (`access.clj:72` → `with-runtime-and-spool-classloader`,
@@ -168,7 +190,7 @@ inside `skein.core.weaver.access/with-spool-classloader` (`access.clj:72` → `w
 require/load see synced sources). This matches `load-synced-namespace!`'s existing `load-file` mechanism
 (`spool_sync.clj:555`) and the startup-file loader (`runtime.clj:245`), and pins the exact source path rather than
 trusting classpath resource resolution to pick the spool root over any shadow. `require :reload-all` is rejected in
-Q3: it reloads transitive non-spool dependencies too.
+DL3: it reloads transitive non-spool dependencies too.
 
 ## PROP-shr-001.C4 — compose with `reload!`, or leave re-registration to the caller? (design question 4)
 
@@ -179,10 +201,13 @@ Q3: it reloads transitive non-spool dependencies too.
 - `reload!` re-runs the startup files so `activate!`/`install!` re-registers ops/queries/handlers — the half
   `reload-spool!` deliberately does not touch, since it holds no opinion about which registrations a spool owns.
 
-The blessed sequence for a code bump is therefore `reload-spool! coord` *then* `reload!` (or, for a spool whose
-activation is one `use!` `:call`, re-run that `use!`) — the caller composes them at their own granularity. This
-mirrors the CLAUDE.md pickup ladder, which already sequences a targeted `require :reload` *before* `reload!` for the
-same reason; `reload-spool!` is the correct rung to replace that ineffective `require :reload` for opt-in spools.
+The blessed sequence for a code bump is therefore `reload-spool! coord` *then* the caller's own re-registration:
+re-run the spool's `use!` `:call` when its activation is a single `use!` (the surgical complement that touches only
+that spool), and fall back to a full `reload!` only when the bump changes registrations across the config. Leading
+with the targeted re-`use!` keeps the sequence consistent with this section's own blast-radius argument — `reload!`
+is the global teardown that argument warns against. This mirrors the CLAUDE.md pickup ladder, which already
+sequences a targeted reload *before* `reload!` for the same reason; `reload-spool!` is the correct rung to replace
+that ineffective `require :reload` for opt-in spools.
 
 **Cost of the rejected alternative (auto-compose `reload!` inside `reload-spool!`):** it turns a surgical "bump this
 one spool's code" into a **global** operation — `reload-config!` clears *every* registry and re-runs *every* spool's
@@ -202,9 +227,10 @@ promise** — the load-file-under-`with-spool-classloader` mechanism is an imple
 map's *meaning* (the return names namespaces and files, which any loader can report). When the owned-classloader
 work lands, `reload-synced-spool!`'s body swaps to "reload the coordinate's namespaces in its owned loader"; the
 blessed `reload-spool!` signature, failure vocabulary (C2), and dependency-ordered result (C3) are unchanged. This
-is the same core-owns-mechanics / alpha-owns-contract split (TEN-007) that lets `sync!` change its tools.deps
-internals without moving the `runtime/sync!` contract. Building `reload-spool!` now, on the current mechanism, is
-therefore not throwaway: it is the redesign's API surface, delivered early.
+is the same core-owns-mechanics / alpha-owns-contract split — grounded in the C17/C19 tier contract, with TEN-007's
+core/alpha separation applied by analogy — that lets `sync!` change its tools.deps internals without moving the
+`runtime/sync!` contract. Building `reload-spool!` now, on the current mechanism, is therefore not throwaway: it is
+the redesign's API surface, delivered early.
 
 ## PROP-shr-001.C6 — spec and doc deltas (design question 6)
 
@@ -222,7 +248,7 @@ therefore not throwaway: it is the redesign's API surface, delivered early.
 - **`devflow/specs/daemon-runtime.md`.** Reaffirmed, not changed: `reload-spool!` leans on the existing spool
   classloader and `:local/root`/git sync (the C41/C42/C91 machinery) without altering them. The plan records that no
   daemon-runtime clause changes; a one-line cross-reference that the spool classloader also backs `reload-spool!` is
-  optional, a spec-plan call.
+  optional, a spec-plan call (Q2).
 - **`docs/skein.md` / `CLAUDE.md` pickup ladder.** The ladder's "already-loaded Clojure namespaces need a targeted
   `(require 'the.ns :reload)`" rung is wrong for opt-in spools (P1); the implementation feature updates it to name
   `runtime/reload-spool!` for synced spools. Guidance-doc change, run through the docs-style gate.
@@ -234,8 +260,8 @@ therefore not throwaway: it is the redesign's API surface, delivered early.
 - **Cold-focused (per-slice Done-when):** `clojure -M:test skein.spools-test` — the home of the `sync!`/`use!`
   integration tests, which already carries the disposable-runtime harness (`with-runtime`, `write-local-lib!`,
   `write-spools!`, `write-spool-ns!`). If the graph-ordering logic warrants isolation, a focused
-  `skein.runtime-reload-test` sibling; the spec-plan decides. Add `skein.api.spool-test`-style coverage only if the
-  alpha fn grows validation beyond the symbol check.
+  `skein.runtime-reload-test` sibling; the spec-plan decides (Q1). Add `skein.api.spool-test`-style coverage only if
+  the alpha fn grows validation beyond the symbol check.
 - **Test approach (`:publish? false` discipline).** `with-runtime` (`test_support.clj`) yields a fresh runtime
   thread-bound but **unpublished** (`:publish? false` default), and `reload-spool!` takes that runtime explicitly —
   no ambient singleton is read (matching the runtime-publication discipline). Core cases:
@@ -268,30 +294,30 @@ therefore not throwaway: it is the redesign's API surface, delivered early.
 - **DW5:** Cold-focused, full suite, Go, smoke, and fmt/lint/reflect/docs gates green; `make api-docs` regenerated
   clean.
 
-## PROP-shr-001.Q Design decisions (alternatives considered)
+## PROP-shr-001.DL Decisions ledger (alternatives considered)
 
-- **PROP-shr-001.Q1 — coordinate symbol or namespace symbol? (resolved: coordinate, C1).** A namespace argument
+- **PROP-shr-001.DL1 — coordinate symbol or namespace symbol? (resolved: coordinate, C1).** A namespace argument
   would let `reload-spool!` reuse the `use!` `:ns` loader shape, but a spool is many namespaces and its identity in
   sync state is the coordinate. **Adopted: the coordinate**, reloading all of the root's namespaces as one unit;
   taking a namespace would push the operator to enumerate a spool's namespaces by hand — the very tedium this verb
   removes.
-- **PROP-shr-001.Q2 — compose `reload!`, or leave re-registration to the caller? (resolved: leave it, C4).**
+- **PROP-shr-001.DL2 — compose `reload!`, or leave re-registration to the caller? (resolved: leave it, C4).**
   Auto-composing `reload!` would make one call both reload code and re-register, but at the cost of a global
   registry teardown for a one-spool intent (TEN-004) and an un-composable verb. **Adopted: code-only reload**, with
-  `reload!` (or a targeted re-`use!`) as the caller's complementary second step, matching the pickup ladder.
-- **PROP-shr-001.Q3 — order by tools.namespace, hand-rolled parse, or `require :reload-all`? (resolved:
+  a targeted re-`use!` (or `reload!`) as the caller's complementary second step, matching the pickup ladder.
+- **PROP-shr-001.DL3 — order by tools.namespace, hand-rolled parse, or `require :reload-all`? (resolved:
   tools.namespace, C3).** `require :reload-all` reloads transitive *non-spool* dependencies (clojure.core-adjacent
   libs, blessed api) — over-broad and slow. A hand-rolled `ns`-form parser avoids a new dependency but re-implements
   prefix-list/reader-conditional/`:use` parsing we must then make robust (TEN-003), more owned surface than TEN-004
   wants. **Adopted: `org.clojure/tools.namespace` parse+dependency for the intra-root topo-sort, driving our own
   `load-file`** — never its classloader-blind `refresh`. One established `org.clojure` weaver dependency, buying a
   battle-tested parser.
-- **PROP-shr-001.Q4 — `load-file` or `require :reload` per namespace? (resolved: `load-file`, C3).** A per-namespace
+- **PROP-shr-001.DL4 — `load-file` or `require :reload` per namespace? (resolved: `load-file`, C3).** A per-namespace
   `(require ns :reload)` under `with-spool-classloader` might resolve the spool root via classloader resource
-  lookup, but load order still matters (Q3) and resource resolution could pick a shadow over the intended root.
+  lookup, but load order still matters (DL3) and resource resolution could pick a shadow over the intended root.
   **Adopted: `load-file` on the located source path**, matching `load-synced-namespace!` and the startup-file loader,
   which pins the exact file.
-- **PROP-shr-001.Q5 — unload deleted namespaces? (resolved: no, NG2).** tools.namespace `refresh` tracks and unloads
+- **PROP-shr-001.DL5 — unload deleted namespaces? (resolved: no, NG2).** tools.namespace `refresh` tracks and unloads
   removed namespaces, but that requires whole-classpath mtime tracking on the base loader (blind to spool roots) and
   a dependency-tracked unload this dev-loop verb does not need. **Adopted: load the current source set only**; a
   renamed/removed namespace lingers until restart, called out as a non-goal.
