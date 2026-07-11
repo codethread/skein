@@ -1,4 +1,4 @@
-# Pin sync guard Proposal
+# Pin sync guard proposal
 
 **Document ID:** `PROP-Psg-001`
 **Last Updated:** 2026-07-11
@@ -20,9 +20,9 @@ Today each pairing is guarded by its own hand-written pairing test in
 The two tests are near-duplicates that drifted: kanban's guard exists only because a
 review caught its absence after kanban was added. The guard is per-spool and
 opt-in, so the failure mode is structural — a third external spool can ship with
-its coordinate paired in neither test, and nothing fails. The guard covers exactly
-the spools someone remembered to enumerate, which is precisely the set least likely
-to break.
+its coordinate paired in neither test, and nothing fails. Coverage today depends on
+each new external spool's author remembering to hand-write a matching test; nothing
+structural enforces it.
 
 ## PROP-Psg-001.P2 Goals
 

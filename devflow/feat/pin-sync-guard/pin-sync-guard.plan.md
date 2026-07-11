@@ -1,4 +1,4 @@
-# Pin sync guard Plan
+# Pin sync guard plan
 
 **Document ID:** `PLAN-Psg-001`
 **Feature:** `pin-sync-guard`
@@ -73,13 +73,17 @@ one-sided coordinate edit fails.
 
 ## PLAN-Psg-001.P6 Validation strategy
 
-- **PLAN-Psg-001.V1:** `clojure -M:test skein.config-test` green (the cold focused
-  gate for this slice's only touched namespace).
+- **PLAN-Psg-001.V1:** Full locked suite green:
+  `flock -w 3600 /tmp/skein-test.lock clojure -M:test`. `skein.config-test` is an
+  add-libs shard namespace (shard `C` in `test/skein/test_runner.clj`), and focused
+  mode rejects shard members, so the full suite is the only cold gate that runs
+  this slice's touched namespace.
 - **PLAN-Psg-001.V2:** Negative checks confirmed manually before commit: (a)
   temporarily desync one coordinate → the pairing assertion fails; (b) temporarily
   drop a pair from the declared list → the completeness assertion fails naming the
   missing key. Revert both before landing.
-- **PLAN-Psg-001.V3:** `make fmt-check lint` clean for the edited test file.
+- **PLAN-Psg-001.V3:** `make fmt-check lint reflect-check` clean for the edited test
+  file.
 
 ## PLAN-Psg-001.P7 Risks and open questions
 
