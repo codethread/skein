@@ -311,6 +311,49 @@ Developer-only `spools.local.edn`:
 
 The effective root is whichever entry wins the overlay. `:deps/root` is git-only because a local root can already point directly at any subdirectory you want to use. The Maven-only dependency policy still applies to local override roots.
 
+**Caution: a live weaver retains every root it has synced.** The runtime
+dependency mechanism (tools.deps) keeps each added local root for the JVM's
+lifetime, and every later sync re-resolves that whole retained set. Deleting or
+moving a directory that a running weaver ever synced therefore breaks *all*
+subsequent `sync!`/`reload!` calls in that process — including syncs of
+unrelated coordinates — until the path exists again or the weaver restarts.
+If you must move a synced root out from under a live weaver, leave a stub
+directory with a minimal `deps.edn` at the old path until the next restart.
+(`sync!` failing loudly up front for this case is tracked on card `pn7wh`.)
+
+## Testing your spool against a Skein checkout
+
+A shared spool repo carries its own standalone test suite and runs it against a
+Skein checkout — the reference layout is siblings on disk (`your-spool/` beside
+`skein-src/`), which is also how Skein's own CI can run your suite against a
+candidate checkout. The pieces, worked in both `devflow.spool` and
+`kanban.spool`:
+
+```clojure
+;; deps.edn
+{:paths ["src"]
+ :aliases
+ {:test {:extra-paths ["test"]
+         ;; io.skein/skein exposes only Skein's base classpath (src/,
+         ;; batteries). Any reference spool your code requires — most
+         ;; commonly the workflow engine — lives in a spool root off that
+         ;; classpath and must join the test JVM as its own dep.
+         :extra-deps {io.skein/skein {:local/root "../skein-src"}
+                      io.skein/workflow-spool {:local/root "../skein-src/spools/workflow"}}
+         :jvm-opts ["--enable-native-access=ALL-UNNAMED"]
+         :main-opts ["-m" "acme.priority-test"]}}}
+```
+
+Keep every skein-supplied root on the **same checkout** — mixing a sibling
+`io.skein/skein` with a sha-pinned spool root would test your spool against an
+engine version the rest of the classpath never shipped with. Fixture-wise, use
+the public author helper rather than repo-local scaffolding:
+`skein.test.alpha/with-weaver-world` for a disposable in-memory world, plus
+`skein.core.weaver.runtime/with-runtime-binding` when your spool resolves the
+ambient runtime, and give the test namespace a `-main` that exits non-zero on
+failure so `clojure -M:test` is CI-usable. The devflow.spool and kanban.spool
+test suites are the worked examples of all of this.
+
 ## The pattern pair
 
 ### A shared spool exposes explicit-runtime functions
