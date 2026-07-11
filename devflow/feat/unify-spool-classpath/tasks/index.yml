@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: "PH2: move ephemeral to per-spool root + coordinate + guard"
     task_file: tasks/004-move-ephemeral.md
-    status: pending
+    status: complete
     blocked_by: [3]
   - id: 5
     description: "PH2: move roster to per-spool root + coordinate + guard"

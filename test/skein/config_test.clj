@@ -85,6 +85,8 @@
                           {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
                           'skein.spools/workflow
                           {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
+                          'skein.spools/ephemeral
+                          {:local/root (.getCanonicalPath (io/file "spools/ephemeral"))}
                           'skein.spools/delegation
                           {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
@@ -939,16 +941,25 @@
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow")))))
 
+(defn- assert-ephemeral-spool-consent-edge
+  "Assert repo startup guards the activated ephemeral spool with its coordinate."
+  [rt]
+  (let [uses (runtime/uses rt)]
+    (is (= ['skein.spools/ephemeral] (get-in uses [:skein/spools-ephemeral :opts :spools]))
+        ":skein/spools-ephemeral must opt into skein.spools/ephemeral")))
+
 (deftest repo-local-startup-and-reload-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
       (assert-config-registrations rt)
       (assert-treadle-installed-after-config rt)
       (assert-workflow-spool-consent-edges rt)
+      (assert-ephemeral-spool-consent-edge rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
       (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
+      (assert-ephemeral-spool-consent-edge rt)
       ;; runtime registries reload; the strand graph and run state persist
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))

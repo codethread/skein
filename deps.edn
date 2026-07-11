@@ -8,7 +8,7 @@
         org.slf4j/slf4j-nop {:mvn/version "1.7.36"}
         com.bhauman/rebel-readline {:mvn/version "0.1.11"}}
  :aliases
- {:test {:extra-paths ["test" "spools/workflow/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/kanban/src" "spools/cron/src" "spools/bench/src"
+ {:test {:extra-paths ["test" "spools/workflow/src" "spools/ephemeral/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/kanban/src" "spools/cron/src" "spools/bench/src"
                        ".skein/spools/macros/src"]
          ;; devflow is a git-distributed spool. Keep this sha exactly synchronized
          ;; with .skein/spools.edn: config_test loads .skein/config.clj in-process,
@@ -33,18 +33,18 @@
   :smoke {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]
           :main-opts ["-m" "skein.smoke"]}
   :format {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.1"}}
-           :main-opts ["-m" "cljfmt.main" "check" "src" "spools/src" "spools/workflow/src" "test" "dev" "scripts"
+           :main-opts ["-m" "cljfmt.main" "check" "src" "spools/src" "spools/workflow/src" "spools/ephemeral/src" "test" "dev" "scripts"
                        ".skein/init.clj" ".skein/config.clj" ".skein/workflows.clj" ".skein/harnesses.clj"
                        ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
   :format/fix {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.1"}}
-               :main-opts ["-m" "cljfmt.main" "fix" "src" "spools/src" "spools/workflow/src" "test" "dev" "scripts"
+               :main-opts ["-m" "cljfmt.main" "fix" "src" "spools/src" "spools/workflow/src" "spools/ephemeral/src" "test" "dev" "scripts"
                            ".skein/init.clj" ".skein/config.clj" ".skein/workflows.clj" ".skein/harnesses.clj"
                            ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
   :lint/clj-kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "2025.06.05"}}
-                   :main-opts ["-m" "clj-kondo.main" "--lint" "src" "spools/src" "spools/workflow/src" "test"]}
+                   :main-opts ["-m" "clj-kondo.main" "--lint" "src" "spools/src" "spools/workflow/src" "spools/ephemeral/src" "test"]}
   :lint/splint {:extra-deps {io.github.noahtheduke/splint {:mvn/version "1.21.0"}}
-                :main-opts ["-m" "noahtheduke.splint" "--output" "clj-kondo" "src" "spools/src" "spools/workflow/src" "test"]}
-  :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/kanban/src" "spools/cron/src" "spools/bench/src"]
+                :main-opts ["-m" "noahtheduke.splint" "--output" "clj-kondo" "src" "spools/src" "spools/workflow/src" "spools/ephemeral/src" "test"]}
+  :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/ephemeral/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/kanban/src" "spools/cron/src" "spools/bench/src"]
                   :jvm-opts ["--enable-native-access=ALL-UNNAMED" "-Dclojure.compiler.direct-linking=true"]
                   :main-opts ["-m" "quality.reflect-check"]}
   :deps/antq {:extra-deps {com.github.liquidz/antq {:mvn/version "2.11.1276"}}

@@ -9,6 +9,7 @@
                :call 'skein.spools.batteries/activate!})
 (runtime/use! runtime :skein/spools-ephemeral
               {:ns 'skein.spools.ephemeral
+               :spools ['skein.spools/ephemeral]
                :call 'skein.spools.ephemeral/install!})
 (runtime/use! runtime :skein/spools-workflow
               {:ns 'skein.spools.workflow
