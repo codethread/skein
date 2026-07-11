@@ -42,7 +42,7 @@ tasks:
   - id: 9
     description: "PH2: move bobbin reference spool to per-spool root (no coordinate/activation)"
     task_file: tasks/009-move-bobbin.md
-    status: pending
+    status: complete
     blocked_by: [8]
   - id: 10
     description: "PH2: move guild reference spool to per-spool root (no coordinate/activation)"
