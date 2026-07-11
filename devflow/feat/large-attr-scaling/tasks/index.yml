@@ -1,0 +1,21 @@
+tasks:
+  - id: 1
+    description: "PH1: large-attr load harness in test/ (BG1-BG4 + F2 family) + structural smoke"
+    task_file: tasks/001-harness.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: "PH2: full-scale baseline run behind bench lock; numbers + pinned sha + seed into report"
+    task_file: tasks/002-baseline-run.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: "PH3: residual-options assessment bounded to EAV+archive/TEN-007; one verdict; Q4 decided"
+    task_file: tasks/003-options-verdict.md
+    status: pending
+    blocked_by: [2]
+  - id: 4
+    description: "PH4: re-run usage note + inert-gate sweep (go/smoke/quality) + clean tree"
+    task_file: tasks/004-wrapup-gates.md
+    status: pending
+    blocked_by: [3]
