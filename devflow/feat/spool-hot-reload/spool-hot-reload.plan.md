@@ -229,3 +229,19 @@ only the expected `runtime.alpha` diff; DELTA-shr-001 is ready to merge into rep
     that atom feeds, not as the read anchor, so no further change.
 - The status flip Draft → Reviewed is this task's precondition for task generation, not a fresh review
   decision; both review passes already PASSED with zero must-fix.
+
+### PLAN-shr-001.DN3 Task 1tcvb: core seam landed — 2026-07-11
+
+- `reload-synced-spool!` shipped in `spool_sync.clj` with the six-reason fixed-order failure contract;
+  `skein.spools-test` is add-libs **shard A**, so the cold gate is `clojure -M:test --shard A
+  --summary-file <f>` (focused `-M:test skein.spools-test` is rejected — shard members require the shard
+  entry). 76 tests / 274 assertions green; fmt-check/lint/reflect-check zero.
+- **Test-construction constraint for post-sync root-mutation cases (affects future slices' tests):**
+  `:missing-root`/`:unreadable-root` cannot be reproduced by deleting/replacing a *genuinely synced*
+  root — a real `add-libs` registers the local root in the JVM-global tools.deps basis, and removing it
+  poisons every later `sync!` in the whole shard JVM (each re-resolves the vanished root and throws
+  `:runtime-add-failed`). The seam's on-disk re-check reads only the sync-state `:root`, so those two
+  reasons are exercised by seeding a clean `{:status :loaded :root <absent-or-file>}` sync-state entry
+  (coordinate still approved via `spools.edn`) rather than by mutating an add-libs'd root. Any future
+  test needing a "synced then root changed on disk" scenario must follow the same seed-don't-delete
+  pattern (mirrors the existing failure-mode tests, which only ever point at never-added roots).

@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: Core reload seam and failure contract
     task_file: tasks/001-core-reload-seam-and-failure-contract.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: Dependency-ordered reload via tools.namespace

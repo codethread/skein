@@ -558,3 +558,84 @@
                         {:ns ns-sym
                          :relative-path relative-path
                          :searched-roots searched-roots}))))))
+
+(defn- clojure-source? [^java.io.File file]
+  (let [n (.getName file)]
+    (and (.isFile file)
+         (or (str/ends-with? n ".clj") (str/ends-with? n ".cljc")))))
+
+(defn- source-file->ns-sym
+  "Derive a namespace symbol from a source `file` relative to its classpath `dir`."
+  [^java.io.File dir ^java.io.File file]
+  (let [prefix (str (.getCanonicalPath dir) java.io.File/separator)
+        relative (subs (.getCanonicalPath file) (count prefix))]
+    (-> relative
+        (str/replace #"\.cljc?$" "")
+        (str/replace java.io.File/separator ".")
+        (str/replace "_" "-")
+        symbol)))
+
+(defn- spool-namespace-sources
+  "Discover `{:ns sym :file path}` for every `.clj`/`.cljc` under `root`'s consented
+  `root-paths` classpath dirs. The reload file set is exactly that classpath, no wider."
+  [root]
+  (vec
+   (for [^java.io.File dir (root-paths root)
+         ^java.io.File file (file-seq dir)
+         :when (clojure-source? file)]
+     {:ns (source-file->ns-sym dir file)
+      :file (.getCanonicalPath file)})))
+
+(defn reload-synced-spool!
+  "Make coordinate `coord`'s latest synced source live under the spool classloader.
+
+  Resolves `coord`'s synced root from the runtime's approved-spool sync state and
+  approved allowlist (a coordinate can be approved yet unsynced or sync-failed),
+  discovers its namespace sources under the consented `root-paths` classpath, and
+  `load-file`s each inside `with-spool-classloader`. Unlike `load-synced-namespace!`
+  there is no load-once short-circuit — already-loaded namespaces are reloaded. Load
+  order is provisional here; dependency ordering lands separately.
+
+  Fails loudly with a reused `:reason` in ex-data (mirroring `sync-failed`'s
+  `{:status :failed :reason …}` shape), checked in fixed order:
+  `:not-approved` → `:not-synced` → `:sync-failed` → `:missing-root` →
+  `:unreadable-root` → `:no-namespaces`. The on-disk root re-check mirrors
+  `sync-approved-spool!`'s `exists`/`isDirectory`/`canRead` gate, so a root replaced
+  by a file or permission-stripped since sync fails with `:missing-root`/
+  `:unreadable-root` rather than a raw `load-file` exception carrying no `:reason`.
+
+  Returns a data-first map naming the coordinate, its resolved canonical root, and
+  the namespaces reloaded with their source files."
+  [runtime coord]
+  (let [approved (approved-spools runtime)
+        syncs @(approved-spool-sync-state runtime)
+        sync (get syncs coord)]
+    (when-not (contains? (:spools approved) coord)
+      (throw (ex-info "Spool coordinate is not approved"
+                      {:status :failed :reason :not-approved :coord coord})))
+    (when-not (contains? syncs coord)
+      (throw (ex-info "Spool coordinate is not synced"
+                      {:status :failed :reason :not-synced :coord coord})))
+    (when-not (#{:loaded :already-available} (:status sync))
+      (throw (ex-info "Spool coordinate did not sync successfully"
+                      {:status :failed :reason :sync-failed :coord coord :sync sync})))
+    (let [root (:root sync)
+          root-file (io/file root)]
+      (when-not (.exists root-file)
+        (throw (ex-info "Synced spool root is missing on disk"
+                        {:status :failed :reason :missing-root :coord coord :root root})))
+      (when (or (not (.isDirectory root-file)) (not (.canRead root-file)))
+        (throw (ex-info "Synced spool root is not a readable directory"
+                        {:status :failed :reason :unreadable-root :coord coord :root root})))
+      (let [canonical-root (.getCanonicalPath root-file)
+            sources (spool-namespace-sources root)]
+        (when (empty? sources)
+          (throw (ex-info "Synced spool root has no namespace sources"
+                          {:status :failed :reason :no-namespaces :coord coord :root canonical-root})))
+        (with-spool-classloader
+          runtime
+          (fn [] (doseq [{:keys [file]} sources]
+                   (load-file file))))
+        {:coord coord
+         :root canonical-root
+         :namespaces (mapv #(select-keys % [:ns :file]) sources)}))))

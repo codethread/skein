@@ -1438,3 +1438,100 @@
                            (constantly {:shape :old :close-fn #(throw (ex-info "boom" {}))}))
       (let [v2 (runtime/spool-state rt ::demo {:version 2} (constantly {:shape :new}))]
         (is (= :new (:shape v2)))))))
+
+(defn- write-empty-lib!
+  "Write a synced-able spool root with a deps.edn but no namespace sources."
+  [config-dir lib-name]
+  (let [root (io/file config-dir "spools" lib-name)]
+    (.mkdirs (io/file root "src"))
+    (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+    root))
+
+(defn- reload-reason [rt coord]
+  (try
+    (spool-sync/reload-synced-spool! rt coord)
+    nil
+    (catch clojure.lang.ExceptionInfo e
+      (:reason (ex-data e)))))
+
+(deftest reload-synced-spool-makes-single-namespace-source-live
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.reload-ns-" suffix))
+            lib (symbol (str "demo/reload-lib-" suffix))
+            root (write-local-lib! config-dir "reload-ns" ns-sym)
+            src-file (io/file root "src" "demo" (str "reload_ns_" suffix ".clj"))]
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/reload-ns"}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (let [result (spool-sync/reload-synced-spool! rt lib)]
+          (is (= lib (:coord result)))
+          (is (= (.getCanonicalPath root) (:root result)))
+          (is (= [{:ns ns-sym :file (.getCanonicalPath src-file)}]
+                 (:namespaces result)))
+          (is (= :synced-lib-loaded ((requiring-resolve (symbol (str ns-sym "/marker")))))))))))
+
+(deftest reload-synced-spool-fails-when-coordinate-not-approved
+  (with-runtime
+    (fn [rt _config-dir]
+      (is (= :not-approved (reload-reason rt 'demo/never-approved))))))
+
+(deftest reload-synced-spool-fails-when-coordinate-not-synced
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.unsynced-" suffix))
+            lib (symbol (str "demo/unsynced-lib-" suffix))]
+        (write-local-lib! config-dir "unsynced" ns-sym)
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/unsynced"}}}))
+        (is (= :not-synced (reload-reason rt lib)))))))
+
+(deftest reload-synced-spool-fails-when-sync-failed
+  (with-runtime
+    (fn [rt config-dir]
+      (let [lib (symbol (str "demo/sync-failed-lib-" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))]
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/missing"}}}))
+        (is (= :missing-root (get-in (runtime/sync! rt) [:spools lib :reason])))
+        (is (= :sync-failed (reload-reason rt lib)))))))
+
+;; A synced root removed or replaced *after* a clean sync is a real post-sync
+;; scenario, but reproducing it by deleting a genuinely add-libs'd root would
+;; poison this add-libs shard's JVM-global tools.deps basis (every later sync!
+;; re-resolves the now-missing root and fails). The on-disk re-check reads only
+;; the sync-state :root, so seeding a clean :loaded entry whose root is absent /
+;; replaced exercises the same gate without ever add-libs'ing the doomed root.
+(deftest reload-synced-spool-fails-when-root-missing-after-sync
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            lib (symbol (str "demo/missing-root-lib-" suffix))
+            rel (str "spools/missing-root-" suffix)
+            missing-root (io/file config-dir rel)]
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root rel}}}))
+        (swap! (access/approved-spool-sync-state rt) assoc lib
+               {:lib lib :status :loaded :root (.getCanonicalPath missing-root)})
+        (is (= :missing-root (reload-reason rt lib)))))))
+
+(deftest reload-synced-spool-fails-when-root-replaced-by-file-after-sync
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            lib (symbol (str "demo/unreadable-root-lib-" suffix))
+            rel (str "spools/unreadable-root-" suffix)
+            root-file (io/file config-dir rel)]
+        (.mkdirs (.getParentFile root-file))
+        (spit root-file "not a directory\n")
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root rel}}}))
+        (swap! (access/approved-spool-sync-state rt) assoc lib
+               {:lib lib :status :loaded :root (.getCanonicalPath root-file)})
+        (is (= :unreadable-root (reload-reason rt lib)))))))
+
+(deftest reload-synced-spool-fails-when-root-has-no-namespaces
+  (with-runtime
+    (fn [rt config-dir]
+      (let [lib (symbol (str "demo/no-ns-lib-" (str/replace (str (java.util.UUID/randomUUID)) "-" "")))]
+        (write-empty-lib! config-dir "no-ns")
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/no-ns"}}}))
+        (is (contains? #{:loaded :already-available}
+                       (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :no-namespaces (reload-reason rt lib)))))))
