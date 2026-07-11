@@ -214,56 +214,65 @@
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
 
-(deftest devflow-spool-sha-pin-is-synced-across-spools-edn-and-deps-edn
-  ;; the weaver resolves codethread/devflow from .skein/spools.edn while
-  ;; config_test loads deps.edn's :test :extra-deps io.github.codethread/devflow.spool
-  ;; in-process (deps.edn:13-15 calls this out); a one-sided sha bump would
-  ;; silently split the two processes onto different devflow.spool revisions.
+(def ^:private external-spool-coordinate-pairs
+  "Pairs of weaver-side spools.edn keys and test-JVM deps.edn coordinates."
+  [{:spools-key 'codethread/devflow
+    :deps-key 'io.github.codethread/devflow.spool}
+   {:spools-key 'codethread/kanban
+    :deps-key 'io.github.codethread/kanban.spool}])
+
+(deftest external-spool-coordinates-are-synced-across-spools-edn-and-deps-edn
+  ;; The weaver resolves external spool coordinates from .skein/spools.edn while
+  ;; config_test loads .skein/config.clj in-process through deps.edn's :test
+  ;; :extra-deps. Each external spool must name the same checkout in both files,
+  ;; otherwise the test JVM and the weaver can run different spool revisions.
   (let [spools-edn (edn/read-string (slurp ".skein/spools.edn"))
         deps-edn (edn/read-string (slurp "deps.edn"))
-        spools-sha (get-in spools-edn [:spools 'codethread/devflow :git/sha])
-        deps-sha (get-in deps-edn [:aliases :test :extra-deps
-                                   'io.github.codethread/devflow.spool :git/sha])]
-    (is (string? spools-sha) "codethread/devflow :git/sha missing from .skein/spools.edn — lookup path broken")
-    (is (string? deps-sha) "io.github.codethread/devflow.spool :git/sha missing from deps.edn :test :extra-deps — lookup path broken")
-    (is (= spools-sha deps-sha)
-        (str "codethread/devflow :git/sha in .skein/spools.edn (" spools-sha ") must match "
-             "io.github.codethread/devflow.spool :git/sha in deps.edn :test :extra-deps (" deps-sha ")"))))
+        spools (get spools-edn :spools)
+        declared-spools-keys (set (map :spools-key external-spool-coordinate-pairs))
+        external-spools-keys (set (keep (fn [[spools-key entry]]
+                                          (when (:git/url entry)
+                                            spools-key))
+                                        spools))
+        missing-pairs (sort (remove declared-spools-keys external-spools-keys))
+        extra-pairs (sort (remove external-spools-keys declared-spools-keys))]
+    (is (= external-spools-keys declared-spools-keys)
+        (str ".skein/spools.edn :git/url external spools must be declared in "
+             "external-spool-coordinate-pairs; missing " (pr-str missing-pairs)
+             ", extra " (pr-str extra-pairs)))
+    (doseq [{:keys [spools-key deps-key]} external-spool-coordinate-pairs]
+      (testing (str spools-key " <-> " deps-key)
+        (let [spools-entry (get-in spools-edn [:spools spools-key])
+              deps-entry (get-in deps-edn [:aliases :test :extra-deps deps-key])]
+          (is (map? spools-entry)
+              (str spools-key " missing from .skein/spools.edn for declared pair "
+                   spools-key " <-> " deps-key))
+          (is (map? deps-entry)
+              (str deps-key " missing from deps.edn :test :extra-deps for declared pair "
+                   spools-key " <-> " deps-key))
+          (cond
+            (and (:git/sha spools-entry) (:git/sha deps-entry))
+            (is (= (:git/sha spools-entry) (:git/sha deps-entry))
+                (str spools-key " :git/sha in .skein/spools.edn (" (:git/sha spools-entry)
+                     ") must match " deps-key " :git/sha in deps.edn :test :extra-deps ("
+                     (:git/sha deps-entry) ")"))
 
-(deftest kanban-spool-coordinate-is-synced-across-spools-edn-and-deps-edn
-  ;; the weaver resolves codethread/kanban from .skein/spools.edn (root relative
-  ;; to the .skein config-dir, per skein.core.weaver.access/canonical-root)
-  ;; while config_test loads deps.edn's :test :extra-deps
-  ;; io.github.codethread/kanban.spool (root relative to the repo root, per
-  ;; tools.deps :local/root convention) in-process; a one-sided root edit would
-  ;; silently split the two processes onto different kanban.spool checkouts.
-  ;; kanban.spool has no remote yet so both coordinates are :local/root today;
-  ;; once published both flip to a sha-pinned :git/url + :git/sha coordinate
-  ;; like devflow's, so this guard also accepts (and pins) that shape.
-  (let [spools-edn (edn/read-string (slurp ".skein/spools.edn"))
-        deps-edn (edn/read-string (slurp "deps.edn"))
-        spools-entry (get-in spools-edn [:spools 'codethread/kanban])
-        deps-entry (get-in deps-edn [:aliases :test :extra-deps
-                                     'io.github.codethread/kanban.spool])]
-    (is (map? spools-entry) "codethread/kanban missing from .skein/spools.edn — lookup path broken")
-    (is (map? deps-entry) "io.github.codethread/kanban.spool missing from deps.edn :test :extra-deps — lookup path broken")
-    (cond
-      (and (:git/sha spools-entry) (:git/sha deps-entry))
-      (is (= (:git/sha spools-entry) (:git/sha deps-entry))
-          (str "codethread/kanban :git/sha in .skein/spools.edn (" (:git/sha spools-entry) ") must match "
-               "io.github.codethread/kanban.spool :git/sha in deps.edn :test :extra-deps (" (:git/sha deps-entry) ")"))
+            (and (:local/root spools-entry) (:local/root deps-entry))
+            (let [spools-root (.getCanonicalFile (io/file ".skein" (:local/root spools-entry)))
+                  deps-root (.getCanonicalFile (io/file "." (:local/root deps-entry)))]
+              (is (= spools-root deps-root)
+                  (str spools-key " :local/root in .skein/spools.edn (" spools-root
+                       ") must resolve to the same checkout as " deps-key
+                       " :local/root in deps.edn :test :extra-deps (" deps-root ")")))
 
-      (and (:local/root spools-entry) (:local/root deps-entry))
-      (let [spools-root (.getCanonicalFile (io/file ".skein" (:local/root spools-entry)))
-            deps-root (.getCanonicalFile (io/file "." (:local/root deps-entry)))]
-        (is (= spools-root deps-root)
-            (str "codethread/kanban :local/root in .skein/spools.edn (" spools-root ") must resolve to the same "
-                 "checkout as io.github.codethread/kanban.spool :local/root in deps.edn :test :extra-deps (" deps-root ")")))
-
-      :else
-      (throw (ex-info (str "codethread/kanban coordinates in .skein/spools.edn and deps.edn must both be "
-                           ":local/root or both be :git/sha, not a mixed shape")
-                      {:spools-entry spools-entry :deps-entry deps-entry})))))
+            :else
+            (throw (ex-info (str spools-key " <-> " deps-key
+                                 " coordinates in .skein/spools.edn and deps.edn must both be "
+                                 ":local/root or both be :git/sha, not a mixed or unknown shape")
+                            {:spools-key spools-key
+                             :deps-key deps-key
+                             :spools-entry spools-entry
+                             :deps-entry deps-entry}))))))))
 
 (deftest devflow-conventions-op-lists-repo-conventions
   ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
