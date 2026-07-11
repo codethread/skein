@@ -72,6 +72,22 @@
         root (deleted-temp-root! "skein-retained-approved")]
     (is (= [] (@#'spool-sync/retained-root-orphans {lib {:local/root root}} #{lib})))))
 
+(deftest stub-dir-remedy-clears-retained-root-orphan
+  ;; The :stub-dir remedy (DELTA-srr-dr-001.CC2/.D3) is a pure filesystem-existence
+  ;; flip over the TASK-srr-001 detector: with the synthetic root deleted the orphan
+  ;; is reported; recreating a bare directory at that path clears it. The synthetic
+  ;; root is never added to the real basis (PLAN-srr-001.PH2).
+  (let [lib 'orphan/stub-round-trip
+        root (deleted-temp-root! "skein-retained-stub")
+        libs {lib {:local/root root}}]
+    (is (= [{:lib lib :local/root root}] (@#'spool-sync/retained-root-orphans libs #{})))
+    (let [stub (io/file root)]
+      (.mkdirs stub)
+      (try
+        (is (= [] (@#'spool-sync/retained-root-orphans libs #{})))
+        (finally
+          (.delete stub))))))
+
 (defn- write-hot-lib! [config-dir suffix]
   (let [root (io/file config-dir "spools" "runtime-spike")
         ns-sym (symbol (str "runtime-spike.hot-" suffix))
