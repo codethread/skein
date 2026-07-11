@@ -75,8 +75,8 @@
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.vocab.alpha :as vocab]
-            [skein.spools.format :as fmt]
-            [skein.spools.util :refer [fail! attr-get]])
+            [skein.api.format.alpha :as fmt]
+            [skein.api.spool.alpha :refer [fail! attr-get]])
   (:import [java.lang ProcessBuilder$Redirect ProcessHandle]
            [java.nio.file Files]
            [java.nio.file.attribute PosixFilePermissions]

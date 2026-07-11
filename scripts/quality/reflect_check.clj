@@ -27,13 +27,22 @@
 
 (defn -main [& _]
   (let [roots {"src" "skein"
-               "spools/src" "skein/spools"
+               "spools/batteries/src" "skein/spools"
                "spools/agent-run/src" "skein/spools"
                "spools/delegation/src" "skein/spools"
                "spools/chime/src" "skein/spools"
                "spools/kanban/src" "skein/spools"
                "spools/cron/src" "skein/spools"
-               "spools/bench/src" "skein/spools"}
+               "spools/bench/src" "skein/spools"
+               "spools/workflow/src" "skein/spools"
+               "spools/ephemeral/src" "skein/spools"
+               "spools/roster/src" "skein/spools"
+               "spools/loom/src" "skein/spools"
+               "spools/carder/src" "skein/spools"
+               "spools/text-search/src" "skein/spools"
+               "spools/bobbin/src" "skein/spools"
+               "spools/guild/src" "skein/spools"
+               "spools/selvage/src" "skein/spools"}
         namespaces (sort (mapcat (fn [[root subdir]]
                                    (namespaces-under root subdir))
                                  roots))

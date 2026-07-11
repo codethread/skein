@@ -4,29 +4,39 @@
 (def runtime (current/runtime))
 
 (runtime/sync! runtime)
+;; batteries is the one classpath spool: its source ships on :paths rather than
+;; through a synced spool root, so it is required explicitly before its use!.
+;; The require loads the namespace, so use!'s load-synced-namespace! short-circuits
+;; at its find-ns guard and needs no :spools guard (documented exception).
+(require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
               {:ns 'skein.spools.batteries
                :call 'skein.spools.batteries/activate!})
 (runtime/use! runtime :skein/spools-ephemeral
               {:ns 'skein.spools.ephemeral
+               :spools ['skein.spools/ephemeral]
                :call 'skein.spools.ephemeral/install!})
 (runtime/use! runtime :skein/spools-workflow
               {:ns 'skein.spools.workflow
+               :spools ['skein.spools/workflow]
                :call 'skein.spools.workflow/install!})
 (runtime/use! runtime :skein/spools-roster
               {:ns 'skein.spools.roster
+               :spools ['skein.spools/roster]
                :call 'skein.spools.roster/install!})
 ;; loom is a read-only work-graph projection library (registers no ops);
 ;; config.clj's current-dags/branches/flow-status ops are thin wrappers over it.
 (runtime/use! runtime :skein/spools-loom
               {:ns 'skein.spools.loom
+               :spools ['skein.spools/loom]
                :call 'skein.spools.loom/install!})
-;; The shell executor is a classpath-shipped spool that fulfils :shell workflow
+;; The shell executor ships in the workflow spool root and fulfils :shell workflow
 ;; gates by running the gate command directly. Its install! runs an initial
 ;; scan, so it is ordered after workflow (which owns the executor registry it
 ;; registers into).
 (runtime/use! runtime :skein/spools-reed
               {:ns 'skein.spools.executors.shell
+               :spools ['skein.spools/workflow]
                :after [:skein/spools-workflow]
                :call 'skein.spools.executors.shell/install!})
 ;; UNSAFE spool: text-search reaches past the blessed api.* contract into
@@ -36,6 +46,7 @@
 ;; here so the reference stays exercised.
 (runtime/use! runtime :skein/spools-text-search
               {:ns 'skein.spools.text-search
+               :spools ['skein.spools/text-search]
                :call 'skein.spools.text-search/install!})
 ;; devflow is an external git-distributed spool: activation is gated on the
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
@@ -80,6 +91,7 @@
 ;; config.clj — named queries + the CLI op surface.
 (runtime/use! runtime :harnesses
               {:file "harnesses.clj"
+               :spools ['skein.spools/delegation 'skein.spools/agent-run]
                :after [:skein/spools-agents]
                :call 'harnesses/install!
                :required? true})
@@ -89,6 +101,7 @@
 ;; order relative to harnesses.clj is not load-bearing.
 (runtime/use! runtime :reviewers
               {:file "reviewers.clj"
+               :spools ['skein.spools/delegation]
                :after [:skein/spools-agents]
                :call 'reviewers/install!
                :required? true})
@@ -105,6 +118,7 @@
                :required? true})
 (runtime/use! runtime :attention
               {:file "attention.clj"
+               :spools ['skein.macros/macros 'skein.spools/agent-run]
                :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
                :call 'attention/install!
                :required? true})
@@ -123,14 +137,18 @@
                :required? true})
 (runtime/use! runtime :config
               {:file "config.clj"
+               :spools ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow
+                        'skein.spools/agent-run 'codethread/devflow 'skein.macros/macros]
                :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
                        :skein/spools-loom :skein/spools-shuttle :macros/patterns]
-               :call 'config/install!})
+               :call 'config/install!
+               :required? true})
 ;; Analytics is a read-only rollup surface over agent-run usage stamps; it
 ;; only needs the defop macro (macros spool) and the shuttle vocabulary the
 ;; runs were stamped with.
 (runtime/use! runtime :analytics
               {:file "analytics.clj"
+               :spools ['skein.macros/macros]
                :after [:skein/spools-shuttle :macros/patterns]
                :call 'analytics/install!
                :required? true})
@@ -138,6 +156,7 @@
 ;; the :config module.
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
+               :spools ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
                :after [:skein/spools-workflow :skein/spools-agents :config]
                :call 'workflows/install!
                :required? true})
@@ -145,6 +164,7 @@
 ;; direct config.clj load never registers the job or seeds against real gh.
 (runtime/use! runtime :nvd-scan
               {:file "nvd_scan.clj"
+               :spools ['skein.spools/cron]
                :after [:skein/spools-cron :skein/spools-kanban]
                :call 'nvd-scan/install!
                :required? true})

@@ -12,7 +12,7 @@ Root specs are canonical for shipped behavior:
 - [CLI Surface](./specs/cli.md) — the op-only public CLI: the `strand` invoke-envelope dispatcher (zero builtin subcommands), the `mill` router/bootstrap/lifecycle surface, and NDJSON single/stream response relay; per-command behavior lives in `spools/batteries.md`.
 - [REPL API](./specs/repl-api.md) — interactive Clojure helper contract, including connected REPL, runtime spool workspace helpers, lifecycle hook helpers, and the `skein.test.alpha` author-side weaver-world test helpers.
 - [Weaver Runtime](./specs/daemon-runtime.md) — local long-lived weaver lifecycle, storage model, metadata, transports, trusted startup config, query registry, runtime spool workspace model, and synchronous lifecycle hooks.
-- [Alpha Surface](./specs/alpha-surface.md) — the contract index drawing the line around shipped alpha surface: which tiers are in-contract (root specs, blessed API namespaces, classpath spool docs) and which surface is explicitly internal (mill socket protocol, unenumerated error codes, `skein.core.*`).
+- [Alpha Surface](./specs/alpha-surface.md) — the contract index drawing the line around shipped alpha surface: which tiers are in-contract (root specs, blessed API namespaces, opt-in reference spool docs) and which surface is explicitly internal (mill socket protocol, unenumerated error codes, `skein.core.*`).
 
 ## Active features
 

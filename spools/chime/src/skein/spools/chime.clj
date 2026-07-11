@@ -9,7 +9,7 @@
             [skein.api.events.alpha :as events]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.runtime.alpha :as runtime]
-            [skein.spools.util :refer [fail!]])
+            [skein.api.spool.alpha :refer [fail!]])
   (:import [java.io OutputStreamWriter]
            [java.time Instant]))
 

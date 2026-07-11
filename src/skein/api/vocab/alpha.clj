@@ -19,7 +19,7 @@
             [clojure.string :as str]
             [skein.api.relations.alpha :as relations]
             [skein.api.runtime.alpha :as runtime]
-            [skein.spools.util :refer [fail! reject-unknown-keys! require-valid!]]))
+            [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid!]]))
 
 ;; --- C1 declaration shape ------------------------------------------------
 

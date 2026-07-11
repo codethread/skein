@@ -2,9 +2,7 @@
   "Blessed `|`-margin doc-block helpers for any tier that publishes prose as data.
 
   Long strings in source hurt readability and IDE viewports; author them as
-  `|`-margin blocks instead and reflow with these helpers. Spool authors may
-  equally use the `skein.spools.format` names — both surfaces share one
-  implementation and one contract."
+  `|`-margin blocks instead and reflow with these helpers."
   (:require [skein.core.format :as format]))
 
 (defn fill

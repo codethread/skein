@@ -340,7 +340,7 @@
       (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
       (assert-file-contents (java.io.File. workspace "spools.edn") "{:spools {}}\n" "clean bootstrap creates empty spools.edn")
       (let [init-contents (slurp init-file)]
-        (doseq [needle ["(runtime/sync! runtime)" ":skein/spools-batteries" "skein.spools.batteries/activate!"]]
+        (doseq [needle ["(runtime/sync! runtime)" "(require 'skein.spools.batteries)" ":skein/spools-batteries" "skein.spools.batteries/activate!"]]
           (assert-contains init-contents needle "clean bootstrap creates runtime sync + batteries init.clj template")))
       (assert (.isDirectory (java.io.File. workspace "spools")) "clean bootstrap creates spools directory")
       (assert (not (.exists (java.io.File. workspace ".git"))) "clean bootstrap does not run git init")
@@ -363,6 +363,7 @@
          '[skein.api.runtime.alpha :as runtime]
          '[skein.api.graph.alpha :as graph])
 (def runtime (current/runtime))
+(require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
@@ -412,6 +413,7 @@
                "            [skein.api.patterns.alpha :as patterns]))\n"
                "(def runtime (current/runtime))\n"
                "(runtime/sync! runtime)\n"
+               "(require 'skein.spools.batteries)\n"
                "(runtime/use! runtime :skein/spools-batteries\n"
                "  {:ns 'skein.spools.batteries\n"
                "   :call 'skein.spools.batteries/activate!})\n"

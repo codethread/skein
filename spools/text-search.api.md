@@ -48,7 +48,7 @@ UNSAFE: uses skein.core.db for substring search over strand titles and
 Default row cap for `search`. Overflow fails loudly rather than truncating,
   so a caller always sees a complete result set or a clear instruction to narrow
   it.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/text_search.clj#L45-L49">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L45-L49">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/install!">`install!`</a>
 ``` clojure
@@ -62,7 +62,7 @@ Install the UNSAFE `search` op into the active weaver.
   other shipped spools; the op handler and `search` itself take the runtime
   explicitly. Returns installation metadata carrying `:unsafe true` so callers
   can see what they activated.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/text_search.clj#L187-L203">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L187-L203">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/search">`search`</a>
 ``` clojure
@@ -86,7 +86,7 @@ Return strand rows whose title or an attribute value contains `text`.
   Read-only. Fails loudly (TEN-003) on malformed opts or overflow: `search`
   fetches one row past `:limit` and, if the result exceeds it, throws naming
   `--limit` and query-narrowing rather than silently truncating.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/text_search.clj#L121-L157">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L121-L157">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/search-op">`search-op`</a>
 ``` clojure
@@ -98,4 +98,4 @@ Handle `strand search ...`, threading parsed args into `search`.
 
   The registered op handler; resolved by symbol at dispatch time, so it is public
   like the other spools' op handlers.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/text_search.clj#L159-L169">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L159-L169">Source</a></sub></p>

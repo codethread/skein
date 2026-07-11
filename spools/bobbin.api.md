@@ -20,7 +20,7 @@ Assemble compact, self-contained context packs for delegated strand work.
 Function.
 
 Return bobbin installation metadata for trusted registration by name.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/bobbin.clj#L177-L189">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bobbin/src/skein/spools/bobbin.clj#L177-L189">Source</a></sub></p>
 
 ## <a name="skein.spools.bobbin/pack">`pack`</a>
 ``` clojure
@@ -36,7 +36,7 @@ Return a JSON-compatible bobbin context bundle for strand-id.
   sections fail loudly with the allowed set in ex-data. Missing strand ids fail
   loudly. Every edge returned by a section references only strands summarized in
   that same section.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/bobbin.clj#L112-L139">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bobbin/src/skein/spools/bobbin.clj#L112-L139">Source</a></sub></p>
 
 ## <a name="skein.spools.bobbin/render">`render`</a>
 ``` clojure
@@ -48,4 +48,4 @@ Render a bobbin bundle as deterministic prompt text.
 
   Output uses stable section order and sorted related strands. The target strand
   is one compact line plus its `body` attribute in full when present.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/bobbin.clj#L155-L175">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bobbin/src/skein/spools/bobbin.clj#L155-L175">Source</a></sub></p>

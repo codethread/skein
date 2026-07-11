@@ -94,6 +94,8 @@ Two evaluation contexts exist even though the test weaver runs in your test JVM 
 
 A spool that passes tier-2 tests can still fail tier 3 — missing `deps.edn` paths in the spool root, load-order problems in `install!`, or reliance on your test JVM classpath. Tier 3 exists to catch exactly that.
 
+The Skein checkout on that classpath carries the blessed `skein.api.*.alpha` namespaces — including the spool-authoring helpers `skein.api.spool.alpha` and `skein.api.format.alpha`, which are libraries, not spools — plus one classpath-shipped spool, `skein.spools.batteries`. Your spool, and every other reference spool Skein ships, loads only through the approved-root flow above; a direct `require` for anything but those blessed namespaces and `batteries` never proves the weaver can load it.
+
 ## Testing the real spool workflow
 
 Write the spool fixture and approval into the generated world, sync it from `init.clj` (or from `repl!`), then activate and assert:

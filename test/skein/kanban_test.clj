@@ -7,7 +7,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.format :as fmt]
+            [skein.api.format.alpha :as fmt]
             [skein.spools.kanban :as kanban]
             [skein.spools.test-support :refer [with-runtime]]))
 

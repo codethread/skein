@@ -121,7 +121,7 @@ strand current-dags        # the same projection, as JSON, for a renderer or a h
   `summarize` shape appears across loom's projections, so a renderer's node
   formatter is written once.
 
-Honest source: `work-dags` and its `{:roots :dags}` contract in [`loom.clj`](./src/skein/spools/loom.clj), the repo's `current-dags` op in [`.skein/config.clj`](../.skein/config.clj), and `work-dags-projects-parent-of-roots-with-dependency-edges` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
+Honest source: `work-dags` and its `{:roots :dags}` contract in [`loom.clj`](./loom/src/skein/spools/loom.clj), the repo's `current-dags` op in [`.skein/config.clj`](../.skein/config.clj), and `work-dags-projects-parent-of-roots-with-dependency-edges` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
 
 ---
 
@@ -209,7 +209,7 @@ Honest source: the agent dashboard's devflow tab [`scripts/agent-dash/tabs/devfl
   so a consumer that wants boxart, an SVG, or a different layout can feed it the
   same `:gates` and ready-ids rather than re-implementing the marker rules.
 
-Honest source: `gate-chain-mermaid` and its use inside `flow-status` (`:dev/mermaid`) in [`loom.clj`](./src/skein/spools/loom.clj), with the exact marker/precedence output pinned by `gate-chain-mermaid-marks-ready-stalled-and-closed` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
+Honest source: `gate-chain-mermaid` and its use inside `flow-status` (`:dev/mermaid`) in [`loom.clj`](./loom/src/skein/spools/loom.clj), with the exact marker/precedence output pinned by `gate-chain-mermaid-marks-ready-stalled-and-closed` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
 
 ---
 

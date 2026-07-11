@@ -83,6 +83,18 @@
   (spit (io/file target "spools.edn")
         (pr-str {:spools {'skein.spools/agent-run
                           {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
+                          'skein.spools/workflow
+                          {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
+                          'skein.spools/ephemeral
+                          {:local/root (.getCanonicalPath (io/file "spools/ephemeral"))}
+                          'skein.spools/roster
+                          {:local/root (.getCanonicalPath (io/file "spools/roster"))}
+                          'skein.spools/loom
+                          {:local/root (.getCanonicalPath (io/file "spools/loom"))}
+                          'skein.spools/carder
+                          {:local/root (.getCanonicalPath (io/file "spools/carder"))}
+                          'skein.spools/text-search
+                          {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
                           'skein.spools/delegation
                           {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
@@ -929,15 +941,177 @@
     (is (= :loaded (:status use)))
     (is (some #{:config} (get-in use [:opts :after])))))
 
+(defn- assert-workflow-spool-consent-edges
+  "Assert repo startup guards every module that now relies on the workflow coordinate."
+  [rt]
+  (let [uses (runtime/uses rt)]
+    (doseq [use-id [:skein/spools-workflow :skein/spools-reed]]
+      (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
+          (str use-id " must opt into skein.spools/workflow")))
+    (is (= ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow
+            'skein.spools/agent-run 'codethread/devflow 'skein.macros/macros]
+           (get-in uses [:config :opts :spools]))
+        ":config must guard every spool coordinate its config.clj ns requires")
+    (is (true? (get-in uses [:config :opts :required?]))
+        ":config is required — a guarded but non-required module skips silently, dropping the op/query surface")
+    (doseq [use-id [:workflows]]
+      (is (= ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
+             (get-in uses [use-id :opts :spools]))
+          (str use-id " must opt into skein.spools/loom, skein.spools/workflow, and skein.spools/delegation")))))
+
+(defn- assert-ephemeral-spool-consent-edge
+  "Assert repo startup guards the activated ephemeral spool with its coordinate."
+  [rt]
+  (let [uses (runtime/uses rt)]
+    (is (= ['skein.spools/ephemeral] (get-in uses [:skein/spools-ephemeral :opts :spools]))
+        ":skein/spools-ephemeral must opt into skein.spools/ephemeral")))
+
+(defn- assert-roster-spool-consent-edge
+  "Assert repo startup guards the activated roster spool with its coordinate."
+  [rt]
+  (let [uses (runtime/uses rt)]
+    (is (= ['skein.spools/roster] (get-in uses [:skein/spools-roster :opts :spools]))
+        ":skein/spools-roster must opt into skein.spools/roster")))
+
+(defn- assert-loom-spool-consent-edge
+  "Assert repo startup guards the activated loom spool with its coordinate."
+  [rt]
+  (let [uses (runtime/uses rt)]
+    (is (= ['skein.spools/loom] (get-in uses [:skein/spools-loom :opts :spools]))
+        ":skein/spools-loom must opt into skein.spools/loom")))
+
 (deftest repo-local-startup-and-reload-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
       (assert-config-registrations rt)
       (assert-treadle-installed-after-config rt)
+      (assert-workflow-spool-consent-edges rt)
+      (assert-ephemeral-spool-consent-edge rt)
+      (assert-roster-spool-consent-edge rt)
+      (assert-loom-spool-consent-edge rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
       (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
+      (assert-workflow-spool-consent-edges rt)
+      (assert-ephemeral-spool-consent-edge rt)
+      (assert-roster-spool-consent-edge rt)
+      (assert-loom-spool-consent-edge rt)
       ;; runtime registries reload; the strand graph and run state persist
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))
         (is (= "create-or-confirm-worktree" (:checkpoint (first (:ready status)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Guard-wiring assertion gate (PROP-usc-001.R1/.V, PLAN-usc-001.V4)
+;; ---------------------------------------------------------------------------
+
+(defn- read-first-form
+  "Read the first top-level form of a Clojure source file without evaluating it."
+  [path]
+  (with-open [r (java.io.PushbackReader. (io/reader path))]
+    (binding [*read-eval* false]
+      (read {:eof ::eof} r))))
+
+(defn- read-all-forms
+  "Read every top-level form of a Clojure source file without evaluating them."
+  [path]
+  (with-open [r (java.io.PushbackReader. (io/reader path))]
+    (binding [*read-eval* false]
+      (into [] (take-while #(not= ::eof %))
+            (repeatedly #(read {:eof ::eof} r))))))
+
+(defn- unquote-form
+  "Unwrap a reader `(quote x)` list to x, leaving other forms untouched."
+  [form]
+  (if (and (seq? form) (= 'quote (first form))) (second form) form))
+
+(defn- use-form?
+  "True when form is a `runtime/use!` module registration call."
+  [form]
+  (and (seq? form) (= 'runtime/use! (first form))))
+
+(defn- parse-use-form
+  "Project a `(runtime/use! runtime <key> <opts>)` form into its guard-relevant data."
+  [form]
+  (let [opts (nth form 3)]
+    {:key (nth form 2)
+     :ns (some-> (:ns opts) unquote-form)
+     :file (:file opts)
+     :spools (into #{} (map unquote-form) (:spools opts))}))
+
+(defn- ns-require-libs
+  "Return the required namespace symbols from a parsed `ns` form's :require clauses."
+  [ns-form]
+  (->> (rest ns-form)
+       (filter #(and (seq? %) (= :require (first %))))
+       (mapcat rest)
+       (map #(if (sequential? %) (first %) %))))
+
+(defn- spool-or-macros-ns?
+  "True when sym names a skein.spools.* or skein.macros.* namespace."
+  [sym]
+  (let [n (name sym)]
+    (or (str/starts-with? n "skein.spools.")
+        (str/starts-with? n "skein.macros."))))
+
+(defn- coordinate-source-roots
+  "Map each loaded/available synced coordinate to its deps.edn :paths source dirs.
+
+  This is the approved-manifest resolution surface: the spools.edn coordinate,
+  the root the runtime synced it to, and that root's deps.edn `:paths` — the only
+  thing that maps a namespace to a coordinate without a name heuristic."
+  [rt]
+  (into {}
+        (keep (fn [[coord {:keys [root status]}]]
+                (when (#{:loaded :already-available} status)
+                  (let [deps (edn/read-string (slurp (io/file root "deps.edn")))
+                        paths (or (:paths deps) ["src"])]
+                    [coord (mapv #(io/file root %) paths)]))))
+        (:spools (runtime/syncs rt))))
+
+(defn- ns->source-relative-path
+  "Return the classpath-relative source path for a namespace symbol."
+  [ns-sym]
+  (str (-> (name ns-sym) (str/replace "-" "_") (str/replace "." "/")) ".clj"))
+
+(defn- resolve-spool-coordinate
+  "Resolve ns-sym to the coordinate whose synced root holds its source file, or nil."
+  [coordinate-roots ns-sym]
+  (let [relative (ns->source-relative-path ns-sym)]
+    (some (fn [[coord source-dirs]]
+            (when (some #(.isFile (io/file % relative)) source-dirs)
+              coord))
+          coordinate-roots)))
+
+(deftest init-use-guards-declare-required-spool-coordinates
+  ;; PROP-usc-001.R1/.V, PLAN-usc-001.V4/.TC2: the guard-wiring acceptance gate.
+  ;; A synced root resolves through the add-libs classloader whether or not a
+  ;; use! declares :spools, so a green world load never proves consent is wired.
+  ;; This asserts it directly: every init.clj use! that pulls a skein.spools.*/
+  ;; skein.macros.* namespace onto the classpath — a :ns activation (its own
+  ;; coordinate) or a :file module's ns :require (each required coordinate) —
+  ;; must declare that coordinate in :spools, batteries (the classpath exception
+  ;; with no coordinate) excepted. Coordinates resolve through the synced root
+  ;; manifests, never a name heuristic: skein.spools.devflow lives in the
+  ;; codethread/devflow root and skein.spools.executors.shell in the
+  ;; skein.spools/workflow root, so a prefix rule would both false-fail devflow
+  ;; and false-pass a real miss.
+  (with-startup-config-runtime
+    (fn [rt]
+      (let [coordinate-roots (coordinate-source-roots rt)
+            uses (map parse-use-form (filter use-form? (read-all-forms ".skein/init.clj")))]
+        (is (seq uses) "parsed at least one init.clj use! form")
+        (doseq [{:keys [key ns file spools]} uses
+                :when (not= ns 'skein.spools.batteries)]
+          (let [required-nss (if file
+                               (->> (ns-require-libs (read-first-form (io/file ".skein" file)))
+                                    (filter spool-or-macros-ns?))
+                               [ns])]
+            (doseq [required-ns required-nss]
+              (let [coord (resolve-spool-coordinate coordinate-roots required-ns)]
+                (is (some? coord)
+                    (str key " requires " required-ns
+                         " but no synced spool root supplies its source"))
+                (is (contains? spools coord)
+                    (str key " requires " required-ns " (coordinate " coord
+                         ") but its :spools guard " spools " does not declare it"))))))))))
