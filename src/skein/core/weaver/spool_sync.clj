@@ -539,12 +539,15 @@
 (defn sync-approved-spools
   "Load approved local spools into the runtime classloader and record sync status."
   [runtime]
+  ;; Stale state clears before anything that can throw — a structural
+  ;; spools.edn failure or a retained-root preflight abort both leave {} rather
+  ;; than the previous sync's results.
+  (reset! (approved-spool-sync-state runtime) {})
   (let [approved (approved-spools runtime)
         allowlist (set (keys (:spools approved)))
         orphans (basis-retained-root-orphans allowlist)]
     (when (seq orphans)
       (throw (retained-root-orphans-error orphans)))
-    (reset! (approved-spool-sync-state runtime) {})
     (let [results (into (sorted-map)
                         (map (fn [[lib entry]] (sync-approved-spool! runtime lib entry)))
                         (:spools approved))]
