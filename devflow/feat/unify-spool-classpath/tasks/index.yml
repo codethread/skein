@@ -52,7 +52,7 @@ tasks:
   - id: 11
     description: "PH2: move selvage reference spool to per-spool root (no coordinate/activation)"
     task_file: tasks/011-move-selvage.md
-    status: pending
+    status: complete
     blocked_by: [10]
   - id: 12
     description: "PH3: residual opt-in consent sweep + :config :required? + guard-wiring assertion gate"

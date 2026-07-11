@@ -9,7 +9,7 @@
    {:name "ephemeral" :source "spools/ephemeral/src/skein/spools/ephemeral.clj" :outfile "spools/ephemeral.api.md"}
    {:name "guild" :source "spools/guild/src/skein/spools/guild.clj" :outfile "spools/guild.api.md"}
    {:name "bobbin" :source "spools/bobbin/src/skein/spools/bobbin.clj" :outfile "spools/bobbin.api.md"}
-   {:name "selvage" :source "spools/src/skein/spools/selvage.clj" :outfile "spools/selvage.api.md"}
+   {:name "selvage" :source "spools/selvage/src/skein/spools/selvage.clj" :outfile "spools/selvage.api.md"}
    {:name "carder" :source "spools/carder/src/skein/spools/carder.clj" :outfile "spools/carder.api.md"}
    {:name "roster" :source "spools/roster/src/skein/spools/roster.clj" :outfile "spools/roster.api.md"}
    {:name "loom" :source "spools/loom/src/skein/spools/loom.clj" :outfile "spools/loom.api.md"}
