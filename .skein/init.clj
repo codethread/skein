@@ -86,6 +86,7 @@
 ;; config.clj — named queries + the CLI op surface.
 (runtime/use! runtime :harnesses
               {:file "harnesses.clj"
+               :spools ['skein.spools/delegation 'skein.spools/agent-run]
                :after [:skein/spools-agents]
                :call 'harnesses/install!
                :required? true})
@@ -95,6 +96,7 @@
 ;; order relative to harnesses.clj is not load-bearing.
 (runtime/use! runtime :reviewers
               {:file "reviewers.clj"
+               :spools ['skein.spools/delegation]
                :after [:skein/spools-agents]
                :call 'reviewers/install!
                :required? true})
@@ -111,6 +113,7 @@
                :required? true})
 (runtime/use! runtime :attention
               {:file "attention.clj"
+               :spools ['skein.macros/macros 'skein.spools/agent-run]
                :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
                :call 'attention/install!
                :required? true})
@@ -129,15 +132,18 @@
                :required? true})
 (runtime/use! runtime :config
               {:file "config.clj"
-               :spools ['skein.spools/workflow 'skein.spools/loom 'skein.spools/carder]
+               :spools ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow
+                        'skein.spools/agent-run 'codethread/devflow 'skein.macros/macros]
                :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
                        :skein/spools-loom :skein/spools-shuttle :macros/patterns]
-               :call 'config/install!})
+               :call 'config/install!
+               :required? true})
 ;; Analytics is a read-only rollup surface over agent-run usage stamps; it
 ;; only needs the defop macro (macros spool) and the shuttle vocabulary the
 ;; runs were stamped with.
 (runtime/use! runtime :analytics
               {:file "analytics.clj"
+               :spools ['skein.macros/macros]
                :after [:skein/spools-shuttle :macros/patterns]
                :call 'analytics/install!
                :required? true})
@@ -145,7 +151,7 @@
 ;; the :config module.
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
-               :spools ['skein.spools/workflow 'skein.spools/loom]
+               :spools ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
                :after [:skein/spools-workflow :skein/spools-agents :config]
                :call 'workflows/install!
                :required? true})
@@ -153,6 +159,7 @@
 ;; direct config.clj load never registers the job or seeds against real gh.
 (runtime/use! runtime :nvd-scan
               {:file "nvd_scan.clj"
+               :spools ['skein.spools/cron]
                :after [:skein/spools-cron :skein/spools-kanban]
                :call 'nvd-scan/install!
                :required? true})

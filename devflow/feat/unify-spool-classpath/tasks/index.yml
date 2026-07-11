@@ -57,7 +57,7 @@ tasks:
   - id: 12
     description: "PH3: residual opt-in consent sweep + :config :required? + guard-wiring assertion gate"
     task_file: tasks/012-consent-sweep-assertion-gate.md
-    status: pending
+    status: complete
     blocked_by: [11]
   - id: 13
     description: "PH4: batteries classpath exception + require-fallback removal + bootstrap"
