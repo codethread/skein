@@ -6,12 +6,12 @@
             [nrepl.cmdline]
             [nrepl.core :as nrepl]
             [skein.core.client]
-            [skein.core.weaver.config :as daemon-config]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db-test :as db-test]
             [skein.repl :as repl]))
 (defn test-world [config-dir]
-  (daemon-config/world config-dir
+  (weaver-config/world config-dir
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
@@ -34,12 +34,12 @@
          config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]
      (.mkdirs (java.io.File. config-dir))
      (let [world (test-world config-dir)
-           rt (runtime/start! db-file (merge {:world world} opts))]
+           rt (weaver-runtime/start! db-file (merge {:world world} opts))]
        (try
          (f rt db-file)
          (finally
            (reset-open-state!)
-           (runtime/stop! rt)
+           (weaver-runtime/stop! rt)
            (db-test/delete-sqlite-family! db-file)))))))
 
 (deftest helpers-fail-before-connect
@@ -234,17 +234,17 @@
         (is (fn? (get-in (first @calls) [:options :prompt])))
         (is (not (str/includes? (str out) "15")))))))
 
-(deftest runtime-alpha-works-from-explicit-connected-stdin-main
+(deftest runtime-api-works-from-explicit-connected-stdin-main
   (with-runtime
     (fn [rt _]
       (let [out (java.io.StringWriter.)]
         (binding [*in* (java.io.StringReader.
                         (str "(require '[skein.api.current.alpha :as current] "
-                             "'[skein.api.runtime.alpha :as runtime-alpha])\n"
+                             "'[skein.api.runtime.alpha :as runtime])\n"
                              "(def rt (current/runtime))\n"
-                             "(runtime-alpha/approved rt)\n"
-                             "(runtime-alpha/syncs rt)\n"
-                             "(runtime-alpha/uses rt)\n"))
+                             "(runtime/approved rt)\n"
+                             "(runtime/syncs rt)\n"
+                             "(runtime/uses rt)\n"))
                   *out* out
                   *err* (java.io.StringWriter.)
                   *ns* (the-ns 'user)]
@@ -313,8 +313,8 @@
                (repl/queries)))
         (is (= "mine" (:name (repl/query-explain "mine"))))
         (is (= [agent] (mapv :id (repl/strands 'mine))))
-        (runtime/stop! rt)
-        (let [fresh-rt (runtime/start! db-file {:world (test-world (:config-dir (:metadata rt)))})]
+        (weaver-runtime/stop! rt)
+        (let [fresh-rt (weaver-runtime/start! db-file {:world (test-world (:config-dir (:metadata rt)))})]
           (try
             (is (= {} (repl/queries)))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo
@@ -333,21 +333,21 @@
                 (finally
                   (.delete query-file))))
             (finally
-              (runtime/stop! fresh-rt))))))))
+              (weaver-runtime/stop! fresh-rt))))))))
 
 (deftest helpers-fail-loudly-when-daemon-becomes-unavailable
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
     (let [world (test-world config-dir)
-          rt (runtime/start! db-file {:world world})]
+          rt (weaver-runtime/start! db-file {:world world})]
       (try
         (repl/connect! (:config-dir (:metadata rt)))
-        (runtime/stop! rt)
+        (weaver-runtime/stop! rt)
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"metadata is missing or stale"
                               (repl/strands)))
         (finally
           (reset-open-state!)
-          (runtime/stop! rt)
+          (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file))))))

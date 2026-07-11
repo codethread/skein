@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.macros.rules :refer [defrule forget-rules! install-rules!]]
             [skein.spools.agent-run :as shuttle]))
 
@@ -91,7 +91,7 @@
                          (map :to_strand_id)
                          distinct)]
     (->> blocker-ids
-         (map #(api/show rt %))
+         (map #(weaver/show rt %))
          (filter failed-blocker?)
          (sort-by :id)
          vec)))

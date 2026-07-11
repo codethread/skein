@@ -22,16 +22,16 @@ Load agent-run first, then the subagent executor from the same approved local-ro
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :agent-run
+(runtime/sync! runtime)
+(runtime/use! runtime :agent-run
   {:ns 'skein.spools.agent-run
    :spools ['skein.spools/agent-run]
    :call 'skein.spools.agent-run/install!
    :required? true})
-(runtime-alpha/use! runtime :subagent
+(runtime/use! runtime :subagent
   {:ns 'skein.spools.executors.subagent
    :spools ['skein.spools/agent-run]
    :call 'skein.spools.executors.subagent/install!

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime-alpha])\n\n(def runtime (current/runtime))\n\n(runtime-alpha/sync! runtime)\n(runtime-alpha/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/activate!})\n"
+	DefaultInitCLJ        = "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n\n(def runtime (current/runtime))\n\n(runtime/sync! runtime)\n(runtime/use! runtime :skein/spools-batteries\n  {:ns 'skein.spools.batteries\n   :call 'skein.spools.batteries/activate!})\n"
 	DefaultSkeinGitignore = "config.local.json\ninit.local.clj\nspools.local.edn\nstate/\ndata/\nweaver.*\n*.sqlite\n*.sqlite-*\n"
 )
 

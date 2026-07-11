@@ -33,8 +33,8 @@ Runtime behaviour is trusted Clojure loaded by the weaver. To add named queries,
 - Read `docs/skein.md` → "Startup config", "Authoring your own spool code",
   "Weave patterns", "Queries", and "Views and graph helpers".
 - Explore live with `mill weaver repl` or `mill weaver repl --stdin`.
-- `spools.edn` approves local/git spool roots; `runtime-alpha/sync!` makes them
-  available; `runtime-alpha/use!` activates a module; `runtime-alpha/reload!`
+- `spools.edn` approves local/git spool roots; `runtime/sync!` makes them
+  available; `runtime/use!` activates a module; `runtime/reload!`
   re-runs startup files without restarting the weaver.
 
 ## Live REPL hygiene for shared weaver sessions

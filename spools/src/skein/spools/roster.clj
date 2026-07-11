@@ -29,7 +29,7 @@
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! reject-unknown-keys! attr-key->str attr-get poll-until-deadline!]])
   (:import [java.time Duration Instant]))
@@ -136,7 +136,7 @@
     (optional-non-blank! :run-id run-id)
     (optional-non-blank! :source-id source-id)
     (let [existing (when id
-                     (or (api/show runtime id)
+                     (or (weaver/show runtime id)
                          (fail! "track! :id strand not found" {:id id})))
           identity (resolve-identity! existing attrs)
           now (now-str attrs)
@@ -144,17 +144,17 @@
           roster-attrs (track-attributes (merge identity attrs) started-at now)]
       (if existing
         ;; Send only the roster attribute delta, not a merge over the whole
-        ;; stale attribute snapshot: `api/update` applies attributes via SQLite
+        ;; stale attribute snapshot: `weaver/update` applies attributes via SQLite
         ;; json_patch (RFC 7396 merge-patch), so resending unchanged keys would
         ;; silently revert any concurrent write to them (the auto-heartbeat
         ;; event worker and a direct caller race on the same entry) — see
         ;; SPEC-RosterSpool-001.C4.
-        (api/update runtime id
-                    (cond-> {:attributes roster-attrs}
-                      (not= "active" (:state existing)) (assoc :state "active")
-                      (and title (not= title (:title existing))) (assoc :title title)))
-        (api/add runtime {:title (or title (str "Roster: " (:feature identity) " (" (:owner identity) ")"))
-                          :attributes roster-attrs})))))
+        (weaver/update runtime id
+                       (cond-> {:attributes roster-attrs}
+                         (not= "active" (:state existing)) (assoc :state "active")
+                         (and title (not= title (:title existing))) (assoc :title title)))
+        (weaver/add runtime {:title (or title (str "Roster: " (:feature identity) " (" (:owner identity) ")"))
+                             :attributes roster-attrs})))))
 
 ;; ---------------------------------------------------------------------------
 ;; shared entry lookup
@@ -162,7 +162,7 @@
 
 (defn- require-roster-entry!
   [runtime id]
-  (let [strand (or (api/show runtime id)
+  (let [strand (or (weaver/show runtime id)
                    (fail! "Roster entry not found" {:id id}))]
     (when-not (= "true" (attr-value strand :roster/entry))
       (fail! "Strand is not a roster entry" {:id id}))
@@ -198,7 +198,7 @@
       (fail! "heartbeat! opts must be a map" {:opts opts}))
     (reject-unknown-keys! "heartbeat!" #{:now} opts))
   (require-active-roster-entry! runtime entry-id "heartbeat")
-  (api/update runtime entry-id {:attributes {:roster/heartbeat-at (now-str opts)}}))
+  (weaver/update runtime entry-id {:attributes {:roster/heartbeat-at (now-str opts)}}))
 
 ;; ---------------------------------------------------------------------------
 ;; finish!
@@ -270,7 +270,7 @@
           attrs (cond-> {:roster/status status
                          :roster/finished-at now}
                   (:result opts) (assoc :roster/result (:result opts)))]
-      (api/update runtime entry-id {:attributes attrs :state "closed"}))))
+      (weaver/update runtime entry-id {:attributes attrs :state "closed"}))))
 
 ;; ---------------------------------------------------------------------------
 ;; roster listing + stale derivation
@@ -335,7 +335,7 @@
   (reject-unknown-keys! "roster" roster-opts-keys opts)
   (let [threshold (stale-after-ms-opt opts)
         now (Instant/now)]
-    (->> (api/list runtime [:= [:attr "roster/entry"] "true"] {})
+    (->> (weaver/list runtime [:= [:attr "roster/entry"] "true"] {})
          (filter #(= "active" (:state %)))
          (filter #(scope-match? opts %))
          (map #(entry-row % threshold now))
@@ -778,12 +778,12 @@
     {:installed true
      :namespace 'skein.spools.roster
      :watcher integration-event-key
-     :ops [(api/register-op! rt 'roster
-                             {:doc "Manage active-work roster entries: track, heartbeat, finish, list, and await quiet."
-                              :arg-spec roster-arg-spec
+     :ops [(weaver/register-op! rt 'roster
+                                {:doc "Manage active-work roster entries: track, heartbeat, finish, list, and await quiet."
+                                 :arg-spec roster-arg-spec
                               ;; await-quiet blocks for arbitrarily long coordination waits (SPEC-RosterSpool-001.C10)
-                              :deadline-class :unbounded}
-                             'skein.spools.roster/roster-op)]
+                                 :deadline-class :unbounded}
+                                'skein.spools.roster/roster-op)]
      :queries [(graph/register-query! rt 'roster
                                       [:and
                                        [:= :state "active"]

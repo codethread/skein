@@ -7,7 +7,7 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.api.runtime.alpha :as runtime]
             [skein.spools.util :refer [fail!]])
   (:import [java.io OutputStreamWriter]
@@ -192,10 +192,10 @@
     {:removed key}))
 
 (defn- affected-strands [_event]
-  (api/list (rt)))
+  (weaver/list (rt)))
 
 (defn- ready-id-set []
-  (set (map :id (api/ready (rt)))))
+  (set (map :id (weaver/ready (rt)))))
 
 ;; batch/applied and its per-strand fanout share a :batch/id, and weave emits
 ;; batch/applied with no fanout, so scan-once-per-batch keeps both correctness

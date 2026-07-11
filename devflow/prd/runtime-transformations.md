@@ -28,9 +28,9 @@ These helpers run in trusted startup config or connected REPL workflows.
 A user tracks repository ownership in strand attributes:
 
 ```clojure
-(require '[skein.api.weaver.alpha :as api])
+(require '[skein.api.weaver.alpha :as weaver])
 
-(api/register-query!
+(weaver/register-query!
  'ready-for-repo
  '{:where [:and
            [:= [:attr :repo] [:param :repo]]
@@ -51,9 +51,9 @@ Assume a world uses user attributes such as `example_category="feature"` and `pa
 (ns my.skein.views
   (:require [skein.api.graph.alpha :as graph]
             [skein.api.views.alpha :as views]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as weaver]))
 
-(api/register-query!
+(weaver/register-query!
  'active-owned
  '{:where [:and
            [:= [:attr :repo] [:param :repo]]

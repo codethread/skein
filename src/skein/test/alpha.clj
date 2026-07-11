@@ -17,8 +17,8 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.core.client :as client]
-            [skein.core.weaver.config :as config]
-            [skein.core.weaver.runtime :as runtime])
+            [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.runtime :as weaver-runtime])
   (:import [java.nio.file Files Path]
            [java.nio.file.attribute FileAttribute]
            [java.time Duration Instant]))
@@ -155,7 +155,7 @@
                       {:root (.getPath root) :file (.getPath file)})))))
 
 (defn- stop-and-clean! [rt root delete?]
-  (runtime/stop! rt)
+  (weaver-runtime/stop! rt)
   (when delete?
     (delete-tree! root))
   nil)
@@ -188,9 +188,9 @@
         storage (:storage opts :sqlite-file)]
     (try
       (write-fixtures! root opts)
-      (let [world (config/world (.getPath root))
-            rt (runtime/start! nil (cond-> {:world world :publish? false :storage storage}
-                                     (:name opts) (assoc :name (:name opts))))
+      (let [world (weaver-config/world (.getPath root))
+            rt (weaver-runtime/start! nil (cond-> {:world world :publish? false :storage storage}
+                                            (:name opts) (assoc :name (:name opts))))
             ctx (cond-> {:config-dir (:config-dir world)
                          :state-dir (:state-dir world)
                          :data-dir (:data-dir world)
@@ -243,7 +243,7 @@
   runtime clock seam (the scheduler) resolve due-ness against test time rather
   than the wall clock. Pair with `advance!` to step it."
   [runtime clock-fn]
-  (runtime/set-clock! runtime clock-fn))
+  (weaver-runtime/set-clock! runtime clock-fn))
 
 (defn advance!
   "Move `runtime`'s clock forward by `duration`, then pump clock consumers.
@@ -257,9 +257,9 @@
   (when (or (nil? duration) (.isZero duration) (.isNegative duration))
     (throw (ex-info "advance! requires a strictly positive java.time.Duration"
                     {:duration duration})))
-  (let [target (.plus ^Instant (runtime/now runtime) duration)]
-    (runtime/set-clock! runtime (constantly target))
-    (runtime/run-clock-pumps! runtime)
+  (let [target (.plus ^Instant (weaver-runtime/now runtime) duration)]
+    (weaver-runtime/set-clock! runtime (constantly target))
+    (weaver-runtime/run-clock-pumps! runtime)
     target))
 
 (defn run-focused!

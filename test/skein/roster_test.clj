@@ -4,7 +4,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.events.alpha :as events]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.roster :as roster]
             [skein.spools.test-support :as test-support :refer [with-runtime]])
   (:import [java.time Duration Instant]))
@@ -14,10 +14,10 @@
   (get (:attributes strand) k))
 
 (defn- op! [rt & argv]
-  (api/op! rt 'roster argv))
+  (weaver/op! rt 'roster argv))
 
 (defn- op-entry [rt op-name]
-  (some #(when (= (name op-name) (:name %)) %) (api/ops rt)))
+  (some #(when (= (name op-name) (:name %)) %) (weaver/ops rt)))
 
 (deftest track!-creates-a-new-active-entry
   (with-runtime
@@ -64,9 +64,9 @@
 (deftest track!-restamps-an-existing-strand-deriving-identity-and-preserving-attributes
   (with-runtime
     (fn [rt _]
-      (let [source (api/add rt {:title "Workflow root"
-                                :state "closed"
-                                :attributes {:workflow/run-id "wf-1" :feature "roster-spool" :owner "agent-a"}})
+      (let [source (weaver/add rt {:title "Workflow root"
+                                   :state "closed"
+                                   :attributes {:workflow/run-id "wf-1" :feature "roster-spool" :owner "agent-a"}})
             entry (roster/track! rt {:id (:id source)})]
         (is (= (:id source) (:id entry)))
         (is (= "active" (:state entry)))
@@ -92,7 +92,7 @@
   (with-runtime
     (fn [rt _]
       (let [entry (roster/track! rt {:feature "f" :owner "o"})
-            other (api/add rt {:title "Not a roster entry"})]
+            other (weaver/add rt {:title "Not a roster entry"})]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Roster entry not found"
                               (roster/heartbeat! rt "missing")))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Strand is not a roster entry"
@@ -148,7 +148,7 @@
               fin (future (.await start) (roster/finish! rt id {}))]
           (.countDown start)
           @hb @fin
-          (let [final (api/show rt id)]
+          (let [final (weaver/show rt id)]
             (is (= "closed" (:state final)))
             (is (= "finished" (attr final :roster/status))
                 "a late heartbeat must never resurrect a finished entry to active")))))))
@@ -171,15 +171,15 @@
   ;; a bare NPE/DateTimeParseException naming nothing.
   (with-runtime
     (fn [rt _]
-      (let [missing (api/add rt {:title "hand-stamped, no heartbeat"
-                                 :attributes {:roster/entry "true"
-                                              :roster/feature "f" :roster/owner "o"}})]
+      (let [missing (weaver/add rt {:title "hand-stamped, no heartbeat"
+                                    :attributes {:roster/entry "true"
+                                                 :roster/feature "f" :roster/owner "o"}})]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing roster/heartbeat-at"
                               (roster/roster rt {})))
         (roster/finish! rt (:id missing) {}))
-      (let [bad (api/add rt {:title "hand-stamped, bad heartbeat"
-                             :attributes {:roster/entry "true" :roster/feature "f"
-                                          :roster/owner "o" :roster/heartbeat-at "not-an-instant"}})
+      (let [bad (weaver/add rt {:title "hand-stamped, bad heartbeat"
+                                :attributes {:roster/entry "true" :roster/feature "f"
+                                             :roster/owner "o" :roster/heartbeat-at "not-an-instant"}})
             ex (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unparseable roster/heartbeat-at"
                                      (roster/roster rt {})))]
         (is (= (:id bad) (:id (ex-data ex))) "failure names the offending strand")))))
@@ -237,11 +237,11 @@
           (is (some? (:arg-spec entry)))))
       (testing "named roster query defaults to active roster entries"
         (let [tracked (roster/track! rt {:feature "f" :owner "o"})
-              other (api/add rt {:title "Not a roster entry"})
-              ids (set (map :id (api/list rt [:= [:attr "roster/entry"] "true"] {})))]
+              other (weaver/add rt {:title "Not a roster entry"})
+              ids (set (map :id (weaver/list rt [:= [:attr "roster/entry"] "true"] {})))]
           (is (contains? ids (:id tracked)))
           (is (not (contains? ids (:id other))))
-          (is (= [(:id tracked)] (mapv :id (api/list-query rt 'roster {})))))))))
+          (is (= [(:id tracked)] (mapv :id (weaver/list-query rt 'roster {})))))))))
 
 (deftest install-declares-the-roster-attribute-namespace
   (with-runtime
@@ -256,7 +256,7 @@
     (fn [rt _]
       (roster/install!)
       (testing "help projections list the declared verb surface"
-        (let [detail (api/op! rt 'help ["roster"])
+        (let [detail (weaver/op! rt 'help ["roster"])
               alias (op! rt "help")
               verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
           (is (= detail alias))
@@ -405,7 +405,7 @@
                             :on-timeout (constantly nil)}))
 
 (defn- stamped? [rt id]
-  (= "true" (attr (api/show rt id) :roster/entry)))
+  (= "true" (attr (weaver/show rt id) :roster/entry)))
 
 (deftest install!-registers-the-integration-event-handler
   (with-runtime
@@ -420,11 +420,11 @@
     (fn [rt _]
       (roster/watch! rt)
       (testing "a devflow feature root is restamped into a roster entry in place"
-        (let [root (api/add rt {:title "Roster spool feature"
-                                :attributes {:devflow/feature "roster-spool" :owner "agent-a"}})]
+        (let [root (weaver/add rt {:title "Roster spool feature"
+                                   :attributes {:devflow/feature "roster-spool" :owner "agent-a"}})]
           (is (wait-until #(stamped? rt (:id root)))
               "root should auto-stamp asynchronously")
-          (let [entry (api/show rt (:id root))]
+          (let [entry (weaver/show rt (:id root))]
             (is (= (:id root) (:id entry)) "restamps in place, not a new strand")
             (is (= "roster-spool" (attr entry :roster/feature)))
             (is (= "agent-a" (attr entry :roster/owner)))
@@ -433,10 +433,10 @@
             (is (string? (attr entry :roster/heartbeat-at)))
             (is (= "Roster spool feature" (:title entry)) "title is preserved"))))
       (testing "a workflow root's run-id supplies the feature slug"
-        (let [root (api/add rt {:title "Workflow root"
-                                :attributes {:workflow/run-id "wf-7" :owner "agent-b"}})]
+        (let [root (weaver/add rt {:title "Workflow root"
+                                   :attributes {:workflow/run-id "wf-7" :owner "agent-b"}})]
           (is (wait-until #(stamped? rt (:id root))))
-          (let [entry (api/show rt (:id root))]
+          (let [entry (weaver/show rt (:id root))]
             (is (= "wf-7" (attr entry :roster/feature)))
             (is (= "workflow" (attr entry :roster/engine)))))))))
 
@@ -448,11 +448,11 @@
   (with-runtime
     (fn [rt _]
       (roster/watch! rt)
-      (let [root (api/add rt {:title "Feature root on a branch"
-                              :attributes {:workflow/run-id "roster-spool" :owner "agent-a"
-                                           :branch "roster-spool" :worktree "/tmp/wt"}})]
+      (let [root (weaver/add rt {:title "Feature root on a branch"
+                                 :attributes {:workflow/run-id "roster-spool" :owner "agent-a"
+                                              :branch "roster-spool" :worktree "/tmp/wt"}})]
         (is (wait-until #(stamped? rt (:id root))))
-        (let [entry (api/show rt (:id root))]
+        (let [entry (weaver/show rt (:id root))]
           (is (= "roster-spool" (attr entry :roster/branch)))
           (is (= "/tmp/wt" (attr entry :roster/worktree))))
         (testing "branch-scoped roster finds the auto-tracked root"
@@ -463,18 +463,18 @@
   (with-runtime
     (fn [rt _]
       (roster/watch! rt)
-      (let [root (api/add rt {:title "Tracked root"
-                              :attributes {:feature "roster-spool" :owner "agent-a"}})]
+      (let [root (weaver/add rt {:title "Tracked root"
+                                 :attributes {:feature "roster-spool" :owner "agent-a"}})]
         (is (wait-until #(stamped? rt (:id root))))
         (testing "a mutation on a parent-of descendant refreshes the root's heartbeat"
-          (let [child (api/add rt {:title "child task"})
-                _ (api/update rt (:id root) {:edges [{:type "parent-of" :to (:id child)}]})
-                baseline (Instant/parse (attr (api/show rt (:id root)) :roster/heartbeat-at))
-                later? (fn [] (let [now (attr (api/show rt (:id root)) :roster/heartbeat-at)]
+          (let [child (weaver/add rt {:title "child task"})
+                _ (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id child)}]})
+                baseline (Instant/parse (attr (weaver/show rt (:id root)) :roster/heartbeat-at))
+                later? (fn [] (let [now (attr (weaver/show rt (:id root)) :roster/heartbeat-at)]
                                 (when (and now (.isAfter (Instant/parse now) baseline)) now)))]
             ;; ensure the wall clock advances so a fresh heartbeat is strictly later
             (Thread/sleep 5)
-            (api/update rt (:id child) {:title "child task (started)"})
+            (weaver/update rt (:id child) {:title "child task (started)"})
             (is (wait-until later?)
                 "updating a descendant must advance the root's roster/heartbeat-at")))))))
 
@@ -482,18 +482,18 @@
   (with-runtime
     (fn [rt _]
       (roster/watch! rt)
-      (let [no-owner (api/add rt {:title "No owner" :attributes {:feature "roster-spool"}})
-            no-feature (api/add rt {:title "No feature" :attributes {:owner "agent-a"}})
-            plumbing (api/add rt {:title "Workflow molecule"
-                                  :attributes {:workflow/role "molecule"
-                                               :workflow/run-id "roster-spool"
-                                               :owner "agent-a"}})
-            closed (api/add rt {:title "Closed root" :state "closed"
-                                :attributes {:feature "roster-spool" :owner "agent-a"}})
+      (let [no-owner (weaver/add rt {:title "No owner" :attributes {:feature "roster-spool"}})
+            no-feature (weaver/add rt {:title "No feature" :attributes {:owner "agent-a"}})
+            plumbing (weaver/add rt {:title "Workflow molecule"
+                                     :attributes {:workflow/role "molecule"
+                                                  :workflow/run-id "roster-spool"
+                                                  :owner "agent-a"}})
+            closed (weaver/add rt {:title "Closed root" :state "closed"
+                                   :attributes {:feature "roster-spool" :owner "agent-a"}})
             ;; a sufficient root added last is a FIFO barrier: once the single
             ;; event worker has stamped it, every earlier event has been handled.
-            barrier (api/add rt {:title "Barrier root"
-                                 :attributes {:feature "roster-spool" :owner "agent-a"}})]
+            barrier (weaver/add rt {:title "Barrier root"
+                                    :attributes {:feature "roster-spool" :owner "agent-a"}})]
         (is (wait-until #(stamped? rt (:id barrier)))
             "barrier root must auto-stamp")
         (testing "negative roots are left untouched by the handler"

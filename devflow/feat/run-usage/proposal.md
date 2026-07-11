@@ -252,7 +252,7 @@ is the brief's requirement (Q3, considered and rejected).
   `strand agent spend` subcommand land together. There is no migration, no data rewrite, and no historical concern (the
   spend query treats absent usage as absent), so unlike a cutover feature there is no signed migration step.
 - **Pickup ladder.** The changed Clojure namespaces (`skein.spools.agent-run`, `skein.spools.delegation`) are picked up by a
-  targeted `(require … :reload)` then `runtime-alpha/reload!` per the pickup ladder — no weaver restart, because nothing
+  targeted `(require … :reload)` then `runtime/reload!` per the pickup ladder — no weaver restart, because nothing
   changes at the JVM/transport level. The Go CLI change for the `spend` subcommand is arg-spec data on an existing op, so it
   needs only `make build`, not new Go dispatch. Capture applies from the reload forward (additive; NG2).
 

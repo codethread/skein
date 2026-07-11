@@ -5,7 +5,7 @@
   spool, and REPL code that must capture the active weaver runtime explicitly and
   then pass it to `skein.api.*.alpha` functions. It never falls back to client or
   connected REPL state."
-  (:require [skein.core.weaver.runtime :as runtime]))
+  (:require [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn runtime-or-nil
   "Return the thread-bound or published in-process weaver runtime, or nil.
@@ -17,8 +17,8 @@
   `runtime`'s exception as control flow. This is the single ambient-runtime read
   point: callers must not reach into `skein.core.weaver.runtime` internals."
   []
-  (or runtime/*runtime*
-      @runtime/current-runtime))
+  (or weaver-runtime/*runtime*
+      @weaver-runtime/current-runtime))
 
 (defn- runtime*
   [runtime-or-nil-fn]
@@ -45,7 +45,7 @@
   [runtime thunk]
   (when (nil? runtime)
     (throw (ex-info "Cannot scope a nil Skein runtime" {})))
-  (runtime/with-runtime-binding runtime thunk))
+  (weaver-runtime/with-runtime-binding runtime thunk))
 
 (defmacro with-runtime
   "Evaluate `body` with `runtime` bound as the thread-local ambient runtime."

@@ -53,10 +53,10 @@ Strand data is plain SQLite under a workspace's `data/skein.sqlite` — `sqlite3
 ## Hard rules
 
 - **Agents never run `make install`** — it clobbers the user's global on-PATH binaries, which is the user's call. Use `make build` and the repo-local `./bin/strand` / `./bin/mill` for all CLI validation.
-- **Never restart a running weaver to pick up changes**; restarting the canonical weaver requires explicit user sign-off (it tears down live agent runs and registries other agents depend on). Pickup ladder: Go CLI changes need only `make build`; config/startup-file changes need `runtime-alpha/reload!`; already-loaded Clojure namespaces need a targeted `(require 'the.ns :reload)` first (reload! alone skips loaded namespaces); only JVM-level changes (deps.edn, transport/socket, unhealthy JVM) justify a restart. Reload a selected world:
+- **Never restart a running weaver to pick up changes**; restarting the canonical weaver requires explicit user sign-off (it tears down live agent runs and registries other agents depend on). Pickup ladder: Go CLI changes need only `make build`; config/startup-file changes need `runtime/reload!`; already-loaded Clojure namespaces need a targeted `(require 'the.ns :reload)` first (reload! alone skips loaded namespaces); only JVM-level changes (deps.edn, transport/socket, unhealthy JVM) justify a restart. Reload a selected world:
 
   ```sh
-  printf "(do (require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime-alpha]) (runtime-alpha/reload! (current/runtime)))\n" | mill weaver repl --stdin --workspace "$world"
+  printf "(do (require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime]) (runtime/reload! (current/runtime)))\n" | mill weaver repl --stdin --workspace "$world"
   ```
 
 - **Kill by PID only** (`jps`/`ps`/the run's recorded pid, then `kill <pid>`) — never `pkill -f <pattern>`: delegated agents' prompts can quote the very command you match, so a pattern kill strafes healthy sibling runs.

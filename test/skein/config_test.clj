@@ -11,12 +11,12 @@
             [skein.core.db-test :as db-test]
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
-            [skein.api.runtime.alpha :as runtime-alpha]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
-            [skein.api.weaver.alpha :as api]
-            [skein.core.weaver.config :as daemon-config]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.api.weaver.alpha :as weaver]
+            [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.spools.workflow :as workflow]
             [skein.test.alpha :as test-alpha]))
 
@@ -31,7 +31,7 @@
 (defn- test-world
   "Return an isolated test world rooted in a temporary directory."
   [config-dir]
-  (daemon-config/world config-dir
+  (weaver-config/world config-dir
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
@@ -47,7 +47,7 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-config-test-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
       (try
         ;; harnesses.clj's worker alias layers over the shipped :pi harness,
         ;; which shuttle/install! registers in real startups; this fixture
@@ -63,7 +63,7 @@
         ((requiring-resolve 'analytics/install!))
         (f rt)
         (finally
-          (runtime/stop! rt)
+          (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
           (delete-directory! config-dir))))))
 
@@ -116,18 +116,18 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-config-startup-" (java.util.UUID/randomUUID))]
     (copy-config-dir! config-dir)
-    (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
       (try
         (f rt)
         (finally
-          (runtime/stop! rt)
+          (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
           (delete-directory! config-dir))))))
 
 (defn- op!
   "Invoke a repo-local registered op by name with a CLI-shaped argv."
   [op-name argv]
-  (api/op! (current/runtime) (symbol op-name) argv))
+  (weaver/op! (current/runtime) (symbol op-name) argv))
 
 (def ^:private config-op-names
   "The config-owned CLI ops whose generated `help <op>` the refactor must preserve.
@@ -161,14 +161,14 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-surface-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (runtime/start! db-file {:world (test-world config-dir)})]
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
       (try
         (load-file config-path)
         ((requiring-resolve 'config/install!))
         {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
          :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}
         (finally
-          (runtime/stop! rt)
+          (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
           (delete-directory! config-dir))))))
 
@@ -184,7 +184,7 @@
                    "devflow-describe" "devflow-history" "devflow-archive"
                    "devflow-status" "workflow-runs" "devflow-conventions"
                    "flow-await" "flow-status" "hitl" "land" "agent" "bench"]]
-    (is (some #(= op-name (:name %)) (api/ops rt))))
+    (is (some #(= op-name (:name %)) (weaver/ops rt))))
   (is (some #(= "delegate-pipeline" (:name %)) (patterns/patterns rt)))
   ;; agent-plan is spool-owned now; a real startup wires the agents spool in
   ;; via init.clj, so it must still be registered end to end
@@ -313,9 +313,9 @@
                              ["D1" {:workflow/role "molecule" :workflow/family "devflow"}]
                              ["S1" {:agent-run/run "true"}]
                              ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
-        (api/add rt {:title title :state "active" :attributes attrs}))
+        (weaver/add rt {:title title :state "active" :attributes attrs}))
       (let [rows (fn [query-name params]
-                   (set (map :title (api/list rt (get (graph/queries rt) query-name) params))))]
+                   (set (map :title (weaver/list rt (get (graph/queries rt) query-name) params))))]
         (is (= #{"A1" "A2" "A3"} (rows "feature-active" {:feature "alpha"})))
         (is (= #{"A1" "A2"} (rows "feature-work" {:feature "alpha"})))
         (is (= #{"A1"} (rows "feature-owner-work" {:feature "alpha" :owner "amy"})))
@@ -331,33 +331,33 @@
   ;; missing-usage ids for runs whose harness recorded nothing.
   (with-config-runtime
     (fn [rt]
-      (let [card (api/add rt {:title "Feature card" :state "active"
-                              :attributes {:kanban/card "true"}})
-            run-a (api/add rt {:title "Delegate: implement"
-                               :state "closed"
+      (let [card (weaver/add rt {:title "Feature card" :state "active"
+                                 :attributes {:kanban/card "true"}})
+            run-a (weaver/add rt {:title "Delegate: implement"
+                                  :state "closed"
                                ;; values stamped as typed JSON, the shape the
                                ;; shuttle spool writes; the corrupt-usage test
                                ;; covers the string form
-                               :attributes {:agent-run/run "true"
-                                            :agent-run/harness "build"
-                                            :agent-run/cost-usd 1.25
-                                            :agent-run/tokens-total 1000
-                                            :agent-run/tokens {"input" 800 "output" 200}
-                                            :agent-run/usage-source "session"
-                                            :agent-run/exit-code 0
-                                            :agent-run/started-at "2026-07-10T10:00:00Z"
-                                            :agent-run/finished-at "2026-07-10T10:05:00Z"}})
-            run-b (api/add rt {:title "Review: skeptic"
-                               :state "closed"
-                               :attributes {:agent-run/run "true"
-                                            :agent-run/harness "hard-gpt"
-                                            :agent-run/started-at "2026-07-10T10:06:00Z"
-                                            :agent-run/finished-at "2026-07-10T10:08:30Z"}})
-            note (api/add rt {:title "Not a run" :state "closed"
-                              :attributes {:kind "note"}})]
-        (api/update rt (:id card) {:edges [{:type "parent-of" :to (:id run-a)}
-                                           {:type "parent-of" :to (:id run-b)}
-                                           {:type "parent-of" :to (:id note)}]})
+                                  :attributes {:agent-run/run "true"
+                                               :agent-run/harness "build"
+                                               :agent-run/cost-usd 1.25
+                                               :agent-run/tokens-total 1000
+                                               :agent-run/tokens {"input" 800 "output" 200}
+                                               :agent-run/usage-source "session"
+                                               :agent-run/exit-code 0
+                                               :agent-run/started-at "2026-07-10T10:00:00Z"
+                                               :agent-run/finished-at "2026-07-10T10:05:00Z"}})
+            run-b (weaver/add rt {:title "Review: skeptic"
+                                  :state "closed"
+                                  :attributes {:agent-run/run "true"
+                                               :agent-run/harness "hard-gpt"
+                                               :agent-run/started-at "2026-07-10T10:06:00Z"
+                                               :agent-run/finished-at "2026-07-10T10:08:30Z"}})
+            note (weaver/add rt {:title "Not a run" :state "closed"
+                                 :attributes {:kind "note"}})]
+        (weaver/update rt (:id card) {:edges [{:type "parent-of" :to (:id run-a)}
+                                              {:type "parent-of" :to (:id run-b)}
+                                              {:type "parent-of" :to (:id note)}]})
         (let [result (op! "feature-costs" [(:id card)])]
           (is (= "feature-costs" (:operation result)))
           (is (= {:id (:id card) :title "Feature card" :state "active"}
@@ -387,11 +387,11 @@
     (fn [rt]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"root strand not found"
                             (op! "feature-costs" ["nope"])))
-      (let [root (api/add rt {:title "Ad hoc root" :state "active" :attributes {}})
-            bad (api/add rt {:title "Corrupt run" :state "closed"
-                             :attributes {:agent-run/run "true"
-                                          :agent-run/cost-usd "not-a-number"}})]
-        (api/update rt (:id root) {:edges [{:type "parent-of" :to (:id bad)}]})
+      (let [root (weaver/add rt {:title "Ad hoc root" :state "active" :attributes {}})
+            bad (weaver/add rt {:title "Corrupt run" :state "closed"
+                                :attributes {:agent-run/run "true"
+                                             :agent-run/cost-usd "not-a-number"}})]
+        (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id bad)}]})
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed agent-run attribute"
                               (op! "feature-costs" [(:id root)]))
             "a present but unparseable usage value is corrupt data, not absence")))))
@@ -429,26 +429,26 @@
 (deftest current-dags-op-builds-self-contained-plan-task-projection
   (with-config-runtime
     (fn [rt]
-      (let [plan (api/add rt {:title "Feature: plan feature"
-                              :state "active"
-                              :attributes {:feature "plan-feature" :kind "plan" :workflow "agent-plan"}})
-            impl (api/add rt {:title "Implement it"
-                              :state "active"
-                              :attributes {:feature "plan-feature" :kind "task" :workflow "agent-plan"
-                                           :task_key "impl" :owner "agent-a" :harness "build"
-                                           :cwd "/tmp/work" :validation ["clojure -M:test"]}})
-            review (api/add rt {:title "Review it"
-                                :state "active"
-                                :attributes {:feature "plan-feature" :kind "review" :workflow "agent-plan"
-                                             :task_key "review" :hitl true}})]
-        (api/update rt (:id plan) {:edges [{:type "parent-of" :to (:id impl)}
-                                           {:type "parent-of" :to (:id review)}]})
-        (api/update rt (:id review) {:edges [{:type "depends-on" :to (:id impl)}]})
-        (let [strands (api/list rt (var-get (requiring-resolve 'config/feature-active-query))
-                                {:feature "plan-feature"})
+      (let [plan (weaver/add rt {:title "Feature: plan feature"
+                                 :state "active"
+                                 :attributes {:feature "plan-feature" :kind "plan" :workflow "agent-plan"}})
+            impl (weaver/add rt {:title "Implement it"
+                                 :state "active"
+                                 :attributes {:feature "plan-feature" :kind "task" :workflow "agent-plan"
+                                              :task_key "impl" :owner "agent-a" :harness "build"
+                                              :cwd "/tmp/work" :validation ["clojure -M:test"]}})
+            review (weaver/add rt {:title "Review it"
+                                   :state "active"
+                                   :attributes {:feature "plan-feature" :kind "review" :workflow "agent-plan"
+                                                :task_key "review" :hitl true}})]
+        (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id impl)}
+                                              {:type "parent-of" :to (:id review)}]})
+        (weaver/update rt (:id review) {:edges [{:type "depends-on" :to (:id impl)}]})
+        (let [strands (weaver/list rt (var-get (requiring-resolve 'config/feature-active-query))
+                                   {:feature "plan-feature"})
               children (:edges (graph/subgraph rt [(:id plan)] {:type "parent-of"}))
-              ready (api/ready rt (var-get (requiring-resolve 'config/feature-work-query))
-                               {:feature "plan-feature"})]
+              ready (weaver/ready rt (var-get (requiring-resolve 'config/feature-work-query))
+                                  {:feature "plan-feature"})]
           (is (= 3 (count strands)))
           (is (= #{(:id impl) (:id review)}
                  (set (map :to_strand_id children))))
@@ -456,11 +456,11 @@
           (is (= ["Implement it"] (mapv :title ready)))
           ;; current-dags stays self-contained: a blocker outside the plan DAG
           ;; must not surface as a dangling depends-on edge
-          (let [external (api/add rt {:title "External blocker"
-                                      :state "active"
-                                      :attributes {:kind "task"}})]
-            (api/update rt (:id impl)
-                        {:edges [{:type "depends-on" :to (:id external)}]})
+          (let [external (weaver/add rt {:title "External blocker"
+                                         :state "active"
+                                         :attributes {:kind "task"}})]
+            (weaver/update rt (:id impl)
+                           {:edges [{:type "depends-on" :to (:id external)}]})
             (let [dag (->> (:dags (op! "current-dags" []))
                            (filter #(= (:id plan) (get-in % [:root :id])))
                            first)
@@ -473,23 +473,23 @@
 (deftest branches-op-groups-branch-stamped-work-roots
   (with-config-runtime
     (fn [rt]
-      (let [root (api/add rt {:title "Card: feature-x"
-                              :state "active"
-                              :attributes {:kanban/card "true" :kanban/status "claimed"
-                                           :owner "agent-a" :branch "feature-x"
-                                           :worktree "/tmp/feature-x"}})
-            task (api/add rt {:title "Implement feature-x"
-                              :state "active"
-                              :attributes {:kind "task"}})
-            review (api/add rt {:title "Review feature-x"
-                                :state "active"
-                                :attributes {:kind "review"}})]
-        (api/update rt (:id root) {:edges [{:type "parent-of" :to (:id task)}
-                                           {:type "parent-of" :to (:id review)}]})
-        (api/update rt (:id review) {:edges [{:type "depends-on" :to (:id task)}]})
+      (let [root (weaver/add rt {:title "Card: feature-x"
+                                 :state "active"
+                                 :attributes {:kanban/card "true" :kanban/status "claimed"
+                                              :owner "agent-a" :branch "feature-x"
+                                              :worktree "/tmp/feature-x"}})
+            task (weaver/add rt {:title "Implement feature-x"
+                                 :state "active"
+                                 :attributes {:kind "task"}})
+            review (weaver/add rt {:title "Review feature-x"
+                                   :state "active"
+                                   :attributes {:kind "review"}})]
+        (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id task)}
+                                              {:type "parent-of" :to (:id review)}]})
+        (weaver/update rt (:id review) {:edges [{:type "depends-on" :to (:id task)}]})
         ;; a branch-stamped child (task assigned owner+branch) must not
         ;; surface as a second work root for the branch
-        (api/update rt (:id task) {:attributes {:kind "task" :branch "feature-x" :owner "agent-b"}})
+        (weaver/update rt (:id task) {:attributes {:kind "task" :branch "feature-x" :owner "agent-b"}})
         (let [result (op! "branches" [])
               branch (first (:branches result))
               view (first (:roots branch))]
@@ -512,7 +512,7 @@
                         :accept true
                         :tasks [{:id "a" :title "Do A" :body "A body"}
                                 {:id "b" :title "Do B"}]})
-      (let [strands (api/list rt)
+      (let [strands (weaver/list rt)
             by-task (into {} (keep (fn [s]
                                      (when-let [task (or (get-in s [:attributes :delegate-pipeline/task])
                                                          (get-in s [:attributes "delegate-pipeline/task"]))]
@@ -530,7 +530,7 @@
         (patterns/weave! rt :delegate-pipeline
                          {:run_id "pipe-no-accept"
                           :tasks [{:id "a" :title "Do A" :harness "worker" :max-attempts 4}]})
-        (let [strands (api/list rt)
+        (let [strands (weaver/list rt)
               task (first (filter #(= "a" (or (get-in % [:attributes :delegate-pipeline/task])
                                               (get-in % [:attributes "delegate-pipeline/task"])))
                                   strands))]
@@ -597,19 +597,19 @@
                             ["Plain task" nil]
                             ["Pending card" nil]
                             ["Refinement card" nil]]]
-        (api/add rt {:title title
-                     :state "active"
-                     :attributes (cond-> {:feature "work-query"}
-                                   role (assoc :workflow/role role)
-                                   (= title "Run record") (assoc :agent-run/run "true")
-                                   (= title "Pending card") (assoc :kanban/card "true"
-                                                                   :kanban/status "pending")
-                                   (= title "Refinement card") (assoc :kanban/card "true"
-                                                                      :kanban/status "refinement"))}))
+        (weaver/add rt {:title title
+                        :state "active"
+                        :attributes (cond-> {:feature "work-query"}
+                                      role (assoc :workflow/role role)
+                                      (= title "Run record") (assoc :agent-run/run "true")
+                                      (= title "Pending card") (assoc :kanban/card "true"
+                                                                      :kanban/status "pending")
+                                      (= title "Refinement card") (assoc :kanban/card "true"
+                                                                         :kanban/status "refinement"))}))
       (is (= #{"Step" "Checkpoint" "Plain task" "Pending card"}
-             (set (map :title (api/list rt (var-get (requiring-resolve 'config/work-query)) {})))))
+             (set (map :title (weaver/list rt (var-get (requiring-resolve 'config/work-query)) {})))))
       (is (= #{"Step" "Checkpoint" "Plain task" "Pending card"}
-             (set (map :title (api/ready rt (var-get (requiring-resolve 'config/work-query)) {}))))))))
+             (set (map :title (weaver/ready rt (var-get (requiring-resolve 'config/work-query)) {}))))))))
 
 (deftest reviewers-file-registers-declarative-roster
   ;; exercises the same load path init.clj's :file+:call reviewers module runs
@@ -753,17 +753,17 @@
 (deftest land-signoff-abort-routes-to-record-step
   (with-config-runtime
     (fn [rt]
-      (let [card-id (:id (api/add rt {:title "Abort card"
-                                      :attributes {:kanban/card "true"
-                                                   :kanban/status "claimed"
-                                                   :kanban/type "feature"}}))]
+      (let [card-id (:id (weaver/add rt {:title "Abort card"
+                                         :attributes {:kanban/card "true"
+                                                      :kanban/status "claimed"
+                                                      :kanban/type "feature"}}))]
         (op! "land" ["start" "land-y" "--branch" "land-y" "--worktree" "/tmp/land-y" "--card" card-id]))
       (op! "land" ["complete" "land-y"])           ; push-draft-pr
       (op! "land" ["complete" "land-y"])           ; ci-green
       (let [root (workflow/current-root "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
-        (is (= "in_review" (get-in (api/show rt card-id) [:attributes :kanban/status]))))
+        (is (= "in_review" (get-in (weaver/show rt card-id) [:attributes :kanban/status]))))
       (op! "land" ["complete" "land-y"])           ; signoff-review
       (let [aborted (op! "land" ["choose" "land-y" "abort" "{\"reason\":\"scope changed\"}"])]
         (is (= "land-choose" (:operation aborted)))
@@ -772,7 +772,7 @@
       (let [root (workflow/current-root "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
-        (is (= "claimed" (get-in (api/show rt card-id) [:attributes :kanban/status]))))
+        (is (= "claimed" (get-in (weaver/show rt card-id) [:attributes :kanban/status]))))
       (let [done (op! "land" ["complete" "land-y" "abort recorded"])]
         (is (true? (:done done)))
         (is (empty? (:ready done)))))))
@@ -780,10 +780,10 @@
 (deftest land-cleanup-instruction-interpolates-the-real-card-id
   (with-config-runtime
     (fn [rt]
-      (let [card-id (:id (api/add rt {:title "Cleanup card"
-                                      :attributes {:kanban/card "true"
-                                                   :kanban/status "claimed"
-                                                   :kanban/type "feature"}}))]
+      (let [card-id (:id (weaver/add rt {:title "Cleanup card"
+                                         :attributes {:kanban/card "true"
+                                                      :kanban/status "claimed"
+                                                      :kanban/type "feature"}}))]
         (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" card-id])
         (op! "land" ["complete" "land-w"])                          ; push-draft-pr
         (op! "land" ["complete" "land-w"])                          ; ci-green
@@ -825,10 +825,10 @@
     (fn [rt]
       ;; a healthy world holds one lock; two active merge-lock strands is a
       ;; corrupt state break-lock must refuse rather than pick one arbitrarily.
-      (api/add rt {:title "Merge lock: land-dup-a"
-                   :attributes {:kind "merge-lock" :land/run-id "land-dup-a"}})
-      (api/add rt {:title "Merge lock: land-dup-b"
-                   :attributes {:kind "merge-lock" :land/run-id "land-dup-b"}})
+      (weaver/add rt {:title "Merge lock: land-dup-a"
+                      :attributes {:kind "merge-lock" :land/run-id "land-dup-a"}})
+      (weaver/add rt {:title "Merge lock: land-dup-b"
+                      :attributes {:kind "merge-lock" :land/run-id "land-dup-b"}})
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"multiple active merge locks found"
                             (op! "land" ["break-lock" "trying to clear a corrupt state"]))))))
 
@@ -882,31 +882,31 @@
                                              :choices [:accepted]))]
         (workflow/start! "flow-status-test" definition {})
         (let [gate-a (:id (first (workflow/next-steps "flow-status-test")))
-              run-a (api/add rt {:title "Run A"
-                                 :state "closed"
-                                 :attributes {:agent-run/run "true"
-                                              :agent-run/phase "done"
-                                              :agent-run/result "A complete"
-                                              :gate/run-id "flow-status-test"}
-                                 :edges [{:type "serves" :to gate-a}]})]
+              run-a (weaver/add rt {:title "Run A"
+                                    :state "closed"
+                                    :attributes {:agent-run/run "true"
+                                                 :agent-run/phase "done"
+                                                 :agent-run/result "A complete"
+                                                 :gate/run-id "flow-status-test"}
+                                    :edges [{:type "serves" :to gate-a}]})]
           (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
           (let [gate-b (:id (first (workflow/next-steps "flow-status-test")))
-                run-b (api/add rt {:title "Run B"
-                                   :state "active"
-                                   :attributes {:agent-run/run "true"
-                                                :agent-run/phase "failed"
-                                                :agent-run/error "boom"
-                                                :gate/run-id "flow-status-test"}
-                                   :edges [{:type "serves" :to gate-b}]})]
+                run-b (weaver/add rt {:title "Run B"
+                                      :state "active"
+                                      :attributes {:agent-run/run "true"
+                                                   :agent-run/phase "failed"
+                                                   :agent-run/error "boom"
+                                                   :gate/run-id "flow-status-test"}
+                                      :edges [{:type "serves" :to gate-b}]})]
             ;; failure summaries are scoped to the requested run: an unrelated
             ;; failed run and an unrelated error-stamped gate must not leak in
-            (api/add rt {:title "Unrelated failed run"
-                         :attributes {:agent-run/run "true"
-                                      :agent-run/phase "failed"
-                                      :agent-run/error "other workflow"}})
-            (api/add rt {:title "Unrelated stalled gate"
-                         :attributes {:workflow/gate "subagent"
-                                      :gate/error "spawn failed elsewhere"}})
+            (weaver/add rt {:title "Unrelated failed run"
+                            :attributes {:agent-run/run "true"
+                                         :agent-run/phase "failed"
+                                         :agent-run/error "other workflow"}})
+            (weaver/add rt {:title "Unrelated stalled gate"
+                            :attributes {:workflow/gate "subagent"
+                                         :gate/error "spawn failed elsewhere"}})
             (let [status (op! "flow-status" ["flow-status-test"])
                   by-title (into {} (map (juxt :title identity)) (:gates status))]
               (is (= "flow-status" (:operation status)))
@@ -925,7 +925,7 @@
   initial gate scan, so config.clj's harness aliases must already exist or a
   durable ready gate would be stamped gate/error on every cold start."
   [rt]
-  (let [use (get (runtime-alpha/uses rt) :skein/spools-treadle)]
+  (let [use (get (runtime/uses rt) :skein/spools-treadle)]
     (is (= :loaded (:status use)))
     (is (some #{:config} (get-in use [:opts :after])))))
 
@@ -935,7 +935,7 @@
       (assert-config-registrations rt)
       (assert-treadle-installed-after-config rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
-      (is (= :loaded (:status (runtime-alpha/reload! rt))))
+      (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
       ;; runtime registries reload; the strand graph and run state persist
       (let [status (op! "devflow-status" ["startup-feature"])]

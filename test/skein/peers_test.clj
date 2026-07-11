@@ -3,11 +3,11 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
             [skein.api.peers.alpha :as peers]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
-            [skein.core.weaver.runtime :as runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn- temp-dir [prefix]
   (.toFile (java.nio.file.Files/createTempDirectory prefix (make-array java.nio.file.attribute.FileAttribute 0))))
@@ -153,18 +153,18 @@
         state-root (io/file root "state" "skein")
         db-a (db-test/temp-db-file)
         db-b (db-test/temp-db-file)
-        rt-a (runtime/start! db-a {:world (world-under root "a" "alpha") :name "alpha"})]
+        rt-a (weaver-runtime/start! db-a {:world (world-under root "a" "alpha") :name "alpha"})]
     ;; The runtime enforces one process-current runtime for REPL convenience;
     ;; peer socket tests need two independent local runtimes and do not rely on
     ;; current-runtime dispatch.
-    (reset! runtime/current-runtime nil)
-    (let [rt-b (runtime/start! db-b {:world (world-under root "b" "beta") :name "beta"})]
+    (reset! weaver-runtime/current-runtime nil)
+    (let [rt-b (weaver-runtime/start! db-b {:world (world-under root "b" "beta") :name "beta"})]
       (try
         (with-state-root state-root #(f rt-a rt-b))
         (finally
-          (runtime/stop! rt-b)
-          (runtime/stop! rt-a)
-          (reset! runtime/current-runtime nil)
+          (weaver-runtime/stop! rt-b)
+          (weaver-runtime/stop! rt-a)
+          (reset! weaver-runtime/current-runtime nil)
           (db-test/delete-sqlite-family! db-a)
           (db-test/delete-sqlite-family! db-b)
           (delete-tree! root))))))
@@ -172,7 +172,7 @@
 (deftest call-peer-invoke-and-status-test
   (with-two-runtimes
     (fn [_rt-a rt-b]
-      (api/register-op! rt-b 'echo "Echo peer test argv" 'skein.peers-test/peer-test-op)
+      (weaver/register-op! rt-b 'echo "Echo peer test argv" 'skein.peers-test/peer-test-op)
       (let [beta (peers/peer "beta")
             echoed (peers/call! beta "echo" {:argv ["x" "y"]})
             via-symbol (peers/call! "beta" 'echo)
@@ -217,7 +217,7 @@
 (deftest call-peer-stream-response-fails-loudly-test
   (with-two-runtimes
     (fn [_rt-a rt-b]
-      (api/register-op! rt-b 'streamer {:stream? true} 'skein.peers-test/peer-stream-op)
+      (weaver/register-op! rt-b 'streamer {:stream? true} 'skein.peers-test/peer-stream-op)
       (try
         (peers/call! "beta" "streamer")
         (is false "expected stream response to fail loudly")
@@ -229,10 +229,10 @@
   (let [root (short-temp-root "sgstop")
         state-root (io/file root "state" "skein")
         db-b (db-test/temp-db-file)
-        rt-b (runtime/start! db-b {:world (world-under root "b" "beta") :name "beta"})]
+        rt-b (weaver-runtime/start! db-b {:world (world-under root "b" "beta") :name "beta"})]
     (try
       (let [beta (with-state-root state-root #(peers/peer "beta"))]
-        (runtime/stop! rt-b)
+        (weaver-runtime/stop! rt-b)
         (try
           (peers/call! beta "status" {})
           (is false "expected stopped peer transport failure")
@@ -240,6 +240,6 @@
             (is (= :peer/transport-failed (:code (ex-data ex))))
             (is (= "beta" (get-in (ex-data ex) [:peer :name]))))))
       (finally
-        (runtime/stop! rt-b)
+        (weaver-runtime/stop! rt-b)
         (db-test/delete-sqlite-family! db-b)
         (delete-tree! root)))))

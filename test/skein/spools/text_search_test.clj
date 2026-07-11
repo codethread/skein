@@ -4,7 +4,7 @@
   blank-pattern and overflow failures."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.repl :as repl]
             [skein.spools.test-support :refer [with-runtime]]
             [skein.spools.text-search :as text-search]))
@@ -39,7 +39,7 @@
   (with-runtime
     (fn [rt _]
       (let [strand (repl/strand! "Old session" {"transcript" "secretword"})]
-        (api/archive! rt (:id strand) ["transcript"])
+        (weaver/archive! rt (:id strand) ["transcript"])
         (testing "an archived attribute value is invisible to the query language and to a default search"
           (is (empty? (text-search/search rt {:text "secretword"}))))
         (testing "--archived opts the cold row back in"
@@ -94,7 +94,7 @@
   (with-runtime
     (fn [rt _]
       (let [strand (repl/strand! "Session log" {"transcript" "coldvalue"})]
-        (api/archive! rt (:id strand) ["transcript"])
+        (weaver/archive! rt (:id strand) ["transcript"])
         (testing "absent --archived reads as false"
           (is (empty? (text-search/search-op {:op/runtime rt :op/args {:text "coldvalue"}}))))
         (testing "present --archived reads as true"

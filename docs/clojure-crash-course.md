@@ -94,12 +94,12 @@ A namespace groups related names, like a module or file. `config.clj`'s `(ns con
 ## Require helper namespaces
 
 ```clojure
-(require '[skein.api.runtime.alpha :as runtime-alpha]
+(require '[skein.api.runtime.alpha :as runtime]
          '[skein.api.graph.alpha :as graph]
          '[skein.api.views.alpha :as views])
 ```
 
-These are privileged built-in helper namespaces shipped with Skein. The aliases let you call functions like `runtime-alpha/sync!`, `graph/strands-by-ids`, and `views/view!`.
+These are privileged built-in helper namespaces shipped with Skein. The aliases let you call functions like `runtime/sync!`, `graph/strands-by-ids`, and `views/view!`.
 
 ## Quick reference
 

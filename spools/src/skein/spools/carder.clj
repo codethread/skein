@@ -12,7 +12,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.util :refer [fail! attr-get attr-key->str]])
   (:import [java.time Duration Instant LocalDateTime ZoneOffset]))
 
@@ -68,7 +68,7 @@
   (current/runtime))
 
 (defn- all-strands [rt]
-  (api/list rt))
+  (weaver/list rt))
 
 (defn- active-strands [opts]
   (->> (all-strands (runtime))

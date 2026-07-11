@@ -13,10 +13,10 @@
             [clojure.test :refer [deftest is]]
             [skein.api.events.alpha :as events]
             [skein.api.scheduler.alpha :as scheduler]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.spools.test-support :as test-support]
             [skein.test.alpha :as test-alpha]
             [skein.weaver-test :as wt])
@@ -29,15 +29,15 @@
   "A due handler that mutates the graph: add a strand tagged from the payload,
   then signal the fire promise. Runs on the weaver's shared serialized lane."
   [{:keys [runtime payload]}]
-  (api/add runtime {:title (:title payload)
-                    :attributes {:origin "scheduler"}})
+  (weaver/add runtime {:title (:title payload)
+                       :attributes {:origin "scheduler"}})
   (deliver @fired true))
 
 (defn- await-fire []
   (deref @fired (test-support/await-budget-ms 3000) false))
 
 (defn- scheduler-strand-titles [runtime]
-  (->> (api/list runtime)
+  (->> (weaver/list runtime)
        (filter #(= "scheduler" (get-in % [:attributes :origin])))
        (mapv :title)))
 
@@ -64,7 +64,7 @@
       (reset! fired (promise))
       ;; First weaver schedules a wake through the blessed API, confirms it is
       ;; pending, then stops before the wake is due.
-      (let [rt1 (runtime/start! db-file {:world world :publish? false})]
+      (let [rt1 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
           (test-alpha/set-clock! rt1 (constantly (Instant/ofEpochSecond 0)))
           (scheduler/schedule! rt1 {:key "survivor"
@@ -74,7 +74,7 @@
           (is (= ["survivor"] (mapv :key (scheduler/pending rt1)))
               "the wake is durably pending in the first weaver")
           (finally
-            (runtime/stop! rt1))))
+            (weaver-runtime/stop! rt1))))
       ;; Simulate the wake instant arriving while the weaver was down: the
       ;; durable row is now overdue. A fresh weaver on the same world must
       ;; re-arm from durable pending rows and fire it (SPEC-004.C100).
@@ -82,7 +82,7 @@
                          {:key "survivor" :wake-at (Instant/ofEpochSecond 1)
                           :handler 'skein.scheduler-e2e-test/add-strand-handler
                           :payload {:title "Survivor strand"}})
-      (let [rt2 (runtime/start! db-file {:world world :publish? false})]
+      (let [rt2 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
           (is (await-fire) "the persisted overdue wake fires after a real weaver restart")
           ;; await-fire only proves the handler body ran; the wake's completion
@@ -95,7 +95,7 @@
           (is (= ["survivor"] (mapv :key (scheduler/recent-fires rt2)))
               "the restart-fired wake is visible in introspection")
           (finally
-            (runtime/stop! rt2))))
+            (weaver-runtime/stop! rt2))))
       (finally
         (db-test/delete-sqlite-family! db-file)
         (wt/delete-tree! (io/file (:config-dir world)))))))

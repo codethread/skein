@@ -17,7 +17,7 @@
   extra `devflow-conventions` `:ops` fields (`:manual`/`:purpose`/...) beyond the
   mechanically-derived `{:name :help}`, remembered but never registered."
   (:require [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as weaver]))
 
 (defonce ^:private op-registry (atom {}))
 
@@ -90,7 +90,7 @@
                         :known-namespaces (vec (keys @op-registry))})))
      (let [runtime (current/runtime)]
        (mapv (fn [{:keys [name arg-spec metadata] fn-sym :fn}]
-               (api/register-op! runtime name
+               (weaver/register-op! runtime name
                                  (merge {:doc (:doc arg-spec) :arg-spec arg-spec} metadata)
                                  fn-sym))
              entries)))))

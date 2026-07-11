@@ -156,14 +156,14 @@ bad request and clear `gate/error`; from the CLI, use `strand update <gate-id> -
 An empty string is treated as cleared.
 
 ```clojure
-(require '[skein.api.weaver.alpha :as api]
+(require '[skein.api.weaver.alpha :as weaver]
          '[skein.api.current.alpha :as current]
          '[skein.spools.agent-run :as agent-run])
 
 (def rt (current/runtime))              ; the active weaver runtime
 
 ;; find stalled subagent gates (spawn-side error, or a dead delegated run)
-(api/list-query rt 'stalled-gates {})
+(weaver/list-query rt 'stalled-gates {})
 
 ;; recover a dead serving run: retry it. The successor inherits the serves edge
 ;; to the gate, and the subagent executor delivers that successor on success.
@@ -172,7 +172,7 @@ An empty string is treated as cleared.
                                    :carry-attrs {"gate/run-id" workflow-run-id}})
 
 ;; recover a spawn-side request error after fixing the bad request.
-(api/update rt gate-id {:attributes {"gate/error" nil
+(weaver/update rt gate-id {:attributes {"gate/error" nil
                                      "agent-run/prompt" "echo recovered"}})
 ```
 

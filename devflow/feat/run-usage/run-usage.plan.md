@@ -37,7 +37,7 @@ The landing is **purely additive** (`PROP-Ru-001.G6`, `C10`): no migration, no b
 restart. Usage attributes are JSON `TEXT` on the existing `attributes` table — no schema change and no `db.clj` touch
 (`PROP-Ru-001.NG3`). The canonical world picks the feature up through the pickup ladder (CLAUDE.md): the changed
 already-loaded Clojure namespaces (`skein.spools.agent-run`, `skein.spools.delegation`) each need a targeted `(require …
-:reload)` before `runtime-alpha/reload!` — which alone skips already-loaded namespaces — then `reload!` re-runs
+:reload)` before `runtime/reload!` — which alone skips already-loaded namespaces — then `reload!` re-runs
 activation so the extended `install!` re-declares idempotently. The `strand agent spend` subcommand is arg-spec data on
 the existing weaver-registered `agent` op, so there is no `cli/` Go dispatch change; `make build` alone picks up the
 repo-local binary. Capture applies from the reload forward (`PROP-Ru-001.NG2`).
@@ -119,7 +119,7 @@ runs, no per-turn/per-tool breakdown, no derived pricing, and no new storage.
 - **PLAN-Ru-001.CM3:** No `skein.core.*` change and no `db.clj` delta (`PROP-Ru-001.NG3`, `SPEC-Ru-004.P3`).
 - **PLAN-Ru-001.CM4:** No cutover, no HITL, no weaver restart (`PROP-Ru-001.C10`). The whole set lands in one additive
   branch merge; the canonical world picks it up through the pickup ladder — targeted `(require … :reload)` per changed
-  namespace then `runtime-alpha/reload!` — with `make build` for the repo-local CLI (no Go dispatch change). Any `.skein`
+  namespace then `runtime/reload!` — with `make build` for the repo-local CLI (no Go dispatch change). Any `.skein`
   config touch (none is planned) would be smoke-tested in a disposable world first.
 
 ## PLAN-Ru-001.P5 Implementation slices

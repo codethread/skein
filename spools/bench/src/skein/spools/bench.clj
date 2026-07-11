@@ -23,9 +23,9 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
-            [skein.api.runtime.alpha :as runtime-alpha]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.bench.exec :as exec]
             [skein.spools.bench.metrics :as metrics]
             [skein.spools.format :as fmt]
@@ -75,7 +75,7 @@
                    (fail! "Bench executor did not stop" {})))}))
 
 (defn- state [runtime]
-  (runtime-alpha/spool-state runtime ::state {:version state-version} new-state))
+  (runtime/spool-state runtime ::state {:version state-version} new-state))
 
 (defn- agents-atom [runtime] (:agents (state runtime)))
 (defn- suites-atom [runtime] (:suites (state runtime)))
@@ -537,14 +537,14 @@
 ;; Entry execution (on the spool executor, bounded by the run semaphore)
 
 (defn- set-phase! [runtime entry-id phase]
-  (api/update runtime entry-id {:attributes {"bench/phase" phase}}))
+  (weaver/update runtime entry-id {:attributes {"bench/phase" phase}}))
 
 (defn- aborted?
   "True when `entry-id` has already been marked aborted. A worker finalizing an
   entry re-reads it first and skips its own done/failed stamp when abort! has won
   the race, so an aborted entry is never resurrected to done/closed."
   [runtime entry-id]
-  (let [e (api/show runtime entry-id)]
+  (let [e (weaver/show runtime entry-id)]
     (and (= "failed" (attr-get e "bench/phase"))
          (= "aborted" (attr-get e "bench/error")))))
 
@@ -612,7 +612,7 @@
           (if (aborted? runtime entry-id)
             {:slug slug :phase "aborted"}
             (do
-              (api/update runtime entry-id
+              (weaver/update runtime entry-id
                           {:state "closed"
                            :attributes (merge {"bench/phase" "done"
                                                "bench/image-digest" (:image-digest result)}
@@ -622,7 +622,7 @@
         (if (aborted? runtime entry-id)
           {:slug slug :phase "aborted"}
           (let [detail (:err (ex-data t))]
-            (api/update runtime entry-id
+            (weaver/update runtime entry-id
                         {:attributes (cond-> {"bench/phase" "failed"
                                               "bench/error" (ex-message t)}
                                        (not (str/blank? detail)) (assoc "bench/error-detail" detail))})
@@ -795,11 +795,11 @@
                                   :parent root-id
                                   :attrs attrs})))
       :else
-      (let [judge-strand (api/add runtime
+      (let [judge-strand (weaver/add runtime
                                   {:title title
                                    :attributes attrs
                                    :edges (mapv (fn [e] {:type "depends-on" :to e}) entry-ids)})]
-        (api/update runtime root-id {:edges [{:type "parent-of" :to (:id judge-strand)}]})
+        (weaver/update runtime root-id {:edges [{:type "parent-of" :to (:id judge-strand)}]})
         (:id judge-strand)))))
 
 ;; ---------------------------------------------------------------------------
@@ -845,7 +845,7 @@
         (agent-run/resolve-harness (:harness judge))))
     (let [sha (or (:sha normalized)
                   (exec/resolve-rev! (data-root runtime) (:repo normalized) (:rev normalized)))
-          root (api/add runtime {:title (str "Bench: " name)
+          root (weaver/add runtime {:title (str "Bench: " name)
                                  :attributes {"bench/run" "true"
                                               "bench/suite" name
                                               "bench/repo" (:repo normalized)
@@ -853,12 +853,12 @@
           run-id (:id root)
           data-dir (.getCanonicalPath (run-dir runtime run-id))]
       (when-let [parent (:for opts)]
-        (api/update runtime parent {:edges [{:type "parent-of" :to run-id}]}))
-      (api/update runtime run-id {:attributes {"bench/data-dir" data-dir}})
+        (weaver/update runtime parent {:edges [{:type "parent-of" :to run-id}]}))
+      (weaver/update runtime run-id {:attributes {"bench/data-dir" data-dir}})
       (let [poured (mapv (fn [cell]
                            (let [prompt-slug (if (:single-prompt? normalized) ::single (:prompt cell))
                                  prompt-text (resolve-prompt-text runtime (:prompts normalized) prompt-slug)
-                                 entry (api/add runtime
+                                 entry (weaver/add runtime
                                                 {:title (str "Bench entry: " (:slug cell))
                                                  :attributes (cond-> {"bench/entry" "true"
                                                                       "bench/slug" (:slug cell)
@@ -869,7 +869,7 @@
                                                                (:thinking cell) (assoc "bench/thinking" (:thinking cell))
                                                                (and (not (:single-prompt? normalized)) (:prompt cell))
                                                                (assoc "bench/prompt-slug" (clojure.core/name (:prompt cell))))})]
-                             (api/update runtime run-id {:edges [{:type "parent-of" :to (:id entry)}]})
+                             (weaver/update runtime run-id {:edges [{:type "parent-of" :to (:id entry)}]})
                              {:slug (:slug cell) :entry-id (:id entry) :cell cell
                               :prompt-text prompt-text :prompt-slug prompt-slug
                               :entry-dir (str (io/file data-dir (:slug cell)))}))
@@ -925,10 +925,10 @@
   Only a `bench/phase failed` entry is retryable (TEN-003). Resets it to
   `pending`, clears `bench/error`, and re-queues it on the executor."
   [runtime entry-id]
-  (let [entry (or (api/show runtime entry-id) (fail! "bench retry: no such entry" {:id entry-id}))]
+  (let [entry (or (weaver/show runtime entry-id) (fail! "bench retry: no such entry" {:id entry-id}))]
     (when-not (= "failed" (attr-get entry "bench/phase"))
       (fail! "bench retry only applies to failed entries" {:id entry-id :phase (attr-get entry "bench/phase")}))
-    (let [root (api/show runtime (root-of runtime entry-id))
+    (let [root (weaver/show runtime (root-of runtime entry-id))
           ctx (rebuild-ctx runtime root)
           slug (attr-get entry "bench/slug")
           cell (or (first (filter #(= slug (:slug %)) (:entries (:suite ctx))))
@@ -938,7 +938,7 @@
           prompt-slug (if (:single-prompt? (:suite ctx)) ::single (:prompt cell))
           prompt-text (resolve-prompt-text runtime (:prompts (:suite ctx)) prompt-slug)
           attempt (or (attr-get entry "bench/attempt") 1)]
-      (api/update runtime entry-id
+      (weaver/update runtime entry-id
                   {:attributes {"bench/phase" "pending"
                                 "bench/error" nil
                                 "bench/attempt" (inc attempt)}})
@@ -962,7 +962,7 @@
   judge is an agent run or an external seam); an agent-run judge additionally
   gets `agent-run/phase \"superseded\"` so the run engine treats it as retired."
   [runtime run-id]
-  (let [root (or (api/show runtime run-id) (fail! "bench abort: no such run" {:id run-id}))
+  (let [root (or (weaver/show runtime run-id) (fail! "bench abort: no such run" {:id run-id}))
         eng (engine runtime)
         entries (run-entries runtime run-id)
         outstanding #{"pending" "preparing" "running"}
@@ -972,7 +972,7 @@
                            ;; Mark BEFORE killing so a kill-triggered worker error
                            ;; can't race the aborted marking (abort wins).
                            (when marked?
-                             (api/update runtime (:id entry)
+                             (weaver/update runtime (:id entry)
                                          {:attributes {"bench/phase" "failed" "bench/error" "aborted"}}))
                            (when eng (exec/kill-container! eng (exec/container-name run-id slug)))
                            (when-let [{:keys [process]} (get @(in-flight-atom runtime) (:id entry))]
@@ -986,7 +986,7 @@
                    (filter #(= "true" (str (attr-get % "bench/judge"))))
                    first)]
     (when judge
-      (api/update runtime (:id judge)
+      (weaver/update runtime (:id judge)
                   {:state "closed"
                    :attributes (cond-> {"bench/aborted" "true" "bench/error" "aborted"}
                                  (attr-get judge "agent-run/run") (assoc "agent-run/phase" "superseded"))}))
@@ -1050,7 +1050,7 @@
   "Return the bench run root for `run-id`, failing loudly when it is missing or
   not a `bench/run` strand."
   [runtime run-id verb]
-  (let [root (or (api/show runtime run-id)
+  (let [root (or (weaver/show runtime run-id)
                  (fail! (str "bench " verb ": no such run") {:id run-id}))]
     (when-not (= "true" (str (attr-get root "bench/run")))
       (fail! (str "bench " verb ": not a bench run root") {:id run-id}))
@@ -1103,7 +1103,7 @@
                :state (:state root)
                :entries (count entries)
                :phases (frequencies (map #(attr-get % "bench/phase") entries))}))
-          (api/list runtime query {}))))
+          (weaver/list runtime query {}))))
 
 (defn status
   "Return a bench run's entries with phase and headline metrics, judge run
@@ -1378,13 +1378,13 @@
   [runtime]
   (let [eng (engine runtime)
         live (in-flight-atom runtime)
-        orphans (->> (api/list runtime orphan-query {})
+        orphans (->> (weaver/list runtime orphan-query {})
                      (remove #(contains? @live (:id %))))]
     (doseq [entry orphans]
       (when eng
         (when-let [root (root-of runtime (:id entry))]
           (exec/kill-container! eng (exec/container-name root (attr-get entry "bench/slug")))))
-      (api/update runtime (:id entry)
+      (weaver/update runtime (:id entry)
                   {:attributes {"bench/phase" "failed"
                                 "bench/error" "orphaned by weaver restart"}}))
     (mapv :id orphans)))
@@ -1413,7 +1413,7 @@
        :agents (mapv :name (agents runtime))
        :suites (mapv :name (suites runtime))
        :reconciled reconciled
-       :op (api/register-op! runtime 'bench
+       :op (weaver/register-op! runtime 'bench
                              {:doc (:doc bench-arg-spec)
                               :arg-spec bench-arg-spec
                               ;; run/reconcile may fetch a git mirror synchronously

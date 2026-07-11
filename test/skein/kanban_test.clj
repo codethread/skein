@@ -6,7 +6,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
             [skein.spools.kanban :as kanban]
             [skein.spools.test-support :refer [with-runtime]]))
@@ -24,7 +24,7 @@
       (f rt))))
 
 (defn- op! [rt & argv]
-  (api/op! rt 'kanban argv))
+  (weaver/op! rt 'kanban argv))
 
 (deftest install-declares-kanban-attr-namespace
   (with-kanban
@@ -41,7 +41,7 @@
 (deftest kanban-about-commands-match-declared-subcommands
   (with-kanban
     (fn [rt]
-      (let [detail (api/resolve-op rt 'kanban)
+      (let [detail (weaver/resolve-op rt 'kanban)
             manual-entries (-> (kanban/about) :commands)
             manual-commands (set (keep :verb manual-entries))
             declared-commands (set (keys (get-in detail [:arg-spec :subcommands])))]
@@ -55,11 +55,11 @@
 (deftest kanban-add-next-claim-and-finish-round-trip
   (with-kanban
     (fn [rt]
-      (is (some #(= "kanban" (:name %)) (api/ops rt)))
+      (is (some #(= "kanban" (:name %)) (weaver/ops rt)))
       (testing "add creates a pending feature card"
         (let [added (op! rt "add" "Build active work convention" "--source" "devflow/rfcs/2026-07-02-feature-tracking-registry.md")
               id (get-in added [:card :id])
-              stored (api/show rt id)]
+              stored (weaver/show rt id)]
           (is (= "Build active work convention" (:title stored)))
           (is (= "true" (get-in stored [:attributes :kanban/card])))
           (is (= "pending" (get-in stored [:attributes :kanban/status])))
@@ -81,7 +81,7 @@
               (is (= "kanban-spool" (get-in claimed [:card :attributes :branch])))
               ;; regression: the claimed status must survive the round trip to
               ;; storage (string/keyword attr-key collisions once dropped it)
-              (is (= "claimed" (get-in (api/show rt id) [:attributes :kanban/status])))
+              (is (= "claimed" (get-in (weaver/show rt id) [:attributes :kanban/status])))
               (is (nil? (:next (op! rt "next"))))
               (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be pending"
                                     (op! rt "claim" id "--owner" "other" "--branch" "b")))))
@@ -100,7 +100,7 @@
   (with-kanban
     (fn [rt]
       (testing "help projections list the declared verb surface"
-        (let [detail (api/op! rt 'help ["kanban"])
+        (let [detail (weaver/op! rt 'help ["kanban"])
               alias (op! rt "help")
               verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
           (is (= detail alias))
@@ -194,7 +194,7 @@
             someday (get-in (op! rt "add" "Someday idea" "--priority" "p4") [:card :id])
             blocker (get-in (op! rt "add" "Breaking change blocker" "--priority" "p1") [:card :id])]
         (testing "add stamps p3 unless told otherwise and validates the flag"
-          (is (= "p3" (get-in (api/show rt old-default) [:attributes :kanban/priority])))
+          (is (= "p3" (get-in (weaver/show rt old-default) [:attributes :kanban/priority])))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"p1, p2, p3, p4"
                                 (op! rt "add" "Bad priority" "--priority" "urgent"))))
         (testing "next serves the highest priority first despite creation order"
@@ -204,10 +204,10 @@
             (is (= [blocker old-default someday] (mapv :id pending)))
             (is (= ["p1" "p3" "p4"] (mapv :priority pending)))))
         (testing "cards that predate priorities read as p3"
-          (let [legacy (api/add rt {:title "Legacy card"
-                                    :attributes {:kanban/card "true"
-                                                 :kanban/status "pending"
-                                                 :kanban/type "feature"}})
+          (let [legacy (weaver/add rt {:title "Legacy card"
+                                       :attributes {:kanban/card "true"
+                                                    :kanban/status "pending"
+                                                    :kanban/type "feature"}})
                 on-board (some #(when (= (:id legacy) (:id %)) %)
                                (:pending (op! rt "board")))]
             (is (= "p3" (:priority on-board)))))
@@ -250,11 +250,11 @@
     (fn [rt]
       (let [card-id (get-in (op! rt "add" "Crashable feature") [:card :id])]
         (op! rt "claim" card-id "--owner" "agent-a" "--branch" "crashable")
-        (let [task (api/add rt {:title "Implement it" :attributes {:kind "task"}})
-              review (api/add rt {:title "Review it" :attributes {:kind "review"}})]
-          (api/update rt card-id {:edges [{:type "parent-of" :to (:id task)}
-                                          {:type "parent-of" :to (:id review)}]})
-          (api/update rt (:id review) {:edges [{:type "depends-on" :to (:id task)}]})
+        (let [task (weaver/add rt {:title "Implement it" :attributes {:kind "task"}})
+              review (weaver/add rt {:title "Review it" :attributes {:kind "review"}})]
+          (weaver/update rt card-id {:edges [{:type "parent-of" :to (:id task)}
+                                             {:type "parent-of" :to (:id review)}]})
+          (weaver/update rt (:id review) {:edges [{:type "depends-on" :to (:id task)}]})
           (op! rt "note" card-id "Decided to keep lane names" "--author" "agent-a")
           (op! rt "note" card-id
                "Done: impl. Next: review. Validation: tests green."
@@ -297,7 +297,7 @@
           (is (= "feature-x" (:branch (first (:claimed board)))))
           (is (= 1 (get-in board [:closed :count])))
           (is (not (contains? board :unknown-status))))
-        (is (= "abandoned" (get-in (api/show rt done-id) [:attributes :kanban/status])))))))
+        (is (= "abandoned" (get-in (weaver/show rt done-id) [:attributes :kanban/status])))))))
 
 (deftest kanban-board-needs-review-frontier
   (with-kanban
@@ -306,14 +306,14 @@
         (op! rt "claim" card-id "--owner" "agent" "--branch" "review-branch")
         (testing "needs-review is always present and empty before any review work"
           (is (= [] (:needs-review (op! rt "board")))))
-        (let [ready-review (api/add rt {:title "Review ready" :attributes {:kind "review"}})
-              impl (api/add rt {:title "Implement" :attributes {:kind "task"}})
-              blocked-review (api/add rt {:title "Review blocked" :attributes {:kind "review"}})]
-          (api/update rt card-id {:edges [{:type "parent-of" :to (:id ready-review)}
-                                          {:type "parent-of" :to (:id impl)}
-                                          {:type "parent-of" :to (:id blocked-review)}]})
+        (let [ready-review (weaver/add rt {:title "Review ready" :attributes {:kind "review"}})
+              impl (weaver/add rt {:title "Implement" :attributes {:kind "task"}})
+              blocked-review (weaver/add rt {:title "Review blocked" :attributes {:kind "review"}})]
+          (weaver/update rt card-id {:edges [{:type "parent-of" :to (:id ready-review)}
+                                             {:type "parent-of" :to (:id impl)}
+                                             {:type "parent-of" :to (:id blocked-review)}]})
           ;; blocked-review depends on impl, so it stays out of the ready frontier
-          (api/update rt (:id blocked-review) {:edges [{:type "depends-on" :to (:id impl)}]})
+          (weaver/update rt (:id blocked-review) {:edges [{:type "depends-on" :to (:id impl)}]})
           (testing "needs-review surfaces only ready review children with the card branch"
             (let [entries (:needs-review (op! rt "board"))]
               (is (vector? entries))
@@ -328,7 +328,7 @@
             b-id (get-in (op! rt "add" "Card B") [:card :id])
             edge (fn [related] (mapv (fn [e] [(:relation e) (get-in e [:strand :id])]) related))]
         ;; A depends-on B: A is the dependent, B is the dependency
-        (api/update rt a-id {:edges [{:type "depends-on" :to b-id}]})
+        (weaver/update rt a-id {:edges [{:type "depends-on" :to b-id}]})
         (testing "the dependent card sees the depends-on direction"
           (is (= [["depends-on" b-id]] (edge (:related (op! rt "card" a-id))))))
         (testing "the dependency card sees the depended-on-by direction"
@@ -336,8 +336,8 @@
         (testing "incoming edges from non-card strands surface too"
           ;; regression: depends-on subgraph expansion walks outgoing edges only,
           ;; so a card-rooted scan never saw task -> card blockers
-          (let [task (api/add rt {:title "Cross-feature task" :attributes {:kind "task"}})]
-            (api/update rt (:id task) {:edges [{:type "depends-on" :to b-id}]})
+          (let [task (weaver/add rt {:title "Cross-feature task" :attributes {:kind "task"}})]
+            (weaver/update rt (:id task) {:edges [{:type "depends-on" :to b-id}]})
             (is (= #{["depended-on-by" a-id] ["depended-on-by" (:id task)]}
                    (set (edge (:related (op! rt "card" b-id))))))))
         (testing "related is always present and empty for an unlinked card"
@@ -371,7 +371,7 @@
         (testing "task add stamps the marker + kind and parents under the feature"
           (is (= "kanban task add" (:operation added)))
           (is (= feature-id (:feature added)))
-          (let [stored (api/show rt task-id)]
+          (let [stored (weaver/show rt task-id)]
             (is (= "Implement the core" (:title stored)))
             (is (= "true" (get-in stored [:attributes :kanban/task])))
             (is (= "task" (get-in stored [:attributes :kind])))
@@ -381,8 +381,8 @@
                             (= task-id (:to_strand_id %))) edges))))
         (testing "task list projects only marked tasks, not other parent-of children"
           ;; a bare strand parented under the feature is not a task (marker-selected)
-          (let [plain (api/add rt {:title "Not a task"})]
-            (api/update rt feature-id {:edges [{:type "parent-of" :to (:id plain)}]})
+          (let [plain (weaver/add rt {:title "Not a task"})]
+            (weaver/update rt feature-id {:edges [{:type "parent-of" :to (:id plain)}]})
             (let [listed (op! rt "task" "list" feature-id)]
               (is (= "kanban task list" (:operation listed)))
               (is (= [task-id] (mapv :id (:tasks listed))))
@@ -390,7 +390,7 @@
         (testing "task add fails loudly on a missing title, non-card feature, and unknown action"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"title must be a non-blank"
                                 (op! rt "task" "add" feature-id)))
-          (let [orphan (api/add rt {:title "Loose strand"})]
+          (let [orphan (weaver/add rt {:title "Loose strand"})]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a kanban card"
                                   (op! rt "task" "add" (:id orphan) "x"))))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"action must be add or list"
@@ -417,8 +417,8 @@
                                     "--depends-on" ready-id) [:task :id])
             status-of (fn [] (into {} (map (juxt :id :status))
                                    (:tasks (op! rt "task" "list" feature-id))))]
-        (api/update rt doing-id {:attributes {:owner "agent-a"}})
-        (api/update rt done-id {:state "closed"})
+        (weaver/update rt doing-id {:attributes {:owner "agent-a"}})
+        (weaver/update rt done-id {:state "closed"})
         (testing "the four statuses derive purely from graph + core attrs"
           (let [status (status-of)]
             (is (= "ready" (status ready-id)) "active, deps met, no owner")
@@ -426,7 +426,7 @@
             (is (= "done" (status done-id)) "closed strand")
             (is (= "blocked" (status blocked-id)) "active with an unmet depends-on target")))
         (testing "closing the dependency unblocks its dependent"
-          (api/update rt ready-id {:state "closed"})
+          (weaver/update rt ready-id {:state "closed"})
           (let [status (status-of)]
             (is (= "done" (status ready-id)) "the closed dependency reads as done")
             (is (= "ready" (status blocked-id)) "dependency closed, no owner -> ready")))))))
@@ -437,7 +437,7 @@
       (let [feature-id (get-in (op! rt "add" "Card-view task feature") [:card :id])
             ready-id (get-in (op! rt "task" "add" feature-id "Ready task") [:task :id])
             doing-id (get-in (op! rt "task" "add" feature-id "Doing task") [:task :id])]
-        (api/update rt doing-id {:attributes {:owner "agent-a"}})
+        (weaver/update rt doing-id {:attributes {:owner "agent-a"}})
         (testing "card view lists child tasks with their derived statuses"
           (let [tasks (:tasks (op! rt "card" feature-id))]
             (is (= #{ready-id doing-id} (set (map :id tasks))))
@@ -460,7 +460,7 @@
       (let [feature-id (get-in (op! rt "add" "Doing-task feature") [:card :id])]
         (op! rt "claim" feature-id "--owner" "agent-a" "--branch" "doing-branch")
         (let [doing-id (get-in (op! rt "task" "add" feature-id "Wire the thing") [:task :id])]
-          (api/update rt doing-id {:attributes {:owner "agent-a"}})
+          (weaver/update rt doing-id {:attributes {:owner "agent-a"}})
           (testing "the claimed lane carries the derived doing-task title"
             (let [claimed (some #(when (= feature-id (:id %)) %) (:claimed (op! rt "board")))]
               (is (= "Wire the thing" (get-in claimed [:doing-task :title])))
@@ -476,7 +476,7 @@
 (deftest kanban-batch-weave-creates-cards-and-dependencies
   (with-kanban
     (fn [rt]
-      (let [existing (api/add rt {:title "Existing blocker"})
+      (let [existing (weaver/add rt {:title "Existing blocker"})
             result (patterns/weave! rt :kanban-batch
                                     {:items [{:key "design"
                                               :title "Design batch"
@@ -487,8 +487,8 @@
                                               :deps ["design" (:id existing)]}]})
             design-id (get-in result [:refs "design"])
             docs-id (get-in result [:refs "docs"])
-            design (api/show rt design-id)
-            docs (api/show rt docs-id)
+            design (weaver/show rt design-id)
+            docs (weaver/show rt docs-id)
             edge-set (set (map (juxt :from_strand_id :to_strand_id :edge_type)
                                (:edges (graph/subgraph rt [docs-id] {:type "depends-on"}))))]
         (is (= "Design batch" (:title design)))

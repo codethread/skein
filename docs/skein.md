@@ -291,19 +291,19 @@ For a simple persistent query, put it directly in `init.clj`:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha]
+         '[skein.api.runtime.alpha :as runtime]
          '[skein.api.graph.alpha :as graph])
 
 (def runtime (current/runtime))
 
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :skein/spools-batteries
+(runtime/sync! runtime)
+(runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
 (graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 
-For a workspace that already activates a local spool with `runtime-alpha/use!`, follow that existing pattern instead: add the `graph/register-query!` call to the spool's `install!` function so reload/startup installs everything from one place.
+For a workspace that already activates a local spool with `runtime/use!`, follow that existing pattern instead: add the `graph/register-query!` call to the spool's `install!` function so reload/startup installs everything from one place.
 
 Defining a Clojure var that contains query data is not the same as registering a named query. A local var can be passed to graph helpers from your own code, but `strand list --query mine` only works after `mine` has been registered in the weaver's named-query registry.
 
@@ -339,8 +339,8 @@ The REPL helper namespace includes common strand functions. Privileged runtime l
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
-(runtime-alpha/reload! (current/runtime))
+         '[skein.api.runtime.alpha :as runtime])
+(runtime/reload! (current/runtime))
 ```
 
 ## Startup config
@@ -364,12 +364,12 @@ The generated `init.clj` is intentionally small:
 ```clojure
 ;; init.clj
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
 
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :skein/spools-batteries
+(runtime/sync! runtime)
+(runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
 ```
@@ -380,13 +380,13 @@ A direct `init.clj` query registration can look like this:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha]
+         '[skein.api.runtime.alpha :as runtime]
          '[skein.api.graph.alpha :as graph])
 
 (def runtime (current/runtime))
 
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :skein/spools-batteries
+(runtime/sync! runtime)
+(runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
 (graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
@@ -396,8 +396,8 @@ Use reload during development:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
-(runtime-alpha/reload! (current/runtime))
+         '[skein.api.runtime.alpha :as runtime])
+(runtime/reload! (current/runtime))
 ```
 
 `skein.api.runtime.alpha` is a privileged built-in runtime loader/config helper namespace shipped with Skein. It is not an ordinary user/community spool, and loader/config helpers do not live under `skein.spools.*`.
@@ -451,15 +451,15 @@ Activate it from `init.clj`:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
 
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :skein/spools-batteries
+(runtime/sync! runtime)
+(runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
-(runtime-alpha/use! runtime :my/workflow
+(runtime/use! runtime :my/workflow
   {:ns 'my.workflow
    :spools #{'my/workflow}
    :call 'my.workflow/install!})
@@ -468,10 +468,10 @@ Activate it from `init.clj`:
 Key points:
 
 - `spools.edn` is approval. It says which local roots the weaver may load.
-- `runtime-alpha/sync!` makes approved roots available to the weaver.
-- `runtime-alpha/use!` activates one module and records whether it loaded, skipped, or failed.
+- `runtime/sync!` makes approved roots available to the weaver.
+- `runtime/use!` activates one module and records whether it loaded, skipped, or failed.
 - `:call` must name a fully qualified zero-argument function.
-- Direct `require` from `mill weaver repl` evaluates in the weaver JVM and is useful for trusted experimentation. For repeatable module activation and reload introspection, use `runtime-alpha/use!` or `runtime-alpha/reload!` from startup config or the live REPL.
+- Direct `require` from `mill weaver repl` evaluates in the weaver JVM and is useful for trusted experimentation. For repeatable module activation and reload introspection, use `runtime/use!` or `runtime/reload!` from startup config or the live REPL.
 - Extension code runs with weaver authority. Only load trusted code.
 - There is no per-module isolation or unload guarantee. Restart the weaver for a clean runtime if needed.
 

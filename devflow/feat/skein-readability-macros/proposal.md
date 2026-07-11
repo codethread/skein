@@ -27,7 +27,7 @@ The decision of whether a scan-first config surface earns grouping macros — no
   identity of every construct and every generated string is held byte-identical (RFC-020.REC4).
 - **PROP-SkeinReadabilityMacros-001.NG2:** No new CLI surface, op semantics, or arg-spec parser change. Generated `help`
   stays derived from arg-specs, never hand-written (RFC-020.NG2; TEN-006).
-- **PROP-SkeinReadabilityMacros-001.NG3:** No change to `init.clj`'s `runtime-alpha/use!` activation model or its
+- **PROP-SkeinReadabilityMacros-001.NG3:** No change to `init.clj`'s `runtime/use!` activation model or its
   explicit ordering comments. Macro registration still runs only inside each module's `install!`, after required spools
   load (RFC-020.NG1).
 - **PROP-SkeinReadabilityMacros-001.NG4:** No promotion to a shipped `skein.api.*.alpha` contract. The macros stay

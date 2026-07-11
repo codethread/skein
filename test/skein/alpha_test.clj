@@ -7,12 +7,12 @@
             [skein.api.views.alpha :as views]
             [clojure.string :as str]
             [clojure.test :refer [deftest is use-fixtures]]
-            [skein.api.weaver.alpha :as api]
-            [skein.core.weaver.config :as daemon-config]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.api.weaver.alpha :as weaver]
+            [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db-test :as db-test]))
 (defn test-world [config-dir]
-  (daemon-config/world config-dir
+  (weaver-config/world config-dir
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
@@ -24,12 +24,12 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-alpha-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (runtime/start! db-file {:world (test-world config-dir) :publish? false})]
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir) :publish? false})]
       (try
         (f rt)
         (finally
           (reset-repl-state!)
-          (runtime/stop! rt)
+          (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file))))))
 
 (defn test-view [{:keys [params]}]
@@ -56,10 +56,10 @@
 (deftest alpha-helpers-route-directly-inside-daemon-runtime
   (with-runtime
     (fn [rt]
-      (api/init rt)
-      (let [feature (api/add rt {:title "Feature" :attributes {:kind "feature"}})
-            task (api/add rt {:title "Task" :attributes {:owner "agent"}})]
-        (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
+      (weaver/init rt)
+      (let [feature (weaver/add rt {:title "Feature" :attributes {:kind "feature"}})
+            task (weaver/add rt {:title "Task" :attributes {:owner "agent"}})]
+        (weaver/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
         (graph/register-query! rt 'agent-owned [:= [:attr :owner] "agent"])
         (is (= [(:id task)] (graph/query-ids rt 'agent-owned {})))
         (is (= [(:id task)] (mapv :id (graph/strands-by-ids rt [(:id task) (:id task)]))))
@@ -67,21 +67,21 @@
                 :keys ["owner"]
                 :archived? true
                 :changed 1}
-               (api/archive! rt (:id task) [:owner])))
-        (is (= [] (api/list rt [:= [:attr :owner] "agent"] {})))
-        (is (= {:owner "agent"} (:attributes (api/show rt (:id task)))))
+               (weaver/archive! rt (:id task) [:owner])))
+        (is (= [] (weaver/list rt [:= [:attr :owner] "agent"] {})))
+        (is (= {:owner "agent"} (:attributes (weaver/show rt (:id task)))))
         (is (= {:strand-id (:id task)
                 :keys ["owner"]
                 :archived? false
                 :changed 1}
-               (api/unarchive! rt (:id task) [:owner])))
-        (api/update rt (:id task) {:attributes {:payload (str/join (repeat 1100 "x"))}})
+               (weaver/unarchive! rt (:id task) [:owner])))
+        (weaver/update rt (:id task) {:attributes {:payload (str/join (repeat 1100 "x"))}})
         (let [lean-task (first (filter #(= (:id task) (:id %))
-                                       (api/ready-lean rt 1024)))
+                                       (weaver/ready-lean rt 1024)))
               payload (get-in lean-task [:attributes :payload])]
           (is (true? (:skein/omitted payload)))
           (is (pos-int? (:bytes payload))))
-        (api/update rt (:id task) {:attributes {:payload nil}})
+        (weaver/update rt (:id task) {:attributes {:payload nil}})
         (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id task)] {})))
         (is (= #{(:id feature) (:id task)}
                (set (map :id (:strands (graph/subgraph rt [(:id feature)]))))))
@@ -133,7 +133,7 @@
   ;; This namespace runs in the parallel batch, whose tests start unpublished
   ;; runtimes only; with the thread-local binding cleared, the public entry point
   ;; must see no ambient runtime and fail loudly.
-  (binding [runtime/*runtime* nil]
+  (binding [weaver-runtime/*runtime* nil]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"No active Skein weaver runtime"
                           (current/runtime)))))

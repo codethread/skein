@@ -8,7 +8,7 @@
 ;; (TEN-003).
 ;;
 ;; Limitation: .skein/init.clj loads this namespace via `:ns`, and a bare
-;; `runtime-alpha/reload!` reruns install! but skips already-loaded namespaces,
+;; `runtime/reload!` reruns install! but skips already-loaded namespaces,
 ;; so this top-level forget does NOT re-run. To pick up renamed or removed
 ;; patterns here, reload the namespace explicitly: (require 'skein.macros.demo
 ;; :reload).

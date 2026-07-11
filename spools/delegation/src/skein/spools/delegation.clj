@@ -10,7 +10,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
             [skein.spools.agent-run :as agent-run]
             [skein.spools.util :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
@@ -542,7 +542,7 @@
       (terminal-phases (sattr s "phase"))))
 
 (defn- task-runs [task-id]
-  (->> (children-ids task-id) (map #(api/show (rt) %)) (filter run?) vec))
+  (->> (children-ids task-id) (map #(weaver/show (rt) %)) (filter run?) vec))
 
 (defn- serving-runs
   "Serving, non-superseded runs for a task: the runs that gate delegation.
@@ -557,7 +557,7 @@
         superseded-ids (set (map :to_strand_id (graph/incoming-edges (rt) run-ids "supersedes")))]
     (->> run-ids
          (remove superseded-ids)
-         (map #(api/show (rt) %))
+         (map #(weaver/show (rt) %))
          (remove #(= "superseded" (sattr % "phase"))))))
 
 (defn- prompt-for-task
@@ -576,12 +576,12 @@
           (when extra (str "Extra instructions:\n" extra "\n"))))))
 
 (defn- active-task! [id]
-  (let [task (or (api/show (rt) id) (fail! "task not found" {:task id}))]
+  (let [task (or (weaver/show (rt) id) (fail! "task not found" {:task id}))]
     (when-not (= "active" (:state task)) (fail! "task must be active" {:task id :state (:state task)}))
     task))
 
 (defn- ready? [id]
-  (contains? (set (map :id (api/ready (rt) [:= :state "active"] {}))) id))
+  (contains? (set (map :id (weaver/ready (rt) [:= :state "active"] {}))) id))
 
 (defn- hitl? [task] (let [v (attr task :hitl)] (or (= true v) (= "true" v))))
 (defn- harness-for [task flags]
@@ -694,7 +694,7 @@
 (defn- op-logs [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--tail" :single}) [run-id] positional]
     (when-not (= 1 (count positional)) (fail! "logs requires <run-id>" {:got positional}))
-    (let [run (or (api/show (rt) run-id) (fail! "Run not found" {:id run-id}))
+    (let [run (or (weaver/show (rt) run-id) (fail! "Run not found" {:id run-id}))
           n (some->> (get flags "--tail") (parse-int! "--tail"))
           clip (fn [text] (let [lines (str/split-lines text)] (str/join "\n" (if n (take-last n lines) lines))))
           rf (fn [^String path] (let [f (java.io.File. path)] (when-not (.exists f) (fail! "Run log file missing" {:id run-id :path path})) (clip (slurp f))))]
@@ -1421,7 +1421,7 @@
         specs (panel-specs panel {:target target :review-id review-id})
         board-id (case (get-in specs [:blackboard :kind])
                    :target (get-in specs [:blackboard :id])
-                   :fresh (:id (api/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
+                   :fresh (:id (weaver/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
                                               :attributes (cond-> {"panel/role" "panel"
                                                                    "review/pass" (:review-pass specs)}
                                                             spawned-by (assoc "agent-run/spawned-by" spawned-by))})))
@@ -1512,7 +1512,7 @@
   [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd roster change-context]
               :or {members 2}
               :as opts}]
-  (when-not (api/show (rt) target-id)
+  (when-not (weaver/show (rt) target-id)
     (fail! "Review target strand not found" {:id target-id}))
   ;; validate the diff surface on every path — the roster path re-checks it in
   ;; roster-review-specs, but a direct :members/:harnesses caller with no
@@ -1789,7 +1789,7 @@
         [id] positional
         fresh? (boolean (get flags "--fresh"))]
     (when-not (= 1 (count positional)) (fail! "retry requires <task-or-run-id>" {:got positional}))
-    (let [strand (or (api/show (rt) id) (fail! "retry target not found" {:id id}))
+    (let [strand (or (weaver/show (rt) id) (fail! "retry target not found" {:id id}))
           task-id (when-not (run? strand) id)
           ;; retry-by-task means "retry the task's own work", so resolve against
           ;; serving runs only — a failed reviewer/recon helper hanging under the
@@ -1824,7 +1824,7 @@
                             (and preserve-resume? fresh-prompt) (assoc "panel/fresh-prompt" fresh-prompt))
             extra (get flags "--prompt")
             append-extra (fn [p] (str p (when extra (str "\n\n" extra))))
-            task (when task-id (api/show (rt) task-id))
+            task (when task-id (weaver/show (rt) task-id))
             interactive? (= "interactive" (sattr run "mode"))
             prompt (cond
                      task (prompt-for-task task extra interactive?)
@@ -1854,7 +1854,7 @@
 
 (defn- blockers [task]
   (->> (:edges (graph/subgraph (rt) [(:id task)] {:type "depends-on"}))
-       (filter #(and (= (:id task) (:from_strand_id %)) (not= "closed" (:state (api/show (rt) (:to_strand_id %))))))
+       (filter #(and (= (:id task) (:from_strand_id %)) (not= "closed" (:state (weaver/show (rt) (:to_strand_id %))))))
        (mapv :to_strand_id)))
 
 (defn- status-visible-child?
@@ -1864,7 +1864,7 @@
 
 (defn- tree-node [s]
   (let [kids (->> (children-ids (:id s))
-                  (map #(api/show (rt) %))
+                  (map #(weaver/show (rt) %))
                   (filter status-visible-child?))]
     (cond-> {:id (:id s) :title (:title s) :kind (if (run? s) "run" "task") :children (mapv tree-node kids)}
       (run? s) (assoc :phase (sattr s "phase"))
@@ -1874,10 +1874,10 @@
   (let [{:keys [positional]} (parse-argv argv {})]
     (when (> (count positional) 1) (fail! "status takes at most one root-id" {:got positional}))
     (let [root (first positional)
-          nodes (if root (cons (api/show (rt) root) (parent-descendants root)) (api/list (rt) [:= :state "active"] {}))
+          nodes (if root (cons (weaver/show (rt) root) (parent-descendants root)) (weaver/list (rt) [:= :state "active"] {}))
           tasks (filter #(and (not (run? %)) (= "active" (:state %))) nodes)
           runs (filter run? nodes)]
-      {:tree (mapv tree-node (if root [(api/show (rt) root)] (filter #(and (not (run? %)) (seq (task-runs (:id %)))) tasks)))
+      {:tree (mapv tree-node (if root [(weaver/show (rt) root)] (filter #(and (not (run? %)) (seq (task-runs (:id %)))) tasks)))
        :ready (mapv :id (filter #(and (not= root (:id %))
                                       (ready? (:id %))
                                       (not (hitl? %))
@@ -2102,7 +2102,7 @@
                      :doc "Panel/council seat-shape run attrs stamped by panel-specs (advisory key list)."})
     {:installed true
      :namespace 'skein.spools.delegation
-     :op (api/register-op! runtime 'agent
+     :op (weaver/register-op! runtime 'agent
                            {:doc (:doc agent-arg-spec)
                             :arg-spec agent-arg-spec
                             ;; await blocks for arbitrarily long coordination waits

@@ -8,7 +8,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [skein.core.db :as db]
-            [skein.core.weaver.runtime :as runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn- normalize-row
   "Decode JSON-backed row fields returned by persistence."
@@ -72,7 +72,7 @@
 (defn with-spool-classloader
   "Run f with the runtime bound and its spool classloader installed."
   [runtime f]
-  (runtime/with-runtime-and-spool-classloader runtime f))
+  (weaver-runtime/with-runtime-and-spool-classloader runtime f))
 
 (defn config-dir
   "Return the runtime's selected config-dir path."

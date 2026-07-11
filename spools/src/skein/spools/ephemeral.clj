@@ -6,7 +6,7 @@
   privileged loader/config/runtime implementation."
   (:require [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as weaver]))
 
 (defn ephemeral!
   "Create a userland ephemeral strand under parent-id.
@@ -18,9 +18,9 @@
    (ephemeral! parent-id title {}))
   ([parent-id title attributes]
    (let [rt (current/runtime)
-         strand (api/add rt {:title title
-                             :attributes (merge {:ephemeral "true"} attributes)})]
-     (api/update rt parent-id {:edges [{:type "parent-of" :to (:id strand)}]})
+         strand (weaver/add rt {:title title
+                                :attributes (merge {:ephemeral "true"} attributes)})]
+     (weaver/update rt parent-id {:edges [{:type "parent-of" :to (:id strand)}]})
      strand)))
 
 (def ephemeral-query

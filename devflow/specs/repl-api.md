@@ -102,19 +102,19 @@ Event handlers receive one event map and may perform trusted side effects, inclu
 
 Approved spool config is the effective overlay of `spools.edn` and `spools.local.edn` in the selected workspace. Both files use the same EDN grammar: exactly one top-level key, `:spools`, whose value is a map from symbol spool coordinates to entry maps of exactly one coordinate kind. Local kind: exactly `{:local/root <non-blank string path>}`. Git kind: required `:git/url` (non-blank string, passed to git verbatim) and `:git/sha` (exactly 40 lowercase hex characters), optional `:git/tag` (non-blank readability label verified against the sha at fetch time), and optional `:deps/root` (non-blank relative subpath, no leading `/`, `~`, or `..` segments; git-only). Unknown top-level keys, non-symbol coordinates, missing `:spools` in a present file, non-map entries, unknown per-lib keys, mixed kind keys, and malformed values fail loudly as structural config errors. Missing files contribute no spools. When both files define the same coordinate, the `spools.local.edn` entry replaces the `spools.edn` entry — including a local `:local/root` overriding a shared git pin for author dev workflows.
 
-Relative `:local/root` values resolve against selected workspace; absolute roots are accepted as explicit user-approved paths; leading `~` and `~/` expand to the user home directory. Normalized approved config returns kind-tagged entries: local entries as `{lib-symbol {:kind :local :local/root original-path :root canonical-path :source {:kind :shared|:local :file path}}}`, git entries with `:kind :git`, the raw `:git/*`/`:deps/root` values, and `:root` computed as the content-addressed cache path (SPEC-004.C91) plus the `:deps/root` subpath. Per-spool missing/unreadable roots, fetch failures, and tag mismatches are not structural config errors; `(runtime-alpha/sync! runtime)` records them as failed sync outcomes so optional module activation can skip without aborting weaver startup.
+Relative `:local/root` values resolve against selected workspace; absolute roots are accepted as explicit user-approved paths; leading `~` and `~/` expand to the user home directory. Normalized approved config returns kind-tagged entries: local entries as `{lib-symbol {:kind :local :local/root original-path :root canonical-path :source {:kind :shared|:local :file path}}}`, git entries with `:kind :git`, the raw `:git/*`/`:deps/root` values, and `:root` computed as the content-addressed cache path (SPEC-004.C91) plus the `:deps/root` subpath. Per-spool missing/unreadable roots, fetch failures, and tag mismatches are not structural config errors; `(runtime/sync! runtime)` records them as failed sync outcomes so optional module activation can skip without aborting weaver startup.
 
 Spool metadata and spool prerequisites are documentation, not REPL API grammar. Shared spool authors document prerequisites, suggested pins, and activation order in their README using the convention described by `docs/writing-shared-spools.md`. A `spool.edn` file, if present in a source tree for historical or local reasons, is ignored by the Skein spool contract and is not an authoritative manifest. This is a deliberate TEN-004-over-TEN-003 tradeoff scoped to manifest retirement: Skein does not read the file at all, so it cannot warn about it. The migration for authors is deleting the file.
 
 Helpers include:
 
-- `(runtime-alpha/approved runtime)` returns normalized approved config.
-- `(runtime-alpha/sync! runtime)` materializes approved git coordinates into the content-addressed cache, uses Clojure runtime dependency tooling to add each entry's effective root, and returns structured results for loaded, already-available, and failed approved spools, including fetch and runtime-add/dependency-policy failure data where applicable.
-- `(runtime-alpha/syncs runtime)` returns weaver-lifetime approved-spool sync state.
-- `(runtime-alpha/reload! runtime)` clears weaver-lifetime approved-spool sync state, module-use state, named queries, views, patterns, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads selected workspace startup files in order (`init.clj`, then `init.local.clj`) inside the active weaver and returns loaded file metadata plus final return values. Missing startup files are skipped; present failing files throw with file context. Event dispatch resumes after the fully layered config loads. Reload does not unload already-loaded Clojure namespaces or vars.
-- `(runtime-alpha/use! runtime key opts)` records one weaver-lifetime module-use attempt under keyword `key`; duplicate keys replace prior state for reload workflows.
-- `(runtime-alpha/uses runtime)` and `(runtime-alpha/use runtime key)` expose weaver-lifetime module-use state.
-- `(runtime-alpha/now runtime)` returns the runtime clock's current `java.time.Instant` — the blessed, runtime-scoped time source trusted spools read instead of `(Instant/now)` (SPEC-004.C1a). It defaults to the real wall clock; deterministic tests install and step an advanceable clock with `skein.test.alpha/set-clock!`/`advance!` (SPEC-003.C28a). It is data-first (an `Instant`, not the clock fn) and, like every `runtime.alpha` helper, takes the runtime first (SPEC-003.C18).
+- `(runtime/approved runtime)` returns normalized approved config.
+- `(runtime/sync! runtime)` materializes approved git coordinates into the content-addressed cache, uses Clojure runtime dependency tooling to add each entry's effective root, and returns structured results for loaded, already-available, and failed approved spools, including fetch and runtime-add/dependency-policy failure data where applicable.
+- `(runtime/syncs runtime)` returns weaver-lifetime approved-spool sync state.
+- `(runtime/reload! runtime)` clears weaver-lifetime approved-spool sync state, module-use state, named queries, views, patterns, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads selected workspace startup files in order (`init.clj`, then `init.local.clj`) inside the active weaver and returns loaded file metadata plus final return values. Missing startup files are skipped; present failing files throw with file context. Event dispatch resumes after the fully layered config loads. Reload does not unload already-loaded Clojure namespaces or vars.
+- `(runtime/use! runtime key opts)` records one weaver-lifetime module-use attempt under keyword `key`; duplicate keys replace prior state for reload workflows.
+- `(runtime/uses runtime)` and `(runtime/use runtime key)` expose weaver-lifetime module-use state.
+- `(runtime/now runtime)` returns the runtime clock's current `java.time.Instant` — the blessed, runtime-scoped time source trusted spools read instead of `(Instant/now)` (SPEC-004.C1a). It defaults to the real wall clock; deterministic tests install and step an advanceable clock with `skein.test.alpha/set-clock!`/`advance!` (SPEC-003.C28a). It is data-first (an `Instant`, not the clock fn) and, like every `runtime.alpha` helper, takes the runtime first (SPEC-003.C18).
 
 `use!` options identify exactly one load target with `:ns` for weaver-side namespace loading or `:file` for selected workspace-relative weaver-side `load-file`; `:file` must be relative and must resolve within the selected workspace. For `:ns`, the weaver first searches synced local-root classpath entries from each root's `deps.edn :paths` (defaulting to `["src"]`) and `load-file`s the namespace source using Clojure's hyphen-to-underscore path mapping; if no synced source exists it falls back to ordinary `require`. Options may include `:spools`, a vector or set of symbol spool coordinate keys that must be approved and available before target loading; `:after`, a vector of prior loaded `use!` keys; `:call`, a fully qualified zero-arity function symbol to resolve and call after successful load; and `:required? true` for strict load/call failure behavior.
 
@@ -174,11 +174,11 @@ Selected workspace startup files (`init.clj`, then `init.local.clj`) may sync ap
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :my/module
+(runtime/sync! runtime)
+(runtime/use! runtime :my/module
   {:ns 'my.module.alpha
    :spools #{'my/module}
    :call 'my.module.alpha/install!})

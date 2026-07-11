@@ -21,7 +21,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [attr-get]]))
 
@@ -120,7 +120,7 @@
 (defn- card-strand
   "Return id's kanban card strand, failing loudly if it is absent or not a card."
   [id]
-  (let [strand (or (api/show (current/runtime) id)
+  (let [strand (or (weaver/show (current/runtime) id)
                    (throw (ex-info "Kanban strand not found" {:id id})))]
     (when-not (= "true" (attr-value strand card-attr))
       (throw (ex-info "Strand is not a kanban card" {:id id :attributes (:attributes strand)})))
@@ -157,10 +157,10 @@
     (when (and epic-id (= "epic" (get flags "--type")))
       (throw (ex-info "kanban epics cannot nest under other epics" {:epic epic-id})))
     (let [epic (some-> epic-id epic-strand)
-          strand (api/add rt {:title title
+          strand (weaver/add rt {:title title
                               :attributes (card-attributes flags)})]
       (when epic
-        (api/update rt (:id epic) {:edges [{:type "parent-of" :to (:id strand)}]}))
+        (weaver/update rt (:id epic) {:edges [{:type "parent-of" :to (:id strand)}]}))
       (cond-> {:operation "kanban add"
                :card (select-keys strand [:id :title :state :attributes])}
         epic (assoc :epic (:id epic))))))
@@ -245,14 +245,14 @@
   "Write only the changed `attrs` (and optional `state`) onto a kanban card.
 
   `attrs` is a delta: just the keyword-keyed attributes this op changes, handed
-  straight to `api/update` so `db/update-strand!`'s `json_patch` merge folds them
+  straight to `weaver/update` so `db/update-strand!`'s `json_patch` merge folds them
   into the stored map. Writing a delta rather than a read-merged full map removes
   a lost-update race — two concurrent `update-card!` calls (e.g. `set-priority!`
   and `claim!`) each patch only their own keys instead of overwriting the whole
-  attribute map from a possibly-stale read. `api/update` returns the full merged
+  attribute map from a possibly-stale read. `weaver/update` returns the full merged
   strand, so callers still see every attribute in the result."
   [strand attrs state]
-  (api/update (current/runtime)
+  (weaver/update (current/runtime)
               (:id strand)
               (cond-> {:attributes attrs}
                 state (assoc :state state))))
@@ -406,16 +406,16 @@
         title (require-non-blank! :title title)
         rt (current/runtime)
         deps (get flags "--depends-on")
-        task (api/add rt {:title title
+        task (weaver/add rt {:title title
                           :attributes (cond-> {task-attr "true"
                                                :kind "task"}
                                         (get flags "--body") (assoc :body (get flags "--body")))})]
-    (api/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
+    (weaver/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
     (when (seq deps)
-      (api/update rt (:id task) {:edges (mapv (fn [dep] {:type "depends-on" :to dep}) deps)}))
+      (weaver/update rt (:id task) {:edges (mapv (fn [dep] {:type "depends-on" :to dep}) deps)}))
     {:operation "kanban task add"
      :feature (:id feature)
-     :task (select-keys (api/show rt (:id task)) [:id :title :state :attributes])}))
+     :task (select-keys (weaver/show rt (:id task)) [:id :title :state :attributes])}))
 
 (defn task-list
   "Project a feature card's tasks with their derived statuses."
@@ -455,7 +455,7 @@
                             :kind "note"}
                      (get flags "--author") (assoc :author (get flags "--author")))
         {note-id :id} (notes/note! rt (:id card) text decorating)
-        note (api/show rt note-id)]
+        note (weaver/show rt note-id)]
     {:operation "kanban note"
      :card (:id card)
      :note (select-keys note [:id :title :state :attributes])}))
@@ -502,7 +502,7 @@
   non-card work would be dropped. The full root set keeps every edge incident
   to the card visible, both directions, any strand, any state."
   [rt card-id]
-  (let [all-ids (mapv :id (api/list rt))
+  (let [all-ids (mapv :id (weaver/list rt))
         {:keys [strands edges]} (graph/subgraph rt all-ids {:type "depends-on"})
         by-id (into {} (map (juxt :id identity)) strands)]
     (->> edges
@@ -550,7 +550,7 @@
         {:keys [notes work]} (card-subtree rt card)
         active-work (filterv #(= "active" (:state %)) work)
         work-ids (set (map :id active-work))
-        ready (filterv #(contains? work-ids (:id %)) (api/ready rt))]
+        ready (filterv #(contains? work-ids (:id %)) (weaver/ready rt))]
     {:operation "kanban card"
      :card (select-keys card [:id :title :state :attributes :created_at :updated_at])
      :tasks (tasks-with-status rt (feature-tasks rt (:id card)))
@@ -566,7 +566,7 @@
 (defn- cards
   "Return all kanban card strands."
   []
-  (api/list (current/runtime) [:= [:attr "kanban/card"] "true"] {}))
+  (weaver/list (current/runtime) [:= [:attr "kanban/card"] "true"] {}))
 
 (defn- by-created
   "Return strands sorted oldest first."
@@ -617,7 +617,7 @@
   the engine ready frontier, and marks human review. Sorted by card id then item
   id."
   [rt review-relevant-features]
-  (let [ready-ids (set (map :id (api/ready rt)))]
+  (let [ready-ids (set (map :id (weaver/ready rt)))]
     (->> review-relevant-features
          (mapcat (fn [card]
                    (let [{:keys [work]} (card-subtree rt card)
@@ -988,7 +988,7 @@
                                 :keys ["kanban/card" "kanban/status" "kanban/type"
                                        "kanban/priority" "kanban/source" "kanban/task"]
                                 :doc "Kanban card state attributes written by skein.spools.kanban/add!."})
-     :ops [(api/register-op! rt 'kanban
+     :ops [(weaver/register-op! rt 'kanban
                              {:doc "Manage the user-facing kanban work board. Run `strand kanban about` for the convention manual."
                               :arg-spec kanban-arg-spec
                               :hook-class :mutating}

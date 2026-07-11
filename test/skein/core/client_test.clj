@@ -4,12 +4,12 @@
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [skein.core.client :as client]
             [skein.api.hooks.alpha :as hooks]
-            [skein.core.weaver.config :as daemon-config]
+            [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db-test :as db-test]))
 (defn test-world [config-dir]
-  (daemon-config/world config-dir
+  (weaver-config/world config-dir
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
@@ -45,11 +45,11 @@
 (defn with-runtime [f]
   (let [db-file (db-test/temp-db-file)
         world (temp-world)
-        rt (runtime/start! db-file {:world world :publish? false})]
+        rt (weaver-runtime/start! db-file {:world world :publish? false})]
     (try
       (f rt world db-file)
       (finally
-        (runtime/stop! rt)
+        (weaver-runtime/stop! rt)
         (db-test/delete-sqlite-family! db-file)
         (delete-tree! (java.io.File. (:config-dir world)))))))
 
@@ -64,8 +64,8 @@
         db-b (db-test/temp-db-file)
         world-a (temp-world)
         world-b (temp-world)
-        rt-a (runtime/start! db-a {:world world-a :publish? false})
-        rt-b (runtime/start! db-b {:world world-b :publish? false})]
+        rt-a (weaver-runtime/start! db-a {:world world-a :publish? false})
+        rt-b (weaver-runtime/start! db-b {:world world-b :publish? false})]
     (try
       (is (= {:database "initialized"} (call-world world-a :init)))
       (is (= {:database "initialized"} (call-world world-b :init)))
@@ -76,8 +76,8 @@
         (is (= (:metadata rt-a) (client/status-world (:config-dir world-a) {:state-dir (:state-dir world-a)})))
         (is (= (:metadata rt-b) (client/status-world (:config-dir world-b) {:state-dir (:state-dir world-b)}))))
       (finally
-        (runtime/stop! rt-a)
-        (runtime/stop! rt-b)
+        (weaver-runtime/stop! rt-a)
+        (weaver-runtime/stop! rt-b)
         (db-test/delete-sqlite-family! db-a)
         (db-test/delete-sqlite-family! db-b)
         (delete-tree! (java.io.File. (:config-dir world-a)))

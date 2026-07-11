@@ -23,10 +23,10 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
    store per-runtime state keyed by a symbol you own, initialised once:
 
    ```clojure
-   (require '[skein.api.runtime.alpha :as runtime-alpha])
+   (require '[skein.api.runtime.alpha :as runtime])
 
    (defn- state [runtime]
-     (runtime-alpha/spool-state runtime ::registry #(atom {})))
+     (runtime/spool-state runtime ::registry #(atom {})))
    ```
 
    Two runtimes then get two independent registries; nothing resets or races
@@ -51,7 +51,7 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
      {:registry (atom {})})
 
    (defn- state [runtime]
-     (runtime-alpha/spool-state runtime ::state {:version state-version} new-state))
+     (runtime/spool-state runtime ::state {:version state-version} new-state))
    ```
 
    Any state holding a live resource (executor, scheduler, socket) must also
@@ -82,12 +82,12 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
    to trigger it. Scheduler delivery is at-least-once, so any handler you register
    must be idempotent.
 7. **Write attribute deltas, not read-merged maps.** To change a strand's
-   attributes, pass `api/update` **only the keys you are changing** —
+   attributes, pass `weaver/update` **only the keys you are changing** —
    `{:attributes {:kanban/status "claimed"}}` — and let `db/update-strand!`'s
    `json_patch` merge fold them into the stored map. Never read the strand, merge
    your changes into its full `:attributes`, and write the whole map back: two
    concurrent updates each start from a possibly-stale read and the later write
-   silently drops the earlier one (a lost-update race). `api/update` returns the
+   silently drops the earlier one (a lost-update race). `weaver/update` returns the
    full merged strand, so a delta write loses no result fidelity. For reads, use
    the shared tolerant reader `skein.spools.util/attr-get` (keyword key, bare
    string fallback) and `attr-key->str` for wire-key coercion rather than
@@ -320,20 +320,20 @@ The effective root is whichever entry wins the overlay. `:deps/root` is git-only
 ```clojure
 (ns acme.priority.alpha
   "Shared spool: promote/inspect strand priority. Runtime is always explicit."
-  (:require [skein.api.runtime.alpha :as runtime-alpha]
-            [skein.api.weaver.alpha :as api]))
+  (:require [skein.api.runtime.alpha :as runtime]
+            [skein.api.weaver.alpha :as weaver]))
 
 (defn- promotions [runtime]
   ;; Runtime-owned state, created once per runtime; no module-level atom.
-  (runtime-alpha/spool-state runtime ::promotions #(atom 0)))
+  (runtime/spool-state runtime ::promotions #(atom 0)))
 
 (defn promote!
   "Raise `id`'s priority attribute in `runtime` and return the updated strand."
   [runtime id]
-  (when-not (api/show runtime id)
+  (when-not (weaver/show runtime id)
     (throw (ex-info "No such strand to promote" {:id id})))     ; fail loudly
   (swap! (promotions runtime) inc)
-  (api/update runtime id {:attributes {:priority "high"}}))
+  (weaver/update runtime id {:attributes {:priority "high"}}))
 
 (defn promotion-count
   "Return how many promotions this `runtime` has performed."

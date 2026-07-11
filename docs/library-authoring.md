@@ -65,8 +65,8 @@ For behavior that only exists inside a running weaver — approved-spool sync, `
     (is (= "Sketch model"
            (:title (t/repl! ctx "
              (require '[skein.api.current.alpha :as current]
-                      '[skein.api.weaver.alpha :as api])
-             (api/add (current/runtime) {:title \"Sketch model\"})"))))))
+                      '[skein.api.weaver.alpha :as weaver])
+             (weaver/add (current/runtime) {:title \"Sketch model\"})"))))))
 ```
 
 `weaver-world-fixture` provides the same lifecycle for `use-fixtures`, binding `skein.test.alpha/*weaver-world*`:
@@ -76,8 +76,8 @@ For behavior that only exists inside a running weaver — approved-spool sync, `
 
 (deftest listing-starts-empty
   (is (= [] (t/repl! t/*weaver-world* "
-    (require '[skein.api.weaver.alpha :as api] '[skein.api.current.alpha :as current])
-    (api/list (current/runtime))"))))
+    (require '[skein.api.weaver.alpha :as weaver] '[skein.api.current.alpha :as current])
+    (weaver/list (current/runtime))"))))
 ```
 
 The context map contains orchestration facts only: `:config-dir`, `:state-dir`, `:data-dir`, `:db-path` (file storage only), `:storage`, `:source` (the Skein checkout on your classpath), `:runtime`, `:metadata`, and `:timeout-ms`. There are deliberately no strand/query wrappers, assertion helpers, or CLI subprocess helpers — exercise the real API forms.
@@ -106,13 +106,13 @@ Write the spool fixture and approval into the generated world, sync it from `ini
                   "spools/demo/src/demo/lib.clj"
                   "(ns demo.lib)\n(defn install! [] :ok)\n"}
           :init "(require '[skein.api.current.alpha :as current]
-                          '[skein.api.runtime.alpha :as runtime-alpha])
-                 (runtime-alpha/sync! (current/runtime))"}]
+                          '[skein.api.runtime.alpha :as runtime])
+                 (runtime/sync! (current/runtime))"}]
     (is (= :loaded
            (get-in (t/repl! ctx "
              (require '[skein.api.current.alpha :as current]
-                      '[skein.api.runtime.alpha :as runtime-alpha])
-             (runtime-alpha/use! (current/runtime) :demo/lib
+                      '[skein.api.runtime.alpha :as runtime])
+             (runtime/use! (current/runtime) :demo/lib
                                  {:ns 'demo.lib :spools #{'demo/lib}})")
                    [:status])))))
 ```

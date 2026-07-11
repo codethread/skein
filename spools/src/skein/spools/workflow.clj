@@ -12,7 +12,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.format :as fmt]
             [skein.spools.util :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]))
 
@@ -943,8 +943,8 @@
   the intra-molecule dependency edges `compile` emits."
   [left-id right-id]
   (let [rt (current/runtime)]
-    (api/update rt right-id {:edges [{:type "depends-on" :to left-id
-                                      :attributes {:workflow/bond "sequential"}}]})))
+    (weaver/update rt right-id {:edges [{:type "depends-on" :to left-id
+                                         :attributes {:workflow/bond "sequential"}}]})))
 
 (defn- burn-with-rt!
   [rt root-id]
@@ -966,23 +966,23 @@
   ([root-id title attributes]
    (let [rt (current/runtime)
          subgraph (graph/subgraph rt [root-id])
-         digest (api/add rt {:title title
-                             :state "closed"
-                             :attributes (merge {"workflow/role" "digest"
-                                                 "workflow/squashed-root" root-id
-                                                 "workflow/squashed-count" (count (:strands subgraph))}
-                                                attributes)})]
+         digest (weaver/add rt {:title title
+                                :state "closed"
+                                :attributes (merge {"workflow/role" "digest"
+                                                    "workflow/squashed-root" root-id
+                                                    "workflow/squashed-count" (count (:strands subgraph))}
+                                                   attributes)})]
      (burn-with-rt! rt root-id)
      digest)))
 
 (defn- active-runs-with-rt
   ([rt]
-   (api/list rt [:and [:= :state "active"] [:= [:attr "workflow/role"] "molecule"]] {}))
+   (weaver/list rt [:and [:= :state "active"] [:= [:attr "workflow/role"] "molecule"]] {}))
   ([rt family]
-   (api/list rt [:and
-                 [:= :state "active"]
-                 [:= [:attr "workflow/role"] "molecule"]
-                 [:= [:attr "workflow/family"] family]] {})))
+   (weaver/list rt [:and
+                    [:= :state "active"]
+                    [:= [:attr "workflow/role"] "molecule"]
+                    [:= [:attr "workflow/family"] family]] {})))
 
 (defn active-runs
   "Return active workflow root strands, optionally filtered by family."
@@ -995,10 +995,10 @@
 
 (defn- current-root-with-rt
   [rt run-id]
-  (let [roots (api/list rt [:and
-                            [:= :state "active"]
-                            [:= [:attr "workflow/run-id"] run-id]
-                            [:= [:attr "workflow/role"] "molecule"]] {})]
+  (let [roots (weaver/list rt [:and
+                               [:= :state "active"]
+                               [:= [:attr "workflow/run-id"] run-id]
+                               [:= [:attr "workflow/role"] "molecule"]] {})]
     (case (count roots)
       0 nil
       1 (first roots)
@@ -1018,7 +1018,7 @@
   closes, even though each step's own deps may be satisfied."
   [rt run-id]
   (let [root (current-root-with-rt rt run-id)
-        ready (api/ready rt)
+        ready (weaver/ready rt)
         root-ready? (and root (some #(= (:id %) (:id root)) ready))
         ids (when root (set (map :id (:strands (graph/subgraph rt [(:id root)])))))]
     (if-not root-ready?
@@ -1140,9 +1140,9 @@
 (defn- root-strand-exists?
   "True when run-id has ever had a root molecule strand, active or closed."
   [rt run-id]
-  (boolean (seq (api/list rt [:and
-                              [:= [:attr "workflow/run-id"] run-id]
-                              [:= [:attr "workflow/role"] "molecule"]] {}))))
+  (boolean (seq (weaver/list rt [:and
+                                 [:= [:attr "workflow/run-id"] run-id]
+                                 [:= [:attr "workflow/role"] "molecule"]] {}))))
 
 (defn- done-with-rt?
   [rt run-id]
@@ -1164,9 +1164,9 @@
   "Return every molecule root ever poured for run-id (active or closed), ordered
   by creation. Empty when the run never existed."
   [rt run-id]
-  (->> (api/list rt [:and
-                     [:= [:attr "workflow/run-id"] run-id]
-                     [:= [:attr "workflow/role"] "molecule"]] {})
+  (->> (weaver/list rt [:and
+                        [:= [:attr "workflow/run-id"] run-id]
+                        [:= [:attr "workflow/role"] "molecule"]] {})
        (sort-by :created_at)
        vec))
 
@@ -1259,13 +1259,13 @@
      (let [roots (run-molecule-roots rt run-id)
            summary (run-summary (mapv #(molecule-history rt %) roots))
            squashed-count (reduce + 0 (map #(count (:strands (graph/subgraph rt [(:id %)]))) roots))
-           digest (api/add rt {:title (or title (str "Digest for run " run-id))
-                               :state "closed"
-                               :attributes (merge {"workflow/role" "digest"
-                                                   "workflow/run-id" run-id
-                                                   "workflow/squashed-count" squashed-count
-                                                   "workflow/summary" summary}
-                                                  attributes)})]
+           digest (weaver/add rt {:title (or title (str "Digest for run " run-id))
+                                  :state "closed"
+                                  :attributes (merge {"workflow/role" "digest"
+                                                      "workflow/run-id" run-id
+                                                      "workflow/squashed-count" squashed-count
+                                                      "workflow/summary" summary}
+                                                     attributes)})]
        (doseq [root roots]
          (burn-with-rt! rt (:id root)))
        digest))))
@@ -1569,7 +1569,7 @@
     (when (and (= "active" (:state strand))
                (contains? #{"molecule" "step" "checkpoint" "procedure"}
                           (attr strand :workflow/role)))
-      (api/update rt (:id strand) {:state "closed"}))))
+      (weaver/update rt (:id strand) {:state "closed"}))))
 
 (defonce ^{:private true
            :doc "Weaver-lifetime map of registered workflow name (keyword) ->

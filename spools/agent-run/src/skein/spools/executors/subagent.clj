@@ -11,7 +11,7 @@
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
@@ -63,7 +63,7 @@
   (when (and (string? s) (not (str/blank? s))) s))
 
 (defn- stamp! [id attributes]
-  (api/update (rt) id {:attributes attributes}))
+  (weaver/update (rt) id {:attributes attributes}))
 
 (defn- current-serving-run
   "The gate's current delegated run, or nil: the single non-superseded run with a
@@ -98,7 +98,7 @@
         gate-id (run-served-gate run-id)
         workflow-run-id (attr run :gate/run-id)]
     (try
-      (let [gate (api/show (rt) gate-id)]
+      (let [gate (weaver/show (rt) gate-id)]
         (cond
           (nil? gate)
           (stamp! run-id {"gate/delivered" "error: gate not found"})
@@ -134,7 +134,7 @@
   ;; `superseded` run left by `agent retry` — is a dead worker whose (blank or
   ;; stale) result must never silently complete the gate; recovery supersedes it
   ;; with a fresh successor that inherits the `serves` edge.
-  (api/list (rt)
+  (weaver/list (rt)
             [:and [:= :state "closed"]
              [:= [:attr "agent-run/phase"] "done"]
              [:edge/out "serves" [:= [:attr "workflow/gate"] "subagent"]]
@@ -165,7 +165,7 @@
     :else (fail! "agent-run/max-attempts must be an integer" {:value v})))
 
 (defn- spawn-for-gate! [run-id gate-view]
-  (let [gate (api/show (rt) (:id gate-view))]
+  (let [gate (weaver/show (rt) (:id gate-view))]
     ;; Skip when the gate already has a run serving it (in flight, or dead and
     ;; awaiting `agent retry`) or a spawn error: the `serves` edge, written
     ;; atomically with the run, is the sole run↔gate link — there is no separate
@@ -225,7 +225,7 @@
   while that server is itself dead, with no re-link step. No wall-clock hang
   policy is applied."
   [gate-view]
-  (let [gate (api/show (rt) (:id gate-view))
+  (let [gate (weaver/show (rt) (:id gate-view))
         error (non-blank (attr gate :gate/error))
         run (current-serving-run (:id gate))]
     (cond

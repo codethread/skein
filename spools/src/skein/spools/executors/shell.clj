@@ -16,7 +16,7 @@
             [clojure.string :as str]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [fail! attr-get]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.api.graph.alpha :as graph]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
@@ -88,7 +88,7 @@
   (attr-get strand k))
 
 (defn- stamp! [id attributes]
-  (api/update (rt) id {:attributes attributes}))
+  (weaver/update (rt) id {:attributes attributes}))
 
 (defn- now [] (str (Instant/now)))
 
@@ -229,7 +229,7 @@
   "Execute one claimed `:shell` gate on the worker thread and stamp its outcome."
   [run-id gate-id]
   (try
-    (let [gate (api/show (rt) gate-id)
+    (let [gate (weaver/show (rt) gate-id)
           argv (parse-argv gate)
           timeout-secs (parse-timeout gate)
           cwd (parse-cwd gate)
@@ -258,7 +258,7 @@
   either closes the gate or stamps an error, and this guard blocks re-dispatch
   in all three cases."
   [runtime run-id gate-view]
-  (let [gate (api/show (rt) (:id gate-view))]
+  (let [gate (weaver/show (rt) (:id gate-view))]
     (when (and (= "active" (:state gate))
                (not (attr gate :shell/error))
                (not (attr gate :shell/running)))
@@ -300,7 +300,7 @@
   the subagent executor — there is no `delegates`-edge join back to a separate
   run row."
   [gate-view]
-  (let [gate (api/show (rt) (:id gate-view))]
+  (let [gate (weaver/show (rt) (:id gate-view))]
     (when-let [error (attr gate :shell/error)]
       {:gate (:id gate) :error error})))
 

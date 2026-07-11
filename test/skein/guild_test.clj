@@ -3,7 +3,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.spec.alpha :as s]
             [clojure.data.json :as json]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.guild :as guild]
             [skein.spools.test-support :refer [with-runtime]]))
 
@@ -26,10 +26,10 @@
       (guild/defop! 'gate.close.v1 {:doc "Close a peer gate" :spec ::close-input}
         'skein.guild-test/close-handler)
       (is (= {:op "gate.close.v1" :input {:task "T-1"}}
-             (api/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])))
+             (weaver/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])))
       (guild/defop! 'ping.v1 {:doc "Ping"} 'skein.guild-test/close-handler)
       (is (= {:op "ping.v1" :input {}}
-             (api/op! rt 'ping.v1 []))))))
+             (weaver/op! rt 'ping.v1 []))))))
 
 (deftest spec-invalid-input-fails-loudly-with-structured-data
   (with-runtime
@@ -38,7 +38,7 @@
       (guild/defop! 'gate.close.v1 {:doc "Close a peer gate" :spec ::close-input}
         'skein.guild-test/close-handler)
       (try
-        (api/op! rt 'gate.close.v1 [(json-arg {:wrong "x"})])
+        (weaver/op! rt 'gate.close.v1 [(json-arg {:wrong "x"})])
         (is false "expected spec validation failure")
         (catch clojure.lang.ExceptionInfo e
           (is (= :op/input-invalid (:code (ex-data e))))
@@ -55,7 +55,7 @@
       (guild/defop! 'gate.close.v2 {:doc "Close v2" :spec ::close-input}
         'skein.guild-test/close-handler)
       (guild/deprecate! 'gate.close.v1 {:replacement "gate.close.v2" :since "2026-07-02"})
-      (let [description (api/op! rt 'guild.describe [])]
+      (let [description (weaver/op! rt 'guild.describe [])]
         (is (string? (:guild description)))
         (is (= [{:name "gate.close.v2"
                  :doc "Close v2"
@@ -75,7 +75,7 @@
         'skein.guild-test/close-handler)
       (guild/deprecate! 'gate.close.v1 {:replacement "gate.close.v2"})
       (try
-        (api/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])
+        (weaver/op! rt 'gate.close.v1 [(json-arg {:task "T-1"})])
         (is false "deprecated op must not succeed")
         (catch clojure.lang.ExceptionInfo e
           (is (= {:code :op/deprecated
@@ -101,7 +101,7 @@
       (testing "unresolved handlers fail before public registration"
         (is (thrown? java.io.FileNotFoundException
                      (guild/defop! 'bad.resolve.v1 {:doc "x"} 'missing.guild/handler)))
-        (is (not-any? #(= "bad.resolve.v1" (:name %)) (api/ops rt))))
+        (is (not-any? #(= "bad.resolve.v1" (:name %)) (weaver/ops rt))))
       (testing "deprecating an unregistered op fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not registered"
                               (guild/deprecate! 'missing.v1 {:replacement "missing.v2"})))))))

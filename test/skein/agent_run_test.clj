@@ -11,9 +11,9 @@
             [next.jdbc :as jdbc]
             [skein.spools.agent-run :as shuttle]
             [skein.api.graph.alpha :as graph]
-            [skein.api.notes.alpha :as notes-alpha]
+            [skein.api.notes.alpha :as notes]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-shuttle
@@ -35,11 +35,11 @@
   ([rt id k pred] (await-attr-matching rt id k pred (test-support/await-budget-ms)))
   ([rt id k pred timeout-ms]
    (test-support/poll-until
-    #(let [strand (api/show rt id)]
+    #(let [strand (weaver/show rt id)]
        (when (pred (get-in strand [:attributes k])) strand))
     {:timeout-ms timeout-ms
      :on-timeout #(throw (ex-info "Timed out waiting for matching attribute"
-                                  {:id id :attr k :strand (api/show rt id)}))})))
+                                  {:id id :attr k :strand (weaver/show rt id)}))})))
 
 (deftest install-declares-usage-attrs-in-agent-run-vocab
   (with-shuttle
@@ -220,7 +220,7 @@
 (deftest dependent-run-waits-for-blocker-and-fans-in
   (with-shuttle
     (fn [rt]
-      (let [blocker (api/add rt {:title "external gate" :attributes {"k" "v"}})
+      (let [blocker (weaver/add rt {:title "external gate" :attributes {"k" "v"}})
             child-a (shuttle/spawn-run! {:harness :sh :prompt "echo a"})
             child-b (shuttle/spawn-run! {:harness :sh :prompt "echo b"})
             collector (shuttle/spawn-run! {:harness :sh :prompt "echo collected"
@@ -229,9 +229,9 @@
         (await-phase rt (:id child-b) #{"done"})
         (testing "collector stays pending while any dependency is active"
           (Thread/sleep 300)
-          (is (= "pending" (get-in (api/show rt (:id collector)) [:attributes :agent-run/phase]))))
+          (is (= "pending" (get-in (weaver/show rt (:id collector)) [:attributes :agent-run/phase]))))
         (testing "closing the last dependency triggers the spawn via events"
-          (api/update rt (:id blocker) {:state "closed"})
+          (weaver/update rt (:id blocker) {:state "closed"})
           (let [done (await-phase rt (:id collector) #{"done"})]
             (is (= "collected" (get-in done [:attributes :agent-run/result])))))))))
 
@@ -244,20 +244,20 @@
         (await-phase rt (:id parent) #{"done"})
         (await-phase rt (:id child) #{"done"})
         (is (= (:id parent)
-               (get-in (api/show rt (:id child)) [:attributes :agent-run/spawned-by])))
+               (get-in (weaver/show rt (:id child)) [:attributes :agent-run/spawned-by])))
         (is (some #(and (= (:id child) (:to_strand_id %)) (= "parent-of" (:edge_type %)))
                   (:edges (graph/subgraph rt [(:id parent)]))))
-        (is (= (:id parent) (:spawned-by (shuttle/run-summary (api/show rt (:id child))))))
-        (is (nil? (:for (shuttle/run-summary (api/show rt (:id child))))))))))
+        (is (= (:id parent) (:spawned-by (shuttle/run-summary (weaver/show rt (:id child))))))
+        (is (nil? (:for (shuttle/run-summary (weaver/show rt (:id child))))))))))
 
 (deftest run-summary-reports-serves-gate-provenance
   (with-shuttle
     (fn [rt]
-      (let [gate (api/add rt {:title "gate"})
+      (let [gate (weaver/add rt {:title "gate"})
             run (shuttle/spawn-run! {:harness :sh
                                      :prompt "echo delegated"
                                      :serves (:id gate)})]
-        (is (= (:id gate) (:for (shuttle/run-summary (api/show rt (:id run))))))
+        (is (= (:id gate) (:for (shuttle/run-summary (weaver/show rt (:id run))))))
         (await-phase rt (:id run) #{"done"})))))
 
 (deftest runs-for-filter-includes-serves-gate-provenance
@@ -267,7 +267,7 @@
   ;; gate-serving run must remain visible from `runs {:for gate-id}` / `agent ps --for`.
   (with-shuttle
     (fn [rt]
-      (let [gate (api/add rt {:title "gate"})
+      (let [gate (weaver/add rt {:title "gate"})
             run (shuttle/spawn-run! {:harness :sh
                                      :prompt "echo delegated"
                                      :serves (:id gate)})]
@@ -283,12 +283,12 @@
   ;; fetches, independent of how many unrelated strands exist.
   (with-shuttle
     (fn [rt]
-      (let [target (api/add rt {:title "delegated target"})
+      (let [target (weaver/add rt {:title "delegated target"})
             run (shuttle/spawn-run! {:harness :sh :prompt "echo work"
                                      :parent (:id target)})]
         (await-phase rt (:id run) #{"done"})
         ;; unrelated strands the summary path must never touch per-strand
-        (dotimes [i 150] (api/add rt {:title (str "noise-" i)}))
+        (dotimes [i 150] (weaver/add rt {:title (str "noise-" i)}))
         (let [incoming-calls (atom 0)
               real-incoming graph/incoming-edges
               incoming-edges-fn (fn [& args]
@@ -304,7 +304,7 @@
 (deftest notes-are-append-only-memory-with-rounds
   (with-shuttle
     (fn [rt]
-      (let [target (api/add rt {:title "shared blackboard"})
+      (let [target (weaver/add rt {:title "shared blackboard"})
             target-id (:id target)]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not found"
                               (shuttle/note! "missing-id" "x")))
@@ -317,7 +317,7 @@
         (is (= ["run-1" "run-2"] (mapv :by (shuttle/notes target-id {:round 1}))))
         (testing "notes are closed strands linked by a notes annotation edge"
           (let [note-id (:id (first (shuttle/notes target-id)))
-                note (api/show rt note-id)]
+                note (weaver/show rt note-id)]
             (is (= "closed" (:state note)))))))))
 
 (deftest await-runs-blocks-until-terminal-and-times-out
@@ -327,7 +327,7 @@
             {:keys [timed-out runs]} (shuttle/await-runs [(:id quick)] {:timeout-secs (test-support/await-budget-secs)})]
         (is (false? timed-out))
         (is (= "quick" (:result (first runs)))))
-      (let [blocker (api/add rt {:title "never closes"})
+      (let [blocker (weaver/add rt {:title "never closes"})
             stuck (shuttle/spawn-run! {:harness :sh :prompt "echo never"
                                        :depends-on [(:id blocker)]})
             {:keys [timed-out]} (shuttle/await-runs [(:id stuck)] {:timeout-secs 1})]
@@ -346,28 +346,28 @@
   (with-shuttle
     (fn [rt]
       (testing "an orphaned running run respawns and completes"
-        (let [orphan (api/add rt {:title "orphan"
-                                  :attributes {"agent-run/run" "true"
-                                               "agent-run/harness" "sh"
-                                               "agent-run/prompt" "echo recovered"
-                                               "agent-run/phase" "running"
-                                               "agent-run/attempt" 1
-                                               "agent-run/pid" 99999999}})
+        (let [orphan (weaver/add rt {:title "orphan"
+                                     :attributes {"agent-run/run" "true"
+                                                  "agent-run/harness" "sh"
+                                                  "agent-run/prompt" "echo recovered"
+                                                  "agent-run/phase" "running"
+                                                  "agent-run/attempt" 1
+                                                  "agent-run/pid" 99999999}})
               summary (shuttle/reconcile!)]
           (is (= [(:id orphan)] (:respawned summary)))
           (is (= "recovered"
                  (get-in (await-phase rt (:id orphan) #{"done"})
                          [:attributes :agent-run/result])))))
       (testing "a run out of attempts is marked exhausted, stays active"
-        (let [spent (api/add rt {:title "spent"
-                                 :attributes {"agent-run/run" "true"
-                                              "agent-run/harness" "sh"
-                                              "agent-run/prompt" "echo nope"
-                                              "agent-run/phase" "running"
-                                              "agent-run/attempt" 3}})
+        (let [spent (weaver/add rt {:title "spent"
+                                    :attributes {"agent-run/run" "true"
+                                                 "agent-run/harness" "sh"
+                                                 "agent-run/prompt" "echo nope"
+                                                 "agent-run/phase" "running"
+                                                 "agent-run/attempt" 3}})
               summary (shuttle/reconcile!)]
           (is (= [(:id spent)] (:exhausted summary)))
-          (let [strand (api/show rt (:id spent))]
+          (let [strand (weaver/show rt (:id spent))]
             (is (= "active" (:state strand)))
             (is (= "exhausted" (get-in strand [:attributes :agent-run/phase])))
             (is (str/includes? (get-in strand [:attributes :agent-run/error]) "exhausted"))))))))
@@ -391,26 +391,26 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Harness not found"
                             (shuttle/spawn-run! {:harness :absent :prompt "x"})))
       (testing "a pending strand referencing a missing harness fails at spawn"
-        (api/add rt {:title "handmade"
-                     :attributes {"agent-run/run" "true"
-                                  "agent-run/harness" "absent"
-                                  "agent-run/prompt" "echo x"
-                                  "agent-run/phase" "pending"}})
+        (weaver/add rt {:title "handmade"
+                        :attributes {"agent-run/run" "true"
+                                     "agent-run/harness" "absent"
+                                     "agent-run/prompt" "echo x"
+                                     "agent-run/phase" "pending"}})
         (let [run-id (:id (first (filter #(= "handmade" (:title %))
-                                         (api/list rt shuttle/run-query {}))))
+                                         (weaver/list rt shuttle/run-query {}))))
               failed (await-phase rt run-id #{"failed"})]
           (is (str/includes? (get-in failed [:attributes :agent-run/error]) "Harness not found")))))))
 
 (deftest recovered-run-with-late-registered-alias-defers-then-respawns
   (with-shuttle
     (fn [rt]
-      (let [orphan (api/add rt {:title "late-alias-orphan"
-                                :attributes {"agent-run/run" "true"
-                                             "agent-run/harness" "late-sh"
-                                             "agent-run/prompt" "echo recovered-late"
-                                             "agent-run/phase" "running"
-                                             "agent-run/attempt" 1
-                                             "agent-run/pid" 99999999}})
+      (let [orphan (weaver/add rt {:title "late-alias-orphan"
+                                   :attributes {"agent-run/run" "true"
+                                                "agent-run/harness" "late-sh"
+                                                "agent-run/prompt" "echo recovered-late"
+                                                "agent-run/phase" "running"
+                                                "agent-run/attempt" 1
+                                                "agent-run/pid" 99999999}})
             summary (shuttle/reconcile!)]
         (is (= [(:id orphan)] (:respawned summary)))
         (let [deferred (await-attr-matching rt (:id orphan) :agent-run/error
@@ -431,13 +431,13 @@
     (try
       (with-shuttle
         (fn [rt]
-          (let [orphan (api/add rt {:title "missing-alias-orphan"
-                                    :attributes {"agent-run/run" "true"
-                                                 "agent-run/harness" "never-registered"
-                                                 "agent-run/prompt" "echo unreachable"
-                                                 "agent-run/phase" "running"
-                                                 "agent-run/attempt" 1
-                                                 "agent-run/pid" 99999999}})
+          (let [orphan (weaver/add rt {:title "missing-alias-orphan"
+                                       :attributes {"agent-run/run" "true"
+                                                    "agent-run/harness" "never-registered"
+                                                    "agent-run/prompt" "echo unreachable"
+                                                    "agent-run/phase" "running"
+                                                    "agent-run/attempt" 1
+                                                    "agent-run/pid" 99999999}})
                 summary (shuttle/reconcile!)]
             (is (= [(:id orphan)] (:respawned summary)))
             (let [failed (await-phase rt (:id orphan) #{"failed"})]
@@ -484,11 +484,11 @@
   ([rt id k] (await-attr rt id k (test-support/await-budget-ms)))
   ([rt id k timeout-ms]
    (test-support/poll-until
-    #(let [strand (api/show rt id)]
+    #(let [strand (weaver/show rt id)]
        (when (some? (get-in strand [:attributes k])) strand))
     {:timeout-ms timeout-ms
      :on-timeout #(throw (ex-info "Timed out waiting for attribute"
-                                  {:id id :attr k :strand (api/show rt id)}))})))
+                                  {:id id :attr k :strand (weaver/show rt id)}))})))
 
 (defn- forget-in-flight!
   "Simulate a weaver crash: drop this runtime's in-flight ownership so
@@ -546,18 +546,18 @@
 (deftest interactive-run-reaps-when-served-strand-closes
   (with-shuttle
     (fn [rt]
-      (let [target (api/add rt {:title "hitl task"})
+      (let [target (weaver/add rt {:title "hitl task"})
             {:keys [run pid]} (spawn-interactive! rt {:parent (:id target)})]
         (is (= "claim" (get-in run [:attributes :agent-run/completion])))
         (is (= (:id target) (get-in run [:attributes :agent-run/for])))
         (is (str/starts-with? (get-in run [:attributes :agent-run/session]) "skein-"))
         (testing "summary carries interactive fields"
-          (let [summary (shuttle/run-summary (api/show rt (:id run)))]
+          (let [summary (shuttle/run-summary (weaver/show rt (:id run)))]
             (is (= "interactive" (:mode summary)))
             (is (= "fake-mux" (:backend summary)))
             (is (= (str "echo attach " pid) (:attach summary)))))
         (testing "closing the served strand reaps the session"
-          (api/update rt (:id target) {:state "closed"})
+          (weaver/update rt (:id target) {:state "closed"})
           (let [done (await-phase rt (:id run) #{"done"})]
             (is (= "closed" (:state done)))
             (is (nil? (get-in done [:attributes :agent-run/teardown-error])))
@@ -572,7 +572,7 @@
     (fn [rt]
       (let [{:keys [run pid]} (spawn-interactive! rt)]
         (is (= "manual-close" (get-in run [:attributes :agent-run/completion])))
-        (api/update rt (:id run) {:state "closed"})
+        (weaver/update rt (:id run) {:state "closed"})
         (let [done (await-phase rt (:id run) #{"done"})]
           (is (= "closed" (:state done)))
           (is (true? (await-process-death pid))))))))
@@ -580,9 +580,9 @@
 (deftest reap-manual-leaves-the-session-to-the-human
   (with-shuttle
     (fn [rt]
-      (let [target (api/add rt {:title "keep my terminal"})
+      (let [target (weaver/add rt {:title "keep my terminal"})
             {:keys [run pid]} (spawn-interactive! rt {:parent (:id target) :reap :manual})]
-        (api/update rt (:id target) {:state "closed"})
+        (weaver/update rt (:id target) {:state "closed"})
         (let [done (await-phase rt (:id run) #{"done"})]
           (is (= "closed" (:state done)))
           (is (process-alive? pid))
@@ -592,7 +592,7 @@
   (with-shuttle
     (fn [rt]
       (testing "a session dying before its target closes fails the run"
-        (let [target (api/add rt {:title "abandoned"})
+        (let [target (weaver/add rt {:title "abandoned"})
               {:keys [run pid]} (spawn-interactive! rt {:parent (:id target)})]
           (clojure.java.shell/sh "kill" "-9" (str pid))
           (is (true? (await-process-death pid)))
@@ -600,13 +600,13 @@
           (let [failed (await-phase rt (:id run) #{"failed"})]
             (is (= "active" (:state failed)))
             (is (str/includes? (get-in failed [:attributes :agent-run/error]) "session ended")))
-          (is (= "active" (:state (api/show rt (:id target)))))))
+          (is (= "active" (:state (weaver/show rt (:id target)))))))
       (testing "a dead session whose target already closed is done, not failed"
-        (let [target (api/add rt {:title "finished then exited"})
+        (let [target (weaver/add rt {:title "finished then exited"})
               {:keys [run pid]} (spawn-interactive! rt {:parent (:id target)})]
           ;; close the target and kill the session without letting the event
           ;; handler win the race: supervision must classify this as complete
-          (api/update rt (:id target) {:state "closed"})
+          (weaver/update rt (:id target) {:state "closed"})
           (clojure.java.shell/sh "kill" "-9" (str pid))
           (shuttle/supervise!)
           (let [done (await-phase rt (:id run) #{"done"})]
@@ -623,7 +623,7 @@
       (shuttle/defharness! :sh-hooked
         {:argv ["sh" "-c"] :preamble? false :cwd "/tmp"
          :capture ["sh" "-c" "printf 'dialogue log for %s in %s' \"$1\" \"$2\"" "hook-capture" :run-id :cwd]})
-      (let [target (api/add rt {:title "captured task"})
+      (let [target (weaver/add rt {:title "captured task"})
             run (shuttle/spawn-run! {:harness :sh-hooked :prompt "sleep 300"
                                      :mode :interactive :backend :fake-mux
                                      :parent (:id target)})
@@ -632,10 +632,10 @@
         (testing "capture! peeks a live session without killing it"
           (let [{:keys [text path]} (shuttle/capture! (:id run))]
             (is (= (str "dialogue log for " (:id run) " in /tmp") text))
-            (is (= path (get-in (api/show rt (:id run)) [:attributes :agent-run/log])))
+            (is (= path (get-in (weaver/show rt (:id run)) [:attributes :agent-run/log])))
             (is (process-alive? pid))))
         (testing "teardown persists the harness capture, not backend scrollback"
-          (api/update rt (:id target) {:state "closed"})
+          (weaver/update rt (:id target) {:state "closed"})
           (let [done (await-phase rt (:id run) #{"done"})
                 log (get-in done [:attributes :agent-run/log])]
             (is (str/starts-with? (slurp log) "dialogue log for"))))
@@ -661,7 +661,7 @@
       (let [{:keys [run pid]} (spawn-interactive! rt)]
         (shuttle/kill! (:id run))
         (is (true? (await-process-death pid)))
-        (let [failed (api/show rt (:id run))]
+        (let [failed (weaver/show rt (:id run))]
           (is (= "failed" (get-in failed [:attributes :agent-run/phase])))
           (is (str/includes? (get-in failed [:attributes :agent-run/error]) "killed")))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no live session"
@@ -670,14 +670,14 @@
 (deftest reconcile-adopts-live-sessions-and-fails-dead-ones
   (with-shuttle
     (fn [rt]
-      (let [target (api/add rt {:title "survives restarts"})
+      (let [target (weaver/add rt {:title "survives restarts"})
             {:keys [run pid]} (spawn-interactive! rt {:parent (:id target)})]
         (testing "a live session is adopted, not respawned"
           (forget-in-flight!)
           (let [summary (shuttle/reconcile!)]
             (is (= [(:id run)] (:adopted summary)))
             (is (empty? (:respawned summary))))
-          (is (= "running" (get-in (api/show rt (:id run)) [:attributes :agent-run/phase])))
+          (is (= "running" (get-in (weaver/show rt (:id run)) [:attributes :agent-run/phase])))
           (is (process-alive? pid)))
         (testing "a dead orphan fails loudly instead of respawning"
           (clojure.java.shell/sh "kill" "-9" (str pid))
@@ -685,7 +685,7 @@
           (forget-in-flight!)
           (let [summary (shuttle/reconcile!)]
             (is (= [(:id run)] (:failed summary))))
-          (let [failed (api/show rt (:id run))]
+          (let [failed (weaver/show rt (:id run))]
             (is (= "active" (:state failed)))
             (is (= "failed" (get-in failed [:attributes :agent-run/phase])))))))))
 
@@ -718,7 +718,7 @@
 (deftest await-detects-dead-interactive-sessions
   (with-shuttle
     (fn [rt]
-      (let [target (api/add rt {:title "await target"})
+      (let [target (weaver/add rt {:title "await target"})
             {:keys [run pid]} (spawn-interactive! rt {:parent (:id target)})
             killer (future (Thread/sleep 500)
                            (clojure.java.shell/sh "kill" "-9" (str pid)))
@@ -784,7 +784,7 @@
             resumer (shuttle/spawn-run! {:harness :session-echo :prompt "continue"
                                          :resume (:id pred)})]
         (testing "provenance: agent-run/resumes attr and a resumes annotation edge"
-          (is (= (:id pred) (get-in (api/show rt (:id resumer)) [:attributes :agent-run/resumes])))
+          (is (= (:id pred) (get-in (weaver/show rt (:id resumer)) [:attributes :agent-run/resumes])))
           (is (= [(:id pred)] (edge-targets rt (:id resumer) "resumes"))))
         (let [done (await-phase rt (:id resumer) #{"done"})]
           (testing "the resolved :resume splice rides ahead of the prompt"
@@ -807,15 +807,15 @@
       (shuttle/defharness! :session-echo session-echo)
       (shuttle/defbackend! :fake-mux fake-mux)
       (testing "a harness without a :resume splice is rejected"
-        (let [pred (api/add rt {:title "sh-pred" :state "closed"
-                                :attributes {"agent-run/run" "true" "agent-run/harness" "sh"
-                                             "agent-run/session-id" "sess-x" "agent-run/phase" "done"}})]
+        (let [pred (weaver/add rt {:title "sh-pred" :state "closed"
+                                   :attributes {"agent-run/run" "true" "agent-run/harness" "sh"
+                                                "agent-run/session-id" "sess-x" "agent-run/phase" "done"}})]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"declares a :resume splice"
                                 (shuttle/spawn-run! {:harness :sh :prompt "x" :resume (:id pred)})))))
       (testing "a predecessor with no captured session-id is rejected"
-        (let [pred (api/add rt {:title "no-session" :state "closed"
-                                :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
-                                             "agent-run/phase" "done"}})]
+        (let [pred (weaver/add rt {:title "no-session" :state "closed"
+                                   :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                                "agent-run/phase" "done"}})]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no captured agent-run/session-id"
                                 (shuttle/spawn-run! {:harness :session-echo :prompt "x" :resume (:id pred)})))))
       (testing "a harness name mismatch is rejected with both names"
@@ -830,7 +830,7 @@
               (is (= "session-echo" (:predecessor-harness (ex-data e))))))))
       (testing "only one active continuation may exist per session"
         (let [pred (captured-predecessor rt)
-              blocker (api/add rt {:title "gate"})]
+              blocker (weaver/add rt {:title "gate"})]
           (shuttle/spawn-run! {:harness :session-echo :prompt "first"
                                :resume (:id pred) :depends-on [(:id blocker)]})
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"already continues this session"
@@ -850,13 +850,13 @@
       ;; a predecessor that lost its session between spawn and launch: handmade
       ;; so the resumer reaches launch, where resume resolution fails loud and
       ;; classed so recovery can branch to --fresh instead of retrying cold.
-      (let [pred (api/add rt {:title "lost-session" :state "closed"
-                              :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
-                                           "agent-run/phase" "done"}})
-            resumer (api/add rt {:title "resumer"
+      (let [pred (weaver/add rt {:title "lost-session" :state "closed"
                                  :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
-                                              "agent-run/prompt" "continue" "agent-run/phase" "pending"
-                                              "agent-run/resumes" (:id pred)}})
+                                              "agent-run/phase" "done"}})
+            resumer (weaver/add rt {:title "resumer"
+                                    :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                                 "agent-run/prompt" "continue" "agent-run/phase" "pending"
+                                                 "agent-run/resumes" (:id pred)}})
             failed (await-phase rt (:id resumer) #{"failed"})]
         (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
         (is (str/includes? (get-in failed [:attributes :agent-run/error]) "missing a required attribute"))))))
@@ -887,37 +887,37 @@
       (shuttle/defbackend! :fake-mux fake-mux)
       (testing "a handmade interactive run carrying agent-run/resumes is rejected"
         (let [pred (captured-predecessor rt)
-              run (api/add rt {:title "handmade-interactive-resume"
-                               :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
-                                            "agent-run/prompt" "continue" "agent-run/phase" "pending"
-                                            "agent-run/mode" "interactive" "agent-run/backend" "fake-mux"
-                                            "agent-run/resumes" (:id pred)}})
+              run (weaver/add rt {:title "handmade-interactive-resume"
+                                  :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                               "agent-run/prompt" "continue" "agent-run/phase" "pending"
+                                               "agent-run/mode" "interactive" "agent-run/backend" "fake-mux"
+                                               "agent-run/resumes" (:id pred)}})
               failed (await-phase rt (:id run) #{"failed"})]
           (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
           (is (str/includes? (get-in failed [:attributes :agent-run/error]) "cannot resume"))))
       (testing "a handmade cross-harness resumer is rejected at launch"
         (let [pred (captured-predecessor rt)
-              run (api/add rt {:title "handmade-cross-harness"
-                               :attributes {"agent-run/run" "true" "agent-run/harness" "sh"
-                                            "agent-run/prompt" "echo x" "agent-run/phase" "pending"
-                                            "agent-run/resumes" (:id pred)}})
+              run (weaver/add rt {:title "handmade-cross-harness"
+                                  :attributes {"agent-run/run" "true" "agent-run/harness" "sh"
+                                               "agent-run/prompt" "echo x" "agent-run/phase" "pending"
+                                               "agent-run/resumes" (:id pred)}})
               failed (await-phase rt (:id run) #{"failed"})]
           (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
           (is (str/includes? (get-in failed [:attributes :agent-run/error]) "exact same harness"))))
       (testing "a second handmade continuation of a live session is rejected at launch"
         (let [pred (captured-predecessor rt)
-              blocker (api/add rt {:title "gate"})]
+              blocker (weaver/add rt {:title "gate"})]
           ;; the first continuation stays active-but-blocked, so it holds the
           ;; session while the second reaches launch and must fail loudly
-          (api/add rt {:title "held-continuation"
-                       :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
-                                    "agent-run/prompt" "first" "agent-run/phase" "pending"
-                                    "agent-run/resumes" (:id pred)}
-                       :edges [{:type "depends-on" :to (:id blocker)}]})
-          (let [run (api/add rt {:title "second-continuation"
-                                 :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
-                                              "agent-run/prompt" "second" "agent-run/phase" "pending"
-                                              "agent-run/resumes" (:id pred)}})
+          (weaver/add rt {:title "held-continuation"
+                          :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                       "agent-run/prompt" "first" "agent-run/phase" "pending"
+                                       "agent-run/resumes" (:id pred)}
+                          :edges [{:type "depends-on" :to (:id blocker)}]})
+          (let [run (weaver/add rt {:title "second-continuation"
+                                    :attributes {"agent-run/run" "true" "agent-run/harness" "session-echo"
+                                                 "agent-run/prompt" "second" "agent-run/phase" "pending"
+                                                 "agent-run/resumes" (:id pred)}})
                 failed (await-phase rt (:id run) #{"failed"})]
             (is (= "resume" (get-in failed [:attributes :agent-run/error-class])))
             (is (str/includes? (get-in failed [:attributes :agent-run/error]) "already continues"))))))))
@@ -976,7 +976,7 @@
     (fn [_rt]
       (let [preamble (#'shuttle/interactive-preamble
                       {:id "run-1" :attributes {:agent-run/for "tgt-1"}})
-            fragment (notes-alpha/writer-ref->prompt {:target "tgt-1" :by "run-1"})]
+            fragment (notes/writer-ref->prompt {:target "tgt-1" :by "run-1"})]
         (is (str/includes? preamble fragment)
             "the completion-contract note line renders through writer-ref->prompt")
         (testing "the no-for-id branch renders no note fragment"
@@ -1546,16 +1546,16 @@
   run with no :cost/:tokens-total is a raw/pre-feature run: it records only its
   timestamps."
   [rt {:keys [harness started finished cost tokens-total tokens]}]
-  (api/add rt {:title (str harness "-run")
-               :state "closed"
-               :attributes (cond-> {"agent-run/run" "true"
-                                    "agent-run/harness" harness
-                                    "agent-run/phase" "done"
-                                    "agent-run/started-at" started
-                                    "agent-run/finished-at" finished}
-                             cost (assoc "agent-run/cost-usd" cost)
-                             tokens-total (assoc "agent-run/tokens-total" tokens-total)
-                             tokens (assoc "agent-run/tokens" tokens))}))
+  (weaver/add rt {:title (str harness "-run")
+                  :state "closed"
+                  :attributes (cond-> {"agent-run/run" "true"
+                                       "agent-run/harness" harness
+                                       "agent-run/phase" "done"
+                                       "agent-run/started-at" started
+                                       "agent-run/finished-at" finished}
+                                cost (assoc "agent-run/cost-usd" cost)
+                                tokens-total (assoc "agent-run/tokens-total" tokens-total)
+                                tokens (assoc "agent-run/tokens" tokens))}))
 
 (deftest spend-aggregates-totals-and-groups-by-harness
   (with-shuttle
@@ -1649,9 +1649,9 @@
                             :finished (format "2026-07-08T10:%02d:01Z" i)
                             :cost 0.01 :tokens-total 10}))
       ;; unrelated strands the aggregation must never touch per-strand
-      (dotimes [i 150] (api/add rt {:title (str "noise-" i)}))
+      (dotimes [i 150] (weaver/add rt {:title (str "noise-" i)}))
       (let [list-calls (atom 0)
-            real-list api/list
+            real-list weaver/list
             counting-list (fn [& args]
                             (swap! list-calls inc)
                             (apply real-list args))

@@ -166,17 +166,17 @@ Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../wor
 **Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `shell/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
 
 ```clojure
-(require '[skein.api.weaver.alpha :as api]
+(require '[skein.api.weaver.alpha :as weaver]
          '[skein.api.current.alpha :as current])
 
 (def rt (current/runtime))              ; the active weaver runtime
 
 ;; find stalled shell gates (any gate carrying shell/error)
-(api/list-query rt 'stalled-shell-gates {})
+(weaver/list-query rt 'stalled-shell-gates {})
 
 ;; recover: fix the underlying problem, then clear the error.
 ;; Clearing shell/error is what lets the next scan re-run the check.
-(api/update rt gate-id {:attributes {"shell/error" nil
+(weaver/update rt gate-id {:attributes {"shell/error" nil
                                      "shell/argv"  ["clojure" "-M:test"]}})
 ;; next scan re-runs the check and closes the gate on exit 0.
 ```

@@ -6,13 +6,13 @@
   of reinventing its own deadline/sleep/recur loop."
   (:require [clojure.java.io :as io]
             [clojure.test :as t]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
-            [skein.core.weaver.config :as daemon-config]
-            [skein.core.weaver.runtime :as runtime]))
+            [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn test-world [config-dir]
-  (daemon-config/world config-dir
+  (weaver-config/world config-dir
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
@@ -90,12 +90,12 @@
          db-file (db-test/temp-db-file)
          config-dir (temp-config-dir (select-keys opts [:prefix :nest-skein?]))]
      (try
-       (let [rt (runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
-                                         :publish? publish?})]
+       (let [rt (weaver-runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
+                                                :publish? publish?})]
          (try
-           (runtime/with-runtime-binding rt #(f rt config-dir))
+           (weaver-runtime/with-runtime-binding rt #(f rt config-dir))
            (finally
-             (runtime/stop! rt))))
+             (weaver-runtime/stop! rt))))
        (finally
          (db-test/delete-sqlite-family! db-file)
          ;; Runtime-added local roots are retained for the process lifetime by tools.deps.
@@ -133,8 +133,8 @@
   ([rt id phases] (await-phase rt id phases (await-budget-ms)))
   ([rt id phases timeout-ms]
    (poll-until
-    #(let [strand (api/show rt id)]
+    #(let [strand (weaver/show rt id)]
        (when (contains? phases (get-in strand [:attributes :agent-run/phase])) strand))
     {:timeout-ms timeout-ms
      :on-timeout #(throw (ex-info "Timed out waiting for run phase"
-                                  {:id id :want phases :strand (api/show rt id)}))})))
+                                  {:id id :want phases :strand (weaver/show rt id)}))})))

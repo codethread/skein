@@ -45,7 +45,7 @@ already regenerated and committed the touched `*.api.md` alongside the docstring
   implemented+committed. The landing is purely additive: no HITL cutover, no weaver restart. The Go
   `spend` subcommand is arg-spec data on an existing op, so `make build` is the CLI pickup; the canonical
   world otherwise picks the change up through the pickup ladder after landing — targeted
-  `(require … :reload)` per changed namespace then `runtime-alpha/reload!`, no restart
+  `(require … :reload)` per changed namespace then `runtime/reload!`, no restart
   (`PROP-Ru-001.C10`, `PLAN-Ru-001.CM4`).
 - **TASK-Ru-007.OS2:** Fixing failures beyond recording gate results: a red gate means stop and report,
   not improvise scope. There is no root-spec edit to make — the deltas are recorded no-change only.

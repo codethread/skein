@@ -16,7 +16,7 @@ The name follows the textile metaphor: a loom holds the whole warp under tension
 
 These projections were previously hand-rolled inside repo `.skein/config.clj`. They are generic graph vocabulary that other code builds on, so they ship here on the classpath while a repo keeps only its own policy — which attribute names a branch, which query feeds the ready frontier, and the op registration glue. `.skein/config.clj`'s `current-dags`, `branches`, and `flow-status` ops are thin wrappers over this spool.
 
-Every function is **read-only** and composes the public `skein.api.graph.alpha` / `skein.api.weaver.alpha` / `skein.spools.workflow` surfaces. Because it reads edges via `graph/subgraph`/`api/list`, it requires an **in-process weaver runtime** — trusted startup config, the weaver's own nREPL, or an in-process test runtime. Callers pass the runtime explicitly.
+Every function is **read-only** and composes the public `skein.api.graph.alpha` / `skein.api.weaver.alpha` / `skein.spools.workflow` surfaces. Because it reads edges via `graph/subgraph`/`weaver/list`, it requires an **in-process weaver runtime** — trusted startup config, the weaver's own nREPL, or an in-process test runtime. Callers pass the runtime explicitly.
 
 ## 2. Usage
 

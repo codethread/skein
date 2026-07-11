@@ -317,12 +317,12 @@ The generated `init.clj` is a small bootstrap:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
 
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :skein/spools-batteries
+(runtime/sync! runtime)
+(runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
 ```
@@ -371,12 +371,12 @@ Register your own from trusted Clojure with `skein.api.weaver.alpha/register-op!
 
 ```clojure
 (require '[skein.api.current.alpha :as current])
-(require '[skein.api.weaver.alpha :as api])
+(require '[skein.api.weaver.alpha :as weaver])
 
 (defn echo-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
 
-(api/register-op! (current/runtime) 'echo "Echo raw argv" 'user/echo-op)
+(weaver/register-op! (current/runtime) 'echo "Echo raw argv" 'user/echo-op)
 ```
 
 ```sh
@@ -392,7 +392,7 @@ Append this handler to `$workspace/init.clj` (not a real repo's `.skein/init.clj
 ```clojure
 (require '[clojure.string :as str])
 (require '[skein.api.current.alpha :as current])
-(require '[skein.api.weaver.alpha :as api])
+(require '[skein.api.weaver.alpha :as weaver])
 
 (defn parse-max [argv]
   (loop [remaining argv]
@@ -427,7 +427,7 @@ Append this handler to `$workspace/init.clj` (not a real repo's `.skein/init.clj
                            [line]))))
 
 (defn by-kanban [rt status limit]
-  (->> (api/list rt [:= [:attr :kanban] status] {})
+  (->> (weaver/list rt [:= [:attr :kanban] status] {})
        (take limit)
        vec))
 
@@ -443,13 +443,13 @@ Append this handler to `$workspace/init.clj` (not a real repo's `.skein/init.clj
     {:max max-rows
      :table (table rows)}))
 
-(api/register-op! (current/runtime) 'kanban "Show strands grouped by :attr kanban" 'user/kanban-op)
+(weaver/register-op! (current/runtime) 'kanban "Show strands grouped by :attr kanban" 'user/kanban-op)
 ```
 
 Reload that disposable workspace's config so its weaver installs the handler. Only reload the workspace you mean to; do not point this at a real repo unless you intend to reload its shared config. This one-liner sends a `reload!` form to the weaver over stdin (`printf` prints the Clojure, `mill weaver repl --stdin` evaluates it):
 
 ```sh
-printf '(do (require '\''[skein.api.current.alpha :as current] '\''[skein.api.runtime.alpha :as runtime-alpha]) (runtime-alpha/reload! (current/runtime)))\n' \
+printf '(do (require '\''[skein.api.current.alpha :as current] '\''[skein.api.runtime.alpha :as runtime]) (runtime/reload! (current/runtime)))\n' \
   | mill weaver repl --stdin --workspace "$workspace"
 ```
 

@@ -6,7 +6,7 @@
   (:refer-clojure :exclude [list update])
   (:require [clojure.edn :as edn]
             [nrepl.core :as nrepl]
-            [skein.core.weaver.config :as config]
+            [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata])
   (:import [java.net InetAddress]))
 
@@ -84,8 +84,8 @@
    (metadata-for-world config-dir nil))
   ([config-dir state-dir]
    (let [world (if state-dir
-                 (config/world config-dir state-dir (str state-dir "/data"))
-                 (config/world config-dir))
+                 (weaver-config/world config-dir state-dir (str state-dir "/data"))
+                 (weaver-config/world config-dir))
          meta (metadata/read-metadata world)]
      (when (metadata/stale-or-missing? meta)
        (fail "Weaver metadata is missing or stale" {:type :skein.core.client/missing-or-stale-metadata

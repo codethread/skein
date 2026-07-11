@@ -9,7 +9,7 @@
             [clojure.string :as str]
             [skein.core.weaver.access :refer [approved-spool-sync-state module-use-state
                                               with-spool-classloader]]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
 (defn approved
@@ -30,7 +30,7 @@
 (defn reload!
   "Reload startup files from `runtime`'s config dir after clearing registries."
   [runtime]
-  (runtime/reload-config! runtime))
+  (weaver-runtime/reload-config! runtime))
 
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.
@@ -38,7 +38,7 @@
   Defaults to the real wall clock; deterministic tests inject an advanceable
   clock through `skein.test.alpha/set-clock!`."
   [runtime]
-  (runtime/now runtime))
+  (weaver-runtime/now runtime))
 
 (def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
 

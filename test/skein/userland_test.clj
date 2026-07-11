@@ -10,7 +10,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.api.current.alpha :as current]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db-test :as db-test]
             [skein.userland.alpha :as u]))
 
@@ -31,12 +31,12 @@
 (defn- start-runtime []
   (let [db-file (db-test/temp-db-file)
         world (temp-world)]
-    {:rt (runtime/start! db-file {:world world :publish? false})
+    {:rt (weaver-runtime/start! db-file {:world world :publish? false})
      :db-file db-file
      :world world}))
 
 (defn- stop-runtime [{:keys [rt db-file world]}]
-  (runtime/stop! rt)
+  (weaver-runtime/stop! rt)
   (db-test/delete-sqlite-family! db-file)
   (delete-tree! (.getParentFile (io/file (:config-dir world)))))
 
@@ -74,7 +74,7 @@
 
 (deftest loud-failure-when-no-runtime-resolvable
   (u/unbind!)
-  (is (nil? @runtime/current-runtime)
+  (is (nil? @weaver-runtime/current-runtime)
       "test JVM must have no published runtime for this assertion")
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"skein.userland.alpha"
                         (u/ready)))

@@ -3,7 +3,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [nrepl.server :as nrepl]
-            [skein.core.weaver.config :as config]
+            [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.scheduler :as scheduler]
             [skein.core.weaver.socket :as socket]
@@ -386,7 +386,7 @@
   ([db-file {:keys [world name publish? storage] :or {publish? true}}]
    (when (and publish? @current-runtime)
      (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
-   (let [world (or world (config/world))
+   (let [world (or world (weaver-config/world))
          existing (metadata/read-metadata world)
          socket-file (metadata/socket-file world)]
      (when-not (metadata/stale-or-missing? existing)
@@ -542,7 +542,7 @@
   "Start a foreground weaver process from command-line arguments."
   [& args]
   (let [{:keys [config-dir state-dir data-dir name]} (parse-main-args args)]
-    (start! nil {:world (config/world config-dir state-dir data-dir) :name name})
+    (start! nil {:world (weaver-config/world config-dir state-dir data-dir) :name name})
     (install-signal-shutdown!)
     (println "weaver started")
     (while @current-runtime

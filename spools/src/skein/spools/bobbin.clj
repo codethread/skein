@@ -8,7 +8,7 @@
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.util :refer [fail! attr-get attr-key->str]]))
 
 (def ^:private section-order [:strand :blockers :dependents :parents :children :notes :workflow])
@@ -40,7 +40,7 @@
 
 (defn- direct-active [rt relation direction target-id]
   (let [op (case direction :out :edge/out :in :edge/in)]
-    (api/list rt (active-query [op relation [:= :id target-id]]) {})))
+    (weaver/list rt (active-query [op relation [:= :id target-id]]) {})))
 
 (defn- edge-summary [edge]
   (select-keys edge [:from_strand_id :to_strand_id :edge_type :attributes]))
@@ -88,7 +88,7 @@
       (graph-section parents []))))
 
 (defn- notes-section [rt target-id]
-  (let [notes (->> (api/list rt [:edge/in "notes" [:= :id target-id]] {})
+  (let [notes (->> (weaver/list rt [:edge/in "notes" [:= :id target-id]] {})
                    (sort-by (juxt #(or (attr % :note/at) "") :created_at :id)))]
     (graph-section notes [])))
 
@@ -101,9 +101,9 @@
   (when (seq (workflow-attrs strand))
     (let [run-id (attr strand :workflow/run-id)
           root (when run-id
-                 (first (api/list rt [:and
-                                      [:= [:attr "workflow/run-id"] run-id]
-                                      [:= [:attr "workflow/role"] "molecule"]] {})))]
+                 (first (weaver/list rt [:and
+                                         [:= [:attr "workflow/run-id"] run-id]
+                                         [:= [:attr "workflow/role"] "molecule"]] {})))]
       (cond-> {:run-id run-id
                :role (attr strand :workflow/role)
                :attributes (workflow-attrs strand)}

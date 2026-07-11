@@ -13,7 +13,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.bench :as bench]
             [skein.spools.bench.exec :as exec]
             [skein.spools.agent-run :as shuttle]
@@ -150,12 +150,12 @@ esac
 
 (defn- await-phase [rt id phases]
   (test-support/poll-until
-   #(let [s (api/show rt id)] (when (contains? phases (get-in s [:attributes :bench/phase])) s))
+   #(let [s (weaver/show rt id)] (when (contains? phases (get-in s [:attributes :bench/phase])) s))
    {:on-timeout #(throw (ex-info "timed out waiting for bench phase"
-                                 {:id id :want phases :strand (api/show rt id)}))}))
+                                 {:id id :want phases :strand (weaver/show rt id)}))}))
 
 (defn- entry-dir [rt run-id slug]
-  (io/file (get-in (api/show rt run-id) [:attributes :bench/data-dir]) slug))
+  (io/file (get-in (weaver/show rt run-id) [:attributes :bench/data-dir]) slug))
 
 ;; ---------------------------------------------------------------------------
 ;; Registry validation
@@ -298,7 +298,7 @@ esac
               (is (str/includes? calls "VALIDATE-OK"))))
           (testing "judge depends on every entry and runs once they close"
             (is (= #{entry-id} (set (map :to_strand_id (graph/outgoing-edges rt [judge] "depends-on")))))
-            (is (= "true" (get-in (api/show rt judge) [:attributes :bench/judge])))
+            (is (= "true" (get-in (weaver/show rt judge) [:attributes :bench/judge])))
             (let [judged (test-support/await-phase rt judge #{"done"})]
               (is (= "verdict" (get-in judged [:attributes :agent-run/result]))))))))))
 
@@ -318,7 +318,7 @@ esac
            :entries [{:agent :fake}]
            :judge :none})
         (let [{:keys [run]} (bench/run! rt :byrev {})]
-          (is (= sha (get-in (api/show rt run) [:attributes :bench/sha]))
+          (is (= sha (get-in (weaver/show rt run) [:attributes :bench/sha]))
               "the resolved sha is stamped so the run reproduces"))))))
 
 ;; ---------------------------------------------------------------------------
@@ -387,7 +387,7 @@ esac
            ;; two SETUP-FAIL invocations recorded proves the cell re-executed
             (is (<= 2 (count (re-seq #"SETUP-FAIL" (slurp (io/file record "calls.log")))))))
           (testing "retrying a non-failed entry fails loudly"
-            (api/update rt entry-id {:attributes {"bench/phase" "done"}})
+            (weaver/update rt entry-id {:attributes {"bench/phase" "done"}})
             (is (thrown-with-msg? Exception #"only applies to failed" (bench/retry! rt entry-id)))))))))
 
 (deftest timeout-fails-entry-loudly
@@ -424,10 +424,10 @@ esac
           (await-phase rt entry-id #{"running"})
           (bench/abort! rt run)
           (let [aborted (test-support/poll-until
-                         #(let [s (api/show rt entry-id)]
+                         #(let [s (weaver/show rt entry-id)]
                             (when (= "failed" (get-in s [:attributes :bench/phase])) s)))]
             (is (= "aborted" (get-in aborted [:attributes :bench/error]))))
-          (let [j (api/show rt judge)]
+          (let [j (weaver/show rt judge)]
             (is (= "closed" (:state j)))
             (is (= "superseded" (get-in j [:attributes :agent-run/phase])))))))))
 
@@ -435,13 +435,13 @@ esac
   (with-bench
     (fn [rt _]
       (bench/set-engine! rt (:engine (fake-engine!)))
-      (let [root (api/add rt {:title "run" :attributes {"bench/run" "true"}})
-            entry (api/add rt {:title "entry"
-                               :attributes {"bench/entry" "true" "bench/slug" "s"
-                                            "bench/phase" "running"}})]
-        (api/update rt (:id root) {:edges [{:type "parent-of" :to (:id entry)}]})
+      (let [root (weaver/add rt {:title "run" :attributes {"bench/run" "true"}})
+            entry (weaver/add rt {:title "entry"
+                                  :attributes {"bench/entry" "true" "bench/slug" "s"
+                                               "bench/phase" "running"}})]
+        (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id entry)}]})
         (is (= [(:id entry)] (bench/reconcile! rt)))
-        (let [reconciled (api/show rt (:id entry))]
+        (let [reconciled (weaver/show rt (:id entry))]
           (is (= "failed" (get-in reconciled [:attributes :bench/phase])))
           (is (str/includes? (get-in reconciled [:attributes :bench/error]) "orphaned")))))))
 
@@ -529,14 +529,14 @@ esac
               entry-id (get entries "block")]
           (await-phase rt entry-id #{"running"})
           ;; mark aborted mid-run, exactly as abort! would, before the worker finalizes
-          (api/update rt entry-id {:attributes {"bench/phase" "failed" "bench/error" "aborted"}})
+          (weaver/update rt entry-id {:attributes {"bench/phase" "failed" "bench/error" "aborted"}})
           ;; release the blocked agent so its worker proceeds to finalize
           (spit (io/file record "release") "go")
           ;; the worker reaches finalization (writes metrics.json) but must not
           ;; resurrect the aborted entry to done/closed
           (test-support/poll-until
            #(when (.exists (io/file (entry-dir rt run "block") "metrics.json")) true))
-          (let [final (api/show rt entry-id)]
+          (let [final (weaver/show rt entry-id)]
             (is (= "failed" (get-in final [:attributes :bench/phase])))
             (is (= "aborted" (get-in final [:attributes :bench/error])))
             (is (= "active" (:state final)) "aborted entry stays active, never closed")))))))
@@ -561,7 +561,7 @@ esac
           (bench/retry! rt entry-id)
           (testing "the retry waits on the SHARED semaphore rather than exceeding :parallel"
             (test-support/poll-until #(when (pos? (.getQueueLength sem)) true))
-            (is (= "pending" (get-in (api/show rt entry-id) [:attributes :bench/phase]))
+            (is (= "pending" (get-in (weaver/show rt entry-id) [:attributes :bench/phase]))
                 "queued behind the held permit, not advanced to preparing"))
           ;; releasing the permit lets the queued retry proceed (and fail again)
           (.release sem)
@@ -620,12 +620,12 @@ esac
 ;; CLI op surface (§10)
 
 (defn- bench-op! [rt & argv]
-  (api/op! rt 'bench (vec argv)))
+  (weaver/op! rt 'bench (vec argv)))
 
 (deftest bench-op-declares-subcommands-and-routes-loudly
   (with-bench
     (fn [rt _]
-      (is (some #(= "bench" (:name %)) (api/ops rt)) "install! registered the op")
+      (is (some #(= "bench" (:name %)) (weaver/ops rt)) "install! registered the op")
       (is (contains? (graph/queries rt) "bench-runs") "install! registered the query")
       (testing "the help alias projects the declared verb surface"
         (let [detail (bench-op! rt "help")
@@ -704,13 +704,13 @@ esac
               (is (= [run] (mapv :run listed)))
               (is (= 1 (:entries (first listed))))
               (is (= {"done" 1} (:phases (first listed)))))
-            (is (= [run] (mapv :id (api/list rt (graph/resolve-query rt 'bench-runs) {})))))
+            (is (= [run] (mapv :id (weaver/list rt (graph/resolve-query rt 'bench-runs) {})))))
           (testing "gc removes only the artifact dir; the run strand survives"
             (let [dir (entry-dir rt run slug)]
               (is (.exists dir))
               (is (= {:removed [run]} (bench-op! rt "gc" "--run" run)))
               (is (not (.exists dir)))
-              (is (= "true" (get-in (api/show rt run) [:attributes :bench/run]))))))))))
+              (is (= "true" (get-in (weaver/show rt run) [:attributes :bench/run]))))))))))
 
 (deftest bench-op-run-honors-entries-subset
   (with-bench
@@ -818,7 +818,7 @@ esac
         (let [{:keys [run entries judge]} (bench/run! rt :ext {})
               slug "fake-opus"
               entry-id (get entries slug)
-              js (api/show rt judge)]
+              js (weaver/show rt judge)]
           (testing "judge strand is a fulfilment seam, not an agent run"
             (is (some? judge))
             (is (= "true" (get-in js [:attributes :bench/judge])))
@@ -839,12 +839,12 @@ esac
               (is (= (get (:attrs spec) "bench/run") (get-in js [:attributes :bench/run])))))
           (testing "manual fulfilment: stamp bench/verdict + close completes the run"
             (await-phase rt entry-id #{"done"})
-            (api/update rt judge {:state "closed"
-                                  :attributes {"bench/verdict" "winner: fake-opus (manual)"}})
+            (weaver/update rt judge {:state "closed"
+                                     :attributes {"bench/verdict" "winner: fake-opus (manual)"}})
             (let [rep (bench/report rt run)]
               (is (= "winner: fake-opus (manual)" (get-in rep [:judge :verdict])))
               (is (= "attr" (get-in rep [:judge :verdict-source]))))
-            (is (= "closed" (:state (api/show rt judge))) "closing the judge strand completes the run")))))))
+            (is (= "closed" (:state (weaver/show rt judge))) "closing the judge strand completes the run")))))))
 
 (deftest judge-prompt-resolves-path-backed-prompt-text
   (with-bench
@@ -861,7 +861,7 @@ esac
            :parallel 1 :timeout-secs 60
            :judge {:external true}})
         (let [{:keys [judge]} (bench/run! rt :pathprompt {})
-              jp (get-in (api/show rt judge) [:attributes :bench/judge-prompt])]
+              jp (get-in (weaver/show rt judge) [:attributes :bench/judge-prompt])]
           (is (str/includes? jp "do the file-backed thing across multiple lines")
               "the :path prompt is slurped and rendered, not the {:path ...} map"))))))
 
@@ -879,7 +879,7 @@ esac
            :parallel 1 :timeout-secs 60
            :judge {:external true}})
         (let [{:keys [judge]} (bench/run! rt :multiprompt {:entries ["fake-alpha"]})
-              jp (get-in (api/show rt judge) [:attributes :bench/judge-prompt])]
+              jp (get-in (weaver/show rt judge) [:attributes :bench/judge-prompt])]
           (is (str/includes? jp "alpha: prompt alpha text"))
           (is (not (str/includes? jp "beta"))
               "an unreferenced suite prompt is not listed as under test"))))))
@@ -902,13 +902,13 @@ esac
               entry-id (get entries "fake-opus")]
           (await-phase rt entry-id #{"done"})
           (testing "prompt and stamped attr share one builder (no drift)"
-            (let [js (api/show rt judge)]
+            (let [js (weaver/show rt judge)]
               (is (= (get-in js [:attributes :agent-run/prompt])
                      (get-in js [:attributes :bench/judge-prompt])))))
           (test-support/await-phase rt judge #{"done"})
           (testing "bench/verdict attr wins over the run result"
             ;; the judge worker stamps its verdict on its own run strand
-            (api/update rt judge {:attributes {"bench/verdict" "winner via attr"}})
+            (weaver/update rt judge {:attributes {"bench/verdict" "winner via attr"}})
             (let [rep (bench/report rt run)]
               (is (= "winner via attr" (get-in rep [:judge :verdict])))
               (is (= "attr" (get-in rep [:judge :verdict-source]))))))))))
@@ -929,7 +929,7 @@ esac
               entry-id (get entries "slow")]
           (await-phase rt entry-id #{"running"})
           (bench/abort! rt run)
-          (let [j (api/show rt judge)]
+          (let [j (weaver/show rt judge)]
             (is (= "closed" (:state j)))
             (is (= "aborted" (get-in j [:attributes :bench/error])))
             (is (nil? (get-in j [:attributes :agent-run/phase]))

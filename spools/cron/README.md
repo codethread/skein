@@ -45,11 +45,11 @@ Activate it from trusted startup config after syncing approved roots:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :cron
+(runtime/sync! runtime)
+(runtime/use! runtime :cron
   {:ns 'skein.spools.cron
    :spools ['skein.spools/cron]
    :call 'skein.spools.cron/install!

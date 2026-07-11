@@ -12,7 +12,7 @@
             [skein.macros.ops :refer [defop forget-ops! install-ops!]]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api])
+            [skein.api.weaver.alpha :as weaver])
   (:import (java.time Duration Instant)))
 
 ;; Reload correctness: clear this namespace's remembered ops before the defop
@@ -144,7 +144,7 @@
   [ctx]
   (let [{:keys [root-id]} (:op/args ctx)
         rt (current/runtime)
-        root (api/show rt root-id)]
+        root (weaver/show rt root-id)]
     (when-not root
       (throw (ex-info "feature-costs root strand not found" {:root-id root-id})))
     (let [{:keys [strands]} (graph/subgraph rt [root-id] {:type "parent-of"})

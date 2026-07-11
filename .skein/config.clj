@@ -26,7 +26,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]))
+            [skein.api.weaver.alpha :as weaver]))
 
 ;; Reload correctness: clear this namespace's remembered ops/queries before the
 ;; def forms below re-register them, so a targeted reload (load-file + reload!)
@@ -618,15 +618,15 @@
   (let [{:keys [parent-id title context cwd harness backend]} (:op/args ctx)
         rt (current/runtime)]
     (require-non-blank! :context context)
-    (when-not (api/show rt parent-id)
+    (when-not (weaver/show rt parent-id)
       (throw (ex-info "hitl parent strand not found" {:parent parent-id})))
-    (let [tracking (api/add rt {:title (str "HITL: " title)
-                                :attributes {"hitl" "true"
-                                             "body" (str "Tracking strand for the interactive HITL session \"" title "\"."
-                                                         " The session agent appends closed note children for decisions,"
-                                                         " writes a final outcome attr, then closes this strand to end its"
-                                                         " run and tear down the session.")}})]
-      (api/update rt parent-id {:edges [{:type "parent-of" :to (:id tracking)}]})
+    (let [tracking (weaver/add rt {:title (str "HITL: " title)
+                                   :attributes {"hitl" "true"
+                                                "body" (str "Tracking strand for the interactive HITL session \"" title "\"."
+                                                            " The session agent appends closed note children for decisions,"
+                                                            " writes a final outcome attr, then closes this strand to end its"
+                                                            " run and tear down the session.")}})]
+      (weaver/update rt parent-id {:edges [{:type "parent-of" :to (:id tracking)}]})
       (let [run (shuttle/spawn-run! {:harness (or harness "hitl-build")
                                      :prompt (hitl-prompt (:id tracking) context)
                                      :title (str "HITL: " title)
@@ -715,7 +715,7 @@
   [ctx]
   (let [{:keys [card-id]} (:op/args ctx)
         rt (current/runtime)
-        card (api/show rt card-id)]
+        card (weaver/show rt card-id)]
     (when-not card
       (throw (ex-info "kanban-export card not found" {:card-id card-id})))
     (let [{:keys [strands edges]} (graph/subgraph rt [card-id] {:type "parent-of"})

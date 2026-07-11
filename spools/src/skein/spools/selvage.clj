@@ -11,7 +11,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.util :refer [fail!]]))
 
 (def ^:private state-version
@@ -200,10 +200,10 @@
   strands selected by that predicate DSL query."
   ([]
    (let [rt (current/runtime)]
-     (vec (mapcat check-strand (api/list rt [:= :state "active"] {})))))
+     (vec (mapcat check-strand (weaver/list rt [:= :state "active"] {})))))
   ([query-form]
    (let [rt (current/runtime)]
-     (vec (mapcat check-strand (api/list rt [:and [:= :state "active"] query-form] {}))))))
+     (vec (mapcat check-strand (weaver/list rt [:and [:= :state "active"] query-form] {}))))))
 
 (defn- attr-namespace
   "The namespace segment of a selvage check's `:attr` — the part before the first

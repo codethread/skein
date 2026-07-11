@@ -106,10 +106,10 @@ file holds `run!` plus an `install!` that performs the `register!` call.
 (defn install! [] {:jobs (register-report-job!)})
 
 ;; init.clj — cron is synced and activated before the job module registers.
-(runtime-alpha/use! runtime :skein/spools-cron
+(runtime/use! runtime :skein/spools-cron
   {:ns 'skein.spools.cron :spools ['skein.spools/cron]
    :call 'skein.spools.cron/install! :required? true})
-(runtime-alpha/use! runtime :report-job
+(runtime/use! runtime :report-job
   {:file "report_job.clj" :after [:skein/spools-cron]
    :call 'report-job/install! :required? true})
 ```

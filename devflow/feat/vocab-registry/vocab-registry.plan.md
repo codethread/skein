@@ -39,7 +39,7 @@ epic's F3 HISTORY-rewrite/cutover shape does not recur here. The whole change se
 consumers) plus docs — there is no `cli/` Go change, so `strand vocab` is a batteries op the running weaver registers,
 not a rebuilt binary. The canonical `.skein` world picks the feature up through the pickup ladder (CLAUDE.md), not a
 restart: reload each changed already-loaded namespace with a targeted `(require 'the.ns :reload)` first —
-`runtime-alpha/reload!` alone skips already-loaded namespaces — then `runtime-alpha/reload!` re-runs activation so the new
+`runtime/reload!` alone skips already-loaded namespaces — then `runtime/reload!` re-runs activation so the new
 op registers and each `install!` re-declares into the surviving registry (`PROP-Vr-001.C12`). Any `.skein` config change
 is smoke-tested in a disposable world first, never by restarting the canonical weaver.
 
@@ -113,7 +113,7 @@ from `relations.alpha`, not re-listed).
   additive branch merge; the canonical world picks the changes up through the pickup ladder (CLAUDE.md), not a restart.
   F4 has no `cli/` Go change — `strand vocab` is a batteries op the weaver registers, so `make build` is not its pickup
   path. Each changed already-loaded Clojure namespace (the touched spool `install!` files, `batteries.clj`, `selvage.clj`,
-  `carder.clj`) needs a targeted `(require 'the.ns :reload)` before `runtime-alpha/reload!` — which alone skips
+  `carder.clj`) needs a targeted `(require 'the.ns :reload)` before `runtime/reload!` — which alone skips
   already-loaded namespaces — then `reload!` re-runs activation so the op registers and every `install!` re-declares. A
   repo-policy `.skein` declaration is smoke-tested in a disposable world first. The pickup ladder — not a restart — is the
   deployment step.
@@ -343,7 +343,7 @@ present: `spools-shuttle`, `spools-treadle`, `spools-agents`, `spools-kanban`, `
   S9 (spec deltas, independent) fan out with their code. S10 is the coordinator-adjacent acceptance gate. **No cutover
   slice and no HITL slice** — the landing is purely additive (`PROP-Vr-001.C12`); the canonical world picks up the changes
   through the pickup ladder after landing — a targeted `(require 'the.ns :reload)` for each changed already-loaded
-  namespace, then `runtime-alpha/reload!` — with no weaver restart.
+  namespace, then `runtime/reload!` — with no weaver restart.
 - **PLAN-Vr-001.TC3:** AFK task-queue sketch (one slice → one task; the six S2 sub-slices are six disjoint tasks):
 
   | Slice | Sketch | Depends-on | ~Tasks |
@@ -416,7 +416,7 @@ Append notes here. Do not rewrite earlier notes.
   F4 has no `cli/` Go change, so `make build` is not the pickup path — `strand vocab` is a batteries op the
   running weaver registers. The registry namespace, the op registration, the six `install!` seeds, and the
   selvage/carder consumers are all already-loaded Clojure namespaces; picking them up needs a targeted
-  `(require 'the.ns :reload)` per changed namespace **before** `runtime-alpha/reload!` (which alone skips
+  `(require 'the.ns :reload)` per changed namespace **before** `runtime/reload!` (which alone skips
   already-loaded namespaces), then `reload!` re-runs activation. No weaver restart.
 - **Citations stabilized (finding 2).** Load-bearing `file.clj:NN` line refs in the durable slice/task
   prose were replaced with the function/op/def anchors already named beside them (or the proposal/spec

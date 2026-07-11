@@ -31,11 +31,11 @@ Agent-run is shipped as an approved-local-root spool example under `spools/agent
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :agent-run
+(runtime/sync! runtime)
+(runtime/use! runtime :agent-run
   {:ns 'skein.spools.agent-run
    :spools ['skein.spools/agent-run]
    :call 'skein.spools.agent-run/install!
@@ -88,7 +88,7 @@ Resume fails loudly (TEN-003), never silently, and every resume-classed failure 
 - **concurrent continuation** — at most one active run may carry `agent-run/resumes <p>` at a time (one live continuation per session);
 - **interactive** — interactive runs reject `:resume`; the live session is their own continuity.
 
-These invariants are enforced both at `spawn-run!` time and again at the launch seam, because a run strand can be hand-built directly via `api/add` — a handmade `agent-run/resumes` run never bypasses them.
+These invariants are enforced both at `spawn-run!` time and again at the launch seam, because a run strand can be hand-built directly via `weaver/add` — a handmade `agent-run/resumes` run never bypasses them.
 
 **Persistence is host-local and never required.** Harness session stores are host-local, non-skein-owned state: Skein records only the `agent-run/session-id` it parsed and never manages the store. Nothing consumes a session unless a caller passes `:resume` — a run without it behaves byte-identically to a no-resume engine. A lost or unresumable session fails loudly rather than auto-falling back to a cold start; the recovery path is the named `--fresh` escape (see [agents `retry`](../delegation/README.md#3-op-surface)), which severs the linkage and respawns on the full-brief prompt.
 

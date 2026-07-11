@@ -10,10 +10,10 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [skein.api.events.alpha :as events]
-            [skein.api.runtime.alpha :as runtime-alpha]
+            [skein.api.runtime.alpha :as runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.scheduler :as scheduler]
             [skein.spools.test-support :as test-support]
             [skein.test.alpha :as test-alpha]
@@ -310,14 +310,14 @@
                                :payload {:n 7}}))
       (reset! captured nil)
       (reset! fired (promise))
-      (let [rt (runtime/start! db-file {:world world :publish? false})]
+      (let [rt (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
           (is (await-fire) "a persisted overdue wake fires on startup re-arm")
           (is (= {:n 7} (:payload @captured)))
           (is (await-completed (:datasource rt) "overdue") "the fired wake is completed")
           (is (= ["overdue"] (mapv :key (db/recent-fires (:datasource rt)))))
           (finally
-            (runtime/stop! rt))))
+            (weaver-runtime/stop! rt))))
       (finally
         (db-test/delete-sqlite-family! db-file)
         (wt/delete-tree! (io/file (:config-dir world)))))))
@@ -349,17 +349,17 @@
       (is (await-fire) "the overdue wake fires once")
       (is (await-completed (:datasource rt) "past"))
       ;; A config reload re-arms the scheduler; a completed wake must not return.
-      (runtime-alpha/reload! rt)
+      (runtime/reload! rt)
       (is (= 1 @fire-count) "a completed wake is not re-fired on reload"))))
 
 (deftest stop-closes-scheduler-executor-thread
   (let [db-file (db-test/temp-db-file)
         world (wt/temp-world)
-        rt (runtime/start! db-file {:world world :publish? false})]
+        rt (weaver-runtime/start! db-file {:world world :publish? false})]
     (try
       (let [executor (:executor (scheduler/state rt))]
         (is (not (.isShutdown executor)) "the scheduler executor runs while the weaver is up")
-        (runtime/stop! rt)
+        (weaver-runtime/stop! rt)
         (is (.isShutdown executor) "stop! shuts the scheduler executor down")
         (is (.isTerminated executor) "the scheduler timer thread is joined on stop"))
       (finally

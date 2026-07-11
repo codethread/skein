@@ -194,7 +194,7 @@ run.clj`](./agent-run/src/skein/spools/agent_run.clj), with coverage in
 
 ```clojure
 (require '[skein.spools.agent-run :as agent-run]
-         '[skein.api.weaver.alpha :as api]
+         '[skein.api.weaver.alpha :as weaver]
          '[skein.api.current.alpha :as current])
 
 (def rt (current/runtime))              ; the active weaver runtime
@@ -204,7 +204,7 @@ run.clj`](./agent-run/src/skein/spools/agent_run.clj), with coverage in
 (def b (agent-run/spawn-run! {:harness :sh :prompt "echo b"}))
 
 ;; an ordinary strand acting as an external gate the collector also waits on
-(def gate (api/add rt {:title "external gate"}))
+(def gate (weaver/add rt {:title "external gate"}))
 
 ;; the collector waits for both workers AND the gate — it stays pending until
 ;; every one is closed, then spawns via the graph event
@@ -213,7 +213,7 @@ run.clj`](./agent-run/src/skein/spools/agent_run.clj), with coverage in
                        :depends-on [(:id a) (:id b) (:id gate)]}))
 
 ;; closing the last blocker is what triggers the collector's spawn
-(api/update rt (:id gate) {:state "closed"})
+(weaver/update rt (:id gate) {:state "closed"})
 ;; => collector runs, agent-run/result "collected"
 ```
 
@@ -230,7 +230,7 @@ run.clj`](./agent-run/src/skein/spools/agent_run.clj), with coverage in
   you write N edges.
 - **The blockers need not be runs.** `depends-on` targets any strand, so a
   agent-run run can wait on a human-closed task, a workflow step, or another run
-  interchangeably — the collector above waits on a plain `api/add` strand
+  interchangeably — the collector above waits on a plain `weaver/add` strand
   alongside its two worker runs.
 
 Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/agent_run_test.clj`` (two `sh` workers plus an external gate strand, collector stays pending until the last closes).

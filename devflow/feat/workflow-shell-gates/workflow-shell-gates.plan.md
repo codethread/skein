@@ -110,7 +110,7 @@ The **pass** outcome rides the ordinary workflow vocabulary only: reed closes th
 | PLAN-ShellGates-001.AA6 | `spools/README.md` | Add a `skein.spools.reed` row to the **classpath** Index table (with `loom`), not the approved-local-root table. |
 | PLAN-ShellGates-001.AA7 | `devflow/specs/alpha-surface.md` | Merge `DELTA-ShellGates-001.D1` on ship: add `reed` to the SPEC-005.C3 classpath spool list. |
 | PLAN-ShellGates-001.AA8 | `test/skein/spools/reed_test.clj` (**new**) | Executable contract tests (see P5), ns `skein.spools.reed-test`, mirroring the classpath-spool test placement of `loom_test.clj`/`carder_test.clj`. |
-| PLAN-ShellGates-001.AA9 | `.skein/init.clj` + `CLAUDE.md`/`AGENTS.md` spool lists (**optional, PH3**) | If this repo runs reed live: a `runtime-alpha/use!` activation (`:call 'skein.spools.reed/install!`, ordered after `:skein/spools-workflow`) and a spool-list entry, plus a smoke-path touch if the smoke demo should exercise a `:shell` gate. |
+| PLAN-ShellGates-001.AA9 | `.skein/init.clj` + `CLAUDE.md`/`AGENTS.md` spool lists (**optional, PH3**) | If this repo runs reed live: a `runtime/use!` activation (`:call 'skein.spools.reed/install!`, ordered after `:skein/spools-workflow`) and a spool-list entry, plus a smoke-path touch if the smoke demo should exercise a `:shell` gate. |
 
 ## PLAN-ShellGates-001.P4 Contract and migration impact
 
@@ -146,7 +146,7 @@ Outcome: `spools/reed.md`, `spools/reed.cookbook.md`, and generated `spools/reed
 
 ### PLAN-ShellGates-001.PH3 Repo-live activation (optional) + smoke
 
-Outcome: if the repo runs reed live, `.skein/init.clj` activates it (ordered after the workflow spool) and the `CLAUDE.md`/`AGENTS.md` spool lists gain a reed entry; the smoke demo optionally exercises a trivial `:shell` gate end to end. If the repo defers live activation, this phase records that decision and ships nothing but the note. This phase touches the canonical world's **config file only** — never a running weaver; pickup is a selected-workspace `runtime-alpha/reload!`, not a restart (see Task context).
+Outcome: if the repo runs reed live, `.skein/init.clj` activates it (ordered after the workflow spool) and the `CLAUDE.md`/`AGENTS.md` spool lists gain a reed entry; the smoke demo optionally exercises a trivial `:shell` gate end to end. If the repo defers live activation, this phase records that decision and ships nothing but the note. This phase touches the canonical world's **config file only** — never a running weaver; pickup is a selected-workspace `runtime/reload!`, not a restart (see Task context).
 
 ## PLAN-ShellGates-001.P6 Validation strategy
 
@@ -264,7 +264,7 @@ For an AFK implementer picking this up cold:
   type hints.
 - **Do NOT** restart/stop/reload the canonical mill or weaver. This is code + docs.
   Any live poking uses a disposable `--workspace "$(mktemp -d)"`. Config pickup for a
-  selected workspace is `runtime-alpha/reload!`, never a restart.
+  selected workspace is `runtime/reload!`, never a restart.
 - **Task-queue slicing (recorded 2026-07-07 by the task-breakdown run).** The queue
   is three sequential AFK tasks, one per phase: `TASK-ShellGates-001` (PH1 — reed.clj
   + full `reed_test.clj` matrix), `TASK-ShellGates-002` (PH2 — `reed.md`/cookbook/

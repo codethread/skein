@@ -24,7 +24,7 @@ Approved local-root spool. Agent-run must be installed first (the default `:harn
 ```
 
 ```clojure
-(runtime-alpha/use! runtime :bench
+(runtime/use! runtime :bench
   {:ns 'skein.spools.bench
    :spools ['skein.spools/bench]
    :call 'skein.spools.bench/install!

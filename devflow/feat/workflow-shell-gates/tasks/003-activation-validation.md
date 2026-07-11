@@ -8,16 +8,16 @@ Type: AFK
 
 Activate reed live in this repo's canonical `.skein` config **file**, add the reed entry to the `CLAUDE.md`/`AGENTS.md` spool lists, and run the full validation sweep across the whole feature (`PLAN-ShellGates-001.PH3`, `.AA9`, `.P6`). This edits config text only.
 
-**Load-bearing rule, carried verbatim from the plan/coordinator:** the canonical weaver is **NEVER** reloaded or restarted to pick this up. The activation lands **dormant** in the config file and takes effect at the user's next natural weaver start. Do not run `runtime-alpha/reload!` against the canonical world, do not `mill weaver stop`/`start`, do not poke the running weaver in any way (`PLAN-ShellGates-001.PH3` last sentence, `.P8` last bullet).
+**Load-bearing rule, carried verbatim from the plan/coordinator:** the canonical weaver is **NEVER** reloaded or restarted to pick this up. The activation lands **dormant** in the config file and takes effect at the user's next natural weaver start. Do not run `runtime/reload!` against the canonical world, do not `mill weaver stop`/`start`, do not poke the running weaver in any way (`PLAN-ShellGates-001.PH3` last sentence, `.P8` last bullet).
 
 ## P2 Must implement exactly
 
 - **MI1 — activate reed in `.skein/init.clj` (`PLAN-ShellGates-001.AA9`).** Add a
-  `runtime-alpha/use!` block for reed as a **classpath** spool (no `:spools` key —
+  `runtime/use!` block for reed as a **classpath** spool (no `:spools` key —
   it ships on the weaver classpath like `loom`), ordered **after**
   `:skein/spools-workflow`:
   ```clojure
-  (runtime-alpha/use! runtime :skein/spools-reed
+  (runtime/use! runtime :skein/spools-reed
                       {:ns 'skein.spools.reed
                        :after [:skein/spools-workflow]
                        :call 'skein.spools.reed/install!})

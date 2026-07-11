@@ -58,16 +58,16 @@ Move work onto this surface whenever the result should be **durable, awaitable b
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime-alpha/sync! runtime)
-(runtime-alpha/use! runtime :agent-run
+(runtime/sync! runtime)
+(runtime/use! runtime :agent-run
   {:ns 'skein.spools.agent-run
    :spools ['skein.spools/agent-run]
    :call 'skein.spools.agent-run/install!
    :required? true})
-(runtime-alpha/use! runtime :delegation
+(runtime/use! runtime :delegation
   {:ns 'skein.spools.delegation
    :spools ['skein.spools/delegation]
    :call 'skein.spools.delegation/install!

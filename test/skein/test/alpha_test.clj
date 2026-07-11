@@ -5,7 +5,7 @@
             [skein.test.alpha :as t]))
 
 (def ^:private require-api
-  "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as api] '[skein.api.graph.alpha :as graph])")
+  "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as weaver] '[skein.api.graph.alpha :as graph])")
 
 (deftest with-weaver-world-runs-file-backed-world-and-cleans-up
   (let [captured (atom nil)
@@ -16,9 +16,9 @@
                  (is (map? (:metadata ctx)))
                  (is (= (:config-dir ctx) (get-in ctx [:metadata :config-dir])))
                  (let [strand (t/repl! ctx (str "(do " require-api
-                                                " (api/add (current/runtime) {:title \"From repl\"}))"))]
+                                                " (weaver/add (current/runtime) {:title \"From repl\"}))"))]
                    (is (= "From repl" (:title strand))))
-                 (is (= 1 (count (t/repl! ctx (str "(do " require-api " (api/list (current/runtime)))")))))
+                 (is (= 1 (count (t/repl! ctx (str "(do " require-api " (weaver/list (current/runtime)))")))))
                  :done)]
     (is (= :done result))
     (testing "generated workspace root is removed after the body"
@@ -45,14 +45,14 @@
        (is (nil? (:db-path ctx)))
        (is (nil? (get-in ctx [:metadata :canonical-db-path])))
        (is (false? (.exists (io/file (:data-dir ctx) "skein.sqlite"))))
-       (is (= [] (t/repl! ctx (str "(do " require-api " (api/list (current/runtime)))"))))))))
+       (is (= [] (t/repl! ctx (str "(do " require-api " (weaver/list (current/runtime)))"))))))))
 
 (deftest weaver-worlds-nest-and-stay-isolated
   (t/with-weaver-world [outer {}]
     (t/with-weaver-world [inner {:storage :sqlite-memory}]
-      (t/repl! outer (str "(do " require-api " (api/add (current/runtime) {:title \"outer\"}))"))
-      (is (= 1 (count (t/repl! outer (str "(do " require-api " (api/list (current/runtime)))")))))
-      (is (= [] (t/repl! inner (str "(do " require-api " (api/list (current/runtime)))")))))))
+      (t/repl! outer (str "(do " require-api " (weaver/add (current/runtime) {:title \"outer\"}))"))
+      (is (= 1 (count (t/repl! outer (str "(do " require-api " (weaver/list (current/runtime)))")))))
+      (is (= [] (t/repl! inner (str "(do " require-api " (weaver/list (current/runtime)))")))))))
 
 (deftest spool-checkout-root-resolves-directory-checkouts-from-classpath-entry
   (let [checkout (doto (io/file (System/getProperty "java.io.tmpdir")

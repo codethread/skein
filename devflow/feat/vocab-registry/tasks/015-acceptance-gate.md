@@ -51,7 +51,7 @@ No `vocab.api.md`: `vocab.alpha` is a `src/` blessed namespace, outside the `spo
 - **TASK-Vr-015.OS1:** Landing/merging (coordinator land pipeline). There is no HITL cutover and no
   weaver restart — the landing is purely additive. F4 has no `cli/` Go change, so `make build` is not the
   pickup path; the canonical world picks the changes up through the pickup ladder after landing — reload
-  each changed already-loaded namespace with `(require 'the.ns :reload)` first, then `runtime-alpha/reload!`
+  each changed already-loaded namespace with `(require 'the.ns :reload)` first, then `runtime/reload!`
   re-runs activation so the `vocab` op registers and the seeds re-declare (`PROP-Vr-001.C12`,
   `PLAN-Vr-001.CM4`).
 - **TASK-Vr-015.OS2:** Fixing failures beyond mechanical regen: a red gate means stop and report, not

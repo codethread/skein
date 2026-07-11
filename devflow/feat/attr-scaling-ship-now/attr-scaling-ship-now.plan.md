@@ -14,7 +14,7 @@ Out of scope: the declared-key overflow storage table (L2), any size-threshold o
 
 ## ASSN-PLAN-001.P2 Approach
 
-- **ASSN-PLAN-001.A1:** Treat leanness as a **read-surface transform at the CLI/agent op boundary**, not a core change. `skein.spools.batteries/list-op`, `ready-op`, and the named-query path wrap the full-fidelity `api/list`/`api/ready` result; `show-op` and every direct trusted `api/*` read stay full. This is the "split by caller" the design requires and keeps one small seam.
+- **ASSN-PLAN-001.A1:** Treat leanness as a **read-surface transform at the CLI/agent op boundary**, not a core change. `skein.spools.batteries/list-op`, `ready-op`, and the named-query path wrap the full-fidelity `weaver/list`/`weaver/ready` result; `show-op` and every direct trusted `weaver/*` read stay full. This is the "split by caller" the design requires and keeps one small seam.
 - **ASSN-PLAN-001.A2:** Own the omission descriptor as **one** `skein.core.specs` clojure.spec (`::omitted-attribute-descriptor`) and construct/discriminate only through it. The lean emitter conforms to it; the trusted reader guard rejects against it.
 - **ASSN-PLAN-001.A3:** Make the declaration registry a faithful reuse of the `acyclic_relations` idioms in `skein.core.db` — durable single-column PK table, idempotent `declare-*!`, `list-*`, and spec-backed key-syntax validation (`::specs/indexed-attr-key`, mirroring how `require-valid-relation-name!` gates on `::specs/edge-type`) — and honestly omit the late-declaration guard, which protects no invariant here.
 - **ASSN-PLAN-001.A4:** Have the query compiler consult the durable registry to choose literal-path vs bound-parameter compilation, re-validating a declared key against `::specs/indexed-attr-key` before literal SQL emission so the one place a key is spliced (not bound) can never carry a metacharacter, changing result semantics for no key.
@@ -50,7 +50,7 @@ Outcome: the datasource opens every world with `journal_mode=WAL`, `mmap_size`, 
 
 ### ASSN-PLAN-001.PH2 L1 lean reads, descriptor spec, and boundary guard
 
-Outcome: `::omitted-attribute-descriptor` exists as the single-source spec; `list`/`ready`/named-query return the descriptor above the 1 KiB floor while small keys and `show` pass through full; trusted `api/*` in-process reads stay full; `attr-get` fails loud on a descriptor value with the offending key and `show <id>` recovery path in ex-data. Tests cover descriptor discrimination (never a plain string), lean-vs-full split, floor boundary, and the guard's loud rejection (including its ex-data contract).
+Outcome: `::omitted-attribute-descriptor` exists as the single-source spec; `list`/`ready`/named-query return the descriptor above the 1 KiB floor while small keys and `show` pass through full; trusted `weaver/*` in-process reads stay full; `attr-get` fails loud on a descriptor value with the offending key and `show <id>` recovery path in ex-data. Tests cover descriptor discrimination (never a plain string), lean-vs-full split, floor boundary, and the guard's loud rejection (including its ex-data contract).
 
 ### ASSN-PLAN-001.PH3 L0b declared hot-key registry, literal-path compilation, and the blocking invariant gate
 
@@ -82,7 +82,7 @@ Outcome: the three deltas are merged into the root specs, the lean-read per-op w
 
 - **ASSN-PLAN-001.TC1:** Implement the three deltas as the source of truth; the final code should read as if lean reads, declared indexing, and WAL storage were the original design.
 - **ASSN-PLAN-001.TC2:** The omission descriptor is `{:skein/omitted true :bytes N}`, defined once as `::specs/omitted-attribute-descriptor`; construct and discriminate only through the spec, never with ad hoc map-shape checks.
-- **ASSN-PLAN-001.TC3:** Split reads by caller: lean at the CLI/agent op boundary, full for `show` and every trusted in-process `api/*` read. Never lean-project in `normalize-row`.
+- **ASSN-PLAN-001.TC3:** Split reads by caller: lean at the CLI/agent op boundary, full for `show` and every trusted in-process `weaver/*` read. Never lean-project in `normalize-row`.
 - **ASSN-PLAN-001.TC4:** The declared-key registry reuses the `acyclic_relations` table shape and declaration idioms but carries no late-declaration guard (it protects no invariant here). Its entry is a bare string, but its shape **is** a shared spec (`::specs/indexed-attr-key`, `ASSN-DELTA-001.D5`), because a declared key is embedded literally into SQL and must be spec-gated against SQL metacharacters — the real parity with the spec-backed `acyclic_relations` precedent, not the hand-rolled `query.clj` `fail!` path. Both `declare-indexed-attr-key!` and `compile-field`'s literal emission consult that one spec.
 - **ASSN-PLAN-001.TC5:** Ship no hydration lever. Full fidelity is lean-list-then-`show <id>` composition.
 - **ASSN-PLAN-001.TC6:** Keep declaration a trusted Clojure surface; add no public CLI/socket declaration command (TEN-006), and keep it separate from any future L2 offload declaration.

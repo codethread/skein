@@ -2,7 +2,7 @@
   "Tests for shared Skein specs that define boundary data contracts."
   (:require [clojure.spec.alpha :as s]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.specs :as specs]))
 
 (deftest attribute-archive-result-spec-pins-archive-shape
@@ -25,5 +25,5 @@
 
 (deftest archive-result-validator-fails-on-invalid-result-shape
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Attribute archive result is invalid"
-                        (#'api/require-archive-result!
+                        (#'weaver/require-archive-result!
                          {:strand-id "abc123" :archived? "true" :changed 1 :keys ["owner"]}))))

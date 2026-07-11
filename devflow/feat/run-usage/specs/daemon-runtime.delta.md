@@ -22,7 +22,7 @@ existing runtime write and reload model without changing it.
   `PROP-Ru-001.C7`, `R4`), adding no new query registry surface (it is an in-op read fn, not a `graph/register-query!`
   registration).
 - The additive pickup is covered generically by the runtime reload contract (`SPEC-004`'s `reload!`/activation model):
-  the changed already-loaded namespaces re-load via a targeted `(require … :reload)` then `runtime-alpha/reload!`, and
+  the changed already-loaded namespaces re-load via a targeted `(require … :reload)` then `runtime/reload!`, and
   the extended `install!` re-declares idempotently into the surviving registry — no weaver restart, no JVM/transport
   change (`PROP-Ru-001.C10`). This is the runtime behaving as `SPEC-004` already specifies, not a change to it.
 

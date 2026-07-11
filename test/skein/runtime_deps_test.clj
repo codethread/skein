@@ -4,11 +4,11 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [nrepl.core :as nrepl]
-            [skein.core.weaver.config :as daemon-config]
-            [skein.core.weaver.runtime :as runtime]))
+            [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn test-world [config-dir]
-  (daemon-config/world config-dir
+  (weaver-config/world config-dir
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
@@ -75,7 +75,7 @@
         suffix (str "s" (str/replace (str (java.util.UUID/randomUUID)) "-" ""))]
     (try
       (let [world (test-world (.getCanonicalPath config-dir))
-            rt (runtime/start! nil {:world world})
+            rt (weaver-runtime/start! nil {:world world})
             {:keys [root lib ns marker]} (write-hot-lib! config-dir suffix)]
         (try
           (is (= ":missing"
@@ -89,7 +89,7 @@
                                        (require '~ns)
                                        ((requiring-resolve '~marker))))))
           (finally
-            (runtime/stop! rt))))
+            (weaver-runtime/stop! rt))))
       (finally
         (keep-add-libs-root! config-dir)))))
 
@@ -98,7 +98,7 @@
         suffix (str "s" (str/replace (str (java.util.UUID/randomUUID)) "-" ""))]
     (try
       (let [world (test-world (.getCanonicalPath config-dir))
-            rt (runtime/start! nil {:world world})
+            rt (weaver-runtime/start! nil {:world world})
             {:keys [lib ns marker]} (write-maven-spool! config-dir suffix)]
         (try
           (is (= ":skipped"
@@ -133,6 +133,6 @@
                                                 :maven-spike)
                                                [:call :return])))))
           (finally
-            (runtime/stop! rt))))
+            (weaver-runtime/stop! rt))))
       (finally
         (keep-add-libs-root! config-dir)))))

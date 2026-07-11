@@ -35,7 +35,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             ;; UNSAFE: physical-table access. A blessed spool builds on
             ;; skein.api.*.alpha only; this one reaches past the contract on
             ;; purpose (see the ns docstring).
@@ -196,8 +196,8 @@
     {:installed true
      :namespace 'skein.spools.text-search
      :unsafe true
-     :ops [(api/register-op! rt 'search
-                             {:doc search-doc
-                              :arg-spec search-arg-spec
-                              :hook-class :read}
-                             'skein.spools.text-search/search-op)]}))
+     :ops [(weaver/register-op! rt 'search
+                                {:doc search-doc
+                                 :arg-spec search-arg-spec
+                                 :hook-class :read}
+                                'skein.spools.text-search/search-op)]}))

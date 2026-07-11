@@ -12,7 +12,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.patterns.alpha :as patterns]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.delegation :as agents]
             [skein.spools.loom :as loom]
             [skein.spools.util :refer [attr-get]]
@@ -35,7 +35,7 @@
 (defn- active-merge-locks
   "Return active merge-lock strands."
   []
-  (api/list (current/runtime) [:and [:= :state "active"] [:= [:attr "kind"] merge-lock-kind]] {}))
+  (weaver/list (current/runtime) [:and [:= :state "active"] [:= [:attr "kind"] merge-lock-kind]] {}))
 
 (defn- land-root
   "Return the active land root for feature, failing loudly when absent."
@@ -61,20 +61,20 @@
                             {:lock (:id held)
                              :owner (attr-value held :owner)
                              :land/run-id (attr-value held :land/run-id)})))
-          (api/add rt {:title (str "Merge lock: " feature)
-                       :attributes {:kind merge-lock-kind
-                                    :owner owner
-                                    :land/run-id feature}}))))))
+          (weaver/add rt {:title (str "Merge lock: " feature)
+                          :attributes {:kind merge-lock-kind
+                                       :owner owner
+                                       :land/run-id feature}}))))))
 
 (defn- release-merge-lock!
   "Release the merge lock held by feature, if one exists."
   [feature reason]
   (doseq [lock (active-merge-locks)
           :when (= feature (attr-value lock :land/run-id))]
-    (api/update (current/runtime)
-                (:id lock)
-                {:state "closed"
-                 :attributes {:land/released-reason reason}})))
+    (weaver/update (current/runtime)
+                   (:id lock)
+                   {:state "closed"
+                    :attributes {:land/released-reason reason}})))
 
 (defn- inspect-merge-lock
   "Return the active merge-lock snapshot, or nil."
@@ -90,17 +90,17 @@
       (throw (ex-info "multiple active merge locks found; inspect and repair manually"
                       {:locks (mapv :id locks)})))
     (if-let [lock (first locks)]
-      {:broken (loom/summarize (api/update (current/runtime)
-                                           (:id lock)
-                                           {:state "closed"
-                                            :attributes {:land/broken-reason reason}}))}
+      {:broken (loom/summarize (weaver/update (current/runtime)
+                                              (:id lock)
+                                              {:state "closed"
+                                               :attributes {:land/broken-reason reason}}))}
       {:broken nil})))
 
 (defn- move-card-to-review!
   "Move the optional land card into in_review when it is present."
   [card]
   (when (and (string? card) (not (str/blank? card)))
-    (let [strand (api/show (current/runtime) card)]
+    (let [strand (weaver/show (current/runtime) card)]
       (when-not (= "true" (attr-value strand :kanban/card))
         (throw (ex-info "land card is not a kanban card" {:card card})))
       (case (attr-value strand :kanban/status)
@@ -121,7 +121,7 @@
   "Move the optional land card from in_review back to claimed after abort."
   [card]
   (when (and (string? card) (not (str/blank? card)))
-    (let [strand (api/show (current/runtime) card)]
+    (let [strand (weaver/show (current/runtime) card)]
       (when-not (= "true" (attr-value strand :kanban/card))
         (throw (ex-info "land card is not a kanban card" {:card card})))
       (case (attr-value strand :kanban/status)
@@ -599,7 +599,7 @@
                  "Create a sequential chain-loop workflow of subagent gates. Input: {run_id,tasks:[{id,title,body?,harness?,cwd?,max-attempts?}],harness?,cwd?,accept?}."
                  'workflows/delegate-pipeline
                  ::delegate-pipeline-input)]
-     :ops [(api/register-op!
+     :ops [(weaver/register-op!
             runtime
             'land
             {:doc (:doc land-arg-spec)

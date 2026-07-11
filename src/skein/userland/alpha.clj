@@ -35,8 +35,8 @@
   (:require [skein.api.current.alpha :as current]
             [skein.api.batch.alpha :as batch]
             [skein.api.graph.alpha :as graph]
-            [skein.api.patterns.alpha :as patterns-api]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.patterns.alpha :as patterns]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.terse :as terse]))
 
 (def ^:dynamic ^:private *scope*
@@ -105,7 +105,7 @@
 (defn init!
   "Initialize the resolved runtime's store schema."
   []
-  (api/init (resolve-runtime)))
+  (weaver/init (resolve-runtime)))
 
 (defn strand!
   "Create a strand in the resolved runtime and return the created row.
@@ -118,22 +118,22 @@
   ([title attributes]
    (strand! title (terse/reject-core-attribute-keys! attributes) {}))
   ([title attributes lifecycle]
-   (api/add (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
+   (weaver/add (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
 
 (defn strand
   "Return the normalized strand row for `id`, or nil when no such strand exists."
   [id]
-  (api/show (resolve-runtime) id))
+  (weaver/show (resolve-runtime) id))
 
 (defn update!
   "Apply `patch` to strand `id` and return the normalized update result."
   [id patch]
-  (api/update (resolve-runtime) id patch))
+  (weaver/update (resolve-runtime) id patch))
 
 (defn supersede!
   "Replace `old-id` with `replacement-id` and return the supersession result."
   [old-id replacement-id]
-  (api/supersede (resolve-runtime) old-id replacement-id))
+  (weaver/supersede (resolve-runtime) old-id replacement-id))
 
 (defn burn!
   "Physically delete one or more strands and their incident edges.
@@ -147,12 +147,12 @@
 (defn declare-acyclic-relation!
   "Declare `relation` as a durable acyclic structural relation (idempotent)."
   [relation]
-  (api/declare-acyclic-relation! (resolve-runtime) relation))
+  (weaver/declare-acyclic-relation! (resolve-runtime) relation))
 
 (defn acyclic-relations
   "Return sorted relation names declared acyclic in the resolved runtime."
   []
-  (api/acyclic-relations (resolve-runtime)))
+  (weaver/acyclic-relations (resolve-runtime)))
 
 (defn defquery!
   "Register `query-name` to `query-def` in the resolved runtime query registry."
@@ -189,8 +189,8 @@
   ([query-or-def params]
    (let [runtime (resolve-runtime)]
      (if (terse/named-query? query-or-def)
-       (api/list-query runtime query-or-def params)
-       (api/list runtime query-or-def params)))))
+       (weaver/list-query runtime query-or-def params)
+       (weaver/list runtime query-or-def params)))))
 
 (defn strands
   "Return resolved-runtime strands, optionally filtered by a query.
@@ -198,7 +198,7 @@
   With no arguments, returns all strands. With a query definition or registered
   query name, delegates to `query` with optional params."
   ([]
-   (api/list (resolve-runtime)))
+   (weaver/list (resolve-runtime)))
   ([query-or-def]
    (query query-or-def))
   ([query-or-def params]
@@ -210,14 +210,14 @@
   Optional query arguments further filter the ready set using an ad hoc predicate
   or registered query name with params."
   ([]
-   (api/ready (resolve-runtime)))
+   (weaver/ready (resolve-runtime)))
   ([query-or-def]
    (ready query-or-def {}))
   ([query-or-def params]
    (let [runtime (resolve-runtime)]
      (if (terse/named-query? query-or-def)
-       (api/ready-query runtime query-or-def params)
-       (api/ready runtime query-or-def params)))))
+       (weaver/ready-query runtime query-or-def params)
+       (weaver/ready runtime query-or-def params)))))
 
 (defn defpattern!
   "Register a runtime pattern in the resolved runtime pattern registry.
@@ -225,29 +225,29 @@
   Accepts a pattern name, optional non-blank doc string, fully qualified function
   symbol, and input spec name. Duplicate names replace prior entries."
   ([pattern-name fn-sym input-spec]
-   (patterns-api/register-pattern! (resolve-runtime) pattern-name fn-sym input-spec))
+   (patterns/register-pattern! (resolve-runtime) pattern-name fn-sym input-spec))
   ([pattern-name doc fn-sym input-spec]
-   (patterns-api/register-pattern! (resolve-runtime) pattern-name doc fn-sym input-spec)))
+   (patterns/register-pattern! (resolve-runtime) pattern-name doc fn-sym input-spec)))
 
 (defn patterns
   "Return the resolved runtime's in-memory pattern registry."
   []
-  (patterns-api/patterns (resolve-runtime)))
+  (patterns/patterns (resolve-runtime)))
 
 (defn pattern
   "Return the registered pattern named `pattern-name`. Missing patterns fail loudly."
   [pattern-name]
-  (patterns-api/pattern (resolve-runtime) pattern-name))
+  (patterns/pattern (resolve-runtime) pattern-name))
 
 (defn pattern-explain
   "Return serializable input guidance for the registered pattern `pattern-name`."
   [pattern-name]
-  (patterns-api/explain (resolve-runtime) pattern-name))
+  (patterns/explain (resolve-runtime) pattern-name))
 
 (defn weave!
   "Invoke the registered pattern `pattern-name` with `input` and create its batch."
   [pattern-name input]
-  (patterns-api/weave! (resolve-runtime) pattern-name input))
+  (patterns/weave! (resolve-runtime) pattern-name input))
 
 (defn apply!
   "Apply one transactional batch graph mutation `payload` to the resolved runtime."

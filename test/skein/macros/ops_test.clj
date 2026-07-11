@@ -1,7 +1,7 @@
 (ns skein.macros.ops-test
   "Tests for the skein.macros.ops defop macro and its remember/install flow."
   (:require [clojure.test :refer [deftest is testing]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.macros.ops :as ops :refer [defop]]
             [skein.spools.test-support :refer [with-runtime]]))
 
@@ -63,12 +63,12 @@
           (is (= 2 (count result)))
           (is (= ["test-alpha" "test-beta"] (mapv :name result))))
         (testing "the named-arg-spec op registers with its fully-qualified handler symbol and arg-spec-derived doc"
-          (let [entry (api/resolve-op rt 'test-alpha)]
+          (let [entry (weaver/resolve-op rt 'test-alpha)]
             (is (= 'skein.macros.ops-test/test-alpha-op (:fn entry)))
             (is (= "Alpha test op." (:doc entry)))
             (is (= "test-alpha" (:op (:arg-spec entry))))))
         (testing "the inline-arg-spec op registers and its extra :deadline-class metadata survives to registration"
-          (let [entry (api/resolve-op rt 'test-beta)]
+          (let [entry (weaver/resolve-op rt 'test-beta)]
             (is (= 'skein.macros.ops-test/test-beta-op (:fn entry)))
             (is (= "test-beta" (:op (:arg-spec entry))))
             (is (= :unbounded (:deadline-class entry)))))))))
@@ -109,10 +109,10 @@
         (fn [rt _]
           (let [result (ops/install-ops! ns-key)]
             (is (= ["stale-a"] (mapv :name result)) "install registers only the surviving op")
-            (is (= 'skein.macros.ops-test/test-alpha-op (:fn (api/resolve-op rt 'stale-a))))
+            (is (= 'skein.macros.ops-test/test-alpha-op (:fn (weaver/resolve-op rt 'stale-a))))
             (testing "the forgotten op never reaches the runtime and resolving it fails loudly"
               (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Operation not found"
-                                    (api/resolve-op rt 'stale-b))))))))))
+                                    (weaver/resolve-op rt 'stale-b))))))))))
 
 (deftest install-ops-unknown-ns-fails-loudly
   (testing "installing a namespace with no remembered ops throws rather than silently installing nothing (TEN-003)"

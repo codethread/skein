@@ -57,7 +57,7 @@ A caller invokes it over the ordinary op socket, passing one JSON argument; inpu
 
 ```clojure
 ;; valid → handler runs with parsed :guild/input
-(api/op! rt 'gate.status.v1 [(json/write-str {:gate-name "api-ready"})])
+(weaver/op! rt 'gate.status.v1 [(json/write-str {:gate-name "api-ready"})])
 ;; => {:gate "api-ready" :satisfied false}
 
 ;; invalid → ex-info {:code :op/input-invalid :op "gate.status.v1" :spec …}, no handler call

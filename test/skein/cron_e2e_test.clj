@@ -27,7 +27,7 @@
             [skein.api.scheduler.alpha :as scheduler]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.spools.cron :as cron]
             [skein.spools.test-support :as test-support]
             [skein.test.alpha :as test-alpha]
@@ -84,14 +84,14 @@
     (try
       ;; First weaver registers the cron job; its cron/<id> wake is durably
       ;; pending before the weaver stops.
-      (let [rt1 (runtime/start! db-file {:world world :publish? false})]
+      (let [rt1 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
           (test-alpha/set-clock! rt1 (constantly (Instant/ofEpochSecond 0)))
           (cron/register! rt1 job)
           (is (some? (cron-wake rt1 "cron/survivor"))
               "the cron wake is durably pending in the first weaver")
           (finally
-            (runtime/stop! rt1))))
+            (weaver-runtime/stop! rt1))))
       ;; The wake instant arrives while the weaver is down: seed the durable
       ;; cron/<id> row so a fresh weaver finds it overdue, mirroring
       ;; scheduler_e2e_test's restart seed.
@@ -102,7 +102,7 @@
       ;; A fresh weaver adopts the durable wake via the startup-config path:
       ;; re-running the identical register! with no in-memory config preserves
       ;; the pending wake (.A4) rather than resetting its countdown.
-      (let [rt2 (runtime/start! db-file {:world world :publish? false})]
+      (let [rt2 (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
           (test-alpha/set-clock! rt2 (constantly (.plusSeconds seed-at 1)))
           (cron/register! rt2 job)
@@ -117,7 +117,7 @@
             (is (= (+ fired-at-ms interval-ms) (:wake_at (cron-wake rt2 "cron/survivor")))
                 "the next cron wake is re-armed at the fire instant + interval"))
           (finally
-            (runtime/stop! rt2))))
+            (weaver-runtime/stop! rt2))))
       (finally
         (db-test/delete-sqlite-family! db-file)
         (wt/delete-tree! (io/file (:config-dir world)))))))

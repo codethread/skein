@@ -340,7 +340,7 @@
       (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
       (assert-file-contents (java.io.File. workspace "spools.edn") "{:spools {}}\n" "clean bootstrap creates empty spools.edn")
       (let [init-contents (slurp init-file)]
-        (doseq [needle ["(runtime-alpha/sync! runtime)" ":skein/spools-batteries" "skein.spools.batteries/activate!"]]
+        (doseq [needle ["(runtime/sync! runtime)" ":skein/spools-batteries" "skein.spools.batteries/activate!"]]
           (assert-contains init-contents needle "clean bootstrap creates runtime sync + batteries init.clj template")))
       (assert (.isDirectory (java.io.File. workspace "spools")) "clean bootstrap creates spools directory")
       (assert (not (.exists (java.io.File. workspace ".git"))) "clean bootstrap does not run git init")
@@ -360,10 +360,10 @@
         original-config "{\"configFormat\":\"alpha\"}\n"
         original-spools "{:spools {}}\n;; user comment\n"
         original-init "(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha]
+         '[skein.api.runtime.alpha :as runtime]
          '[skein.api.graph.alpha :as graph])
 (def runtime (current/runtime))
-(runtime-alpha/use! runtime :skein/spools-batteries
+(runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
 (graph/register-query! runtime 'dirty [:= [:attr :owner] \"dirty\"])
@@ -449,10 +449,10 @@
                            workspace
                            (str "(do\n"
                                 "  (require '[skein.api.current.alpha :as current]\n"
-                                "           '[skein.api.runtime.alpha :as runtime-alpha])\n"
+                                "           '[skein.api.runtime.alpha :as runtime])\n"
                                 "  (let [runtime (current/runtime)]\n"
-                                "    {:approved (runtime-alpha/approved runtime)\n"
-                                "     :syncs (runtime-alpha/syncs runtime)}))\n")
+                                "    {:approved (runtime/approved runtime)\n"
+                                "     :syncs (runtime/syncs runtime)}))\n")
                            "weaver" "repl" "--stdin"))]
         (assert= "spools/smoke-runtime-lib"
                  (get-in loader-state [:approved :spools 'smoke/runtime-lib :local/root])
@@ -522,8 +522,8 @@
                                workspace
                                (str "(do\n"
                                     "  (require '[skein.api.current.alpha :as current]\n"
-                                    "           '[skein.api.runtime.alpha :as runtime-alpha])\n"
-                                    "  (runtime-alpha/reload! (current/runtime))\n"
+                                    "           '[skein.api.runtime.alpha :as runtime])\n"
+                                    "  (runtime/reload! (current/runtime))\n"
                                     "  {:patterns (patterns)\n"
                                     "   :woven (weave! 'reload-review {:title \"Reload patterned smoke\"})})\n")
                                "weaver" "repl" "--stdin"))]

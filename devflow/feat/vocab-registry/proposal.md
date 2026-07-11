@@ -288,7 +288,7 @@ backed by the duplicate-owner edge, consistent with the guidance-not-enforcement
 - **Pickup ladder.** New Clojure namespaces and the batteries op arrive with the JVM/spool load; the Go CLI change for
   `strand vocab` needs only `make build` (a batteries op is registered arg-spec data, not new Go dispatch). If the `.skein`
   world's own config declares a namespace (a repo-policy vocabulary), that config change is picked up by
-  `runtime-alpha/reload!` — no weaver restart, because nothing changes at the JVM/transport level. Smoke-test any `.skein`
+  `runtime/reload!` — no weaver restart, because nothing changes at the JVM/transport level. Smoke-test any `.skein`
   config change in a disposable world first.
 - **PROP-Vr-001.R-reload.** The one reload subtlety is C3's idempotent-same-owner requirement: `reload!` re-runs every
   `install!` against a surviving `spool-state` registry, so same-owner re-declaration must replace, not collide. This is a

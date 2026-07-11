@@ -113,7 +113,7 @@ func TestInitBootstrapsConfigDirWorkspaceThroughMill(t *testing.T) {
 	}
 	initPath := filepath.Join(cfg, "init.clj")
 	got := string(mustReadFile(t, initPath))
-	for _, want := range []string{"(runtime-alpha/sync! runtime)", ":skein/spools-batteries", "skein.spools.batteries/activate!"} {
+	for _, want := range []string{"(runtime/sync! runtime)", ":skein/spools-batteries", "skein.spools.batteries/activate!"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("init.clj missing %q, got:\n%s", want, got)
 		}

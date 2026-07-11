@@ -12,10 +12,10 @@
             [skein.core.client :as client]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.graph.alpha :as graph]
-            [skein.api.patterns.alpha :as patterns-api]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.patterns.alpha :as patterns]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.terse :as terse]
-            [skein.core.weaver.config :as daemon-config]
+            [skein.core.weaver.config :as weaver-config]
             [skein.api.current.alpha :as current]
             [skein.core.query :as query]))
 
@@ -66,8 +66,8 @@
   (when (and config-dir (.isFile (java.io.File. ^String config-dir)))
     (throw (ex-info "connect! expects a daemon config directory, not a database file" {:config-dir config-dir})))
   (let [world (if state-dir
-                (daemon-config/world config-dir state-dir (str state-dir "/data"))
-                (daemon-config/world config-dir))]
+                (weaver-config/world config-dir state-dir (str state-dir "/data"))
+                (weaver-config/world config-dir))]
     (status-world-fn (:config-dir world) (cond-> {}
                                            state-dir (assoc :state-dir (:state-dir world))))
     (reset! active-config-dir (:config-dir world))
@@ -94,28 +94,28 @@
 
 (defn- in-process-call [rt op args]
   (case op
-    :init (api/init rt)
-    :add (apply api/add rt args)
-    :update (apply api/update rt args)
-    :supersede (apply api/supersede rt args)
-    :show (apply api/show rt args)
-    :declare-acyclic-relation! (apply api/declare-acyclic-relation! rt args)
-    :acyclic-relations (api/acyclic-relations rt)
+    :init (weaver/init rt)
+    :add (apply weaver/add rt args)
+    :update (apply weaver/update rt args)
+    :supersede (apply weaver/supersede rt args)
+    :show (apply weaver/show rt args)
+    :declare-acyclic-relation! (apply weaver/declare-acyclic-relation! rt args)
+    :acyclic-relations (weaver/acyclic-relations rt)
     :burn-by-id (apply graph/burn-by-id! rt args)
     :burn-by-ids (apply graph/burn-by-ids! rt args)
     :register-query (apply graph/register-query! rt args)
     :load-queries (apply graph/load-queries! rt args)
     :queries (graph/queries rt)
     :query-explain (apply graph/query-explain rt args)
-    :list (if (seq args) (apply api/list rt args) (api/list rt))
-    :list-query (apply api/list-query rt args)
-    :ready (if (seq args) (apply api/ready rt args) (api/ready rt))
-    :ready-query (apply api/ready-query rt args)
-    :register-pattern! (apply patterns-api/register-pattern! rt args)
-    :patterns (patterns-api/patterns rt)
-    :resolve-pattern (apply patterns-api/pattern rt args)
-    :pattern-explain (apply patterns-api/explain rt args)
-    :weave! (apply patterns-api/weave! rt args)))
+    :list (if (seq args) (apply weaver/list rt args) (weaver/list rt))
+    :list-query (apply weaver/list-query rt args)
+    :ready (if (seq args) (apply weaver/ready rt args) (weaver/ready rt))
+    :ready-query (apply weaver/ready-query rt args)
+    :register-pattern! (apply patterns/register-pattern! rt args)
+    :patterns (patterns/patterns rt)
+    :resolve-pattern (apply patterns/pattern rt args)
+    :pattern-explain (apply patterns/explain rt args)
+    :weave! (apply patterns/weave! rt args)))
 
 (defn- daemon [op & args]
   (call-daemon

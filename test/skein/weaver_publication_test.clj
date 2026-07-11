@@ -3,16 +3,16 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
             [skein.core.weaver.metadata :as metadata]
-            [skein.core.weaver.runtime :as runtime]
+            [skein.core.weaver.runtime :as weaver-runtime]
             [skein.weaver-test :refer [delete-tree! temp-world]]))
 
 (deftest stop-unpublishes-published-runtime
   (let [world (temp-world)
-        rt (runtime/start! nil {:world world})]
+        rt (weaver-runtime/start! nil {:world world})]
     (try
-      (is (= rt @runtime/current-runtime))
-      (runtime/stop! rt)
-      (is (nil? @runtime/current-runtime))
+      (is (= rt @weaver-runtime/current-runtime))
+      (weaver-runtime/stop! rt)
+      (is (nil? @weaver-runtime/current-runtime))
       (finally
         (delete-tree! (io/file (:config-dir world) ".."))))))
 
@@ -21,34 +21,34 @@
         init (io/file (:config-dir world) "init.clj")]
     (try
       (spit init "(throw (ex-info \"init failed\" {}))")
-      (is (thrown? Exception (runtime/start! nil {:world world})))
-      (is (nil? @runtime/current-runtime))
+      (is (thrown? Exception (weaver-runtime/start! nil {:world world})))
+      (is (nil? @weaver-runtime/current-runtime))
       (is (nil? (metadata/read-metadata world)))
       (is (false? (.exists (metadata/json-metadata-file world))))
       (is (false? (.exists (metadata/socket-file world))))
       (finally
-        (some-> @runtime/current-runtime runtime/stop!)
+        (some-> @weaver-runtime/current-runtime weaver-runtime/stop!)
         (metadata/delete! world)
         (delete-tree! (io/file (:config-dir world)))))))
 
 (deftest unpublished-start-does-not-publish
   (let [world (temp-world)
-        rt (runtime/start! nil {:world world :publish? false})]
+        rt (weaver-runtime/start! nil {:world world :publish? false})]
     (try
-      (is (nil? @runtime/current-runtime))
+      (is (nil? @weaver-runtime/current-runtime))
       (finally
-        (runtime/stop! rt)
+        (weaver-runtime/stop! rt)
         (delete-tree! (io/file (:config-dir world) ".."))))))
 
 (deftest publishing-second-runtime-still-fails-loudly
   (let [world-a (temp-world)
         world-b (temp-world)
-        rt-a (runtime/start! nil {:world world-a})]
+        rt-a (weaver-runtime/start! nil {:world world-a})]
     (try
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"runtime is already active"
-                            (runtime/start! nil {:world world-b})))
+                            (weaver-runtime/start! nil {:world world-b})))
       (finally
-        (runtime/stop! rt-a)
+        (weaver-runtime/stop! rt-a)
         (delete-tree! (io/file (:config-dir world-a) ".."))
         (delete-tree! (io/file (:config-dir world-b) ".."))))))

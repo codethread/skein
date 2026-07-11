@@ -26,7 +26,7 @@ One fact reframes the decision: `.skein` **already ships a grouping macro**. `sk
 
 ## RFC-020.P3 Non-goals
 
-- **RFC-020.NG1:** No change to `init.clj`'s `runtime-alpha/use!` activation model or its explicit ordering
+- **RFC-020.NG1:** No change to `init.clj`'s `runtime/use!` activation model or its explicit ordering
   comments — those encode load-order rationale a macro must not hide. Macro registration still runs only inside
   each module's `install!`, after required spools load.
 - **RFC-020.NG2:** No new CLI surface, op semantics, or arg-spec parser change. Generated `help` stays derived
@@ -41,7 +41,7 @@ One fact reframes the decision: `.skein` **already ships a grouping macro**. `sk
 
 Boilerplate that separates a construct from its usage today, from the worktree files (line numbers circa 2026-07-08; cited by name where they will drift):
 
-- **Ops (`config.clj`).** `install!`'s op vector is ~15 near-identical `(api/register-op! runtime 'name
+- **Ops (`config.clj`).** `install!`'s op vector is ~15 near-identical `(weaver/register-op! runtime 'name
   (op-metadata name-arg-spec) 'config/name-op)` calls (circa lines 735-824). The op name is spelled three
   times per op — quoted symbol, arg-spec var, handler symbol — and the handler `defn`, the `^:private
   name-arg-spec` (circa 561-706), and this registration sit far apart. The devflow family repeats each name a

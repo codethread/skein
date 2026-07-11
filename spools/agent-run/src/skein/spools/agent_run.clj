@@ -69,8 +69,8 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
-            [skein.api.notes.alpha :as notes-alpha]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.notes.alpha :as notes]
+            [skein.api.weaver.alpha :as weaver]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
@@ -844,7 +844,7 @@
                 "  1) leave a durable summary note: " cmd " "
                 ;; single renderer of the note-writing fragment; the concrete
                 ;; served target is already resolved, so a plain-data ref renders it
-                (notes-alpha/writer-ref->prompt {:target for-id :by id}) "\n"
+                (notes/writer-ref->prompt {:target for-id :by id}) "\n"
                 "  2) say goodbye to the user in this session\n"
                 "  3) as your LITERAL LAST action, close it: " cmd " update " for-id " --state closed\n"
                 "  Closing that strand tears this session down; nothing you do after it will run.\n")
@@ -1091,7 +1091,7 @@
     (.mkdirs)))
 
 (defn- update-run! [id attributes patch]
-  (api/update (rt) id (merge patch {:attributes attributes})))
+  (weaver/update (rt) id (merge patch {:attributes attributes})))
 
 (defn- mark-failed!
   "Mark a run failed with `error`. `extra` merges additional terminal attributes
@@ -1134,7 +1134,7 @@
              ^Runnable (fn []
                          (binding [*runtime* runtime]
                            (swap! (in-flight) dissoc id)
-                           (when-let [run (first (api/ready runtime [:and pending-query [:= :id id]] {}))]
+                           (when-let [run (first (weaver/ready runtime [:and pending-query [:= :id id]] {}))]
                              (when (claim! id)
                                (launch-run! runtime run)))))
              (long recovery-harness-retry-ms)
@@ -1218,7 +1218,7 @@
     (let [splice (or (:resume harness)
                      (fail! "Resuming run's harness declares no :resume splice"
                             {:run (:id run) :harness (:name harness) :error-class "resume"}))
-          predecessor (or (api/show (rt) predecessor-id)
+          predecessor (or (weaver/show (rt) predecessor-id)
                           (fail! "Resume predecessor not found"
                                  {:run (:id run) :predecessor predecessor-id :error-class "resume"}))]
       (mapv (fn [token]
@@ -1234,7 +1234,7 @@
 
 (defn- validate-resume-at-launch!
   "Re-enforce the A1 resume invariants at the launch seam. Creating a pending
-  run strand directly (via `api/add`, not `spawn-run!`) is a supported API, so a
+  run strand directly (via `weaver/add`, not `spawn-run!`) is a supported API, so a
   handmade `agent-run/resumes` run must not bypass the checks that otherwise live
   only in `validate-resume!`: interactive runs cannot resume (the live session is
   their continuity), a resuming run must share the predecessor's exact
@@ -1248,7 +1248,7 @@
       (fail! "Interactive runs cannot resume; the live session is its own continuity"
              {:run (:id run) :resumes predecessor-id :error-class "resume"}))
     (let [harness-name (sattr run "harness")
-          predecessor (or (api/show (rt) predecessor-id)
+          predecessor (or (weaver/show (rt) predecessor-id)
                           (fail! "Resume predecessor not found"
                                  {:run (:id run) :predecessor predecessor-id :error-class "resume"}))
           predecessor-harness (sattr predecessor "harness")]
@@ -1256,7 +1256,7 @@
         (fail! "Resume requires the exact same harness as the predecessor"
                {:run (:id run) :harness harness-name
                 :predecessor-harness predecessor-harness :error-class "resume"}))
-      (when-let [live (seq (->> (api/list (rt)
+      (when-let [live (seq (->> (weaver/list (rt)
                                           [:and [:= :state "active"] run-query
                                            [:= [:attr "agent-run/resumes"] predecessor-id]]
                                           {})
@@ -1338,7 +1338,7 @@
 (defn- finish-run! [id process harness out-file err-file]
   (let [exit (.waitFor ^Process process)
         stdout (read-file-safe out-file)
-        current (api/show (rt) id)]
+        current (weaver/show (rt) id)]
     (swap! (in-flight) dissoc id)
     (when-not (= "failed" (sattr current "phase"))
       (if (zero? exit)
@@ -1422,7 +1422,7 @@
   target counts as closed: the session would otherwise outlive the graph."
   [run]
   (when-let [for-id (sattr run "for")]
-    (let [target (api/show (rt) for-id)]
+    (let [target (weaver/show (rt) for-id)]
       (or (nil? target) (not= "active" (:state target))))))
 
 (defn- session-alive? [id run backend-name backend]
@@ -1486,7 +1486,7 @@
   [id reason]
   (when (claim-teardown! id)
     (try
-      (let [current (api/show (rt) id)]
+      (let [current (weaver/show (rt) id)]
         ;; a racing path may have finished the run between selection and claim
         (when (= "running" (sattr current "phase"))
           (let [backend-name (harness-key (sattr current "backend"))
@@ -1512,7 +1512,7 @@
   [id]
   (when (claim-teardown! id)
     (try
-      (let [current (api/show (rt) id)]
+      (let [current (weaver/show (rt) id)]
         (when (= "running" (sattr current "phase"))
           (.delete (launcher-script-file id))
           (mark-failed! id "session ended before its work completed")))
@@ -1548,7 +1548,7 @@
                      acc
                      ;; recheck completion after the probe: the agent may have
                      ;; closed its target and exited between selection and probe
-                     (let [current (api/show (rt) id)]
+                     (let [current (weaver/show (rt) id)]
                        (if (or (not= "active" (:state current))
                                (for-target-closed? current))
                          (do (finish-interactive! id "completed at session end")
@@ -1558,7 +1558,7 @@
                (catch Exception e
                  (update acc :errors conj {:id id :error (ex-message e)})))))
          {:reaped [] :failed [] :errors []}
-         (api/list (rt) interactive-running-query {}))]
+         (weaver/list (rt) interactive-running-query {}))]
     (when (seq (:errors outcome))
       (fail! "Interactive supervision hit errors" outcome))
     (dissoc outcome :errors)))
@@ -1703,7 +1703,7 @@
   []
   (let [runtime (rt)
         workers (worker-executor)
-        ready-runs (remove recovery-deferred? (api/ready runtime pending-query {}))
+        ready-runs (remove recovery-deferred? (weaver/ready runtime pending-query {}))
         claimed (filterv (comp claim! :id) ready-runs)]
     (doseq [run claimed]
       (.execute workers ^Runnable (fn [] (launch-run! runtime run))))
@@ -1752,7 +1752,7 @@
   Returns a summary of respawned/exhausted/adopted/reaped/failed run ids."
   []
   (let [orphans (remove #(contains? @(in-flight) (:id %))
-                        (api/list (rt) running-query {}))
+                        (weaver/list (rt) running-query {}))
         {interactive-orphans true headless-orphans false}
         (group-by (comp boolean interactive?) orphans)
         summary (reduce
@@ -1825,7 +1825,7 @@
   (when mode
     (fail! "Interactive runs cannot :resume; the live session is its own continuity"
            {:resume predecessor-id :mode mode}))
-  (let [predecessor (or (api/show (rt) predecessor-id)
+  (let [predecessor (or (weaver/show (rt) predecessor-id)
                         (fail! "Resume predecessor not found" {:resume predecessor-id}))
         predecessor-harness (sattr predecessor "harness")]
     (when-not (= harness-name predecessor-harness)
@@ -1838,7 +1838,7 @@
     (when-not (:resume harness-def)
       (fail! "Resume requires a harness that declares a :resume splice"
              {:resume predecessor-id :harness harness-name}))
-    (when-let [live (seq (mapv :id (api/list (rt)
+    (when-let [live (seq (mapv :id (weaver/list (rt)
                                              [:and [:= :state "active"] run-query
                                               [:= [:attr "agent-run/resumes"] predecessor-id]]
                                              {})))]
@@ -1904,17 +1904,17 @@
     ;; validate provenance targets before the run exists so a bad parent id
     ;; cannot leave a spawned run behind a thrown edge update
     (doseq [parent-id parent-ids]
-      (when-not (api/show (rt) parent-id)
+      (when-not (weaver/show (rt) parent-id)
         (fail! "Run parent strand not found" {:id parent-id})))
-    (when (and serves (not (api/show (rt) serves)))
+    (when (and serves (not (weaver/show (rt) serves)))
       (fail! "Run :serves target not found" {:id serves}))
-    (let [run (api/add (rt) {:title (or title (truncate prompt 72))
+    (let [run (weaver/add (rt) {:title (or title (truncate prompt 72))
                              :attributes (merge attrs reserved)
                              :edges (cond-> (mapv (fn [dep] {:type "depends-on" :to dep}) (distinct (or depends-on [])))
                                       resume (conj {:type "resumes" :to resume})
                                       serves (conj {:type "serves" :to serves}))})]
       (doseq [parent-id parent-ids]
-        (api/update (rt) parent-id {:edges [{:type "parent-of" :to (:id run)}]}))
+        (weaver/update (rt) parent-id {:edges [{:type "parent-of" :to (:id run)}]}))
       run)))
 
 (defn- parent-of-sources
@@ -1966,7 +1966,7 @@
         superseded-ids (set (map :to_strand_id (graph/incoming-edges (rt) run-ids "supersedes")))]
     (->> run-ids
          (remove superseded-ids)
-         (map #(api/show (rt) %))
+         (map #(weaver/show (rt) %))
          (remove #(= "superseded" (sattr % "phase"))))))
 
 (defn- helper-parent
@@ -2010,7 +2010,7 @@
   (when-not (contains? #{:fresh :resume} continuity)
     (fail! "supersede-and-respawn! :continuity must be :fresh or :resume"
            {:run old-run-id :continuity continuity}))
-  (let [predecessor (or (api/show (rt) old-run-id)
+  (let [predecessor (or (weaver/show (rt) old-run-id)
                         (fail! "Supersede predecessor not found" {:run old-run-id}))
         interactive? (interactive? predecessor)
         served-target (run-for-target predecessor)
@@ -2035,8 +2035,8 @@
     ;; Close the predecessor and record lineage only once the successor exists,
     ;; so a spawn that throws (resume validation, missing target) leaves the
     ;; predecessor untouched rather than half-succeeded.
-    (api/update (rt) old-run-id {:state "closed" :attributes {"agent-run/phase" "superseded"}})
-    (api/update (rt) (:id successor)
+    (weaver/update (rt) old-run-id {:state "closed" :attributes {"agent-run/phase" "superseded"}})
+    (weaver/update (rt) (:id successor)
                 {:attributes {"agent-run/supersedes" old-run-id}
                  :edges [{:type "supersedes" :to old-run-id}]})
     successor))
@@ -2096,7 +2096,7 @@
   [opts incoming-edges-fn]
   (let [{:keys [active for]} opts]
     (try (supervise!) (catch Exception _ nil))
-   (let [run-strands (api/list (rt)
+   (let [run-strands (weaver/list (rt)
                                (if active [:and [:= :state "active"] run-query] run-query)
                                {})
          ;; A run satisfies a --for filter two ways: a serving run has an
@@ -2257,7 +2257,7 @@
   those, and every sum skips nils so a missing figure is never inflated to 0. The
   read costs one bulk query for many runs, never one per run (PROP-Ru-001.R4)."
   ([] (spend {}))
-  ([opts] (spend* opts api/list)))
+  ([opts] (spend* opts weaver/list)))
 
 (def ^:private terminal-phases #{"done" "failed" "exhausted" "superseded"})
 
@@ -2287,7 +2287,7 @@
 (defn kill!
   "Kill a run's harness process (or interactive session) and mark it failed."
   [id]
-  (let [run (or (api/show (rt) id) (fail! "Run not found" {:id id}))]
+  (let [run (or (weaver/show (rt) id) (fail! "Run not found" {:id id}))]
     (if (interactive? run)
       (let [backend-name (harness-key (sattr run "backend"))
             backend (resolve-backend backend-name)]
@@ -2323,7 +2323,7 @@
   outlives the session (hook-written logs), on finished runs too. Fails
   loudly when the run is not interactive or no capture op is configured."
   [id]
-  (let [run (or (api/show (rt) id) (fail! "Run not found" {:id id}))]
+  (let [run (or (weaver/show (rt) id) (fail! "Run not found" {:id id}))]
     (when-not (interactive? run)
       (fail! "Capture applies to interactive runs; headless runs already write agent-run/log" {:id id}))
     (let [backend (resolve-backend (harness-key (sattr run "backend")))
@@ -2338,7 +2338,7 @@
   The note is born closed (memory, not work), linked to the target by a `notes`
   edge alone — no `note/for` attribute — and carries optional `note/by`/`note/round`."
   ([target-id text] (note! target-id text {}))
-  ([target-id text opts] (notes-alpha/note! (rt) target-id text opts)))
+  ([target-id text opts] (notes/note! (rt) target-id text opts)))
 
 (defn notes
   "Return `target-id`'s notes in `note/at` order, optionally one `:round`, via
@@ -2347,7 +2347,7 @@
   Walks the incoming `notes` edges to the target, so it reads every writer's
   notes regardless of decorating attrs."
   ([target-id] (notes target-id {}))
-  ([target-id opts] (notes-alpha/notes (rt) target-id opts)))
+  ([target-id opts] (notes/notes (rt) target-id opts)))
 
 ;; ---------------------------------------------------------------------------
 ;; Review contract state

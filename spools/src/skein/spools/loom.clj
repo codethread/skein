@@ -18,7 +18,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.spools.workflow :as workflow]
             [skein.spools.util :refer [attr-get fail! reject-unknown-keys! require-valid!]]))
 
@@ -31,7 +31,7 @@
   [rt]
   (into {}
         (map (juxt :id identity))
-        (api/list rt [:= :state "active"] {})))
+        (weaver/list rt [:= :state "active"] {})))
 
 (defn summarize
   "Return the compact strand shape used by read-only projections."
@@ -174,7 +174,7 @@
                      (filter #(attr-get % branch-attr))
                      (remove #(contains? child-ids (:id %)))
                      (filter #(or (nil? branch) (= branch (attr-get % branch-attr)))))
-          ready-ids (set (map :id (api/ready rt ready-query {})))]
+          ready-ids (set (map :id (weaver/ready rt ready-query {})))]
       (->> roots
            (group-by #(attr-get % branch-attr))
            (sort-by key)
@@ -211,7 +211,7 @@
         superseded (set (map :to_strand_id (graph/incoming-edges rt run-ids "supersedes")))]
     (->> run-ids
          (remove superseded)
-         (map #(api/show rt %))
+         (map #(weaver/show rt %))
          (remove #(= "superseded" (attr-get % :agent-run/phase)))
          (map :id)
          first)))
@@ -220,7 +220,7 @@
   "Return a compact workflow gate projection joined to its delegated run."
   [rt gate->run failed-run-ids stalled-gate-ids gate]
   (let [run-id (get gate->run (:id gate))
-        run (when run-id (api/show rt run-id))
+        run (when run-id (weaver/show rt run-id))
         run-failed? (contains? failed-run-ids run-id)
         spawn-stalled? (contains? stalled-gate-ids (:id gate))]
     (cond-> {:id (:id gate)
@@ -281,11 +281,11 @@
         gate->run (into {} (keep (fn [g] (when-let [r (gate-serving-run-id rt (:id g))] [(:id g) r]))) run-gates)
         run-delegated-ids (set (vals gate->run))
         stalled-gates (filterv #(contains? run-gate-ids (:id %))
-                               (api/list rt [:and [:= :state "active"]
-                                             [:= [:attr "workflow/gate"] "subagent"]
-                                             [:exists [:attr "gate/error"]]] {}))
+                               (weaver/list rt [:and [:= :state "active"]
+                                                [:= [:attr "workflow/gate"] "subagent"]
+                                                [:exists [:attr "gate/error"]]] {}))
         agent-failures (filterv #(contains? run-delegated-ids (:id %))
-                                (api/list rt [:in [:attr "agent-run/phase"] ["failed" "exhausted"]] {}))
+                                (weaver/list rt [:in [:attr "agent-run/phase"] ["failed" "exhausted"]] {}))
         stalled-gate-ids (set (map :id stalled-gates))
         failed-run-ids (set (map :id agent-failures))
         gates (mapv (partial compact-gate rt gate->run failed-run-ids stalled-gate-ids) run-gates)

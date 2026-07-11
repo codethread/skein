@@ -22,11 +22,11 @@
             [clojure.walk :as walk]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
-            [skein.api.notes.alpha :as notes-api]
+            [skein.api.notes.alpha :as notes]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.runtime.alpha :as runtime-api]
             [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.query :as query]
             [skein.core.specs :as specs])
   (:import [java.io PushbackReader StringReader]))
@@ -208,7 +208,7 @@
 (defn- run-named-ready-query-lean [rt query-name raw-params limit]
   (let [query-def (graph/resolve-query rt (handle-name query-name))
         params (validate-query-params query-def raw-params)]
-    (api/ready-lean rt lean-attribute-byte-floor query-def params limit)))
+    (weaver/ready-lean rt lean-attribute-byte-floor query-def params limit)))
 
 ;; --- op handlers ------------------------------------------------------------
 
@@ -220,11 +220,11 @@
     (check-attr-duplicates! (:op/argv ctx))
     (let [merged (merge (attributes->map attributes) (or attr {}))
           edges (parse-edges edge)]
-      (api/add rt
-               (cond-> {:title title :attributes merged}
-                 (some? state) (assoc :state (validate-generic-state state))
-                 (seq edges) (assoc :edges edges))
-               (request-context :add)))))
+      (weaver/add rt
+                  (cond-> {:title title :attributes merged}
+                    (some? state) (assoc :state (validate-generic-state state))
+                    (seq edges) (assoc :edges edges))
+                  (request-context :add)))))
 
 (defn update-op
   "Patch one strand's title, state, attributes, and outgoing edges."
@@ -239,18 +239,18 @@
                   (some? title) (assoc :title title)
                   (some? state) (assoc :state (validate-generic-state state))
                   (contains? args :attr) (assoc :attributes attr))]
-      (api/update rt id patch (request-context :update)))))
+      (weaver/update rt id patch (request-context :update)))))
 
 (defn show-op
   "Return one normalized strand by id."
   [ctx]
-  (api/show (:op/runtime ctx) (:id (:op/args ctx))))
+  (weaver/show (:op/runtime ctx) (:id (:op/args ctx))))
 
 (defn supersede-op
   "Replace one strand with another and return the supersession result."
   [ctx]
   (let [{:keys [old-id replacement-id]} (:op/args ctx)]
-    (api/supersede (:op/runtime ctx) old-id replacement-id (request-context :supersede))))
+    (weaver/supersede (:op/runtime ctx) old-id replacement-id (request-context :supersede))))
 
 (defn burn-op
   "Physically delete one strand by id and return the burn summary."
@@ -268,10 +268,10 @@
     (if query
       (do (when (str/blank? query)
             (throw (ex-info "--query requires a non-empty name" {})))
-          (run-named-query rt api/list-lean query params state limit))
+          (run-named-query rt weaver/list-lean query params state limit))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
-          (api/list-lean rt lean-attribute-byte-floor (if state [:= :state state] [:exists :id]) {} limit)))))
+          (weaver/list-lean rt lean-attribute-byte-floor (if state [:= :state state] [:exists :id]) {} limit)))))
 
 (defn ready-op
   "List lean-projected ready strands, optionally from the result set of a named query."
@@ -286,7 +286,7 @@
           (run-named-ready-query-lean rt query params limit))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
-          (api/ready-lean rt lean-attribute-byte-floor [:exists :id] {} limit)))))
+          (weaver/ready-lean rt lean-attribute-byte-floor [:exists :id] {} limit)))))
 
 (defn subgraph-op
   "Return a relation-scoped subgraph rooted at one strand."
@@ -341,14 +341,14 @@
     (check-attr-duplicates! (:op/argv ctx))
     ;; note! folds every non-:by/:round opt into decorating attrs, so the
     ;; string-keyed --attr map lands as ordinary strand attrs on the note.
-    (notes-api/note! (:op/runtime ctx) id text (merge (or attr {}) {:by by :round round}))))
+    (notes/note! (:op/runtime ctx) id text (merge (or attr {}) {:by by :round round}))))
 
 (defn notes-op
   "Return a target strand's notes from every primitive writer in note/at order,
   optionally filtered to one review round."
   [ctx]
   (let [{:keys [id round]} (:op/args ctx)]
-    (notes-api/notes (:op/runtime ctx) id {:round round})))
+    (notes/notes (:op/runtime ctx) id {:round round})))
 
 (defn vocab-op
   "List the runtime's vocabulary declarations as an ordered array of C1 maps,
@@ -517,9 +517,9 @@
    {:installed true
     :namespace 'skein.spools.batteries
     :ops (mapv (fn [[op-name arg-spec hook-class handler]]
-                 (api/register-op! rt op-name
-                                   {:doc (:doc arg-spec)
-                                    :arg-spec arg-spec
-                                    :hook-class hook-class}
-                                   handler))
+                 (weaver/register-op! rt op-name
+                                      {:doc (:doc arg-spec)
+                                       :arg-spec arg-spec
+                                       :hook-class hook-class}
+                                      handler))
                op-registrations)}))

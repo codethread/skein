@@ -21,13 +21,13 @@ The shell executor ships on the weaver classpath, so it needs no `spools.edn` ap
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime-alpha])
+         '[skein.api.runtime.alpha :as runtime])
 
 (def runtime (current/runtime))
-(runtime-alpha/use! runtime :skein/spools-workflow
+(runtime/use! runtime :skein/spools-workflow
   {:ns 'skein.spools.workflow
    :call 'skein.spools.workflow/install!})
-(runtime-alpha/use! runtime :skein/spools-reed
+(runtime/use! runtime :skein/spools-reed
   {:ns 'skein.spools.executors.shell
    :call 'skein.spools.executors.shell/install!})
 ```

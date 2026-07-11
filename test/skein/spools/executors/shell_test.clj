@@ -5,7 +5,7 @@
             [skein.spools.executors.shell :as reed]
             [skein.spools.workflow :as workflow]
             [skein.spools.test-support :as test-support :refer [with-runtime]]
-            [skein.api.weaver.alpha :as api]
+            [skein.api.weaver.alpha :as weaver]
             [skein.api.events.alpha :as events])
   (:import [java.io File]))
 
@@ -49,9 +49,9 @@
   (first (filter #(= "shell" (:gate %)) (workflow/next-steps run-id))))
 
 (defn- shell-gate-strand [rt run-id]
-  (first (api/list rt [:and [:= [:attr "workflow/gate"] "shell"]
-                       [:= [:attr "test/run-id"] run-id]]
-                   {})))
+  (first (weaver/list rt [:and [:= [:attr "workflow/gate"] "shell"]
+                          [:= [:attr "test/run-id"] run-id]]
+                      {})))
 
 (defn- temp-file [suffix]
   (doto (File/createTempFile "reed-test" suffix)
@@ -63,7 +63,7 @@
       (workflow/start! "pass" (single-gate "pass" {"shell/argv" ["true"]}) {})
       (events/await-quiescent! rt)
       (let [gate-id (:id (shell-gate-strand rt "pass"))
-            closed (await-eventually #(let [g (api/show rt gate-id)]
+            closed (await-eventually #(let [g (weaver/show rt gate-id)]
                                         (when (= "closed" (:state g)) g)))]
         (is (= "shell" (attr closed :workflow/outcome-by)))
         (is (zero? (attr closed :shell/exit-code)))
@@ -77,7 +77,7 @@
       (workflow/start! "fail" (single-gate "fail" {"shell/argv" ["false"]}) {})
       (events/await-quiescent! rt)
       (let [gate-id (:id (ready-shell-gate "fail"))
-            errored (await-eventually #(let [g (api/show rt gate-id)]
+            errored (await-eventually #(let [g (weaver/show rt gate-id)]
                                          (when (attr g :shell/error) g)))]
         (is (= "active" (:state errored)))
         (is (= 1 (attr errored :shell/exit-code)))
@@ -85,10 +85,10 @@
         (is (str/includes? (attr errored :shell/error) "exited 1"))
         ;; the gate stays ready and stamped, not masquerading as a closed step
         (is (= [gate-id] (mapv :id (filter #(= "shell" (:gate %)) (workflow/next-steps "fail")))))
-        (is (nil? (attr (api/show rt gate-id) :workflow/outcome-by)))
+        (is (nil? (attr (weaver/show rt gate-id) :workflow/outcome-by)))
         ;; discoverable through both the stall predicate and the coordinator query
         (is (= gate-id (:gate (reed/gate-stalled? (ready-shell-gate "fail")))))
-        (is (some #(= gate-id (:id %)) (api/list-query rt 'stalled-shell-gates {})))))))
+        (is (some #(= gate-id (:id %)) (weaver/list-query rt 'stalled-shell-gates {})))))))
 
 (deftest errored-gate-is-not-rerun-until-error-cleared
   (with-reed
@@ -99,7 +99,7 @@
         (workflow/start! "rec" (single-gate "rec" {"shell/argv" (argv 3)}) {})
         (events/await-quiescent! rt)
         (let [gate-id (:id (ready-shell-gate "rec"))
-              errored (await-eventually #(let [g (api/show rt gate-id)]
+              errored (await-eventually #(let [g (weaver/show rt gate-id)]
                                            (when (attr g :shell/error) g)))]
           (is (= 3 (attr errored :shell/exit-code)))
           (is (= 1 (run-count)))
@@ -109,19 +109,19 @@
           ;; thread strictly before the only worker-pool submission path, so a
           ;; re-dispatch regression is visible as a claim marker the moment scan!
           ;; returns — no marker means nothing was submitted.
-          (api/add rt {:title "noise-1"})
-          (api/add rt {:title "noise-2"})
+          (weaver/add rt {:title "noise-1"})
+          (weaver/add rt {:title "noise-2"})
           (reed/scan!)
-          (is (nil? (attr (api/show rt gate-id) :shell/running)))
-          (is (some? (attr (api/show rt gate-id) :shell/error)))
+          (is (nil? (attr (weaver/show rt gate-id) :shell/running)))
+          (is (some? (attr (weaver/show rt gate-id) :shell/error)))
           (is (= 1 (run-count)))
           ;; clearing shell/error (and fixing the command) re-runs the check once
           ;; and closes the gate on the next scan.
-          (api/update rt gate-id {:attributes {"shell/error" nil
-                                               "shell/running" nil
-                                               "shell/argv" (argv 0)}})
+          (weaver/update rt gate-id {:attributes {"shell/error" nil
+                                                  "shell/running" nil
+                                                  "shell/argv" (argv 0)}})
           (events/await-quiescent! rt)
-          (let [closed (await-eventually #(let [g (api/show rt gate-id)]
+          (let [closed (await-eventually #(let [g (weaver/show rt gate-id)]
                                             (when (= "closed" (:state g)) g)))]
             (is (zero? (attr closed :shell/exit-code)))
             (is (nil? (attr closed :shell/error)))
@@ -140,7 +140,7 @@
           (workflow/start! run-id (single-gate run-id bad) {})
           (events/await-quiescent! rt)
           (let [gate-id (:id (ready-shell-gate run-id))
-                errored (await-eventually #(let [g (api/show rt gate-id)]
+                errored (await-eventually #(let [g (weaver/show rt gate-id)]
                                              (when (attr g :shell/error) g)))]
             (is (= "active" (:state errored)) (str "case " i))
             (is (str/includes? (attr errored :shell/error) expected) (str "case " i))
@@ -156,7 +156,7 @@
                                                          "shell/timeout-secs" 1}) {})
       (events/await-quiescent! rt)
       (let [gate-id (:id (ready-shell-gate "timeout"))
-            errored (await-eventually #(let [g (api/show rt gate-id)]
+            errored (await-eventually #(let [g (weaver/show rt gate-id)]
                                          (when (attr g :shell/error) g)))]
         (is (= "active" (:state errored)))
         (is (str/includes? (attr errored :shell/error) "timed out")))
@@ -166,7 +166,7 @@
                                                                                "shell/timeout-secs" 1}) {})
       (events/await-quiescent! rt)
       (let [gate-id (:id (ready-shell-gate "timeout-descendant"))
-            errored (await-eventually #(let [g (api/show rt gate-id)]
+            errored (await-eventually #(let [g (weaver/show rt gate-id)]
                                          (when (attr g :shell/error) g)))]
         (is (= "active" (:state errored)))
         (is (str/includes? (attr errored :shell/error) "timed out")))
@@ -175,7 +175,7 @@
                                                                  "shell/timeout-secs" 0}) {})
       (events/await-quiescent! rt)
       (let [gate-id (:id (ready-shell-gate "timeout-bad"))
-            errored (await-eventually #(let [g (api/show rt gate-id)]
+            errored (await-eventually #(let [g (weaver/show rt gate-id)]
                                          (when (attr g :shell/error) g)))]
         (is (str/includes? (attr errored :shell/error) "shell/timeout-secs"))
         (is (nil? (attr errored :shell/exit-code)))))))
@@ -190,14 +190,14 @@
                                              :attributes {"shell/argv" ["true"]})) {})
       (let [sub-gate-id (:id (first (workflow/next-steps "iso")))]
         (reed/scan!)
-        (is (= "active" (:state (api/show rt sub-gate-id))))
-        (is (nil? (attr (api/show rt sub-gate-id) :shell/running)))
-        (is (nil? (attr (api/show rt sub-gate-id) :shell/exit-code))))
+        (is (= "active" (:state (weaver/show rt sub-gate-id))))
+        (is (nil? (attr (weaver/show rt sub-gate-id) :shell/running)))
+        (is (nil? (attr (weaver/show rt sub-gate-id) :shell/exit-code))))
       ;; large output is retained only as a bounded tail
       (workflow/start! "big" (single-gate "big" {"shell/argv" ["sh" "-c" "yes 0123456789 | head -c 200000"]}) {})
       (events/await-quiescent! rt)
       (let [gate-id (:id (shell-gate-strand rt "big"))
-            closed (await-eventually #(let [g (api/show rt gate-id)]
+            closed (await-eventually #(let [g (weaver/show rt gate-id)]
                                         (when (= "closed" (:state g)) g)))
             output (attr closed :shell/output)]
         (is (zero? (attr closed :shell/exit-code)))
@@ -221,8 +221,8 @@
         (workflow/complete! "comp" {:step (:id first-step)})
         (events/await-quiescent! rt))
       (let [gate-id (:id (shell-gate-strand rt "comp"))]
-        (await-eventually #(= "closed" (:state (api/show rt gate-id))))
-        (is (zero? (attr (api/show rt gate-id) :shell/exit-code)))
+        (await-eventually #(= "closed" (:state (weaver/show rt gate-id))))
+        (is (zero? (attr (weaver/show rt gate-id) :shell/exit-code)))
         (is (= "After" (:title (first (workflow/next-steps "comp")))))))))
 
 (deftest state-shape-matches-declared-version
