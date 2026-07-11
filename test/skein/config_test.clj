@@ -83,6 +83,8 @@
   (spit (io/file target "spools.edn")
         (pr-str {:spools {'skein.spools/agent-run
                           {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
+                          'skein.spools/workflow
+                          {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
                           'skein.spools/delegation
                           {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
@@ -929,14 +931,24 @@
     (is (= :loaded (:status use)))
     (is (some #{:config} (get-in use [:opts :after])))))
 
+(defn- assert-workflow-spool-consent-edges
+  "Assert repo startup guards every module that now relies on the workflow coordinate."
+  [rt]
+  (let [uses (runtime/uses rt)]
+    (doseq [use-id [:skein/spools-workflow :skein/spools-reed :config :workflows]]
+      (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
+          (str use-id " must opt into skein.spools/workflow")))))
+
 (deftest repo-local-startup-and-reload-preserve-registrations
   (with-startup-config-runtime
     (fn [rt]
       (assert-config-registrations rt)
       (assert-treadle-installed-after-config rt)
+      (assert-workflow-spool-consent-edges rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
       (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
+      (assert-workflow-spool-consent-edges rt)
       ;; runtime registries reload; the strand graph and run state persist
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))

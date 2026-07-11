@@ -1,4 +1,5 @@
 {:spools {skein.spools/agent-run {:local/root "../spools/agent-run"}
+          skein.spools/workflow {:local/root "../spools/workflow"}
           skein.spools/delegation {:local/root "../spools/delegation"}
           skein.spools/chime {:local/root "../spools/chime"}
           skein.spools/kanban {:local/root "../spools/kanban"}

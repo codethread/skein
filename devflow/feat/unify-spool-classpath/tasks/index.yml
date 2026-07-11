@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: "PH2: move workflow (+executors/shell) to per-spool root + consent edges"
     task_file: tasks/003-move-workflow-shell.md
-    status: pending
+    status: complete
     blocked_by: [2]
   - id: 4
     description: "PH2: move ephemeral to per-spool root + coordinate + guard"

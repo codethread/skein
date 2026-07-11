@@ -12,6 +12,7 @@
                :call 'skein.spools.ephemeral/install!})
 (runtime/use! runtime :skein/spools-workflow
               {:ns 'skein.spools.workflow
+               :spools ['skein.spools/workflow]
                :call 'skein.spools.workflow/install!})
 (runtime/use! runtime :skein/spools-roster
               {:ns 'skein.spools.roster
@@ -21,12 +22,13 @@
 (runtime/use! runtime :skein/spools-loom
               {:ns 'skein.spools.loom
                :call 'skein.spools.loom/install!})
-;; The shell executor is a classpath-shipped spool that fulfils :shell workflow
+;; The shell executor ships in the workflow spool root and fulfils :shell workflow
 ;; gates by running the gate command directly. Its install! runs an initial
 ;; scan, so it is ordered after workflow (which owns the executor registry it
 ;; registers into).
 (runtime/use! runtime :skein/spools-reed
               {:ns 'skein.spools.executors.shell
+               :spools ['skein.spools/workflow]
                :after [:skein/spools-workflow]
                :call 'skein.spools.executors.shell/install!})
 ;; UNSAFE spool: text-search reaches past the blessed api.* contract into
@@ -123,6 +125,7 @@
                :required? true})
 (runtime/use! runtime :config
               {:file "config.clj"
+               :spools ['skein.spools/workflow]
                :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
                        :skein/spools-loom :skein/spools-shuttle :macros/patterns]
                :call 'config/install!})
@@ -138,6 +141,7 @@
 ;; the :config module.
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
+               :spools ['skein.spools/workflow]
                :after [:skein/spools-workflow :skein/spools-agents :config]
                :call 'workflows/install!
                :required? true})
