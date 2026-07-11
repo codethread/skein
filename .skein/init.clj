@@ -17,6 +17,7 @@
                :call 'skein.spools.workflow/install!})
 (runtime/use! runtime :skein/spools-roster
               {:ns 'skein.spools.roster
+               :spools ['skein.spools/roster]
                :call 'skein.spools.roster/install!})
 ;; loom is a read-only work-graph projection library (registers no ops);
 ;; config.clj's current-dags/branches/flow-status ops are thin wrappers over it.

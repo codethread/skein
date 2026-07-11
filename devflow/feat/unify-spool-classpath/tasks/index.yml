@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: "PH2: move roster to per-spool root + coordinate + guard"
     task_file: tasks/005-move-roster.md
-    status: pending
+    status: complete
     blocked_by: [4]
   - id: 6
     description: "PH2: move loom to per-spool root + coordinate + guard + fold config/workflows edges"
