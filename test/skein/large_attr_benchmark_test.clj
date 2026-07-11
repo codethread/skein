@@ -12,6 +12,10 @@
             [skein.core.db-test :as db-test]
             [skein.large-attr-benchmark :as bench]))
 
+(defn- assert-out-rejected! [out]
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
+                        (bench/run-all (assoc bench/smoke-options :out out)))))
+
 (defn- temp-out-dir []
   (.toFile (java.nio.file.Files/createTempDirectory
             "large-attr-benchmark-smoke"
@@ -26,6 +30,13 @@
   (and (number? (:median-ms m))
        (vector? (:samples-ms m))
        (seq (:samples-ms m))))
+
+(deftest run-all-fails-loudly-on-missing-or-blank-out
+  (testing "nil :out"
+    (assert-out-rejected! nil))
+  (testing "blank :out"
+    (assert-out-rejected! "")
+    (assert-out-rejected! "   ")))
 
 (deftest harness-wires-every-scenario-at-tiny-n
   (let [out-dir (temp-out-dir)]

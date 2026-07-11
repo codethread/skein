@@ -15,7 +15,6 @@ Build the durable large-attr load harness in the `test/` tier by generalizing th
 **Owned files:**
 - `dev/skein/eav_benchmark.clj` → `test/skein/large_attr_benchmark.clj` (`ns skein.large-attr-benchmark`): relocate + generalize; **delete the old `dev/` path** (`git mv`; no Makefile/CI/devflow reference to it exists, safe to move — `AA1`, `DN1`).
 - `test/skein/large_attr_benchmark_test.clj` (`ns skein.large-attr-benchmark-test`): the fast structural smoke `deftest` (`AA2`).
-- `deps.edn` — **only if** an alias note is needed so `clojure -M:test -m skein.large-attr-benchmark` resolves (T2's invocation); the `:test` alias already puts `test/` and `skein.core.*`/`skein.api.*`/`text-search` on the classpath, so prefer no change and add only a comment if one clarifies the run entrypoint.
 
 ## TASK-LargeAttrScaling-001.P2 Must implement exactly
 

@@ -152,6 +152,8 @@
                     (select-keys opts [:archived-fraction]))))
   (when (str/blank? (:corpus-needle opts))
     (throw (ex-info "Corpus needle must be a non-blank substring" (select-keys opts [:corpus-needle]))))
+  (when (str/blank? (:out opts))
+    (throw (ex-info "Output directory must be a non-blank path" (select-keys opts [:out]))))
   (when (< (:payload-bytes opts) 16384)
     (throw (ex-info "Payload bytes must be at least 16KiB for the structural write-amp gate"
                     (select-keys opts [:payload-bytes]))))

@@ -18,7 +18,7 @@
     env SKEIN_LARGE_ATTR_BENCH_FULL=1 clojure -Scp "$cp" -J--enable-native-access=ALL-UNNAMED -M -m skein.large-attr-benchmark --out "${ws:?}"
   ```
 
-  Flagged to the coordinator (feature card `kbcjt`, note `p1n9e`) as a harness/doc issue; not patched here (`NG2`/`OS3`).
+  Flagged to the coordinator (feature card `kbcjt`, note `p1n9e`) as a harness/doc issue during this run; fixed afterward by adding the `:large-attr-bench` alias to `deps.edn` and updating the harness's usage string — see "Re-running the harness" below for the working invocation.
 
 ## Seed profile (`A6`)
 
