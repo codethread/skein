@@ -74,7 +74,7 @@ Four commands, and you have a graph — each strand is a node carrying its attri
 <img src="./docs/assets/strand-graph.svg" width="640"
      alt="Four strands in a graph, each carrying its attributes map. 'Write the docs' and 'Build the CLI' depend on 'Sketch the data model'; 'Announce the release' depends on both of them. Only 'Sketch the data model' is ready.">
 
-<details>
+<details markdown>
 <summary>The same graph in one REPL call</summary>
 
 From the weaver's REPL (covered below), the whole graph is one transactional weave. `:ref` names are temporary handles, so edges can point at siblings created in the same call:
@@ -168,7 +168,7 @@ Skein is built for agents, and its own repository is written for them to read. P
 
 Everything on this page is a few small primitives — `add`, `weave`, `pattern` — over one graph. Around them Skein ships shared libraries called [spools](./spools/README.md), the durable workspace config you saw `mill init` create, an event and hooks system inside the weaver, and a testing library (`skein.test.alpha`) that spins up disposable weaver worlds. They go a long way: this repository coordinates its own development (a kanban board, a feature lifecycle, delegated agent runs, and a landing workflow) entirely in userland code built from those parts.
 
-<details>
+<details markdown>
 <summary>A landing workflow, condensed</summary>
 
 A sketch of the landing discipline in this repo's [`.skein/workflows.clj`](./.skein/workflows.clj). Steps compile to strands in the same graph you have been querying: the review gate is completed by a delegated subagent run, and the merge step cannot become ready until CI is green and sign-off is decided.

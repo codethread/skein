@@ -36,10 +36,15 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.superfences
+  # The homepage is the repository README, which is written in GitHub-flavored
+  # markdown: md_in_html renders the fenced code inside its <details markdown>
+  # dropdowns, gfm_admonition renders its > [!NOTE] alerts.
+  - md_in_html
+  - gfm_admonition
 
 nav:
-  # The root landing page lives directly in .mkdocs/index.md so the site
-  # remains a committed projection over repository docs instead of rewriting docs/skein.md.
+  # The root landing page is the repository README (.mkdocs/index.md symlinks
+  # it), so the site opens on the same pitch and worked example as GitHub.
   - Home: index.md
   - Skein: docs/skein.md
   - Getting Started: docs/getting-started.md

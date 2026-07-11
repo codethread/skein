@@ -71,7 +71,7 @@ api-docs:
 	fi
 
 docs-site:
-	uvx --from mkdocs --with mkdocs-material mkdocs build --strict
+	uvx --from mkdocs --with mkdocs-material --with markdown-gfm-admonition mkdocs build --strict
 
 docs-check:
 	$(MAKE) api-docs
@@ -79,7 +79,7 @@ docs-check:
 	$(MAKE) docs-site
 
 docs-serve:
-	uvx --from mkdocs --with mkdocs-material mkdocs serve --dev-addr 127.0.0.1:8000
+	uvx --from mkdocs --with mkdocs-material --with markdown-gfm-admonition mkdocs serve --dev-addr 127.0.0.1:8000
 
 fmt:
 	clojure -M:format/fix
