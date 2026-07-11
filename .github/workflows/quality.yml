@@ -94,6 +94,30 @@ jobs:
             smoke-clojure-${{ runner.os }}-
       - run: clojure -M:smoke
 
+  spool-suites:
+    name: Spool suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: spool-suites-clojure-${{ runner.os }}-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            spool-suites-clojure-${{ runner.os }}-
+      - run: make spool-suite-gate
+
   format-check:
     name: Format check
     runs-on: ubuntu-latest
