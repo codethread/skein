@@ -42,6 +42,7 @@ clojure -M:test <ns...>                 # cold focused run — the per-slice Don
 flock -w 3600 /tmp/skein-test.lock clojure -M:test  # full locked suite — queue acceptance + land only; CI-blocking
 (cd cli && go test ./...)               # primary validation, CI-blocking
 clojure -M:smoke                        # primary validation, CI-blocking
+make spool-suite-gate                   # pinned external spool suites vs this checkout — CI-blocking; also runs at land merge-local-verify (GITLIBS=<dir> overrides the gitlibs cache)
 make fmt-check lint reflect-check docs-check   # blocking CI quality gates, held at zero findings
 make api-docs                           # regenerate spools/*.api.md and docs/api/*.api.md after touching any spool or skein.api.*.alpha docstring
 ```
@@ -53,7 +54,7 @@ Strand data is plain SQLite under a workspace's `data/skein.sqlite` — `sqlite3
 ## Hard rules
 
 - **Agents never run `make install`** — it clobbers the user's global on-PATH binaries, which is the user's call. Use `make build` and the repo-local `./bin/strand` / `./bin/mill` for all CLI validation.
-- **Never restart a running weaver to pick up changes**; restarting the canonical weaver requires explicit user sign-off (it tears down live agent runs and registries other agents depend on). Pickup ladder: Go CLI changes need only `make build`; config/startup-file changes need `runtime/reload!`; already-loaded Clojure namespaces need a targeted `(require 'the.ns :reload)` first (reload! alone skips loaded namespaces); only JVM-level changes (deps.edn, transport/socket, unhealthy JVM) justify a restart. Reload a selected world:
+- **Never restart a running weaver to pick up changes**; restarting the canonical weaver requires explicit user sign-off (it tears down live agent runs and registries other agents depend on). Pickup ladder: Go CLI changes need only `make build`; config/startup-file changes need `runtime/reload!`; already-loaded **base-classpath** namespaces (`src/`, batteries) need a targeted `(require 'the.ns :reload)` first (reload! alone skips loaded namespaces); already-loaded **spool** namespaces (any local-root/git spool) cannot be reached by a bare `:reload` — the source lives in the spool classloader, so `load-file` the namespace's source under `skein.core.weaver.access/with-spool-classloader`, then `runtime/reload!` (a blessed `reload-spool!` verb is in flight on card `sae7i`); only JVM-level changes (deps.edn, transport/socket, unhealthy JVM) justify a restart. Reload a selected world:
 
   ```sh
   printf "(do (require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime]) (runtime/reload! (current/runtime)))\n" | mill weaver repl --stdin --workspace "$world"

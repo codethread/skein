@@ -18,7 +18,7 @@ mill weaver start   # boot this repo's weaver — the shared coordination world
 
 Every piece of work takes the same shape, whoever does it:
 
-1. **A kanban card.** Anything you ask for becomes a feature card on the strand-backed board ([`spools/kanban.md`](./spools/kanban.md)); half-formed ideas sit in the refinement lane until you promote them.
+1. **A kanban card.** Anything you ask for becomes a feature card on the strand-backed board (contract: [`kanban.md`](https://github.com/codethread/kanban.spool/blob/main/kanban.md) in the external kanban.spool repo); half-formed ideas sit in the refinement lane until you promote them.
 2. **The devflow lifecycle.** A coordinator agent runs a feature through devflow — proposal, spec/plan, tasks, implementation — in its own worktree, delegating tasks to worker agents.
 3. **Adversarial review.** Finished changes are reviewed by the declared rosters in [`.skein/reviewers.clj`](./.skein/reviewers.clj): small single-concern reviewers, synthesized cross-vendor so no model family signs off its own work.
 4. **Landing.** A coordinator drives the `land` workflow: draft PR, green CI, roster sign-off, verified squash-merge, green main CI. `strand land about` prints the discipline.

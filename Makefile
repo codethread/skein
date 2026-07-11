@@ -1,4 +1,4 @@
-.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report test-warm test-warm-stop
+.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report test-warm test-warm-stop spool-suite-gate
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
@@ -96,6 +96,72 @@ security-report:
 # cold `clojure -M:test <ns...>` run is the slice gate (PLAN-Ttv-001.TC1).
 test-warm:
 	NS="$(NS)" bash scripts/test-warm
+
+# Single local-reproduction surface for the spool-suite gate (PLAN-ssc-001.A1):
+# run the pinned external spool suites (codethread/devflow.spool, kanban.spool)
+# against this checkout's HEAD, closing the untested skein-src->spool direction.
+# The two shas are read from deps.edn as EDN (never restated here, never line-
+# grepped) and the target aborts loudly rather than run against an empty sha.
+# Each spool source is materialized at its pin into a mktemp scratch root beside a
+# `skein-src` link to the invoking checkout ($(CURDIR)), matching the spools'
+# committed `:local/root "../skein-src"`. devflow.spool needs the moved
+# workflow-spool root injected at job time via -Sdeps (NG2-safe; never an edit to
+# the spool's own deps.edn); kanban.spool carries its own workflow-spool root and
+# runs plain. On a red suite the target names the spool, its resolved sha, and the
+# one command that reproduces it locally. Requires OpenJDK on PATH, e.g.
+# PATH="/opt/homebrew/opt/openjdk/bin:$$PATH" make spool-suite-gate.
+spool-suite-gate:
+	@set -e; \
+	src="$(CURDIR)"; \
+	coords="$$(clojure -M -e '(let [deps (clojure.edn/read-string (slurp "deps.edn")) ed (get-in deps [:aliases :test :extra-deps]) g (fn [c] (let [m (get ed c) sha (:git/sha m) url (:git/url m)] (when-not (and (string? sha) (string? url)) (binding [*out* *err*] (println (str "spool-suite-gate: deps.edn :aliases :test :extra-deps is missing :git/url or :git/sha for " c "; refusing to run against HEAD/an empty sha"))) (System/exit 1)) [url sha]))] (let [[du ds] (g (quote io.github.codethread/devflow.spool)) [ku ks] (g (quote io.github.codethread/kanban.spool))] (println du ds ku ks) (flush) (System/exit 0)))')" || coords=""; \
+	if [ -z "$$coords" ]; then \
+		echo "spool-suite-gate: could not extract spool coordinates from deps.edn (unparseable, or missing the :aliases :test :extra-deps spool pins); refusing to run against HEAD/an empty sha" >&2; \
+		exit 1; \
+	fi; \
+	set -- $$coords; \
+	durl="$$1"; dsha="$$2"; kurl="$$3"; ksha="$$4"; \
+	if [ -z "$$durl" ] || [ -z "$$dsha" ] || [ -z "$$kurl" ] || [ -z "$$ksha" ]; then \
+		echo "spool-suite-gate: incomplete spool coordinates extracted from deps.edn" >&2; \
+		exit 1; \
+	fi; \
+	root="$$(mktemp -d)"; \
+	trap 'rm -rf "$$root"' EXIT; \
+	ln -s "$$src" "$$root/skein-src"; \
+	materialize() { \
+		name="$$1"; url="$$2"; sha="$$3"; lib="$$4"; dir="$$root/$$name"; \
+		gl="$${GITLIBS:-$$HOME/.gitlibs}/libs/$$lib/$$sha"; \
+		if [ -d "$$gl" ]; then \
+			cp -R "$$gl" "$$dir"; \
+			chmod -R u+w "$$dir"; \
+		else \
+			mkdir -p "$$dir"; \
+			git -C "$$dir" init -q; \
+			git -C "$$dir" remote add origin "$$url"; \
+			if ! git -C "$$dir" fetch -q --depth 1 origin "$$sha"; then \
+				git -C "$$dir" fetch -q origin; \
+			fi; \
+			git -C "$$dir" checkout -q "$$sha"; \
+		fi; \
+	}; \
+	materialize devflow.spool "$$durl" "$$dsha" io.github.codethread/devflow.spool; \
+	materialize kanban.spool "$$kurl" "$$ksha" io.github.codethread/kanban.spool; \
+	dcmd="clojure -Sdeps '{:deps {io.skein/workflow-spool {:local/root \"../skein-src/spools/workflow\"}}}' -M:test"; \
+	kcmd="clojure -M:test"; \
+	echo "==> spool-suite-gate: devflow.spool@$$dsha (with workflow-spool injection)"; \
+	if ! ( cd "$$root/devflow.spool" && eval "$$dcmd" ); then \
+		printf '\n%s\n' "spool-suite-gate: devflow.spool@$$dsha FAILED against skein-src HEAD ($$src)" >&2; \
+		echo "  reproduce: make spool-suite-gate" >&2; \
+		echo "  or, in a sibling layout with ./skein-src beside ./devflow.spool, from devflow.spool/: $$dcmd" >&2; \
+		exit 1; \
+	fi; \
+	echo "==> spool-suite-gate: kanban.spool@$$ksha"; \
+	if ! ( cd "$$root/kanban.spool" && eval "$$kcmd" ); then \
+		printf '\n%s\n' "spool-suite-gate: kanban.spool@$$ksha FAILED against skein-src HEAD ($$src)" >&2; \
+		echo "  reproduce: make spool-suite-gate" >&2; \
+		echo "  or, in a sibling layout with ./skein-src beside ./kanban.spool, from kanban.spool/: $$kcmd" >&2; \
+		exit 1; \
+	fi; \
+	echo "spool-suite-gate: OK (devflow.spool@$$dsha, kanban.spool@$$ksha) against skein-src HEAD"
 
 # Reap the worktree's warm REPL by recorded PID (PID only, never `pkill -f`) and
 # remove the runtime files (PLAN-Ttv-001.R1). The land cleanup step calls this

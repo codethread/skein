@@ -1,0 +1,16 @@
+tasks:
+  - id: 1
+    description: make spool-suite-gate target (sha extract, layout, devflow injection, attribution)
+    task_file: tasks/001-make-spool-suite-gate-target.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Blocking spool-suites CI job in quality.yml
+    task_file: tasks/002-quality-yml-spool-suites-job.md
+    status: complete
+    blocked_by: [1]
+  - id: 3
+    description: Land merge-local-verify extension in .skein/workflows.clj
+    task_file: tasks/003-land-merge-local-verify-extension.md
+    status: complete
+    blocked_by: [1]

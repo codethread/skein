@@ -367,7 +367,8 @@
                                       " Then, on the merged local main, run the full local verification gate:"
                                       " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" flock -w 3600 /tmp/skein-test.lock clojure -M:test`,"
                                       " `(cd cli && go test ./...)`, `make fmt-check lint reflect-check docs-check`,"
-                                      " and the smoke suite `clojure -M:smoke`. If any gate fails:"
+                                      " the smoke suite `clojure -M:smoke`, and the spool-suite gate"
+                                      " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" make spool-suite-gate`. If any gate fails:"
                                       " `git reset --hard origin/main`, fix on the branch, and re-satisfy the"
                                       " ci-green and signoff-review steps before re-attempting. Record every gate"
                                       " result in notes. Do NOT push in this step."))})
