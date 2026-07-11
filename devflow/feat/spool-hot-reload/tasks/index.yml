@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: Dependency-ordered reload via tools.namespace
     task_file: tasks/002-dependency-ordered-reload.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 3
     description: Blessed runtime.alpha/reload-spool! verb

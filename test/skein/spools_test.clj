@@ -1535,3 +1535,68 @@
         (is (contains? #{:loaded :already-available}
                        (get-in (runtime/sync! rt) [:spools lib :status])))
         (is (= :no-namespaces (reload-reason rt lib)))))))
+
+;; PLAN-shr-001.V3: two intra-root namespaces where `a` uses a macro from `b`.
+;; A bumped `b` macro only reaches `a`'s expansion when `b` reloads before `a`;
+;; the reverse order re-expands `a` against the stale macro. Asserting `a`'s new
+;; value proves the topo-sort reloads dependencies first, not in arbitrary order.
+(deftest reload-synced-spool-reloads-intra-root-dependencies-first
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-b (symbol (str "demo.dep-macro-" suffix))
+            ns-a (symbol (str "demo.dep-consumer-" suffix))
+            lib (symbol (str "demo/dep-order-lib-" suffix))
+            root (io/file config-dir "spools" "dep-order")]
+        (.mkdirs (io/file root "src"))
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+        (write-spool-ns! root ns-b (str "(ns " ns-b ")\n(defmacro tag [] :v1)\n"))
+        (write-spool-ns! root ns-a
+                         (str "(ns " ns-a " (:require [" ns-b " :as b]))\n(defn value [] (b/tag))\n"))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/dep-order"}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (:status (runtime/use! rt (keyword (str "dep-order-" suffix))
+                                              {:ns ns-a :spools [lib]}))))
+        (is (= :v1 ((requiring-resolve (symbol (str ns-a "/value"))))))
+        (write-spool-ns! root ns-b (str "(ns " ns-b ")\n(defmacro tag [] :v2)\n"))
+        (let [result (spool-sync/reload-synced-spool! rt lib)]
+          (is (= :v2 ((requiring-resolve (symbol (str ns-a "/value")))))
+              "a re-expands against the bumped macro only if b reloaded first")
+          (is (= [ns-b ns-a] (mapv :ns (:namespaces result)))))))))
+
+;; PLAN-shr-001.V2 keystone (the gap proof): a synced+loaded spool fn returns :v1;
+;; after the source is bumped to :v2, neither the config `reload!` nor a bare
+;; `(require ns :reload)` — both blind to the spool classloader's roots — see the
+;; change, but `reload-synced-spool!` load-files it live under the spool loader.
+(deftest reload-synced-spool-picks-up-bumped-source-that-reload-and-require-miss
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.keystone-" suffix))
+            lib (symbol (str "demo/keystone-lib-" suffix))
+            root (io/file config-dir "spools" "keystone")
+            src-file (io/file root "src" "demo" (str "keystone_" suffix ".clj"))
+            version #(requiring-resolve (symbol (str ns-sym "/version")))]
+        (.mkdirs (.getParentFile src-file))
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+        (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v1)\n"))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/keystone"}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (:status (runtime/use! rt (keyword (str "keystone-" suffix))
+                                              {:ns ns-sym :spools [lib]}))))
+        (is (= :v1 ((version))))
+        (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v2)\n"))
+        ;; Config reload does not reload spool sources; it also clears the sync
+        ;; registry, so restore it with a plain re-sync (which only re-adds the
+        ;; root to the classloader — it never load-files the namespace).
+        (runtime/reload! rt)
+        (is (= :v1 ((version))) "config reload is blind to the bumped spool source")
+        (is (contains? #{:loaded :already-available}
+                       (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :v1 ((version))) "re-sync add-libs the root but does not reload the source")
+        ;; A bare require :reload runs on the base loader, which has no spool root.
+        (try (require ns-sym :reload) (catch java.io.FileNotFoundException _ nil))
+        (is (= :v1 ((version))) "require :reload is classloader-blind to the spool root")
+        (let [result (spool-sync/reload-synced-spool! rt lib)]
+          (is (= :v2 ((version))) "the blessed seam load-files the bumped source live")
+          (is (= [ns-sym] (mapv :ns (:namespaces result)))))))))

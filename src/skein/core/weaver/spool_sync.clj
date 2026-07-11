@@ -13,6 +13,8 @@
   (:require [clojure.java.io :as io]
             [clojure.repl.deps :as repl-deps]
             [clojure.string :as str]
+            [clojure.tools.namespace.dependency :as ns-dep]
+            [clojure.tools.namespace.parse :as ns-parse]
             [skein.core.format :as format]
             [skein.core.query :as query]
             [skein.core.weaver.access :refer [approved-spool-sync-state
@@ -586,15 +588,60 @@
      {:ns (source-file->ns-sym dir file)
       :file (.getCanonicalPath file)})))
 
+(defn- parse-source-ns
+  "Attach the declared namespace and its required deps to `source`.
+
+  Reads the source's `ns` form with `org.clojure/tools.namespace` — the same
+  battle-tested parser the compiler-agnostic `refresh` uses — rather than
+  trusting the classpath-derived name. `:deps` is the set of every namespace this
+  source requires/uses; the intra-root subset becomes the reload-order edges. A
+  source with no readable `ns` form keeps its path-derived `:ns` and contributes
+  no edges."
+  [{:keys [file] :as source}]
+  (with-open [reader (java.io.PushbackReader. (io/reader (io/file file)))]
+    (let [decl (ns-parse/read-ns-decl reader)]
+      (assoc source
+             :ns (if decl (ns-parse/name-from-ns-decl decl) (:ns source))
+             :deps (if decl (ns-parse/deps-from-ns-decl decl) #{})))))
+
+(defn- dependency-ordered-sources
+  "Order `sources` dependencies-first within this root only.
+
+  Each source is parsed for its `ns` form, then topologically sorted so a
+  namespace reloads after every intra-root namespace it requires. External
+  requires (`clojure.*`, blessed `skein.api.*`, other spools) are edges out of
+  the set and are neither ordered nor reloaded. Namespaces with no intra-root
+  relationship keep their discovery order and follow the sorted set."
+  [sources]
+  (let [parsed (mapv parse-source-ns sources)
+        by-ns (into {} (map (juxt :ns identity)) parsed)
+        intra (set (keys by-ns))
+        graph (reduce (fn [g {:keys [ns deps]}]
+                        (reduce (fn [g dep]
+                                  (if (contains? intra dep)
+                                    (ns-dep/depend g ns dep)
+                                    g))
+                                g
+                                deps))
+                      (ns-dep/graph)
+                      parsed)
+        sorted (filter intra (ns-dep/topo-sort graph))
+        remaining (remove (set sorted) (map :ns parsed))]
+    (mapv by-ns (concat sorted remaining))))
+
 (defn reload-synced-spool!
   "Make coordinate `coord`'s latest synced source live under the spool classloader.
 
   Resolves `coord`'s synced root from the runtime's approved-spool sync state and
   approved allowlist (a coordinate can be approved yet unsynced or sync-failed),
-  discovers its namespace sources under the consented `root-paths` classpath, and
-  `load-file`s each inside `with-spool-classloader`. Unlike `load-synced-namespace!`
-  there is no load-once short-circuit — already-loaded namespaces are reloaded. Load
-  order is provisional here; dependency ordering lands separately.
+  discovers its namespace sources under the consented `root-paths` classpath, sorts
+  them dependencies-first with `org.clojure/tools.namespace` (intra-root edges only),
+  and `load-file`s each inside `with-spool-classloader`. Unlike `load-synced-namespace!`
+  there is no load-once short-circuit — already-loaded namespaces are reloaded. A
+  bumped cross-namespace macro is therefore live for its consumers, which reload
+  after it. External requires are edges out of the set and are not reloaded, so this
+  is neither `refresh` (classloader-blind to spool roots) nor `require :reload-all`
+  (reloads transitive non-spool deps).
 
   Fails loudly with a reused `:reason` in ex-data (mirroring `sync-failed`'s
   `{:status :failed :reason …}` shape), checked in fixed order:
@@ -632,10 +679,11 @@
         (when (empty? sources)
           (throw (ex-info "Synced spool root has no namespace sources"
                           {:status :failed :reason :no-namespaces :coord coord :root canonical-root})))
-        (with-spool-classloader
-          runtime
-          (fn [] (doseq [{:keys [file]} sources]
-                   (load-file file))))
-        {:coord coord
-         :root canonical-root
-         :namespaces (mapv #(select-keys % [:ns :file]) sources)}))))
+        (let [ordered (dependency-ordered-sources sources)]
+          (with-spool-classloader
+            runtime
+            (fn [] (doseq [{:keys [file]} ordered]
+                     (load-file file))))
+          {:coord coord
+           :root canonical-root
+           :namespaces (mapv #(select-keys % [:ns :file]) ordered)})))))
