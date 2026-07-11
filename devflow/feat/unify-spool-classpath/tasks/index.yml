@@ -72,5 +72,5 @@ tasks:
   - id: 15
     description: "Queue acceptance: full locked suite + go + smoke + quality gates + fresh-world verify"
     task_file: tasks/015-queue-acceptance.md
-    status: pending
+    status: complete
     blocked_by: [14]
