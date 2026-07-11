@@ -59,7 +59,7 @@ Top categories:
 
 ### Reflection
 
-Totals: 0 reflection warnings. Every warning is fixed with a type hint at the definition site, so the gate is a blocking CI check that fails on any reflected interop. The gate compiles all of `src` (every `skein.*` namespace) plus every spool source root — `spools/src`, `spools/agent-run/src`, `spools/delegation/src`, `spools/chime/src`, and `spools/kanban/src` — so no shipped namespace escapes it. Repeated compile/reload warnings are preserved rather than deduplicated so the gate stays compiler-faithful.
+Totals: 0 reflection warnings. Every warning is fixed with a type hint at the definition site, so the gate is a blocking CI check that fails on any reflected interop. The gate compiles all of `src` (every `skein.*` namespace) plus every spool source root — `spools/src`, `spools/agent-run/src`, `spools/delegation/src`, and `spools/chime/src` — so no shipped namespace escapes it (`spools/kanban/src` was extracted to the external `kanban.spool` repo and no longer sits on this gate's classpath). Repeated compile/reload warnings are preserved rather than deduplicated so the gate stays compiler-faithful.
 
 The clusters hinted to reach zero:
 

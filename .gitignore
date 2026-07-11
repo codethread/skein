@@ -11,9 +11,6 @@ cli/bin/
 site/
 
 scripts/agent-dash/node_modules/
-scripts/kanban-export/node_modules/
-# kanban-export writes to /tmp by default; ignore any local --out overrides too
-/kanban-*.html
 
 .lsp/
 .clj-kondo/

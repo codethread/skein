@@ -25,7 +25,6 @@
             [skein.spools.workflow :as workflow]
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
-            [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]))
 
 ;; Reload correctness: clear this namespace's remembered ops/queries before the
@@ -670,62 +669,6 @@
                       {:branch branch})))
     {:operation "branches"
      :branches branches}))
-
-;; ---------------------------------------------------------------------------
-;; kanban-export: a card's full parent-of subtree for offline rendering
-;; ---------------------------------------------------------------------------
-
-(defn- export-strand
-  "Compact strand shape for the export payload, timestamps included.
-
-  Unlike loom's active-only `summarize`, this keeps closed strands and their
-  created/updated stamps so a consumer can show completed work and age."
-  [strand]
-  (select-keys strand [:id :title :state :attributes :created_at :updated_at]))
-
-(defn- internal-edges
-  "Return edges whose endpoints both sit in id-set, projected and sorted.
-
-  Subgraph expansion walks outward to strands beyond the subtree, so edges are
-  filtered against the subtree's own id set to keep the projection
-  self-contained (mirrors loom's internal-edge discipline)."
-  [id-set edges]
-  (->> edges
-       (filter #(and (contains? id-set (:from_strand_id %))
-                     (contains? id-set (:to_strand_id %))))
-       (sort-by (juxt :from_strand_id :to_strand_id :edge_type))
-       (mapv #(select-keys % [:from_strand_id :to_strand_id :edge_type]))))
-
-(defop kanban-export
-  "Return a card's full parent-of subtree with its internal depends-on edges.
-
-  Given a feature or epic card id, returns the root, every strand beneath it via
-  parent-of (all lifecycle states, so completed work still counts toward
-  progress), the parent-of hierarchy edges, and the depends-on edges internal to
-  the subtree. It is a read-only graph projection: presentation and the progress
-  rollup live in the consumer (scripts/kanban-export). The existing `subgraph`
-  op walks one relation at a time, so this op exists to bundle the hierarchy and
-  its dependencies in a single call. Fails loudly when the id is unknown."
-  {:arg-spec {:op "kanban-export"
-              :doc "Show a card's parent-of subtree with internal depends-on edges."
-              :positionals [{:name :card-id
-                             :type :string
-                             :required? true
-                             :doc "Feature or epic card strand id."}]}}
-  [ctx]
-  (let [{:keys [card-id]} (:op/args ctx)
-        rt (current/runtime)
-        card (weaver/show rt card-id)]
-    (when-not card
-      (throw (ex-info "kanban-export card not found" {:card-id card-id})))
-    (let [{:keys [strands edges]} (graph/subgraph rt [card-id] {:type "parent-of"})
-          id-set (set (map :id strands))
-          depends (:edges (graph/subgraph rt (vec id-set) {:type "depends-on"}))]
-      {:operation "kanban-export"
-       :root-id card-id
-       :strands (mapv export-strand strands)
-       :parent-of-edges (internal-edges id-set edges)
-       :depends-on-edges (internal-edges id-set depends)})))
 
 ;; ---------------------------------------------------------------------------
 ;; install!
