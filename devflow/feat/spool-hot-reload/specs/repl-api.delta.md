@@ -33,11 +33,17 @@ states only the durable contract additions.
 - **DELTA-shr-001.CC2:** `reload-spool!` fails loudly (TEN-003) on every unresolvable coordinate,
   carrying a `:reason` keyword in ex-data drawn from the runtime's **existing** vocabulary — no parallel
   words: `:not-approved` (coordinate not in approved config), `:not-synced` (approved but not synced),
-  `:sync-failed` (its sync did not succeed), `:missing-root` (synced but root absent on disk), and
-  `:no-namespaces` (root with no namespace sources — a misconfigured root, surfaced rather than swallowed
-  as an empty no-op). The synced-success gate reuses the same `#{:loaded :already-available}` set the
-  loader already treats as "root is on the classpath", so a root `reload-spool!` accepts is exactly a
-  root `use!` could have loaded.
+  `:sync-failed` (its sync did not succeed), `:missing-root` (synced but root absent on disk),
+  `:unreadable-root` (root present but not a readable directory), and `:no-namespaces` (root with no
+  namespace sources — a misconfigured root, surfaced rather than swallowed as an empty no-op). The
+  preconditions are checked in a fixed order: approved → sync status in the success set → root re-checked
+  on disk → namespace sources present. The synced-success gate reuses the same `#{:loaded
+  :already-available}` set the loader already treats as "root is on the classpath", so a root
+  `reload-spool!` accepts is exactly a root `use!` could have loaded. Because `reload-spool!` resolves the
+  root from post-sync state, a coordinate that synced cleanly can still have had its root replaced by a
+  file or its permissions stripped since; it re-checks the root on disk with the same
+  `exists`/`isDirectory`/`canRead` gate `sync-approved-spool!` uses — mapping to `:missing-root` vs
+  `:unreadable-root` — rather than falling through to a raw `load-file` exception carrying no `:reason`.
 
 - **DELTA-shr-001.CC3:** `reload-spool!` reloads *code only* and leaves registry re-registration to the
   caller — it does not call `reload!`, and `reload!` does not call it. The two are complementary halves
@@ -76,7 +82,7 @@ states only the durable contract additions.
 ## DELTA-shr-001.P4 Open questions
 
 - **DELTA-shr-001.Q1:** None block promotion. The two spec-plan questions the proposal deferred are
-  resolved in the plan: Q2 (daemon-runtime.md cross-reference) resolved as *no change* — daemon-runtime
-  reaffirmed, not amended; Q1 (test-ns split) resolved in the plan's validation strategy. On promotion,
-  CC1–CC4 merge into repl-api.md (SPEC-003.P5 helper list, SPEC-003.C17 enumeration, and the reload
-  paragraph) and this delta is marked Merged.
+  resolved in the plan: `PROP-shr-001.Q2` (daemon-runtime.md cross-reference) resolved as *no change* —
+  daemon-runtime reaffirmed, not amended; `PROP-shr-001.Q1` (test-ns split) resolved in the plan's
+  validation strategy. On promotion, CC1–CC4 merge into repl-api.md (SPEC-003.P5 helper list,
+  SPEC-003.C17 enumeration, and the reload paragraph) and this delta is marked Merged.

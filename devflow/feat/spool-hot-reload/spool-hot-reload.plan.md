@@ -6,7 +6,7 @@
 **RFC:** none
 **Root specs:** [repl-api.md](../../specs/repl-api.md) (SPEC-003), [alpha-surface.md](../../specs/alpha-surface.md) (SPEC-005), [daemon-runtime.md](../../specs/daemon-runtime.md) (SPEC-004)
 **Feature specs:** [specs/repl-api.delta.md](./specs/repl-api.delta.md) (DELTA-shr-001)
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-11
 
 ## PLAN-shr-001.P1 Goal and scope
@@ -33,9 +33,15 @@ reopened. Out of scope: any classloader-ownership redesign, namespace *unload*, 
   coordinate can be approved yet unsynced or sync-failed. Read the runtime's approved-spool sync state
   (`skein.core.weaver.access/approved-spool-sync-state`, the atom `synced-root-paths` reads) plus the
   approved allowlist, and fail loudly at the first unmet precondition with a `:reason` keyword reused from
-  the existing vocabulary (`:not-approved`/`:not-synced`/`:sync-failed`/`:missing-root`/`:no-namespaces`).
-  The sync-success gate reuses the loader's own `#{:loaded :already-available}` set so "reloadable" and
-  "loadable by `use!`" mean the same thing.
+  the existing vocabulary
+  (`:not-approved`/`:not-synced`/`:sync-failed`/`:missing-root`/`:unreadable-root`/`:no-namespaces`). The
+  preconditions run in a fixed order — approved → sync status in the success set → root re-checked on disk
+  → namespace sources present. The sync-success gate reuses the loader's own `#{:loaded :already-available}`
+  set so "reloadable" and "loadable by `use!`" mean the same thing. Because the root is resolved from
+  post-sync state, a coordinate that synced cleanly can still have had its root replaced by a file or its
+  permissions stripped since, so the root is re-checked on disk with the same `exists`/`isDirectory`/
+  `canRead` gate `sync-approved-spool!` uses (`spool_sync.clj:456-458`), mapping to `:missing-root` vs
+  `:unreadable-root` rather than falling through to a raw `load-file` exception with no `:reason`.
 - **PLAN-shr-001.A3:** Discover namespace sources with the existing `root-paths` fn (reads the root's
   `deps.edn :paths`, default `["src"]`, guards `..`/symlink escape), so the reload file set is exactly the
   consented classpath. Every `.clj`/`.cljc` under those dirs is a namespace source of the spool.
@@ -88,9 +94,11 @@ reopened. Out of scope: any classloader-ownership redesign, namespace *unload*, 
 Outcome: `skein.core.weaver.spool-sync/reload-synced-spool!` resolves a coordinate's synced root from
 sync state, discovers its namespace sources via `root-paths`, and `load-file`s them under
 `with-spool-classloader` (provisional order), making the coordinate's latest synced source live. Every
-unresolvable precondition throws loudly with its reused `:reason` in ex-data
-(`:not-approved`/`:not-synced`/`:sync-failed`/`:missing-root`/`:no-namespaces`). Verified by the
-failure-mode tests and a basic single-namespace reload.
+unresolvable precondition throws loudly with its reused `:reason` in ex-data, checked in order
+(`:not-approved`/`:not-synced`/`:sync-failed`/`:missing-root`/`:unreadable-root`/`:no-namespaces`); the
+on-disk root re-check mirrors `sync-approved-spool!`'s `exists`/`isDirectory`/`canRead` gate so a synced
+root later replaced-by-a-file or permission-stripped fails with `:missing-root`/`:unreadable-root` instead
+of a raw `load-file` exception. Verified by the failure-mode tests and a basic single-namespace reload.
 
 ### PLAN-shr-001.PH2 Dependency-ordered reload
 
@@ -132,7 +140,8 @@ only the expected `runtime.alpha` diff; DELTA-shr-001 is ready to merge into rep
 - **PLAN-shr-001.V3:** Dependency order: two namespaces in one root, `a` using a macro from `b`; bump
   `b`'s macro, `reload-spool!`, assert `a` reflects the new expansion (proving `b` reloads before `a`).
 - **PLAN-shr-001.V4:** Failure modes: `ex-data :reason` assertion for each of `:not-approved`,
-  `:not-synced`, `:sync-failed`, `:missing-root`, `:no-namespaces`.
+  `:not-synced`, `:sync-failed`, `:missing-root`, `:unreadable-root` (synced root replaced by a file or
+  permission-stripped after sync), and `:no-namespaces`.
 - **PLAN-shr-001.V5:** Full locked suite `flock -w 3600 /tmp/skein-test.lock clojure -M:test` at queue
   acceptance and at land only — never a per-slice gate.
 - **PLAN-shr-001.V6:** `(cd cli && go test ./...)` and `clojure -M:smoke` as regression insurance (no
@@ -175,12 +184,24 @@ only the expected `runtime.alpha` diff; DELTA-shr-001 is ready to merge into rep
   `:missing-root` reason), `skein.core.weaver.access` (`with-spool-classloader`,
   `approved-spool-sync-state`), `skein.core.weaver.runtime` (`with-runtime-and-spool-classloader`).
 - **PLAN-shr-001.TC4:** Reason vocabulary is reused, not invented: `use-spool-skip` emits
-  `:not-approved`/`:not-synced`/`:sync-failed`; `sync-approved-spool!` emits `:missing-root`;
-  `:no-namespaces` is the single new keyword for the new multi-namespace-discovery condition.
+  `:not-approved`/`:not-synced`/`:sync-failed`; `sync-approved-spool!` emits `:missing-root` and
+  `:unreadable-root` (`spool_sync.clj:456-458`); `:no-namespaces` is the single new keyword for the new
+  multi-namespace-discovery condition.
 - **PLAN-shr-001.TC5:** Test harness lives in `test/skein/spools_test.clj` with
   `skein.spools.test-support/with-runtime`; reuse `write-local-lib!`/`write-spools!`/`write-spool-ns!`.
 - **PLAN-shr-001.TC6:** Non-goal to hold: no namespace *unload* (PROP-shr-001.NG2/DL5); a renamed/removed
   namespace lingers until restart.
+- **PLAN-shr-001.TC7:** Queue strategy — the four phases map to four thin AFK vertical slices, one agent
+  run each, strictly sequential (`blocked_by` chains 001→002→003→004): (1) core seam + full failure
+  contract (all six reused reasons, provisional load order) with failure-mode + single-namespace tests;
+  (2) `org.clojure/tools.namespace` on the weaver `deps.edn` + intra-root dependency-ordered reload with
+  the dependency-order and keystone-regression tests; (3) the thin blessed `runtime.alpha/reload-spool!`
+  with its gap-naming docstring, symbol-guard coverage, keystone through the blessed fn, and `make
+  api-docs`; (4) the CLAUDE.md/`docs/skein.md` pickup-ladder correction through the docs-style gate. The
+  DELTA-shr-001 → repl-api.md merge is a land-time promotion step, not an implementation slice (kept out
+  of scope on every task). Every slice's Done-when cold gate is `clojure -M:test skein.spools-test` (plus
+  `make fmt-check lint reflect-check` on code slices, `make api-docs`/`docs-check` on doc slices); the
+  full locked suite is queue-acceptance/land only, never a per-slice gate (V5).
 
 ## PLAN-shr-001.P9 Developer Notes
 
@@ -191,3 +212,20 @@ only the expected `runtime.alpha` diff; DELTA-shr-001 is ready to merge into rep
   do not add a spurious SPEC-005.C2 edit or a daemon-runtime cross-reference.
 - Verified at authoring: `org.clojure/tools.namespace` is **not** yet on the weaver `deps.edn`, so PH2's
   dependency add is a real change; the sync-state/classloader seam fns all exist as cited.
+
+### PLAN-shr-001.DN2 Task z9x0x: queue authored + review NTHs folded — 2026-07-11
+
+- Folded the review synthesis (note `pi8iq`, run `b8zd1`) nice-to-haves before generating tasks:
+  - **NH1 (`:unreadable-root` sixth-reason gap):** the failure contract now enumerates a sixth reused
+    reason `:unreadable-root` alongside `:missing-root`, with an explicit fixed check order and an on-disk
+    root re-check mirroring `sync-approved-spool!`'s `exists`/`isDirectory`/`canRead` gate
+    (`spool_sync.clj:456-458`). This closes the fall-through where a coordinate that synced OK then had its
+    root replaced-by-a-file or permission-stripped hit a raw `load-file` exception with no `:reason`.
+    Amended in this plan (A2, PH1, V4, TC4) and in DELTA-shr-001.CC2. PH1's task carries it.
+  - **NH2 (anchor-id clarity):** DELTA-shr-001.Q1 now qualifies the proposal's open questions as
+    `PROP-shr-001.Q1`/`PROP-shr-001.Q2` rather than bare `Q1`/`Q2`.
+  - **NH3 (citation precision):** plan A2 already names the public seam
+    `access/approved-spool-sync-state`; `synced-root-paths` is referenced only as the descriptor of what
+    that atom feeds, not as the read anchor, so no further change.
+- The status flip Draft → Reviewed is this task's precondition for task generation, not a fresh review
+  decision; both review passes already PASSED with zero must-fix.
