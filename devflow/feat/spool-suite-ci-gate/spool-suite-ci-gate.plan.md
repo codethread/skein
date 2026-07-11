@@ -6,7 +6,7 @@
 **RFC:** none
 **Root specs:** none <!-- CI/process infra; no root spec owns CI or land gates (see PLAN-ssc-001.CM1) -->
 **Feature specs:** none <!-- no durable domain contract changes; no-delta argument in PLAN-ssc-001.CM1 -->
-**Status:** Draft
+**Status:** Reviewed
 **Last Updated:** 2026-07-11
 
 ## PLAN-ssc-001.P1 Goal and scope
@@ -45,9 +45,10 @@ stage.
 - **PLAN-ssc-001.A3 — Sibling-layout arrangement (PROP-ssc-001.S3).** For each spool: materialize the
   spool source at its pinned sha into a scratch working dir (shallow `git clone` + `git checkout
   <sha>`, or an equivalent `~/.gitlibs` copy), and arrange a `skein-src` entry beside it resolving to
-  the candidate skein-src at HEAD (a symlink/checkout of the PR head), matching the spools' committed
-  `:local/root "../skein-src"` default. Use a scratch root (`mktemp -d`), never the developer's real
-  sibling tree.
+  the candidate skein-src at HEAD, matching the spools' committed `:local/root "../skein-src"` default.
+  "Candidate skein-src at HEAD" means the **invoking repo checkout** — the PR head on CI, the merged
+  local main at land (A6) — never a hard-coded PR-head assumption; resolve it from the make target's
+  own working directory. Use a scratch root (`mktemp -d`), never the developer's real sibling tree.
 
 - **PLAN-ssc-001.A4 — Devflow-only workflow-spool injection (PROP-ssc-001.S3; empirically forced).**
   `devflow.spool@e9b28f5`'s `:test` alias supplies only `io.skein/skein {:local/root "../skein-src"}`
@@ -56,11 +57,14 @@ stage.
   `skein.spools.workflow`, so the devflow suite is RED on a clean HEAD with
   `Could not locate skein/spools/workflow` until the moved root is supplied. The gate runs the devflow
   suite with the workflow-spool root injected at job time:
-  `clojure -Sdeps '{:deps {io.skein/workflow-spool {:local/root "../skein-src/spools/workflow"}}}' -M:test`
-  (or an equivalent added test alias). `kanban.spool` already carries `io.skein/workflow-spool` in its
-  own `:test` alias and runs plain `clojure -M:test` with no injection. This is a skein-src-side
-  run-time arrangement, not a spool edit (PROP-ssc-001.NG2). Red→green verified locally — see
-  PLAN-ssc-001.V1 and task note p4nbj.
+  `clojure -Sdeps '{:deps {io.skein/workflow-spool {:local/root "../skein-src/spools/workflow"}}}' -M:test`.
+  Only NG2-safe injection forms are permitted: the `-Sdeps` command-line dep map above, or a
+  skein-src-side/user `deps.edn` (a file the gate owns on the skein-src side). An alias composable into
+  the spool's own `clojure -M:test` can only come from the spool's own `deps.edn` — adding it there
+  edits `devflow.spool` and violates NG2, so it is **forbidden**; do not add a test alias into
+  `devflow.spool`. `kanban.spool` already carries `io.skein/workflow-spool` in its own `:test` alias
+  and runs plain `clojure -M:test` with no injection. This is a skein-src-side run-time arrangement, not
+  a spool edit (PROP-ssc-001.NG2). Red→green verified locally — see PLAN-ssc-001.V1 and task note p4nbj.
 
 - **PLAN-ssc-001.A5 — Blocking CI placement (PROP-ssc-001.S1).** A new job in
   `.github/workflows/quality.yml` (working name `spool-suites`), a peer of `clojure-test` /
@@ -81,8 +85,9 @@ stage.
 - **PLAN-ssc-001.A7 — Failure attribution (PROP-ssc-001.G3/S5; TEN-003).** On any red suite the target
   fails loudly naming the spool (`devflow.spool` / `kanban.spool`), its resolved sha, and the one
   command that reproduces it locally (`make spool-suite-gate`, or the exact per-spool `clojure`
-  invocation including the `-Sdeps` injection for devflow). The command is emitted from the resolved
-  values, never hand-copied.
+  invocation including the NG2-safe `-Sdeps` injection for devflow — never an alias added into
+  `devflow.spool` itself; see PLAN-ssc-001.A4). The command is emitted from the resolved values, never
+  hand-copied.
 
 ## PLAN-ssc-001.P3 Affected areas
 
@@ -102,7 +107,10 @@ stage.
   and `codethread/kanban.spool` are downstream consumers of skein, not skein-shipped reference spools —
   SPEC-005.C3's in-contract reference-spool list is exactly the in-tree spools (`bobbin`, `carder`,
   `ephemeral`, `executors/shell`, `guild`, `loom`, `roster`, `selvage`, `text-search`, `workflow`) and
-  does not include them, so no alpha-surface contract covers these suites. The land workflow op surface
+  does not include them, so no alpha-surface contract covers these suites. SPEC-005.C4 makes the point
+  directly rather than by omission: it names `devflow` by name as externally-distributed userland
+  "outside this line", owning its own README/cadence contracts — so no skein alpha-surface contract can
+  cover these suites and no `*.delta.md` is warranted. The land workflow op surface
   lives in `.skein/workflows.clj`, which is repo coordination config, not a root-spec domain, and the
   `:merge-local-verify` change is an instruction-string edit, not a new op or a change to any workflow
   engine contract. `deps.edn` is read only. Therefore no `*.delta.md` is written; the durable pins stay
@@ -179,6 +187,16 @@ a disposable world and confirming the rendered step instruction lists the new ga
 - **PLAN-ssc-001.TC4:** `.skein/workflows.clj` config changes pick up via `runtime/reload!`; smoke-test
   in a disposable `mktemp -d` `--workspace` world, never the canonical `.skein`, and never restart a
   running weaver.
+- **PLAN-ssc-001.TC5 — Task-queue strategy (three AFK slices, linear PH1→PH2→PH3).** The queue mirrors
+  the phases: (001) the `make spool-suite-gate` target owning sha-extraction + sibling layout + the
+  NG2-safe devflow-only `-Sdeps` workflow-spool injection + failure attribution, self-validated by the
+  V1 red→green plus a malformed-`deps.edn` sha-extraction-fails-loudly probe; (002) the blocking
+  `spool-suites` job in `quality.yml` calling the target, syntactically validated locally with the live
+  green/red proof deferred honestly to the PR CI at land; (003) the land `:merge-local-verify`
+  instruction-string extension in `.skein/workflows.clj`, smoke-tested in a disposable `--workspace`
+  world with `runtime/reload!`, never a weaver restart. 002 and 003 both depend on 001; they are
+  independent of each other. No Clojure src/test namespace changes, so no per-slice `clojure -M:test`
+  cold gate applies (V2) — the gates are the shell/YAML/config validations named in each task file.
 
 ## PLAN-ssc-001.P9 Developer Notes
 
@@ -191,3 +209,19 @@ a disposable world and confirming the rendered step instruction lists the new ga
   target. PROP-ssc-001.S6 (land gate) resolved in PLAN-ssc-001.A6 as **include**.
 - S3 red→green empirically re-confirmed from task note p4nbj (predecessor u0avh); the plan does not
   re-run it — the implementer must, against the actual make target.
+
+### PLAN-ssc-001.DN2 Task txnue: task-queue stage — 2026-07-11
+
+- Applied the four orthogonal nice-to-haves from plan-review synthesis note `lqqg1` (run a0p9p) before
+  flipping Status Draft→Reviewed:
+  - NTH-1: CM1 now cites SPEC-005.C4 (names `devflow` by name as externally-distributed userland
+    "outside this line"), a direct authority stronger than C3's exclusion-by-omission.
+  - NTH-2: A4/A7 now name only the NG2-safe injection forms (`-Sdeps` or a skein-src-side/user
+    `deps.edn`) and explicitly forbid adding a test alias into `devflow.spool`'s own `deps.edn`.
+  - NTH-3: A3 now resolves "candidate skein-src" to the invoking repo checkout (PR head on CI, merged
+    local main at land), avoiding a hard-coded PR-head assumption that would misbehave at land.
+  - NTH-4 (provenance nit, no plan defect): the empirical reproduction note is `p4nbj` (by u0avh) on
+    this feature's card, not the `in1kg` id cited in the launch brief. The plan already cites `p4nbj`
+    correctly at V1/TC2/DN1; task 001 references `p4nbj`.
+- Queue written: three linear AFK slices (001 make target → 002 CI job → 003 land extension). No
+  cycles; 002 and 003 both blocked_by 001, independent of each other.
