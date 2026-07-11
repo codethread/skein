@@ -34,6 +34,9 @@
   ;; Per-worktree warm test REPL: compose with :test to inherit its classpath and
   ;; native-access opt — `clojure -M:test:test-repl` boots skein.test.warm.
   :test-repl {:main-opts ["-m" "skein.test.warm"]}
+  :large-attr-bench {:extra-paths ["test" "spools/text-search/src"]
+                     :jvm-opts ["--enable-native-access=ALL-UNNAMED"]
+                     :main-opts ["-m" "skein.large-attr-benchmark"]}
   :repl {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
   :rebel {:jvm-opts ["--enable-native-access=ALL-UNNAMED"]
           :main-opts ["-m" "rebel-readline.main"]}

@@ -92,7 +92,7 @@
 (def ^:private usage
   (str/join
    "\n"
-   ["Usage: SKEIN_LARGE_ATTR_BENCH_FULL=1 clojure -M:test -m skein.large-attr-benchmark [options]"
+   ["Usage: SKEIN_LARGE_ATTR_BENCH_FULL=1 clojure -M:large-attr-bench [options]"
     ""
     "Runs both measurement families at full scale and writes results.edn under --out."
     "Env-gated: without SKEIN_LARGE_ATTR_BENCH_FULL set, the run refuses (this is an"

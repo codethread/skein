@@ -1,6 +1,6 @@
 # Large-attribute Scaling — Assessment Report
 
-**Document ID:** `ASSESS-LargeAttrScaling-001` **Feature:** `large-attr-scaling` **Plan:** [large-attr-scaling.plan.md](./large-attr-scaling.plan.md) (`PLAN-LargeAttrScaling-001`) **Proposal:** [proposal.md](./proposal.md) (`PROP-LargeAttrScaling-001`) **Status:** `S2` numbers recorded; `S3` (residual-options assessment + verdict) and the re-run usage note are appended by later slices.
+**Document ID:** `ASSESS-LargeAttrScaling-001` **Feature:** `large-attr-scaling` **Plan:** [large-attr-scaling.plan.md](./large-attr-scaling.plan.md) (`PLAN-LargeAttrScaling-001`) **Proposal:** [proposal.md](./proposal.md) (`PROP-LargeAttrScaling-001`) **Status:** `S2` numbers recorded; `S3` residual-options verdict complete; re-run usage documented.
 
 ## Baseline run
 
@@ -43,6 +43,24 @@ The full-scale default profile from `default-options` in the harness, unmodified
 | `point-read-sample` | `500` |
 
 Measured row counts: `250000` strands, `50012` archived (≈20%), `16666` rows matching the filtered-scan predicate in both schemas, `62500` rows in the `ready` view in both schemas.
+
+## Re-running the harness
+
+Use the dev/test entrypoint below. It is only for re-running this assessment harness (`NG3`); it is not a shipped CLI or agent surface.
+
+```sh
+ws=$(mktemp -d)
+cd /Users/ct/dev/projects/skein-src__large-attr-scaling
+PATH="/opt/homebrew/opt/openjdk/bin:$PATH" \
+  flock -w 3600 /tmp/skein-bench.lock \
+  env SKEIN_LARGE_ATTR_BENCH_FULL=1 clojure -M:large-attr-bench --seed 1337 --n 250000 --out "${ws:?}"
+```
+
+The `:large-attr-bench` alias runs `skein.large-attr-benchmark/-main` directly. This avoids the broken `clojure -M:test -m ...`
+form: `:test` already pins `:main-opts` to `skein.test-runner`, so trailing `-m skein.large-attr-benchmark` is treated as test-runner
+arguments. The default profile is already `--seed 1337 --n 250000`; the flags are shown here to make the pinned seed profile explicit.
+The harness writes raw EDN to `${ws:?}/results.edn`. Copy that file into `devflow/feat/large-attr-scaling/results/` only when updating the committed
+baseline report.
 
 ## Gate reproduction (`BG1`–`BG4`)
 

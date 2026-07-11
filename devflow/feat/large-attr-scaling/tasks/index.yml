@@ -17,5 +17,5 @@ tasks:
   - id: 4
     description: "PH4: re-run usage note + inert-gate sweep (go/smoke/quality) + clean tree"
     task_file: tasks/004-wrapup-gates.md
-    status: pending
+    status: complete
     blocked_by: [3]
