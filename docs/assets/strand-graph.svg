@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 412" role="img"
+     aria-label="Four strands in a graph, each carrying its attributes map. 'Write the docs' and 'Build the CLI' depend on 'Sketch the data model'; 'Announce the release' depends on both of them. Only 'Sketch the data model' is ready.">
+  <style>
+    svg { --line: #6e7781; --title: #1f2328; --muted: #57606a; --ready: #1a7f37; --blocked: #9a6700; }
+    @media (prefers-color-scheme: dark) {
+      svg { --line: #8b949e; --title: #e6edf3; --muted: #9198a1; --ready: #3fb950; --blocked: #d29922; }
+    }
+    text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .box { fill: none; stroke: var(--line); stroke-width: 1.4; }
+    .title { font-size: 13px; font-weight: 600; fill: var(--title); text-anchor: middle; }
+    .attrs { font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: var(--muted); text-anchor: middle; }
+    .state { font-size: 11.5px; fill: var(--muted); text-anchor: middle; }
+    .ready { fill: var(--ready); }
+    .blocked { fill: var(--blocked); }
+    .edge { stroke: var(--line); stroke-width: 1.4; fill: none; }
+    .label { font-size: 11.5px; font-style: italic; fill: var(--muted); }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--line)"/>
+    </marker>
+  </defs>
+
+  <!-- Sketch the data model: nothing blocks it, so it is the ready frontier -->
+  <rect class="box" x="218" y="24" width="204" height="76" rx="9"/>
+  <text class="title" x="320" y="46">Sketch the data model</text>
+  <text class="attrs" x="320" y="65">{"type": "docs"}</text>
+  <text class="state" x="320" y="84"><tspan class="ready">●</tspan> ready</text>
+
+  <!-- Write the docs -->
+  <rect class="box" x="64" y="168" width="204" height="76" rx="9"/>
+  <text class="title" x="166" y="190">Write the docs</text>
+  <text class="attrs" x="166" y="209">{"type": "docs"}</text>
+  <text class="state" x="166" y="228"><tspan class="blocked">●</tspan> blocked</text>
+
+  <!-- Build the CLI -->
+  <rect class="box" x="372" y="168" width="204" height="76" rx="9"/>
+  <text class="title" x="474" y="190">Build the CLI</text>
+  <text class="attrs" x="474" y="209">{"type": "code"}</text>
+  <text class="state" x="474" y="228"><tspan class="blocked">●</tspan> blocked</text>
+
+  <!-- Announce the release: blocked until both dependencies close -->
+  <rect class="box" x="218" y="312" width="204" height="76" rx="9"/>
+  <text class="title" x="320" y="334">Announce the release</text>
+  <text class="attrs" x="320" y="353">{}</text>
+  <text class="state" x="320" y="372"><tspan class="blocked">●</tspan> blocked</text>
+
+  <!-- depends-on edges, each pointing at the work it waits on -->
+  <line class="edge" x1="200" y1="168" x2="288" y2="104" marker-end="url(#arrow)"/>
+  <text class="label" x="244" y="130" text-anchor="end">depends-on</text>
+  <line class="edge" x1="440" y1="168" x2="352" y2="104" marker-end="url(#arrow)"/>
+  <line class="edge" x1="280" y1="312" x2="192" y2="248" marker-end="url(#arrow)"/>
+  <line class="edge" x1="360" y1="312" x2="448" y2="248" marker-end="url(#arrow)"/>
+</svg>

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 300" role="img"
+     aria-label="mill, the supervisor, routes to one weaver per workspace; a worktree of repo-a uses the same repo-a weaver; each weaver owns its own skein.sqlite of strands.">
+  <style>
+    svg { --line: #6e7781; --title: #1f2328; --muted: #57606a; }
+    @media (prefers-color-scheme: dark) {
+      svg { --line: #8b949e; --title: #e6edf3; --muted: #9198a1; }
+    }
+    text { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .box { fill: none; stroke: var(--line); stroke-width: 1.4; }
+    .stack { fill: none; stroke: var(--line); stroke-width: 1.4; opacity: 0.4; }
+    .dashed { stroke-dasharray: 5 4; }
+    .title { font-size: 13px; font-weight: 600; fill: var(--title); text-anchor: middle; }
+    .chip { font-size: 12px; font-weight: 600; fill: var(--title); text-anchor: middle; }
+    .sub { font-size: 11.5px; fill: var(--muted); text-anchor: middle; }
+    .label { font-size: 11px; font-style: italic; fill: var(--muted); }
+    .edge { stroke: var(--line); stroke-width: 1.4; fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--line)"/>
+    </marker>
+  </defs>
+
+  <!-- mill -->
+  <rect class="box" x="200" y="18" width="160" height="56" rx="9"/>
+  <text class="title" x="280" y="42">mill</text>
+  <text class="sub" x="280" y="60">supervisor · start once</text>
+
+  <line class="edge" x1="244" y1="74" x2="170" y2="122" marker-end="url(#arrow)"/>
+  <line class="edge" x1="316" y1="74" x2="406" y2="122" marker-end="url(#arrow)"/>
+
+  <!-- a linked worktree of repo-a resolves to the same workspace, so the same weaver -->
+  <rect class="box dashed" x="24" y="30" width="152" height="40" rx="9"/>
+  <text class="chip" x="100" y="55">repo-a worktree</text>
+  <line class="edge dashed" x1="100" y1="70" x2="115" y2="122" marker-end="url(#arrow)"/>
+  <text class="label" x="120" y="102">same weaver</text>
+
+  <!-- weavers, one per workspace -->
+  <rect class="box" x="32" y="128" width="224" height="56" rx="9"/>
+  <text class="title" x="144" y="152">weaver</text>
+  <text class="sub" x="144" y="170">workspace: repo-a</text>
+
+  <rect class="box" x="304" y="128" width="224" height="56" rx="9"/>
+  <text class="title" x="416" y="152">weaver</text>
+  <text class="sub" x="416" y="170">workspace: repo-b</text>
+
+  <line class="edge" x1="144" y1="184" x2="144" y2="226" marker-end="url(#arrow)"/>
+  <line class="edge" x1="416" y1="184" x2="416" y2="226" marker-end="url(#arrow)"/>
+
+  <!-- strands, drawn as a small stack of records -->
+  <rect class="stack" x="42" y="224" width="204" height="52" rx="9"/>
+  <rect class="box" x="32" y="232" width="204" height="52" rx="9"/>
+  <text class="title" x="134" y="254">strands</text>
+  <text class="sub" x="134" y="272">repo-a's own skein.sqlite</text>
+
+  <rect class="stack" x="326" y="224" width="204" height="52" rx="9"/>
+  <rect class="box" x="316" y="232" width="204" height="52" rx="9"/>
+  <text class="title" x="418" y="254">strands</text>
+  <text class="sub" x="418" y="272">repo-b's own skein.sqlite</text>
+</svg>
