@@ -67,7 +67,7 @@ tasks:
   - id: 14
     description: "PH5: docs restructure + spec-delta promotion + api-docs regen"
     task_file: tasks/014-docs-spec-promotion-api-docs.md
-    status: pending
+    status: complete
     blocked_by: [13]
   - id: 15
     description: "Queue acceptance: full locked suite + go + smoke + quality gates + fresh-world verify"

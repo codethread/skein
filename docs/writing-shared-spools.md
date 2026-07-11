@@ -67,7 +67,7 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
    resolves. This keeps registration serialisable and runtime-portable.
 4. **Fail loudly (TEN-003).** On unexpected input or missing state, throw with
    data. Do not paper over it with a "sensible default" or a fallback to the
-   published runtime. Reach for `skein.spools.util` (`fail!`,
+   published runtime. Reach for `skein.api.spool.alpha` (`fail!`,
    `reject-unknown-keys!`, `require-valid!`, `attr-key->str`) instead of
    re-deriving these seams per spool.
 5. **Never depend on the ergonomics layer.** A shared spool must **not** require
@@ -89,7 +89,7 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
    concurrent updates each start from a possibly-stale read and the later write
    silently drops the earlier one (a lost-update race). `weaver/update` returns the
    full merged strand, so a delta write loses no result fidelity. For reads, use
-   the shared tolerant reader `skein.spools.util/attr-get` (keyword key, bare
+   the shared tolerant reader `skein.api.spool.alpha/attr-get` (keyword key, bare
    string fallback) and `attr-key->str` for wire-key coercion rather than
    re-deriving a per-file attribute accessor. This delta write rides SQLite's
    `json_patch`, whose merge semantics treat an explicit `nil` value as a
@@ -105,14 +105,14 @@ backs it with the duplicate-owner check: if two owners claim the same namespace,
 
 ## Shared helper namespaces
 
-The shipped reference spools share two small helper namespaces. They are part of the spool-authoring contract only where this guide documents them. Prefer these helpers over local copies when writing a shared spool.
+Every reference spool builds on two small blessed helper namespaces, `skein.api.spool.alpha` and `skein.api.format.alpha`. Both are source-visible on the Skein checkout/classpath — require them directly, no `spools.edn` approval needed. They are part of the spool-authoring contract only where this guide documents them; prefer them over local copies when writing a shared spool.
 
-### `skein.spools.util`
+### `skein.api.spool.alpha`
 
 Require it from spool code when you need fail-loud validation, attribute-key normalisation, or a caller-owned polling loop:
 
 ```clojure
-(require '[skein.spools.util :as spool-util])
+(require '[skein.api.spool.alpha :as spool])
 ```
 
 - `(fail! message data)` and `(fail! message data cause)` throw `ex-info` with
@@ -139,15 +139,13 @@ Require it from spool code when you need fail-loud validation, attribute-key nor
   It validates all five entries before polling, so bad inputs fail at the seam
   instead of surfacing later as a bare null or sleep error.
 
-### `skein.spools.format`
+### `skein.api.format.alpha`
 
 Require it when a spool needs to publish prose as data, such as `about` payloads or long rule descriptions:
 
 ```clojure
-(require '[skein.spools.format :as spool-format])
+(require '[skein.api.format.alpha :as format])
 ```
-
-The same two helpers are also blessed as `skein.api.format.alpha` for code outside the spool layer (trusted config, userland, core); both names share one implementation and one contract.
 
 Both helpers read `|`-margin strings. The first `|` on each source line marks column 0, so the surrounding Clojure form may be indented freely.
 
@@ -161,7 +159,7 @@ Both helpers read `|`-margin strings. The first `|` on each source line marks co
 Example:
 
 ```clojure
-(spool-format/fill
+(format/fill
   "|First prose item
    |continues on the next source line.
    |
@@ -234,7 +232,7 @@ Include a **Dependency information** section with a complete `spools.edn` snippe
    :git/tag "v0.1.0"}}}
 ```
 
-If a prerequisite is shipped on Skein's own classpath, document the namespace and why it is required, but do not invent a coordinate for it. Shipped namespaces are already trusted as part of the selected Skein checkout.
+If a prerequisite is a blessed `skein.api.*.alpha` namespace or `skein.spools.batteries` (Skein's one classpath-shipped spool, see [Classpath exception: batteries](../spools/README.md#classpath-exception-batteries)), document the namespace and why it is required, but do not invent a coordinate for it — both are already trusted as part of the selected Skein checkout. Every other reference spool is never a shipped-classpath prerequisite: if your spool depends on one, list it as an ordinary `spools.edn` coordinate above, the same as any other spool prerequisite.
 
 ### README activation snippet
 

@@ -44,7 +44,7 @@ Group active branch-stamped work roots into per-branch progress views.
   Fails loudly on unknown opt keys, a non-keyword `:branch-attr`, or a
   non-string `:branch`. Returns a vector of `{:branch :roots}` sorted by
   branch name.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L141-L184">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/loom/src/skein/spools/loom.clj#L141-L184">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/flow-status">`flow-status`</a>
 ``` clojure
@@ -59,7 +59,7 @@ Return workflow flow status by joining history, frontier, gates, runs, and stall
   this run's own gates and their delegated runs so records from other workflows
   never surface in an unrelated run's payload. Includes a `:dev/mermaid` gate
   chain rendered by `gate-chain-mermaid`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L267-L300">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/loom/src/skein/spools/loom.clj#L267-L300">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/gate-chain-mermaid">`gate-chain-mermaid`</a>
 ``` clojure
@@ -72,7 +72,7 @@ Return a dev-only Mermaid chain showing ready, stalled, and closed gates.
   `gates` are compact gate projections (as from `flow-status`); `ready-ids` is
   the set of ids on the ready frontier. This is the single render helper for the
   gate chain, so any op reusing it renders identical marker/node/link logic.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L247-L265">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/loom/src/skein/spools/loom.clj#L247-L265">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/install!">`install!`</a>
 ``` clojure
@@ -85,7 +85,7 @@ Return loom installation metadata for trusted registration by name.
   Loom registers no ops; it is a read-only projection library that repo config
   and other spools compose. This metadata mirrors the other read-only spools for
   discovery symmetry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L302-L315">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/loom/src/skein/spools/loom.clj#L302-L315">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/summarize">`summarize`</a>
 ``` clojure
@@ -94,7 +94,7 @@ Return loom installation metadata for trusted registration by name.
 Function.
 
 Return the compact strand shape used by read-only projections.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L36-L39">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/loom/src/skein/spools/loom.clj#L36-L39">Source</a></sub></p>
 
 ## <a name="skein.spools.loom/work-dags">`work-dags`</a>
 ``` clojure
@@ -107,4 +107,4 @@ Return active parent-of work DAGs and their active depends-on edges.
   Projects every active parent-of root, its hierarchy edges, dependency edges,
   and compact strand rows into one JSON-compatible `{:roots :dags}` structure —
   the flat CLI query surface returns strand rows, this joins them into DAGs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/loom.clj#L93-L113">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/loom/src/skein/spools/loom.clj#L93-L113">Source</a></sub></p>

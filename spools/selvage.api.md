@@ -23,7 +23,7 @@ Return vocabulary violations for one strand map or strand id.
 
   Missing strand ids fail loudly through the public graph surfaces. A clean
   strand returns an empty vector.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L181-L194">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L181-L194">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/check-all">`check-all`</a>
 ``` clojure
@@ -36,7 +36,7 @@ Return vocabulary violations across active strands.
 
   With no arguments checks all active strands. With `query-form`, checks only
   strands selected by that predicate DSL query.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L196-L206">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L196-L206">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/clear-violations!">`clear-violations!`</a>
 ``` clojure
@@ -45,7 +45,7 @@ Return vocabulary violations across active strands.
 Function.
 
 Clear recorded watch-mode violations.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L269-L273">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L269-L273">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/defvocab!">`defvocab!`</a>
 ``` clojure
@@ -59,7 +59,7 @@ Register or replace an attribute vocabulary for this weaver lifetime.
   `{:attr s :enum [...]}`, `{:attr s :kind k}`, and
   `{:attr s :required-with other-attr}`. Unknown keys and unknown kinds throw
   `ex-info` with allowed values. Returns the registered metadata.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L98-L110">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L98-L110">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/install!">`install!`</a>
 ``` clojure
@@ -68,7 +68,7 @@ Register or replace an attribute vocabulary for this weaver lifetime.
 Function.
 
 Install Selvage watch support into the active weaver and return metadata.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L275-L283">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L275-L283">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/record-event!">`record-event!`</a>
 ``` clojure
@@ -80,7 +80,7 @@ Event handler that records violations for strand added/updated events.
 
   Intended for registration by `watch!`. Handler exceptions are deliberately not
   caught here so the weaver event failure surface records them.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L242-L255">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L242-L255">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/remove-vocab!">`remove-vocab!`</a>
 ``` clojure
@@ -91,7 +91,7 @@ Function.
 Remove a registered vocabulary by name.
 
   Missing vocabularies fail loudly. Returns `{:removed name}`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L117-L126">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L117-L126">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/undeclared-checks">`undeclared-checks`</a>
 ``` clojure
@@ -111,7 +111,7 @@ Return registered selvage checks whose `:attr` namespace no vocabulary
   Read-only composition sugar over `vocabs` — it references the registry, never
   enforces it. Registered nowhere by default: no watch, no new enforcement path,
   and no change to selvage's `:enum`/`:kind`/`:required-with` linting model.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L217-L240">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L217-L240">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/violations">`violations`</a>
 ``` clojure
@@ -120,7 +120,7 @@ Return registered selvage checks whose `:attr` namespace no vocabulary
 Function.
 
 Return recorded watch-mode violations in delivery order.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L264-L267">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L264-L267">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/vocabs">`vocabs`</a>
 ``` clojure
@@ -129,7 +129,7 @@ Return recorded watch-mode violations in delivery order.
 Function.
 
 Return registered vocabulary metadata in deterministic order.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L112-L115">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L112-L115">Source</a></sub></p>
 
 ## <a name="skein.spools.selvage/watch!">`watch!`</a>
 ``` clojure
@@ -138,4 +138,4 @@ Return registered vocabulary metadata in deterministic order.
 Function.
 
 Register the asynchronous mutation watcher for post-hoc violation recording.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/src/skein/spools/selvage.clj#L257-L262">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/selvage/src/skein/spools/selvage.clj#L257-L262">Source</a></sub></p>

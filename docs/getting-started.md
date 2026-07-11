@@ -322,6 +322,9 @@ The generated `init.clj` is a small bootstrap:
 (def runtime (current/runtime))
 
 (runtime/sync! runtime)
+;; batteries is the one classpath-shipped spool: require it explicitly before
+;; its use! rather than approving a spools.edn coordinate for it.
+(require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
