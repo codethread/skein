@@ -1,0 +1,11 @@
+tasks:
+  - id: 1
+    description: Retained-root detector and loud-failure preflight
+    task_file: tasks/001-detector-and-preflight.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Stub-dir remedy round-trip
+    task_file: tasks/002-stub-dir-remedy-round-trip.md
+    status: complete
+    blocked_by: [1]

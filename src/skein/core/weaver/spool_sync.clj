@@ -10,7 +10,8 @@
   trusted `skein.api.runtime.alpha` surface delegates its
   `approved`/`sync!`/`syncs` publics and its module loading here and owns the
   blessed contract (SPEC-004, SPEC-005.C5)."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.java.basis :as basis]
+            [clojure.java.io :as io]
             [clojure.repl.deps :as repl-deps]
             [clojure.string :as str]
             [skein.core.format :as format]
@@ -481,16 +482,77 @@
                                                        (ex-data t) (assoc :data (ex-data t))
                                                        fetch (assoc :fetch fetch))))))))
 
+(defn- retained-root-orphans
+  "Detector: retained `:libs` entries whose local root has left the allowlist and disk.
+
+  Pure over (`retained-libs`, `allowlist`, filesystem): returns a vector of
+  `{:lib <lib symbol> :local/root <path string>}` for every `retained-libs` entry
+  that (a) carries a `:local/root`, (b) whose path no longer `.exists`, and (c)
+  whose lib symbol is absent from the `allowlist` set. A nil/empty `retained-libs`
+  yields no orphans. Its only side input is the on-disk existence probe; it never
+  reads or mutates the process-global basis (`DELTA-srr-dr-001.CC1`)."
+  [retained-libs allowlist]
+  (into []
+        (keep (fn [[lib coord]]
+                (when-let [root (:local/root coord)]
+                  (when (and (not (.exists (io/file root)))
+                             (not (contains? allowlist lib)))
+                    {:lib lib :local/root root}))))
+        retained-libs))
+
+(defn- basis-retained-root-orphans
+  "Feed the session-retained runtime basis into the retained-root detector.
+
+  Supplies `(:libs (clojure.java.basis/current-basis))` — the process-global
+  universe `add-libs` re-canonicalizes — and `allowlist` to `retained-root-orphans`.
+  Reading the basis is pure inspection; it never mutates `the-basis`."
+  [allowlist]
+  (retained-root-orphans (:libs (basis/current-basis)) allowlist))
+
+(defn- retained-root-orphans-error
+  "Build the loud whole-sync failure for a non-empty retained-root orphan set.
+
+  Assembles the stack-trace-free `ex-info` of `DELTA-srr-dr-001.CC2`: the message
+  names each deleted retained lib and path and why `sync!` cannot proceed, and
+  `ex-data` carries `:missing-roots`, the named-not-applied `:remedy`, and the
+  `:retained-universe-source` so the diagnostic is self-describing."
+  [orphans]
+  (let [listing (str/join ", "
+                          (map (fn [{:keys [lib] :local/keys [root]}]
+                                 (str lib " (" root ")"))
+                               orphans))]
+    (ex-info (str (format/reflow
+                   "|Sync aborted: a session-retained spool root was deleted from disk and has
+                     |left the approved allowlist. add-libs retains every runtime-added local/root
+                     |in the process-global tools.deps basis, so the next add-libs would fail while
+                     |re-canonicalizing the deleted coordinate — naming the stale retained lib, not
+                     |the spool being synced. sync! cannot proceed until the retained basis resolves.")
+                  " Deleted retained roots: " listing
+                  ". Remedy: recreate a bare directory at each deleted path (:stub-dir, effective"
+                  " until the next weaver restart clears the retained basis), or restart the weaver"
+                  " JVM to discard the retained basis (:restart).")
+             {:missing-roots (vec orphans)
+              :remedy {:stub-dir "recreate a bare directory at each deleted :local/root path; effective until the next weaver restart clears the retained basis"
+                       :restart "restart the weaver JVM to discard the session-retained tools.deps basis"}
+              :retained-universe-source '(:libs (clojure.java.basis/current-basis))})))
+
 (defn sync-approved-spools
   "Load approved local spools into the runtime classloader and record sync status."
   [runtime]
+  ;; Stale state clears before anything that can throw — a structural
+  ;; spools.edn failure or a retained-root preflight abort both leave {} rather
+  ;; than the previous sync's results.
   (reset! (approved-spool-sync-state runtime) {})
   (let [approved (approved-spools runtime)
-        results (into (sorted-map)
-                      (map (fn [[lib entry]] (sync-approved-spool! runtime lib entry)))
-                      (:spools approved))]
-    (reset! (approved-spool-sync-state runtime) results)
-    {:spools results}))
+        allowlist (set (keys (:spools approved)))
+        orphans (basis-retained-root-orphans allowlist)]
+    (when (seq orphans)
+      (throw (retained-root-orphans-error orphans)))
+    (let [results (into (sorted-map)
+                        (map (fn [[lib entry]] (sync-approved-spool! runtime lib entry)))
+                        (:spools approved))]
+      (reset! (approved-spool-sync-state runtime) results)
+      {:spools results})))
 
 (defn approved-spool-syncs
   "Return the most recent approved spool sync results."
