@@ -5,7 +5,8 @@
             [clojure.test :refer [deftest is]]
             [nrepl.core :as nrepl]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]))
 
 (defn test-world [config-dir]
   (weaver-config/world config-dir
@@ -23,6 +24,53 @@
   ;; temp spool roots prevents later add-libs calls in this shard from failing
   ;; while canonicalizing an earlier, now-deleted local/root coordinate.
   nil)
+
+;; The retained-root detector is tested purely over SYNTHETIC :libs maps whose
+;; :local/root points at a temp dir this test owns and deletes — never via add-libs
+;; and never against the live basis — so deleting the root cannot poison the
+;; shard's JVM-global tools.deps basis (PLAN-srr-001.PH1).
+(defn- deleted-temp-root! [prefix]
+  (let [dir (temp-dir prefix)
+        root (.getCanonicalPath dir)]
+    (.delete dir)
+    root))
+
+(deftest retained-root-detector-flags-allowlist-orphan
+  (let [lib 'orphan/deleted
+        root (deleted-temp-root! "skein-retained-orphan")
+        orphans (@#'spool-sync/retained-root-orphans {lib {:local/root root}} #{})]
+    (is (= [{:lib lib :local/root root}] orphans))
+    (let [err (@#'spool-sync/retained-root-orphans-error orphans)
+          data (ex-data err)]
+      (is (str/includes? (ex-message err) (str lib)))
+      (is (str/includes? (ex-message err) root))
+      (is (= [{:lib lib :local/root root}] (:missing-roots data)))
+      (is (contains? (:remedy data) :stub-dir))
+      (is (contains? (:remedy data) :restart))
+      (is (some? (:retained-universe-source data))))))
+
+(deftest retained-root-detector-ignores-healthy-root
+  (let [dir (temp-dir "skein-retained-healthy")
+        root (.getCanonicalPath dir)]
+    (try
+      (is (= [] (@#'spool-sync/retained-root-orphans {'healthy/present {:local/root root}} #{})))
+      (finally
+        (.delete dir)))))
+
+(deftest retained-root-detector-reports-all-missing-roots
+  (let [r1 (deleted-temp-root! "skein-retained-m1")
+        r2 (deleted-temp-root! "skein-retained-m2")
+        orphans (@#'spool-sync/retained-root-orphans {'a/one {:local/root r1}
+                                                      'b/two {:local/root r2}}
+                                                     #{})]
+    (is (= 2 (count orphans)))
+    (is (= #{{:lib 'a/one :local/root r1} {:lib 'b/two :local/root r2}}
+           (set orphans)))))
+
+(deftest retained-root-detector-excludes-still-approved-root
+  (let [lib 'approved/deleted
+        root (deleted-temp-root! "skein-retained-approved")]
+    (is (= [] (@#'spool-sync/retained-root-orphans {lib {:local/root root}} #{lib})))))
 
 (defn- write-hot-lib! [config-dir suffix]
   (let [root (io/file config-dir "spools" "runtime-spike")
