@@ -388,9 +388,26 @@ The report has `totals`, `groups`, and per-run `runs`. Each run includes `id`, `
 `cost-usd`, `tokens-total`, optional `tokens`, `duration-ms`, `started-at`, and `finished-at`.
 
 **Why this shape.** `pi-json` folds per-message usage deltas into one run total. `claude-json` reads
-Claude's final result object. Raw harness output records no cost or token usage, but still reports
+Claude's final result object. `codex-json` takes the last (cumulative) `turn.completed` event — codex
+reports tokens but no dollar cost, so a seat's `:cost-rates` card derives `cost-usd` from the token
+split when one is declared. Raw harness output records no cost or token usage, but still reports
 wall time because the spend reader derives `duration-ms` from the run timestamps. Missing cost or
 token figures stay null and sums skip them; the engine never writes a fake zero.
+
+**Cost from a rate card.** A token-only harness (`codex-json`) prices out only when its seat declares a
+rate card:
+
+```clojure
+;; USD per 1M tokens; the seat that picks the model carries the card
+(defalias! :mini-gpt-codex
+  {:alias-of :codex
+   :extra-args ["-m" "gpt-5.4-mini"]
+   :cost-rates {:input 0.25 :cache-read 0.025 :output 2.0}})
+```
+
+An alias-level card overrides the tool's own, so per-model pricing lives beside the model choice. With
+no card, the run still records its tokens — cost just stays absent (a recorded token count without a
+cost beats a guessed number). See [`agent-run/README.md` §3.2](./agent-run/README.md#32-cost-rate-cards-cost-rates).
 
 Honest source: `skein.spools.agent-run/spend` and the `strand agent spend` subcommand in the
 delegation spool.

@@ -79,6 +79,21 @@
           (is (= ["tool" "-p"] (:argv effective)))
           (is (= ["--model" "fast"] (:extra-args effective)))
           (is (= "Review: " (:prompt-prefix effective)))))
+      (testing "a seat-level rate card overrides the tool's default card"
+        ;; a codex seat picks the model, so per-model pricing lives on the seat
+        ;; and must win over the tool's base card; a seat with none inherits it.
+        (shuttle/defharness! :priced {:argv ["tool"] :parse :codex-json
+                                      :cost-rates {:input 1.25 :output 10.0}})
+        (shuttle/defalias! :priced-cheap {:alias-of :priced
+                                          :cost-rates {:input 0.25 :output 2.0}})
+        (shuttle/defalias! :priced-default {:alias-of :priced})
+        (is (= {:input 0.25 :output 2.0} (:cost-rates (shuttle/resolve-harness :priced-cheap)))
+            "the seat's card wins over the tool's")
+        (is (= {:input 1.25 :output 10.0} (:cost-rates (shuttle/resolve-harness :priced-default)))
+            "a seat with no card inherits the tool's")
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cost-rates"
+                              (shuttle/defharness! :bad {:argv ["x"] :cost-rates {:inputs 1.0}}))
+            "a typo'd rate key fails at registration rather than going unpriced"))
       (testing "the listing shows alias and root-harness docs together"
         (let [by-name (into {} (map (juxt :name identity)) (shuttle/harnesses))
               fast (get by-name "fast")
@@ -1219,6 +1234,78 @@
       (is (not (contains? (:usage parsed) :tokens-total)))
       (is (not (contains? (:usage parsed) :cost-usd))))))
 
+(deftest parse-codex-json-takes-last-cumulative-turn
+  ;; codex's turn.completed usage is the cumulative session total, not a
+  ;; per-turn delta (openai/codex#17539): the fixture carries two turn.completed
+  ;; events and the run total is the LAST, never a sum. This is the opposite
+  ;; fold from pi's per-turn deltas, so a copy of that logic would break here.
+  (let [{:keys [result session-id usage]} (#'shuttle/parse-codex-json (fixture "codex-json.out"))
+        {:keys [tokens]} usage]
+    (testing "session id comes from thread.started and result is the last agent_message"
+      (is (= "codex-thread-fixture" session-id))
+      (is (= "Final sanitized codex result summary." result)
+          "the trailing agent_message wins over the earlier partial"))
+    (is (= "codex-json" (:usage-source usage)))
+    (testing "tokens-total is the last turn's input+output, never a cross-turn sum"
+      (is (= (+ 14437 320) (:tokens-total usage)))
+      (is (= 14757 (:tokens-total usage)))
+      (is (not= (+ 8200 14757) (:tokens-total usage))
+          "22957 would be a sum across the two cumulative turns"))
+    (testing "the breakdown splits cached out of input and keeps reasoning beside output"
+      (is (= (- 14437 10112) (:input tokens)) "input is uncached = input_tokens - cached")
+      (is (= 4325 (:input tokens)))
+      (is (= 10112 (:cache-read tokens)))
+      (is (= 320 (:output tokens)))
+      (is (= 64 (:reasoning tokens))))
+    (testing "codex reports no dollar cost, so a bare parse carries none"
+      (is (not (contains? usage :cost-usd))))))
+
+(deftest parse-codex-json-no-agent-message-is-blank
+  ;; A stream with usage but no agent_message spent tokens yet produced no
+  ;; report; :result must be blank (never the raw stream) so finish-run!'s exit-0
+  ;; blank-result guard fires instead of closing a hollow done.
+  (let [stdout (str/join "\n"
+                         ["{\"type\":\"thread.started\",\"thread_id\":\"t-none\"}"
+                          "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":100,\"cached_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0}}"])
+        {:keys [result session-id usage]} (#'shuttle/parse-codex-json stdout)]
+    (is (str/blank? result) "no agent_message means a blank result, never the raw stream")
+    (is (= "t-none" session-id) "session id and usage are still captured for forensics")
+    (is (= 100 (:tokens-total usage)))))
+
+(deftest parse-codex-json-non-numeric-usage-fails-loudly
+  ;; codex usage drift (a token field as string/null) must fail loudly through
+  ;; the shared normalize-usage path, never silently drop or price as zero.
+  (let [stdout (str "{\"type\":\"turn.completed\",\"usage\":"
+                    "{\"input_tokens\":\"lots\",\"cached_input_tokens\":0,\"output_tokens\":5,\"reasoning_output_tokens\":0}}")]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"usage figure is not a number"
+                          (#'shuttle/parse-codex-json stdout)))))
+
+(deftest apply-cost-rates-derives-cost-from-token-split
+  ;; A token-only usage tally gains cost-usd only when a rate card prices it; the
+  ;; card is USD per 1M over the stored split, and usage-source is left as the
+  ;; parser set it so a derived cost stays distinguishable from a reported one.
+  (let [usage {:usage-source "codex-json" :tokens-total 14757
+               :tokens {:input 4325 :cache-read 10112 :output 320 :reasoning 64}}
+        rates {:input 1.25 :cache-read 0.125 :output 10.0}
+        priced (#'shuttle/apply-cost-rates usage rates)
+        expected (+ (* (/ 4325 1e6) 1.25)
+                    (* (/ 10112 1e6) 0.125)
+                    (* (/ 320 1e6) 10.0))]
+    (is (about= expected (:cost-usd priced)))
+    (is (= "codex-json" (:usage-source priced))
+        "a card-derived cost keeps the parser's usage-source")
+    (testing "reasoning is unpriced — it is a subset of output already counted"
+      (is (= (:tokens usage) (:tokens priced))))
+    (testing "no card leaves the tally untouched"
+      (is (not (contains? (#'shuttle/apply-cost-rates usage nil) :cost-usd))))
+    (testing "a provider-reported cost is never overwritten by a card"
+      (let [reported (assoc usage :cost-usd 99.0)]
+        (is (= 99.0 (:cost-usd (#'shuttle/apply-cost-rates reported rates))))))
+    (testing "a card that prices no spent dimension leaves cost absent"
+      (is (not (contains? (#'shuttle/apply-cost-rates {:usage-source "codex-json" :tokens {}}
+                                                      rates)
+                          :cost-usd))))))
+
 (deftest parse-output-threads-usage-per-format
   (testing ":raw records nothing it cannot see — no :usage key"
     (let [parsed (#'shuttle/parse-output :raw "plain text output")]
@@ -1229,7 +1316,10 @@
       (is (= "pi-json" (get-in parsed [:usage :usage-source])))))
   (testing ":claude-json threads the folded usage"
     (let [parsed (#'shuttle/parse-output :claude-json (fixture "claude-json.out"))]
-      (is (= "claude-json" (get-in parsed [:usage :usage-source]))))))
+      (is (= "claude-json" (get-in parsed [:usage :usage-source])))))
+  (testing ":codex-json threads the cumulative-last usage"
+    (let [parsed (#'shuttle/parse-output :codex-json (fixture "codex-json.out"))]
+      (is (= "codex-json" (get-in parsed [:usage :usage-source]))))))
 
 (deftest pi-json-terminal-error-run-fails-loudly
   (with-shuttle
@@ -1375,6 +1465,77 @@
             "no total_cost_usd reported → the cost key is absent, never a stored 0")
         (is (= (+ 100 40) (:agent-run/tokens-total attrs)) "tokens are still captured")
         (is (= "claude-json" (:agent-run/usage-source attrs)))))))
+
+(def ^:private codex-stream
+  ;; one codex exec --json turn: thread id, an agent_message, and a cumulative
+  ;; turn.completed usage. Uncached input = 2000 - 500 = 1500.
+  (str "printf '%s\\n' "
+       "'{\"type\":\"thread.started\",\"thread_id\":\"codex-e2e\"}' "
+       "'{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"codex end to end\"}}' "
+       "'{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":2000,\"cached_input_tokens\":500,"
+       "\"output_tokens\":100,\"reasoning_output_tokens\":20}}'"))
+
+(deftest codex-json-completing-run-derives-cost-from-rate-card
+  (with-shuttle
+    (fn [rt]
+      ;; codex reports tokens but no dollar cost, so cost-usd is derived from the
+      ;; seat's :cost-rates card over the token split.
+      (shuttle/defharness! :sh-codex-rated
+        {:argv ["sh" "-c"] :parse :codex-json :preamble? false
+         :cost-rates {:input 1.25 :cache-read 0.125 :output 10.0}})
+      (let [run (shuttle/spawn-run! {:harness :sh-codex-rated :prompt codex-stream})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "closed" (:state done)))
+        (is (= "codex end to end" (:agent-run/result attrs)))
+        (is (= "codex-e2e" (:agent-run/session-id attrs)))
+        (is (= "codex-json" (:agent-run/usage-source attrs))
+            "the source stays codex-json so a card-derived cost is distinguishable")
+        (is (= (+ 2000 100) (:agent-run/tokens-total attrs)))
+        (is (= 1500 (get-in attrs [:agent-run/tokens :input])))
+        (is (= 500 (get-in attrs [:agent-run/tokens :cache-read])))
+        (is (= 100 (get-in attrs [:agent-run/tokens :output])))
+        (is (= 20 (get-in attrs [:agent-run/tokens :reasoning])))
+        (is (about= (+ (* (/ 1500 1e6) 1.25) (* (/ 500 1e6) 0.125) (* (/ 100 1e6) 10.0))
+                    (:agent-run/cost-usd attrs)))))))
+
+(deftest codex-json-run-without-rate-card-records-tokens-but-no-cost
+  (with-shuttle
+    (fn [rt]
+      ;; a token-only parse with no declared rate card leaves cost-usd absent —
+      ;; recorded tokens without cost beat a guessed number.
+      (shuttle/defharness! :sh-codex-norate {:argv ["sh" "-c"] :parse :codex-json :preamble? false})
+      (let [run (shuttle/spawn-run! {:harness :sh-codex-norate :prompt codex-stream})
+            done (await-phase rt (:id run) #{"done"})
+            attrs (:attributes done)]
+        (is (= "codex-json" (:agent-run/usage-source attrs)))
+        (is (= (+ 2000 100) (:agent-run/tokens-total attrs)) "tokens still land")
+        (is (= 1500 (get-in attrs [:agent-run/tokens :input])))
+        (is (not (contains? attrs :agent-run/cost-usd))
+            "no rate card → cost is absent, never a guessed number")))))
+
+(deftest codex-json-no-agent-message-run-fails-loudly
+  (with-shuttle
+    (fn [rt]
+      ;; a codex stream that spends tokens but emits no agent_message is a hollow
+      ;; done: the run is failed (loud, retryable) while its usage is preserved.
+      (shuttle/defharness! :sh-codex-noresult
+        {:argv ["sh" "-c"] :parse :codex-json :preamble? false
+         :cost-rates {:input 1.25 :output 10.0}})
+      (let [stream (str "printf '%s\\n' "
+                        "'{\"type\":\"thread.started\",\"thread_id\":\"codex-none\"}' "
+                        "'{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":300,"
+                        "\"cached_input_tokens\":0,\"output_tokens\":40,\"reasoning_output_tokens\":0}}'")
+            run (shuttle/spawn-run! {:harness :sh-codex-noresult :prompt stream})
+            failed (await-phase rt (:id run) #{"failed"})
+            attrs (:attributes failed)]
+        (is (= "active" (:state failed)) "loud and retryable")
+        (is (= "failed" (:agent-run/phase attrs)))
+        (is (str/includes? (:agent-run/error attrs) "empty result"))
+        (is (= "codex-none" (:agent-run/session-id attrs)) "session id survives the blank-result branch")
+        (is (= (+ 300 40) (:agent-run/tokens-total attrs)) "spent tokens are preserved")
+        (is (about= (+ (* (/ 300 1e6) 1.25) (* (/ 40 1e6) 10.0)) (:agent-run/cost-usd attrs))
+            "derived cost rides onto the failed record too")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Spend aggregation (PROP-Ru-001.C7)

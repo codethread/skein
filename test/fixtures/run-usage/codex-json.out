@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"codex-thread-fixture"}
+{"type":"item.completed","item":{"type":"reasoning","text":"internal reasoning, not the result"}}
+{"type":"item.completed","item":{"type":"agent_message","text":"First partial answer."}}
+{"type":"turn.completed","usage":{"input_tokens":8000,"cached_input_tokens":6000,"output_tokens":200,"reasoning_output_tokens":150}}
+{"type":"item.completed","item":{"type":"agent_message","text":"Final sanitized codex result summary."}}
+{"type":"turn.completed","usage":{"input_tokens":14437,"cached_input_tokens":10112,"output_tokens":320,"reasoning_output_tokens":64}}

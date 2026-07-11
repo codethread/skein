@@ -253,10 +253,16 @@
     (and (string? name) (not (str/blank? name))) (keyword name)
     :else (fail! "Harness name must be a keyword, symbol, or non-blank string" {:name name})))
 
-(def ^:private harness-def-keys #{:argv :parse :prompt-via :preamble? :env :cwd :doc :capture :resume})
-(def ^:private alias-def-keys #{:alias-of :extra-args :prompt-prefix :doc})
-(def ^:private parse-strategies #{:raw :claude-json :pi-json})
+(def ^:private harness-def-keys #{:argv :parse :prompt-via :preamble? :env :cwd :doc :capture :resume :cost-rates})
+(def ^:private alias-def-keys #{:alias-of :extra-args :prompt-prefix :doc :cost-rates})
+(def ^:private parse-strategies #{:raw :claude-json :pi-json :codex-json})
 (def ^:private prompt-via-strategies #{:arg :stdin})
+
+;; A token-only parse strategy (codex reports no dollar cost) turns into a
+;; cost-usd only when its seat declares a rate card. The card is USD per 1M
+;; tokens over the run's stored token split; the key set is closed so a typo'd
+;; rate diagnoses loudly instead of pricing that dimension at zero.
+(def ^:private cost-rate-keys #{:input :cache-read :output})
 
 ;; A harness :resume splice is literal argv strings interleaved with placeholder
 ;; keywords, each resolving from the predecessor run's captured attribute of the
@@ -284,6 +290,10 @@
 (s/def :skein.spools.agent-run.harness/env map?)
 (s/def :skein.spools.agent-run.harness/cwd string?)
 (s/def :skein.spools.agent-run.harness/doc string?)
+;; A closed map of at least one cost-rate-key -> non-negative USD-per-1M rate; a
+;; typo'd key fails the key predicate rather than silently going unpriced.
+(s/def :skein.spools.agent-run.harness/cost-rates
+  (s/map-of cost-rate-keys (s/and number? (complement neg?)) :min-count 1))
 (s/def ::harness-def
   (s/keys :req-un [:skein.spools.agent-run.harness/argv]
           :opt-un [:skein.spools.agent-run.harness/parse
@@ -291,7 +301,8 @@
                    :skein.spools.agent-run.harness/preamble?
                    :skein.spools.agent-run.harness/env
                    :skein.spools.agent-run.harness/cwd
-                   :skein.spools.agent-run.harness/doc]))
+                   :skein.spools.agent-run.harness/doc
+                   :skein.spools.agent-run.harness/cost-rates]))
 
 (s/def :skein.spools.agent-run.alias/alias-of
   (s/or :keyword keyword? :symbol symbol? :string (s/and string? (complement str/blank?))))
@@ -302,7 +313,10 @@
   (s/keys :req-un [:skein.spools.agent-run.alias/alias-of]
           :opt-un [:skein.spools.agent-run.alias/extra-args
                    :skein.spools.agent-run.alias/prompt-prefix
-                   :skein.spools.agent-run.alias/doc]))
+                   :skein.spools.agent-run.alias/doc
+                   ;; a seat picks the model (via --model / -m extra-args), so a
+                   ;; seat-level rate card is how per-model codex pricing lands
+                   :skein.spools.agent-run.harness/cost-rates]))
 
 (defn- validate-resume-argv!
   "Validate a harness :resume splice: a non-empty vector of literal strings and
@@ -372,9 +386,13 @@
 
   A harness def is plain data: required `:argv` (vector of strings; the run
   prompt is appended per `:prompt-via`, default `:arg`), optional `:parse`
-  strategy (:raw, :claude-json, :pi-json — default :raw), `:prompt-via`
-  (:arg or :stdin), `:preamble?` (default true; when false the run
-  preamble is not injected), `:env` map, `:cwd`, `:doc`, `:resume` — an argv
+  strategy (:raw, :claude-json, :pi-json, :codex-json — default :raw),
+  `:prompt-via` (:arg or :stdin), `:preamble?` (default true; when false the run
+  preamble is not injected), `:env` map, `:cwd`, `:doc`, `:cost-rates` — a rate
+  card `{:input :cache-read :output}` of USD per 1M tokens that derives
+  `agent-run/cost-usd` from a token-only tally (a parser like :codex-json that
+  reports tokens but no dollar cost); absent rates leave cost absent rather than
+  guessed — `:resume` — an argv
   splice of literal strings and placeholder keywords (from the closed
   `resume-placeholder-inputs` set) that continues a predecessor's session, each
   placeholder resolving from that predecessor run's captured attributes at
@@ -408,8 +426,10 @@
   "Register `name` as an alias (seat) layered over another harness or alias.
 
   Alias defs take `:alias-of` (required), `:extra-args` appended to the base
-  argv before the prompt, `:prompt-prefix` prepended to the run prompt, and
-  `:doc`. Aliases are how userland exposes its own named agent seats.
+  argv before the prompt, `:prompt-prefix` prepended to the run prompt, `:doc`,
+  and `:cost-rates` — a seat-level rate card (same shape as `defharness!`) that
+  overrides the tool's own card, since a seat is where the model is chosen.
+  Aliases are how userland exposes its own named agent seats.
 
   Writes only the alias (seat) registry, independent of the harness registry, so
   a seat may intentionally carry a tool's name — `defalias! :pi {:alias-of :pi}`
@@ -443,20 +463,26 @@
     (loop [key (harness-key name)
            seen #{}
            extra-args []
-           prompt-prefix ""]
+           prompt-prefix ""
+           cost-rates nil]
       (cond
         (and (not (contains? seen key)) (contains? alias-defs key))
         (let [def (get alias-defs key)]
           (recur (harness-key (:alias-of def))
                  (conj seen key)
                  (into (vec (:extra-args def)) extra-args)
-                 (str (:prompt-prefix def) prompt-prefix)))
+                 (str (:prompt-prefix def) prompt-prefix)
+                 ;; outermost seat's rates win: `or` keeps the first declared as
+                 ;; the chain flattens inward toward the tool
+                 (or cost-rates (:cost-rates def))))
 
         (contains? harness-defs key)
-        (assoc (get harness-defs key)
-               :name key
-               :extra-args extra-args
-               :prompt-prefix prompt-prefix)
+        (cond-> (assoc (get harness-defs key)
+                       :name key
+                       :extra-args extra-args
+                       :prompt-prefix prompt-prefix)
+          ;; a seat-level rate card overrides the tool's own default card
+          cost-rates (assoc :cost-rates cost-rates))
 
         (contains? alias-defs key)
         (fail! "Harness alias chain contains a cycle"
@@ -991,11 +1017,69 @@
       {:result (str/trim stdout)
        :usage (pi-usage events)})))
 
+(defn- parse-codex-json
+  "Parse `codex exec --json` output: a JSONL event stream. Keep the last
+  agent_message as the result, the started thread id as the session id, and the
+  LAST turn.completed usage as the run's tally.
+
+  codex's turn.completed usage is the CUMULATIVE session total, not a per-turn
+  delta (openai/codex#17539), so the run total is the last turn.completed —
+  never a sum across them, the opposite fold from pi's per-turn deltas.
+  `cached_input_tokens` is a subset of `input_tokens` and
+  `reasoning_output_tokens` a subset of `output_tokens`, so the stored breakdown
+  splits input into `:input` (uncached) and `:cache-read` (cached), keeps
+  `:output` whole with `:reasoning` recorded beside it, and `:tokens-total` is
+  the harness's own input+output. codex reports no dollar cost (subscription
+  auth); a harness `:cost-rates` card is what later turns these tokens into a
+  cost. For a stream with no agent_message `:result` is blank — never the raw
+  stream — so the exit-0 blank-result guard stays reachable."
+  [stdout]
+  (let [lines (->> (str/split-lines stdout)
+                   (map str/trim)
+                   (remove str/blank?))
+        events (keep (fn [line]
+                       (try
+                         (let [v (json/read-str line)]
+                           (when (map? v) v))
+                         (catch Exception _ nil)))
+                     lines)
+        agent-message (->> events
+                           (filter #(and (= "item.completed" (get % "type"))
+                                         (= "agent_message" (get-in % ["item" "type"]))))
+                           (keep #(get-in % ["item" "text"]))
+                           last)
+        session-id (some #(when (= "thread.started" (get % "type")) (get % "thread_id"))
+                         events)
+        last-usage (->> events
+                        (filter #(= "turn.completed" (get % "type")))
+                        (keep #(get % "usage"))
+                        last)]
+    (cond-> {:result (or agent-message "")}
+      session-id (assoc :session-id session-id)
+      last-usage
+      (assoc :usage
+             (let [input (get last-usage "input_tokens")
+                   cached (get last-usage "cached_input_tokens")
+                   output (get last-usage "output_tokens")
+                   reasoning (get last-usage "reasoning_output_tokens")
+                   ;; split cached out of input so the two dims never double-count;
+                   ;; both non-numeric drift falls through to normalize-usage,
+                   ;; which fails loudly naming the offending figure
+                   uncached (when (and (number? input) (number? cached)) (- input cached))]
+               (normalize-usage
+                {:usage-source "codex-json"
+                 :tokens-total (when (and (number? input) (number? output)) (+ input output))
+                 :tokens {:input (if (some? uncached) uncached input)
+                          :cache-read cached
+                          :output output
+                          :reasoning reasoning}}))))))
+
 (defn- parse-output [strategy stdout]
   (case (or strategy :raw)
     :raw {:result (str/trim stdout)}
     :claude-json (parse-claude-json stdout)
-    :pi-json (parse-pi-json stdout)))
+    :pi-json (parse-pi-json stdout)
+    :codex-json (parse-codex-json stdout)))
 
 ;; ---------------------------------------------------------------------------
 ;; Spawn engine
@@ -1226,6 +1310,31 @@
     tokens-total (assoc "agent-run/tokens-total" tokens-total)
     (seq tokens) (assoc "agent-run/tokens" tokens)))
 
+(defn- apply-cost-rates
+  "Derive `:cost-usd` for a token-only usage tally from a harness `:cost-rates`
+  card. `cost-rates` is USD per 1M tokens keyed by the token split `:input`
+  (uncached), `:cache-read` (cached), `:output`.
+
+  Only the dimensions the run actually spent (normalize-usage has already
+  dropped nil/zero) and the card actually prices contribute — a spent dimension
+  with no matching rate is left out rather than guessed at zero. A usage that
+  already carries provider cost, a run with no card, or a card with no priced
+  dimension leaves the tally untouched, so absent cost stays absent (recorded
+  tokens without cost beat a guessed number). The `:usage-source` is never
+  rewritten, keeping a card-derived cost distinguishable from a provider-reported
+  one."
+  [usage cost-rates]
+  (if (or (nil? usage) (contains? usage :cost-usd) (nil? cost-rates))
+    usage
+    (let [tokens (:tokens usage)
+          priced (keep (fn [[dim rate]]
+                         (when-let [n (get tokens dim)]
+                           (* (/ n 1e6) rate)))
+                       cost-rates)]
+      (if (seq priced)
+        (assoc usage :cost-usd (reduce + priced))
+        usage))))
+
 (defn- finish-run! [id process harness out-file err-file]
   (let [exit (.waitFor ^Process process)
         stdout (read-file-safe out-file)
@@ -1239,6 +1348,9 @@
               (catch Exception e
                 {:result (str/trim stdout)
                  :parse-error (str (ex-message e))}))
+            ;; a token-only parser (codex-json) yields no cost of its own; the
+            ;; seat's rate card is what turns those tokens into cost-usd
+            usage (apply-cost-rates usage (:cost-rates harness))
             usage-attrs (usage->attrs usage)]
         (cond
           ;; exit 0 but the harness's own event stream reports a terminal

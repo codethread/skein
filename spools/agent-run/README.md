@@ -50,13 +50,15 @@ Harnesses are data-first launcher definitions registered in trusted Clojure; ali
 
 | Fn | Behavior |
 |---|---|
-| `(defharness! name def)` | Register a concrete harness. `def` requires `:argv` and may include `:parse`, `:prompt-via`, `:preamble?`, `:env`, `:cwd`, `:doc`, `:resume` (session continuation splice — see [§3.1](#31-session-continuation-resume)), and `:capture` (interactive transcript capture — see [§4.1](#41-transcript-capture)). |
-| `(defalias! name def)` | Register an alias over a harness or another alias. Alias defs require `:alias-of` and may add `:extra-args`, `:prompt-prefix`, and `:doc`. |
+| `(defharness! name def)` | Register a concrete harness. `def` requires `:argv` and may include `:parse`, `:prompt-via`, `:preamble?`, `:env`, `:cwd`, `:doc`, `:cost-rates` (rate card — see [§3.2](#32-cost-rate-cards-cost-rates)), `:resume` (session continuation splice — see [§3.1](#31-session-continuation-resume)), and `:capture` (interactive transcript capture — see [§4.1](#41-transcript-capture)). |
+| `(defalias! name def)` | Register an alias over a harness or another alias. Alias defs require `:alias-of` and may add `:extra-args`, `:prompt-prefix`, `:doc`, and `:cost-rates` (a seat-level rate card that overrides the tool's). |
 | `(resolve-harness name)` | Return the effective harness after flattening aliases; alias cycles fail loudly. |
 | `(harnesses)` | Return registered harness and alias metadata ordered by name. |
 | `(register-default-harnesses!)` | Register shipped `claude`, `pi`, and `sh` harnesses without replacing existing entries. |
 
-Default parse strategies are `:raw`, `:claude-json`, and `:pi-json`. The `sh` harness is intended for tests and plumbing.
+Default parse strategies are `:raw`, `:claude-json`, `:pi-json`, and `:codex-json`. The `sh` harness is intended for tests and plumbing.
+
+`:codex-json` parses `codex exec --json` (a JSONL event stream): the result is the last `agent_message` item, the session id is the started thread id, and usage comes from the **last** `turn.completed` event. codex's `turn.completed` usage is the *cumulative* session total, not a per-turn delta (openai/codex#17539), so the run total is the last event, never a sum — the opposite fold from `:pi-json`'s per-turn deltas. `cached_input_tokens` is split out of `input_tokens` into the `:cache-read` dimension, and `reasoning_output_tokens` is recorded beside `:output` (a subset of it, never added on top). codex reports no dollar cost (subscription auth), so `:codex-json` records tokens only; a `:cost-rates` card is what turns them into cost.
 
 Harnesses and aliases live in separate runtime registries. A harness names one
 concrete tool (`claude`, `pi`, `sh`); an alias names a seat over a tool
@@ -89,6 +91,12 @@ Resume fails loudly (TEN-003), never silently, and every resume-classed failure 
 These invariants are enforced both at `spawn-run!` time and again at the launch seam, because a run strand can be hand-built directly via `api/add` — a handmade `agent-run/resumes` run never bypasses them.
 
 **Persistence is host-local and never required.** Harness session stores are host-local, non-skein-owned state: Skein records only the `agent-run/session-id` it parsed and never manages the store. Nothing consumes a session unless a caller passes `:resume` — a run without it behaves byte-identically to a no-resume engine. A lost or unresumable session fails loudly rather than auto-falling back to a cold start; the recovery path is the named `--fresh` escape (see [agents `retry`](../delegation/README.md#3-op-surface)), which severs the linkage and respawns on the full-brief prompt.
+
+### 3.2 Cost rate cards (`:cost-rates`)
+
+Some harnesses report token usage but no dollar cost — `:codex-json` is the case in point (codex runs on subscription auth and never emits a price). For these, a harness or alias may declare a **rate card** `:cost-rates {:input <usd-per-1M-uncached> :cache-read <usd-per-1M-cached> :output <usd-per-1M-output>}`. At completion, when a parser yields usage without cost and the seat declares a card, the engine derives `agent-run/cost-usd` from the token split (USD per 1M tokens over the run's `:input`/`:cache-read`/`:output` dimensions). The key set is closed, so a typo'd rate fails at `defharness!`/`defalias!` time rather than pricing that dimension at zero.
+
+The card is optional on purpose: **absence is contract.** When no rates are declared, cost stays absent — recorded tokens without cost beat a guessed number, and the sums in `strand agent spend` skip the absent figure rather than reading a fake zero. A parser that reports its own dollar cost (`:claude-json`, `:pi-json`) is never overridden by a card. The `usage-source` is left as the parser set it (`"codex-json"`), so a card-derived cost stays distinguishable from a provider-reported one. Because the *seat* is where a model is chosen (`-m` / `--model` in `:extra-args`), an alias-level card overrides the tool's own card — per-model pricing lives on the alias.
 
 ## 4. Backend registry (interactive sessions)
 
@@ -241,6 +249,10 @@ Interactive runs get their own preamble variant carrying the completion contract
 | `agent-run/error` | Failure detail when phase is `failed` or `exhausted`. A headless exit 0 with an empty result reads `harness exited 0 with an empty result`; a harness-reported turn error reads `harness exited 0 but the final turn errored: <message>`. Both append a stderr tail when one exists. |
 | `agent-run/exit-code` | Process exit code of a headless run, recorded on every outcome that observed one: `done`, the exit-0 failures (blank result, harness-reported turn error), and non-zero-exit failure. Absent when no process reported a code (interactive death, launch exception, kill). |
 | `agent-run/session-id` | Harness session id when parsed from harness output. |
+| `agent-run/usage-source` | Which parser produced the usage tally: `claude-json`, `pi-json`, or `codex-json`. A `codex-json` cost is derived from a `:cost-rates` card, not reported by the provider. |
+| `agent-run/cost-usd` | Run cost in USD, when the parser reported one or a `:cost-rates` card derived it. Absent when neither applies — never a stored 0. |
+| `agent-run/tokens-total` | Harness's own total token count for the run. Absent when the harness reported none. |
+| `agent-run/tokens` | Token breakdown map (`:input`, `:output`, `:cache-read`, `:cache-write`, `:reasoning`) carrying only the dimensions the run actually spent; a reported zero is dropped, never stored. |
 | `agent-run/resumes` | Predecessor run id whose harness session this run continues (also carried as a `resumes` annotation edge). |
 | `agent-run/error-class` | `resume` on a failure that resolving/continuing a session caused, so recovery can branch to a fresh spawn instead of retrying against a lost session. |
 | `agent-run/recovered-at` | Timestamp set when crash reconciliation returned a headless orphan to `pending`; missing harness aliases on these recovery-origin retries defer back to `pending` only inside the bounded recovery window. |
