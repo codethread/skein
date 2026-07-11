@@ -180,3 +180,18 @@ Append notes here. Do not rewrite earlier notes.
 - Nice-to-haves: applied N1 (compute the allowlist once, thread to preflight + loop) in A2. Skipped
   N2 (CC2 message label "session-retained spool root" → "retained local root") — the label lives in
   `DELTA-srr-dr-001.CC2`, which passed review unanimously and is out of this task's owned scope.
+
+### PLAN-srr-001.DN3 Task v90yt: task-queue generation — 2026-07-11
+
+- Sliced into two AFK tasks aligned to the plan phases: `TASK-srr-001` = PH1 (pure detector A1 +
+  thin basis caller + preflight throw A2 wired into `sync-approved-spools`, allowlist computed once,
+  + the four PH1 detector cases); `TASK-srr-002` = PH2 (`:stub-dir` filesystem-flip round-trip, plus
+  the optional stub-restore-bounded end-to-end case), blocked_by `TASK-srr-001`.
+- Kept the detector and its throw-site in one slice rather than splitting them: a detector-only slice
+  would ship a private fn no caller uses (dead code until the wiring lands), i.e. a horizontal
+  layer-only change the slicing rules discourage. Slice 1 is the complete vertical path — `sync!`
+  actually fails loudly — tested through the detector seam per the synthetic-`:libs` technique.
+- No HITL slice: both are deterministic (`clojure -M:test skein.runtime-deps-test` cold) with a fixed
+  contract; nothing needs a human decision. Neither slice touches `skein.api.*.alpha` docstrings, so
+  `make api-docs`/`docs-check` are not gated (V2). Owned file scope stays `spool_sync.clj` +
+  `runtime_deps_test.clj`.
