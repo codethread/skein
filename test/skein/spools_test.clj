@@ -1536,6 +1536,58 @@
                        (get-in (runtime/sync! rt) [:spools lib :status])))
         (is (= :no-namespaces (reload-reason rt lib)))))))
 
+;; Two distinct source files under the root declaring the same namespace would let
+;; `into {}` keep whichever parsed last and silently drop the other from the reload
+;; set. Sync only adds the root to the classpath (no compile), so the collision must
+;; fail loudly at reload-ordering time, naming the namespace and both file paths.
+(deftest reload-synced-spool-fails-when-two-sources-declare-same-namespace
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            shared-ns (symbol (str "demo.dup-shared-" suffix))
+            lib (symbol (str "demo/dup-ns-lib-" suffix))
+            root (io/file config-dir "spools" "dup-ns")
+            file-a (io/file root "src" "demo" (str "dup_a_" suffix ".clj"))
+            file-b (io/file root "src" "demo" (str "dup_b_" suffix ".clj"))]
+        (.mkdirs (.getParentFile file-a))
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+        (spit file-a (str "(ns " shared-ns ")\n(defn a [] :a)\n"))
+        (spit file-b (str "(ns " shared-ns ")\n(defn b [] :b)\n"))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/dup-ns"}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (spool-sync/reload-synced-spool! rt lib)))
+              data (ex-data ex)]
+          (is (= :duplicate-namespace (:reason data)))
+          (is (= shared-ns (:namespace data)))
+          (is (= lib (:coord data)))
+          (is (= #{(.getCanonicalPath file-a) (.getCanonicalPath file-b)}
+                 (set (:files data)))))))))
+
+;; A genuine circular intra-root require makes tools.namespace throw a raw
+;; `::circular-dependency` ex-info with no :status/:coord. The seam must catch it
+;; and rethrow under the documented `{:status :failed :reason :coord}` contract.
+;; Sync only adds the root to the classpath (no compile), so the cycle surfaces at
+;; reload-ordering rather than sync.
+(deftest reload-synced-spool-fails-on-circular-intra-root-requires
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-a (symbol (str "demo.cycle-a-" suffix))
+            ns-b (symbol (str "demo.cycle-b-" suffix))
+            lib (symbol (str "demo/cycle-lib-" suffix))
+            root (io/file config-dir "spools" "cycle")]
+        (.mkdirs (io/file root "src"))
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+        (write-spool-ns! root ns-a (str "(ns " ns-a " (:require [" ns-b " :as b]))\n"))
+        (write-spool-ns! root ns-b (str "(ns " ns-b " (:require [" ns-a " :as a]))\n"))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/cycle"}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (spool-sync/reload-synced-spool! rt lib)))
+              data (ex-data ex)]
+          (is (= :circular-requires (:reason data)))
+          (is (= lib (:coord data)))
+          (is (= #{ns-a ns-b} (set (vals (:cycle data))))))))))
+
 ;; PLAN-shr-001.V3: two intra-root namespaces where `a` uses a macro from `b`.
 ;; A bumped `b` macro only reaches `a`'s expansion when `b` reloads before `a`;
 ;; the reverse order re-expands `a` against the stale macro. Asserting `a`'s new
@@ -1602,12 +1654,17 @@
           (is (= [ns-sym] (mapv :ns (:namespaces result)))))))))
 
 ;; TASK-shr-003.MI1: the blessed verb fails loudly before delegating when `coord`
-;; is not a symbol, rather than passing a bad key into the sync-state lookup.
+;; is not a symbol, rather than passing a bad key into the sync-state lookup. It
+;; routes through the canonical `require-valid!` seam, so the failure carries the
+;; standard `{:value :explain}` boundary-validation shape its siblings produce.
 (deftest reload-spool-verb-rejects-non-symbol-coordinate
   (with-runtime
     (fn [rt _config-dir]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be a symbol"
-                            (runtime/reload-spool! rt :demo/keyword-coord))))))
+      (let [ex (is (thrown? clojure.lang.ExceptionInfo
+                            (runtime/reload-spool! rt :demo/keyword-coord)))
+            data (ex-data ex)]
+        (is (= :demo/keyword-coord (:value data)))
+        (is (contains? data :explain))))))
 
 ;; TASK-shr-003.MI5: the keystone gap proof exercised *through* the blessed
 ;; `runtime/reload-spool!` (runtime passed explicitly, no ambient singleton): a

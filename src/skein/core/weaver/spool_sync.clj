@@ -567,11 +567,21 @@
          (or (str/ends-with? n ".clj") (str/ends-with? n ".cljc")))))
 
 (defn- source-file->ns-sym
-  "Derive a namespace symbol from a source `file` relative to its classpath `dir`."
+  "Derive a namespace symbol from a source `file` relative to its classpath `dir`.
+
+  `root-paths` only vets top-level `:paths` entries, so a file reached through a
+  deeper symlink can canonicalize outside `dir`'s prefix. That escape fails loudly
+  with the offending file and root instead of a bare `StringIndexOutOfBoundsException`
+  carrying no context."
   [^java.io.File dir ^java.io.File file]
-  (let [prefix (str (.getCanonicalPath dir) java.io.File/separator)
-        relative (subs (.getCanonicalPath file) (count prefix))]
-    (-> relative
+  (let [canonical-dir (.getCanonicalPath dir)
+        canonical-file (.getCanonicalPath file)
+        prefix (str canonical-dir java.io.File/separator)]
+    (when-not (str/starts-with? canonical-file prefix)
+      (throw (ex-info "Synced spool source escapes its classpath dir via a symlink"
+                      {:status :failed :reason :source-escapes-root
+                       :file canonical-file :root canonical-dir})))
+    (-> (subs canonical-file (count prefix))
         (str/replace #"\.cljc?$" "")
         (str/replace java.io.File/separator ".")
         (str/replace "_" "-")
@@ -604,27 +614,67 @@
              :ns (if decl (ns-parse/name-from-ns-decl decl) (:ns source))
              :deps (if decl (ns-parse/deps-from-ns-decl decl) #{})))))
 
+(defn- index-sources-by-ns
+  "Index parsed `sources` by declared `:ns`, failing loudly on a collision.
+
+  Two files under `coord`'s consented root-paths that declare the same namespace
+  would let a plain `(into {} …)` silently keep whichever parsed last and drop the
+  other from the reload set. That violates the swallow-nothing contract, so a
+  collision throws with the colliding namespace and both file paths instead of
+  arbitrarily picking one."
+  [coord sources]
+  (reduce (fn [m source]
+            (let [ns-sym (:ns source)]
+              (if-let [prior (get m ns-sym)]
+                (throw (ex-info "Two synced spool sources declare the same namespace"
+                                {:status :failed :reason :duplicate-namespace :coord coord
+                                 :namespace ns-sym :files [(:file prior) (:file source)]}))
+                (assoc m ns-sym source))))
+          {}
+          sources))
+
+(defn- dependency-graph
+  "Build the intra-root dependency graph over `parsed`, restricted to `intra` edges.
+
+  A genuine circular intra-root require makes `org.clojure/tools.namespace` throw a
+  raw `::circular-dependency` ex-info carrying no `:status`/`:coord`. Catch it and
+  rethrow under the same fixed `{:status :failed :reason … :coord …}` contract the
+  coordinate-resolution gates use, naming the cycle."
+  [coord intra parsed]
+  (try
+    (reduce (fn [g {:keys [ns deps]}]
+              (reduce (fn [g dep]
+                        (if (contains? intra dep)
+                          (ns-dep/depend g ns dep)
+                          g))
+                      g
+                      deps))
+            (ns-dep/graph)
+            parsed)
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [reason node dependency]} (ex-data e)]
+        (if (= ::ns-dep/circular-dependency reason)
+          (throw (ex-info "Synced spool sources have a circular intra-root require"
+                          {:status :failed :reason :circular-requires :coord coord
+                           :cycle {:namespace node :requires dependency}}
+                          e))
+          (throw e))))))
+
 (defn- dependency-ordered-sources
-  "Order `sources` dependencies-first within this root only.
+  "Order `coord`'s `sources` dependencies-first within this root only.
 
   Each source is parsed for its `ns` form, then topologically sorted so a
   namespace reloads after every intra-root namespace it requires. External
   requires (`clojure.*`, blessed `skein.api.*`, other spools) are edges out of
   the set and are neither ordered nor reloaded. Namespaces with no intra-root
-  relationship keep their discovery order and follow the sorted set."
-  [sources]
+  relationship keep their discovery order and follow the sorted set. Two sources
+  declaring the same namespace, or a circular intra-root require, fail loudly
+  under the coordinate's `{:status :failed :reason …}` contract."
+  [coord sources]
   (let [parsed (mapv parse-source-ns sources)
-        by-ns (into {} (map (juxt :ns identity)) parsed)
+        by-ns (index-sources-by-ns coord parsed)
         intra (set (keys by-ns))
-        graph (reduce (fn [g {:keys [ns deps]}]
-                        (reduce (fn [g dep]
-                                  (if (contains? intra dep)
-                                    (ns-dep/depend g ns dep)
-                                    g))
-                                g
-                                deps))
-                      (ns-dep/graph)
-                      parsed)
+        graph (dependency-graph coord intra parsed)
         sorted (filter intra (ns-dep/topo-sort graph))
         remaining (remove (set sorted) (map :ns parsed))]
     (mapv by-ns (concat sorted remaining))))
@@ -650,6 +700,12 @@
   `sync-approved-spool!`'s `exists`/`isDirectory`/`canRead` gate, so a root replaced
   by a file or permission-stripped since sync fails with `:missing-root`/
   `:unreadable-root` rather than a raw `load-file` exception carrying no `:reason`.
+
+  Two further reasons surface at reload-ordering time, once the root is confirmed
+  loadable: `:duplicate-namespace` (two sources under the root declare the same
+  namespace, which would otherwise silently drop one file) and `:circular-requires`
+  (a circular intra-root require, rethrown from `org.clojure/tools.namespace` under
+  this same `{:status :failed :reason … :coord …}` shape rather than escaping raw).
 
   Returns a data-first map naming the coordinate, its resolved canonical root, and
   the namespaces reloaded with their source files."
@@ -679,7 +735,7 @@
         (when (empty? sources)
           (throw (ex-info "Synced spool root has no namespace sources"
                           {:status :failed :reason :no-namespaces :coord coord :root canonical-root})))
-        (let [ordered (dependency-ordered-sources sources)]
+        (let [ordered (dependency-ordered-sources coord sources)]
           (with-spool-classloader
             runtime
             (fn [] (doseq [{:keys [file]} ordered]

@@ -6,11 +6,15 @@
   points that need to capture the active runtime."
   (:refer-clojure :exclude [sync use])
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [skein.api.spool.alpha :refer [require-valid!]]
             [skein.core.weaver.access :refer [approved-spool-sync-state module-use-state
                                               with-spool-classloader]]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
+
+(s/def ::coord symbol?)
 
 (defn approved
   "Return the normalized approved spool roots for `runtime`'s config dir."
@@ -47,10 +51,19 @@
   re-registration to the caller (a targeted re-`use!` of the spool's activation, or
   a full `reload!` when the bump changes registrations across the config).
 
+  Redefinition semantics — this re-`load-file`s sources, rebinding vars in place;
+  it unloads nothing, so definitions minted before the reload are not migrated.
+  Concretely: a `defmulti` dispatch table survives (re-evaluating `defmulti` is a
+  no-op, so methods registered against the prior table stay and a changed dispatch
+  signature is not picked up), a re-evaluated `defprotocol` mints a fresh interface
+  so instances built before the reload no longer satisfy the new protocol
+  (`satisfies?`/`instance?` go false), and any instance or captured var from before
+  the reload keeps its old definition. A revision that deletes or renames a
+  namespace also leaves the old one loaded until restart.
+
   Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data."
   [runtime coord]
-  (when-not (symbol? coord)
-    (throw (ex-info "Spool coordinate must be a symbol" {:coord coord :class (some-> coord class)})))
+  (require-valid! ::coord coord "reload-spool! coord must be a spool coordinate symbol")
   (spool-sync/reload-synced-spool! runtime coord))
 
 (defn now

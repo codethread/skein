@@ -19,7 +19,7 @@ Explicit-runtime API for trusted weaver runtime loader/config workflows.
 Function.
 
 Return the normalized approved spool roots for `runtime`'s config dir.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L15-L18">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L19-L22">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/now">`now`</a>
 ``` clojure
@@ -31,7 +31,7 @@ Return the current java.time.Instant from `runtime`'s clock seam.
 
   Defaults to the real wall clock; deterministic tests inject an advanceable
   clock through `skein.test.alpha/set-clock!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L56-L62">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L69-L75">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/reload!">`reload!`</a>
 ``` clojure
@@ -40,7 +40,7 @@ Return the current java.time.Instant from `runtime`'s clock seam.
 Function.
 
 Reload startup files from `runtime`'s config dir after clearing registries.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L30-L33">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L34-L37">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/reload-spool!">`reload-spool!`</a>
 ``` clojure
@@ -62,8 +62,18 @@ Make `coord`'s latest synced source live in `runtime`.
   re-registration to the caller (a targeted re-`use!` of the spool's activation, or
   a full `reload!` when the bump changes registrations across the config).
 
+  Redefinition semantics — this re-`load-file`s sources, rebinding vars in place;
+  it unloads nothing, so definitions minted before the reload are not migrated.
+  Concretely: a `defmulti` dispatch table survives (re-evaluating `defmulti` is a
+  no-op, so methods registered against the prior table stay and a changed dispatch
+  signature is not picked up), a re-evaluated `defprotocol` mints a fresh interface
+  so instances built before the reload no longer satisfy the new protocol
+  (`satisfies?`/`instance?` go false), and any instance or captured var from before
+  the reload keeps its old definition. A revision that deletes or renames a
+  namespace also leaves the old one loaded until restart.
+
   Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L35-L54">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L39-L67">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/spool-state">`spool-state`</a>
 ``` clojure
@@ -90,7 +100,7 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   once a version is declared. A malformed opts map fails loudly at the call site
   (see `validate-spool-state-opts!`) rather than degrading to the unversioned
   path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L272-L325">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L285-L338">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/sync!">`sync!`</a>
 ``` clojure
@@ -99,7 +109,7 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
 Function.
 
 Load approved local roots into `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L20-L23">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L24-L27">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/syncs">`syncs`</a>
 ``` clojure
@@ -108,7 +118,7 @@ Load approved local roots into `runtime`.
 Function.
 
 Return `runtime`'s most recent approved-root sync state.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L25-L28">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L29-L32">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/use">`use`</a>
 ``` clojure
@@ -117,7 +127,7 @@ Return `runtime`'s most recent approved-root sync state.
 Function.
 
 Return one module-use registry entry from `runtime` by key.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L187-L190">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L200-L203">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/use!">`use!`</a>
 ``` clojure
@@ -131,7 +141,7 @@ Load a runtime module and record its module-use state under keyword key.
   include `:call` to invoke a no-arg function after load. Returns a registry
   entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
   rethrow after recording failure metadata.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L140-L180">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L153-L193">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/uses">`uses`</a>
 ``` clojure
@@ -140,4 +150,4 @@ Load a runtime module and record its module-use state under keyword key.
 Function.
 
 Return `runtime`'s module-use registry as data-first maps.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L182-L185">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L195-L198">Source</a></sub></p>

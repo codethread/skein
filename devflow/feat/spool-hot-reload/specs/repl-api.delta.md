@@ -44,6 +44,13 @@ states only the durable contract additions.
   file or its permissions stripped since; it re-checks the root on disk with the same
   `exists`/`isDirectory`/`canRead` gate `sync-approved-spool!` uses — mapping to `:missing-root` vs
   `:unreadable-root` — rather than falling through to a raw `load-file` exception carrying no `:reason`.
+  Three integrity reasons surface once the root is confirmed loadable, each carrying the same
+  `{:status :failed :reason … :coord …}` shape: `:source-escapes-root` (a source reached through a deeper
+  symlink canonicalizes outside its classpath dir — wrapped rather than a bare
+  `StringIndexOutOfBoundsException`), `:duplicate-namespace` (two sources under the root declare the same
+  namespace, naming both paths rather than silently dropping one), and `:circular-requires` (a circular
+  intra-root require, caught from `org.clojure/tools.namespace` and rethrown under this contract naming
+  the cycle rather than escaping as a raw `::circular-dependency` ex-info with no `:coord`).
 
 - **DELTA-shr-001.CC3:** `reload-spool!` reloads *code only* and leaves registry re-registration to the
   caller — it does not call `reload!`, and `reload!` does not call it. The two are complementary halves
@@ -54,7 +61,12 @@ states only the durable contract additions.
   the bump changes registrations across the config). `reload-spool!` adds no CLI op (hot-reload is a
   trusted runtime/REPL workflow) and changes no `sync!`/`reload!`/`use!` semantics — it is a new sibling.
   It does not unload namespaces a new revision removed (PROP-shr-001.NG2; a renamed namespace lingers
-  until restart).
+  until restart). Redefinition is in-place var rebinding, not migration: a `defmulti` dispatch table
+  survives the reload (re-evaluating `defmulti` is a no-op, so methods on the prior table stay and a
+  changed dispatch signature is not picked up), a re-evaluated `defprotocol` mints a fresh interface so
+  instances built before the reload no longer `satisfies?`/`instance?` the new protocol, and any instance
+  or captured var from before the reload keeps its old definition. The docstring states this so operators
+  are warned about the specific stale-dispatch/stale-instance hazard, not just the no-unload caveat.
 
 - **DELTA-shr-001.CC4:** The SPEC-003.C17 enumeration of `runtime.alpha` helpers gains spool-code
   hot-reload alongside the config/sync/use surface. The SPEC-003 reload paragraph (the `runtime/reload!`
