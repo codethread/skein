@@ -30,8 +30,9 @@ the retained-root orphan. This is a filesystem-existence flip over the pure dete
 
 ## TASK-srr-002.P3 Done when
 
-- **TASK-srr-002.DW1:** The cold focused run `clojure -M:test skein.runtime-deps-test` is green
-  (`PLAN-srr-001.V1`). Warm `make test-warm` output does not satisfy this gate.
+- **TASK-srr-002.DW1:** The cold shard run `clojure -M:test --shard B --summary-file <f>` is green
+  (`PLAN-srr-001.V1`; `skein.runtime-deps-test` is add-libs shard B — the runner rejects focused
+  per-namespace runs of shard namespaces). Warm `make test-warm` output does not satisfy this gate.
 - **TASK-srr-002.DW2:** `make fmt-check lint reflect-check` is clean at zero findings
   (`PLAN-srr-001.V2`).
 - **TASK-srr-002.DW3:** The `TASK-srr-002.MI1` stub-dir round-trip case exists and passes; if the

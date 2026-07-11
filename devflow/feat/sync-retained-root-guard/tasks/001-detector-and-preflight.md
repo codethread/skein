@@ -53,8 +53,9 @@ and `test/skein/runtime_deps_test.clj` only.
 
 ## TASK-srr-001.P3 Done when
 
-- **TASK-srr-001.DW1:** The cold focused run `clojure -M:test skein.runtime-deps-test` is green
-  (`PLAN-srr-001.V1`). Warm `make test-warm` output does not satisfy this gate.
+- **TASK-srr-001.DW1:** The cold shard run `clojure -M:test --shard B --summary-file <f>` is green
+  (`PLAN-srr-001.V1`; `skein.runtime-deps-test` is add-libs shard B — the runner rejects focused
+  per-namespace runs of shard namespaces). Warm `make test-warm` output does not satisfy this gate.
 - **TASK-srr-001.DW2:** `make fmt-check lint reflect-check` is clean at zero findings
   (`PLAN-srr-001.V2`).
 - **TASK-srr-001.DW3:** All four `TASK-srr-001.MI6` detector cases exist and pass.

@@ -113,9 +113,10 @@ by this stub-restore discipline (`PROP-srr-001.S3`).
 
 ## PLAN-srr-001.P6 Validation strategy
 
-- **PLAN-srr-001.V1 (per-slice cold gate):** Each phase gates on the cold focused run
-  `clojure -M:test skein.runtime-deps-test` — the touched namespace. Warm (`make test-warm
-  NS="skein.runtime-deps-test"`) is for iteration only and never satisfies the gate.
+- **PLAN-srr-001.V1 (per-slice cold gate):** Each phase gates on the cold shard run
+  `clojure -M:test --shard B --summary-file <f>` — `skein.runtime-deps-test` is an add-libs shard
+  namespace (shard B in `skein.test-runner`), and the runner rejects focused per-namespace runs of
+  shard namespaces. Warm iteration is fine but never satisfies the gate.
 - **PLAN-srr-001.V2 (quality gates):** `make fmt-check lint reflect-check` clean at zero findings
   (the delta touches no docstrings on `skein.api.*.alpha`, so `docs-check`/`make api-docs` are not
   implicated; confirm `docs-check` stays green).
@@ -191,7 +192,7 @@ Append notes here. Do not rewrite earlier notes.
   would ship a private fn no caller uses (dead code until the wiring lands), i.e. a horizontal
   layer-only change the slicing rules discourage. Slice 1 is the complete vertical path — `sync!`
   actually fails loudly — tested through the detector seam per the synthetic-`:libs` technique.
-- No HITL slice: both are deterministic (`clojure -M:test skein.runtime-deps-test` cold) with a fixed
+- No HITL slice: both are deterministic (cold shard-B run per V1) with a fixed
   contract; nothing needs a human decision. Neither slice touches `skein.api.*.alpha` docstrings, so
   `make api-docs`/`docs-check` are not gated (V2). Owned file scope stays `spool_sync.clj` +
   `runtime_deps_test.clj`.
