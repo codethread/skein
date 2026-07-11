@@ -26,9 +26,10 @@ specs change. See the proposal for why the drift matters.
   For each pair the test looks up both entries, asserts both are present, then
   branches on shape exactly as the current kanban test does: both `:git/sha` →
   string equality; both `:local/root` → canonical-path equality (`io/file ".skein"
-  root` vs `io/file "." root`, `.getCanonicalFile`); anything else → `throw`
-  `ex-info` naming the mixed shape. Use `testing` with the pair to keep failures
-  attributable. This preserves the two current tests' behaviour verbatim while
+  root` vs `io/file "." root`, `.getCanonicalFile`); anything else → a failing
+  assertion naming the mixed shape and both entries (an assertion, not a `throw`,
+  so one bad pair does not stop the remaining pairs from being checked). Use
+  `testing` with the pair to keep failures attributable. This preserves the two current tests' behaviour verbatim while
   removing the duplication (`PROP-Psg-001.G1`, `G2`).
 - **PLAN-Psg-001.A2:** Keep the pairs list hand-declared, guarded for completeness —
   do not mechanically derive it from `spools.edn`. The deps.edn key

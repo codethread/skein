@@ -266,13 +266,13 @@
                        " :local/root in deps.edn :test :extra-deps (" deps-root ")")))
 
             :else
-            (throw (ex-info (str spools-key " <-> " deps-key
-                                 " coordinates in .skein/spools.edn and deps.edn must both be "
-                                 ":local/root or both be :git/sha, not a mixed or unknown shape")
-                            {:spools-key spools-key
-                             :deps-key deps-key
-                             :spools-entry spools-entry
-                             :deps-entry deps-entry}))))))))
+            ;; a failing assertion rather than a throw so one bad pair still
+            ;; lets the remaining declared pairs be checked in the same run
+            (is false
+                (str spools-key " <-> " deps-key
+                     " coordinates in .skein/spools.edn and deps.edn must both be "
+                     ":local/root or both be :git/sha; got " (pr-str spools-entry)
+                     " and " (pr-str deps-entry)))))))))
 
 (deftest devflow-conventions-op-lists-repo-conventions
   ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
