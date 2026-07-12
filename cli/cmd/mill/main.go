@@ -81,13 +81,15 @@ func main() {
 	start := &cobra.Command{Use: "start", Short: "Start the selected workspace's weaver through the local mill", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		workspace, _ := cmd.Flags().GetString("workspace")
 		name, _ := cmd.Flags().GetString("name")
+		readyTimeout, _ := cmd.Flags().GetString("ready-timeout")
 		if cmd.Flags().Changed("name") && strings.TrimSpace(name) == "" {
 			return errors.New("--name requires a non-empty value")
 		}
-		return runWeaverLifecycle("weaver-start", workspace, name)
+		return runWeaverLifecycleWithReadyTimeout("weaver-start", workspace, name, readyTimeout)
 	}}
 	start.Flags().String("workspace", "", "explicit workspace selection (defaults to repo-local .skein)")
 	start.Flags().String("name", "", "friendly name for this weaver (defaults to workspace basename)")
+	start.Flags().String("ready-timeout", "", "ready metadata wait budget (Go duration, default 5m)")
 	weaver.AddCommand(start)
 	status := &cobra.Command{Use: "status", Short: "Show selected workspace weaver status through the local mill", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		workspace, _ := cmd.Flags().GetString("workspace")

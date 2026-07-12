@@ -586,6 +586,82 @@ func TestStartFailsWhenWeaverExitsBeforeReadyMetadata(t *testing.T) {
 	}
 }
 
+func TestReadyTimeoutParsing(t *testing.T) {
+	ms, err := parseReadyTimeout("1500ms")
+	if err != nil || ms != 1500 {
+		t.Fatalf("expected 1500ms, got ms=%d err=%v", ms, err)
+	}
+	if ms, err := parseReadyTimeout(""); err != nil || ms != 0 {
+		t.Fatalf("empty ready timeout should use default, got ms=%d err=%v", ms, err)
+	}
+	if _, err := parseReadyTimeout("nope"); err == nil || !strings.Contains(err.Error(), "invalid --ready-timeout") {
+		t.Fatalf("expected invalid duration error, got %v", err)
+	}
+	if _, err := parseReadyTimeout("0s"); err == nil || !strings.Contains(err.Error(), "positive duration") {
+		t.Fatalf("expected positive duration error, got %v", err)
+	}
+	if _, err := parseReadyTimeout("500us"); err == nil || !strings.Contains(err.Error(), "at least 1ms") {
+		t.Fatalf("expected minimum duration error, got %v", err)
+	}
+}
+
+func TestStartUsesConfiguredReadyTimeout(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
+	source := tempSource(t)
+	cfg := tempConfig(t, source)
+	started := make(chan int, 1)
+	orig := launchWeaver
+	launchWeaver = func(source string, args []string, out, errOut io.Writer) (*exec.Cmd, error) {
+		cmd := exec.Command("sleep", "60")
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		started <- cmd.Process.Pid
+		return cmd, nil
+	}
+	t.Cleanup(func() { launchWeaver = orig })
+	s := server{children: map[string]*weaverChild{}}
+	_, err := s.startWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg, ReadyTimeoutMs: 25})
+	if err == nil || !strings.Contains(err.Error(), "before timeout") {
+		t.Fatalf("expected ready timeout error, got %v", err)
+	}
+	pid := <-started
+	if processAlive(pid) {
+		waitForPIDExit(pid, time.Second)
+		if processAlive(pid) {
+			t.Fatalf("timed-out weaver pid %d still alive", pid)
+		}
+	}
+}
+
+func TestStartRejectsNegativeReadyTimeout(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
+	cfg := tempConfig(t, tempSource(t))
+	s := server{children: map[string]*weaverChild{}}
+	_, err := s.startWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg, ReadyTimeoutMs: -1})
+	if err == nil || !strings.Contains(err.Error(), "invalid ready_timeout_ms") {
+		t.Fatalf("expected invalid ready_timeout_ms error, got %v", err)
+	}
+}
+
+func TestReleaseChildOnlyRemovesOwner(t *testing.T) {
+	owner := &weaverChild{}
+	replacement := &weaverChild{}
+	s := server{children: map[string]*weaverChild{"world": replacement}}
+	if s.releaseChild("world", owner) {
+		t.Fatal("release by a superseded start must not claim its successor's entry")
+	}
+	if s.children["world"] != replacement {
+		t.Fatal("successor supervision entry was removed")
+	}
+	if !s.releaseChild("world", replacement) {
+		t.Fatal("owner release should remove the entry and report ownership")
+	}
+	if _, ok := s.children["world"]; ok {
+		t.Fatal("owner release left the entry behind")
+	}
+}
+
 func configDirArg(args []string) string {
 	for i, arg := range args {
 		if arg == "--workspace" && i+1 < len(args) {
