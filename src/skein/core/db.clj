@@ -187,6 +187,9 @@
    ["CREATE TABLE IF NOT EXISTS acyclic_relations (
        relation TEXT PRIMARY KEY
      )"]
+   ["CREATE TABLE IF NOT EXISTS immutable_keys (
+       key TEXT PRIMARY KEY
+     )"]
    ["CREATE TABLE IF NOT EXISTS scheduler_wakes (
        key TEXT PRIMARY KEY,
        wake_at INTEGER NOT NULL,
@@ -232,6 +235,7 @@
 (def ^:private required-attribute-columns #{"strand_id" "key" "value" "archived"})
 (def ^:private required-edge-columns #{"from_strand_id" "to_strand_id" "edge_type" "attributes"})
 (def ^:private shipped-acyclic-relations #{"depends-on" "parent-of" "supersedes" "serves" "notes"})
+(def ^:private shipped-immutable-keys #{"note/text" "note/at"})
 
 (defn- missing-columns [ds table required]
   (seq (remove (set (map :name (execute! ds [(str "PRAGMA table_info(" table ")")]))) required)))
@@ -269,7 +273,7 @@
               (str/includes? edge-schema "CHECK (edge_type IN"))
       (throw (ex-info "Existing strand_edges table is not compatible with the current schema; use a new database or migrate it explicitly." {})))))
 
-(declare bootstrap-acyclic-relation!)
+(declare bootstrap-acyclic-relation! bootstrap-immutable-key! immutable-key?)
 
 (defn init!
   "Initialize ds with the current schema and shipped acyclic relations.
@@ -283,6 +287,8 @@
   (ensure-current-schema! ds)
   (doseq [relation shipped-acyclic-relations]
     (bootstrap-acyclic-relation! ds relation))
+  (doseq [k shipped-immutable-keys]
+    (bootstrap-immutable-key! ds k))
   ds)
 
 (declare get-strand update-strand! add-edge! strands-by-ids require-updated-strand require-existing-strand-ids! placeholders)
@@ -391,6 +397,54 @@
                       " FROM strands t WHERE t.id = ?")
                  strand-id]))
 
+(defn- throw-immutable-violation! [json-k strand-id existing attempted]
+  (throw (ex-info (str "Attribute key " json-k " is write-once and cannot be changed")
+                  {:key json-k :strand-id strand-id :existing existing :attempted attempted})))
+
+(defn- immutable-attribute-row [ds strand-id json-k]
+  (execute-one! ds ["SELECT value FROM attributes WHERE strand_id = ? AND key = ?" strand-id json-k]))
+
+(defn- guard-immutable-write!
+  "Reject a value-changing write to a registered immutable key.
+
+  Reads the existing row in the caller's transaction; a decoded value equal to
+  the decoded attempt passes (idempotent re-assert), so first writes and
+  identical carry-throughs stay legal while genuine changes throw."
+  [ds strand-id k v]
+  (let [json-k (json-key k)]
+    (when (immutable-key? ds json-k)
+      (when-let [row (immutable-attribute-row ds strand-id json-k)]
+        (let [existing (<-json (:value row))
+              attempted (<-json (attr-value->json v))]
+          (when-not (= existing attempted)
+            (throw-immutable-violation! json-k strand-id existing attempted)))))))
+
+(defn- guard-immutable-drop!
+  "Reject deleting or archiving a registered immutable key that has a stored row.
+
+  Attempted is nil to distinguish a removal from a value change."
+  [ds strand-id json-k]
+  (when (immutable-key? ds json-k)
+    (when-let [row (immutable-attribute-row ds strand-id json-k)]
+      (throw-immutable-violation! json-k strand-id (<-json (:value row)) nil))))
+
+(defn- guard-immutable-replace!
+  "Reject a full-map replace that drops or changes any registered immutable key.
+
+  Runs BEFORE the delete-all so existing rows are still visible; a key carried
+  through with its decoded value unchanged is legal, an absent or changed key
+  throws."
+  [ds strand-id attributes]
+  (let [new-by-json (into {} (map (fn [[k v]] [(json-key k) v])) (or attributes {}))]
+    (doseq [{:keys [key value]} (execute! ds ["SELECT key, value FROM attributes WHERE strand_id = ?" strand-id])]
+      (when (immutable-key? ds key)
+        (if (contains? new-by-json key)
+          (let [existing (<-json value)
+                attempted (<-json (attr-value->json (get new-by-json key)))]
+            (when-not (= existing attempted)
+              (throw-immutable-violation! key strand-id existing attempted)))
+          (throw-immutable-violation! key strand-id (<-json value) nil))))))
+
 (defn- write-attribute-rows!
   "Write attribute rows as fresh hot data.
 
@@ -398,6 +452,7 @@
   `archived = 0`; untouched archived keys remain cold."
   [ds strand-id attributes]
   (doseq [[k v] (sort-by (comp str key) attributes)]
+    (guard-immutable-write! ds strand-id k v)
     (execute! ds ["INSERT INTO attributes (strand_id, key, value)
                    VALUES (?, ?, json(?))
                    ON CONFLICT(strand_id, key) DO UPDATE
@@ -406,6 +461,7 @@
                   strand-id (json-key k) (attr-value->json v)])))
 
 (defn- replace-attribute-rows! [ds strand-id attributes]
+  (guard-immutable-replace! ds strand-id attributes)
   (execute! ds ["DELETE FROM attributes WHERE strand_id = ?" strand-id])
   (write-attribute-rows! ds strand-id (or attributes {})))
 
@@ -430,7 +486,9 @@
     (require-valid! ::specs/attributes patched "Attributes must be nil or a map that encodes to a JSON object")
     (doseq [[k v] attributes]
       (if (nil? v)
-        (execute! ds ["DELETE FROM attributes WHERE strand_id = ? AND key = ?" strand-id (json-key k)])
+        (do
+          (guard-immutable-drop! ds strand-id (json-key k))
+          (execute! ds ["DELETE FROM attributes WHERE strand_id = ? AND key = ?" strand-id (json-key k)]))
         (write-attribute-rows! ds strand-id {k (get patched k)})))))
 
 (def ^:private generic-states #{"active" "closed"})
@@ -591,6 +649,22 @@
     (do
       (require-existing-relation-acyclic! ds relation)
       (insert-acyclic-relation! ds relation))))
+
+(defn- immutable-key?
+  "Return true when key is declared write-once immutable in ds.
+
+  Key is the stored JSON object-key text (see `json-key`)."
+  [ds key]
+  (boolean (execute-one! ds ["SELECT 1 AS found FROM immutable_keys WHERE key = ?" key])))
+
+(defn- bootstrap-immutable-key!
+  "Seed key as write-once immutable, tolerating an already-present declaration."
+  [ds key]
+  (if (immutable-key? ds key)
+    {:key key :immutable true}
+    (do
+      (execute-one! ds ["INSERT INTO immutable_keys (key) VALUES (?) RETURNING key" key])
+      {:key key :immutable true})))
 
 (defn declare-acyclic-relation!
   "Declare relation acyclic before edges of that relation exist.
@@ -851,6 +925,9 @@
         target (if archived? 1 0)
         changed (count (remove #(= target (:archived %)) rows))]
     (require-archive-keys-present! rows strand-id archive-keys)
+    (when archived?
+      (doseq [k archive-keys]
+        (guard-immutable-drop! tx strand-id k)))
     (when (seq archive-keys)
       (execute! tx (into [(str "UPDATE attributes
                                 SET archived = ?

@@ -879,3 +879,124 @@
         (close-fn)))
     (testing "use after close fails loudly"
       (is (thrown? java.sql.SQLException (db/all-strands connectable))))))
+
+;; ---------------------------------------------------------------------------
+;; Immutable (write-once) attribute keys: the shipped registration is
+;; note/text + note/at. First writes are legal everywhere; once a row exists the
+;; key cannot be changed, deleted, or archived on any mutation path.
+;; ---------------------------------------------------------------------------
+
+(defn- note-strand!
+  "Create a strand carrying the shipped immutable note keys (a note birth write)."
+  [ds]
+  (:id (db/add-strand! ds {:title "note"
+                           :state "closed"
+                           :attributes {"note/text" "original"
+                                        "note/at" "2026-01-01T00:00:00.000Z"}})))
+
+(defn- decoded-attrs [ds id]
+  (db/<-json (:attributes (db/get-strand ds id))))
+
+(deftest init-seeds-immutable-keys
+  (with-db
+    (fn [ds]
+      (is (seq (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'immutable_keys'"])))
+      (is (= #{"note/text" "note/at"}
+             (set (map :key (db/execute! ds ["SELECT key FROM immutable_keys ORDER BY key"]))))))))
+
+(deftest immutable-key-birth-write-is-legal
+  (with-db
+    (fn [ds]
+      (let [id (note-strand! ds)]
+        (is (= "original" (:note/text (decoded-attrs ds id))))
+        (is (= "2026-01-01T00:00:00.000Z" (:note/at (decoded-attrs ds id))))))))
+
+(deftest immutable-key-first-write-on-existing-strand-is-legal
+  (with-db
+    (fn [ds]
+      (let [id (:id (db/add-strand! ds {:title "plain" :attributes {:owner "a"}}))]
+        (db/update-strand! ds id {:attributes {"note/text" "first"}})
+        (is (= "first" (:note/text (decoded-attrs ds id))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"write-once"
+                              (db/update-strand! ds id {:attributes {"note/text" "second"}})))))))
+
+(deftest immutable-key-change-rejected-via-patch
+  (with-db
+    (fn [ds]
+      (let [id (note-strand! ds)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"write-once"
+                              (db/update-strand! ds id {:attributes {"note/text" "changed"}})))
+        (testing "the rejected transaction leaves storage untouched"
+          (is (= "original" (:note/text (decoded-attrs ds id)))))))))
+
+(deftest immutable-key-identical-rewrite-is-legal
+  (with-db
+    (fn [ds]
+      (let [id (note-strand! ds)]
+        (db/update-strand! ds id {:attributes {"note/text" "original"}})
+        (is (= "original" (:note/text (decoded-attrs ds id))))))))
+
+(deftest immutable-key-nil-patch-deletion-rejected
+  (with-db
+    (fn [ds]
+      (let [id (note-strand! ds)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"write-once"
+                              (db/update-strand! ds id {:attributes {"note/text" nil}})))
+        (is (= "original" (:note/text (decoded-attrs ds id))))))))
+
+(deftest immutable-key-archive-rejected-unarchive-legal
+  (with-db
+    (fn [ds]
+      (let [id (note-strand! ds)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"write-once"
+                              (db/archive-attributes! ds id ["note/text"])))
+        (is (= "original" (:note/text (decoded-attrs ds id))))
+        (testing "unarchiving a row archived before enforcement existed is the recovery path"
+          (db/execute! ds ["UPDATE attributes SET archived = 1 WHERE strand_id = ? AND key = ?" id "note/text"])
+          (is (= 1 (:changed (db/unarchive-attributes! ds id ["note/text"]))))
+          (is (= "original" (:note/text (decoded-attrs ds id)))))))))
+
+(deftest immutable-key-batch-update-enforced
+  (with-db
+    (fn [ds]
+      (let [id (note-strand! ds)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"write-once"
+                              (db/apply-batch! ds {:refs {:n id}
+                                                   :strands [{:ref :n :attributes {"note/text" "changed"}}]})))
+        (is (= "original" (:note/text (decoded-attrs ds id))))
+        (testing "an identical carry-through through the batch path is legal"
+          (db/apply-batch! ds {:refs {:n id}
+                               :strands [{:ref :n :attributes {"note/text" "original"}}]})
+          (is (= "original" (:note/text (decoded-attrs ds id)))))))))
+
+(deftest non-immutable-key-mutates-freely-on-every-path
+  (with-db
+    (fn [ds]
+      (let [id (:id (db/add-strand! ds {:title "free" :attributes {:owner "a"}}))]
+        (testing "patch change and nil-patch deletion"
+          (db/update-strand! ds id {:attributes {:owner "b"}})
+          (db/update-strand! ds id {:attributes {:owner nil}})
+          (is (nil? (:owner (decoded-attrs ds id))))
+          (db/update-strand! ds id {:attributes {:owner "c"}}))
+        (testing "archive and unarchive"
+          (db/archive-attributes! ds id [:owner])
+          (db/unarchive-attributes! ds id [:owner])
+          (is (= "c" (:owner (decoded-attrs ds id)))))
+        (testing "batch update"
+          (db/apply-batch! ds {:refs {:f id} :strands [{:ref :f :attributes {:owner "d"}}]})
+          (is (= "d" (:owner (decoded-attrs ds id)))))))))
+
+(deftest immutable-violation-ex-data-shape
+  (with-db
+    (fn [ds]
+      (let [id (note-strand! ds)]
+        (testing "a value change reports existing and attempted values"
+          (let [ex (try (db/update-strand! ds id {:attributes {"note/text" "changed"}})
+                        (catch clojure.lang.ExceptionInfo e e))]
+            (is (= {:key "note/text" :strand-id id :existing "original" :attempted "changed"}
+                   (ex-data ex)))))
+        (testing "a deletion reports :attempted nil"
+          (let [ex (try (db/update-strand! ds id {:attributes {"note/text" nil}})
+                        (catch clojure.lang.ExceptionInfo e e))]
+            (is (= {:key "note/text" :strand-id id :existing "original" :attempted nil}
+                   (ex-data ex)))))))))
