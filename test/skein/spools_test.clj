@@ -864,6 +864,17 @@
               (is (= 'org.clojure/data.json (:lib data)))
               (is (= #{lib-a lib-b} (set (:roots data))))
               (is (= [] @universes)))
+            (spit (io/file root-b "deps.edn")
+                  (pr-str {:paths ["src"]
+                           :deps {'org.clojure/data.json {:mvn/version "2.4.0"
+                                                          :exclusions ['org.clojure/clojure]}}}))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+                  data (ex-data ex)]
+              (is (str/includes? (ex-message ex) "coordinate conflict"))
+              (is (= 'org.clojure/data.json (:lib data)))
+              (is (= #{{:mvn/version "2.4.0"}
+                       {:mvn/version "2.4.0" :exclusions ['org.clojure/clojure]}}
+                     (set (:coordinates data)))))
             (write-spools! config-dir
                            (pr-str {:spools {lib-a {:local/root (str "spools/conflict-a-" suffix)}
                                              lib-b {:local/root (str "spools/conflict-b-" suffix)}}

@@ -287,6 +287,21 @@ Example:
  :deps {camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}}}
 ```
 
+`sync!` resolves all approved spool Maven deps as one universe. If two roots
+declare the same Maven lib with different coordinates, the whole sync fails and
+names the lib, roots, and coordinates. Pin that lib with a top-level
+`:mvn-overrides` map in `spools.edn` or `spools.local.edn`:
+
+```clojure
+{:spools {acme/a {:local/root "spools/a"}
+          acme/b {:local/root "spools/b"}}
+ :mvn-overrides {camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}}}
+```
+
+Overrides are overlaid shared-then-local like `:spools` and use the same
+Maven-only policy as spool-root `:deps`: Maven coordinates only, no mutable
+versions, and no source-bearing coordinate keys.
+
 ## Local development overrides
 
 Use the same coordinate in shared `spools.edn` and gitignored `spools.local.edn` to develop against a checkout while other users stay pinned to the git sha. Local entries overlay shared entries by coordinate.

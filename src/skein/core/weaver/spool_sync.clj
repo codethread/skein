@@ -552,7 +552,7 @@
   "Merge every surviving root's declared Maven deps into one resolution universe.
 
   Returns a `{lib coord}` map. A lib declared by multiple roots with disagreeing
-  `:mvn/version` fails the whole sync loudly (TEN-003), naming the lib, versions,
+  coordinates fails the whole sync loudly (TEN-003), naming the lib, coordinates,
   and declaring roots, unless `mvn-overrides` pins it — an override replaces the
   lib's coordinate across the universe and silences its conflict. Overrides that
   no surviving root declares are ignored."
@@ -564,15 +564,15 @@
      (fn [universe dep decls]
        (if-let [override (get mvn-overrides dep)]
          (assoc universe dep override)
-         (let [versions (into (sorted-set) (map #(get-in % [:coord :mvn/version])) decls)]
-           (if (> (count versions) 1)
-             (throw (ex-info (str "Cross-root Maven version conflict for " dep ": "
+         (let [coords (into #{} (map :coord) decls)]
+           (if (> (count coords) 1)
+             (throw (ex-info (str "Cross-root Maven coordinate conflict for " dep ": "
                                   (str/join ", " (map (fn [{:keys [root coord]}]
-                                                        (str (:mvn/version coord) " (" root ")"))
+                                                        (str (pr-str coord) " (" root ")"))
                                                       decls))
                                   "; pin " dep " in :mvn-overrides to resolve")
                              {:lib dep
-                              :versions (vec versions)
+                              :coordinates (vec coords)
                               :roots (mapv :root decls)}))
              (assoc universe dep (:coord (first decls)))))))
      {}
