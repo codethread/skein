@@ -9,8 +9,9 @@
   This file registers the devflow wrapper ops, the loom projection ops
   (`current-dags`/`branches`/`flow-status` — the generic projection logic lives
   in the spool; the ops here supply repo policy such as which attribute names a
-  branch and which query feeds the ready frontier), the `hitl` session op, and
-  a few named queries. Sibling init.clj modules hold the rest of the repo
+  branch and which query feeds the ready frontier), the `kanban-tree` board
+  projection op, the `hitl` session op, and a few named queries. Sibling
+  init.clj modules hold the rest of the repo
   policy: hand-authored workflows in workflows.clj, harness seats in
   harnesses.clj, chime attention rules in attention.clj, the NVD scan cron job
   in nvd_scan.clj, and reviewer rosters in reviewers.clj."
@@ -552,6 +553,8 @@
    ;; PLAN-Srm-001.DN1). :queries has no such mismatch and derives below.
    :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
          {:name "kanban-export" :help "strand help kanban-export"}
+         {:name "kanban-tree" :help "strand help kanban-tree"
+          :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
          {:name "branches" :help "strand help branches"}
          {:name "devflow-start" :help "strand help devflow-start"}
          {:name "devflow-next" :help "strand help devflow-next"}

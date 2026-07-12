@@ -117,11 +117,14 @@ async function fetchKanban(all: boolean): Promise<KanbanRow[]> {
 
 // ── tree flattening ──────────────────────────────────────────────────────────
 // The board is a flattened pre-order walk of the epic → feature → task tree.
-// Selection anchors on a position-unique `key` (ancestor ids joined) rather than
-// the strand id, since a feature appears once but the same task id never repeats.
-// Epics are open unless the user collapsed them; features are closed unless the
-// user expanded them — so the default board shows every feature (grouped under any
-// epic) with tasks tucked away, matching the old flat board plus expand markers.
+// Every strand appears exactly once per render — dedup keeps a feature either
+// top-level or under its epic, never both — so the row `key` is the plain strand
+// id. Selection then stays anchored to the same card when a poll regroups it (a
+// feature hopping under a newly-linked epic) instead of jumping, which a
+// position-derived key would do the moment the ancestry changed. Epics are open
+// unless the user collapsed them; features are closed unless the user expanded
+// them — so the default board shows every feature (grouped under any epic) with
+// tasks tucked away, matching the old flat board plus expand markers.
 
 type Marker = "open" | "closed" | "leaf";
 
@@ -158,22 +161,21 @@ function flatten(cards: KanbanRow[], collapsed: Set<string>, expanded: Set<strin
   // Each card's children are its epic's features or its own tasks; `segs` carries
   // the ancestor continuation columns down so a task under a non-last feature draws
   // the "│" that keeps the epic's branch connected.
-  const emitCard = (card: KanbanRow, depth: number, prefix: string, segs: string[], last: boolean) => {
-    const key = `${prefix}${card.id}`;
+  const emitCard = (card: KanbanRow, depth: number, segs: string[], last: boolean) => {
     const isEpic = card.type === "epic";
     const feats = isEpic ? featuresByEpic.get(card.id) ?? [] : [];
     const open = isEpic ? !collapsed.has(card.id) : expanded.has(card.id);
     const hasChildren = isEpic ? feats.length > 0 : card.tasks.length > 0;
-    rows.push({ key, depth, guide: guideOf(depth, segs, last), kind: "card", card, marker: hasChildren ? (open ? "open" : "closed") : "leaf" });
+    rows.push({ key: card.id, depth, guide: guideOf(depth, segs, last), kind: "card", card, marker: hasChildren ? (open ? "open" : "closed") : "leaf" });
     if (!open || !hasChildren) return;
     const childSegs = depth === 0 ? [] : [...segs, last ? "  " : "│ "];
-    if (isEpic) feats.forEach((f, i) => emitCard(f, depth + 1, `${key}/`, childSegs, i === feats.length - 1));
+    if (isEpic) feats.forEach((f, i) => emitCard(f, depth + 1, childSegs, i === feats.length - 1));
     else
       card.tasks.forEach((t, i) =>
-        rows.push({ key: `${key}/${t.id}`, depth: depth + 1, guide: guideOf(depth + 1, childSegs, i === card.tasks.length - 1), kind: "task", task: t }),
+        rows.push({ key: t.id, depth: depth + 1, guide: guideOf(depth + 1, childSegs, i === card.tasks.length - 1), kind: "task", task: t }),
       );
   };
-  topLevel.forEach((c) => emitCard(c, 0, "", [], true));
+  topLevel.forEach((c) => emitCard(c, 0, [], true));
   return rows;
 }
 
