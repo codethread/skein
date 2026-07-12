@@ -103,3 +103,19 @@ burn without recording.
   JSON text. The skip path is covered by testing `#'capture-burn-tombstone!`
   directly on an absent id, since inducing a mid-tx disappearance in a
   single-threaded test is not practical.
+- 2026-07-12 Task 2 (run s93h9): recovery round-trip verified in a disposable
+  workspace via an embedded `:publish? false` runtime bound with
+  `current/with-runtime` (in-process, no daemon). Created `design` +
+  `docs` (`docs --depends-on--> design`), burned `docs`; `(repl/strand docs)`
+  → nil while `(repl/burn-history docs)` returned one tombstone carrying
+  `title "Write docs"`, `attributes {:note/text {:value "keep" :archived
+  false} :owner {:value "agent" :archived false}}`, the `depends-on` edge, and
+  `recorded_at`; `(repl/recent-burns 5)` listed the same burned id. Assembled a
+  batch payload by stripping each attribute to `:value`, binding surviving
+  `design` under `:refs`, and re-creating the edge from the recovered ref, then
+  replayed through `db/apply-batch!`. The recovered strand got a **new id**
+  (`qb1l3` ≠ original `lo1j2`) — new-id caveat confirmed — with attributes and
+  the `depends-on` edge restored. The repl wrappers `burn-history`/`recent-burns`
+  are in-process only: they resolve `current/runtime-or-nil` → `access/ds` →
+  `skein.core.db` reads and throw remediation pointing at `mill weaver repl`
+  when no live runtime is bound (covered by repl-surface tests).

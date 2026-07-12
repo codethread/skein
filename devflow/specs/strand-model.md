@@ -1,6 +1,6 @@
 # Strand Model
 
-**Document ID:** `SPEC-001` **Status:** Implemented **Last Updated:** 2026-07-10 **Code:** `src/skein/core/db.clj`
+**Document ID:** `SPEC-001` **Status:** Implemented **Last Updated:** 2026-07-12 **Code:** `src/skein/core/db.clj`
 
 ## SPEC-001.P1 Purpose
 
@@ -23,7 +23,9 @@ A strand has:
 
 Active strands have `state="active"`. Closing a strand sets `state="closed"`. Replacing a strand sets `state="replaced"` only through the supersession operation.
 
-Burning a strand explicitly deletes the strand and all incident edges. Burn operations are raw deletion primitives intended for trusted workflows and userland composition.
+Burning a strand explicitly deletes the strand and all incident edges. Burn operations are raw deletion primitives intended for trusted workflows and userland composition. Every burn path — single-op and batch — writes a durable tombstone in the same transaction: a record of the burned strand's core row, its full attribute map (hot and archived), and its incident edges at deletion time, plus when it was recorded.
+
+Tombstones are forensic and support hand-recovery; they are not an undo mechanism. Recovery is operator-driven: the batch graph mutation primitive is ref-addressed, so replaying a tombstone requires assembling a payload from the recorded content (binding refs, choosing which edges to re-create). A recovered strand gets a new id, and edges from unburned strands to the burned id are not restored automatically.
 
 ## SPEC-001.P4 Attributes
 
@@ -77,6 +79,8 @@ A ready strand is a strand with `state="active"` and no direct `depends-on` depe
 
 The `strands` table stores lifecycle state as columns. Attribute values live in the row-backed `attributes` table: one `(strand_id, key, value, archived)` row per attribute, with each `value` stored as JSON `TEXT` and archived rows excluded from hot query/list paths while full point reads can still project the complete attribute map. Writing an archived key resets that key to hot data and does not change any other archived key on the strand. The `strand_edges` table stores relation names and edge attributes as JSON `TEXT`. The `acyclic_relations` table stores durable per-relation acyclicity declarations. The default weaver-owned database filename is `skein.sqlite`. JSONB assumptions are not part of this contract.
 
+The `burn_history` table records a tombstone written atomically with strand deletion. Tombstone content records the burned strand's core fields, attribute map, and incident edges in shapes that map onto the batch graph mutation payload's strand and edge entries, keeping recovery assembly mechanical. No retention or GC policy applies to tombstone rows. The read surface stops at the trusted in-process tier: `skein.core.db` exposes tombstone lookup by burned strand id and a recent-burns listing, and `skein.repl` wraps these for interactive disaster-recovery sessions. No `skein.api.*.alpha` namespace and no CLI surface expose tombstones.
+
 The weaver datasource opens each SQLite database with WAL journaling, a non-zero memory map size, and an enlarged page cache. These pragmas are applied on open for every world and change no schema or read shape.
 
 Storage has no declared hot-key registry. Every hot attribute row is uniformly indexable by `(key, value)` and by `strand_id`, so no userland or API caller declares a key before querying it.
@@ -91,4 +95,4 @@ Every attribute key has the same predicate capability: `:=`, `:!=`, `:<`/`:<=`/`
 
 ## SPEC-001.P10 Deferred
 
-Parent-scoped lifecycle rules, attribute-level metadata, per-attribute timestamps, category/outcome taxonomies, and durable audit/tombstone records for deletion are not part of the current model.
+Parent-scoped lifecycle rules, attribute-level metadata, per-attribute timestamps, and category/outcome taxonomies are not part of the current model. Deletion tombstones now ship (SPEC-001.P3, SPEC-001.P8); still deferred are a tombstone retention policy, an undo/restore operation, and any programmatic (api-tier or CLI) tombstone surface.

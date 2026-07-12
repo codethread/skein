@@ -335,6 +335,38 @@
             (finally
               (weaver-runtime/stop! fresh-rt))))))))
 
+(deftest burn-tombstone-reads-use-in-process-datasource
+  (with-runtime
+    (fn [_rt _db-file]
+      (reset-open-state!)
+      (repl/init!)
+      (let [design (:id (repl/strand! "Sketch model" {:priority "high"}))
+            docs (:id (repl/strand! "Write docs" {:owner "agent"}))]
+        (repl/update! docs {:edges [{:type "depends-on" :to design}]})
+        (repl/burn! docs)
+        (let [[tombstone :as history] (repl/burn-history docs)]
+          (is (= 1 (count history)))
+          (is (= docs (:strand_id tombstone)))
+          (is (= "Write docs" (:title tombstone)))
+          (is (= {:value "agent" :archived false} (get-in tombstone [:attributes :owner])))
+          (is (= [{:from docs :to design :type "depends-on" :attributes {}}]
+                 (:edges tombstone)))
+          (is (some? (:recorded_at tombstone))))
+        (is (= [] (repl/burn-history design)))
+        (is (= [docs] (mapv :strand_id (repl/recent-burns 10))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"positive integer limit"
+                              (repl/recent-burns 0)))))))
+
+(deftest burn-tombstone-reads-require-in-process-runtime
+  (reset-open-state!)
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"mill weaver repl"
+                        (repl/burn-history "anything")))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"mill weaver repl"
+                        (repl/recent-burns 5))))
+
 (deftest helpers-fail-loudly-when-daemon-becomes-unavailable
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/td-" (java.util.UUID/randomUUID))]

@@ -14,7 +14,9 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
+            [skein.core.db :as db]
             [skein.core.terse :as terse]
+            [skein.core.weaver.access :as access]
             [skein.core.weaver.config :as weaver-config]
             [skein.api.current.alpha :as current]
             [skein.core.query :as query]))
@@ -193,6 +195,44 @@
   Missing ids fail loudly. Returns the weaver burn summary."
   [ids]
   (daemon :burn-by-ids (vec ids)))
+
+(defn- recovery-datasource
+  "Return the in-process weaver datasource for burn-tombstone recovery reads.
+
+  Tombstone reads are an in-process weaver REPL activity: they read directly
+  from the live datasource rather than riding the `daemon` client dispatch.
+  Throws with remediation pointing at `mill weaver repl` when no in-process
+  runtime is bound (a connected-client REPL or none)."
+  []
+  (if-let [rt (current/runtime-or-nil)]
+    (access/ds rt)
+    (throw (ex-info (format-alpha/reflow
+                     "|Burn-tombstone recovery reads run inside the live weaver JVM. No
+                       |in-process runtime is bound here (a connected-client REPL has none).
+                       |Start an in-process weaver REPL with `mill weaver repl` and rerun.")
+                    {:helper 'burn-history :code :skein.repl/no-in-process-runtime}))))
+
+(defn burn-history
+  "Return every burn tombstone recorded for burned strand `id`, newest first.
+
+  Disaster-recovery read: each tombstone carries the burned strand's core
+  fields, its full attribute map (values tagged `{:value ... :archived ...}`
+  so archived keys stay distinguishable), its incident edges, and
+  `recorded_at`, shaped to feed a batch graph mutation payload by hand.
+  In-process only — throws with remediation when no live weaver runtime is
+  bound; run it from `mill weaver repl`."
+  [id]
+  (db/burn-history-for-strand (recovery-datasource) id))
+
+(defn recent-burns
+  "Return the latest `limit` burn tombstones across all strands, newest first.
+
+  Disaster-recovery read for scanning recent deletions; `limit` is required
+  and must be positive. Each tombstone has the shape documented on
+  `burn-history`. In-process only — throws with remediation when no live
+  weaver runtime is bound; run it from `mill weaver repl`."
+  [limit]
+  (db/recent-burn-history (recovery-datasource) limit))
 
 (defn- call-daemon [f]
   (try

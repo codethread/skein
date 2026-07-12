@@ -7,5 +7,5 @@ tasks:
   - id: 2
     description: repl recovery wrapper, SPEC-001 delta promotion, docs gates
     task_file: tasks/002-repl-wrapper-spec-promotion.md
-    status: pending
+    status: complete
     blocked_by: [1]
