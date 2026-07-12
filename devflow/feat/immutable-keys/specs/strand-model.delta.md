@@ -1,7 +1,7 @@
 # Strand Model Delta: immutable attribute keys
 
 **Document ID:** `DELTA-Immut-001`
-**Status:** Draft
+**Status:** Merged
 **Last Updated:** 2026-07-12
 **Root spec:** [SPEC-001 Strand Model](../../../specs/strand-model.md)
 

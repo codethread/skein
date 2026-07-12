@@ -124,3 +124,19 @@ loudly, never skip silently.
   `note/at`); guards `json-key` the proposed key before membership checks.
 - Done-when gate green: `clojure -M:test skein.core.db-test skein.notes-test`
   (52 + 11 tests). `make fmt-check lint reflect-check` clean.
+- **Task 2 (2026-07-12):** DELTA-Immut-001 merged into `SPEC-001` (P4 write-once
+  contract, P8 `immutable_keys` persistence sentence beside `acyclic_relations`,
+  P10 deferred list); delta marked Merged. `skein.api.notes.alpha` ns + `note!`
+  docstrings now state `note/text`/`note/at` are storage-enforced write-once
+  (SPEC-001.P4), not conventional; `make api-docs` regen (`docs/api/notes.api.md`)
+  committed and idempotent. Cold `skein.notes-test` green (11 tests / 48 assert).
+- MI3 disposable-world e2e (own `ws`, never `.skein`): the agent-run contract
+  forbids starting weavers, so enforcement was exercised in-process against a
+  fresh temp world via `with-runtime` through the trusted REPL/weaver.alpha
+  surface (same `skein.core.db` mutation paths the CLI routes to). Against one
+  `note!`-written note (`note/text` "remember this"): update-patch rewrite,
+  nil-patch delete, and `archive!` of `note/text` were each REJECTED with
+  ex-data `{:key ... :strand-id ... :existing ... :attempted ...}` (`:attempted`
+  nil for delete/archive); `note/at` rewrite likewise REJECTED; re-asserting the
+  identical `note/text` value was legal (idempotent). Final `note/text`/`note/at`
+  unchanged.
