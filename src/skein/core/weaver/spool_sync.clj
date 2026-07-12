@@ -440,7 +440,7 @@
 
   Returns the parsed basis map, or nil when the property or file is absent (a
   process not started by the Clojure CLI). Reads only the immutable launch file,
-  never `clojure.java.basis/current-basis`, so it observes no runtime mutation."
+  never the process-global runtime basis, so it observes no runtime mutation."
   []
   (when-let [path (System/getProperty "clojure.basis")]
     (let [file (io/file path)]
@@ -458,8 +458,8 @@
   nothing shadows the base classpath. An empty universe resolves to `{}` without a
   subprocess or basis read. Fails loudly (TEN-003) when Maven deps must be resolved
   but the launch basis is unavailable, since a missing provided universe would
-  re-add coordinates skein already ships. Sole mockable seam for the old add-libs
-  calls; resolution over the universe is atomic, so an unresolvable coordinate
+  re-add coordinates skein already ships. This is the sole mockable resolver
+  seam; resolution over the universe is atomic, so an unresolvable coordinate
   throws and fails the whole sync."
   [deps]
   (if (empty? deps)

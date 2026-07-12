@@ -19,75 +19,6 @@
             prefix
             (make-array java.nio.file.attribute.FileAttribute 0))))
 
-(defn- keep-add-libs-root! [_file]
-  ;; tools.deps keeps add-libs local roots in JVM-global basis state. Retaining
-  ;; temp spool roots prevents later add-libs calls in this shard from failing
-  ;; while canonicalizing an earlier, now-deleted local/root coordinate.
-  nil)
-
-;; The retained-root detector is tested purely over SYNTHETIC :libs maps whose
-;; :local/root points at a temp dir this test owns and deletes — never via add-libs
-;; and never against the live basis — so deleting the root cannot poison the
-;; shard's JVM-global tools.deps basis (PLAN-srr-001.PH1).
-(defn- deleted-temp-root! [prefix]
-  (let [dir (temp-dir prefix)
-        root (.getCanonicalPath dir)]
-    (.delete dir)
-    root))
-
-(deftest retained-root-detector-flags-allowlist-orphan
-  (let [lib 'orphan/deleted
-        root (deleted-temp-root! "skein-retained-orphan")
-        orphans (@#'spool-sync/retained-root-orphans {lib {:local/root root}} #{})]
-    (is (= [{:lib lib :local/root root}] orphans))
-    (let [err (@#'spool-sync/retained-root-orphans-error orphans)
-          data (ex-data err)]
-      (is (str/includes? (ex-message err) (str lib)))
-      (is (str/includes? (ex-message err) root))
-      (is (= [{:lib lib :local/root root}] (:missing-roots data)))
-      (is (contains? (:remedy data) :stub-dir))
-      (is (contains? (:remedy data) :restart))
-      (is (some? (:retained-universe-source data))))))
-
-(deftest retained-root-detector-ignores-healthy-root
-  (let [dir (temp-dir "skein-retained-healthy")
-        root (.getCanonicalPath dir)]
-    (try
-      (is (= [] (@#'spool-sync/retained-root-orphans {'healthy/present {:local/root root}} #{})))
-      (finally
-        (.delete dir)))))
-
-(deftest retained-root-detector-reports-all-missing-roots
-  (let [r1 (deleted-temp-root! "skein-retained-m1")
-        r2 (deleted-temp-root! "skein-retained-m2")
-        orphans (@#'spool-sync/retained-root-orphans {'a/one {:local/root r1}
-                                                      'b/two {:local/root r2}}
-                                                     #{})]
-    (is (= 2 (count orphans)))
-    (is (= #{{:lib 'a/one :local/root r1} {:lib 'b/two :local/root r2}}
-           (set orphans)))))
-
-(deftest retained-root-detector-excludes-still-approved-root
-  (let [lib 'approved/deleted
-        root (deleted-temp-root! "skein-retained-approved")]
-    (is (= [] (@#'spool-sync/retained-root-orphans {lib {:local/root root}} #{lib})))))
-
-(deftest stub-dir-remedy-clears-retained-root-orphan
-  ;; The :stub-dir remedy (DELTA-srr-dr-001.CC2/.D3) is a pure filesystem-existence
-  ;; flip over the TASK-srr-001 detector: with the synthetic root deleted the orphan
-  ;; is reported; recreating a bare directory at that path clears it. The synthetic
-  ;; root is never added to the real basis (PLAN-srr-001.PH2).
-  (let [lib 'orphan/stub-round-trip
-        root (deleted-temp-root! "skein-retained-stub")
-        libs {lib {:local/root root}}]
-    (is (= [{:lib lib :local/root root}] (@#'spool-sync/retained-root-orphans libs #{})))
-    (let [stub (io/file root)]
-      (.mkdirs stub)
-      (try
-        (is (= [] (@#'spool-sync/retained-root-orphans libs #{})))
-        (finally
-          (.delete stub))))))
-
 (defn- write-hot-lib! [config-dir suffix]
   (let [root (io/file config-dir "spools" "runtime-spike")
         ns-sym (symbol (str "runtime-spike.hot-" suffix))
@@ -131,7 +62,7 @@
         (throw (ex-info "Daemon eval threw" {:exception ex :responses responses})))
       (if (some #(some #{"done"} (:status %)) responses)
         (some :value responses)
-        (throw (ex-info "nREPL client drained without a done status (maven resolution/add-libs likely exceeded the client timeout)"
+        (throw (ex-info "nREPL client drained without a done status (Maven resolution likely exceeded the client timeout)"
                         {:responses responses}))))))
 
 (deftest daemon-runtime-can-hot-add-config-dir-local-root
@@ -147,15 +78,28 @@
                                         :present
                                         (catch java.io.FileNotFoundException _#
                                           :missing)))))
+          (spit (io/file config-dir "spools.edn")
+                (pr-str {:spools {lib {:local/root root}}}))
+          (is (= ":loaded"
+                 (daemon-value rt `(do (require 'skein.api.current.alpha
+                                                'skein.api.runtime.alpha)
+                                       (get-in (skein.api.runtime.alpha/sync!
+                                                (skein.api.current.alpha/runtime))
+                                               [:spools '~lib :status])))))
           (is (= ":daemon-hot-added"
-                 (daemon-value rt `(do (require 'clojure.repl.deps)
-                                       (clojure.repl.deps/add-libs {'~lib {:local/root ~root}})
-                                       (require '~ns)
-                                       ((requiring-resolve '~marker))))))
+                 (daemon-value rt `(do (require 'skein.api.current.alpha
+                                                'skein.api.runtime.alpha)
+                                       (get-in (skein.api.runtime.alpha/use!
+                                                (skein.api.current.alpha/runtime)
+                                                :runtime-spike
+                                                {:spools ['~lib]
+                                                 :ns '~ns
+                                                 :call '~marker})
+                                               [:call :return])))))
           (finally
             (weaver-runtime/stop! rt))))
       (finally
-        (keep-add-libs-root! config-dir)))))
+        nil))))
 
 (deftest approved-spool-sync-loads-maven-deps-before-activation
   (let [config-dir (temp-dir "skein-runtime-maven-spool-config")
@@ -199,4 +143,4 @@
           (finally
             (weaver-runtime/stop! rt))))
       (finally
-        (keep-add-libs-root! config-dir)))))
+        nil))))

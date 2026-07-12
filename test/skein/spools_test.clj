@@ -530,9 +530,8 @@
               (is (= :missing-root (get-in (ex-data e) [:sync :reason]))))))))))
 
 ;; Dogfoods skein.test.alpha for author-visible weaver-world behavior
-;; (LAT-PLAN-001.PH6). Uses an explicit :root because synced local roots must
-;; outlive the world: deleting an add-libs'ed root leaves stale basis entries
-;; for later syncs in this JVM.
+;; (LAT-PLAN-001.PH6). Uses an explicit :root because the daemon init helper
+;; needs the synced local root to outlive the temporary world.
 (deftest daemon-init-runs-with-spool-classloader-after-sync
   (let [root (temp-config-dir)
         suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
@@ -834,6 +833,61 @@
             (is (= [{} {} {'org.clojure/data.csv {:mvn/version "1.1.0"}}]
                    @universes))))))))
 
+(deftest sync-approved-spool-conflicts-fail-unless-pinned-by-mvn-overrides
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            lib-a (symbol (str "demo/conflict-a-" suffix))
+            lib-b (symbol (str "demo/conflict-b-" suffix))
+            root-a (write-local-lib! config-dir (str "conflict-a-" suffix)
+                                     (symbol (str "demo.conflict_a_" suffix)))
+            root-b (write-local-lib! config-dir (str "conflict-b-" suffix)
+                                     (symbol (str "demo.conflict_b_" suffix)))
+            universes (atom [])]
+        (spit (io/file root-a "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.clojure/data.json {:mvn/version "2.4.0"}}}))
+        (spit (io/file root-b "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.clojure/data.json {:mvn/version "2.5.1"}}}))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib-a {:local/root (str "spools/conflict-a-" suffix)}
+                                         lib-b {:local/root (str "spools/conflict-b-" suffix)}}}))
+        (with-resolver
+          (fn [universe]
+            (swap! universes conj universe)
+            {})
+          (fn []
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+                  data (ex-data ex)]
+              (is (str/includes? (ex-message ex) "org.clojure/data.json"))
+              (is (= 'org.clojure/data.json (:lib data)))
+              (is (= #{lib-a lib-b} (set (:roots data))))
+              (is (= [] @universes)))
+            (write-spools! config-dir
+                           (pr-str {:spools {lib-a {:local/root (str "spools/conflict-a-" suffix)}
+                                             lib-b {:local/root (str "spools/conflict-b-" suffix)}}
+                                    :mvn-overrides {'org.clojure/data.json {:mvn/version "2.5.1"}}}))
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib-a :status])))
+            (is (= [{'org.clojure/data.json {:mvn/version "2.5.1"}}]
+                   @universes))))))))
+
+(deftest sync-approved-spool-validates-mvn-overrides-policy
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            lib (symbol (str "demo/bad-override-" suffix))]
+        (write-local-lib! config-dir (str "bad-override-" suffix)
+                          (symbol (str "demo.bad_override_" suffix)))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/bad-override-" suffix)}}
+                                :mvn-overrides {'org.clojure/data.json {:local/root "../nope"}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+              data (ex-data ex)]
+          (is (str/includes? (ex-message ex) "source-bearing coordinates"))
+          (is (= :shared (:kind data)))
+          (is (= 'org.clojure/data.json (:lib data))))))))
+
 (deftest sync-approved-local-overlay-rejects-source-bearing-deps
   (with-runtime
     (fn [rt config-dir]
@@ -880,7 +934,7 @@
             ns-sym (symbol (str "demo.maven_refinement_" suffix))
             lib (symbol (str "demo/maven-refinement-" suffix))
             root (write-local-lib! config-dir (str "maven-refinement-" suffix) ns-sym)
-            calls (atom [])]
+            universes (atom [])]
         (spit (io/file root "deps.edn")
               (pr-str {:paths ["src"]
                        :deps {'org.clojure/data.json {:mvn/version "2.5.1"
@@ -890,16 +944,17 @@
                        :aliases {:dev {:extra-deps {'demo/source {:local/root "../ignored"}}}}
                        :ignored/top-level {:also :ignored}}))
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/maven-refinement-" suffix)}}}))
-        (with-redefs [clojure.repl.deps/add-libs (fn [libs]
-                                                   (swap! calls conj libs)
-                                                   (set (keys libs)))]
-          (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-          (is (= [{'org.clojure/data.json {:mvn/version "2.5.1"
-                                           :exclusions ['org.clojure/clojure]
-                                           :classifier "sources"
-                                           :extension "jar"}}
-                  {lib {:local/root (.getCanonicalPath root)}}]
-                 @calls)))))))
+        (with-resolver
+          (fn [universe]
+            (swap! universes conj universe)
+            {})
+          (fn []
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= [{'org.clojure/data.json {:mvn/version "2.5.1"
+                                             :exclusions ['org.clojure/clojure]
+                                             :classifier "sources"
+                                             :extension "jar"}}]
+                   @universes))))))))
 
 (deftest sync-git-spool-rejects-source-bearing-deps
   (with-runtime
@@ -1516,11 +1571,9 @@
         (is (= :sync-failed (reload-reason rt lib)))))))
 
 ;; A synced root removed or replaced *after* a clean sync is a real post-sync
-;; scenario, but reproducing it by deleting a genuinely add-libs'd root would
-;; poison this add-libs shard's JVM-global tools.deps basis (every later sync!
-;; re-resolves the now-missing root and fails). The on-disk re-check reads only
-;; the sync-state :root, so seeding a clean :loaded entry whose root is absent /
-;; replaced exercises the same gate without ever add-libs'ing the doomed root.
+;; scenario. The on-disk re-check reads only the sync-state :root, so seeding a
+;; clean :loaded entry whose root is absent / replaced exercises the same gate
+;; without needing a real sync of a doomed root.
 (deftest reload-synced-spool-fails-when-root-missing-after-sync
   (with-runtime
     (fn [rt config-dir]
@@ -1666,7 +1719,7 @@
         (is (= :v1 ((version))) "config reload is blind to the bumped spool source")
         (is (contains? #{:loaded :already-available}
                        (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :v1 ((version))) "re-sync add-libs the root but does not reload the source")
+        (is (= :v1 ((version))) "re-sync adds the root but does not reload the source")
         ;; A bare require :reload runs on the base loader, which has no spool root.
         (try (require ns-sym :reload) (catch java.io.FileNotFoundException _ nil))
         (is (= :v1 ((version))) "require :reload is classloader-blind to the spool root")
