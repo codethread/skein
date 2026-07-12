@@ -34,9 +34,10 @@ func TestWeaverLifecycleWithFakeLauncher(t *testing.T) {
 		launches++
 		launchedSource = source
 		launchedArgs = append([]string(nil), args...)
-		if out != io.Discard || errOut != io.Discard {
-			t.Fatalf("weaver child output should not be forwarded to mill logs")
+		if out == io.Discard || errOut == io.Discard {
+			t.Fatalf("weaver child output should be captured in the weaver log, not discarded")
 		}
+		_, _ = io.WriteString(out, "probe: child stdout line\n")
 		cmd := exec.Command("sleep", "60")
 		if err := cmd.Start(); err != nil {
 			return nil, err
@@ -67,6 +68,13 @@ func TestWeaverLifecycleWithFakeLauncher(t *testing.T) {
 	}
 	if status["config_dir"] == "" || status["state_dir"] == "" || status["data_dir"] == "" || status["database_path"] == "" {
 		t.Fatalf("running status missing identity/path fields: %#v", status)
+	}
+	logPath := filepath.Join(world.StateDir, "weaver.log")
+	if status["log_path"] != logPath {
+		t.Fatalf("running status should carry the weaver log path, got %#v", status["log_path"])
+	}
+	if b, err := os.ReadFile(logPath); err != nil || !strings.Contains(string(b), "probe: child stdout line") {
+		t.Fatalf("weaver log should capture child output, err=%v content=%q", err, b)
 	}
 	status, err = s.startWeaver(req)
 	if err != nil {
@@ -102,6 +110,9 @@ func TestWeaverLifecycleWithFakeLauncher(t *testing.T) {
 	}
 	if strings.Contains(logText, "weaver running config_dir=") {
 		t.Fatalf("idempotent start should not log a lifecycle transition:\n%s", logText)
+	}
+	if strings.Contains(logText, "probe: child stdout line") {
+		t.Fatalf("weaver child output should not be forwarded to mill logs:\n%s", logText)
 	}
 }
 
@@ -562,6 +573,9 @@ func TestStartFailsWhenWeaverExitsBeforeReadyMetadata(t *testing.T) {
 	_, err := s.startWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg})
 	if err == nil || !strings.Contains(err.Error(), "before publishing ready metadata") {
 		t.Fatalf("expected ready metadata failure, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "weaver log") {
+		t.Fatalf("startup failure should point at the weaver log, got %v", err)
 	}
 	world, err := config.RuntimeWorld(cfg)
 	if err != nil {

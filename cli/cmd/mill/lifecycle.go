@@ -131,13 +131,27 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 	if err != nil {
 		return nil, err
 	}
-	cmd, err := launchWeaver(source, weaverArgs(world, name), io.Discard, io.Discard)
+	// Weaver stdout/stderr go to a per-weaver log, never to mill's own log:
+	// appended across restarts so a crashed boot stays post-mortem readable,
+	// and deliberately left in place by cleanupWorldArtifacts.
+	logPath := weaverLogPath(world.StateDir)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
+		return nil, err
+	}
+	_, _ = fmt.Fprintf(logFile, "=== weaver start %s config_dir=%s ===\n", time.Now().UTC().Format(time.RFC3339), world.ConfigDir)
+	cmd, err := launchWeaver(source, weaverArgs(world, name), logFile, logFile)
+	if err != nil {
+		_ = logFile.Close()
 		return nil, err
 	}
 	done := make(chan error, 1)
 	s.children[world.ConfigDir] = &weaverChild{cmd: cmd, world: world, name: name, done: done}
-	go func() { done <- cmd.Wait() }()
+	go func() {
+		err := cmd.Wait()
+		_ = logFile.Close()
+		done <- err
+	}()
 	// Weaver startup includes JVM boot plus trusted config evaluation
 	// (spool sync and module loads), which can far exceed a bare boot.
 	status, err := waitForReadyStatus(world, cmd.Process.Pid, done, 60*time.Second)
@@ -149,7 +163,10 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 		}
 		cleanupWorldArtifacts(world)
 		delete(s.children, world.ConfigDir)
-		return nil, err
+		if tail := tailOfFile(logPath, 4096); tail != "" {
+			return nil, fmt.Errorf("%w; weaver log tail (%s):\n%s", err, logPath, tail)
+		}
+		return nil, fmt.Errorf("%w; weaver log: %s", err, logPath)
 	}
 	millLogf("weaver started config_dir=%s state_dir=%s pid=%v", world.ConfigDir, world.StateDir, status["pid"])
 	return status, nil
@@ -361,6 +378,7 @@ func statusFromMetadata(m client.Metadata, state string) map[string]any {
 		"socket_path":    m.SocketPath,
 		"nrepl":          m.NREPL,
 		"started_at":     m.StartedAt,
+		"log_path":       weaverLogPath(m.StateDir),
 	}
 }
 
@@ -430,6 +448,37 @@ func cleanupWorldArtifacts(world config.World) {
 	_ = os.Remove(filepath.Join(world.StateDir, "weaver.sock"))
 }
 
+func weaverLogPath(stateDir string) string {
+	return filepath.Join(stateDir, "weaver.log")
+}
+
+// tailOfFile returns up to the last maxBytes of the file, trimmed, or "" when
+// the file is missing, unreadable, or empty — a diagnostic must never turn a
+// lifecycle failure into an I/O error of its own.
+func tailOfFile(path string, maxBytes int64) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	offset := info.Size() - maxBytes
+	if offset < 0 {
+		offset = 0
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return ""
+	}
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
 func baseStatus(world config.World, state string) map[string]any {
 	return baseStatusWithName(world, state, "")
 }
@@ -449,6 +498,7 @@ func baseStatusWithName(world config.World, state string, requestedName string) 
 		"database_label": world.DBPath,
 		"database_path":  world.DBPath,
 		"name":           name,
+		"log_path":       weaverLogPath(world.StateDir),
 	}
 }
 
