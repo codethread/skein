@@ -295,6 +295,8 @@
                         :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
               :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
                     {:name "kanban-export" :help "strand help kanban-export"}
+                    {:name "kanban-tree" :help "strand help kanban-tree"
+                     :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
                     {:name "branches" :help "strand help branches"}
                     {:name "devflow-start" :help "strand help devflow-start"}
                     {:name "devflow-next" :help "strand help devflow-next"}
@@ -525,6 +527,56 @@
               (is (every? #(and (contains? dag-ids (:from_strand_id %))
                                 (contains? dag-ids (:to_strand_id %)))
                           (concat (:parent_of_edges dag) (:depends_on_edges dag)))))))))))
+
+(deftest kanban-tree-op-projects-epic-feature-task-hierarchy
+  ;; The kanban-tree projection joins the parent-of tiers (epic -> feature ->
+  ;; task) the flat query surface can't, and derives task status. Uses the full
+  ;; startup fixture because the op resolves the kanban spool's `kanban-cards`
+  ;; query. Asserts epic linkage, top-level vs nested features, derived statuses
+  ;; (done/blocked/doing/ready), and that closed tasks appear only under --all.
+  (with-startup-config-runtime
+    (fn [rt]
+      (let [blocker (weaver/add rt {:title "Blocker" :state "active" :attributes {:kind "task"}})
+            epic (weaver/add rt {:title "Epic E" :state "active"
+                                 :attributes {:kanban/card "true" :kanban/type "epic"}})
+            f1 (weaver/add rt {:title "Feature under epic" :state "active"
+                               :attributes {:kanban/card "true" :kanban/type "feature"}})
+            f2 (weaver/add rt {:title "Top-level feature" :state "active"
+                               :attributes {:kanban/card "true" :kanban/type "feature"}})
+            t-doing (weaver/add rt {:title "Doing task" :state "active"
+                                    :attributes {:kanban/task "true" :owner "amy"}})
+            t-ready (weaver/add rt {:title "Ready task" :state "active"
+                                    :attributes {:kanban/task "true"}})
+            t-blocked (weaver/add rt {:title "Blocked task" :state "active"
+                                      :attributes {:kanban/task "true" :owner "bob"}})
+            t-done (weaver/add rt {:title "Done task" :state "closed"
+                                   :attributes {:kanban/task "true" :owner "amy"}})]
+        (weaver/update rt (:id epic) {:edges [{:type "parent-of" :to (:id f1)}]})
+        (weaver/update rt (:id f1) {:edges [{:type "parent-of" :to (:id t-doing)}
+                                            {:type "parent-of" :to (:id t-ready)}
+                                            {:type "parent-of" :to (:id t-blocked)}
+                                            {:type "parent-of" :to (:id t-done)}]})
+        (weaver/update rt (:id t-blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
+        (let [by-id (fn [result] (into {} (map (juxt :id identity)) (:cards result)))
+              active (by-id (op! "kanban-tree" []))
+              full (by-id (op! "kanban-tree" ["--all" "true"]))
+              task-status (fn [card] (into {} (map (juxt :title :status)) (:tasks card)))]
+          ;; active view: only kanban cards (epic + features); the plain-task
+          ;; blocker carries no kanban/card and never surfaces as a card
+          (is (= #{(:id epic) (:id f1) (:id f2)} (set (keys active))))
+          (is (= "epic" (:type (active (:id epic)))))
+          (is (= "feature" (:type (active (:id f1)))))
+          ;; epic linkage: a feature under an epic carries its epic id; others nil
+          (is (= (:id epic) (:epic (active (:id f1)))))
+          (is (nil? (:epic (active (:id f2)))))
+          (is (nil? (:epic (active (:id epic)))))
+          ;; derived task status; the closed task is filtered from the active view
+          (is (= {"Doing task" "doing" "Ready task" "ready" "Blocked task" "blocked"}
+                 (task-status (active (:id f1)))))
+          (is (= [] (:tasks (active (:id f2)))))
+          ;; --all surfaces the closed (done) task alongside the active ones
+          (is (= {"Doing task" "doing" "Ready task" "ready" "Blocked task" "blocked" "Done task" "done"}
+                 (task-status (full (:id f1))))))))))
 
 (deftest branches-op-groups-branch-stamped-work-roots
   (with-config-runtime
