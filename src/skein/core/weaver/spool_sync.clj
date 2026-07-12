@@ -20,7 +20,9 @@
             [skein.core.weaver.access :refer [approved-spool-sync-state
                                               with-spool-classloader config-dir spools-file
                                               canonical-root cache-base]])
-  (:import [java.nio.file FileSystemException FileVisitResult Files LinkOption SimpleFileVisitor StandardCopyOption]
+  (:import [java.math BigInteger]
+           [java.security MessageDigest]
+           [java.nio.file FileSystemException FileVisitResult Files LinkOption SimpleFileVisitor StandardCopyOption]
            [java.nio.file.attribute FileAttribute]))
 
 (def ^:private local-spool-keys #{:local/root})
@@ -581,6 +583,12 @@
 (defn- file-url-string [path]
   (str (.toURL (.toURI (io/file path)))))
 
+(declare clojure-source? parse-source-ns source-file->ns-sym)
+
+(def pending-generation-remedy
+  "Operator-facing remedy for a non-additive spool sync diff."
+  "recorded; takes effect at the next weaver generation (mill-supervised restart, user sign-off)")
+
 (defn- added-jar-paths [added]
   (distinct (mapcat :paths (vals added))))
 
@@ -614,6 +622,90 @@
       :loaded
       :already-available)))
 
+(defn- successful-sync? [[_ result]]
+  (#{:loaded :already-available} (:status result)))
+
+(defn- sha256-file [^java.io.File file]
+  (let [digest (MessageDigest/getInstance "SHA-256")]
+    (with-open [in (io/input-stream file)]
+      (let [buffer (byte-array 8192)]
+        (loop []
+          (let [n (.read in buffer)]
+            (when (pos? n)
+              (.update digest buffer 0 n)
+              (recur))))))
+    (format "%064x" (BigInteger. 1 (.digest digest)))))
+
+(defn- root-fingerprint [source-paths]
+  (->> source-paths
+       (mapcat file-seq)
+       (filter clojure-source?)
+       (map (fn [^java.io.File file]
+              [(.getCanonicalPath file) (sha256-file file)]))
+       sort
+       vec))
+
+(defn- root-namespace-set [source-paths]
+  (set (for [^java.io.File dir source-paths
+             ^java.io.File file (file-seq dir)
+             :when (clojure-source? file)]
+         (:ns (parse-source-ns {:file (.getCanonicalPath file)})))))
+
+(defn- non-additive-diff [previous previous-fingerprints survivors]
+  (let [previous-loaded (into {} (filter successful-sync?) previous)
+        current-by-lib (into {} (map (juxt :lib identity)) survivors)
+        removals (vec (for [[lib result] previous-loaded
+                            :when (not (contains? current-by-lib lib))]
+                        (select-keys result [:lib :kind :root :source])))
+        changed-roots (vec (for [[lib result] previous-loaded
+                                 :let [survivor (get current-by-lib lib)]
+                                 :when (and survivor (not= (:root result) (get-in survivor [:entry :root])))]
+                             {:lib lib
+                              :previous-root (:root result)
+                              :new-root (get-in survivor [:entry :root])}))
+        redefinitions (vec (for [[lib result] previous-loaded
+                                 :let [survivor (get current-by-lib lib)
+                                       fingerprint (when survivor (root-fingerprint (:source-paths survivor)))]
+                                 :when (and survivor
+                                            (= (:root result) (get-in survivor [:entry :root]))
+                                            (some find-ns (root-namespace-set (:source-paths survivor)))
+                                            (or (nil? (get previous-fingerprints lib))
+                                                (not= (get previous-fingerprints lib) fingerprint)))]
+                             {:lib lib
+                              :root (:root result)
+                              :loaded-namespaces (filterv find-ns (root-namespace-set (:source-paths survivor)))}))]
+    (cond-> {}
+      (seq removals) (assoc :removed-roots removals)
+      (seq changed-roots) (assoc :changed-roots changed-roots)
+      (seq redefinitions) (assoc :redefinitions redefinitions))))
+
+(defn- stale-spool-state-report [runtime]
+  (let [current (:generation-id runtime)]
+    (vec (for [[key value] @(:spool-state runtime)
+               :let [generation (:skein.runtime/generation (meta value))]
+               :when (and generation (not= generation current))]
+           {:key key
+            :generation generation
+            :current-generation current}))))
+
+(defn- record-pending-generation! [runtime diff approved]
+  (let [pending {:status :pending
+                 :generation (:generation-id runtime)
+                 :diff diff
+                 :approved-spools (set (keys (:spools approved)))
+                 :remedy pending-generation-remedy}]
+    (reset! (:pending-spool-generation runtime) pending)
+    pending))
+
+(defn- fail-non-additive-diff! [runtime diff approved]
+  (let [pending (record-pending-generation! runtime diff approved)]
+    (throw (ex-info (str "Non-additive spool sync diff recorded; " pending-generation-remedy)
+                    {:status :failed
+                     :reason :non-additive-sync-diff
+                     :diff diff
+                     :pending-generation pending
+                     :remedy pending-generation-remedy}))))
+
 (defn sync-approved-spools
   "Load approved spools into the runtime classloader and record per-spool status.
 
@@ -627,32 +719,47 @@
   [runtime]
   ;; Stale state clears before anything that can throw — a structural spools.edn
   ;; failure or an atomic-resolution abort both leave {} rather than stale results.
-  (reset! (approved-spool-sync-state runtime) {})
-  (let [approved (approved-spools runtime)
-        phase1 (mapv (fn [[lib entry]] (materialize-and-validate-spool lib entry))
-                     (:spools approved))
-        failed (into {} (keep :failed) phase1)
-        survivors (into [] (keep :survivor) phase1)
-        universe (merge-maven-universe survivors (:mvn-overrides approved))
-        added (resolve-spool-maven-libs universe)
-        loader (:spool-classloader runtime)
-        pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
-        _ (add-delta-jars! loader added pre-urls)
-        survivor-results (into {}
-                               (map (fn [{:keys [lib entry maven-deps source-paths fetch]}]
-                                      (add-source-paths! loader source-paths)
-                                      [lib (cond-> (assoc (sync-result-base lib entry)
-                                                          :status (spool-load-status maven-deps source-paths added pre-urls))
-                                             fetch (assoc :fetch fetch))]))
-                               survivors)
-        results (into (sorted-map) (concat failed survivor-results))]
-    (reset! (approved-spool-sync-state runtime) results)
-    {:spools results}))
+  (let [public-previous @(approved-spool-sync-state runtime)
+        previous @(:approved-spool-generation-state runtime)
+        previous-fingerprints @(:approved-spool-generation-fingerprints runtime)]
+    (reset! (approved-spool-sync-state runtime) {})
+    (let [approved (approved-spools runtime)
+          phase1 (mapv (fn [[lib entry]] (materialize-and-validate-spool lib entry))
+                       (:spools approved))
+          failed (into {} (keep :failed) phase1)
+          survivors (into [] (keep :survivor) phase1)
+          diff (non-additive-diff previous previous-fingerprints survivors)
+          _ (when (seq diff)
+              (reset! (approved-spool-sync-state runtime) public-previous)
+              (fail-non-additive-diff! runtime diff approved))
+          universe (merge-maven-universe survivors (:mvn-overrides approved))
+          added (resolve-spool-maven-libs universe)
+          loader (:spool-classloader runtime)
+          pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
+          _ (add-delta-jars! loader added pre-urls)
+          survivor-results (into {}
+                                 (map (fn [{:keys [lib entry maven-deps source-paths fetch]}]
+                                        (add-source-paths! loader source-paths)
+                                        [lib (cond-> (assoc (sync-result-base lib entry)
+                                                            :status (spool-load-status maven-deps source-paths added pre-urls))
+                                               fetch (assoc :fetch fetch))]))
+                                 survivors)
+          results (into (sorted-map) (concat failed survivor-results))
+          fingerprints (into {} (map (juxt :lib (comp root-fingerprint :source-paths))) survivors)
+          retained (stale-spool-state-report runtime)]
+      (reset! (approved-spool-sync-state runtime) results)
+      (reset! (:approved-spool-generation-state runtime)
+              (into (sorted-map) (filter successful-sync?) results))
+      (reset! (:approved-spool-generation-fingerprints runtime) fingerprints)
+      (cond-> {:spools results}
+        (seq retained) (assoc :retained-spool-state retained)
+        @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime))))))
 
 (defn approved-spool-syncs
   "Return the most recent approved spool sync results."
   [runtime]
-  {:spools (into (sorted-map) @(approved-spool-sync-state runtime))})
+  (cond-> {:spools (into (sorted-map) @(approved-spool-sync-state runtime))}
+    @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime))))
 
 (defn module-file
   "Resolve module-use `path` against `runtime`'s config-dir, failing on escape.
@@ -866,7 +973,8 @@
   the namespaces reloaded with their source files."
   [runtime coord]
   (let [approved (approved-spools runtime)
-        syncs @(approved-spool-sync-state runtime)
+        syncs (merge @(:approved-spool-generation-state runtime)
+                     @(approved-spool-sync-state runtime))
         sync (get syncs coord)]
     (when-not (contains? (:spools approved) coord)
       (throw (ex-info "Spool coordinate is not approved"

@@ -100,7 +100,7 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   once a version is declared. A malformed opts map fails loudly at the call site
   (see `validate-spool-state-opts!`) rather than degrading to the unversioned
   path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L285-L338">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L295-L348">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/sync!">`sync!`</a>
 ``` clojure

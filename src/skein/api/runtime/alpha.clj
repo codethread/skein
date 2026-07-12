@@ -248,19 +248,28 @@
                         {:opts opts})))))
   opts)
 
+(defn- tag-spool-state-generation
+  "Tag `value` with the runtime generation that created it, when metadata permits it."
+  [runtime value]
+  (if (instance? clojure.lang.IObj value)
+    (vary-meta value assoc :skein.runtime/generation (:generation-id runtime))
+    value))
+
 (defn- versioned-value
   "Tag `value` with its declared spool-state `version` for later reload checks.
 
   Version nil (the unversioned default) leaves `value` untouched. A declared
   version is stored as value metadata, so `close-fn` lookups and consumers still
   see the plain state value; versioned state must therefore support metadata."
-  [value version]
-  (if (nil? version)
-    value
-    (if (instance? clojure.lang.IObj value)
-      (vary-meta value assoc ::version version)
-      (throw (ex-info "Versioned spool state must support metadata"
-                      {:version version :class (class value)})))))
+  [runtime value version]
+  (tag-spool-state-generation
+   runtime
+   (if (nil? version)
+     value
+     (if (instance? clojure.lang.IObj value)
+       (vary-meta value assoc ::version version)
+       (throw (ex-info "Versioned spool state must support metadata"
+                       {:version version :class (class value)}))))))
 
 (defn- reinit-mismatched-state
   "Build the replacement value when preserved `existing` state mismatches the
@@ -270,8 +279,9 @@
   returns the new value. Without one, `existing`'s `:close-fn` runs best-effort
   so a stale executor or scheduler is released, then `init-fn` builds fresh
   state — preserving nothing. The result is re-tagged with `version`."
-  [existing version migrate-fn init-fn]
+  [runtime existing version migrate-fn init-fn]
   (versioned-value
+   runtime
    (if migrate-fn
      (migrate-fn existing)
      (do (when-let [close-fn (:close-fn existing)]
@@ -325,7 +335,7 @@
                existing (get m* key)]
            (cond
              (not (contains? m* key))
-             (let [value (versioned-value (init-fn) version)]
+             (let [value (versioned-value runtime (init-fn) version)]
                (swap! state assoc key value)
                value)
 
@@ -333,6 +343,6 @@
              existing
 
              :else
-             (let [replacement (reinit-mismatched-state existing version migrate-fn init-fn)]
+             (let [replacement (reinit-mismatched-state runtime existing version migrate-fn init-fn)]
                (swap! state assoc key replacement)
                replacement))))))))

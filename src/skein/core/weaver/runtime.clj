@@ -422,7 +422,11 @@
                          :pattern-registry (atom {})
                          :op-registry (atom {})
                          :hook-registry (atom {})
+                         :generation-id (str (java.util.UUID/randomUUID))
                          :approved-spool-sync-state (atom {})
+                         :approved-spool-generation-state (atom {})
+                         :approved-spool-generation-fingerprints (atom {})
+                         :pending-spool-generation (atom nil)
                          :module-use-state (atom {})
                          :spool-state (atom {})
                          :spool-classloader (clojure.lang.DynamicClassLoader.

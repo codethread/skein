@@ -833,6 +833,61 @@
             (is (= [{} {} {'org.clojure/data.csv {:mvn/version "1.1.0"}}]
                    @universes))))))))
 
+(deftest sync-records-pending-generation-for-removed-loaded-root
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.pending_removed_" suffix))
+            lib (symbol (str "demo/pending-removed-" suffix))]
+        (write-local-lib! config-dir (str "pending-removed-" suffix) ns-sym)
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/pending-removed-" suffix)}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (write-spools! config-dir (pr-str {:spools {}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+              data (ex-data ex)]
+          (is (= :non-additive-sync-diff (:reason data)))
+          (is (= [lib] (mapv :lib (get-in data [:diff :removed-roots]))))
+          (is (str/includes? (:remedy data) "next weaver generation"))
+          (is (= (:pending-generation data) (:pending-generation (runtime/syncs rt)))))))))
+
+(deftest sync-records-pending-generation-for-redefined-loaded-root
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.pending_redefined_" suffix))
+            lib (symbol (str "demo/pending-redefined-" suffix))
+            root (io/file config-dir "spools" (str "pending-redefined-" suffix))
+            src-file (write-spool-ns! root ns-sym (str "(ns " ns-sym ")\n(defn marker [] :v1)\n"))]
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/pending-redefined-" suffix)}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (:status (runtime/use! rt (keyword (str "pending-redefined-" suffix))
+                                              {:ns ns-sym :spools [lib]}))))
+        (spit src-file (str "(ns " ns-sym ")\n(defn marker [] :v2)\n"))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+              data (ex-data ex)]
+          (is (= :non-additive-sync-diff (:reason data)))
+          (is (= [lib] (mapv :lib (get-in data [:diff :redefinitions]))))
+          (is (= [ns-sym] (get-in data [:diff :redefinitions 0 :loaded-namespaces])))
+          (is (str/includes? (ex-message ex) "recorded")))))))
+
+(deftest sync-reports-retained-spool-state-from-older-generation
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.retained_state_" suffix))
+            lib (symbol (str "demo/retained-state-" suffix))]
+        (write-local-lib! config-dir (str "retained-state-" suffix) ns-sym)
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/retained-state-" suffix)}}}))
+        (runtime/spool-state rt ::retained (constantly {:shape :old}))
+        (swap! (:spool-state rt) update ::retained vary-meta assoc :skein.runtime/generation "older-generation")
+        (let [result (runtime/sync! rt)]
+          (is (= :loaded (get-in result [:spools lib :status])))
+          (is (= [{:key ::retained
+                   :generation "older-generation"
+                   :current-generation (:generation-id rt)}]
+                 (:retained-spool-state result))))))))
+
 (deftest sync-approved-spool-conflicts-fail-unless-pinned-by-mvn-overrides
   (with-runtime
     (fn [rt config-dir]
@@ -1723,14 +1778,13 @@
                                               {:ns ns-sym :spools [lib]}))))
         (is (= :v1 ((version))))
         (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v2)\n"))
-        ;; Config reload does not reload spool sources; it also clears the sync
-        ;; registry, so restore it with a plain re-sync (which only re-adds the
-        ;; root to the classloader — it never load-files the namespace).
+        ;; Config reload does not reload spool sources; a plain re-sync now records
+        ;; a pending generation instead of pretending the source bump is live.
         (runtime/reload! rt)
         (is (= :v1 ((version))) "config reload is blind to the bumped spool source")
-        (is (contains? #{:loaded :already-available}
-                       (get-in (runtime/sync! rt) [:spools lib :status])))
-        (is (= :v1 ((version))) "re-sync adds the root but does not reload the source")
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+          (is (= :non-additive-sync-diff (:reason (ex-data ex)))))
+        (is (= :v1 ((version))) "re-sync refuses the non-additive source bump")
         ;; A bare require :reload runs on the base loader, which has no spool root.
         (try (require ns-sym :reload) (catch java.io.FileNotFoundException _ nil))
         (is (= :v1 ((version))) "require :reload is classloader-blind to the spool root")
