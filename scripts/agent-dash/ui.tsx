@@ -10,7 +10,10 @@ import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { opts, workspaceRoot, type DetailRow } from "./data";
 
-export const clip = (s: string, w: number): string => (w <= 0 ? "" : cliTruncate(s, w, { truncationCharacter: "…" }));
+// cliTruncate reserves a column for its ellipsis, so at w=1 it drops even a
+// single fitting glyph to "…"; short-circuit anything that already fits.
+export const clip = (s: string, w: number): string =>
+  w <= 0 ? "" : stringWidth(s) <= w ? s : cliTruncate(s, w, { truncationCharacter: "…" });
 export const pad = (s: string, w: number): string => {
   const t = clip(s, w);
   return t + " ".repeat(Math.max(0, w - stringWidth(t)));

@@ -194,7 +194,19 @@ const rowId = (r: FlatRow): string => (r.kind === "card" ? r.card.id : r.task.id
 const rowIdCell = (r: FlatRow): string => r.guide + rowId(r);
 const rowLane = (r: FlatRow): string => (r.kind === "card" ? r.card.lane : r.task.status);
 const rowPrio = (r: FlatRow): string => (r.kind === "card" ? r.card.priority : "");
-const rowType = (r: FlatRow): string => (r.kind === "card" ? r.card.type : "task");
+// PRIO renders as the bare number (colour carries the urgency); rowPrio keeps the
+// "p1".."p4" form the colour/dim lookups key on.
+const rowPrioNum = (r: FlatRow): string => rowPrio(r).replace(/^p/, "");
+// Type column compacts feature→feat so it never widens past its 4-char header.
+const TYPE_ABBR: Record<string, string> = { feature: "feat", epic: "epic", task: "task" };
+const rowType = (r: FlatRow): string => {
+  const t = r.kind === "card" ? r.card.type : "task";
+  return TYPE_ABBR[t] ?? t;
+};
+// Under a narrow terminal (<80) the lane column costs the most width; compact known
+// lanes to four-letter codes (unknowns—task statuses—fall back to a four-char slice).
+const LANE_ABBR: Record<string, string> = { claimed: "clmd", in_review: "revw", pending: "pend", refinement: "refn" };
+const abbrevLane = (lane: string): string => LANE_ABBR[lane] ?? lane.slice(0, 4);
 const rowOwner = (r: FlatRow): string => (r.kind === "card" ? r.card.owner : r.task.owner ?? "-");
 const rowBranch = (r: FlatRow): string => (r.kind === "card" ? r.card.branch : "");
 const rowTitle = (r: FlatRow): string =>
@@ -222,13 +234,23 @@ function KanbanTree({
   if (rows.length === 0) {
     return <Text dimColor>{clip(loaded ? `no ${all ? "" : "active "}cards` : "loading board…", cols)}</Text>;
   }
+  const narrow = cols < 80;
+  const laneText = (r: FlatRow): string => (narrow ? abbrevLane(rowLane(r)) : rowLane(r));
+  // Narrow terminals collapse a present branch to a tick; rows without one keep
+  // their bare value (a "-"/"" placeholder) so the column still reads.
+  const hasBranch = (v: string): boolean => v !== "" && v !== "-";
+  const branchHeader = narrow ? "B" : "BRANCH";
+  const branchText = (r: FlatRow): string => {
+    const b = rowBranch(r);
+    return narrow && hasBranch(b) ? "✓" : b;
+  };
   const w = {
     id: fitCol("ID", rows.map(rowIdCell), 16),
-    lane: fitCol("LANE", rows.map(rowLane), 12),
-    prio: fitCol("PRIO", rows.map(rowPrio), 4),
+    lane: fitCol("LANE", rows.map(laneText), 12),
+    prio: fitCol("P", rows.map(rowPrioNum), 4),
     type: fitCol("TYPE", rows.map(rowType), 8),
     owner: fitCol("OWNER", rows.map(rowOwner), 14),
-    branch: fitCol("BRANCH", rows.map(rowBranch), 24),
+    branch: fitCol(branchHeader, rows.map(branchText), 24),
   };
   const titleWidth = Math.max(0, cols - 12 - w.id - w.lane - w.prio - w.type - w.owner - w.branch);
   const { start, visible, below } = windowRows(rows, selected, interactive, termRows);
@@ -241,11 +263,11 @@ function KanbanTree({
         cells={[
           { text: pad("ID", w.id) }, { text: "  " },
           { text: pad("LANE", w.lane) }, { text: "  " },
-          { text: pad("PRIO", w.prio) }, { text: "  " },
+          { text: pad("P", w.prio) }, { text: "  " },
           { text: pad("TYPE", w.type) }, { text: "  " },
+          { text: pad("TITLE", titleWidth) }, { text: "  " },
           { text: pad("OWNER", w.owner) }, { text: "  " },
-          { text: pad("BRANCH", w.branch) }, { text: "  " },
-          { text: "TITLE" },
+          { text: branchHeader },
         ]}
       />
       {visible.map((r, i) => {
@@ -259,17 +281,17 @@ function KanbanTree({
         const cells: Cell[] = [
           { text: pad(rowIdCell(r), w.id), dimColor: !isSelected && isTask },
           { text: "  " },
-          { text: pad(rowLane(r), w.lane), color: laneColor, dimColor: laneDim },
+          { text: pad(laneText(r), w.lane), color: laneColor, dimColor: laneDim },
           { text: "  " },
-          { text: pad(rowPrio(r), w.prio), color: isSelected || closed ? undefined : PRIO_COLOR[rowPrio(r)], dimColor: !isSelected && (closed || prioDim(rowPrio(r))) },
+          { text: pad(rowPrioNum(r), w.prio), color: isSelected || closed ? undefined : PRIO_COLOR[rowPrio(r)], dimColor: !isSelected && (closed || prioDim(rowPrio(r))) },
           { text: "  " },
           { text: pad(rowType(r), w.type), dimColor: !isSelected && rowType(r) !== "epic" },
           { text: "  " },
+          { text: pad(rowTitle(r), titleWidth), dimColor: !isSelected && (isTask ? r.task.status === "done" : closed) },
+          { text: "  " },
           { text: pad(rowOwner(r), w.owner), dimColor: !isSelected },
           { text: "  " },
-          { text: pad(rowBranch(r), w.branch) },
-          { text: "  " },
-          { text: clip(rowTitle(r), titleWidth), dimColor: !isSelected && (isTask ? r.task.status === "done" : closed) },
+          { text: pad(branchText(r), w.branch) },
         ];
         return <TableRow key={r.key} cells={cells} width={cols} inverse={isSelected} />;
       })}
