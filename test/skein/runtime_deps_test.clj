@@ -5,8 +5,7 @@
             [clojure.test :refer [deftest is]]
             [nrepl.core :as nrepl]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]
-            [skein.core.weaver.spool-sync :as spool-sync]))
+            [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn test-world [config-dir]
   (weaver-config/world config-dir
