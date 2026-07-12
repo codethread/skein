@@ -287,6 +287,86 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Strand ids not found"
                               (db/burn-by-ids! ds [b])))))))
 
+(deftest burn-records-one-tombstone-per-strand
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A" :attributes {:owner "agent"}}))
+            b (:id (db/add-strand! ds {:title "B"}))]
+        (db/burn-by-ids! ds [a b])
+        (let [ta (db/burn-history-for-strand ds a)
+              tb (db/burn-history-for-strand ds b)
+              tomb (first ta)]
+          (is (= 1 (count ta)))
+          (is (= 1 (count tb)))
+          (is (= a (:strand_id tomb)))
+          (is (= "A" (:title tomb)))
+          (is (= "active" (:state tomb)))
+          (is (string? (:created_at tomb)))
+          (is (string? (:updated_at tomb)))
+          (is (string? (:recorded_at tomb)))
+          (is (= {:owner {:value "agent" :archived false}} (:attributes tomb)))
+          (is (= [] (:edges tomb))))))))
+
+(deftest batch-burn-records-tombstone
+  (with-db
+    (fn [ds]
+      (let [doomed (:id (db/add-strand! ds {:title "Doomed" :attributes {:kind "scratch"}}))]
+        (db/apply-batch! ds {:refs {:doomed doomed} :burn [:doomed]})
+        (let [tomb (first (db/burn-history-for-strand ds doomed))]
+          (is (some? tomb))
+          (is (= "Doomed" (:title tomb)))
+          (is (= {:kind {:value "scratch" :archived false}} (:attributes tomb))))))))
+
+(deftest tombstone-captures-archived-attributes-and-incident-edges
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B" :attributes {:owner "agent" :payload "cold"}}))
+            c (:id (db/add-strand! ds {:title "C"}))]
+        (db/execute! ds ["UPDATE attributes SET archived = 1 WHERE strand_id = ? AND key = 'payload'" b])
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {:reason "needs"}})
+        (db/add-edge! ds {:from b :to c :type "related-to" :attributes {:note "link"}})
+        (db/burn-by-id! ds b)
+        (let [tomb (first (db/burn-history-for-strand ds b))]
+          (is (= {:owner {:value "agent" :archived false}
+                  :payload {:value "cold" :archived true}}
+                 (:attributes tomb)))
+          (is (= #{{:from a :to b :type "depends-on" :attributes {:reason "needs"}}
+                   {:from b :to c :type "related-to" :attributes {:note "link"}}}
+                 (set (:edges tomb)))))))))
+
+(deftest tombstone-well-formed-with-no-edges-or-attributes
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "Bare"}))]
+        (db/burn-by-id! ds a)
+        (let [tomb (first (db/burn-history-for-strand ds a))]
+          (is (= "Bare" (:title tomb)))
+          (is (= {} (:attributes tomb)))
+          (is (= [] (:edges tomb))))))))
+
+(deftest burn-history-reads-are-newest-first
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            c (:id (db/add-strand! ds {:title "C"}))]
+        (db/burn-by-id! ds a)
+        (db/burn-by-id! ds b)
+        (db/burn-by-id! ds c)
+        (is (= [c b a] (mapv :strand_id (db/recent-burn-history ds 10))))
+        (is (= [c b] (mapv :strand_id (db/recent-burn-history ds 2))))
+        (is (= [a] (mapv :strand_id (db/burn-history-for-strand ds a))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer limit"
+                              (db/recent-burn-history ds 0)))))))
+
+(deftest capturing-a-missing-id-skips-without-tombstone-or-error
+  (with-db
+    (fn [ds]
+      (is (nil? (#'db/capture-burn-tombstone! ds "absent")))
+      (is (empty? (db/recent-burn-history ds 10)))
+      (is (empty? (db/burn-history-for-strand ds "absent"))))))
+
 (deftest query-fields-use-state-and-attributes
   (with-db
     (fn [ds]

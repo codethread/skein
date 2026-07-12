@@ -1,0 +1,11 @@
+tasks:
+  - id: 1
+    description: burn_history storage, capture in deletion tx, core read fns, db tests
+    task_file: tasks/001-burn-history-core-storage.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: repl recovery wrapper, SPEC-001 delta promotion, docs gates
+    task_file: tasks/002-repl-wrapper-spec-promotion.md
+    status: pending
+    blocked_by: [1]
