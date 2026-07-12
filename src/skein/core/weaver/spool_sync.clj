@@ -585,7 +585,7 @@
 
 (declare clojure-source? parse-source-ns source-file->ns-sym)
 
-(def pending-generation-remedy
+(def ^:private pending-generation-remedy
   "Operator-facing remedy for a non-additive spool sync diff."
   "recorded; takes effect at the next weaver generation (mill-supervised restart, user sign-off)")
 
@@ -646,16 +646,19 @@
        vec))
 
 (defn- root-namespace-set [source-paths]
-  (set (for [^java.io.File dir source-paths
-             ^java.io.File file (file-seq dir)
-             :when (clojure-source? file)]
-         (:ns (parse-source-ns {:file (.getCanonicalPath file)})))))
+  (set (keep (fn [^java.io.File file]
+               (:ns (parse-source-ns {:file (.getCanonicalPath file)})))
+             (for [^java.io.File dir source-paths
+                   ^java.io.File file (file-seq dir)
+                   :when (clojure-source? file)]
+               file))))
 
-(defn- non-additive-diff [previous previous-fingerprints survivors]
+(defn- non-additive-diff [previous previous-fingerprints approved survivors]
   (let [previous-loaded (into {} (filter successful-sync?) previous)
+        approved-libs (set (keys (:spools approved)))
         current-by-lib (into {} (map (juxt :lib identity)) survivors)
         removals (vec (for [[lib result] previous-loaded
-                            :when (not (contains? current-by-lib lib))]
+                            :when (not (contains? approved-libs lib))]
                         (select-keys result [:lib :kind :root :source])))
         changed-roots (vec (for [[lib result] previous-loaded
                                  :let [survivor (get current-by-lib lib)]
@@ -683,10 +686,11 @@
   (let [current (:generation-id runtime)]
     (vec (for [[key value] @(:spool-state runtime)
                :let [generation (:skein.runtime/generation (meta value))]
-               :when (and generation (not= generation current))]
-           {:key key
-            :generation generation
-            :current-generation current}))))
+               :when (not= generation current)]
+           (cond-> {:key key
+                    :generation (or generation :unknown)
+                    :current-generation current}
+             (nil? generation) (assoc :reason :untagged))))))
 
 (defn- record-pending-generation! [runtime diff approved]
   (let [pending {:status :pending
@@ -714,6 +718,8 @@
   Maven deps (with `:mvn-overrides` applied) once against skein's launch classpath,
   adds the delta jars and each surviving root's source paths to the single spool
   classloader, and classifies each root `:loaded`/`:already-available`. Maven
+  A non-additive diff restores the previous public sync state, records a
+  `:pending-generation`, and throws before touching the classloader. Maven
   resolution is atomic: a cross-root version conflict or an unresolvable universe
   fails the whole sync loudly, leaving `{}` sync state rather than partial results."
   [runtime]
@@ -728,7 +734,7 @@
                        (:spools approved))
           failed (into {} (keep :failed) phase1)
           survivors (into [] (keep :survivor) phase1)
-          diff (non-additive-diff previous previous-fingerprints survivors)
+          diff (non-additive-diff previous previous-fingerprints approved survivors)
           _ (when (seq diff)
               (reset! (approved-spool-sync-state runtime) public-previous)
               (fail-non-additive-diff! runtime diff approved))

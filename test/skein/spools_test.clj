@@ -850,6 +850,33 @@
           (is (str/includes? (:remedy data) "next weaver generation"))
           (is (= (:pending-generation data) (:pending-generation (runtime/syncs rt)))))))))
 
+(deftest sync-skips-namespace-less-source-files-while-classifying-diffs
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.nsless_source_" suffix))
+            lib (symbol (str "demo/nsless-source-" suffix))
+            root (write-local-lib! config-dir (str "nsless-source-" suffix) ns-sym)]
+        (spit (io/file root "src" "data_readers.clj") "{demo/tag demo.reader/read}\n")
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/nsless-source-" suffix)}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :already-available (get-in (runtime/sync! rt) [:spools lib :status])))))))
+
+(deftest sync-reports-still-approved-validation-failure-as-per-root-failure
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.failed_still_approved_" suffix))
+            lib (symbol (str "demo/failed-still-approved-" suffix))
+            root (write-local-lib! config-dir (str "failed-still-approved-" suffix) ns-sym)]
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/failed-still-approved-" suffix)}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]")
+        (let [result (runtime/sync! rt)]
+          (is (= :failed (get-in result [:spools lib :status])))
+          (is (str/includes? (get-in result [:spools lib :message]) "EOF"))
+          (is (nil? (:pending-generation result))))))))
+
 (deftest sync-records-pending-generation-for-redefined-loaded-root
   (with-runtime
     (fn [rt config-dir]
@@ -886,6 +913,23 @@
           (is (= [{:key ::retained
                    :generation "older-generation"
                    :current-generation (:generation-id rt)}]
+                 (:retained-spool-state result))))))))
+
+(deftest sync-reports-untagged-retained-spool-state
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.untagged_state_" suffix))
+            lib (symbol (str "demo/untagged-state-" suffix))]
+        (write-local-lib! config-dir (str "untagged-state-" suffix) ns-sym)
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/untagged-state-" suffix)}}}))
+        (runtime/spool-state rt ::untagged (fn [] (Object.)))
+        (let [result (runtime/sync! rt)]
+          (is (= :loaded (get-in result [:spools lib :status])))
+          (is (= [{:key ::untagged
+                   :generation :unknown
+                   :current-generation (:generation-id rt)
+                   :reason :untagged}]
                  (:retained-spool-state result))))))))
 
 (deftest sync-approved-spool-conflicts-fail-unless-pinned-by-mvn-overrides
