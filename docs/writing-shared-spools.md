@@ -287,6 +287,21 @@ Example:
  :deps {camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}}}
 ```
 
+`sync!` resolves all approved spool Maven deps as one universe. If two roots
+declare the same Maven lib with different coordinates, the whole sync fails and
+names the lib, roots, and coordinates. Pin that lib with a top-level
+`:mvn-overrides` map in `spools.edn` or `spools.local.edn`:
+
+```clojure
+{:spools {acme/a {:local/root "spools/a"}
+          acme/b {:local/root "spools/b"}}
+ :mvn-overrides {camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}}}
+```
+
+Overrides are overlaid shared-then-local like `:spools` and use the same
+Maven-only policy as spool-root `:deps`: Maven coordinates only, no mutable
+versions, and no source-bearing coordinate keys.
+
 ## Local development overrides
 
 Use the same coordinate in shared `spools.edn` and gitignored `spools.local.edn` to develop against a checkout while other users stay pinned to the git sha. Local entries overlay shared entries by coordinate.
@@ -311,15 +326,13 @@ Developer-only `spools.local.edn`:
 
 The effective root is whichever entry wins the overlay. `:deps/root` is git-only because a local root can already point directly at any subdirectory you want to use. The Maven-only dependency policy still applies to local override roots.
 
-**Caution: a live weaver retains every root it has synced.** The runtime
-dependency mechanism (tools.deps) keeps each added local root for the JVM's
-lifetime, and every later sync re-resolves that whole retained set. Deleting or
-moving a directory that a running weaver ever synced therefore breaks *all*
-subsequent `sync!`/`reload!` calls in that process — including syncs of
-unrelated coordinates — until the path exists again or the weaver restarts.
-If you must move a synced root out from under a live weaver, leave a stub
-directory with a minimal `deps.edn` at the old path until the next restart.
-(`sync!` failing loudly up front for this case is tracked on card `pn7wh`.)
+**Caution: `sync!` resolves the current approved Maven universe.** Each call
+reads the roots approved at that moment, validates their `deps.edn` files, and
+resolves their Maven dependencies as one stateless universe. A root removed from
+`spools.edn` is simply absent from the next resolution; there is no retained
+root set to stub out. If a root is still approved but its directory was deleted
+or moved, that root reports a per-spool missing/unreadable failure until you
+update or restore the approved entry.
 
 ## Testing your spool against a Skein checkout
 
