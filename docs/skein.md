@@ -126,6 +126,18 @@ The weaver exposes two local transports:
 
 A selected workspace may have one running weaver. Runtime registries are weaver-lifetime state, so named queries, weave patterns, views, and synced spool state should be loaded from startup config if you want them to appear after every restart.
 
+## Weaver generations and cutover
+
+A **weaver generation** is one weaver process lifetime. It answers two everyday questions: when a config or spool change you make takes effect, and what happens to running agent runs when a weaver is replaced. The spool classloader is created when the weaver boots and is never swapped while it runs, so some changes load into the live weaver and some must wait for the next generation.
+
+`runtime/sync!` classifies each change. Additive changes load into the running weaver: a newly approved root, or a coordinate that has never loaded in this generation. Non-additive changes cannot, because applying them would mean unloading code the running JVM has no safe way to drop: removing a root that already loaded, pointing an already-loaded root at different source, or bumping the version of a loaded Maven coordinate. `sync!` refuses those in-JVM, records a `:pending-generation` entry, and reports `recorded; takes effect at the next weaver generation (mill-supervised restart, user sign-off)`. The pending change stays visible in `syncs` and in later `sync!` returns until the weaver process is replaced. If a change you expected does not take effect, check `syncs` for a pending generation. See daemon-runtime SPEC-004.C44c–C44f for the full classification.
+
+Replacing a weaver ends every agent run it is supervising, so a restart is not free. `mill weaver stop` does not drain the work first. It sends the weaver process SIGTERM, waits about five seconds, then SIGKILL if it has not exited. The headless runs the weaver was supervising are orphaned, not lost: the next weaver start recovers them through `reconcile!`, which resets each run to `pending` for auto-respawn, or marks it `exhausted` (non-retryable) once its attempts are spent. Interactive sessions survive the stop whatever their backend, tmux included, and the next generation adopts them instead of respawning. Before cycling a weaver that has live work, a coordinator either drains it first with `strand agent await` on the outstanding runs, or accepts the respawn-and-retry cost for whatever runs are still going when the stop lands.
+
+Restarting the canonical weaver requires explicit user sign-off, the same hard rule that governs every canonical-weaver restart (see AGENTS.md).
+
+One-time migration: a weaver started before stateless resolution landed (2026-07, SPEC-004.C44@sync-owns-resolution) carries process-global `add-libs` and basis residue that an in-JVM upgrade cannot unwind. A single restart of that weaver sheds it, and every generation after starts clean with no such restart needed. When to take that restart is a human decision under the sign-off rule above.
+
 ## CLI
 
 The `strand` CLI is intentionally small. It is for scripts, low-friction agent use, and JSON automation. It does not evaluate rich Clojure forms or mutate runtime extension state.
