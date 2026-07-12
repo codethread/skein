@@ -6,11 +6,12 @@
   of generalists. Each entry is one independent read-only review run with its
   own precise contract; a synthesizer fans all findings into one verdict.
 
-  Run it over any strand (kanban card, plan root, task) from the worktree
-  where the diff lives, and name the diff surface so reviewers stop
-  re-deriving it:
+  Findings append as notes on the review target, so run it over the feature's
+  task strand — never the kanban card, whose notes stay lean for handover —
+  from the worktree where the diff lives, and name the diff surface so
+  reviewers stop re-deriving it:
 
-      strand agent review <target-id> --roster change-review --cwd <worktree> \\
+      strand agent review <task-id> --roster change-review --cwd <worktree> \\
         --commit-range <base>..HEAD
 
   The commit range is expanded to its changed files and injected into every

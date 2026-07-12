@@ -328,9 +328,16 @@
                   :depends-on [:ci-green]
                   :attributes {"workflow/action-ref" "land.signoff.review"
                                "workflow/instruction"
-                               (fn [{:keys [worktree]}]
-                                 (str "Run the declared roster review:"
-                                      " `strand agent review <work-root> --roster change-review --cwd " worktree
+                               (fn [{:keys [worktree card]}]
+                                 (str "Run the declared roster review against a TASK strand, never the kanban card"
+                                      " or work root — findings append as notes on the review target, and card notes"
+                                      " stay lean for handover. "
+                                      (if card
+                                        (str "Pick the card's task tracking this branch's work"
+                                             " (`strand kanban task list " card "`), adding one first if none fits"
+                                             " (`strand kanban task add " card " <title>`). ")
+                                        "Target the task strand for this work under the work root. ")
+                                      "Then: `strand agent review <task-id> --roster change-review --cwd " worktree
                                       " --commit-range origin/main..HEAD`. Drive every fix round to done; each fix"
                                       " round re-pushes the branch and MUST re-establish green CI (the ci-green bar)"
                                       " before this step may complete. SIGN-OFF IS ONLY VALID WITH A PUSHED BRANCH"
