@@ -100,6 +100,9 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 	if err != nil {
 		return nil, err
 	}
+	if req.ReadyTimeoutMs < 0 {
+		return nil, fmt.Errorf("invalid ready_timeout_ms %d: must be positive milliseconds, or omitted for the default", req.ReadyTimeoutMs)
+	}
 	s.mu.Lock()
 	if child := s.children[world.ConfigDir]; child != nil && child.cmd.Process != nil && processAlive(child.cmd.Process.Pid) {
 		status, stale := readStatus(world)
@@ -163,7 +166,8 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 		status["pid"] = child.cmd.Process.Pid
 		return status, nil
 	}
-	s.children[world.ConfigDir] = &weaverChild{cmd: cmd, world: world, name: name, done: done}
+	registered := &weaverChild{cmd: cmd, world: world, name: name, done: done}
+	s.children[world.ConfigDir] = registered
 	s.mu.Unlock()
 	go func() {
 		err := cmd.Wait()
@@ -183,10 +187,13 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 		case <-done:
 		default:
 		}
-		cleanupWorldArtifacts(world)
-		s.mu.Lock()
-		delete(s.children, world.ConfigDir)
-		s.mu.Unlock()
+		// The ready wait runs unlocked, so a sibling start may have replaced
+		// this entry after our weaver died; only the still-registered owner
+		// may remove supervision state and world artifacts, or a failed
+		// early start would tear down its successor's healthy weaver.
+		if s.releaseChild(world.ConfigDir, registered) {
+			cleanupWorldArtifacts(world)
+		}
 		if tail := tailOfFile(logPath, 4096); tail != "" {
 			return nil, fmt.Errorf("%w; weaver log tail (%s):\n%s", err, logPath, tail)
 		}
@@ -194,6 +201,20 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 	}
 	millLogf("weaver started config_dir=%s state_dir=%s pid=%v", world.ConfigDir, world.StateDir, status["pid"])
 	return status, nil
+}
+
+// releaseChild removes the supervision entry for configDir only when it is
+// still the given child, reporting whether the caller owns the world's
+// artifacts. A false return means another start replaced the entry and now
+// owns the workspace.
+func (s *server) releaseChild(configDir string, child *weaverChild) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.children[configDir] != child {
+		return false
+	}
+	delete(s.children, configDir)
+	return true
 }
 
 func (s *server) weaverStatus(req client.MillWorldRequest) (map[string]any, error) {

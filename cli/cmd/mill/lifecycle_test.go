@@ -634,6 +634,34 @@ func TestStartUsesConfiguredReadyTimeout(t *testing.T) {
 	}
 }
 
+func TestStartRejectsNegativeReadyTimeout(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
+	cfg := tempConfig(t, tempSource(t))
+	s := server{children: map[string]*weaverChild{}}
+	_, err := s.startWeaver(client.MillWorldRequest{CWD: t.TempDir(), ConfigDir: cfg, ReadyTimeoutMs: -1})
+	if err == nil || !strings.Contains(err.Error(), "invalid ready_timeout_ms") {
+		t.Fatalf("expected invalid ready_timeout_ms error, got %v", err)
+	}
+}
+
+func TestReleaseChildOnlyRemovesOwner(t *testing.T) {
+	owner := &weaverChild{}
+	replacement := &weaverChild{}
+	s := server{children: map[string]*weaverChild{"world": replacement}}
+	if s.releaseChild("world", owner) {
+		t.Fatal("release by a superseded start must not claim its successor's entry")
+	}
+	if s.children["world"] != replacement {
+		t.Fatal("successor supervision entry was removed")
+	}
+	if !s.releaseChild("world", replacement) {
+		t.Fatal("owner release should remove the entry and report ownership")
+	}
+	if _, ok := s.children["world"]; ok {
+		t.Fatal("owner release left the entry behind")
+	}
+}
+
 func configDirArg(args []string) string {
 	for i, arg := range args {
 		if arg == "--workspace" && i+1 < len(args) {
