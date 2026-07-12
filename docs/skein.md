@@ -101,6 +101,12 @@ mill start
 mill weaver start --workspace "$workspace"
 ```
 
+`mill weaver start` waits up to 5 minutes for ready metadata while the JVM boots and trusted workspace config runs. On unusually slow machines or first boots that must fetch and compile a lot of code, pass a larger positive Go duration:
+
+```sh
+mill weaver start --workspace "$workspace" --ready-timeout 10m
+```
+
 Stop it:
 
 ```sh

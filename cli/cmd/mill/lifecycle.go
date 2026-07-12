@@ -26,6 +26,8 @@ func resolveLifecycleWorld(req client.MillWorldRequest) (config.World, error) {
 	return loaded, nil
 }
 
+const defaultWeaverReadyTimeout = 5 * time.Minute
+
 // sourceDiagOut receives launch-source warning diagnostics (e.g. a configured
 // installed source that has become unusable and is being bypassed). Defaults to
 // stderr so it never corrupts stdout doc/JSON output; overridable in tests.
@@ -99,24 +101,27 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 		return nil, err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if child := s.children[world.ConfigDir]; child != nil && child.cmd.Process != nil && processAlive(child.cmd.Process.Pid) {
 		status, stale := readStatus(world)
 		if status != nil && !stale {
+			s.mu.Unlock()
 			return status, nil
 		}
 		if status == nil {
 			status = baseStatusWithName(world, "starting", child.name)
 			status["pid"] = child.cmd.Process.Pid
 		}
+		s.mu.Unlock()
 		return status, nil
 	}
 	if status, stale := readStatus(world); status != nil {
+		s.mu.Unlock()
 		if !stale {
 			return status, nil
 		}
 		return nil, fmt.Errorf("stale weaver metadata for selected workspace: %v", status["stale_reason"])
 	}
+	s.mu.Unlock()
 	source, err := resolveLaunchSource(req.CWD)
 	if err != nil {
 		return nil, err
@@ -146,7 +151,20 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 		return nil, err
 	}
 	done := make(chan error, 1)
+	s.mu.Lock()
+	if child := s.children[world.ConfigDir]; child != nil && child.cmd.Process != nil && processAlive(child.cmd.Process.Pid) {
+		s.mu.Unlock()
+		terminateProcess(cmd.Process)
+		go func() {
+			_ = cmd.Wait()
+			_ = logFile.Close()
+		}()
+		status := baseStatusWithName(world, "starting", child.name)
+		status["pid"] = child.cmd.Process.Pid
+		return status, nil
+	}
 	s.children[world.ConfigDir] = &weaverChild{cmd: cmd, world: world, name: name, done: done}
+	s.mu.Unlock()
 	go func() {
 		err := cmd.Wait()
 		_ = logFile.Close()
@@ -154,7 +172,11 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 	}()
 	// Weaver startup includes JVM boot plus trusted config evaluation
 	// (spool sync and module loads), which can far exceed a bare boot.
-	status, err := waitForReadyStatus(world, cmd.Process.Pid, done, 60*time.Second)
+	readyTimeout := defaultWeaverReadyTimeout
+	if req.ReadyTimeoutMs > 0 {
+		readyTimeout = time.Duration(req.ReadyTimeoutMs) * time.Millisecond
+	}
+	status, err := waitForReadyStatus(world, cmd.Process.Pid, done, readyTimeout)
 	if err != nil {
 		terminateProcess(cmd.Process)
 		select {
@@ -162,7 +184,9 @@ func (s *server) startWeaver(req client.MillWorldRequest) (map[string]any, error
 		default:
 		}
 		cleanupWorldArtifacts(world)
+		s.mu.Lock()
 		delete(s.children, world.ConfigDir)
+		s.mu.Unlock()
 		if tail := tailOfFile(logPath, 4096); tail != "" {
 			return nil, fmt.Errorf("%w; weaver log tail (%s):\n%s", err, logPath, tail)
 		}
@@ -433,6 +457,9 @@ func waitForReadyStatus(world config.World, pid int, done <-chan error, timeout 
 			}
 			return nil, fmt.Errorf("weaver exited before publishing ready metadata")
 		default:
+		}
+		if !processAlive(pid) {
+			return nil, fmt.Errorf("weaver exited before publishing ready metadata")
 		}
 		if time.Now().After(deadline) {
 			terminatePID(pid)

@@ -14,7 +14,9 @@ import (
 	"skein-strand-cli/internal/config"
 )
 
-const MillProtocolVersion = 1
+const MillProtocolVersion = 2
+
+const defaultWeaverReadyTimeout = 5 * time.Minute
 
 type MillMetadata struct {
 	ProtocolVersion int    `json:"protocol_version"`
@@ -35,10 +37,11 @@ type MillRequest struct {
 }
 
 type MillWorldRequest struct {
-	CWD       string `json:"cwd,omitempty"`
-	ConfigDir string `json:"config_dir,omitempty"`
-	Source    string `json:"source,omitempty"`
-	Name      string `json:"name,omitempty"`
+	CWD            string `json:"cwd,omitempty"`
+	ConfigDir      string `json:"config_dir,omitempty"`
+	Source         string `json:"source,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ReadyTimeoutMs int64  `json:"ready_timeout_ms,omitempty"`
 }
 
 type MillResponse struct {
@@ -76,9 +79,13 @@ func MillCallPayload(operation string, world MillWorldRequest, payload map[strin
 	switch operation {
 	case "weaver-start":
 		// Weaver startup waits for the child process to publish ready metadata.
-		// The mill side allows 60s for JVM boot plus trusted startup config, so
-		// the client protocol deadline must cover that whole request.
-		deadline = 65 * time.Second
+		// The client protocol deadline must cover the mill-side ready wait plus
+		// a small cushion for response delivery.
+		if world.ReadyTimeoutMs > 0 {
+			deadline = time.Duration(world.ReadyTimeoutMs)*time.Millisecond + 5*time.Second
+		} else {
+			deadline = defaultWeaverReadyTimeout + 5*time.Second
+		}
 	case "weaver-stop":
 		// Stop signals the weaver and waits for its shutdown hook to clean up
 		// runtime metadata (supervised child or metadata-discovered pid), which

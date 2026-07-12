@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
 	"skein-strand-cli/internal/client"
 )
@@ -20,6 +21,23 @@ func worldRequest(workspace, name string) (client.MillWorldRequest, error) {
 		return client.MillWorldRequest{}, err
 	}
 	return client.MillWorldRequest{CWD: cwd, ConfigDir: workspace, Name: name}, nil
+}
+
+func parseReadyTimeout(value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid --ready-timeout %q: %w", value, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("invalid --ready-timeout %q: must be a positive duration", value)
+	}
+	if d < time.Millisecond {
+		return 0, fmt.Errorf("invalid --ready-timeout %q: must be at least 1ms", value)
+	}
+	return d.Milliseconds(), nil
 }
 
 func emitJSON(v any) error {
@@ -39,10 +57,19 @@ func runInit(workspace string) error {
 }
 
 func runWeaverLifecycle(operation, workspace, name string) error {
+	return runWeaverLifecycleWithReadyTimeout(operation, workspace, name, "")
+}
+
+func runWeaverLifecycleWithReadyTimeout(operation, workspace, name, readyTimeout string) error {
 	world, err := worldRequest(workspace, name)
 	if err != nil {
 		return err
 	}
+	ms, err := parseReadyTimeout(readyTimeout)
+	if err != nil {
+		return err
+	}
+	world.ReadyTimeoutMs = ms
 	result, err := client.MillCall(operation, world)
 	if err != nil {
 		return err
