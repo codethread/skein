@@ -3,7 +3,6 @@
   spools.local.edn reading, sync!, layered use!, reload!, event helper routing,
   daemon init, and the ephemeral helper spool."
   (:require [clojure.java.io :as io]
-            [clojure.repl.deps]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.core.client :as client]
@@ -64,6 +63,20 @@
       (f)
       (finally
         (alter-var-root #'access/cache-base (constantly original))))))
+
+(defn- with-resolver
+  "Run `f` with the private Maven resolver seam replaced by `resolver`.
+
+  `resolver` receives the merged `{lib coord}` universe and returns a tools.deps
+  `:added` lib-map, so sync tests exercise the two-phase loader without real
+  network resolution."
+  [resolver f]
+  (let [original @#'spool-sync/resolve-spool-maven-libs]
+    (try
+      (alter-var-root #'spool-sync/resolve-spool-maven-libs (constantly resolver))
+      (f)
+      (finally
+        (alter-var-root #'spool-sync/resolve-spool-maven-libs (constantly original))))))
 
 (defn- write-local-lib! [config-dir lib-name ns-sym]
   (let [root (io/file config-dir "spools" lib-name)
@@ -789,29 +802,37 @@
         (is (#{:loaded :already-available}
              (get-in (runtime/sync! rt) [:spools lib :status])))))))
 
-(deftest sync-reports-loaded-when-existing-spool-adds-new-maven-deps
+;; Under stateless resolution, :loaded/:already-available is driven by whether a
+;; sync newly added the root's source dir or its directly-declared Maven jars to
+;; the classloader (DELTA-Sor-001.CC1). A fresh root loads via its source dir; an
+;; unchanged re-sync is already-available; adding a Maven dep whose jar is absent
+;; flips the root back to :loaded even though its source dir is already present.
+(deftest sync-status-reflects-newly-added-source-and-maven-jars
   (with-runtime
     (fn [rt config-dir]
       (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.added_maven_dep_" suffix))
             lib (symbol (str "demo/added-maven-dep-" suffix))
             root (write-local-lib! config-dir (str "added-maven-dep-" suffix) ns-sym)
-            calls (atom [])]
+            fake-jar (str (io/file config-dir "fake" (str "data.csv-1.1.0-" suffix ".jar")))
+            universes (atom [])
+            resolver (fn [universe]
+                       (swap! universes conj universe)
+                       (if (contains? universe 'org.clojure/data.csv)
+                         {'org.clojure/data.csv {:mvn/version "1.1.0" :paths [fake-jar]}}
+                         {}))]
         (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/added-maven-dep-" suffix)}}}))
-        (with-redefs [clojure.repl.deps/add-libs (fn [libs]
-                                                   (swap! calls conj libs)
-                                                   (if (contains? libs 'org.clojure/data.csv)
-                                                     (set (keys libs))
-                                                     #{}))]
-          (is (= :already-available (get-in (runtime/sync! rt) [:spools lib :status])))
-          (spit (io/file root "deps.edn")
-                (pr-str {:paths ["src"]
-                         :deps {'org.clojure/data.csv {:mvn/version "1.1.0"}}}))
-          (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
-          (is (= [{lib {:local/root (.getCanonicalPath root)}}
-                  {'org.clojure/data.csv {:mvn/version "1.1.0"}}
-                  {lib {:local/root (.getCanonicalPath root)}}]
-                 @calls)))))))
+        (with-resolver
+          resolver
+          (fn []
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :already-available (get-in (runtime/sync! rt) [:spools lib :status])))
+            (spit (io/file root "deps.edn")
+                  (pr-str {:paths ["src"]
+                           :deps {'org.clojure/data.csv {:mvn/version "1.1.0"}}}))
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= [{} {} {'org.clojure/data.csv {:mvn/version "1.1.0"}}]
+                   @universes))))))))
 
 (deftest sync-approved-local-overlay-rejects-source-bearing-deps
   (with-runtime

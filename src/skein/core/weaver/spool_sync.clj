@@ -10,10 +10,9 @@
   trusted `skein.api.runtime.alpha` surface delegates its
   `approved`/`sync!`/`syncs` publics and its module loading here and owns the
   blessed contract (SPEC-004, SPEC-005.C5)."
-  (:require [clojure.java.basis :as basis]
-            [clojure.java.io :as io]
-            [clojure.repl.deps :as repl-deps]
+  (:require [clojure.java.io :as io]
             [clojure.string :as str]
+            [clojure.tools.deps.interop :as deps-interop]
             [clojure.tools.namespace.dependency :as ns-dep]
             [clojure.tools.namespace.parse :as ns-parse]
             [skein.core.format :as format]
@@ -74,16 +73,72 @@
           (throw (ex-info "Git spool entry :deps/root must be a relative path with no ~ or .. segments"
                           (assoc source :lib lib :deps/root (:deps/root entry)))))))))
 
+(def ^:private allowed-spool-maven-coordinate-keys
+  #{:mvn/version :exclusions :classifier :extension})
+
+(def ^:private rejected-spool-deps-keys
+  #{:git/url :git/sha :local/root})
+
+(def ^:private allowed-spools-file-keys #{:spools :mvn-overrides})
+
+(defn- mutable-maven-version? [version]
+  (or (str/ends-with? version "-SNAPSHOT")
+      (#{"RELEASE" "LATEST"} version)))
+
+(defn- validate-maven-coordinate!
+  "Apply the Maven-only dependency policy to one `lib`/`coord` pair, failing loudly.
+
+  `context` is merged into every error's ex-data so the caller (spool `deps.edn`
+  or `:mvn-overrides`) locates the offending declaration. Rejects non-symbol libs,
+  non-map coords, source-bearing coordinates, non-string or mutable `:mvn/version`,
+  and unsupported coordinate keys."
+  [lib coord context]
+  (when-not (symbol? lib)
+    (throw (ex-info "Maven coordinate lib must be a symbol" (assoc context :lib lib))))
+  (when-not (map? coord)
+    (throw (ex-info "Maven coordinate must be a coordinate map" (assoc context :lib lib :coord coord))))
+  (when-let [source-keys (seq (filter #(contains? coord %) rejected-spool-deps-keys))]
+    (throw (ex-info "Maven coordinate must not declare source-bearing coordinates"
+                    (assoc context :lib lib :keys (vec source-keys)))))
+  (when-not (string? (:mvn/version coord))
+    (throw (ex-info "Maven coordinate must declare string :mvn/version"
+                    (assoc context :lib lib :coord coord))))
+  (when (mutable-maven-version? (:mvn/version coord))
+    (throw (ex-info "Maven coordinate must not use mutable Maven versions"
+                    (assoc context :lib lib :mvn/version (:mvn/version coord)))))
+  (when-let [unknown (seq (remove allowed-spool-maven-coordinate-keys (keys coord)))]
+    (throw (ex-info "Maven coordinate contains unsupported Maven coordinate keys"
+                    (assoc context :lib lib :keys (vec unknown))))))
+
+(defn- normalize-mvn-overrides
+  "Validate one config file's optional top-level `:mvn-overrides` map.
+
+  Returns a `{lib coord}` map (empty when the key is absent). Fails loudly when
+  the value is not a map, and applies the same Maven-only policy as spool `deps`
+  to each pinned coordinate."
+  [name source config]
+  (let [overrides (:mvn-overrides config)]
+    (cond
+      (nil? overrides) {}
+      (not (map? overrides))
+      (throw (ex-info (str name " :mvn-overrides must be a map") (assoc source :mvn-overrides overrides)))
+      :else
+      (do
+        (doseq [[lib coord] overrides]
+          (validate-maven-coordinate! lib coord source))
+        overrides))))
+
 (defn- normalize-approved-spools-file
   "Validate one approved-spool config file and resolve roots for this runtime."
   [runtime name source config]
   (when-not (map? config)
     (throw (ex-info (str name " must contain a map") (assoc source :config config))))
-  (when-let [unknown (seq (remove #{:spools} (keys config)))]
+  (when-let [unknown (seq (remove allowed-spools-file-keys (keys config)))]
     (throw (ex-info (str name " contains unknown top-level keys") (assoc source :keys (vec unknown)))))
   (when-not (map? (:spools config))
     (throw (ex-info (str name " requires :spools map") (assoc source :spools (:spools config)))))
-  {:spools (into {}
+  {:mvn-overrides (normalize-mvn-overrides name source config)
+   :spools (into {}
                  (map (fn [[lib entry]]
                         (validate-approved-spool-entry! source lib entry)
                         (if (contains? entry :local/root)
@@ -144,11 +199,16 @@
 
   The effective allowlist is `spools.edn` overlaid by `spools.local.edn`; local
   entries replace shared entries with the same coordinate. Missing files
-  contribute no spools, while malformed present files fail loudly."
+  contribute no spools, while malformed present files fail loudly. The optional
+  top-level `:mvn-overrides` map is overlaid the same shared-then-local way and is
+  returned only when non-empty."
   [runtime]
   (reject-legacy-spool-config! runtime)
-  {:spools (merge (:spools (approved-spools-file runtime "spools.edn" :shared))
-                  (:spools (approved-spools-file runtime "spools.local.edn" :local)))})
+  (let [shared (approved-spools-file runtime "spools.edn" :shared)
+        local (approved-spools-file runtime "spools.local.edn" :local)
+        overrides (merge (:mvn-overrides shared) (:mvn-overrides local))]
+    (cond-> {:spools (merge (:spools shared) (:spools local))}
+      (seq overrides) (assoc :mvn-overrides overrides))))
 
 (defn- spool-source-fields [entry]
   (case (:kind entry)
@@ -345,23 +405,6 @@
             (delete-tree! tmp)
             (throw t)))))))
 
-(defn- add-root-paths-to-spool-loader! [runtime root]
-  (let [loader (:spool-classloader runtime)]
-    (doseq [^java.io.File path (root-paths root)]
-      (when-not (.isDirectory path)
-        (throw (ex-info "Local root classpath entry must be a directory" {:root root :path (.getPath path)})))
-      (.addURL ^clojure.lang.DynamicClassLoader loader (.toURL (.toURI path))))))
-
-(def ^:private allowed-spool-maven-coordinate-keys
-  #{:mvn/version :exclusions :classifier :extension})
-
-(def ^:private rejected-spool-deps-keys
-  #{:git/url :git/sha :local/root})
-
-(defn- mutable-maven-version? [version]
-  (or (str/ends-with? version "-SNAPSHOT")
-      (#{"RELEASE" "LATEST"} version)))
-
 (defn- read-spool-deps-edn [entry]
   (let [deps-file (io/file (:root entry) "deps.edn")]
     (when (.isFile deps-file)
@@ -385,46 +428,63 @@
                      :deps-file (::deps-file deps)
                      :deps (:deps deps)})))
   (doseq [[lib coord] (:deps deps)]
-    (when-not (symbol? lib)
-      (throw (ex-info "Spool deps.edn :deps keys must be symbols"
-                      {:root (:root entry)
-                       :deps-file (::deps-file deps)
-                       :lib lib})))
-    (when-not (map? coord)
-      (throw (ex-info "Spool deps.edn :deps entries must be Maven coordinate maps"
-                      {:root (:root entry)
-                       :deps-file (::deps-file deps)
-                       :lib lib
-                       :coord coord})))
-    (when-let [source-keys (seq (filter #(contains? coord %) rejected-spool-deps-keys))]
-      (throw (ex-info "Spool deps.edn :deps entries must not declare source-bearing coordinates"
-                      {:root (:root entry)
-                       :deps-file (::deps-file deps)
-                       :lib lib
-                       :keys (vec source-keys)})))
-    (when-not (string? (:mvn/version coord))
-      (throw (ex-info "Spool deps.edn :deps entries must declare string :mvn/version"
-                      {:root (:root entry)
-                       :deps-file (::deps-file deps)
-                       :lib lib
-                       :coord coord})))
-    (when (mutable-maven-version? (:mvn/version coord))
-      (throw (ex-info "Spool deps.edn :deps entries must not use mutable Maven versions"
-                      {:root (:root entry)
-                       :deps-file (::deps-file deps)
-                       :lib lib
-                       :mvn/version (:mvn/version coord)})))
-    (when-let [unknown (seq (remove allowed-spool-maven-coordinate-keys (keys coord)))]
-      (throw (ex-info "Spool deps.edn :deps entries contain unsupported Maven coordinate keys"
-                      {:root (:root entry)
-                       :deps-file (::deps-file deps)
-                       :lib lib
-                       :keys (vec unknown)}))))
+    (validate-maven-coordinate! lib coord {:root (:root entry) :deps-file (::deps-file deps)}))
   (:deps deps))
 
 (defn- spool-maven-deps! [entry]
   (when-let [deps (read-spool-deps-edn entry)]
     (not-empty (validate-spool-maven-deps! entry deps))))
+
+(defn- launch-basis
+  "Read skein's immutable launch basis from the `clojure.basis` property file.
+
+  Returns the parsed basis map, or nil when the property or file is absent (a
+  process not started by the Clojure CLI). Reads only the immutable launch file,
+  never `clojure.java.basis/current-basis`, so it observes no runtime mutation."
+  []
+  (when-let [path (System/getProperty "clojure.basis")]
+    (let [file (io/file path)]
+      (when (.exists file)
+        (query/read-edn-file file)))))
+
+(defn- resolve-spool-maven-libs
+  "Resolve merged Maven `deps` against skein's launch classpath, returning `:added`.
+
+  Reads skein's launch libs and `:mvn/repos`/`:mvn/local-repo` from the immutable
+  `clojure.basis` property file and asks tools.deps — via the shipped
+  `clojure -T:deps` subprocess seam — to resolve only the delta over that
+  already-provided universe, returning the tools.deps `:added` lib-map (lib to a
+  coordinate carrying resolved `:paths`). Libs skein already ships are excluded so
+  nothing shadows the base classpath. An empty universe resolves to `{}` without a
+  subprocess or basis read. Fails loudly (TEN-003) when Maven deps must be resolved
+  but the launch basis is unavailable, since a missing provided universe would
+  re-add coordinates skein already ships. Sole mockable seam for the old add-libs
+  calls; resolution over the universe is atomic, so an unresolvable coordinate
+  throws and fails the whole sync."
+  [deps]
+  (if (empty? deps)
+    {}
+    (let [basis (launch-basis)]
+      (when-not basis
+        (throw (ex-info (format/reflow
+                         "|Cannot resolve spool Maven dependencies: skein's launch basis
+                           |(clojure.basis property file) is unavailable, so the already-provided
+                           |classpath universe is unknown. Start the weaver via the Clojure CLI so
+                           |the launch basis is present.")
+                        {:libs (vec (keys deps))
+                         :clojure-basis (System/getProperty "clojure.basis")})))
+      (let [existing (:libs basis)
+            add (reduce-kv (fn [m lib coord]
+                             (if (contains? existing lib) m (assoc m lib coord)))
+                           {} deps)]
+        (if (empty? add)
+          {}
+          (:added (deps-interop/invoke-tool
+                   {:tool-alias :deps
+                    :fn 'clojure.tools.deps/resolve-added-libs
+                    :args {:existing existing
+                           :add add
+                           :procurer (select-keys basis [:mvn/repos :mvn/local-repo])}})))))))
 
 (defn- materialize-git-spool-outcome
   "Materialize a git entry, returning {:fetch ...} or {:failed <sync-failed>}.
@@ -446,115 +506,148 @@
       {:failed (sync-failed lib entry :fetch-failed {:exit 1
                                                      :stderr (stderr-tail (ex-message t))})})))
 
-(defn- sync-approved-spool! [runtime lib entry]
+(defn- materialize-and-validate-spool
+  "Phase 1: materialize a git root, verify it on disk, and validate it per-root.
+
+  Returns `{:failed [lib result]}` for a per-root materialization/validation
+  failure (recorded exactly as before: fetch/tag, missing/unreadable root, or a
+  `:runtime-add-failed` Maven-policy/source-path failure), or `{:survivor {...}}`
+  carrying the lib, entry, validated Maven deps, vetted source-path `File`s, and
+  any `:fetch` outcome for the shared resolution phase."
+  [lib entry]
   (let [{:keys [fetch failed]} (when (= :git (:kind entry))
                                  (materialize-git-spool-outcome lib entry))
         root-file (io/file (:root entry))]
     (cond
       failed
-      failed
+      {:failed failed}
 
       (not (.exists root-file))
-      (sync-failed lib entry :missing-root (cond-> {} fetch (assoc :fetch fetch)))
+      {:failed (sync-failed lib entry :missing-root (cond-> {} fetch (assoc :fetch fetch)))}
 
       (or (not (.isDirectory root-file)) (not (.canRead root-file)))
-      (sync-failed lib entry :unreadable-root (cond-> {} fetch (assoc :fetch fetch)))
+      {:failed (sync-failed lib entry :unreadable-root (cond-> {} fetch (assoc :fetch fetch)))}
 
       :else
       (try
         (let [maven-deps (spool-maven-deps! entry)
-              added-maven (when maven-deps
-                            (with-spool-classloader
-                              runtime
-                              #(binding [clojure.core/*repl* true]
-                                 (repl-deps/add-libs maven-deps))))
-              added (with-spool-classloader
-                      runtime
-                      #(binding [clojure.core/*repl* true]
-                         (repl-deps/add-libs {lib {:local/root (:root entry)}})))]
-          (add-root-paths-to-spool-loader! runtime (:root entry))
-          [lib (cond-> (assoc (sync-result-base lib entry)
-                              :status (if (or (seq added-maven) (seq added))
-                                        :loaded
-                                        :already-available))
-                 fetch (assoc :fetch fetch))])
+              source-paths (root-paths (:root entry))]
+          (doseq [^java.io.File path source-paths]
+            (when-not (.isDirectory path)
+              (throw (ex-info "Local root classpath entry must be a directory"
+                              {:root (:root entry) :path (.getPath path)}))))
+          {:survivor {:lib lib
+                      :entry entry
+                      :maven-deps maven-deps
+                      :source-paths source-paths
+                      :fetch fetch}})
         (catch Throwable t
-          (sync-failed lib entry :runtime-add-failed (cond-> {:message (ex-message t)
-                                                              :class (str (class t))}
-                                                       (ex-data t) (assoc :data (ex-data t))
-                                                       fetch (assoc :fetch fetch))))))))
+          {:failed (sync-failed lib entry :runtime-add-failed
+                                (cond-> {:message (ex-message t)
+                                         :class (str (class t))}
+                                  (ex-data t) (assoc :data (ex-data t))
+                                  fetch (assoc :fetch fetch)))})))))
 
-(defn- retained-root-orphans
-  "Detector: retained `:libs` entries whose local root has left the allowlist and disk.
+(defn- merge-maven-universe
+  "Merge every surviving root's declared Maven deps into one resolution universe.
 
-  Pure over (`retained-libs`, `allowlist`, filesystem): returns a vector of
-  `{:lib <lib symbol> :local/root <path string>}` for every `retained-libs` entry
-  that (a) carries a `:local/root`, (b) whose path no longer `.exists`, and (c)
-  whose lib symbol is absent from the `allowlist` set. A nil/empty `retained-libs`
-  yields no orphans. Its only side input is the on-disk existence probe; it never
-  reads or mutates the process-global basis (`DELTA-srr-dr-001.CC1`)."
-  [retained-libs allowlist]
-  (into []
-        (keep (fn [[lib coord]]
-                (when-let [root (:local/root coord)]
-                  (when (and (not (.exists (io/file root)))
-                             (not (contains? allowlist lib)))
-                    {:lib lib :local/root root}))))
-        retained-libs))
+  Returns a `{lib coord}` map. A lib declared by multiple roots with disagreeing
+  `:mvn/version` fails the whole sync loudly (TEN-003), naming the lib, versions,
+  and declaring roots, unless `mvn-overrides` pins it — an override replaces the
+  lib's coordinate across the universe and silences its conflict. Overrides that
+  no surviving root declares are ignored."
+  [survivors mvn-overrides]
+  (let [declarations (for [{:keys [lib maven-deps]} survivors
+                           [dep coord] maven-deps]
+                       {:root lib :lib dep :coord coord})]
+    (reduce-kv
+     (fn [universe dep decls]
+       (if-let [override (get mvn-overrides dep)]
+         (assoc universe dep override)
+         (let [versions (into (sorted-set) (map #(get-in % [:coord :mvn/version])) decls)]
+           (if (> (count versions) 1)
+             (throw (ex-info (str "Cross-root Maven version conflict for " dep ": "
+                                  (str/join ", " (map (fn [{:keys [root coord]}]
+                                                        (str (:mvn/version coord) " (" root ")"))
+                                                      decls))
+                                  "; pin " dep " in :mvn-overrides to resolve")
+                             {:lib dep
+                              :versions (vec versions)
+                              :roots (mapv :root decls)}))
+             (assoc universe dep (:coord (first decls)))))))
+     {}
+     (group-by :lib declarations))))
 
-(defn- basis-retained-root-orphans
-  "Feed the session-retained runtime basis into the retained-root detector.
+(defn- file-url-string [path]
+  (str (.toURL (.toURI (io/file path)))))
 
-  Supplies `(:libs (clojure.java.basis/current-basis))` — the process-global
-  universe `add-libs` re-canonicalizes — and `allowlist` to `retained-root-orphans`.
-  Reading the basis is pure inspection; it never mutates `the-basis`."
-  [allowlist]
-  (retained-root-orphans (:libs (basis/current-basis)) allowlist))
+(defn- added-jar-paths [added]
+  (distinct (mapcat :paths (vals added))))
 
-(defn- retained-root-orphans-error
-  "Build the loud whole-sync failure for a non-empty retained-root orphan set.
+(defn- add-delta-jars!
+  "Add the resolved jar URLs absent from `pre-urls` to the spool classloader."
+  [^clojure.lang.DynamicClassLoader loader added pre-urls]
+  (doseq [path (added-jar-paths added)
+          :when (not (contains? pre-urls (file-url-string path)))]
+    (.addURL loader (.toURL (.toURI (io/file path))))))
 
-  Assembles the stack-trace-free `ex-info` of `DELTA-srr-dr-001.CC2`: the message
-  names each deleted retained lib and path and why `sync!` cannot proceed, and
-  `ex-data` carries `:missing-roots`, the named-not-applied `:remedy`, and the
-  `:retained-universe-source` so the diagnostic is self-describing."
-  [orphans]
-  (let [listing (str/join ", "
-                          (map (fn [{:keys [lib] :local/keys [root]}]
-                                 (str lib " (" root ")"))
-                               orphans))]
-    (ex-info (str (format/reflow
-                   "|Sync aborted: a session-retained spool root was deleted from disk and has
-                     |left the approved allowlist. add-libs retains every runtime-added local/root
-                     |in the process-global tools.deps basis, so the next add-libs would fail while
-                     |re-canonicalizing the deleted coordinate — naming the stale retained lib, not
-                     |the spool being synced. sync! cannot proceed until the retained basis resolves.")
-                  " Deleted retained roots: " listing
-                  ". Remedy: recreate a bare directory at each deleted path (:stub-dir, effective"
-                  " until the next weaver restart clears the retained basis), or restart the weaver"
-                  " JVM to discard the retained basis (:restart).")
-             {:missing-roots (vec orphans)
-              :remedy {:stub-dir "recreate a bare directory at each deleted :local/root path; effective until the next weaver restart clears the retained basis"
-                       :restart "restart the weaver JVM to discard the session-retained tools.deps basis"}
-              :retained-universe-source '(:libs (clojure.java.basis/current-basis))})))
+(defn- add-source-paths!
+  "Add a surviving root's vetted source directories to the spool classloader."
+  [^clojure.lang.DynamicClassLoader loader source-paths]
+  (doseq [^java.io.File path source-paths]
+    (.addURL loader (.toURL (.toURI path)))))
+
+(defn- spool-load-status
+  "Classify a surviving root `:loaded`/`:already-available` against `pre-urls`.
+
+  A root is `:loaded` when this sync newly added any of its source directories or
+  its directly-declared Maven jars to the classloader — otherwise every URL it
+  contributes was already present and it is `:already-available`."
+  [maven-deps source-paths added pre-urls]
+  (let [source-urls (map (fn [^java.io.File p] (str (.toURL (.toURI p)))) source-paths)
+        jar-urls (for [dep (keys maven-deps)
+                       :let [coord (get added dep)]
+                       :when coord
+                       path (:paths coord)]
+                   (file-url-string path))]
+    (if (some (complement pre-urls) (concat source-urls jar-urls))
+      :loaded
+      :already-available)))
 
 (defn sync-approved-spools
-  "Load approved local spools into the runtime classloader and record sync status."
+  "Load approved spools into the runtime classloader and record per-spool status.
+
+  Phase 1 materializes and validates each approved root independently, recording
+  per-root `:failed` outcomes. Phase 2 resolves the union of every surviving root's
+  Maven deps (with `:mvn-overrides` applied) once against skein's launch classpath,
+  adds the delta jars and each surviving root's source paths to the single spool
+  classloader, and classifies each root `:loaded`/`:already-available`. Maven
+  resolution is atomic: a cross-root version conflict or an unresolvable universe
+  fails the whole sync loudly, leaving `{}` sync state rather than partial results."
   [runtime]
-  ;; Stale state clears before anything that can throw — a structural
-  ;; spools.edn failure or a retained-root preflight abort both leave {} rather
-  ;; than the previous sync's results.
+  ;; Stale state clears before anything that can throw — a structural spools.edn
+  ;; failure or an atomic-resolution abort both leave {} rather than stale results.
   (reset! (approved-spool-sync-state runtime) {})
   (let [approved (approved-spools runtime)
-        allowlist (set (keys (:spools approved)))
-        orphans (basis-retained-root-orphans allowlist)]
-    (when (seq orphans)
-      (throw (retained-root-orphans-error orphans)))
-    (let [results (into (sorted-map)
-                        (map (fn [[lib entry]] (sync-approved-spool! runtime lib entry)))
-                        (:spools approved))]
-      (reset! (approved-spool-sync-state runtime) results)
-      {:spools results})))
+        phase1 (mapv (fn [[lib entry]] (materialize-and-validate-spool lib entry))
+                     (:spools approved))
+        failed (into {} (keep :failed) phase1)
+        survivors (into [] (keep :survivor) phase1)
+        universe (merge-maven-universe survivors (:mvn-overrides approved))
+        added (resolve-spool-maven-libs universe)
+        loader (:spool-classloader runtime)
+        pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
+        _ (add-delta-jars! loader added pre-urls)
+        survivor-results (into {}
+                               (map (fn [{:keys [lib entry maven-deps source-paths fetch]}]
+                                      (add-source-paths! loader source-paths)
+                                      [lib (cond-> (assoc (sync-result-base lib entry)
+                                                          :status (spool-load-status maven-deps source-paths added pre-urls))
+                                             fetch (assoc :fetch fetch))]))
+                               survivors)
+        results (into (sorted-map) (concat failed survivor-results))]
+    (reset! (approved-spool-sync-state runtime) results)
+    {:spools results}))
 
 (defn approved-spool-syncs
   "Return the most recent approved spool sync results."
