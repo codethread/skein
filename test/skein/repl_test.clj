@@ -355,7 +355,7 @@
         (is (= [] (repl/burn-history design)))
         (is (= [docs] (mapv :strand_id (repl/recent-burns 10))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                              #"positive integer limit"
+                              #"Read result limit must be a positive integer"
                               (repl/recent-burns 0)))))))
 
 (deftest burn-tombstone-reads-require-in-process-runtime
