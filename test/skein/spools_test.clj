@@ -896,6 +896,37 @@
                                   'org.example/new {:mvn/version "2.0.0"}}}))
             (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))))))))
 
+(deftest sync-refuses-resolved-maven-coordinate-without-version
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.maven_missing_version_" suffix))
+            lib (symbol (str "demo/maven-missing-version-" suffix))
+            root (write-local-lib! config-dir (str "maven-missing-version-" suffix) ns-sym)
+            version? (atom true)
+            resolver (fn [universe]
+                       (when (contains? universe 'org.example/loaded)
+                         {'org.example/loaded (cond-> {:paths [(str (io/file config-dir "fake" "loaded.jar"))]}
+                                                @version? (assoc :mvn/version "1.0.0"))}))]
+        (spit (io/file root "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.example/loaded {:mvn/version "1.0.0"}}}))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/maven-missing-version-" suffix)}}}))
+        (with-resolver
+          resolver
+          (fn []
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= {'org.example/loaded "1.0.0"}
+                   @(:approved-spool-generation-maven rt)))
+            (reset! version? false)
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+                  data (ex-data ex)]
+              (is (= "Resolved Maven coordinate must declare string :mvn/version" (ex-message ex)))
+              (is (= 'org.example/loaded (:lib data)))
+              (is (= {:paths [(str (io/file config-dir "fake" "loaded.jar"))]} (:coord data)))
+              (is (= {'org.example/loaded "1.0.0"}
+                     @(:approved-spool-generation-maven rt))))))))))
+
 (deftest sync-records-pending-generation-for-removed-loaded-root
   (with-runtime
     (fn [rt config-dir]

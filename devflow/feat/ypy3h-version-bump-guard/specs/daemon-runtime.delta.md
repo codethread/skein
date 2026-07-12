@@ -11,7 +11,7 @@
 
 ## DELTA-Vbg-001.P2 Contract changes
 
-- **DELTA-Vbg-001.CC1** (extends SPEC-004.C44/C44c): After resolving the approved Maven universe and before adding jar URLs or source roots, `sync!` compares the current resolved Maven versions with the runtime's previous successful resolved-Maven state for this weaver generation. A coordinate is considered already loaded when a previous successful sync added its resolved jar URLs to the spool classloader.
+- **DELTA-Vbg-001.CC1** (extends SPEC-004.C44/C44c): After resolving the approved Maven universe and before adding jar URLs or source roots, `sync!` compares the current resolved Maven versions with the runtime's accumulated resolved-Maven state for this weaver generation. A coordinate is considered already loaded when a successful sync in this weaver generation added its resolved jar URLs to the spool classloader. The in-generation root, fingerprint, and Maven baselines accumulate across syncs because the classloader state remains live even when a later sync fails.
 
 - **DELTA-Vbg-001.CC2** (extends SPEC-004.C44c): Any version change for an already-loaded coordinate is a non-additive sync diff. `sync!` refuses the in-JVM application with `ExceptionInfo` ex-data containing `:reason :non-additive-sync-diff`, a `:diff` map with `:maven-version-bumps`, each bumped coordinate, previous version, new version, and the existing remedy text: `recorded; takes effect at the next weaver generation (mill-supervised restart, user sign-off)`.
 

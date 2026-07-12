@@ -112,6 +112,19 @@
     (throw (ex-info "Maven coordinate contains unsupported Maven coordinate keys"
                     (assoc context :lib lib :keys (vec unknown))))))
 
+(defn- resolved-maven-version
+  "Return the resolved Maven version for `lib`, failing loudly when absent.
+
+  Resolver output feeds the in-generation version-bump baseline. Missing versions
+  are not comparable and must never be recorded as nil baseline entries."
+  [lib coord]
+  (let [version (:mvn/version coord)]
+    (when-not (string? version)
+      (throw (ex-info "Resolved Maven coordinate must declare string :mvn/version"
+                      {:lib lib
+                       :coord coord})))
+    version))
+
 (defn- normalize-mvn-overrides
   "Validate one config file's optional top-level `:mvn-overrides` map.
 
@@ -748,7 +761,7 @@
               (fail-non-additive-diff! runtime structural-diff approved))
           universe (merge-maven-universe survivors (:mvn-overrides approved))
           added (resolve-spool-maven-libs universe)
-          resolved-maven (into {} (map (fn [[lib coord]] [lib (:mvn/version coord)])) added)
+          resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)
           _ (when (seq diff)
               (reset! (approved-spool-sync-state runtime) public-previous)

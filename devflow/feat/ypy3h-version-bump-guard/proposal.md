@@ -8,11 +8,11 @@ Add Maven version-bump detection to the existing `sync!` non-additive diff class
 
 Use runtime-owned in-memory state beside the existing generation sync state:
 
-- `:approved-spool-generation-state` remains the previous successful root state.
-- `:approved-spool-generation-fingerprints` remains the source redefinition baseline.
-- `:approved-spool-generation-maven` records `{coordinate resolved-version}` for coordinates returned by the resolver as added jars in a successful sync.
+- `:approved-spool-generation-state` accumulates successful root states across the current weaver generation.
+- `:approved-spool-generation-fingerprints` accumulates source redefinition baselines across the current weaver generation.
+- `:approved-spool-generation-maven` accumulates `{coordinate resolved-version}` for coordinates returned by the resolver in successful syncs.
 
-This defines "already loaded" as a coordinate whose resolved jar URLs were added by a previous successful sync in this weaver generation. Coordinates newly appearing in the current resolution have no previous entry and remain additive-safe.
+These baselines mean "already loaded in this weaver generation." They survive later failed or partial syncs so a transient bad spool edit does not erase the classloader state that still exists in the running weaver. Coordinates newly appearing in the current resolution have no previous entry and remain additive-safe.
 
 ## Behavior
 
