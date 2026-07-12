@@ -653,7 +653,7 @@
                    :when (clojure-source? file)]
                file))))
 
-(defn- non-additive-diff [previous previous-fingerprints approved survivors]
+(defn- non-additive-diff [previous previous-fingerprints previous-maven approved survivors resolved-maven]
   (let [previous-loaded (into {} (filter successful-sync?) previous)
         approved-libs (set (keys (:spools approved)))
         current-by-lib (into {} (map (juxt :lib identity)) survivors)
@@ -676,11 +676,18 @@
                                                 (not= (get previous-fingerprints lib) fingerprint)))]
                              {:lib lib
                               :root (:root result)
-                              :loaded-namespaces (filterv find-ns (root-namespace-set (:source-paths survivor)))}))]
+                              :loaded-namespaces (filterv find-ns (root-namespace-set (:source-paths survivor)))}))
+        version-bumps (vec (for [[coord previous-version] previous-maven
+                                 :let [new-version (get resolved-maven coord)]
+                                 :when (and new-version (not= previous-version new-version))]
+                             {:coordinate coord
+                              :previous-version previous-version
+                              :new-version new-version}))]
     (cond-> {}
       (seq removals) (assoc :removed-roots removals)
       (seq changed-roots) (assoc :changed-roots changed-roots)
-      (seq redefinitions) (assoc :redefinitions redefinitions))))
+      (seq redefinitions) (assoc :redefinitions redefinitions)
+      (seq version-bumps) (assoc :maven-version-bumps version-bumps))))
 
 (defn- stale-spool-state-report [runtime]
   (let [current (:generation-id runtime)]
@@ -727,19 +734,25 @@
   ;; failure or an atomic-resolution abort both leave {} rather than stale results.
   (let [public-previous @(approved-spool-sync-state runtime)
         previous @(:approved-spool-generation-state runtime)
-        previous-fingerprints @(:approved-spool-generation-fingerprints runtime)]
+        previous-fingerprints @(:approved-spool-generation-fingerprints runtime)
+        previous-maven @(:approved-spool-generation-maven runtime)]
     (reset! (approved-spool-sync-state runtime) {})
     (let [approved (approved-spools runtime)
           phase1 (mapv (fn [[lib entry]] (materialize-and-validate-spool lib entry))
                        (:spools approved))
           failed (into {} (keep :failed) phase1)
           survivors (into [] (keep :survivor) phase1)
-          diff (non-additive-diff previous previous-fingerprints approved survivors)
+          structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {})
+          _ (when (seq structural-diff)
+              (reset! (approved-spool-sync-state runtime) public-previous)
+              (fail-non-additive-diff! runtime structural-diff approved))
+          universe (merge-maven-universe survivors (:mvn-overrides approved))
+          added (resolve-spool-maven-libs universe)
+          resolved-maven (into {} (map (fn [[lib coord]] [lib (:mvn/version coord)])) added)
+          diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)
           _ (when (seq diff)
               (reset! (approved-spool-sync-state runtime) public-previous)
               (fail-non-additive-diff! runtime diff approved))
-          universe (merge-maven-universe survivors (:mvn-overrides approved))
-          added (resolve-spool-maven-libs universe)
           loader (:spool-classloader runtime)
           pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
           _ (add-delta-jars! loader added pre-urls)
@@ -755,8 +768,10 @@
           retained (stale-spool-state-report runtime)]
       (reset! (approved-spool-sync-state runtime) results)
       (reset! (:approved-spool-generation-state runtime)
-              (into (sorted-map) (filter successful-sync?) results))
-      (reset! (:approved-spool-generation-fingerprints runtime) fingerprints)
+              (merge (into (sorted-map) previous)
+                     (into (sorted-map) (filter successful-sync?) results)))
+      (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
+      (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
       (cond-> {:spools results}
         (seq retained) (assoc :retained-spool-state retained)
         @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime))))))

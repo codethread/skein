@@ -426,6 +426,7 @@
                          :approved-spool-sync-state (atom {})
                          :approved-spool-generation-state (atom {})
                          :approved-spool-generation-fingerprints (atom {})
+                         :approved-spool-generation-maven (atom {})
                          :pending-spool-generation (atom nil)
                          :module-use-state (atom {})
                          :spool-state (atom {})

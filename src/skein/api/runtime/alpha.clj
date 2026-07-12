@@ -23,14 +23,19 @@
 (s/def ::previous-root any?)
 (s/def ::new-root any?)
 (s/def ::loaded-namespaces (s/coll-of symbol? :kind vector?))
+(s/def ::coordinate symbol?)
+(s/def ::previous-version string?)
+(s/def ::new-version string?)
 (s/def ::removed-root (s/keys :req-un [::lib ::kind ::root]
                               :opt-un [::source]))
 (s/def ::changed-root (s/keys :req-un [::lib ::previous-root ::new-root]))
 (s/def ::redefinition (s/keys :req-un [::lib ::root ::loaded-namespaces]))
+(s/def ::maven-version-bump (s/keys :req-un [::coordinate ::previous-version ::new-version]))
 (s/def ::removed-roots (s/coll-of ::removed-root :kind vector?))
 (s/def ::changed-roots (s/coll-of ::changed-root :kind vector?))
 (s/def ::redefinitions (s/coll-of ::redefinition :kind vector?))
-(s/def ::diff (s/keys :opt-un [::removed-roots ::changed-roots ::redefinitions]))
+(s/def ::maven-version-bumps (s/coll-of ::maven-version-bump :kind vector?))
+(s/def ::diff (s/keys :opt-un [::removed-roots ::changed-roots ::redefinitions ::maven-version-bumps]))
 (s/def ::generation (s/or :id string? :unknown #{:unknown}))
 (s/def ::approved-spools set?)
 (s/def ::remedy string?)
@@ -61,11 +66,12 @@
   (spool-sync/approved-spools runtime))
 
 (defn sync!
-  "Load approved local roots into `runtime`.
+  "Load approved spool roots and Maven jars into `runtime`.
 
   Returns `{:spools ...}` plus `:retained-spool-state` when preserved spool-state
-  entries are from an older or unknown generation. Refuses non-additive diffs by
-  throwing ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
+  entries are from an older or unknown generation. Refuses non-additive diffs,
+  including Maven version changes for already-loaded coordinates, by throwing
+  ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
   `:pending-generation`, and `:remedy`; later successful calls include the
   pending generation until the weaver process is replaced."
   [runtime]

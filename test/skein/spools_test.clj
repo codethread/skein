@@ -833,6 +833,69 @@
             (is (= [{} {} {'org.clojure/data.csv {:mvn/version "1.1.0"}}]
                    @universes))))))))
 
+(deftest sync-refuses-maven-version-bump-for-loaded-coordinate
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.maven_bump_" suffix))
+            lib (symbol (str "demo/maven-bump-" suffix))
+            root (write-local-lib! config-dir (str "maven-bump-" suffix) ns-sym)
+            version (atom "1.0.0")
+            resolver (fn [universe]
+                       (when (contains? universe 'org.example/loaded)
+                         {'org.example/loaded {:mvn/version @version
+                                               :paths [(str (io/file config-dir "fake" (str "loaded-" @version ".jar")))]}}))]
+        (spit (io/file root "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.example/loaded {:mvn/version "1.0.0"}}}))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/maven-bump-" suffix)}}}))
+        (with-resolver
+          resolver
+          (fn []
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (spit (io/file root "deps.edn") "{:paths [\"src\"]")
+            (is (= :failed (get-in (runtime/sync! rt) [:spools lib :status])))
+            (reset! version "2.0.0")
+            (spit (io/file root "deps.edn")
+                  (pr-str {:paths ["src"]
+                           :deps {'org.example/loaded {:mvn/version "2.0.0"}}}))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+                  data (ex-data ex)
+                  bump (get-in data [:diff :maven-version-bumps 0])]
+              (is (= :non-additive-sync-diff (:reason data)))
+              (is (= 'org.example/loaded (:coordinate bump)))
+              (is (= "1.0.0" (:previous-version bump)))
+              (is (= "2.0.0" (:new-version bump)))
+              (is (str/includes? (:remedy data) "next weaver generation")))))))))
+
+(deftest sync-allows-unchanged-and-new-maven-versions
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.maven_unchanged_" suffix))
+            lib (symbol (str "demo/maven-unchanged-" suffix))
+            root (write-local-lib! config-dir (str "maven-unchanged-" suffix) ns-sym)
+            resolver (fn [universe]
+                       (cond-> {'org.example/loaded {:mvn/version "1.0.0"
+                                                     :paths [(str (io/file config-dir "fake" "loaded-1.0.0.jar"))]}}
+                         (contains? universe 'org.example/new)
+                         (assoc 'org.example/new {:mvn/version "2.0.0"
+                                                  :paths [(str (io/file config-dir "fake" "new-2.0.0.jar"))]})))]
+        (spit (io/file root "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.example/loaded {:mvn/version "1.0.0"}}}))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/maven-unchanged-" suffix)}}}))
+        (with-resolver
+          resolver
+          (fn []
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (is (= :already-available (get-in (runtime/sync! rt) [:spools lib :status])))
+            (spit (io/file root "deps.edn")
+                  (pr-str {:paths ["src"]
+                           :deps {'org.example/loaded {:mvn/version "1.0.0"}
+                                  'org.example/new {:mvn/version "2.0.0"}}}))
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))))))))
+
 (deftest sync-records-pending-generation-for-removed-loaded-root
   (with-runtime
     (fn [rt config-dir]
