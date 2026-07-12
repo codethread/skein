@@ -26,7 +26,7 @@ The landed epic changed how a weaver picks up config changes, but the user-facin
 
 ## PROP-Gmd-001.P4 Proposed scope
 
-- **PROP-Gmd-001.S1:** A generation/cutover section in `docs/skein.md` covering the process boundary, additive vs non-additive sync, the pending-generation record and remedy, the stop-drain behavior (headless process trees killed and stamped failed-loud-retryable; interactive tmux sessions adopted by the next generation), the coordinator's `strand agent await` drain-or-accept-retry choice, and the one-time migration restart.
+- **PROP-Gmd-001.S1:** A generation/cutover section in `docs/skein.md` covering the process boundary, additive vs non-additive sync, the pending-generation record and remedy, the stop behavior (`mill weaver stop` sends SIGTERM then SIGKILL and does not drain; headless orphans are recovered at the next start by `reconcile!` — reset to `pending` for respawn or marked `exhausted` when attempts are spent; interactive sessions of any backend survive and are adopted by the next generation), the coordinator's `strand agent await` drain-or-accept-retry choice, and the one-time migration restart.
 - **PROP-Gmd-001.S2:** A surgical edit to the `CLAUDE.md`/`AGENTS.md` pickup-ladder hard rule adding the pending-generation restart trigger, in the existing hard-rule tone.
 - **PROP-Gmd-001.S3:** A sweep result: correct or flag any surviving falsified statement (e.g. a doc still naming `add-libs`) the epic did not already fix.
 
