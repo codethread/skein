@@ -335,6 +335,32 @@
                    {:from b :to c :type "related-to" :attributes {:note "link"}}}
                  (set (:edges tomb)))))))))
 
+(deftest co-burning-connected-strands-records-shared-edge-in-both-tombstones
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            shared {:from a :to b :type "depends-on" :attributes {:reason "needs"}}]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {:reason "needs"}})
+        (db/burn-by-ids! ds [a b])
+        (let [tomb-a (first (db/burn-history-for-strand ds a))
+              tomb-b (first (db/burn-history-for-strand ds b))]
+          (is (= [shared] (:edges tomb-a)))
+          (is (= [shared] (:edges tomb-b))))))))
+
+(deftest batch-co-burning-connected-refs-records-shared-edge-in-both-tombstones
+  (with-db
+    (fn [ds]
+      (let [a (:id (db/add-strand! ds {:title "A"}))
+            b (:id (db/add-strand! ds {:title "B"}))
+            shared {:from a :to b :type "depends-on" :attributes {:reason "needs"}}]
+        (db/add-edge! ds {:from a :to b :type "depends-on" :attributes {:reason "needs"}})
+        (db/apply-batch! ds {:refs {:a a :b b} :burn [:a :b]})
+        (let [tomb-a (first (db/burn-history-for-strand ds a))
+              tomb-b (first (db/burn-history-for-strand ds b))]
+          (is (= [shared] (:edges tomb-a)))
+          (is (= [shared] (:edges tomb-b))))))))
+
 (deftest tombstone-well-formed-with-no-edges-or-attributes
   (with-db
     (fn [ds]
@@ -357,7 +383,7 @@
         (is (= [c b a] (mapv :strand_id (db/recent-burn-history ds 10))))
         (is (= [c b] (mapv :strand_id (db/recent-burn-history ds 2))))
         (is (= [a] (mapv :strand_id (db/burn-history-for-strand ds a))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer limit"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
                               (db/recent-burn-history ds 0)))))))
 
 (deftest capturing-a-missing-id-skips-without-tombstone-or-error

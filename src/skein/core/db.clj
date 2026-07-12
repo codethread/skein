@@ -119,6 +119,9 @@
     (throw (ex-info message {:value value :explain (s/explain-str spec value)})))
   value)
 
+(defn- require-positive-limit! [limit]
+  (require-valid! ::specs/read-limit limit "Read result limit must be a positive integer"))
+
 (defn json-key
   "Render a map key as JSON object key text, preserving keyword/symbol namespaces.
 
@@ -909,6 +912,8 @@
   gone at capture time are skipped. Runs inside the caller's burn transaction,
   so a failed insert propagates and aborts the burn."
   [tx id]
+  ;; A missing row deletes nothing, so skipping it records no unrecorded burn:
+  ;; every strand that is actually deleted still has its tombstone captured.
   (when-let [row (execute-one! tx [(str "SELECT " strand-columns " FROM strands WHERE id = ?") id])]
     (let [attributes (reduce (fn [acc {:keys [key value archived]}]
                                (assoc acc key {:value (<-json value) :archived (= 1 archived)}))
@@ -931,8 +936,12 @@
                         (->json attributes) (json/write-str edges :key-fn json-key)]))))
 
 (defn- delete-strands! [ds ids]
+  ;; Capture every tombstone before deleting any strand: a delete cascades the
+  ;; incident edges, so interleaving capture and deletion would drop a shared
+  ;; edge from the later co-burned strand's tombstone.
   (doseq [id ids]
-    (capture-burn-tombstone! ds id)
+    (capture-burn-tombstone! ds id))
+  (doseq [id ids]
     (execute! ds ["DELETE FROM strand_edges WHERE from_strand_id = ? OR to_strand_id = ?" id id])
     (execute! ds ["DELETE FROM strands WHERE id = ?" id])))
 
@@ -974,8 +983,7 @@
   limit is required and must be a positive integer; there is no unbounded read.
   Each tombstone is decoded to a keyword-keyed map as in burn-history-for-strand."
   [ds limit]
-  (when-not (pos-int? limit)
-    (throw (ex-info "recent-burn-history requires a positive integer limit" {:limit limit})))
+  (require-positive-limit! limit)
   (mapv decode-burn-history-row
         (execute! ds ["SELECT id, strand_id, title, state, created_at, updated_at, attributes, edges, recorded_at
                        FROM burn_history ORDER BY id DESC LIMIT ?" limit])))
@@ -1315,9 +1323,6 @@
    (query-strands ds query-def {}))
   ([ds query-def params]
    (query-strands ds query-def params)))
-
-(defn- require-positive-limit! [limit]
-  (require-valid! ::specs/read-limit limit "Read result limit must be a positive integer"))
 
 (defn- bounded-select!
   "Return selected rows, failing loudly when more than limit rows match."
