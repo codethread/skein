@@ -237,3 +237,35 @@ Append notes here. Do not rewrite earlier notes.
   `--strict`). No-touch anchors (`spools/workflow.md`, `spools/workflow.cookbook.md`,
   `devflow/README.md`) byte-identical to main. `devflow/README.md:53` reviewed and
   left unchanged (archived changelog line).
+
+### PLAN-StorageDocs-001.DN2 PH2 implementation — 2026-07-13
+
+- Restated all PH2 docstring sources to content write-once (`note/text`/`note/at`
+  storage-enforced, strand still decoratable), mirroring `notes.alpha/note!`:
+  `batteries.clj:335` (`note-op`) and the generated-help `:doc` (`:470`),
+  `agent_run.clj:13` (ns) and `:2335` (`note!`), `delegation.clj:388-390`
+  (`:semantics`) and the `strand agent help` `:doc` (`:1950`),
+  `relations/alpha.clj:35` (`notes` relation help), `vocab/alpha.clj:106` (the
+  `note/*` namespace `:doc` overclaimed all five keys as immutable — corrected to
+  scope write-once to `note/text`/`note/at`).
+- `spools/agent-run/README.md` note surfaces corrected to the shipped vocabulary:
+  the wrong `agent-run/note*` / `agent-run/at` / `agent-run/round` attribute names
+  (`:214,217,275-276`) became `note/text`, `note/at`, optional `note/by`/`note/round`;
+  linkage stated as the `notes` edge, never a `note/for` attribute. The discipline
+  prose now names the enforced-error reality (a note-content rewrite throws; burn is
+  the only escape hatch).
+- The `delegation.clj:388-390` `:semantics` bullet was split in two: my restatement
+  pushed the single string past col-180, and the file already renders semantics as
+  one string per bullet, so splitting kept every literal under the limit without a
+  `(str ...)` concat.
+- No-touch anchors hold byte-identical content: `agent_run.clj` "run never mutated
+  in place" and its `agent-run.api.md` mirror shifted one line down (the in-scope
+  `:13` ns-docstring edit added a line, anticipated by R2) but their text is
+  unchanged; `skein.api.notes.alpha` / `docs/api/notes.api.md` untouched.
+- `make api-docs` regenerated `spools/agent-run.api.md`, `spools/batteries.api.md`,
+  and `spools/delegation.api.md`. Non-Source-link content diffs are exactly the
+  three var docstrings (`agent-run` ns, `agent-run/note!`, `batteries/note-op`); the
+  remaining churn is Source-link line-number shifts from the added lines. The
+  `:semantics`/arg-spec `:doc` edits surface in `strand agent help`, not api docs.
+- Gates green: `make fmt-check lint reflect-check docs-check` (api-docs no-drift once
+  the source + generated files are committed together, mkdocs `--strict`).

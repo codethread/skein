@@ -211,10 +211,10 @@ orphaned run.
 
 | Fn | Behavior |
 |---|---|
-| `(note! target-id text opts)` | Append an immutable closed note strand linked to `target-id` by a `notes` annotation edge. `opts` may set `:by` (author run id) and `:round`. |
+| `(note! target-id text opts)` | Append a closed note strand linked to `target-id` by a `notes` annotation edge; its `note/text`/`note/at` content is storage-enforced write-once. `opts` may set `:by` (author run id) and `:round`. |
 | `(notes target-id opts)` | Return notes in creation order, optionally filtered by `:round`. |
 
-Notes are append-only memory, not mutation. They carry `agent-run/note-for`, `agent-run/note`, `agent-run/at`, and optional `agent-run/note-by` / `agent-run/round` attributes.
+Notes are append-only memory: a note-content rewrite throws, and burn is the only escape hatch. Each note carries `note/text` and `note/at` (storage-enforced write-once), plus optional `note/by` / `note/round`; the linkage is the `notes` edge, never a `note/for` attribute.
 
 ## 7. Preamble seam
 
@@ -272,8 +272,8 @@ Interactive runs get their own preamble variant carrying the completion contract
 | `agent-run/session` | Workspace-namespaced suggested session name; the probe/cleanup anchor when a crash predates the handle write. |
 | `agent-run/handle.<key>` | Durable backend handle entries returned by `:start` (e.g. `handle.session`, `handle.pane`). |
 | `agent-run/teardown-error` | Recorded when backend stop failed after completion; never blocks the close. |
-| `agent-run/note-for` | Target strand id for a note strand. |
-| `agent-run/note`, `agent-run/note-by`, `agent-run/round`, `agent-run/at` | Note payload and ordering metadata. |
+| `note/text`, `note/at` | Note body and sub-second timestamp; storage-enforced write-once. Linkage to the target is the `notes` edge, not a `note/for` attribute. |
+| `note/by`, `note/round` | Optional author run id and council round on a note. |
 
 The `pending → running → done | failed | exhausted` transitions are written by the engine. The terminal `superseded` phase is written by `supersede-and-respawn!`;
 a superseded run's logs and notes remain for archaeology.

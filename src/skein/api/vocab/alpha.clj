@@ -103,7 +103,7 @@
    ;; note/kind is an open, guidance-only advisory set (activity/decision/
    ;; review-dump/summary; absent reads as activity), declared but never enforced.
    :keys ["note/text" "note/at" "note/by" "note/round" "note/kind"]
-   :doc "Immutable note-strand memory attributes written by skein.api.notes.alpha/note!."})
+   :doc "Note-strand memory attributes written by skein.api.notes.alpha/note!; note/text and note/at are storage-enforced write-once."})
 
 (defn- seed-declarations
   "Return the core seed as a vector of valid C1 declarations: one `:edge` per

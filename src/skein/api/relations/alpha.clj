@@ -32,7 +32,7 @@
     :family :operational
     :direction "note --notes--> target"
     :declared-acyclic? true
-    :help "Append-only memory: a closed note strand attached to its target."}
+    :help "Append-only memory: a closed note strand attached to its target; its note/text/note/at content is storage-enforced write-once."}
    {:relation "related-to"
     :family :annotation
     :direction "source --related-to--> target"

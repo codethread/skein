@@ -10,8 +10,9 @@
 
   Runs survive weaver crashes because the strands are durable: `reconcile!`
   respawns still-active running strands on install, bounded by
-  `agent-run/max-attempts`. Run memory is append-only note strands linked by
-  `notes` annotation edges — the edge is the sole linkage.
+  `agent-run/max-attempts`. Run memory is note strands linked by `notes`
+  annotation edges — the edge is the sole linkage — whose `note/text`/`note/at`
+  content is storage-enforced write-once.
 
   Delegation semantics ride a `serves` edge (run → target): a serving run is a
   delegation of that target's own work. This is distinct from the `parent-of`
@@ -2332,11 +2333,13 @@
       {:id id :path path :text (slurp path)})))
 
 (defn note!
-  "Append an immutable note strand to `target-id`'s memory via the blessed
+  "Append a note strand to `target-id`'s memory via the blessed
   `skein.api.notes.alpha/note!`, threading this spool's runtime.
 
   The note is born closed (memory, not work), linked to the target by a `notes`
-  edge alone — no `note/for` attribute — and carries optional `note/by`/`note/round`."
+  edge alone — no `note/for` attribute — and carries optional `note/by`/`note/round`.
+  Its `note/text`/`note/at` content is storage-enforced write-once; the strand
+  stays open to decorating attrs."
   ([target-id text] (note! target-id text {}))
   ([target-id text opts] (notes/note! (rt) target-id text opts)))
 

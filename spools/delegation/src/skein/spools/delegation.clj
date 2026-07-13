@@ -385,8 +385,9 @@
            :note {:group "memory-review"
                   :help-topic "strand help agent"
                   :verb "note"
-                  :semantics ["Append an immutable note to any strand memory."
-                              "Notes are append-only memory, not mutation; workers may note any strand, including parents, without violating their contract."
+                  :semantics ["Append a note to any strand's memory; its note/text/note/at content is storage-enforced write-once."
+                              "Notes are append-only memory: a note-content rewrite throws, and burn is the only escape hatch."
+                              "Workers may note any strand, including parents, without violating their contract."
                               "--round is for councils."]
                   :returns {"id" "note id" "target" "strand id"}}
            :notes {:group "memory-review"
@@ -1947,7 +1948,7 @@
              :positionals [{:name :id :required? true :doc "Task or run id."}]}
     "status" {:doc "Return the coordinator dashboard."
               :positionals [{:name :root-id :doc "Optional plan or task root id."}]}
-    "note" {:doc "Append an immutable note to a strand."
+    "note" {:doc "Append a note to a strand; its note/text/note/at content is write-once."
             :flags {:by {:doc "Author run id."}
                     :round {:type :int :doc "Council round."}
                     :attr {:repeat? true :doc "Decorating attr key=value on the note strand; repeatable."}}

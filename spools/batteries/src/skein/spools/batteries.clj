@@ -332,10 +332,12 @@
                     (patterns/explain rt (handle-name nm))))))
 
 (defn note-op
-  "Append an immutable note to a target strand's memory via the note primitive.
+  "Append a note to a target strand's memory via the note primitive.
 
-  Returns the primitive's `{:id :target}` shape, where `target` is a projection
-  of the `notes` edge rather than a stored attribute."
+  Its `note/text`/`note/at` content is storage-enforced write-once (SPEC-001.P4);
+  the note strand stays open to decorating attrs. Returns the primitive's
+  `{:id :target}` shape, where `target` is a projection of the `notes` edge rather
+  than a stored attribute."
   [ctx]
   (let [{:keys [id text by round attr]} (:op/args ctx)]
     (check-attr-duplicates! (:op/argv ctx))
@@ -467,7 +469,7 @@
 
 (def ^:private note-arg-spec
   {:op "note"
-   :doc "Append an immutable note to a target strand's memory."
+   :doc "Append a note to a target strand's memory; its note/text/note/at content is write-once."
    :flags {:by {:type :string
                 :doc "Author attribution recorded on the note."}
            :round {:type :int
