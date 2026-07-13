@@ -1,12 +1,12 @@
-# Library authoring: testing against a Skein checkout
+# Testing your config and spools
 
-This guide is for authors of Skein spools and libraries: normal trusted Clojure libraries approved through `spools.edn`, synced into a weaver, and activated from `init.clj` or a connected REPL. It covers repo shape, putting a selected Skein checkout on your test classpath, the three testing tiers, and weaver-world integration tests with `skein.test.alpha`.
+Everything you write against a workspace is testable, from a two-line `init.clj` registration to a spool you distribute. The cheapest tier is not a test at all — smoke a config change in a disposable world, as [customising your workspace](./customisation.md) shows — and this page covers everything after that: putting a selected Skein checkout on your test classpath, the three testing tiers, and weaver-world integration tests with `skein.test.alpha`, whose fixtures (`:init`, `:spools-edn`, `:files`) exercise exactly the artifacts the customisation page has you writing.
 
-For how to structure a spool others will run, read [writing-shared-spools](./writing-shared-spools.md). For the runtime/spool model itself, read [skein](./skein.md).
+For how to structure a spool others will run, read [writing shared spools](./writing-shared-spools.md). For the runtime/spool model itself, read the [user reference](../reference.md).
 
 ## Repo shape
 
-A spool library is an ordinary Clojure project:
+A spool that outgrows its workspace — or that you test from a separate repo — is an ordinary Clojure project:
 
 ```text
 my-spool/

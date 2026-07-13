@@ -40,7 +40,7 @@ Archived feature folders preserve historical planning context. Current shipped c
 - `26-06-28__cli-attribute-inputs` — shipped file, stdin, and bulk JSON attribute input sources for `strand add`.
 - `26-06-28__batch-graph-upsert` — shipped transactional trusted Clojure batch graph mutation primitive with local refs, create/update/burn/edge upsert support, weaver events, and `skein.api.batch.alpha/apply!`.
 - `26-06-29__edge-relation-families` — shipped state lifecycle model, declared acyclic relation families, core supersession, edge predicates, relation-scoped traversal, and annotation catalog.
-- `26-07-03__library-author-testing-support` — shipped weaver storage handles with real in-memory SQLite for trusted tests, explicit storage metadata/status, the `skein.test.alpha` author-side weaver-world helpers, and `docs/library-authoring.md`.
+- `26-07-03__library-author-testing-support` — shipped weaver storage handles with real in-memory SQLite for trusted tests, explicit storage metadata/status, the `skein.test.alpha` author-side weaver-world helpers, and `docs/spools/testing.md`.
 - `26-06-29__repo-first-config` — shipped repo-local `.skein` world selection, layered shared/local config, local extension overrides, and fail-loud no-global default behavior.
 - `26-06-29__weaver-lifecycle-hooks` — shipped synchronous trusted lifecycle hooks for payload gating, attribute normalization, and pre-commit mutation policy.
 - `26-06-30__mill-router-runtime` — shipped local Go `mill` router/supervisor, mill-routed `strand` commands, Git-root repo bootstrap, XDG runtime/data worlds, startup storage initialization, and connected REPL attachment through mill metadata.

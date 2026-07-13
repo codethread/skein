@@ -7,7 +7,7 @@
 ;;   attention.clj  — chime attention rules
 ;;   nvd_scan.clj   — NVD scan cron job
 ;;   analytics.clj  — agent-run cost/usage rollups (`strand feature-costs`)
-;; Gitignored init.local.clj binds each developer's notifier. Read docs/skein.md
+;; Gitignored init.local.clj binds each developer's notifier. Read docs/reference.md
 ;; before changing this config; smoke-test changes in a disposable world first.
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])

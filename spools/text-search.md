@@ -97,7 +97,7 @@ Result rows are `{:id :title :key :snippet}`, ordered by strand id then key:
 
 - [README.md](./README.md) — shipped spools index (this spool is marked UNSAFE).
 - [text-search.cookbook.md](./text-search.cookbook.md) — worked recipes.
-- [Writing shared spools](../docs/writing-shared-spools.md#unsafe-spools) — the
+- [Writing shared spools](../docs/spools/writing-shared-spools.md#unsafe-spools) — the
   unsafe-spool convention this spool is the reference for.
 - `test/skein/spools/text_search_test.clj` — executable contract examples
   against a real weaver runtime.

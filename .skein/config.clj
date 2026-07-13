@@ -263,7 +263,7 @@
 ;; The blessed arg-spec parser (skein.api.cli.alpha) binds positionals strictly
 ;; by order, so it cannot express the position-independent `step=<id>` selector
 ;; these ops accept, nor disambiguate the optional json-input/notes slots it can
-;; sit among (docs/skein.md "Discovery tiers"). We therefore declare the fixed
+;; sit among (docs/reference.md "Discovery tiers"). We therefore declare the fixed
 ;; positionals in each arg-spec — which drives generated `strand help <op>` — and
 ;; collect the optional tail into one variadic positional, then split `step=<id>`
 ;; out of that tail here. Fail-loud errors reference `strand help <op>` in their

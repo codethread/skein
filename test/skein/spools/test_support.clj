@@ -62,7 +62,7 @@
   `expected-keys`.
 
   The drift alarm for the versioned spool-state convention
-  (docs/writing-shared-spools.md 'Versioned spool state'): a spool declares a
+  (docs/spools/writing-shared-spools.md 'Versioned spool state'): a spool declares a
   `state-version` alongside `new-state`, and spool-state reuses a preserved map
   across `reload!` until that version changes. If `new-state` gains or loses a
   key without a matching version bump, a post-upgrade reload would silently reuse

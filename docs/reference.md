@@ -75,7 +75,7 @@ From a Skein source checkout, `make install` installs the Go CLIs (`strand` and 
 
 `mill init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. It does not run `git init`, persist source, or initialize database storage; weaver startup prepares storage.
 
-User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is `docs/skein.md`. Two harness-agnostic orientation commands surface this to agents at runtime, with no running weaver required: `mill skein prime` resolves the Skein source and prints the paths to the docs, the spool index, and the repo coordination guidance, plus how to extend `.skein` config; `mill strand prime` prints the strand planning/tracking workflow. In a repo-world bootstrap, `mill init` also seeds a `## Skein / strand` section in the repository-root `AGENTS.md`/`CLAUDE.md` that points new agents at these two commands. Each shipped spool's per-fn API reference (`spools/*.api.md`) and each blessed `skein.api.*.alpha` namespace's per-fn reference (`docs/api/*.api.md`) is generated from source docstrings and regenerated with `make api-docs` — never hand-edited; see the [spool index](../spools/README.md#doc-triad) for the contract/cookbook/generated-API triad. The [alpha API index](./api/README.md) maps each `skein.api.*.alpha` namespace to the concern it owns; the generated pages are reference only, and the behavior contracts remain the root specs (see the [spec index](#spec-index)).
+User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is this page, `docs/reference.md`. Two harness-agnostic orientation commands surface this to agents at runtime, with no running weaver required: `mill skein prime` resolves the Skein source and prints the paths to the docs, the spool index, and the repo coordination guidance, plus how to extend `.skein` config; `mill strand prime` prints the strand planning/tracking workflow. In a repo-world bootstrap, `mill init` also seeds a `## Skein / strand` section in the repository-root `AGENTS.md`/`CLAUDE.md` that points new agents at these two commands. Each shipped spool's per-fn API reference (`spools/*.api.md`) and each blessed `skein.api.*.alpha` namespace's per-fn reference (`docs/api/*.api.md`) is generated from source docstrings and regenerated with `make api-docs` — never hand-edited; see the [spool index](../spools/README.md#doc-triad) for the contract/cookbook/generated-API triad. The [alpha API index](./api/README.md) maps each `skein.api.*.alpha` namespace to the concern it owns; the generated pages are reference only, and the behavior contracts remain the root specs (see the [spec index](#spec-index)).
 
 When working in this repository, also read the "Repo coordination workspace (.skein)" section of the root [`AGENTS.md`](../AGENTS.md): the `.skein` shared coordination world, its working discipline, and pointers into the live surface (`strand devflow-conventions` for the registered ops, queries, and patterns). The config layout — `.skein/init.clj` activation order and its per-concern modules (`config.clj`, `workflows.clj`, `harnesses.clj`, `reviewers.clj`, `attention.clj`, `nvd_scan.clj`, `analytics.clj`) — is documented in the `init.clj` header itself.
 
@@ -196,7 +196,7 @@ Skein has one deliberate convention for "how do I find out?", with three tiers. 
 
 **`prime` is run-first context priming for agents.** A `prime` command prints the working discipline for an area — the conventions an agent must load *before* acting, with pointers to deeper docs. `mill skein prime` (source/docs orientation) and `mill strand prime` (the strand workflow) ship embedded in the `mill` binary and need no running weaver; spool-level primes like `strand kanban prime` are spool-generated so they can never drift from the installed surface. Repo-world `mill init` seeds a marker-guarded section into `AGENTS.md`/`CLAUDE.md` pointing fresh agents at the prime commands (see "Agent guidance files").
 
-Spool authors: the authoring rules for this surface live in [`docs/writing-shared-spools.md`](./writing-shared-spools.md).
+Spool authors: the authoring rules for this surface live in [`docs/spools/writing-shared-spools.md`](./spools/writing-shared-spools.md).
 
 ## Strand model
 
@@ -389,145 +389,9 @@ Each tombstone carries the burned strand's core fields, its full attribute map (
 
 Two caveats. The recovered strand gets a new id, so anything that referenced the old id must be re-pointed. And only the edges the tombstone recorded are available to replay — inbound edges from strands that were never burned are not restored, so re-create them explicitly against the new id.
 
-## Startup config
+## Startup config and customisation
 
-`mill init` bootstraps missing workspace files in the selected workspace without overwriting existing files. It does not initialize database storage; weaver startup prepares storage for the selected workspace.
-
-For the ordinary repo-local `.skein` workspace, it creates or ensures:
-
-- `.skein/config.json` only if absent, with the alpha format marker;
-- `.skein/spools/` directory;
-- `.skein/spools.edn` only if absent, with `{:spools {}}`;
-- `.skein/init.clj` only if absent, with the default below;
-- `.skein/.gitignore` only if absent, ignoring local config overlays such as `config.local.json`, `init.local.clj`, and `spools.local.edn`.
-
-It also seeds a `## Skein / strand` orientation section, bounded by `<!-- mill:skein-prime -->` and `<!-- /mill:skein-prime -->` markers, into the repository-root `AGENTS.md`/`CLAUDE.md` (appending to whichever exist, creating `AGENTS.md` when neither does), pointing new agents at `mill skein prime` and `mill strand prime`. Injection is idempotent and append-only; it never rewrites existing prose. Explicit `--workspace` bootstrap does not touch repo guidance files.
-
-Explicit `--workspace` standalone workspaces bootstrap the selected workspace directory directly. Existing `config.json`, `spools.edn`, `init.clj`, and `.gitignore` are preserved.
-
-The generated `init.clj` is intentionally small:
-
-```clojure
-;; init.clj
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime])
-
-(def runtime (current/runtime))
-
-(runtime/sync! runtime)
-(runtime/use! runtime :skein/spools-batteries
-  {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
-```
-
-The weaver loads startup files in order: `init.clj`, then `init.local.clj`. Missing files are skipped; present failing files fail loudly with file context. Use startup-loaded code to register queries, weave patterns, load approved spools, register views, and install conventions for your workspace. Simple workspaces can put shared registrations directly in `init.clj` and personal overlays in gitignored `init.local.clj`; reusable or larger workspaces should keep `init.clj` minimal and install behavior from a local spool.
-
-A direct `init.clj` query registration can look like this:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime]
-         '[skein.api.graph.alpha :as graph])
-
-(def runtime (current/runtime))
-
-(runtime/sync! runtime)
-(runtime/use! runtime :skein/spools-batteries
-  {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
-(graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
-```
-
-Use reload during development:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime])
-(runtime/reload! (current/runtime))
-```
-
-`skein.api.runtime.alpha` is a privileged built-in runtime loader/config helper namespace shipped with Skein. It is not an ordinary user/community spool, and loader/config helpers do not live under `skein.spools.*`.
-
-Reload clears weaver-lifetime spool sync state, module-use state, named queries, weave patterns, views, custom ops, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads `init.clj` followed by `init.local.clj`. Missing files are skipped; present failures fail loudly.
-
-`reload!` re-runs the startup files but does not unload namespaces or vars it already loaded, and a bare `(require ns :reload)` is classloader-blind to per-spool synced roots — so neither picks up updated code from an already-synced opt-in spool. `reload-spool!` covers that gap. It takes the spool's `spools.edn` coordinate symbol and reloads the coordinate's namespaces in dependency order:
-
-```clojure
-(runtime/reload-spool! (current/runtime) 'skein.spools/kanban)
-```
-
-The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs the startup files so `install!`/`activate!` re-registers ops, queries, and handlers. So the code-bump sequence is `reload-spool! coord` to make the code live, then a targeted re-`use!` of the spool's activation to re-register — or a full `reload!` when the bump changes registrations across the config.
-
-## Authoring your own spool code
-
-Skein treats runtime extensions as trusted Clojure code. Before writing your own, see the [reference spools](../spools/README.md) — a workflow engine and an ephemeral-strand helper (plus the external, git-distributed devflow lifecycle) that double as worked examples of spool design; all of them load the same opt-in way yours will. A common layout is:
-
-```text
-workspace/
-  config.json
-  init.clj
-  spools.edn
-  spools/
-    my-workflow/
-      deps.edn
-      src/my/workflow.clj
-```
-
-Approve the local spool root in `spools.edn`:
-
-```clojure
-{:spools {my/workflow {:local/root "spools/my-workflow"}}}
-```
-
-Relative `:local/root` values resolve against the selected workspace. Absolute paths are accepted as explicit user-approved paths, and `~` expands to your home directory.
-
-Create a minimal `deps.edn` in the spool root:
-
-```clojure
-{:paths ["src"]}
-```
-
-If `:paths` is omitted, Skein's namespace loading defaults to `["src"]`.
-
-Implement the spool:
-
-```clojure
-(ns my.workflow
-  (:require [skein.api.current.alpha :as current]
-            [skein.api.graph.alpha :as graph]))
-
-(defn install! []
-  (graph/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
-  {:my.workflow/installed true})
-```
-
-Activate it from `init.clj`:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime])
-
-(def runtime (current/runtime))
-
-(runtime/sync! runtime)
-(runtime/use! runtime :skein/spools-batteries
-  {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
-(runtime/use! runtime :my/workflow
-  {:ns 'my.workflow
-   :spools #{'my/workflow}
-   :call 'my.workflow/install!})
-```
-
-Key points:
-
-- `spools.edn` is approval. It says which local roots the weaver may load.
-- `runtime/sync!` makes approved roots available to the weaver.
-- `runtime/use!` activates one module and records whether it loaded, skipped, or failed.
-- `:call` must name a fully qualified zero-argument function.
-- Direct `require` from `mill weaver repl` evaluates in the weaver JVM and is useful for trusted experimentation. For repeatable module activation and reload introspection, use `runtime/use!` or `runtime/reload!` from startup config or the live REPL.
-- Extension code runs with weaver authority. Only load trusted code.
-- There is no per-module isolation or unload guarantee. Restart the weaver for a clean runtime if needed.
+The weaver loads trusted startup files from the selected workspace in order — `init.clj`, then `init.local.clj` — and everything registered there (named queries, weave patterns, views, event handlers, activated spools) is weaver-lifetime runtime state. The full customisation story is its own page: [customising your workspace](./spools/customisation.md) covers the files `mill init` bootstraps, direct `init.clj` registrations, smoke-testing config in a disposable world, `reload!`/`reload-spool!` semantics, REPL hygiene in a shared weaver, promoting config to a local spool, and the `skein.userland.alpha` ergonomics layer. The rules change only when a spool leaves your machine: [writing shared spools](./spools/writing-shared-spools.md).
 
 ## Weave patterns
 

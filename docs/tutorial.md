@@ -1,13 +1,13 @@
-# Getting started with Skein
+# Skein tutorial
 
-This guide takes you from nothing to a working Skein setup, then a little further, into the live REPL and your own custom command. You can follow it top to bottom. You do not need to know Clojure or any graph tooling to start.
+This tutorial takes you from nothing to a working Skein setup, then a little further, into the live REPL and a taste of customisation. You can follow it top to bottom. You do not need to know Clojure or any graph tooling to start.
 
 It is written in two halves:
 
 1. **The everyday CLI** — install, start a weaver, add strands, ask what is
    ready. This is all most people need day to day.
-2. **The live machine** — the REPL, named queries, and building your own
-   behavior. Optional, and clearly marked, so you can stop after part one and
+2. **The live machine** — the REPL, named queries, and where customisation
+   starts. Optional, and clearly marked, so you can stop after part one and
    come back later.
 
 The guide marks places where you can skip ahead. If a section is not what you need right now, skip it. Already sold on the live-runtime story and want to jump straight to it? Go to [The REPL: a live machine](#the-repl-a-live-machine).
@@ -19,7 +19,7 @@ Skein's own repository is written to be read by coding agents, and it ships agen
 - `mill skein prime` prints orientation for the Skein source, docs, and how to
   extend a `.skein` config. `mill strand prime` explains the strand
   planning-and-tracking workflow. Both run with no weaver.
-- `docs/skein.md`, the `spools/` contracts, and `devflow/specs/` hold the real
+- `docs/reference.md`, the `spools/` contracts, and `devflow/specs/` hold the real
   detail.
 
 An agent that has read that surface can answer "how do I model a review step?" or "what belongs in the CLI versus the REPL?" interactively. You can follow this guide without an agent; the agent is optional.
@@ -292,222 +292,17 @@ strand ready --query mine
 
 Named queries registered this way last only for the current weaver run. To keep one across restarts, register it from startup config, covered next.
 
-## Startup config and runtime helpers
+## Startup config: making it stick
 
-Skip this section unless you want behavior that survives a restart or that the whole repo should share.
-
-**What survives a restart.** Your strands do, because they live in SQLite. Anything you registered only in a live REPL (named queries, patterns, views, custom ops, event handlers) is weaver-lifetime state and disappears when the weaver stops. Move those registrations into startup config so the weaver re-installs them every time it boots. Reloading config (rather than restarting) re-runs the startup files in place and never touches your strands.
-
-`mill init` creates missing workspace files without overwriting existing ones. For a repo workspace the layout is:
-
-```text
-.skein/
-  .gitignore          # commit: ignore local and runtime artifacts
-  config.json         # commit: shared alpha workspace config
-  init.clj            # commit: shared trusted startup config
-  spools.edn          # commit: shared approved local-root spools
-  config.local.json   # gitignored: personal config overlay
-  init.local.clj      # gitignored: personal startup overlay
-  spools.local.edn    # gitignored: personal approved-spool overlay
-```
-
-These files are "trusted" because the weaver loads and runs them as code with weaver authority, so treat them like any committed source. Commit the shared files when you want the whole repo to get the same behavior. Keep personal, machine-specific overlays in the gitignored `*.local.*` files. Runtime metadata, sockets, and SQLite data live under Skein's state directory, not in `.skein`.
-
-The generated `init.clj` is a small bootstrap:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.runtime.alpha :as runtime])
-
-(def runtime (current/runtime))
-
-(runtime/sync! runtime)
-;; batteries is the one classpath-shipped spool: require it explicitly before
-;; its use! rather than approving a spools.edn coordinate for it.
-(require 'skein.spools.batteries)
-(runtime/use! runtime :skein/spools-batteries
-  {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
-```
-
-The weaver loads `init.clj`, then `init.local.clj`. This is where you register queries and patterns, load approved spools, and install your own conventions. To make the `mine` query above permanent, add its registration to `init.clj`:
+Weaver-lifetime state means the query above disappears at the next restart. To keep it, the workspace loads trusted startup code — `init.clj`, then a gitignored `init.local.clj` — every time the weaver starts, and a registration moved there survives every restart:
 
 ```clojure
 (require '[skein.api.graph.alpha :as graph])
-(graph/register-query! (current/runtime) 'mine [:= [:attr :owner] "ct"])
+
+(graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 
-Two kinds of code can extend the weaver:
-
-- **Built-in `skein.api.*.alpha` namespaces** — privileged helpers shipped on
-  the Skein classpath.
-- **Your own trusted spools** — Clojure you approve in `spools.edn` and load
-  through config or the REPL.
-
-`spools.local.edn` overlays `spools.edn` by coordinate, so a personal fork can replace a shared entry without editing committed config:
-
-```clojure
-;; .skein/spools.edn, committed
-{:spools {team/workflows {:local/root "spools/team-workflows"}}}
-```
-
-```clojure
-;; .skein/spools.local.edn, gitignored
-{:spools {team/workflows {:local/root "~/dev/workflows/team-workflows"}
-          personal/ops   {:local/root "~/dev/workflows/personal-ops"}}}
-```
-
-Skein does not resolve floating or transitive dependencies here: it will not chase version ranges or pull a spool's own dependencies for you. A `:local/root` must already exist on disk. A shared spool can also be approved by a pinned git coordinate (`:git/url` plus a 40-character `:git/sha`); on first use `sync!` fetches that exact commit and caches it by sha. The [writing shared spools](./writing-shared-spools.md) guide covers the git-distribution path, and the [shipped reference spools](../spools/README.md) are worked examples of spool design, driven end to end by their own tests.
-
-**Keep it governable.** Runtime programmability is easy to overuse. Try new behavior in a disposable workspace first, and promote it into committed `init.clj` or a spool only after review, with someone named to own it and its commands documented for the agents and people who depend on them. Once custom behavior grows past a helper or two, follow [writing shared spools](./writing-shared-spools.md) for the maintainable path.
-
-### Custom operations
-
-Every weaver command is a registered op, invoked as `strand <op> [args]`. There is no `op` sub-prefix. The built-in `help` op lists registered ops and explains one op's arguments:
-
-```sh
-strand help
-strand help <op>
-```
-
-Register your own from trusted Clojure with `skein.api.weaver.alpha/register-op!`. The CLI forwards everything after the op name as string argv:
-
-```clojure
-(require '[skein.api.current.alpha :as current])
-(require '[skein.api.weaver.alpha :as weaver])
-
-(defn echo-op [{:op/keys [name argv]}]
-  {:operation name :argv argv})
-
-(weaver/register-op! (current/runtime) 'echo "Echo raw argv" 'user/echo-op)
-```
-
-```sh
-strand echo --flag value
-```
-
-## Example: your own kanban command
-
-The op surface is deliberately generic: Skein only routes argv to a trusted weaver-side handler. Workflow behavior like a kanban board belongs in your config or spool code, not in core Skein. Here is a small one, built in a disposable workspace so you can try it without touching a real repo. Promote something like this into a committed workspace only once it earns its keep and has an owner.
-
-Append this handler to `$workspace/init.clj` (not a real repo's `.skein/init.clj`):
-
-```clojure
-(require '[clojure.string :as str])
-(require '[skein.api.current.alpha :as current])
-(require '[skein.api.weaver.alpha :as weaver])
-
-(defn parse-max [argv]
-  (loop [remaining argv]
-    (case (first remaining)
-      nil 5
-      "--max" (let [value (second remaining)]
-                (when-not value
-                  (throw (ex-info "--max requires a value" {:argv argv})))
-                (let [n (parse-long value)]
-                  (when-not (pos-int? n)
-                    (throw (ex-info "--max must be a positive integer" {:value value})))
-                  n))
-      (throw (ex-info "Unknown kanban argument" {:argument (first remaining)
-                                                 :argv argv})))))
-
-(defn title-cell [strand]
-  (or (:title strand) ""))
-
-(defn pad [s width]
-  (let [s (subs (str s) 0 (min width (count (str s))))]
-    (str s (apply str (repeat (- width (count s)) " ")))))
-
-(defn table [rows]
-  (let [width 24
-        line (str "+" (str/join "+" (repeat 3 (apply str (repeat (+ width 2) "-")))) "+")
-        render-row (fn [[a b c]]
-                     (str "| " (pad a width) " | " (pad b width) " | " (pad c width) " |"))]
-    (str/join "\n" (concat [line
-                            (render-row ["Ready" "In progress" "Done"])
-                            line]
-                           (map render-row rows)
-                           [line]))))
-
-(defn by-kanban [rt status limit]
-  (->> (weaver/list rt [:= [:attr :kanban] status] {})
-       (take limit)
-       vec))
-
-(defn kanban-op [{:op/keys [argv]}]
-  (let [rt (current/runtime)
-        max-rows (parse-max argv)
-        cols [(by-kanban rt "ready" max-rows)
-              (by-kanban rt "in-progress" max-rows)
-              (by-kanban rt "done" max-rows)]
-        row-count (apply max (map count cols))
-        rows (for [i (range row-count)]
-               (mapv #(title-cell (nth % i nil)) cols))]
-    {:max max-rows
-     :table (table rows)}))
-
-(weaver/register-op! (current/runtime) 'kanban "Show strands grouped by :attr kanban" 'user/kanban-op)
-```
-
-Reload that disposable workspace's config so its weaver installs the handler. Only reload the workspace you mean to; do not point this at a real repo unless you intend to reload its shared config. This one-liner sends a `reload!` form to the weaver over stdin (`printf` prints the Clojure, `mill weaver repl --stdin` evaluates it):
-
-```sh
-printf '(do (require '\''[skein.api.current.alpha :as current] '\''[skein.api.runtime.alpha :as runtime]) (runtime/reload! (current/runtime)))\n' \
-  | mill weaver repl --stdin --workspace "$workspace"
-```
-
-Create a few demo strands with one batch call. `cat <<'EOF' ... EOF` is a shell heredoc: it feeds the lines between the markers to the command on the left, so the Clojure block reaches the weaver's REPL on stdin:
-
-```sh
-cat <<'EOF' | mill weaver repl --stdin --workspace "$workspace"
-(do
-  (require '[skein.api.current.alpha :as current]
-           '[skein.api.batch.alpha :as batch])
-  (batch/apply! (current/runtime)
-    {:strands [{:ref :ready-1
-                :title "Sketch CLI op guide"
-                :attributes {:kanban "ready"}}
-               {:ref :ready-2
-                :title "Review examples"
-                :attributes {:kanban "ready"}}
-               {:ref :progress-1
-                :title "Wire kanban handler"
-                :attributes {:kanban "in-progress"}}
-               {:ref :done-1
-                :title "Ship op mechanism"
-                :state "closed"
-                :attributes {:kanban "done"}}
-               {:ref :done-2
-                :title "Document smoke path"
-                :state "closed"
-                :attributes {:kanban "done"}}]}))
-EOF
-```
-
-Now invoke your command. `--max` is optional and defaults to 5 rows:
-
-```sh
-strand --workspace "$workspace" kanban --max 15
-```
-
-`strand` keeps public output JSON, so pull out the `table` field when you want the terminal-friendly view:
-
-```sh
-strand --workspace "$workspace" kanban --max 15 | jq -r .table
-```
-
-Produces something like:
-
-```text
-+--------------------------+--------------------------+--------------------------+
-| Ready                    | In progress              | Done                     |
-+--------------------------+--------------------------+--------------------------+
-| Review examples          | Wire kanban handler      | Ship op mechanism        |
-| Sketch CLI op guide      |                          | Document smoke path      |
-+--------------------------+--------------------------+--------------------------+
-```
-
-You just added a command to Skein without recompiling or restarting it. Views and event handlers work the same way, from trusted Clojure; see [docs/skein.md](./skein.md) for those.
+That two-line increment to the generated `init.clj` is the first rung of a ladder that runs from direct registrations, through local spools, to custom CLI commands of your own. The whole ladder — startup files, reloading a live weaver, promoting config to a spool, and worked examples — is [customising your workspace](./spools/customisation.md); this tutorial stops at showing you the rung exists.
 
 ## Stop the weaver
 
@@ -525,14 +320,16 @@ mill weaver stop
 
 ## Where to go next
 
-- [Skein user reference](./skein.md) — the complete model, CLI, weaver, REPL,
+- [Skein user reference](./reference.md) — the complete model, CLI, weaver, REPL,
   and workspace behavior, with a spec index at the end.
 - [Shipped reference spools](../spools/README.md) — a workflow engine, a feature
   lifecycle, a kanban board, and more, as working code.
-- [Writing shared spools](./writing-shared-spools.md) — building extensions
+- [Customising your workspace](./spools/customisation.md) — the full ladder from
+  `init.clj` to your own local spool.
+- [Writing shared spools](./spools/writing-shared-spools.md) — building extensions
   other people can run.
-- [Library authoring](./library-authoring.md) — testing spools against a chosen
-  Skein checkout.
+- [Testing your config and spools](./spools/testing.md) — from disposable worlds
+  to weaver-world integration tests against a chosen Skein checkout.
 - [Clojure crash course](./clojure-crash-course.md) — enough Clojure to be
   comfortable in the REPL.
 - [Tenets](../devflow/TENETS.md) and [philosophy](../devflow/PHILOSOPHY.md) —

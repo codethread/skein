@@ -32,7 +32,7 @@ Approved local-root spool. Agent-run must be installed first (the default `:harn
    :after [:agent-run]})
 ```
 
-`install!` creates the runtime-owned spool state (executor, registries, in-flight tracking — versioned per `docs/writing-shared-spools.md` with a `:close-fn`), registers the `bench` CLI op and the `bench-runs` named query, detects the container engine (see §4), and reconciles orphaned entries from a previous weaver lifetime (see §9). It registers **no suites and no agent definitions** — those are trusted config, exactly like harness aliases.
+`install!` creates the runtime-owned spool state (executor, registries, in-flight tracking — versioned per `docs/spools/writing-shared-spools.md` with a `:close-fn`), registers the `bench` CLI op and the `bench-runs` named query, detects the container engine (see §4), and reconciles orphaned entries from a previous weaver lifetime (see §9). It registers **no suites and no agent definitions** — those are trusted config, exactly like harness aliases.
 
 All public functions take `runtime` as the first argument (shared-spool rules). State lives in `skein.api.runtime.alpha/spool-state`; no module-level atoms.
 
@@ -282,5 +282,5 @@ Not pinned (recorded where visible): model behavior (nondeterministic by nature 
 - [agent-run/README.md](../agent-run/README.md) — the run engine serving the default `:harness` judge; executor/state conventions this spool mirrors.
 - [executors/subagent.md](../executors/subagent.md) — bridges workflow `:subagent` gates to agent runs; how a `judge-spec` gate (§8) is fulfilled inside a workflow.
 - [delegation/README.md](../delegation/README.md) — `strand agent retry` for judge recovery; harness/alias registry the judge seat resolves against; `roster-review-specs`, the seam pattern `judge-spec` mirrors.
-- `docs/writing-shared-spools.md` — the shared-spool rules this spool is held to (explicit runtime, versioned spool state, fail loudly, subcommand arg-specs).
+- `docs/spools/writing-shared-spools.md` — the shared-spool rules this spool is held to (explicit runtime, versioned spool state, fail loudly, subcommand arg-specs).
 - `test/skein/bench_test.clj` — executable coverage via the injected fake engine (no container runtime needed).

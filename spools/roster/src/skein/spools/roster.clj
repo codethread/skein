@@ -11,7 +11,7 @@
   root under roster tracking without losing its identity. Every public model
   function here takes `runtime` as its first argument and never resolves
   ambient runtime itself (see SPEC-RosterSpool-001 P4/P5 and
-  docs/writing-shared-spools.md's explicit-runtime pattern), so this spool
+  docs/spools/writing-shared-spools.md's explicit-runtime pattern), so this spool
   composes safely across published daemons, test runtimes, and side-by-side
   worlds; only `install!` resolves the active runtime, at the activation
   boundary used by other shipped spools, and CLI op handlers read `:op/runtime`

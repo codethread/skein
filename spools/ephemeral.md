@@ -51,5 +51,5 @@ Burning is workspace-wide by design: `burn-ephemeral!` clears **all** active eph
 - [README.md](./README.md) — shipped spools index.
 - `test/skein/spools_test.clj` — the ephemeral cases drive this spool
   against a real weaver runtime.
-- [Authoring your own spool code](../docs/skein.md#authoring-your-own-spool-code)
+- [Authoring your own spool code](../docs/reference.md#authoring-your-own-spool-code)
   — the loading/approval model for spools you write yourself.

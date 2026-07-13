@@ -7,7 +7,7 @@ This guide is for authors of spools that **other people** will run — reusable,
 > JVM (tests, embedded tooling, `:publish? false`). It earns that by taking the
 > runtime **explicitly** and never reaching for ambient/singleton state.
 
-If you are only writing your own workspace `init.clj` or local helpers, you do not need this discipline — layer the terse [`skein.userland.alpha`](#layering-ergonomics-in-your-own-config) ergonomics module on top and enjoy. This guide is about the code you ship to others.
+If you are only writing your own workspace `init.clj` or local helpers, you do not need this discipline — layer the terse `skein.userland.alpha` ergonomics module on top ([customising your workspace](./customisation.md)) and enjoy. This guide is about the code you ship to others.
 
 ## Why explicit runtime
 
@@ -19,7 +19,7 @@ RFC-016 made the weaver runtime an explicit first argument throughout `skein.api
    resolve it internally. Callers own runtime selection; you thread what you are
    given.
 2. **Keep state runtime-owned.** No module-level `atom`/`def` mutable state. Use
-   [`skein.api.runtime.alpha/spool-state`](../devflow/specs/repl-api.md) to
+   [`skein.api.runtime.alpha/spool-state`](../../devflow/specs/repl-api.md) to
    store per-runtime state keyed by a symbol you own, initialised once:
 
    ```clojure
@@ -170,7 +170,7 @@ Example:
 
 ## The discovery surface your spool ships
 
-Skein's discovery convention has three tiers — generated `help`, authored `about`, run-first `prime` — described in [`docs/skein.md`](./skein.md) ("Discovery tiers"). For a spool op this means:
+Skein's discovery convention has three tiers — generated `help`, authored `about`, run-first `prime` — described in [`docs/reference.md`](../reference.md) ("Discovery tiers"). For a spool op this means:
 
 1. **Declare your verbs as `:subcommands` arg-spec data; never hand-roll dispatch or usage errors.** Declaring subcommands buys the whole `help` tier for free: `strand help <op>` renders your verbs, `strand <op> help|-h|--help` aliases to it, and missing/unknown-verb failures become structured parser errors carrying the available names. `help`, `-h`, `--help`, and the arg name `subcommand` are reserved and rejected at registration. Bare `<op>` stays a loud non-zero error — never exit-0 help.
 2. **Ship `about` when your op has semantics beyond its argument shapes.** Return one structured JSON document (purpose, conventions, attribute contracts, usage examples) from an `about` subcommand. Do not duplicate arg shapes in it — that is `help`'s job and it never drifts.
@@ -186,7 +186,7 @@ A shared spool can be published as an ordinary git repository and consumed from 
 > `.skein/spools.edn`, activates it (`:required? true`) from `.skein/init.clj`,
 > pins the same sha as a tools.deps git dep for the test JVM (`deps.edn`), and
 > developers override it with a gitignored `spools.local.edn` local root. See
-> [`spools/devflow.md`](../spools/devflow.md) for the consumer side.
+> [`spools/devflow.md`](../../spools/devflow.md) for the consumer side.
 
 A consumer pins the exact source content they consent to run:
 
@@ -232,7 +232,7 @@ Include a **Dependency information** section with a complete `spools.edn` snippe
    :git/tag "v0.1.0"}}}
 ```
 
-If a prerequisite is a blessed `skein.api.*.alpha` namespace or `skein.spools.batteries` (Skein's one classpath-shipped spool, see [Classpath exception: batteries](../spools/README.md#classpath-exception-batteries)), document the namespace and why it is required, but do not invent a coordinate for it — both are already trusted as part of the selected Skein checkout. Every other reference spool is never a shipped-classpath prerequisite: if your spool depends on one, list it as an ordinary `spools.edn` coordinate above, the same as any other spool prerequisite.
+If a prerequisite is a blessed `skein.api.*.alpha` namespace or `skein.spools.batteries` (Skein's one classpath-shipped spool, see [Classpath exception: batteries](../../spools/README.md#classpath-exception-batteries)), document the namespace and why it is required, but do not invent a coordinate for it — both are already trusted as part of the selected Skein checkout. Every other reference spool is never a shipped-classpath prerequisite: if your spool depends on one, list it as an ordinary `spools.edn` coordinate above, the same as any other spool prerequisite.
 
 ### README activation snippet
 
@@ -399,29 +399,11 @@ Everything takes `runtime`. It runs correctly in a published daemon, an unpublis
 
 ### Layering ergonomics in your own config
 
-In your **own** workspace `init.clj`, capture the runtime once and hold it, then call both the blessed API and the shared spool through terse wrappers:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.userland.alpha :as u]
-         '[acme.priority.alpha :as priority])
-
-;; Bind the active in-process runtime once for terse daily calls.
-(u/bind! (current/runtime))
-
-;; Terse core calls — the runtime is resolved for you.
-(u/strand! "Ship the release" {:owner "me"})
-(u/ready)
-
-;; The shared spool still takes the runtime explicitly; hand it (u/runtime).
-(priority/promote! (u/runtime) some-id)
-```
-
-The ergonomics live entirely on **your** side of the boundary. The shared spool never learns that `skein.userland.alpha` exists. That asymmetry is the whole point: users may trade explicitness for terseness in their own config; shared code may not.
+The consumer's side of this pattern — binding the runtime once with `skein.userland.alpha` for terse daily calls while your spool stays explicit — is workspace customisation, and lives on [that page](./customisation.md). The rule that matters here: the ergonomics stay entirely on the user's side of the boundary. A shared spool never learns that `skein.userland.alpha` exists; users may trade explicitness for terseness in their own config, shared code may not.
 
 ## Namespace tiers (why this split exists)
 
-See [AGENTS.md](../AGENTS.md) and [SPEC-003](../devflow/specs/repl-api.md).
+See [AGENTS.md](../../AGENTS.md) and [SPEC-003](../../devflow/specs/repl-api.md).
 
 - `skein.api.*.alpha` — blessed, accreting, explicit-runtime API. **Build shared
   spools on this.**
@@ -440,7 +422,7 @@ The invariant "no `skein.*` (engine, blessed API, REPL, or shipped spool) source
 
 Every rule above says: build on `skein.api.*.alpha`, never on `skein.core.*`. Sometimes a genuinely useful capability lives on the wrong side of that line — the blessed surface deliberately doesn't expose it, and won't. When you reach past the contract anyway, do it in the open, like a Rust `unsafe` block: the capability stays available, the danger stays visible, and the next reader knows exactly what they're trusting.
 
-The worked reference is [`skein.spools.text-search`](../spools/text-search.md): it requires `skein.core.db` and runs SQL against the physical tables to search titles and attribute values, including archived rows the query language cannot see. It is a maintained example of rule-breaking, not a blessed path. If you must write one, follow the same three markers so the break is never silent:
+The worked reference is [`skein.spools.text-search`](../../spools/text-search.md): it requires `skein.core.db` and runs SQL against the physical tables to search titles and attribute values, including archived rows the query language cannot see. It is a maintained example of rule-breaking, not a blessed path. If you must write one, follow the same three markers so the break is never silent:
 
 1. **`UNSAFE:` docstring prefix.** The namespace docstring's first line begins
    with `UNSAFE:` and names the internal namespaces it requires. A reader
