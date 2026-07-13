@@ -30,7 +30,7 @@ The surface is deliberately built from words coding agents are already trained o
 - **status** — the coordinator dashboard (`agent status`): what's ready, running, failed, or awaiting your verification.
 - **harness / alias** — which agent tool runs the work (`worker`, `explore`, `build`, …).
 - **worker contract** — the standing rules every delegated agent is handed automatically.
-- **notes** — durable, append-only memory linked to any strand by the blessed `notes` relation.
+- **notes** — durable, storage-enforced write-once memory linked to any strand by the blessed `notes` relation.
 
 ### How to prompt effectively
 
@@ -216,9 +216,10 @@ The coordinator dashboard. `root-id` is a plan or task id; no root = every activ
 ```
 agent note <strand-id> "text" [--by <run-id>] [--round n]
 ```
-Append an immutable note to any strand's memory (`--round` only matters inside councils). The note strand links to its target with the blessed
-`notes` relation; any `:by` or `:round` fields are facets on the note, not the linkage. Notes are append-only memory, not mutation: a worker may
-note any strand, including parents, without violating its contract. → `{"id":"<note-id>","target":"<strand-id>"}` (`target` is projected from the `notes` edge)
+Append a note to any strand's memory (`--round` only matters inside councils). The note strand links to its target with the blessed
+`notes` relation; any `:by` or `:round` fields are facets on the note, not the linkage. Note content is storage-enforced write-once: a rewrite of
+`note/text` or `note/at` throws rather than mutating, and burn is the only escape hatch. Notes are append-only memory, not mutation, so a worker
+may note any strand, including parents, without violating its contract. → `{"id":"<note-id>","target":"<strand-id>"}` (`target` is projected from the `notes` edge)
 
 ```
 agent notes <strand-id> [--round n]

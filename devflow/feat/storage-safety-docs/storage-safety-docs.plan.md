@@ -212,3 +212,28 @@ Append notes here. Do not rewrite earlier notes.
   generated-help `:doc` strings (`batteries.clj:470`, `delegation.clj:1950`) and
   the wrong-vocab table (`spools/agent-run/README.md:217,275-276`). No scope
   additions or removals were needed.
+
+### PLAN-StorageDocs-001.DN1 PH1 implementation — 2026-07-13
+
+- Landed all PH1 surfaces (Task 1): `docs/skein.md` note verb (`note/text`/`note/at`
+  content write-once, strand still decoratable), burn honesty in the top command
+  list and the strand-model section, and a `### Burn recovery` cookbook in the REPL
+  section; `spools/README.md:41` and `spools/delegation/README.md:33,219-220`
+  restated as storage-enforced write-once with the enforced-error reality (a
+  note-content rewrite throws; burn is the only escape hatch).
+- Wording modeled on `skein.api.notes.alpha/note!` and cross-checked against
+  `devflow/specs/strand-model.md` P3/P4/P8. No claim exceeds `note/text` +
+  `note/at` content write-once (NG2 held).
+- Burn-recovery cookbook uses the actual shipped surface: bare `recent-burns` /
+  `burn-history` (the weaver REPL drops into `skein.repl`, `repl.clj:408,436`),
+  the tombstone shape from `db/burn-history-for-strand` (each attr value tagged
+  `{:value ... :archived ...}`), and `skein.api.batch.alpha/apply!` with
+  `:refs`/`:strands`/`:edges` for the hand-assembled replay. New-id + inbound-edge
+  caveats stated per SPEC-001 strand-model.md:28.
+- `docs/skein.md` uses long unwrapped prose lines (existing max ~1311 cols), so
+  the docs-style col-180 guidance defers to the file's own convention there; the
+  hard-wrapped `spools/delegation/README.md` (~150 cols) was matched.
+- Gates green: `make fmt-check lint docs-check` (api-docs no-drift, mkdocs
+  `--strict`). No-touch anchors (`spools/workflow.md`, `spools/workflow.cookbook.md`,
+  `devflow/README.md`) byte-identical to main. `devflow/README.md:53` reviewed and
+  left unchanged (archived changelog line).

@@ -163,6 +163,8 @@ printf '{"title":"New work"}\n' | strand --workspace "$workspace" --stdin weave 
 
 ```
 
+`burn` deletes a strand and its incident edges, and records a durable forensic tombstone in the same transaction. It is hand-recoverable from the REPL, not an undo; see the strand model and the burn-recovery cookbook below.
+
 The public strand/weaver commands emit JSON. CLI attributes are string-valued `key=value` pairs; richer Clojure data belongs in config or REPL workflows.
 
 Use the CLI for:
@@ -229,6 +231,8 @@ Burn only when you want deletion:
 strand --workspace "$workspace" burn <id>
 ```
 
+Every burn records a durable forensic tombstone in the same transaction — the burned strand's core row, full attribute map, and incident edges (SPEC-001.P3/P8). A tombstone supports hand-recovery, not undo: recovery is a REPL-only activity (`skein.repl/burn-history`, `recent-burns`), a replay mints a new id, and inbound edges from unburned strands are not restored. See the burn-recovery cookbook in the REPL section.
+
 ## Edges and readiness
 
 Edges connect strands with open relation names. The shipped acyclic relations are `depends-on`, `parent-of`, `supersedes`, `serves`, and `notes`.
@@ -249,7 +253,7 @@ strand --workspace "$workspace" ready
 Self-edges fail for every relation. The declared acyclic relations `depends-on`, `parent-of`, `supersedes`, `serves`, and `notes` reject relation-local cycles.
 Other annotation relations may form non-self cycles.
 
-The batteries `note` verb appends an immutable note strand at the root.
+The batteries `note` verb appends a note strand at the root. The note is born closed, and its `note/text` and `note/at` content is storage-enforced write-once (SPEC-001.P4): the birth write is legal, but no later path can rewrite, delete, or archive it. The strand itself stays open to writer-owned decorating attributes.
 `notes` reads the target's attached notes by walking the `notes` relation, no matter which writer created them.
 
 ## Attributes are the extension point
@@ -360,6 +364,30 @@ The REPL helper namespace includes common strand functions. Privileged runtime l
          '[skein.api.runtime.alpha :as runtime])
 (runtime/reload! (current/runtime))
 ```
+
+### Burn recovery
+
+Burn is deletion, not undo. Every burn writes a forensic tombstone (SPEC-001.P3/P8), and the REPL is the only surface that reads it. Run these from an in-process `mill weaver repl`; they throw with remediation from a connected-client REPL that has no in-process runtime.
+
+```clojure
+(recent-burns 20)             ; scan recent deletions across all strands, newest first
+(burn-history "<burned-id>")  ; every tombstone recorded for one burned id
+```
+
+Each tombstone carries the burned strand's core fields, its full attribute map (each value tagged `{:value ... :archived ...}` so archived keys stay distinguishable), its incident edges, and `recorded_at`. The shapes map onto the batch graph mutation payload's strand and edge entries, so recovery is mechanical: assemble a payload from the tombstone and apply it.
+
+```clojure
+(require '[skein.api.batch.alpha :as batch]
+         '[skein.api.current.alpha :as current])
+
+;; :refs bind existing strand ids you want to re-point at the recovered strand.
+(batch/apply! (current/runtime)
+              {:refs    {:parent "<existing-id>"}
+               :strands [{:ref :recovered :title "..." :attributes {"note/text" "..."}}]
+               :edges   [{:op :upsert :from :parent :to :recovered :type "parent-of"}]})
+```
+
+Two caveats. The recovered strand gets a new id, so anything that referenced the old id must be re-pointed. And only the edges the tombstone recorded are available to replay — inbound edges from strands that were never burned are not restored, so re-create them explicitly against the new id.
 
 ## Startup config
 
