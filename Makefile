@@ -51,7 +51,19 @@ api-docs:
 docs-site:
 	uvx --from mkdocs --with mkdocs-material --with markdown-gfm-admonition mkdocs build --strict
 
+# AGENTS.md holds only undiscoverable guidance (build commands, safety rules,
+# run-first pointers); everything else belongs to the surface that owns it —
+# prime/about manuals, devflow/specs, or lint. The budget makes accumulation a
+# CI failure so placement is decided at addition time, not in a later audit.
+AGENTS_MD_LINE_BUDGET := 110
+
 docs-check:
+	@lines=$$(wc -l < AGENTS.md); \
+	if [ "$$lines" -gt $(AGENTS_MD_LINE_BUDGET) ]; then \
+		echo "AGENTS.md is $$lines lines, over the $(AGENTS_MD_LINE_BUDGET)-line budget."; \
+		echo "Move guidance to the surface that owns it (prime/about manuals, devflow/specs, lint) instead of growing AGENTS.md."; \
+		exit 1; \
+	fi
 	$(MAKE) api-docs
 	git diff --exit-code -- 'spools/*.api.md' 'spools/executors/*.api.md' 'docs/api/*.api.md'
 	$(MAKE) docs-site

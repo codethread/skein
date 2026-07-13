@@ -121,10 +121,18 @@
                     "implementation. Confine your review to spool READMEs, devflow/specs root "
                     "specs, AGENTS.md/CLAUDE.md guidance, ns docstrings, and metadata such as "
                     "'Last Updated' dates: flag every doc or metadata statement the diff "
-                    "falsifies and every new behavior the docs should carry but do not. Do not "
+                    "falsifies and every new behavior the docs should carry but do not. When "
+                    "the diff should carry new guidance, enforce placement (PHILOSOPHY.md "
+                    "'Prose guides, code decides'): workflow discipline belongs in the "
+                    "authored prime/about manuals, shipped contracts in devflow/specs, "
+                    "mechanically checkable rules in lint config; AGENTS.md accepts only "
+                    "undiscoverable content - build/validation commands, safety rules, "
+                    "run-first pointers. Flag any AGENTS.md addition that restates what a "
+                    "prime/about manual, spec, or TENETS.md already owns: name the owning "
+                    "surface and recommend moving the prose there, never keeping both. Do not "
                     "re-verify the implementation or re-run tests - correctness owns that lane; "
                     "a doc claim is drift only when the prose contradicts the changed code. "
-                    "Read prose files and the diff, not whole source namespaces. Budget ~12 calls.")
+                    "Read prose files and the diff, not whole source namespaces. Budget ~15 calls.")
      :scope "documentation, specs, and metadata files - never source implementation"}]
 
    :synthesizer {:harness :sol-med}})
