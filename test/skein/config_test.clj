@@ -733,14 +733,14 @@
         (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:reviewers roster)))]
           (is (some? sleeps) "owner-required test-sleeps reviewer is declared")
           (is (str/includes? (:contract sleeps) "time itself is a genuine component")))
-        (is (= :review-gpt (get-in roster [:synthesizer :harness]))
+        (is (= :sol-med (get-in roster [:synthesizer :harness]))
             "sign-off synthesis stays on the cross-vendor GPT seat")
-        (is (= :hard-gpt (get-in complex-roster [:synthesizer :harness]))
+        (is (= :terra-med (get-in complex-roster [:synthesizer :harness]))
             "complex patch review is synthesized outside its reviewer seats")
         (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:reviewers docs-roster)))]
           (is (some? fact-check) "docs roster leads with the accuracy seat")
           (is (str/includes? (:contract fact-check) "NEVER the canonical .skein")))
-        (is (= :review-gpt (get-in docs-roster [:synthesizer :harness]))
+        (is (= :sol-med (get-in docs-roster [:synthesizer :harness]))
             "docs sign-off synthesis stays on the cross-vendor GPT seat")))))
 
 (deftest codex-harness-persists-sessions-and-declares-resume

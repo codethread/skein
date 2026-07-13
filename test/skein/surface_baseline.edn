@@ -311,7 +311,7 @@
       :repeat false,
       :parse nil,
       :doc
-      "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-build — the default). Headless harnesses like build/worker die in a pane."}],
+      "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-fable — the default). Headless harnesses like build die in a pane."}],
     :positionals
     [{:name "parent-id",
       :type "string",
