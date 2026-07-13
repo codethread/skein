@@ -1,0 +1,397 @@
+# Skein tutorial
+
+This tutorial takes you from nothing to a working Skein setup, then a little further, into the live
+REPL and a taste of customisation. You can follow it top to bottom. You do not need to know Clojure
+or any graph tooling to start.
+
+It is written in two halves:
+
+1. **The everyday CLI** — install, start a weaver, add strands, ask what is
+   ready. This is all most people need day to day.
+2. **The live machine** — the REPL, named queries, and where customisation
+   starts. Optional, and clearly marked, so you can stop after part one and
+   come back later.
+
+The guide marks places where you can skip ahead. If a section is not what you need right now, skip
+it. To go straight to the live runtime, jump to [The REPL: a live
+machine](#the-repl-a-live-machine).
+
+## Prefer to learn by asking?
+
+Skein's own repository is written to be read by coding agents, and it ships agent-facing docs,
+`prime` orientation commands, and the specs behind every contract. If you already work with a coding
+agent, you can point it at a Skein checkout and ask questions as you go.
+
+- `mill skein prime` prints orientation for the Skein source, docs, and how to
+  extend a `.skein` config. `mill strand prime` explains the strand
+  planning-and-tracking workflow. Both run with no weaver.
+- `docs/reference.md`, the `spools/` contracts, and `devflow/specs/` hold the real
+  detail.
+
+An agent that has read that surface can answer "how do I model a review step?" or "what belongs in
+the CLI versus the REPL?" interactively. You can follow this guide without an agent; the agent is
+optional.
+
+## The mental model in one minute
+
+A **strand** is a small record with three parts: a title, a **lifecycle `state`** (whether it is
+`active`, `closed`, or `replaced`), and an **open map of `attributes`**. "Open map" means the
+attribute names are yours to invent (`owner`, `priority`, `kind`, `kanban`, whatever your workflow
+needs) instead of waiting for a schema to grow.
+
+Strands connect with **edges**: links from one strand to another. Edges are **typed**, meaning each
+carries a relation name like `depends-on`, and they can carry attributes of their own.
+
+You work with strands two ways:
+
+- The **`strand` CLI** for everyday create, update, and read. Its commands print
+  JSON, so scripts and agents can consume them.
+- The **weaver's REPL** for everything richer: querying, mutating, and extending
+  Skein while it runs, without restarting anything. A REPL is an interactive
+  Clojure prompt; more on it in part two.
+
+The CLI stays deliberately thin. Runtime customization lives in trusted config and the REPL. See [PHILOSOPHY.md](../devflow/PHILOSOPHY.md) for why the line is drawn there.
+
+## Before you start
+
+You need a few things on the machine:
+
+- **Git**, and a Git repository to track work in. Skein is repo-first: without
+  `--workspace` it selects a repo's `.skein`, so no-flag use needs Git. An
+  explicit `--workspace <dir>` bootstraps and runs anywhere, Git or not.
+- **make**, to build and install the CLIs.
+- **Go**, which compiles the `strand` and `mill` command-line tools.
+- **A JVM**, which runs the weaver (Skein is a Clojure program).
+
+Install those the usual way for your platform before the steps below.
+
+## Install
+
+Skein installs from a cloned source checkout of this repository.
+
+```sh
+make install
+```
+
+This builds and installs the `strand` and `mill` CLIs and records this checkout as mill's source for launching weavers. It does not change anything `mill init` writes into a repo.
+
+## Start mill
+
+`mill` is the local supervisor. Everything below — `mill init`, starting the weaver, the REPL — routes through it, so start it once in a terminal you can leave open:
+
+```sh
+mill start
+```
+
+Leave it running for the rest of this guide.
+
+## Choosing a workspace
+
+A workspace is one isolated Skein setup. By default `strand` is **repo-first**: when you do not pass
+`--workspace`, `mill` looks upward for the Git repository root (the "canonical" root that linked
+worktrees share) and uses that repo's `.skein` directory as your workspace. Two worktrees of the
+same repository talk to the same weaver and the same data.
+
+If you omit `--workspace` outside a Git repository, the command fails with a remediation message
+instead of guessing. It will not invent a workspace from your current directory or fall back to a
+global one.
+
+That `.skein` directory holds trusted config only. The runtime state (metadata, sockets, and the SQLite database) lives under Skein's own state directory, not in your repo.
+
+Create a workspace in the repo you want to use Skein in:
+
+```sh
+mill init
+```
+
+`mill init` creates or completes `.skein` at the Git root. It writes shared, committable config
+files (covered later) and never overwrites ones you already have. It fails loudly outside Git, does
+not run `git init`, and does not create the database; the weaver prepares storage when it starts.
+
+**Escape hatch — throwaway workspaces.** For experiments, tests, or agent work, use a disposable workspace so you never touch a real repo's config:
+
+```sh
+workspace=$(mktemp -d)
+mill init --workspace "$workspace"
+```
+
+`--workspace` is not sticky, so pass the same path on **every** command that should target it, for
+example `mill weaver start --workspace "$workspace"`. The plain examples below leave the flag off
+for readability; the customization examples later use an explicit `$workspace` so you never casually
+reload a real repo's config.
+
+## Start the weaver
+
+With `mill` running, ask it to start the weaver for your workspace:
+
+```sh
+mill weaver start
+```
+
+There is no separate database-init step. Starting the weaver prepares storage.
+
+## Add and inspect strands
+
+Add a couple of strands, with a few attributes of your own choosing:
+
+```sh
+strand add "Review docs" --attr owner=ct --attr area=docs
+strand add "Scratch idea" --attr temporary=true
+```
+
+Attributes are plain `key=value` strings. `--attr temporary=true` stores the string `"true"`, not a JSON boolean; richer values are a REPL job, covered later.
+
+List everything, or just what is ready. These commands print JSON:
+
+```sh
+strand list
+strand ready
+```
+
+## Dependencies and readiness
+
+An edge named `depends-on` from `A` to `B` means "A is blocked while B is active". To add one, you
+need the id of the strand you depend on. `strand add` prints the new strand as JSON, so create the
+blocker first and read its `"id"` from the output:
+
+```sh
+strand add "Sketch the model"
+```
+
+The output includes a field like `"id": "ab12c"`. Use that generated id (yours will differ) to add a second strand that depends on it:
+
+```sh
+strand add "Build the weaver" --edge depends-on:ab12c
+strand ready
+```
+
+`ready` returns active strands whose `depends-on` targets are inactive or absent (closed, replaced,
+or never created), so it shows "Sketch the model" but not "Build the weaver". Close the first and
+the second becomes ready. Use the id printed for "Sketch the model" earlier:
+
+```sh
+strand update ab12c --state closed
+strand ready
+```
+
+**Scripting tip.** Once you are comfortable, you can capture an id in one line instead of copying it
+by hand. `jq` is the standard JSON command-line tool, and `$(...)` runs a command and keeps its
+output in a shell variable:
+
+```sh
+design=$(strand add "Sketch the model" | jq -r '.id')
+strand add "Build the weaver" --edge depends-on:"$design"
+```
+
+`depends-on`, `parent-of`, `supersedes`, `serves`, and `notes` are Skein's five **declared acyclic
+relations**: a "relation" is an edge type, and "acyclic" means Skein rejects cycles in each of them
+(A cannot end up depending on itself through a chain). It also rejects an edge from a strand to
+itself on any relation.
+
+## Closing and deleting
+
+There is no special "done" command. Close a strand when it is no longer active, and record an outcome as an attribute if you want one:
+
+```sh
+strand update <strand-id> --state closed --attr outcome=done
+```
+
+On `update`, `--attr` merges into the strand's existing attributes: this call adds `outcome=done`
+and leaves `owner`, `area`, and anything else already there untouched. To change one attribute, name
+just that one.
+
+Closed strands stay visible with `state="closed"`. Deletion is separate and explicit:
+
+```sh
+strand burn <strand-id>
+```
+
+---
+
+That is the everyday CLI: add, relate, ask what is ready, close, and occasionally burn. If you do
+not need the REPL or runtime customization, you can stop here and run `mill weaver stop`. The rest
+of this guide covers the REPL and building your own behavior.
+
+## The REPL: a live machine
+
+The weaver is a running Clojure image. `mill weaver repl` attaches directly to it, so the code you
+type runs inside the weaver, against your real strands, with no restart between edits.
+
+```sh
+mill weaver repl
+```
+
+For editor-driven work, see the [IDE REPL setup guide](./ide-repl/) for connecting VS Code or Calva to the running weaver's nREPL.
+
+**Reading the Clojure below.** A handful of rules cover everything in this section:
+
+- A call puts the function name first, inside the parentheses: `(strand! "x")`
+  calls `strand!` with `"x"`.
+- The `!` on a name is a convention for "this changes something", not syntax.
+- A word starting with a colon, like `:owner`, is a **keyword**: a plain,
+  self-describing name often used as a map key.
+- Curly braces make a **map** of key/value pairs: `{:owner "ct"}`.
+- `def` gives a value a name you can reuse: `(def s ...)` binds `s`.
+
+The [Clojure crash course](./clojure-crash-course.md) covers the rest. For a custom CLI command in
+trusted Clojure, the worked example lives in [customising your
+workspace](./spools/customisation.md).
+
+`mill weaver repl` starts in Skein's `skein.repl` namespace, where helpers like `strand!`, `strand`,
+`strands`, `ready`, `update!`, and `defquery!` are already defined, so the snippets below need no
+`require` for them. Create a strand and look it up:
+
+```clojure
+(def s (:id (strand! "My first REPL strand" {:owner "ct"}))) ; create; keep its :id in s
+(strand s)                                                   ; look it up by id
+```
+
+Create several related strands in one transactional call. `:ref` values are temporary handles
+(stand-in names) so `:edges` can link siblings before the real ids exist; the returned `:refs` map
+binds each handle to its generated id:
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.batch.alpha :as batch])   ; transactional graph mutations
+
+(def refs
+  (:refs
+   (batch/apply! (current/runtime)
+    {:strands [{:ref :design :title "Sketch the data model" :attributes {:owner "ct" :priority "high"}}
+               {:ref :build  :title "Implement the weaver"  :attributes {:owner "ct"}}
+               {:ref :docs   :title "Write getting-started" :attributes {:owner "agent"}}]
+     :edges   [{:op :upsert :from :build :to :design :type "depends-on"}
+               {:op :upsert :from :docs  :to :build  :type "depends-on"}]})))
+```
+
+Now write a small helper and use it:
+
+```clojure
+(defn brief
+  "Keep just the :id and :title of each strand row."
+  [rows]
+  (map #(select-keys % [:id :title]) rows))
+
+(brief (strands))   ; every strand, summarized
+```
+
+Because the weaver is live, you can improve `brief` while it runs. Redefine it, and the next call uses the new version. No restart, no lost strands:
+
+```clojure
+(require '[clojure.pprint :refer [pprint]])
+
+(defn brief
+  "Pretty-print just the :id and :title of each strand row."
+  [rows]
+  (pprint (map #(select-keys % [:id :title]) rows)))
+
+(brief (strands))   ; same call, now pretty-printed
+(brief (ready))     ; only strands with no active dependency
+(update! s {:state "closed"})   ; close one; the row stays, state becomes "closed"
+```
+
+Skein ships graph helpers too. `graph/subgraph` walks a declared acyclic relation from a root id and returns the connected strands and edges. Fold that into an ASCII tree:
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.graph.alpha :as graph]
+         '[clojure.string :as str])
+
+(defn dag-tree
+  "Render the depends-on subgraph under root-id as an ASCII tree of titles."
+  [root-id]
+  (let [{:keys [strands edges]} (graph/subgraph (current/runtime) [root-id] {:type "depends-on"})
+        title    (into {} (map (juxt :id :title)) strands)
+        children (group-by :from_strand_id edges)
+        lines    (fn lines [id depth]
+                   (cons (str (apply str (repeat (max 0 (dec depth)) "   "))
+                              (when (pos? depth) "└─ ")
+                              (title id))
+                         (mapcat #(lines (:to_strand_id %) (inc depth))
+                                 (children id))))]
+    (str/join "\n" (lines root-id 0))))
+
+(println (dag-tree (:docs refs)))   ; walk from the docs strand
+```
+
+Produces:
+
+```text
+Write getting-started
+└─ Implement the weaver
+   └─ Sketch the data model
+```
+
+## Named queries: from the REPL to the CLI
+
+A query is a data expression, here "the `owner` attribute equals `ct`". Register one by name in the REPL:
+
+```clojure
+(defquery! 'mine '[:= [:attr :owner] "ct"])   ; register a query named "mine"
+(strands 'mine)                               ; run it in the REPL
+```
+
+The plain CLI can discover and run the same query for as long as this weaver keeps running:
+
+```sh
+strand query list
+strand query explain mine
+strand list --query mine
+strand ready --query mine
+```
+
+`query list` and `query explain <name>` are read-only discovery. Applying a query stays on `list
+--query` and `ready --query`. See the [REPL API spec](../devflow/specs/repl-api.md) for the full
+predicate language.
+
+Named queries registered this way last only for the current weaver run. To keep one across restarts, register it from startup config, covered next.
+
+## Startup config: making it stick
+
+Weaver-lifetime state means the query above disappears at the next restart. To keep it, the
+workspace loads trusted startup code — `init.clj`, then a gitignored `init.local.clj` — every time
+the weaver starts, and a registration moved there survives every restart. These two lines append to
+the generated `init.clj`, where `(def runtime (current/runtime))` already binds `runtime`:
+
+```clojure
+(require '[skein.api.graph.alpha :as graph])
+
+(graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
+```
+
+That two-line increment to the generated `init.clj` is the first rung of a ladder that runs from
+direct registrations, through local spools, to custom CLI commands of your own. The whole ladder —
+startup files, reloading a live weaver, promoting config to a spool, and worked examples — is
+[customising your workspace](./spools/customisation.md); this tutorial stops at showing you the rung
+exists.
+
+## Stop the weaver
+
+Stop the weaver when you are finished. In a repo workspace:
+
+```sh
+mill weaver stop
+```
+
+For a throwaway workspace, pass the same `$workspace` path you created it with:
+
+```sh
+mill weaver stop --workspace "$workspace"
+```
+
+## Where to go next
+
+- [Skein user reference](./reference.md) — the complete model, CLI, weaver, REPL,
+  and workspace behavior, with a spec index at the end.
+- [Shipped reference spools](../spools/README.md) — a workflow engine, a feature
+  lifecycle, a kanban board, and more, as working code.
+- [Customising your workspace](./spools/customisation.md) — the full ladder from
+  `init.clj` to your own local spool.
+- [Writing shared spools](./spools/writing-shared-spools.md) — building extensions
+  other people can run.
+- [Testing your config and spools](./spools/testing.md) — from disposable worlds
+  to weaver-world integration tests against a chosen Skein checkout.
+- [Clojure crash course](./clojure-crash-course.md) — enough Clojure to be
+  comfortable in the REPL.
+- [Tenets](../devflow/TENETS.md) and [philosophy](../devflow/PHILOSOPHY.md) —
+  why Skein is shaped the way it is.

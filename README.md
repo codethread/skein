@@ -67,7 +67,7 @@ strand add "Announce the release" \
 ```
 
 > [!NOTE]
-> `type` is not a Skein concept. Attributes are arbitrary key/values — this example invented `type=docs|code` on the spot, and inventing your own conventions is the point. See [attributes are the extension point](./docs/skein.md#attributes-are-the-extension-point).
+> `type` is not a Skein concept. Attributes are arbitrary key/values — this example invented `type=docs|code` on the spot, and inventing your own conventions is the point. See [attributes are the extension point](./docs/reference.md#attributes-are-the-extension-point).
 
 Four commands, and you have a graph — each strand is a node carrying its attributes, and each edge points at the work it waits on:
 
@@ -143,7 +143,7 @@ mill weaver stop
 
 The everyday commands are defined the same way: `add`, `list`, `ready`, and the rest come from the [batteries spool](./spools/batteries.md), activated by one line `mill init` writes into `.skein/init.clj`. Remove that line and `strand` keeps only `help`; register your own ops in its place and the CLI becomes whatever surface your workflow needs.
 
-With no `--workspace`, `strand` finds the canonical Git repository root and uses that repo as its workspace. Outside a Git repo, commands fail loudly rather than guess. The [getting started guide](./docs/getting-started.md) walks through all of this slowly, including throwaway `--workspace` worlds for experiments.
+With no `--workspace`, `strand` finds the canonical Git repository root and uses that repo as its workspace. Outside a Git repo, commands fail loudly rather than guess. The [getting started guide](./docs/tutorial.md) walks through all of this slowly, including throwaway `--workspace` worlds for experiments.
 
 ## Learn it from an agent
 
@@ -152,15 +152,16 @@ Skein is built for agents, and its own repository is written for them to read. P
 ## Where to go next
 
 - [Docs site](https://codethread.github.io/skein/) — everything below, rendered.
-- [Getting started](./docs/getting-started.md) — install to your first custom command.
-- [Skein user reference](./docs/skein.md) — the data model, CLI, weaver, REPL,
+- [Tutorial](./docs/tutorial.md) — install to your first named query, top to bottom.
+- [Skein user reference](./docs/reference.md) — the data model, CLI, weaver, REPL,
   and workspace conventions.
 - [Reference spools](./spools/README.md) — the shipped workflow extensions:
   a workflow engine, a feature lifecycle, a kanban board, and more, each one
   working code you can read, run, or copy.
-- [Writing shared spools](./docs/writing-shared-spools.md) and
-  [library authoring](./docs/library-authoring.md) — building extensions others
-  can run.
+- [Customising your workspace](./docs/spools/customisation.md),
+  [testing your config and spools](./docs/spools/testing.md), and
+  [writing shared spools](./docs/spools/writing-shared-spools.md) — the ladder
+  from a two-line `init.clj` to extensions others can run.
 - [Clojure crash course](./docs/clojure-crash-course.md) — enough Clojure to
   read the REPL examples.
 

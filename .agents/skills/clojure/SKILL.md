@@ -91,7 +91,7 @@ When a value is prose (op payloads, `about` surfaces, rule descriptions, delegat
 - `skein.api.format.alpha` — the blessed surface for any tier: trusted config (`.skein/`), userland, core.
 - `skein.spools.format` — the same `fill`/`reflow` under the documented spool-authoring names; prefer it inside `skein.spools.*`.
 
-`(fill block)` returns a vector of item strings (bare `|` line separates items; indented-past-the-bar lines keep an item verbatim for command samples). `(reflow block)` soft-wraps one paragraph into one string. Contract: `docs/writing-shared-spools.md`.
+`(fill block)` returns a vector of item strings (bare `|` line separates items; indented-past-the-bar lines keep an item verbatim for command samples). `(reflow block)` soft-wraps one paragraph into one string. Contract: `docs/spools/writing-shared-spools.md`.
 
 ```clojure
 (format-alpha/reflow

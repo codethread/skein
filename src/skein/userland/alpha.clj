@@ -30,7 +30,7 @@
   USERLAND-ONLY, FOREVER: no `skein.*` namespace may require this module. It is a
   strict downstream consumer tier and must never sit upstream of the engine,
   blessed API, shipped spools, or REPL surface. Shared/distributed spools must
-  keep taking the runtime explicitly (see docs/writing-shared-spools.md); this
+  keep taking the runtime explicitly (see docs/spools/writing-shared-spools.md); this
   ergonomics layer is for workspace-local config, tests, and glue only."
   (:require [skein.api.current.alpha :as current]
             [skein.api.batch.alpha :as batch]

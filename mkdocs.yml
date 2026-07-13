@@ -46,10 +46,14 @@ nav:
   # The root landing page is the repository README (.mkdocs/index.md symlinks
   # it), so the site opens on the same pitch and worked example as GitHub.
   - Home: index.md
-  - Skein: docs/skein.md
-  - Getting Started: docs/getting-started.md
-  - Writing Shared Spools: docs/writing-shared-spools.md
-  - Library Authoring: docs/library-authoring.md
+  - Tutorial: docs/tutorial.md
+  - Reference: docs/reference.md
+  # The user-side spools ladder: customise -> test -> share. The bundled
+  # spools Skein ships keep their own section below.
+  - Spools:
+      - Customising your workspace: docs/spools/customisation.md
+      - Testing your config and spools: docs/spools/testing.md
+      - Writing Shared Spools: docs/spools/writing-shared-spools.md
   - Specs:
       - Tenets: devflow/TENETS.md
       - Philosophy: devflow/PHILOSOPHY.md
@@ -79,7 +83,7 @@ nav:
       - skein.api.views.alpha: docs/api/views.api.md
       - skein.api.vocab.alpha: docs/api/vocab.api.md
       - skein.api.weaver.alpha: docs/api/weaver.api.md
-  - Spools:
+  - Bundled Spools:
       - Index: spools/README.md
       - Batteries:
           - Contract: spools/batteries.md

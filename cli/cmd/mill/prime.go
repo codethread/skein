@@ -1,46 +1,93 @@
 package main
 
 import (
-	"bytes"
-	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
-	"text/template"
+	"path/filepath"
+	"strings"
 )
 
-//go:embed prime/skein.md
-var primeSkein string
+// primeManifestPath is the one frozen path in the prime contract: every Skein
+// checkout ships a manifest here naming its prime topics, so an already
+// installed mill renders current orientation text from a newer checkout
+// instead of shipping stale embedded prose. The path itself must never move;
+// the manifest indirection exists so everything it points at still can.
+const primeManifestPath = "docs/prime/index.json"
 
-//go:embed prime/strand.md
-var primeStrand string
+// primeManifestVersion is the manifest schema this mill understands. A future
+// checkout needing richer rendering bumps the manifest version, and this guard
+// turns that skew into a loud upgrade instruction instead of garbled output.
+const primeManifestVersion = 1
 
-// primeData is the interpolation context for prime templates. Source is the
-// Skein source checkout resolved at runtime (never hardcoded) so the printed
-// doc paths point at the real installed sources.
-type primeData struct {
-	Source string
+type primeManifest struct {
+	Version int               `json:"version"`
+	Topics  map[string]string `json:"topics"`
 }
 
-// renderPrime resolves the Skein source and interpolates it into the topic's
-// embedded template. It is client-side and needs no running weaver.
-func renderPrime(topic, tmpl string) (string, error) {
-	source, err := resolveLaunchSource("")
+// renderPrime resolves the Skein source, looks the topic up in the checkout's
+// prime manifest, and renders the file the manifest names. The rendering
+// contract is a single token: every {{.Source}} occurrence becomes the
+// resolved checkout path, and no other template construct is interpreted, so
+// any future implementation can reproduce it with a string substitution.
+func renderPrime(topic string) (string, error) {
+	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("mill %s prime cannot resolve the Skein source that hosts the docs: %w", topic, err)
+		return "", fmt.Errorf("mill %s prime cannot determine the cwd used to resolve the Skein source: %w", topic, err)
 	}
-	t, err := template.New(topic).Parse(tmpl)
+	source, err := resolveLaunchSource(cwd)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("mill %s prime cannot resolve the Skein source that hosts the docs from cwd %s: %w", topic, cwd, err)
 	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, primeData{Source: source}); err != nil {
-		return "", err
+	manifestPath := filepath.Join(source, filepath.FromSlash(primeManifestPath))
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return "", fmt.Errorf("mill %s prime: reading prime manifest: %w", topic, err)
 	}
-	return buf.String(), nil
+	var manifest primeManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return "", fmt.Errorf("mill %s prime: parsing prime manifest %s: %w", topic, manifestPath, err)
+	}
+	if manifest.Version != primeManifestVersion {
+		return "", fmt.Errorf("mill %s prime: manifest %s is version %d but this mill supports version %d; upgrade mill", topic, manifestPath, manifest.Version, primeManifestVersion)
+	}
+	rel, ok := manifest.Topics[topic]
+	if !ok {
+		return "", fmt.Errorf("mill %s prime: manifest %s declares no %q topic", topic, manifestPath, topic)
+	}
+	if err := validatePrimeTopicPath(rel); err != nil {
+		return "", fmt.Errorf("mill %s prime: manifest %s topic %q has invalid path %q: %w", topic, manifestPath, topic, rel, err)
+	}
+	body, err := os.ReadFile(filepath.Join(source, filepath.FromSlash(rel)))
+	if err != nil {
+		return "", fmt.Errorf("mill %s prime: reading manifest topic file %s: %w", topic, rel, err)
+	}
+	return strings.ReplaceAll(string(body), "{{.Source}}", source), nil
 }
 
-func runPrime(topic, tmpl string) error {
-	out, err := renderPrime(topic, tmpl)
+func validatePrimeTopicPath(rel string) error {
+	if rel == "" {
+		return fmt.Errorf("path is empty")
+	}
+	if strings.HasPrefix(rel, "/") {
+		return fmt.Errorf("path must be relative")
+	}
+	if len(rel) >= 2 && ((rel[0] >= 'A' && rel[0] <= 'Z') || (rel[0] >= 'a' && rel[0] <= 'z')) && rel[1] == ':' {
+		return fmt.Errorf("path must not have a Windows volume prefix")
+	}
+	if strings.Contains(rel, `\`) {
+		return fmt.Errorf("path must use slash separators")
+	}
+	for _, segment := range strings.Split(rel, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("path contains invalid segment %q", segment)
+		}
+	}
+	return nil
+}
+
+func runPrime(topic string) error {
+	out, err := renderPrime(topic)
 	if err != nil {
 		return err
 	}

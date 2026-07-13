@@ -72,5 +72,5 @@ Malformed options fail loudly with `ex-info`; unknown keys are not ignored.
 - [README.md](./README.md) — shipped spools index.
 - `test/skein/spools/carder_test.clj` — executable contract examples against a
   real weaver runtime.
-- [Authoring your own spool code](../docs/skein.md#authoring-your-own-spool-code)
+- [Authoring your own spool code](../docs/spools/customisation.md#promoting-config-to-a-local-spool)
   — the loading/approval model for spools you write yourself.

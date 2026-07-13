@@ -62,7 +62,7 @@ No single tell proves anything — one em dash is fine. Flag prose when tells cl
 
 No line of prose may pass column 180 — long lines break IDE viewports. Markdown in this repo is mostly wrapped much narrower; match the file you are editing.
 
-Prose that ships as data inside Clojure source (op payloads, `about` surfaces, rule descriptions) is still human-facing and gets this skill's sweep, but its authoring format is the `|`-margin block reflowed through `skein.api.format.alpha` (or `skein.spools.format` inside spools) — never one long string literal or `(str ...)` fragments. See `docs/writing-shared-spools.md` for the block contract.
+Prose that ships as data inside Clojure source (op payloads, `about` surfaces, rule descriptions) is still human-facing and gets this skill's sweep, but its authoring format is the `|`-margin block reflowed through `skein.api.format.alpha` (or `skein.spools.format` inside spools) — never one long string literal or `(str ...)` fragments. See `docs/spools/writing-shared-spools.md` for the block contract.
 
 ## Procedures
 

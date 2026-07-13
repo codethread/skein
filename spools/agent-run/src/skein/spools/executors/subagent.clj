@@ -41,7 +41,7 @@
   "Shape version for the subagent executor's runtime spool-state map. Bump whenever
   `new-state`'s key set changes: spool-state survives `reload!`, so a post-upgrade
   reload would otherwise reuse a preserved map missing the new key
-  (docs/writing-shared-spools.md 'Versioned spool state', SPEC-004.C95). The
+  (docs/spools/writing-shared-spools.md 'Versioned spool state', SPEC-004.C95). The
   `state-shape-matches-declared-version` test guards against silent drift."
   1)
 

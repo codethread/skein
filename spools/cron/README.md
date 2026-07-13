@@ -143,6 +143,6 @@ Job execution failures are recorded, not swallowed (TEN-003): a job whose
 - [`../chime/README.md`](../chime/README.md) — the sibling notification engine
   this spool mirrors for local-root layout, runtime-owned state, and loud failure
   recording.
-- [`../../docs/writing-shared-spools.md`](../../docs/writing-shared-spools.md) —
+- [`../../docs/spools/writing-shared-spools.md`](../../docs/spools/writing-shared-spools.md) —
   runtime-owned state, versioned spool-state, and injectable side-effect
   boundaries.

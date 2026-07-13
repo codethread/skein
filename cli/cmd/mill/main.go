@@ -115,13 +115,13 @@ func main() {
 
 	skein := &cobra.Command{Use: "skein", Short: "Skein orientation for agents"}
 	skein.AddCommand(&cobra.Command{Use: "prime", Short: "Print Skein orientation: resolved source path and the docs/spools to read", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		return runPrime("skein", primeSkein)
+		return runPrime("skein")
 	}})
 	root.AddCommand(skein)
 
 	strandCmd := &cobra.Command{Use: "strand", Short: "Strand workflow guidance for agents"}
 	strandCmd.AddCommand(&cobra.Command{Use: "prime", Short: "Print the strand planning/tracking workflow", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		return runPrime("strand", primeStrand)
+		return runPrime("strand")
 	}})
 	root.AddCommand(strandCmd)
 

@@ -118,4 +118,4 @@ Rule, notifier, and process failures are recorded by `(chime/failures)` and even
 
 - [`../README.md`](../README.md) — shipped and approved local-root spool index.
 - [`../agent-run/README.md`](../agent-run/README.md) — local-root layout and loading pattern.
-- [`../../docs/skein.md#authoring-your-own-spool-code`](../../docs/skein.md#authoring-your-own-spool-code) — authoring and loading local spools.
+- [`../../docs/spools/customisation.md#promoting-config-to-a-local-spool`](../../docs/spools/customisation.md#promoting-config-to-a-local-spool) — authoring and loading local spools.
