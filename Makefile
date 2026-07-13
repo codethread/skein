@@ -51,17 +51,18 @@ api-docs:
 docs-site:
 	uvx --from mkdocs --with mkdocs-material --with markdown-gfm-admonition mkdocs build --strict
 
-# AGENTS.md holds only undiscoverable guidance (build commands, safety rules,
-# run-first pointers); everything else belongs to the surface that owns it —
-# prime/about manuals, devflow/specs, or lint. The budget makes accumulation a
-# CI failure so placement is decided at addition time, not in a later audit.
+# Coarse growth budget for AGENTS.md. Placement judgment lives with the
+# docs-drift reviewer (guidance belongs to prime/about manuals, devflow/specs,
+# or an automated check); this cap only forces that conversation when the file
+# keeps growing. Tighten it as slimming lands.
 AGENTS_MD_LINE_BUDGET := 110
 
 docs-check:
-	@lines=$$(wc -l < AGENTS.md); \
+	@lines=$$(awk 'END{print NR}' AGENTS.md) || { echo "docs-check: cannot read AGENTS.md" >&2; exit 1; }; \
+	case "$$lines" in ''|*[!0-9]*) echo "docs-check: unexpected AGENTS.md line count '$$lines'" >&2; exit 1;; esac; \
 	if [ "$$lines" -gt $(AGENTS_MD_LINE_BUDGET) ]; then \
 		echo "AGENTS.md is $$lines lines, over the $(AGENTS_MD_LINE_BUDGET)-line budget."; \
-		echo "Move guidance to the surface that owns it (prime/about manuals, devflow/specs, lint) instead of growing AGENTS.md."; \
+		echo "Move guidance to the surface that owns it (prime/about manuals, devflow/specs, an automated check) instead of growing AGENTS.md."; \
 		exit 1; \
 	fi
 	$(MAKE) api-docs
