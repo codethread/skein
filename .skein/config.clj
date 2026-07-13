@@ -642,7 +642,7 @@
   {:arg-spec {:op "flow-await"
               :doc "Block until a workflow run needs coordinator attention."
               :flags {:timeout-secs {:type :int
-                                     :doc "Optional timeout in seconds."}}
+                                     :doc "Optional timeout in seconds. Cap blocking awaits at ~50 minutes and re-issue, so provider prompt caches don't expire while idle."}}
               :positionals [{:name :workflow-run-id
                              :type :string
                              :required? true

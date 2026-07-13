@@ -6,15 +6,15 @@ Read `./devflow/TENETS.md` and `./devflow/PHILOSOPHY.md` before all work. This f
 
 **Arriving in this repo** — run `mill skein prime` once: where the source, docs, and config live. The deep reference is `docs/skein.md`; its "Discovery tiers" section explains the convention behind everything below (`prime` orients, `about` explains an op, `strand help [<op>]` answers exact invocation).
 
-**Working with the user** — claim a kanban card first; `strand kanban prime` is the board discipline (lanes, claiming, notes, branch visibility).
+**Working with the user** — claim a kanban card first; `strand kanban prime` is the board discipline.
 
-**Starting multi-step work** — `mill strand prime`: the planning/tracking workflow. Feature work runs the devflow lifecycle (`strand devflow-start <feature>`); `strand devflow-conventions` lists this repo's registered ops, queries, and patterns; step views carry their own instructions.
+**Starting multi-step work** — `mill strand prime`: the planning/tracking workflow. Feature work runs the devflow lifecycle (`strand devflow-start <feature>`); `strand devflow-conventions` lists this repo's registered ops, queries, and patterns.
 
-**Delegating** — `strand agent about`. Delegate real work as tracked agent runs, never your harness's native subagents: a run is resumable, retryable, inspectable, and visible to other agents; native subagents are for cheap synchronous read-only recon only. Seats and review rosters: `strand agent harnesses` / `strand agent rosters`, with routing policy beside the definitions in `.skein/harnesses.clj` / `.skein/reviewers.clj`.
+**Delegating** — `strand agent about`. Delegate real work as tracked agent runs, never your harness's native subagents (those are for cheap synchronous read-only recon only — invisible to the coordination world). Seats and review rosters: `strand agent harnesses` / `strand agent rosters`, with routing policy beside the definitions in `.skein/harnesses.clj` / `.skein/reviewers.clj`.
 
-**Waiting on or recovering runs** — `strand flow-await <run-id>` blocks until a run needs you (cap each await at ~50 minutes via `--timeout-secs` and re-issue, so provider prompt caches don't expire); `strand ready --query work` is the default ready view; failures surface via `strand list --query agent-failures` and `strand agent logs <run-id> --tail 80`.
+**Waiting on or recovering runs** — `strand flow-await <run-id>` blocks until a run needs you (`strand help flow-await` for the await cap); `strand ready --query work` is the default ready view; failures surface via `strand list --query agent-failures` and `strand agent logs <run-id> --tail 80`.
 
-**Landing a finished branch** — coordinator-only: `strand land about`. Worker agents stop at implemented+committed.
+**Landing a finished branch** — coordinator-only: `strand land about`.
 
 **Changing shipped behavior** — update the relevant root spec in `devflow/specs/`; namespace tiers are contractual (SPEC-003.C19). **Authoring or changing spools** — `docs/writing-shared-spools.md`; the spool index is `spools/README.md`.
 
