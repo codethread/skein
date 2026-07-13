@@ -257,12 +257,13 @@
                        :help-topic "strand help agent"
                        :verb "harnesses"
                        :semantics ["List configured harnesses and aliases."
-                                   "Docs are capability statements: a harness doc describes the tool surface, an alias doc the model seat. Alias entries carry both — their own doc plus the resolved root's harness/harness-doc — so a supervisor picks the right seat from one listing."
+                                   "Docs are capability statements: a harness doc describes the tool surface, an alias doc the model seat. The terse default lists name, kind, alias-of, and doc — enough to coordinate over seats; --full adds argv plus each alias's resolved root harness and harness-doc for plumbing work."
                                    "A harness picks who does the work; validation remains in task attributes and proves the work independently."]
                        :returns [{"name" "string" "kind" "harness|alias" "alias-of" "optional string"
-                                  "harness" "alias entries only: resolved root harness name"
-                                  "harness-doc" "alias entries only: the root harness's doc"
-                                  "argv" "optional vector" "doc" "optional string"}]}
+                                  "doc" "optional string"
+                                  "harness" "--full, alias entries only: resolved root harness name"
+                                  "harness-doc" "--full, alias entries only: the root harness's doc"
+                                  "argv" "--full, harness entries: the tool argv"}]}
            :backends {:group "engine"
                       :help-topic "strand help agent"
                       :verb "backends"
@@ -1928,7 +1929,9 @@
             :positionals [{:name :run-id :required? true :doc "Run id."}]}
     "kill" {:doc "Kill a running run process or interactive session."
             :positionals [{:name :run-id :required? true :doc "Run id."}]}
-    "harnesses" {:doc "List configured harnesses and aliases."}
+    "harnesses" {:doc "List configured harnesses and aliases."
+                 :flags {:full {:type :boolean
+                                :doc "Include argv and resolved root-harness details (the terse default lists name, kind, alias-of, and doc)."}}}
     "backends" {:doc "List configured interactive backends."}
     "delegate" {:doc "Delegate one task or every ready task below a plan."
                 :flags {:ready {:doc "Plan/root id for fan-out delegation."}
@@ -2015,7 +2018,10 @@
       "await" (op-await (parsed->legacy-argv args [:ids]))
       "logs" (op-logs (parsed->legacy-argv args [:run-id]))
       "kill" (agent-run/kill! (:run-id args))
-      "harnesses" (agent-run/harnesses)
+      "harnesses" (let [entries (agent-run/harnesses)]
+                    (if (:full args)
+                      entries
+                      (mapv #(select-keys % [:name :kind :alias-of :doc]) entries)))
       "backends" (agent-run/backends)
       "note" (op-note (parsed->legacy-argv args [:strand-id :text]))
       "notes" (op-notes (parsed->legacy-argv args [:strand-id]))
