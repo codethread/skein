@@ -246,7 +246,7 @@
       :required false,
       :repeat false,
       :parse nil,
-      :doc "Optional timeout in seconds."}],
+      :doc "Optional timeout in seconds. Cap blocking awaits at ~50 minutes and re-issue, so provider prompt caches don't expire while idle."}],
     :positionals
     [{:name "workflow-run-id",
       :type "string",
