@@ -708,7 +708,7 @@
   [--harness <name>] [--backend <name>]`. Creates a tracking strand under
   `parent-id` (a kanban card, plan, or work root), composes the required
   `--context` brief with the tracking contract, and spawns an interactive
-  multiplexer run serving the tracking strand (default harness `hitl-build`,
+  multiplexer run serving the tracking strand (default harness `hitl-fable`,
   backend `tmux`). The session ends when the session agent closes the tracking
   strand after writing its outcome; the coordinator then reads the tracking
   strand for notes and outcome. Returns the tracking id and pending run
@@ -729,7 +729,7 @@
                       :cwd {:type :string
                             :doc "Working directory for the session (defaults to the workspace root)."}
                       :harness {:type :string
-                                :doc "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-build — the default). Headless harnesses like build/worker die in a pane."}
+                                :doc "Interactive-capable harness (prompt-via :arg TUI, e.g. hitl-fable — the default). Headless harnesses like build die in a pane."}
                       :backend {:type :string
                                 :doc "Multiplexer backend (default tmux)."}}}}
   [ctx]
@@ -745,7 +745,7 @@
                                                             " writes a final outcome attr, then closes this strand to end its"
                                                             " run and tear down the session.")}})]
       (weaver/update rt parent-id {:edges [{:type "parent-of" :to (:id tracking)}]})
-      (let [run (shuttle/spawn-run! {:harness (or harness "hitl-build")
+      (let [run (shuttle/spawn-run! {:harness (or harness "hitl-fable")
                                      :prompt (hitl-prompt (:id tracking) context)
                                      :title (str "HITL: " title)
                                      :parent (:id tracking)

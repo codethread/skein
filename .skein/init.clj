@@ -173,7 +173,7 @@
                :call 'nvd-scan/install!
                :required? true})
 ;; The subagent gate executor installs last: its install! runs an initial gate
-;; scan, so every harness alias harnesses.clj registers (e.g. worker) must
+;; scan, so every harness alias harnesses.clj registers (e.g. sol-low) must
 ;; already exist or a durable ready gate would be stamped gate/error on every
 ;; cold start.
 (runtime/use! runtime :skein/spools-treadle

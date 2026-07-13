@@ -29,22 +29,25 @@
               the review's change context (--commit-range); only dynamic
               reviewer *selection* from git changes stays deferred to an RFC.
 
-  Routing note: route by waste-type, not call count. grunt (sonnet) is the
-  default for read-through review seats - its instinct is targeted git-diff
-  and ranged file reads, so it does not thrash whole namespaces for a small
-  window. Reserve explore (haiku) for trivially greppable single-file concerns
-  whose contract tells it to do one global diff sweep - haiku is ~0.25-0.3x
-  sonnet's per-call cost, so a few extra greps there are still net-cheaper.
-  Reserve frontier seats for judgment-heavy contracts. The synthesizer is the
-  cross-vendor GPT seat so sign-off never comes from the model family that
-  authored the work, and it de-duplicates overlapping findings by root cause."
+  Routing note: pick seats by scanning the scorecards in
+  .skein/harnesses.clj ({:complexity :code-taste :resilience :ui-design
+  :cost}, X = untested), matching the axes the contract actually needs -
+  route by waste-type, not call count. In practice: trivially greppable
+  single-sweep concerns take the cheapest seat (:luna-low, cost 9);
+  read-through single-concern lenses take :terra-med (code-taste 7 at ~40%
+  of sol's price); judgment-heavy contracts take :sol-med or :opus. Note
+  reviewers must run on read/write seats for now: findings append via the
+  strand CLI over the weaver socket, which the -ro sandbox blocks (see
+  :codex-ro in harnesses.clj) - read-only stays prompt-discipline. Two
+  sign-off invariants: the synthesizer is never a seat that reviewed, and at
+  least one reviewing seat comes from outside the authoring model family."
   (:require [skein.spools.delegation :as agents]))
 
 (def change-review
   "Roster fanned out over each reviewed change in this repository."
   {:reviewers
    [{:name "test-sleeps"
-     :harness :explore
+     :harness :luna-low
      :contract (str "Hunt for sleeps and arbitrary timeouts in tests. They are nearly always "
                     "a hack: push the author toward event/condition-driven synchronization, "
                     "injected clocks, or deterministic scheduling, even when that means "
@@ -57,7 +60,7 @@
      :scope "test files and test helpers in the change"}
 
     {:name "fail-loudly"
-     :harness :grunt
+     :harness :terra-med
      :contract (str "Enforce TEN-003 (devflow/TENETS.md): unexpected input or state must fail "
                     "loudly, never fall back to 'sensible defaults', silent nil-punning, or "
                     "swallowed exceptions. Flag every new code path that guesses instead of "
@@ -68,7 +71,7 @@
                     "concisely and let the synthesizer merge by root cause. Budget ~12-15 calls.")}
 
     {:name "surface-minimalism"
-     :harness :grunt
+     :harness :terra-med
      :contract (str "Enforce TEN-004 (devflow/TENETS.md): the change should expose the minimum "
                     "possible new public surface. Flag new API functions, CLI verbs, flags, or "
                     "attributes that userland composition of existing surface could replace, "
@@ -77,7 +80,7 @@
                     "or re-read a file in slices after a whole read. Budget ~12-15 calls.")}
 
     {:name "spec-shapes"
-     :harness :grunt
+     :harness :terra-med
      :contract (str "Check that every public data shape the change introduces or reshapes - "
                     "registry inputs (defroster!/defharness!-style), weave pattern inputs, and "
                     "the input/output shapes of public seam functions - is defined by a "
@@ -92,7 +95,7 @@
                     "root cause. Budget ~15 calls.")}
 
     {:name "correctness"
-     :harness :grunt
+     :harness :terra-med
      :contract (str "Verify the change does what its strand contract and docs claim: trace the "
                     "main paths, check boundary and concurrency behavior against the actual "
                     "code, and flag regressions to adjacent behavior the diff touches. Report "
@@ -104,7 +107,7 @@
                     "Budget ~15-20 calls.")}
 
     {:name "docs-drift"
-     :harness :grunt
+     :harness :terra-med
      :contract (str "Check documentation and metadata coherence only - prose, not "
                     "implementation. Confine your review to spool READMEs, devflow/specs root "
                     "specs, AGENTS.md/CLAUDE.md guidance, ns docstrings, and metadata such as "
@@ -115,20 +118,21 @@
                     "Read prose files and the diff, not whole source namespaces. Budget ~12 calls.")
      :scope "documentation, specs, and metadata files - never source implementation"}]
 
-   :synthesizer {:harness :review-gpt}})
+   :synthesizer {:harness :sol-med}})
 
 (def complex-patch-review
   "Roster for GPT-authored implementation changes — the refactor/complex-patch
-  flow (patch-gpt/hard-gpt author; see the flow comment in config.clj). Two
-  deep cross-vendor seats instead of the single-concern fan-out: opus for
-  holistic architecture/idiom judgment (it never authored the patch, so no
-  self-sign-off), and GPT-5.4 high for the exhaustive line-level pass.
-  Synthesized by hard-gpt so synthesis comes from neither reviewing seat.
-  Compose with change-review when a change also wants the cheap
-  single-concern sweeps (test-sleeps, docs-drift, ...)."
+  flow (:sol-low / :sol-high author). Two deep seats instead of the
+  single-concern fan-out: :opus for holistic architecture/idiom judgment
+  (cross-vendor - it never authored the patch, so no self-sign-off), and
+  :sol-med for the exhaustive line-level pass (same family as the author;
+  the opus seat is the independent eye, and sol-med benched the strongest
+  line-level codex quality). Synthesized by :terra-med so synthesis comes
+  from neither reviewing seat. Compose with change-review when a change also
+  wants the cheap single-concern sweeps (test-sleeps, docs-drift, ...)."
   {:reviewers
    [{:name "opus-design"
-     :harness :build
+     :harness :opus
      :contract (str "Deep architecture and idiom review of a GPT-authored patch. Judge: does "
                     "the change respect the repo's namespace tiers, runtime-publication "
                     "discipline, and implementation boundaries (CLAUDE.md); is complexity "
@@ -138,25 +142,27 @@
                     "Read the diff first, then only the surrounding context it touches. "
                     "Judgment over nitpicks - style detail belongs to the fmt/lint gates.")}
     {:name "gpt-thorough"
-     :harness :review-gpt
+     :harness :sol-med
      :contract (str "Exhaustive line-level correctness pass over the diff: logic errors, "
                     "boundary conditions, transaction and locking mistakes, error-path gaps "
                     "(TEN-003 fail-loudly), test assertions that do not test what they claim, "
                     "and divergence between the change and the spec/plan clauses it cites. "
                     "Work the diff hunk by hunk; verify claims against source with ranged "
                     "reads, never whole-namespace reads.")}]
-   :synthesizer {:harness :hard-gpt}})
+   :synthesizer {:harness :terra-med}})
 
 (def docs-review
   "Roster fanned out over human-facing prose changes: READMEs, docs/, spool
   contract docs and cookbooks, release notes. Distilled from the five-seat
   panel that reviewed the 2026-07 docs refresh and spool-cookbook batches
   (passes panel-0461821b, panel-1e14b735), whose seat mix repeatedly caught
-  disjoint defect classes. Generated `spools/*.api.md` files mirror
-  docstrings and are out of scope."
+  disjoint defect classes; seats remapped to the 2026-07-13 scorecard roster.
+  reader-skeptic deliberately exercises :sol-high (scorecard X/untested) as
+  its trial lane - downgrade to :sol-med if early runs disappoint. Generated
+  `spools/*.api.md` files mirror docstrings and are out of scope."
   {:reviewers
    [{:name "docs-fact-check"
-     :harness :review-gpt
+     :harness :sol-med
      :contract (str "Verify every command, flag, filename, path, and behavioral claim in the "
                     "changed prose against the repo's sources of truth: the contract docs, "
                     "generated api docs, devflow/specs, source, and tests. Spot-run the "
@@ -168,7 +174,7 @@
                     "must-fix. Budget ~15-20 calls plus the snippet runs you choose.")}
 
     {:name "docs-tone"
-     :harness :review-gpt
+     :harness :sol-med
      :contract (str "Police the house voice: warm, plain, confident. The prose is usually "
                     "opus-authored, which trends over-familiar and hyperbolic, so flag "
                     "overselling, forced enthusiasm, chumminess, empty hedging, and 'why' "
@@ -177,7 +183,7 @@
                     "changed prose files. Budget ~10-12 calls.")}
 
     {:name "llm-tells"
-     :harness :grunt
+     :harness :terra-med
      :contract (str "Sweep the changed prose with the docs-style checklist skill at "
                     ".claude/skills/docs-style/SKILL.md (in this worktree): grep its word "
                     "tells, contrast reframes ('it's not X, it's Y'), rule-of-three padding, "
@@ -186,7 +192,7 @@
                     "rewrite. Skip generated *.api.md files. Budget ~10-12 calls.")}
 
     {:name "reader-newbie"
-     :harness :explore
+     :harness :luna-low
      :contract (str "PERSONA: a developer meeting this material for the first time — no "
                     "Clojure, no prior Skein vocabulary beyond getting-started. Read the "
                     "changed docs top to bottom, in order, taking every instruction "
@@ -197,7 +203,7 @@
                     "spelunking. Budget ~8-10 calls.")}
 
     {:name "reader-skeptic"
-     :harness :hard-gpt
+     :harness :sol-high
      :contract (str "PERSONA: a tired tech lead deciding whether this documentation helps or "
                     "rots. For each changed doc: does it solve problems a real team hits, or "
                     "is it filler demonstrating API calls? Does its reasoning give the cost "
@@ -205,7 +211,7 @@
                     "load-bearing — never session anecdotes or hardcoded incidental detail "
                     "that will silently rot? Name anything you would cut. Budget ~12-15 calls.")}]
 
-   :synthesizer {:harness :review-gpt}})
+   :synthesizer {:harness :sol-med}})
 
 (defn install!
   "Register this repository's reviewer rosters with the delegation spool."
