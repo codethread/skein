@@ -27,9 +27,9 @@ repo-local `.skein` workspace:
   spools/            -> optional local spools
 ```
 
-`mill init` creates the shared half when absent — `config.json` with the alpha format marker, `spools.edn` as
-`{:spools {}}`, `init.clj` with the default below, the `spools/` directory — plus a `.gitignore` ignoring the
-personal overlays (`config.local.json`, `init.local.clj`, `spools.local.edn`). The overlays are yours to add
+When absent, `mill init` creates the shared half: `config.json` with the alpha format marker, `spools.edn` as
+`{:spools {}}`, `init.clj` with the default below, and the `spools/` directory. It also adds a `.gitignore`
+ignoring the personal overlays (`config.local.json`, `init.local.clj`, `spools.local.edn`). The overlays are yours to add
 when you want them: each shared file has a gitignored personal counterpart, so shared config is committed and
 reviewed while personal config stays on your machine. Explicit `--workspace` bootstrap works the same way on
 the selected directory, preserving whatever already exists.
@@ -47,6 +47,8 @@ failing files fail loudly with file context. The generated `init.clj` is intenti
 (def runtime (current/runtime))
 
 (runtime/sync! runtime)
+;; batteries ships on the classpath (:paths), so require it before its use!.
+(require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
@@ -130,9 +132,8 @@ generations for the classification and the cutover semantics.
 
 ## REPL hygiene in a shared weaver
 
-Much of this iteration happens from `mill weaver repl`, and it is worth knowing whose house you are in. The
-REPL (and `mill weaver repl --stdin`) evaluates inside the live weaver JVM, usually in the shared `skein.repl`
-namespace. Exploratory requires and scratch defs mutate that namespace for every other session attached to the
+Much of this iteration happens from `mill weaver repl`. The REPL (and `mill weaver repl --stdin`) evaluates
+inside the live weaver JVM, usually in the shared `skein.repl` namespace. Exploratory requires and scratch defs mutate that namespace for every other session attached to the
 same weaver, so use names that are easy to identify and clean up: prefer `:as` aliases over `:refer`, prefix
 aliases and scratch vars with an owner or session prefix (`ct-`, `agent-abc-`, a task slug), and avoid
 unprefixed scratch vars like `result`, `x`, or `data`. Clean aliases with `ns-unalias` and scratch vars with
@@ -229,7 +230,11 @@ unload guarantee: restart the weaver when you need a clean runtime.
 
 ## Your own CLI command
 
-Every `strand` command is a registered op, and ops register the same way queries do, so a local spool can add commands to the CLI without recompiling anything. `strand help` lists registered ops; `strand help <op>` explains one. Register your own from trusted Clojure with `skein.api.weaver.alpha/register-op!` — the CLI forwards everything after the op name to your handler as string argv:
+Every `strand` command is a registered op, and ops register the same way queries do, so a local
+spool can add commands to the CLI without recompiling anything. `strand help` lists registered ops;
+`strand help <op>` explains one. Register your own from trusted Clojure with
+`skein.api.weaver.alpha/register-op!` — the CLI forwards everything after the op name to your
+handler as string argv:
 
 ```clojure
 (ns my.workflow
@@ -248,7 +253,11 @@ Every `strand` command is a registered op, and ops register the same way queries
 strand echo --flag value
 ```
 
-Op handlers return data; the CLI prints it as JSON. Like every registration on this page, ops are weaver-lifetime state — keep them in startup-loaded code, and reload with the verbs above while iterating. The shipped [kanban board spool](../../spools/kanban.md) is the grown-up version of this pattern: a whole board surface built from ops, queries, and attributes, worth reading once your own command grows past a helper.
+Op handlers return data; the CLI prints it as JSON. Like every registration on this page, ops are
+weaver-lifetime state — keep them in startup-loaded code, and reload with the verbs above while
+iterating. The shipped [kanban board spool](../../spools/kanban.md) is a complete example of this
+pattern: a whole board surface built from ops, queries, and attributes, worth reading once your own
+command grows past a helper.
 
 ## Terse daily driving
 
@@ -282,8 +291,10 @@ not, so `skein.userland.alpha` is userland-only, forever, and no spool you distr
 
 ## When a spool leaves your workspace
 
-Everything above assumes the code is yours alone, running in your weaver, free to grab the ambient runtime and
-keep state wherever it likes. The moment other people run your spool, those liberties become bugs: a shared
+Everything above assumes the code is yours alone, running in your weaver, free to resolve the ambient runtime
+and stay informally structured. Even here, runtime-owned state is the easier default — it survives reloads
+that a module-level atom loses — so the liberties are ambient resolution and loose structure, not unmanaged
+state. The moment other people run your spool, those liberties become bugs: a shared
 spool must work in any weaver runtime, including unpublished runtimes that coexist with others in a single
 JVM, so it takes the runtime explicitly as the first argument of every public function, keeps its state
 runtime-owned, registers behavior by symbol rather than closure, and never touches the ergonomics layer. Those

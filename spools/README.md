@@ -24,7 +24,14 @@ Signatures live only in the generated API doc; contracts and cookbooks link to t
 
 ## Index
 
-Each spool lives in its own root under `spools/<name>/src`, off the weaver's source classpath. A spool's `.skein/spools.edn` coordinate is what makes it reachable — `runtime/sync!` adds the approved root to the weaver runtime, and a `:spools`-guarded `runtime/use!` activates it. These spools also serve as the worked example of authoring your own ([docs/reference.md](../docs/spools/customisation.md#promoting-config-to-a-local-spool)); for publishing a spool for others by git coordinate, SHA-pinned approval, README dependency/activation snippets, Maven-only spool-root dependencies, and local development overrides, see [Writing shared spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution).
+Each spool lives in its own root under `spools/<name>/src`, off the weaver's source classpath. A
+spool's `.skein/spools.edn` coordinate is what makes it reachable — `runtime/sync!` adds the
+approved root to the weaver runtime, and a `:spools`-guarded `runtime/use!` activates it. These
+spools also serve as the worked example of authoring your own ([customising your
+workspace](../docs/spools/customisation.md#promoting-config-to-a-local-spool)); for publishing a
+spool for others by git coordinate, SHA-pinned approval, README dependency/activation snippets,
+Maven-only spool-root dependencies, and local development overrides, see [Writing shared
+spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution).
 
 | Spool | Coordinate (`.skein/spools.edn`) | Contract doc | API reference | Purpose |
 |---|---|---|---|---|
@@ -49,7 +56,14 @@ Each spool lives in its own root under `spools/<name>/src`, off the weaver's sou
 
 `bobbin`, `guild`, and `selvage` are never-activated reference roots: this repo carries their source and tests but adds no `.skein/spools.edn` coordinate for them — a downstream user opts in by adding one.
 
-`skein.spools.devflow` is consumed from [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather than a local root — the worked example of publishing a spool for others (RFC-017, [Writing shared spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution)). This repo pins a sha-pinned `:git/url`+`:git/sha` coordinate in `.skein/spools.edn`, activates it with `:required? true` in `.skein/init.clj`, and pins the same sha as a tools.deps git dep for the test JVM; developers override the coordinate with a gitignored `spools.local.edn` local root to work against a checkout.
+`skein.spools.devflow` is consumed from
+[`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
+than a local root — the worked example of publishing a spool for others (RFC-017, [Writing shared
+spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution)).
+This repo pins a sha-pinned `:git/url`+`:git/sha` coordinate in `.skein/spools.edn`, activates it
+with `:required? true` in `.skein/init.clj`, and pins the same sha as a tools.deps git dep for the
+test JVM; developers override the coordinate with a gitignored `spools.local.edn` local root to work
+against a checkout.
 
 `skein.spools.kanban` is the second external spool: it lives in [`codethread/kanban.spool`](https://github.com/codethread/kanban.spool) and requires `skein.spools.devflow` (the `kanban card` devflow join), so `.skein/init.clj` activates it after devflow with both coordinates in its `:spools` guard. Like devflow, `.skein/spools.edn` and the test JVM (`deps.edn`) pin the same sha-pinned `:git/url`+`:git/sha` coordinate — config_test enforces the pairing — and developers override it with a gitignored `spools.local.edn` local root.
 

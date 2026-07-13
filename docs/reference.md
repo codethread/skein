@@ -1,6 +1,8 @@
 # Skein user reference
 
-Skein is a local strand graph for agents and humans. It gives you a durable SQLite-backed graph of work, notes, dependencies, and workflow state, while keeping the command-line surface small and machine-readable.
+Skein is a local strand graph for agents and humans. It gives you a durable SQLite-backed graph of
+work, notes, dependencies, and workflow state, while keeping the command-line surface small and
+machine-readable.
 
 The short version:
 
@@ -10,11 +12,14 @@ The short version:
 - The **REPL** is the trusted, high-power surface for customization and exploration.
 - Your workflow model lives mostly in custom **attributes** and your own config/spool code.
 
-This guide is written for Skein users and for agents working inside a user's Skein workspace. Maintainer-facing contracts live in [`devflow/specs/`](../devflow/specs/); see the [spec index](#spec-index) at the end.
+This guide is written for Skein users and for agents working inside a user's Skein workspace.
+Maintainer-facing contracts live in [`devflow/specs/`](../devflow/specs/); see the [spec
+index](#spec-index) at the end.
 
 ## Mental model
 
-Skein is daemon-core-first behind a small router. You start `mill` once, ask it to start a weaver for a selected workspace, then clients send requests through `mill` to that weaver.
+Skein is daemon-core-first behind a small router. You start `mill` once, ask it to start a weaver
+for a selected workspace, then clients send requests through `mill` to that weaver.
 
 ```text
 selected workspace (normally canonical repo .skein)
@@ -43,13 +48,19 @@ Different workspaces are different workspaces. Use `--workspace <dir>` when you 
 
 ## Workspace resolution
 
-The ordinary workspace is repository-scoped. Without `--workspace`, `mill` resolves the canonical repository root and uses that repo's `.skein` directory as the selected workspace. Linked worktrees for the same repository share this default workspace. Outside supported Git layouts, no-flag commands fail loudly. `mill init` creates or completes `.skein` at the canonical Git root and fails loudly outside supported Git layouts:
+The ordinary workspace is repository-scoped. Without `--workspace`, `mill` resolves the canonical
+repository root and uses that repo's `.skein` directory as the selected workspace. Linked worktrees
+for the same repository share this default workspace. Outside supported Git layouts, no-flag
+commands fail loudly. `mill init` creates or completes `.skein` at the canonical Git root and fails
+loudly outside supported Git layouts:
 
 ```sh
 mill init
 ```
 
-Mill resolves the Skein source checkout used to launch the weaver from `SKEIN_SOURCE`, the install-time source recorded by `make install`, or a canonical Skein checkout cwd. `mill init` does not persist a source path in `.skein/config.json`.
+Mill resolves the Skein source checkout used to launch the weaver from `SKEIN_SOURCE`, the
+install-time source recorded by `make install`, or a canonical Skein checkout cwd. `mill init` does
+not persist a source path in `.skein/config.json`.
 
 A workspace can also be selected explicitly with:
 
@@ -57,7 +68,8 @@ A workspace can also be selected explicitly with:
 strand --workspace /path/to/workspace ...
 ```
 
-For explicit workspaces, `/path/to/workspace` is the config workspace. Runtime state, metadata, sockets, and data are owned by mill under Skein's XDG state root for the selected config identity.
+For explicit workspaces, `/path/to/workspace` is the config workspace. Runtime state, metadata,
+sockets, and data are owned by mill under Skein's XDG state root for the selected config identity.
 
 The important file is `config.json`:
 
@@ -71,15 +83,50 @@ The important file is `config.json`:
 
 ## Agent guidance files
 
-From a Skein source checkout, `make install` installs the Go CLIs (`strand` and `mill`) and records the checkout as mill's default source for weaver launch and the thin nREPL attach client. After that, use the CLIs directly: `mill start`, `mill init`, and `mill weaver start`.
+From a Skein source checkout, `make install` installs the Go CLIs (`strand` and `mill`) and records
+the checkout as mill's default source for weaver launch and the thin nREPL attach client. After
+that, use the CLIs directly: `mill start`, `mill init`, and `mill weaver start`.
 
-`mill init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein` workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves shared config files ready to commit. It does not run `git init`, persist source, or initialize database storage; weaver startup prepares storage.
+`mill init` is the normal repo bootstrap path. It creates or completes the canonical repo `.skein`
+workspace, writes shareable `config.json` with the alpha format marker when absent, and leaves
+shared config files ready to commit. It does not run `git init`, persist source, or initialize
+database storage; weaver startup prepares storage.
 
-User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user reference is this page, `docs/reference.md`. Two harness-agnostic orientation commands surface this to agents at runtime, with no running weaver required: `mill skein prime` resolves the Skein source and prints the paths to the docs, the spool index, and the repo coordination guidance, plus how to extend `.skein` config; `mill strand prime` prints the strand planning/tracking workflow. In a repo-world bootstrap, `mill init` also seeds a `## Skein / strand` section in the repository-root `AGENTS.md`/`CLAUDE.md` that points new agents at these two commands. Each shipped spool's per-fn API reference (`spools/*.api.md`) and each blessed `skein.api.*.alpha` namespace's per-fn reference (`docs/api/*.api.md`) is generated from source docstrings and regenerated with `make api-docs` — never hand-edited; see the [spool index](../spools/README.md#doc-triad) for the contract/cookbook/generated-API triad. The [alpha API index](./api/README.md) maps each `skein.api.*.alpha` namespace to the concern it owns; the generated pages are reference only, and the behavior contracts remain the root specs (see the [spec index](#spec-index)).
+User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user
+reference is this page, `docs/reference.md`. Two harness-agnostic orientation commands surface this
+to agents at runtime, with no running weaver required: `mill skein prime` resolves the Skein source
+and prints the paths to the docs, the spool index, and the repo coordination guidance, plus how to
+extend `.skein` config; `mill strand prime` prints the strand planning/tracking workflow. In a
+repo-world bootstrap, `mill init` also seeds a `## Skein / strand` section in the repository-root
+`AGENTS.md`/`CLAUDE.md` that points new agents at these two commands. Each shipped spool's per-fn
+API reference (`spools/*.api.md`) and each blessed `skein.api.*.alpha` namespace's per-fn reference
+(`docs/api/*.api.md`) is generated from source docstrings and regenerated with `make api-docs` —
+never hand-edited; see the [spool index](../spools/README.md#doc-triad) for the
+contract/cookbook/generated-API triad. The [alpha API index](./api/README.md) maps each
+`skein.api.*.alpha` namespace to the concern it owns; the generated pages are reference only, and
+the behavior contracts remain the root specs (see the [spec index](#spec-index)).
 
-When working in this repository, also read the "Repo coordination workspace (.skein)" section of the root [`AGENTS.md`](../AGENTS.md): the `.skein` shared coordination world, its working discipline, and pointers into the live surface (`strand devflow-conventions` for the registered ops, queries, and patterns). The config layout — `.skein/init.clj` activation order and its per-concern modules (`config.clj`, `workflows.clj`, `harnesses.clj`, `reviewers.clj`, `attention.clj`, `nvd_scan.clj`, `analytics.clj`) — is documented in the `init.clj` header itself.
+When working in this repository, also read the "Repo coordination workspace (.skein)" section of the
+root [`AGENTS.md`](../AGENTS.md): the `.skein` shared coordination world, its working discipline,
+and pointers into the live surface (`strand devflow-conventions` for the registered ops, queries,
+and patterns). The config layout — `.skein/init.clj` activation order and its per-concern modules
+(`config.clj`, `workflows.clj`, `harnesses.clj`, `reviewers.clj`, `attention.clj`, `nvd_scan.clj`,
+`analytics.clj`) — is documented in the `init.clj` header itself.
 
-`.skein/workflows.clj` registers the **landing workflow** (family `land`) behind the `land` op — the coordinator-only discipline for taking a finished branch to landed. It is a single sequential `skein.spools.workflow` molecule whose ordering is the enforcement: push the branch and open a draft PR, drive CI green at HEAD, then run the declared roster sign-off — sign-off is only valid on a pushed branch with a draft PR and green CI. A coordinator sign-off checkpoint (`approved` continues; `abort` records a required reason and leaves the branch untouched) then gates a squash-merge into *local* main (regenerating `make api-docs` into the squash first if spool docstrings changed), which must pass the full local verification gate (`clojure -M:test`, `go test`, `make fmt-check lint reflect-check docs-check`, and the smoke suite) before main is pushed; main is only landed once its own CI is green, after which cleanup deletes the remote branch/PR, removes the worktree, finishes the kanban card when one is set (`strand kanban finish <card> --outcome done`), and closes the run. Worker agents never land — they stop at implemented+committed; only a coordinator holding delegated sign-off authority drives a `land` run (`strand land about` for the manual, `strand help land` for the command surface).
+`.skein/workflows.clj` registers the **landing workflow** (family `land`) behind the `land` op — the
+coordinator-only discipline for taking a finished branch to landed. It is a single sequential
+`skein.spools.workflow` molecule whose ordering is the enforcement: push the branch and open a draft
+PR, drive CI green at HEAD, then run the declared roster sign-off — sign-off is only valid on a
+pushed branch with a draft PR and green CI. A coordinator sign-off checkpoint (`approved` continues;
+`abort` records a required reason and leaves the branch untouched) then gates a squash-merge into
+*local* main (regenerating `make api-docs` into the squash first if spool docstrings changed), which
+must pass the full local verification gate (`clojure -M:test`, `go test`, `make fmt-check lint
+reflect-check docs-check`, and the smoke suite) before main is pushed; main is only landed once its
+own CI is green, after which cleanup deletes the remote branch/PR, removes the worktree, finishes
+the kanban card when one is set (`strand kanban finish <card> --outcome done`), and closes the run.
+Worker agents never land — they stop at implemented+committed; only a coordinator holding delegated
+sign-off authority drives a `land` run (`strand land about` for the manual, `strand help land` for
+the command surface).
 
 ## Weaver
 
@@ -101,7 +148,9 @@ mill start
 mill weaver start --workspace "$workspace"
 ```
 
-`mill weaver start` waits up to 5 minutes for ready metadata while the JVM boots and trusted workspace config runs. On unusually slow machines or first boots that must fetch and compile a lot of code, pass a larger positive Go duration:
+`mill weaver start` waits up to 5 minutes for ready metadata while the JVM boots and trusted
+workspace config runs. On unusually slow machines or first boots that must fetch and compile a lot
+of code, pass a larger positive Go duration:
 
 ```sh
 mill weaver start --workspace "$workspace" --ready-timeout 10m
@@ -124,19 +173,45 @@ The weaver exposes two local transports:
 - a Unix socket used by the Go `strand` CLI;
 - an nREPL endpoint used by the live weaver REPL.
 
-A selected workspace may have one running weaver. Runtime registries are weaver-lifetime state, so named queries, weave patterns, views, and synced spool state should be loaded from startup config if you want them to appear after every restart.
+A selected workspace may have one running weaver. Runtime registries are weaver-lifetime state, so
+named queries, weave patterns, views, and synced spool state should be loaded from startup config if
+you want them to appear after every restart.
 
 ## Weaver generations and cutover
 
-A **weaver generation** is one weaver process lifetime. It answers two everyday questions: when a config or spool change you make takes effect, and what happens to running agent runs when a weaver is replaced. The spool classloader is created when the weaver boots and is never swapped while it runs, so some changes load into the live weaver and some must wait for the next generation.
+A **weaver generation** is one weaver process lifetime. It answers two everyday questions: when a
+config or spool change you make takes effect, and what happens to running agent runs when a weaver
+is replaced. The spool classloader is created when the weaver boots and is never swapped while it
+runs, so some changes load into the live weaver and some must wait for the next generation.
 
-`runtime/sync!` classifies each change. Additive changes load into the running weaver: a newly approved root, or a coordinate that has never loaded in this generation. Non-additive changes cannot, because applying them would mean unloading code the running JVM has no safe way to drop: removing a root that already loaded, pointing an already-loaded root at different source, or bumping the version of a loaded Maven coordinate. `sync!` refuses those in-JVM, records a `:pending-generation` entry, and reports `recorded; takes effect at the next weaver generation (mill-supervised restart, user sign-off)`. The pending change stays visible in `syncs` and in later `sync!` returns until the weaver process is replaced. If a change you expected does not take effect, check `syncs` for a pending generation. See daemon-runtime SPEC-004.C44c–C44f for the full classification.
+`runtime/sync!` classifies each change. Additive changes load into the running weaver: a newly
+approved root, or a coordinate that has never loaded in this generation. Non-additive changes
+cannot, because applying them would mean unloading code the running JVM has no safe way to drop:
+removing a root that already loaded, pointing an already-loaded root at different source, or bumping
+the version of a loaded Maven coordinate. `sync!` refuses those in-JVM, records a
+`:pending-generation` entry, and reports `recorded; takes effect at the next weaver generation
+(mill-supervised restart, user sign-off)`. The pending change stays visible in `syncs` and in later
+`sync!` returns until the weaver process is replaced. If a change you expected does not take effect,
+check `syncs` for a pending generation. See daemon-runtime SPEC-004.C44c–C44f for the full
+classification.
 
-Replacing a weaver ends every agent run it is supervising, so a restart is not free. `mill weaver stop` does not drain the work first. It sends the weaver process SIGTERM, waits about five seconds, then SIGKILL if it has not exited. The headless runs the weaver was supervising are orphaned, not lost: the next weaver start recovers them through `reconcile!`, which resets each run to `pending` for auto-respawn, or marks it `exhausted` (non-retryable) once its attempts are spent. Interactive sessions survive the stop whatever their backend, tmux included, and the next generation adopts them instead of respawning. Before cycling a weaver that has live work, a coordinator either drains it first with `strand agent await` on the outstanding runs, or accepts the respawn-and-retry cost for whatever runs are still going when the stop lands.
+Replacing a weaver ends every agent run it is supervising, so a restart is not free. `mill weaver
+stop` does not drain the work first. It sends the weaver process SIGTERM, waits about five seconds,
+then SIGKILL if it has not exited. The headless runs the weaver was supervising are orphaned, not
+lost: the next weaver start recovers them through `reconcile!`, which resets each run to `pending`
+for auto-respawn, or marks it `exhausted` (non-retryable) once its attempts are spent. Interactive
+sessions survive the stop whatever their backend, tmux included, and the next generation adopts them
+instead of respawning. Before cycling a weaver that has live work, a coordinator either drains it
+first with `strand agent await` on the outstanding runs, or accepts the respawn-and-retry cost for
+whatever runs are still going when the stop lands.
 
 Restarting the canonical weaver requires explicit user sign-off, the same hard rule that governs every canonical-weaver restart (see AGENTS.md).
 
-One-time migration: a weaver started before stateless resolution landed (2026-07, SPEC-004.C44@sync-owns-resolution) carries process-global `add-libs` and basis residue that an in-JVM upgrade cannot unwind. A single restart of that weaver sheds it, and every generation after starts clean with no such restart needed. When to take that restart is a human decision under the sign-off rule above.
+One-time migration: a weaver started before stateless resolution landed (2026-07,
+SPEC-004.C44@sync-owns-resolution) carries process-global `add-libs` and basis residue that an
+in-JVM upgrade cannot unwind. A single restart of that weaver sheds it, and every generation after
+starts clean with no such restart needed. When to take that restart is a human decision under the
+sign-off rule above.
 
 ## CLI
 
@@ -163,7 +238,9 @@ printf '{"title":"New work"}\n' | strand --workspace "$workspace" --stdin weave 
 
 ```
 
-`burn` deletes a strand and its incident edges, and records a durable forensic tombstone in the same transaction. It is hand-recoverable from the REPL, not an undo; see the strand model and the burn-recovery cookbook below.
+`burn` deletes a strand and its incident edges, and records a durable forensic tombstone in the same
+transaction. It is hand-recoverable from the REPL, not an undo; see the strand model and the
+burn-recovery cookbook below.
 
 The public strand/weaver commands emit JSON. CLI attributes are string-valued `key=value` pairs; richer Clojure data belongs in config or REPL workflows.
 
@@ -182,7 +259,9 @@ Do not expect the CLI to be a package manager, query authoring surface, plugin h
 
 ## Discovery tiers: help, about, prime
 
-Skein has one deliberate convention for "how do I find out?", with three tiers. They compose as an escalation path — `prime` orients you, `about` explains an op you are about to lean on, `help` answers exact invocation questions — and each tier has a different source of truth:
+Skein has one deliberate convention for "how do I find out?", with three tiers. They form an
+escalation path. `prime` orients you; `about` explains an op you are about to lean on; `help`
+answers exact invocation questions. Each tier has a different source of truth:
 
 | Tier | Source | Question it answers | Examples |
 | --- | --- | --- | --- |
@@ -190,11 +269,26 @@ Skein has one deliberate convention for "how do I find out?", with three tiers. 
 | `about` | **Authored** per-op JSON manual | "What does this op mean?" — semantics, contracts, attribute conventions | `strand kanban about`, `strand agent about` |
 | `prime` | **Authored** prose orientation | "How do we work here?" — run **before** starting work | `mill skein prime`, `mill strand prime`, `strand kanban prime` |
 
-**`help` is never hand-written.** `strand help` lists every registered op; `strand help <op>` renders one op's detail from its arg-spec, including declared subcommands. Ops that declare `:subcommands` also answer `strand <op> help`, `strand <op> -h`, and `strand <op> --help` (sole token, no payloads) with the same detail at exit 0, and their missing/unknown-subcommand failures are structured parser errors carrying the available names — no spool ever writes its own usage strings or dispatch errors. Contracts: SPEC-002.C39, SPEC-003.C64/C65, SPEC-004.C63c–e.
+**`help` is never hand-written.** `strand help` lists every registered op; `strand help <op>`
+renders one op's detail from its arg-spec, including declared subcommands. Ops that declare
+`:subcommands` also answer `strand <op> help`, `strand <op> -h`, and `strand <op> --help` (sole
+token, no payloads) with the same detail at exit 0, and their missing/unknown-subcommand failures
+are structured parser errors carrying the available names — no spool ever writes its own usage
+strings or dispatch errors. Contracts: SPEC-002.C39, SPEC-003.C64/C65, SPEC-004.C63c–e.
 
-**`about` is the op's manual.** A spool op whose meaning goes beyond its argument shapes ships an `about` subcommand returning a structured JSON document: purpose, conventions, attribute contracts, and usage examples. Think man page, machine-readable. Purely structural ops (batteries `add`/`list`/...) do not need one — their arg-spec already says everything.
+**`about` is the op's manual.** A spool op whose meaning goes beyond its argument shapes ships an
+`about` subcommand returning a structured JSON document: purpose, conventions, attribute contracts,
+and usage examples. Think man page, machine-readable. Purely structural ops (batteries
+`add`/`list`/...) do not need one — their arg-spec already says everything.
 
-**`prime` is run-first context priming for agents.** A `prime` command prints the working discipline for an area — the conventions an agent must load *before* acting, with pointers to deeper docs. `mill skein prime` (source/docs orientation) and `mill strand prime` (the strand workflow) ship embedded in the `mill` binary and need no running weaver; spool-level primes like `strand kanban prime` are spool-generated so they can never drift from the installed surface. Repo-world `mill init` seeds a marker-guarded section into `AGENTS.md`/`CLAUDE.md` pointing fresh agents at the prime commands (see "Agent guidance files").
+**`prime` is run-first context priming for agents.** A `prime` command prints the working discipline
+for an area — the conventions an agent must load *before* acting, with pointers to deeper docs.
+`mill skein prime` (source/docs orientation) and `mill strand prime` (the strand workflow) need no
+running weaver: `mill` resolves the Skein source checkout and renders the topic file the manifest at
+`docs/prime/index.json` names, so an already-installed `mill` prints current orientation text from a
+newer checkout. Spool-level primes like `strand kanban prime` are spool-generated so they can never
+drift from the installed surface. Repo-world `mill init` seeds a marker-guarded section into
+`AGENTS.md`/`CLAUDE.md` pointing fresh agents at the prime commands (see "Agent guidance files").
 
 Spool authors: the authoring rules for this surface live in [`docs/spools/writing-shared-spools.md`](./spools/writing-shared-spools.md).
 
@@ -208,7 +302,9 @@ A strand has:
 - `created_at` and `updated_at`;
 - `attributes` — userland JSON object.
 
-`state` is the only built-in lifecycle field. Concepts like `status`, `kind`, `type`, `category`, `outcome`, `owner`, `priority`, `project`, `estimate`, or `retention` are your attributes, not core fields.
+`state` is the only built-in lifecycle field. Concepts like `status`, `kind`, `type`, `category`,
+`outcome`, `owner`, `priority`, `project`, `estimate`, or `retention` are your attributes, not core
+fields.
 
 | Concept | Where it belongs |
 | --- | --- |
@@ -231,7 +327,11 @@ Burn only when you want deletion:
 strand --workspace "$workspace" burn <id>
 ```
 
-Every burn records a durable forensic tombstone in the same transaction — the burned strand's core row, full attribute map, and incident edges (SPEC-001.P3/P8). A tombstone supports hand-recovery, not undo: recovery is a REPL-only activity (`skein.repl/burn-history`, `recent-burns`), a replay mints a new id, and inbound edges from unburned strands are not restored. See the burn-recovery cookbook in the REPL section.
+Every burn records a durable forensic tombstone in the same transaction — the burned strand's core
+row, full attribute map, and incident edges (SPEC-001.P3/P8). A tombstone supports hand-recovery,
+not undo: recovery is a REPL-only activity (`skein.repl/burn-history`, `recent-burns`), a replay
+mints a new id, and inbound edges from unburned strands are not restored. See the burn-recovery
+cookbook in the REPL section.
 
 ## Edges and readiness
 
@@ -253,7 +353,10 @@ strand --workspace "$workspace" ready
 Self-edges fail for every relation. The declared acyclic relations `depends-on`, `parent-of`, `supersedes`, `serves`, and `notes` reject relation-local cycles.
 Other annotation relations may form non-self cycles.
 
-The batteries `note` verb appends a note strand at the root. The note is born closed, and its `note/text` and `note/at` content is storage-enforced write-once (SPEC-001.P4): the birth write is legal, but no later path can rewrite, delete, or archive it. The strand itself stays open to writer-owned decorating attributes.
+The batteries `note` verb appends a note strand at the root. The note is born closed, and its
+`note/text` and `note/at` content is storage-enforced write-once (SPEC-001.P4): the birth write is
+legal, but no later path can rewrite, delete, or archive it. The strand itself stays open to
+writer-owned decorating attributes.
 `notes` reads the target's attached notes by walking the `notes` relation, no matter which writer created them.
 
 ## Attributes are the extension point
@@ -278,9 +381,13 @@ Your workspace can decide what attributes mean. For example:
 - `temporary=true` can identify rows your own tooling treats as temporary;
 - `external.issue=123` can link to another system if your tooling understands it.
 
-Skein stores attributes as JSON text. CLI input is simple string pairs; `--attr temporary=true` stores the string `"true"`, not a JSON boolean. Trusted Clojure workflows can write richer JSON-compatible values.
+Skein stores attributes as JSON text. CLI input is simple string pairs; `--attr temporary=true`
+stores the string `"true"`, not a JSON boolean. Trusted Clojure workflows can write richer
+JSON-compatible values.
 
-Because attributes are userland, your own config and spools should define the conventions for your workspace. Prefer documenting those conventions in source-controlled docs or in your spool docs. Attribute names and cleanup behavior are userland choices, not Skein core.
+Because attributes are userland, your own config and spools should define the conventions for your
+workspace. Prefer documenting those conventions in source-controlled docs or in your spool docs.
+Attribute names and cleanup behavior are userland choices, not Skein core.
 
 ## Queries
 
@@ -305,7 +412,9 @@ strand --workspace "$workspace" ready --query agent-docs
 
 ```
 
-`query list` and `query explain <name>` are the read-only discovery pair for named query definitions. Application stays on the read commands: `list --query <name>` and `ready --query <name>` with repeated `--param key=value` when the query declares runtime params.
+`query list` and `query explain <name>` are the read-only discovery pair for named query
+definitions. Application stays on the read commands: `list --query <name>` and `ready --query
+<name>` with repeated `--param key=value` when the query declares runtime params.
 
 Named query registries are not durable by themselves. If you want a query after every weaver restart, register it from startup-loaded code.
 
@@ -319,21 +428,33 @@ For a simple persistent query, put it directly in `init.clj`:
 (def runtime (current/runtime))
 
 (runtime/sync! runtime)
+;; batteries ships on the classpath (:paths), so require it before its use!.
+(require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
    :call 'skein.spools.batteries/activate!})
 (graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 
-For a workspace that already activates a local spool with `runtime/use!`, follow that existing pattern instead: add the `graph/register-query!` call to the spool's `install!` function so reload/startup installs everything from one place.
+For a workspace that already activates a local spool with `runtime/use!`, follow that existing
+pattern instead: add the `graph/register-query!` call to the spool's `install!` function so
+reload/startup installs everything from one place.
 
-Defining a Clojure var that contains query data is not the same as registering a named query. A local var can be passed to graph helpers from your own code, but `strand list --query mine` only works after `mine` has been registered in the weaver's named-query registry.
+Defining a Clojure var that contains query data is not the same as registering a named query. A
+local var can be passed to graph helpers from your own code, but `strand list --query mine` only
+works after `mine` has been registered in the weaver's named-query registry.
 
-`strand list --query mine` returns all matching strands unless you also pass a state filter. Use `strand list --query mine --state active` when you only want active matches. `strand ready --query mine` always applies readiness semantics, so returned strands are active and unblocked.
+`strand list --query mine` returns all matching strands unless you also pass a state filter. Use
+`strand list --query mine --state active` when you only want active matches. `strand ready --query
+mine` always applies readiness semantics, so returned strands are active and unblocked.
 
 ## REPL
 
-The REPL is the trusted, high-power surface. `mill weaver repl` attaches directly to the selected running weaver nREPL, so forms evaluate in the weaver JVM with weaver process authority. Use it for richer inspection, custom query authoring, config reloads, and calling your own spool code. Prefer blessed helper/API paths for operations that should preserve validation, hooks, events, and normalized return shapes.
+The REPL is the trusted, high-power surface. `mill weaver repl` attaches directly to the selected
+running weaver nREPL, so forms evaluate in the weaver JVM with weaver process authority. Use it for
+richer inspection, custom query authoring, config reloads, and calling your own spool code. Prefer
+blessed helper/API paths for operations that should preserve validation, hooks, events, and
+normalized return shapes.
 
 Open a live weaver REPL:
 
@@ -357,7 +478,8 @@ Script the live weaver REPL with stdin:
 printf '(skein.api.current.alpha/runtime)\n' | mill weaver repl --stdin --workspace "$workspace"
 ```
 
-The REPL helper namespace includes common strand functions. Privileged runtime loader/config helpers are explicit built-in namespaces, not ordinary user spools; require them when needed:
+The REPL helper namespace includes common strand functions. Privileged runtime loader/config helpers
+are explicit built-in namespaces, not ordinary user spools; require them when needed:
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -367,14 +489,20 @@ The REPL helper namespace includes common strand functions. Privileged runtime l
 
 ### Burn recovery
 
-Burn is deletion, not undo. Every burn writes a forensic tombstone (SPEC-001.P3/P8), read from the interactive `skein.repl` surface over the in-process `skein.core.db` read fns. Run these from an in-process `mill weaver repl`; they throw with remediation from a connected-client REPL that has no in-process runtime.
+Burn is deletion, not undo. Every burn writes a forensic tombstone (SPEC-001.P3/P8), read from the
+interactive `skein.repl` surface over the in-process `skein.core.db` read fns. Run these from an
+in-process `mill weaver repl`; they throw with remediation from a connected-client REPL that has no
+in-process runtime.
 
 ```clojure
 (recent-burns 20)             ; scan recent deletions across all strands, newest first
 (burn-history "<burned-id>")  ; every tombstone recorded for one burned id
 ```
 
-Each tombstone carries the burned strand's core fields, its full attribute map (each value tagged `{:value ... :archived ...}` so archived keys stay distinguishable), its incident edges, and `recorded_at`. The shapes map onto the batch graph mutation payload's strand and edge entries, so recovery is mechanical: assemble a payload from the tombstone and apply it.
+Each tombstone carries the burned strand's core fields, its full attribute map (each value tagged
+`{:value ... :archived ...}` so archived keys stay distinguishable), its incident edges, and
+`recorded_at`. The shapes map onto the batch graph mutation payload's strand and edge entries, so
+recovery is mechanical: assemble a payload from the tombstone and apply it.
 
 ```clojure
 (require '[skein.api.batch.alpha :as batch]
@@ -387,17 +515,30 @@ Each tombstone carries the burned strand's core fields, its full attribute map (
                :edges   [{:op :upsert :from :parent :to :recovered :type "parent-of"}]})
 ```
 
-Two caveats. The recovered strand gets a new id, so anything that referenced the old id must be re-pointed. And only the edges the tombstone recorded are available to replay — inbound edges from strands that were never burned are not restored, so re-create them explicitly against the new id.
+Two caveats. The recovered strand gets a new id, so anything that referenced the old id must be
+re-pointed. And only the edges the tombstone recorded are available to replay — inbound edges from
+strands that were never burned are not restored, so re-create them explicitly against the new id.
 
 ## Startup config and customisation
 
-The weaver loads trusted startup files from the selected workspace in order — `init.clj`, then `init.local.clj` — and everything registered there (named queries, weave patterns, views, event handlers, activated spools) is weaver-lifetime runtime state. The full customisation story is its own page: [customising your workspace](./spools/customisation.md) covers the files `mill init` bootstraps, direct `init.clj` registrations, smoke-testing config in a disposable world, `reload!`/`reload-spool!` semantics, REPL hygiene in a shared weaver, promoting config to a local spool, and the `skein.userland.alpha` ergonomics layer. The rules change only when a spool leaves your machine: [writing shared spools](./spools/writing-shared-spools.md).
+The weaver loads trusted startup files from the selected workspace in order — `init.clj`, then
+`init.local.clj` — and everything registered there (named queries, weave patterns, views, event
+handlers, activated spools) is weaver-lifetime runtime state. The full customisation story is its
+own page: [customising your workspace](./spools/customisation.md) covers the files `mill init`
+bootstraps, direct `init.clj` registrations, smoke-testing config in a disposable world,
+`reload!`/`reload-spool!` semantics, REPL hygiene in a shared weaver, promoting config to a local
+spool, and the `skein.userland.alpha` ergonomics layer. The rules change only when a spool leaves
+your machine: [writing shared spools](./spools/writing-shared-spools.md).
 
 ## Weave patterns
 
-Weave patterns are trusted owner-defined transformations that turn a JSON-like input payload into an atomic batch of new strands and edges. They are useful when agents should submit intent and your workspace should decide the graph shape.
+Weave patterns are trusted owner-defined transformations that turn a JSON-like input payload into an
+atomic batch of new strands and edges. They are useful when agents should submit intent and your
+workspace should decide the graph shape.
 
-Pattern registration lives in trusted Clojure config or spools, not in the public CLI. A pattern has a simple name, a fully qualified weaver-loadable function symbol, and a `clojure.spec` input contract.
+Pattern registration lives in trusted Clojure config or spools, not in the public CLI. A pattern has
+a simple name, a fully qualified weaver-loadable function symbol, and a `clojure.spec` input
+contract.
 
 ```clojure
 (ns my.workflow
@@ -430,17 +571,30 @@ printf '{"title":"Implement review flow"}\n' | strand --workspace "$workspace" w
 
 ```
 
-`pattern list` and `pattern explain <name>` are the write-definition discovery pair, parallel to `query list` / `query explain <name>` for read definitions. Application stays on `weave --pattern <name>`.
+`pattern list` and `pattern explain <name>` are the write-definition discovery pair, parallel to
+`query list` / `query explain <name>` for read definitions. Application stays on `weave --pattern
+<name>`.
 
-The pattern function runs inside the weaver and receives `{:input input}`. Its return value must be the same batch vector shape accepted by Skein's batch primitive: strand maps with optional `:ref` and `:edges`. Symbolic refs are transient to the batch and are never durable ids. Input spec failure, malformed batch output, missing refs, invalid durable targets, cycles, and database errors fail loudly and leave no partial batch writes.
+The pattern function runs inside the weaver and receives `{:input input}`. Its return value must be
+the same batch vector shape accepted by Skein's batch primitive: strand maps with optional `:ref`
+and `:edges`. Symbolic refs are transient to the batch and are never durable ids. Input spec
+failure, malformed batch output, missing refs, invalid durable targets, cycles, and database errors
+fail loudly and leave no partial batch writes.
 
-`weave --pattern` is the CLI-safe, named, spec-checked, create-only front door over the same transactional batch engine as REPL-only `skein.api.batch.alpha/apply!`. Raw batch is the trusted loading-dock door: it can create, update, burn, and upsert edges, so it remains a Clojure config/REPL workflow instead of a public CLI command.
+`weave --pattern` is the CLI-safe, named, spec-checked, create-only front door over the same
+transactional batch engine as REPL-only `skein.api.batch.alpha/apply!`. Raw batch is the trusted
+loading-dock door: it can create, update, burn, and upsert edges, so it remains a Clojure
+config/REPL workflow instead of a public CLI command.
 
 Like queries and views, patterns are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload.
 
 ## Views and graph helpers
 
-Skein ships built-in privileged alpha namespaces for trusted runtime transformations. They are source-visible helper namespaces from the Skein checkout/classpath, not user/community spools that need `spools.edn` approval — `skein.api.spool.alpha` (the spool-authoring helpers `fail!`, `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`) is one of them, the blessed home every reference spool builds on:
+Skein ships built-in privileged alpha namespaces for trusted runtime transformations. They are
+source-visible helper namespaces from the Skein checkout/classpath, not user/community spools that
+need `spools.edn` approval — `skein.api.spool.alpha` (the spool-authoring helpers `fail!`,
+`reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`) is
+one of them, the blessed home every reference spool builds on:
 
 ```clojure
 (require '[skein.api.graph.alpha :as graph]
@@ -449,7 +603,9 @@ Skein ships built-in privileged alpha namespaces for trusted runtime transformat
 
 Graph helpers include operations such as query id selection, strand hydration by ids, ancestor-root traversal, subgraph expansion, and burn-by-id helpers.
 
-Views let you register named read-only transformations backed by weaver-loadable function symbols. A view name is a simple unqualified name; the function symbol must be fully qualified and loadable in the weaver runtime.
+Views let you register named read-only transformations backed by weaver-loadable function symbols. A
+view name is a simple unqualified name; the function symbol must be fully qualified and loadable in
+the weaver runtime.
 
 ```clojure
 (ns my.workflow
@@ -485,13 +641,19 @@ printf "(do (require '[skein.api.current.alpha :as current] '[skein.api.views.al
   | mill weaver repl --stdin --workspace "$workspace"
 ```
 
-There is no public `strand view` CLI command; view registration and invocation are trusted config/REPL workflows. A view returns whatever serializable Clojure data your function returns. The `{:ids ... :strands ...}` shape above is a convention, not a required schema.
+There is no public `strand view` CLI command; view registration and invocation are trusted
+config/REPL workflows. A view returns whatever serializable Clojure data your function returns. The
+`{:ids ... :strands ...}` shape above is a convention, not a required schema.
 
-Like queries, views are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload. View functions should be read-only; mutating workflows such as updates, burns, or cleanup helpers should be ordinary trusted functions, not views.
+Like queries, views are weaver-lifetime runtime state. Register them from startup config if they
+should always exist after restart or reload. View functions should be read-only; mutating workflows
+such as updates, burns, or cleanup helpers should be ordinary trusted functions, not views.
 
 ## Events
 
-Skein ships `skein.api.events.alpha` for trusted config and live REPL workflows that need to react to strand mutations. There are no public JSON socket or `strand` CLI commands for event registration.
+Skein ships `skein.api.events.alpha` for trusted config and live REPL workflows that need to react
+to strand mutations. There are no public JSON socket or `strand` CLI commands for event
+registration.
 
 Register handlers from startup-loaded code or weaver-loadable spools:
 
@@ -514,7 +676,9 @@ Register handlers from startup-loaded code or weaver-loadable spools:
                     {:purpose :cleanup}))
 ```
 
-Handlers are selected by explicit event-type filters such as `:strand/added`, `:strand/updated`, and `:strand/burned`. Registration uses a stable key and a fully qualified function symbol resolvable in the weaver JVM; duplicate keys replace prior handlers for reload workflows.
+Handlers are selected by explicit event-type filters such as `:strand/added`, `:strand/updated`, and
+`:strand/burned`. Registration uses a stable key and a fully qualified function symbol resolvable in
+the weaver JVM; duplicate keys replace prior handlers for reload workflows.
 
 Event dispatch is asynchronous after successful mutations. Handler exceptions do not roll back the mutation; inspect bounded failure state from trusted Clojure:
 
@@ -529,9 +693,18 @@ Event handler state is weaver-lifetime runtime state. Register handlers from `in
 
 ## Scheduler (no-poller wakeups)
 
-The default answer for time-based work is still pull: stamp a `wake-at` attribute on a strand and let a view or query surface it to whatever already polls the graph. That keeps timing in ordinary, inspectable strand data. Reach for the scheduler only for the **no-poller** case — when something must proactively happen at instant `T` and there is no client polling to trigger it.
+The default answer for time-based work is still pull: stamp a `wake-at` attribute on a strand and
+let a view or query surface it to whatever already polls the graph. That keeps timing in ordinary,
+inspectable strand data. Reach for the scheduler only for the **no-poller** case — when something
+must proactively happen at instant `T` and there is no client polling to trigger it.
 
-`skein.api.scheduler.alpha` is a blessed explicit-runtime namespace for that case. A wake is keyed by a stable caller key, an absolute `java.time.Instant`, a fully qualified handler symbol, and an optional JSON-encodable payload; the weaver persists it in dedicated weaver-owned tables (never as a strand), re-arms pending wakes across startup and trusted reload, and dispatches due handlers through the same serialized async lane as post-commit events. Delivery is at-least-once, so handlers must be idempotent. There is no mutating `strand schedule` CLI: scheduling is a trusted REPL/config/API surface only.
+`skein.api.scheduler.alpha` is a blessed explicit-runtime namespace for that case. A wake is keyed
+by a stable caller key, an absolute `java.time.Instant`, a fully qualified handler symbol, and an
+optional JSON-encodable payload; the weaver persists it in dedicated weaver-owned tables (never as a
+strand), re-arms pending wakes across startup and trusted reload, and dispatches due handlers
+through the same serialized async lane as post-commit events. Delivery is at-least-once, so handlers
+must be idempotent. There is no mutating `strand schedule` CLI: scheduling is a trusted
+REPL/config/API surface only.
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -554,11 +727,15 @@ The default answer for time-based work is still pull: stamp a `wake-at` attribut
   (scheduler/cancel! rt "nightly-sweep"))
 ```
 
-Core stays minimal: no cron, recurrence, retry/backoff, jitter, or DST policy. A handler that wants to run again schedules its own next wake. See the Weaver Runtime spec (`SPEC-004.P10d`) and REPL API spec (`SPEC-003.P4a`) for the full contract.
+Core stays minimal: no cron, recurrence, retry/backoff, jitter, or DST policy. A handler that wants
+to run again schedules its own next wake. See the Weaver Runtime spec (`SPEC-004.P10d`) and REPL API
+spec (`SPEC-003.P4a`) for the full contract.
 
 ## Fail loudly
 
-Skein intentionally fails loudly instead of guessing. Expect errors for malformed config, unsupported fields, missing weavers, stale metadata, invalid edge targets, cycles, unknown queries, missing spools, and bad runtime code.
+Skein intentionally fails loudly instead of guessing. Expect errors for malformed config,
+unsupported fields, missing weavers, stale metadata, invalid edge targets, cycles, unknown queries,
+missing spools, and bad runtime code.
 
 This is by design: the system is flexible because attributes and user code are open-ended, so surprising states should be visible and fixable rather than silently papered over.
 
