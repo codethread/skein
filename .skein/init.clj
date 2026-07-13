@@ -1,3 +1,14 @@
+;; Startup entrypoint for the repo's canonical coordination world. Repo policy
+;; is split one file per concern, each activated below in dependency order:
+;;   config.clj     — named queries and the CLI op surface
+;;   workflows.clj  — hand-authored workflows (land, delegate-pipeline)
+;;   harnesses.clj  — harness seats and routing policy
+;;   reviewers.clj  — reviewer rosters
+;;   attention.clj  — chime attention rules
+;;   nvd_scan.clj   — NVD scan cron job
+;;   analytics.clj  — agent-run cost/usage rollups (`strand feature-costs`)
+;; Gitignored init.local.clj binds each developer's notifier. Read docs/skein.md
+;; before changing this config; smoke-test changes in a disposable world first.
 (require '[skein.api.current.alpha :as current]
          '[skein.api.runtime.alpha :as runtime])
 

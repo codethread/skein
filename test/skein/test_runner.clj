@@ -94,9 +94,9 @@
       (->> parallel-namespaces (mapv #(.submit pool ^Callable (fn [] (run-namespace :parent/parallel %)))) (mapv #(.get %)))
       (finally (.shutdown pool) (.awaitTermination pool 1 TimeUnit/MINUTES)))))
 
-(defn- print-result! [{:keys [group ns summary elapsed-ms output]}]
+(defn- print-result! [{:keys [group summary elapsed-ms output] ns-sym :ns}]
   (print output) (when-not (str/ends-with? output "\n") (println))
-  (println "Namespace summary:" ns (assoc summary :group group :elapsed-ms elapsed-ms)))
+  (println "Namespace summary:" ns-sym (assoc summary :group group :elapsed-ms elapsed-ms)))
 
 (defn- java-command [shard-id summary-file]
   (let [java-bin (str (System/getProperty "java.home") java.io.File/separator "bin" java.io.File/separator "java")

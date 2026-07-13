@@ -1,4 +1,4 @@
-.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint reflect-check deps-report security-report test-warm test-warm-stop spool-suite-gate
+.PHONY: build install dash api-docs docs-site docs-serve docs-check fmt fmt-check lint lint-go lint-clj lint-splint lint-conventions reflect-check deps-report security-report test-warm test-warm-stop spool-suite-gate
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
@@ -51,11 +51,11 @@ api-docs:
 docs-site:
 	uvx --from mkdocs --with mkdocs-material --with markdown-gfm-admonition mkdocs build --strict
 
-# Coarse growth budget for AGENTS.md. Placement judgment lives with the
-# docs-drift reviewer (guidance belongs to prime/about manuals, devflow/specs,
-# or an automated check); this cap only forces that conversation when the file
-# keeps growing. Tighten it as slimming lands.
-AGENTS_MD_LINE_BUDGET := 110
+# Growth budget for AGENTS.md, which holds only what the live surface cannot
+# tell an agent. Placement judgment lives with the docs-drift reviewer
+# (guidance belongs to prime/about manuals, devflow/specs, or an automated
+# check); this cap forces that conversation when the file grows.
+AGENTS_MD_LINE_BUDGET := 70
 
 docs-check:
 	@lines=$$(awk 'END{print NR}' AGENTS.md) || { echo "docs-check: cannot read AGENTS.md" >&2; exit 1; }; \
@@ -80,13 +80,18 @@ fmt-check:
 	clojure -M:format
 	cd cli && test -z "$$(go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -l .)"
 
-lint: lint-clj lint-splint lint-go
+lint: lint-clj lint-splint lint-conventions lint-go
 
 lint-clj:
 	clojure -M:lint/clj-kondo
 
 lint-splint:
 	clojure -M:lint/splint
+
+# repo conventions that prose alone cannot hold: ns docstrings everywhere and
+# no local bindings named after clojure.core macros (see scripts/quality)
+lint-conventions:
+	clojure -M:lint/conventions
 
 lint-go:
 	cd cli && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run --config ../.golangci.yml ./...

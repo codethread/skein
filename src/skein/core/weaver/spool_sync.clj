@@ -938,10 +938,10 @@
   coordinate-resolution gates use, naming the cycle."
   [coord intra parsed]
   (try
-    (reduce (fn [g {:keys [ns deps]}]
+    (reduce (fn [g {ns-sym :ns deps :deps}]
               (reduce (fn [g dep]
                         (if (contains? intra dep)
-                          (ns-dep/depend g ns dep)
+                          (ns-dep/depend g ns-sym dep)
                           g))
                       g
                       deps))
@@ -1009,17 +1009,17 @@
   (let [approved (approved-spools runtime)
         syncs (merge @(:approved-spool-generation-state runtime)
                      @(approved-spool-sync-state runtime))
-        sync (get syncs coord)]
+        sync-entry (get syncs coord)]
     (when-not (contains? (:spools approved) coord)
       (throw (ex-info "Spool coordinate is not approved"
                       {:status :failed :reason :not-approved :coord coord})))
     (when-not (contains? syncs coord)
       (throw (ex-info "Spool coordinate is not synced"
                       {:status :failed :reason :not-synced :coord coord})))
-    (when-not (#{:loaded :already-available} (:status sync))
+    (when-not (#{:loaded :already-available} (:status sync-entry))
       (throw (ex-info "Spool coordinate did not sync successfully"
-                      {:status :failed :reason :sync-failed :coord coord :sync sync})))
-    (let [root (:root sync)
+                      {:status :failed :reason :sync-failed :coord coord :sync sync-entry})))
+    (let [root (:root sync-entry)
           root-file (io/file root)]
       (when-not (.exists root-file)
         (throw (ex-info "Synced spool root is missing on disk"

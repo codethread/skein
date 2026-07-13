@@ -232,11 +232,11 @@
                        (vocab/declarations (current/runtime) {:kind :attr-namespace}))]
     (vec (for [{vocab-name :name {:keys [checks]} :spec} (vocabs)
                check checks
-               :let [ns (attr-namespace (:attr check))]
-               :when (not (contains? declared ns))]
+               :let [attr-ns (attr-namespace (:attr check))]
+               :when (not (contains? declared attr-ns))]
            {:vocab vocab-name
             :attr (:attr check)
-            :namespace ns
+            :namespace attr-ns
             :check check}))))
 
 (defn record-event!

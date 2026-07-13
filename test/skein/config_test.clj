@@ -1197,12 +1197,12 @@
       (let [coordinate-roots (coordinate-source-roots rt)
             uses (map parse-use-form (filter use-form? (read-all-forms ".skein/init.clj")))]
         (is (seq uses) "parsed at least one init.clj use! form")
-        (doseq [{:keys [key ns file spools]} uses
-                :when (not= ns 'skein.spools.batteries)]
+        (doseq [{:keys [key file spools] use-ns :ns} uses
+                :when (not= use-ns 'skein.spools.batteries)]
           (let [required-nss (if file
                                (->> (ns-require-libs (read-first-form (io/file ".skein" file)))
                                     (filter spool-or-macros-ns?))
-                               [ns])]
+                               [use-ns])]
             (doseq [required-ns required-nss]
               (let [coord (resolve-spool-coordinate coordinate-roots required-ns)]
                 (is (some? coord)

@@ -424,7 +424,7 @@ Project a run strand into the compact summary shape the op surface returns.
 ## <a name="skein.spools.agent-run/runs">`runs`</a>
 ``` clojure
 (runs)
-(runs {:keys [active for]})
+(runs {:keys [active], for-target :for})
 ```
 Function.
 
