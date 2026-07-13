@@ -1,13 +1,22 @@
 # Agent Contributor Guide
 
-Read `./devflow/TENETS.md` and `./devflow/PHILOSOPHY.md` before all work, then let the system orient you — this file holds only what the live surface cannot tell you.
+Read `./devflow/TENETS.md` and `./devflow/PHILOSOPHY.md` before all work. This file holds only what the live surface cannot tell you; everything else is routed by scenario below.
 
-## Discovery: ask the system, not this file
+## What to read, when
 
-- `mill skein prime` — source/docs/config layout; `mill strand prime` — planning and tracking (run before multi-step work); `strand kanban prime` — board discipline (run before working the board).
-- `about` manuals (`strand agent about`, `strand kanban about`, `strand land about`) and generated `strand help [<op>]` cover op semantics and invocation; the three-tier convention is documented in `docs/skein.md` "Discovery tiers".
-- The installed surface is live: `strand devflow-conventions` (registered ops, queries, patterns), `strand agent harnesses` / `strand agent rosters` (seats and rosters; routing policy sits beside the definitions in `.skein/harnesses.clj` / `.skein/reviewers.clj`), `strand pattern explain <name>`.
-- Shipped contracts: `devflow/specs/` — update the relevant root spec when changing shipped behavior; namespace tiers are contractual (SPEC-003.C19). Reference spools are indexed in `spools/README.md`; authoring rules in `docs/writing-shared-spools.md`; user reference in `docs/skein.md`.
+**Arriving in this repo** — run `mill skein prime` once: where the source, docs, and config live. The deep reference is `docs/skein.md`; its "Discovery tiers" section explains the convention behind everything below (`prime` orients, `about` explains an op, `strand help [<op>]` answers exact invocation).
+
+**Working with the user** — claim a kanban card first; `strand kanban prime` is the board discipline (lanes, claiming, notes, branch visibility).
+
+**Starting multi-step work** — `mill strand prime`: the planning/tracking workflow. Feature work runs the devflow lifecycle (`strand devflow-start <feature>`); `strand devflow-conventions` lists this repo's registered ops, queries, and patterns; step views carry their own instructions.
+
+**Delegating** — `strand agent about`. Delegate real work as tracked agent runs, never your harness's native subagents: a run is resumable, retryable, inspectable, and visible to other agents; native subagents are for cheap synchronous read-only recon only. Seats and review rosters: `strand agent harnesses` / `strand agent rosters`, with routing policy beside the definitions in `.skein/harnesses.clj` / `.skein/reviewers.clj`.
+
+**Waiting on or recovering runs** — `strand flow-await <run-id>` blocks until a run needs you (cap each await at ~50 minutes via `--timeout-secs` and re-issue, so provider prompt caches don't expire); `strand ready --query work` is the default ready view; failures surface via `strand list --query agent-failures` and `strand agent logs <run-id> --tail 80`.
+
+**Landing a finished branch** — coordinator-only: `strand land about`. Worker agents stop at implemented+committed.
+
+**Changing shipped behavior** — update the relevant root spec in `devflow/specs/`; namespace tiers are contractual (SPEC-003.C19). **Authoring or changing spools** — `docs/writing-shared-spools.md`; the spool index is `spools/README.md`.
 
 ## Commands
 
@@ -42,13 +51,7 @@ make api-docs                           # regenerate *.api.md after touching any
 
 ## Repo coordination workspace (.skein)
 
-The repo's `.skein` workspace is the shared coordination world — kanban board, devflow runs, delegation, and cross-agent tracking live there; everything else follows the disposable-workspace rule. Config layout and change discipline live in the `.skein/init.clj` header; smoke-test config changes in a disposable world first (note: `spools.edn` local roots resolve relative to the config dir).
-
-- Work under a claimed kanban card and note as you go — `strand kanban prime` is the source of truth for board, claiming, branch visibility, and notes.
-- Features run the devflow lifecycle (`strand devflow-start <feature>`; ops in `strand devflow-conventions`); step views carry their own instructions.
-- Delegate real work as tracked agent runs (`strand agent about`), not your harness's native subagents: an agent run is resumable, retryable, inspectable, and visible to other agents; native subagents are for cheap synchronous read-only recon only.
-- Landing is coordinator-only (`strand land about`); worker agents stop at implemented+committed.
-- Attention: `strand flow-await <run-id>` blocks until a run needs a coordinator (cap each await at ~50 minutes via `--timeout-secs` and re-issue, so provider prompt caches don't expire); `strand ready --query work` is the default ready view; failures surface via `strand list --query agent-failures` and `strand agent logs <run-id> --tail 80`.
+The repo's `.skein` workspace is the shared coordination world — kanban board, devflow runs, delegation, and cross-agent tracking live there, worked as the scenarios above describe; everything else follows the disposable-workspace rule. Config layout and change discipline live in the `.skein/init.clj` header; smoke-test config changes in a disposable world first (note: `spools.edn` local roots resolve relative to the config dir).
 
 ## Implementation boundaries
 
