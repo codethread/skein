@@ -483,7 +483,15 @@
                                           |the task. Closing unblocks dependents.")}
                       {:step 6 :action "For failed runs: logs, diagnose, fix task body/environment, then agent retry <task-id>."}
                       {:step 7 :action "Repeat until status shows nothing ready, running, or failed; then fan in and close the plan root."}]
-   :policy {:siblings "Sibling tasks own disjoint files; never two mutators in one file scope."
+   :policy {:native-subagents (fmt/reflow "
+                                |Delegate real work as tracked agent runs, never a
+                                |harness's native subagents. Runs are resumable,
+                                |retryable, inspectable, and visible to the
+                                |coordination world; native subagents die with
+                                |their spawning session and leave nothing awaitable
+                                |behind. Native subagents are for cheap synchronous
+                                |read-only recon only.")
+            :siblings "Sibling tasks own disjoint files; never two mutators in one file scope."
             :delegation-depth "Keep delegation shallow: workers spawn read-only helpers, not sub-plans, unless their contract says otherwise."
             :task-sizing (fmt/reflow "
                            |Size every task to finish well inside one worker context
