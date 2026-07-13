@@ -71,7 +71,7 @@ by verifiable `file:line`. Three buckets:
 
 - **PROP-StorageDocs-001.S1 (restate as enforced guarantee):** note-memory
   convention prose is aligned to the enforced write-once reality. Hand-authored
-  prose edited directly: `docs/skein.md:252`, `spools/README.md:41`,
+  prose edited directly: `docs/skein.md:256`, `spools/README.md:41`,
   `spools/agent-run/README.md:214,217,275-276`, `spools/delegation/README.md:33,219-220`.
   The `spools/agent-run/README.md:217,275-276` note-vocabulary claims also carry
   the wrong attribute names (`agent-run/note-for`, `agent-run/note`,
@@ -80,12 +80,12 @@ by verifiable `file:line`. Three buckets:
   `note/round` (`src/skein/api/notes/alpha.clj:71-79`) — so the contract doc
   stops contradicting the code it describes. Docstring sources edited, with
   `make api-docs` regenerating their `.api.md` counterparts:
-  `spools/batteries/src/skein/spools/batteries.clj:335,470`
+  `spools/batteries/src/skein/spools/batteries.clj:335,472`
   (→ `spools/batteries.api.md:73`),
   `spools/agent-run/src/skein/spools/agent_run.clj:13,2335`
   (→ `spools/agent-run.api.md:17,268`),
   `spools/delegation/src/skein/spools/delegation.clj:388-389`, and the
-  generated-help op doc `spools/delegation/src/skein/spools/delegation.clj:1950`
+  generated-help op doc `spools/delegation/src/skein/spools/delegation.clj:1951`
   (`"Append an immutable note to a strand."`, the `strand agent help` entry),
   `src/skein/api/relations/alpha.clj:35`, and — if touched —
   `src/skein/api/vocab/alpha.clj:106`. Restatements borrow the shipped

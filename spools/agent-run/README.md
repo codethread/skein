@@ -211,7 +211,7 @@ orphaned run.
 
 | Fn | Behavior |
 |---|---|
-| `(note! target-id text opts)` | Append a closed note strand linked to `target-id` by a `notes` annotation edge; its `note/text`/`note/at` content is storage-enforced write-once. `opts` may set `:by` (author run id) and `:round`. |
+| `(note! target-id text opts)` | Append a closed note strand linked to `target-id` by the declared `notes` relation; its `note/text`/`note/at` content is storage-enforced write-once. `opts` may set `:by` (author run id) and `:round`. |
 | `(notes target-id opts)` | Return notes in creation order, optionally filtered by `:round`. |
 
 Notes are append-only memory: a note-content rewrite throws, and burn is the only escape hatch. Each note carries `note/text` and `note/at` (storage-enforced write-once), plus optional `note/by` / `note/round`; the linkage is the `notes` edge, never a `note/for` attribute.
@@ -279,7 +279,7 @@ The `pending → running → done | failed | exhausted` transitions are written 
 a superseded run's logs and notes remain for archaeology.
 
 Run parents are connected to children with `parent-of` edges. Serving runs connect to their targets with `serves` edges. Lineage uses `supersedes` edges.
-Notes use the undeclared annotation relation `notes`.
+Notes use the declared `notes` relation.
 
 ## 9. See also
 

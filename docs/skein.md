@@ -367,7 +367,7 @@ The REPL helper namespace includes common strand functions. Privileged runtime l
 
 ### Burn recovery
 
-Burn is deletion, not undo. Every burn writes a forensic tombstone (SPEC-001.P3/P8), and the REPL is the only surface that reads it. Run these from an in-process `mill weaver repl`; they throw with remediation from a connected-client REPL that has no in-process runtime.
+Burn is deletion, not undo. Every burn writes a forensic tombstone (SPEC-001.P3/P8), read from the interactive `skein.repl` surface over the in-process `skein.core.db` read fns. Run these from an in-process `mill weaver repl`; they throw with remediation from a connected-client REPL that has no in-process runtime.
 
 ```clojure
 (recent-burns 20)             ; scan recent deletions across all strands, newest first

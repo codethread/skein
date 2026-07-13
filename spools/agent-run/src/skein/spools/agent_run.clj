@@ -10,8 +10,8 @@
 
   Runs survive weaver crashes because the strands are durable: `reconcile!`
   respawns still-active running strands on install, bounded by
-  `agent-run/max-attempts`. Run memory is note strands linked by `notes`
-  annotation edges — the edge is the sole linkage — whose `note/text`/`note/at`
+  `agent-run/max-attempts`. Run memory is note strands linked by the declared
+  `notes` relation — the edge is the sole linkage — whose `note/text`/`note/at`
   content is storage-enforced write-once.
 
   Delegation semantics ride a `serves` edge (run → target): a serving run is a

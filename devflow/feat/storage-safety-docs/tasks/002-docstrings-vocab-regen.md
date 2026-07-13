@@ -30,11 +30,11 @@ Worktree: `/Users/ct/dev/projects/skein-src__2la9m-storage-docs` (branch
 
 - **TASK-StorageDocs-002.MI1:** Restate the docstring sources to the enforced
   wording (`note/text`/`note/at` content storage-enforced write-once, strand
-  still decoratable): `spools/batteries/src/skein/spools/batteries.clj:335,470`
-  (`:470` is a generated-help `:doc` string),
+  still decoratable): `spools/batteries/src/skein/spools/batteries.clj:335,472`
+  (`:472` is a generated-help `:doc` string),
   `spools/agent-run/src/skein/spools/agent_run.clj:13,2335`,
   `spools/delegation/src/skein/spools/delegation.clj:388-389`, the generated-help
-  `:doc` string `spools/delegation/src/skein/spools/delegation.clj:1950`
+  `:doc` string `spools/delegation/src/skein/spools/delegation.clj:1951`
   (`strand agent help` entry), `src/skein/api/relations/alpha.clj:35`, and
   `src/skein/api/vocab/alpha.clj:106` only if its wording needs it.
 - **TASK-StorageDocs-002.MI2:** `delegation.clj:388-389` discipline prose
