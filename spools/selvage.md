@@ -105,5 +105,5 @@ In Clojure strand maps these are keyword keys such as `:agent-run/phase`.
 - [README.md](./README.md) — shipped spools index.
 - `test/skein/spools/selvage_test.clj` — executable examples against a real
   weaver runtime.
-- [Authoring your own spool code](../docs/reference.md#authoring-your-own-spool-code)
+- [Authoring your own spool code](../docs/spools/customisation.md#promoting-config-to-a-local-spool)
   — the loading/approval model for spools you write yourself.

@@ -87,5 +87,5 @@ Every function is **read-only** and composes the public `skein.api.graph.alpha` 
 - [carder.md](./carder.md) — the sibling read-only graph spool (hygiene/triage).
 - `test/skein/spools/loom_test.clj` — executable contract examples against a real
   weaver runtime.
-- [Authoring your own spool code](../docs/reference.md#authoring-your-own-spool-code)
+- [Authoring your own spool code](../docs/spools/customisation.md#promoting-config-to-a-local-spool)
   — the loading/approval model for spools you write yourself.

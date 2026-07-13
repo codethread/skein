@@ -227,6 +227,29 @@ experimentation, but for repeatable module activation and reload introspection, 
 Extension code runs with weaver authority, so only load trusted code. And there is no per-module isolation or
 unload guarantee: restart the weaver when you need a clean runtime.
 
+## Your own CLI command
+
+Every `strand` command is a registered op, and ops register the same way queries do, so a local spool can add commands to the CLI without recompiling anything. `strand help` lists registered ops; `strand help <op>` explains one. Register your own from trusted Clojure with `skein.api.weaver.alpha/register-op!` — the CLI forwards everything after the op name to your handler as string argv:
+
+```clojure
+(ns my.workflow
+  (:require [skein.api.current.alpha :as current]
+            [skein.api.weaver.alpha :as weaver]))
+
+(defn echo-op [{:op/keys [name argv]}]
+  {:operation name :argv argv})
+
+(defn install! []
+  (weaver/register-op! (current/runtime) 'echo "Echo raw argv" 'my.workflow/echo-op)
+  {:my.workflow/installed true})
+```
+
+```sh
+strand echo --flag value
+```
+
+Op handlers return data; the CLI prints it as JSON. Like every registration on this page, ops are weaver-lifetime state — keep them in startup-loaded code, and reload with the verbs above while iterating. The shipped [kanban board spool](../../spools/kanban.md) is the grown-up version of this pattern: a whole board surface built from ops, queries, and attributes, worth reading once your own command grows past a helper.
+
 ## Terse daily driving
 
 Explicit-runtime code threads a `runtime` argument through every call, which is the right discipline for

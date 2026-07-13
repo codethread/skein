@@ -24,7 +24,7 @@ Signatures live only in the generated API doc; contracts and cookbooks link to t
 
 ## Index
 
-Each spool lives in its own root under `spools/<name>/src`, off the weaver's source classpath. A spool's `.skein/spools.edn` coordinate is what makes it reachable — `runtime/sync!` adds the approved root to the weaver runtime, and a `:spools`-guarded `runtime/use!` activates it. These spools also serve as the worked example of authoring your own ([docs/reference.md](../docs/reference.md#authoring-your-own-spool-code)); for publishing a spool for others by git coordinate, SHA-pinned approval, README dependency/activation snippets, Maven-only spool-root dependencies, and local development overrides, see [Writing shared spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution).
+Each spool lives in its own root under `spools/<name>/src`, off the weaver's source classpath. A spool's `.skein/spools.edn` coordinate is what makes it reachable — `runtime/sync!` adds the approved root to the weaver runtime, and a `:spools`-guarded `runtime/use!` activates it. These spools also serve as the worked example of authoring your own ([docs/reference.md](../docs/spools/customisation.md#promoting-config-to-a-local-spool)); for publishing a spool for others by git coordinate, SHA-pinned approval, README dependency/activation snippets, Maven-only spool-root dependencies, and local development overrides, see [Writing shared spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution).
 
 | Spool | Coordinate (`.skein/spools.edn`) | Contract doc | API reference | Purpose |
 |---|---|---|---|---|
@@ -88,4 +88,4 @@ Each spool lives in its own root under `spools/<name>/src`, off the weaver's sou
   registration by name; others use `install!` for side-effectful setup such as
   registering weaver ops. See each contract doc for exact behavior.
 - To author and load your own spool from a workspace-local root, follow
-  [Authoring your own spool code](../docs/reference.md#authoring-your-own-spool-code).
+  [Authoring your own spool code](../docs/spools/customisation.md#promoting-config-to-a-local-spool).

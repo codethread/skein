@@ -187,7 +187,7 @@ For editor-driven work, see the [IDE REPL setup guide](./ide-repl/) for connecti
 - Curly braces make a **map** of key/value pairs: `{:owner "ct"}`.
 - `def` gives a value a name you can reuse: `(def s ...)` binds `s`.
 
-The [Clojure crash course](./clojure-crash-course.md) covers the rest. If you came for the payoff, the worked [custom command example](#example-your-own-kanban-command) is further down.
+The [Clojure crash course](./clojure-crash-course.md) covers the rest. If you came for the payoff — your own custom CLI command in trusted Clojure — the worked example lives in [customising your workspace](./spools/customisation.md).
 
 Create a strand and look it up:
 
