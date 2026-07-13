@@ -15,6 +15,11 @@ Explicit-runtime cross-spool note primitive: the blessed writer and reader
   primitive is visible to every reader regardless of the decorating attributes a
   caller layers on its notes.
 
+  Note content is immutable by storage enforcement, not convention: `note/text`
+  and `note/at` are declared write-once keys (SPEC-001.P4), so once a note is
+  written its content and timestamp cannot be rewritten, deleted, or archived on
+  any mutation path. Only the caller's decorating attributes stay mutable.
+
   Callers own runtime selection and pass the target weaver runtime as the first
   argument, per the blessed-namespace convention.
 
@@ -44,9 +49,12 @@ Append an immutable note strand to `target-id`'s memory and return its id.
   The note is born closed, carries `note/text`, a sub-second `note/at`
   timestamp, optional `note/by`/`note/round`, and any caller-supplied decorating
   attrs, and links to the target by an outgoing `notes` edge — never a
-  `note/for` attribute. Fails loudly on blank text, a missing target, or a
-  non-integer `:round` (the `note/round` contract is single-typed).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L65-L91">Source</a></sub></p>
+  `note/for` attribute. `note/text` and `note/at` are storage-enforced
+  write-once (SPEC-001.P4): the birth write here is legal, but no later mutation
+  path can rewrite, delete, or archive them. Fails loudly on blank text, a
+  missing target, or a non-integer `:round` (the `note/round` contract is
+  single-typed).
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L70-L99">Source</a></sub></p>
 
 ## <a name="skein.api.notes.alpha/notes">`notes`</a>
 ``` clojure
@@ -61,7 +69,7 @@ Return `target-id`'s notes in `note/at` order, optionally one `:round`.
   each note as `{:id :note :at}` plus `:by`/`:round` when present. `:round` must
   be an integer (fails loudly otherwise); ordering parses `note/at` so mixed
   fractional-precision timestamps still sort chronologically.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L93-L112">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L101-L120">Source</a></sub></p>
 
 ## <a name="skein.api.notes.alpha/write!">`write!`</a>
 ``` clojure
@@ -75,7 +83,7 @@ Append a note through `w`, returning `note!`'s `{:id :target}`.
   `:by` overrides the writer default; `:round` passes through. A thunk target
   resolves at each call; a missing or deleted target fails loudly with the
   primitive's "Note target strand not found".
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L177-L193">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L185-L201">Source</a></sub></p>
 
 ## <a name="skein.api.notes.alpha/writer">`writer`</a>
 ``` clojure
@@ -91,7 +99,7 @@ Return a writer value bound to `runtime`, wrapping the `note!` primitive.
   value defaulted onto every write; `:by` is the default author. Validates these
   shapes and fails loudly naming the offending field. `note!`/`notes` are
   untouched; the writer wraps the low-level primitive.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L158-L175">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L166-L183">Source</a></sub></p>
 
 ## <a name="skein.api.notes.alpha/writer-ref">`writer-ref`</a>
 ``` clojure
@@ -105,7 +113,7 @@ Freeze `w` to the plain-data ref `{:target :decoration :by}`.
   ship into subprocesses, so late rebinding across a process boundary is out of
   scope. The constructor reconstructs a writer from this ref, so no `ref->writer`
   sugar ships.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L195-L205">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L203-L213">Source</a></sub></p>
 
 ## <a name="skein.api.notes.alpha/writer-ref->prompt">`writer-ref->prompt`</a>
 ``` clojure
@@ -120,4 +128,4 @@ Render `ref` as the note-writing CLI instruction fragment.
   placeholder the agent fills in. Validates the ref shape and fails loudly naming
   the offending field; a malformed ref never renders silently. Renders only the
   write instruction — no read/`agent notes` string.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L207-L221">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L215-L229">Source</a></sub></p>

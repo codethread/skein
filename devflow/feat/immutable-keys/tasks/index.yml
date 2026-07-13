@@ -1,0 +1,11 @@
+tasks:
+  - id: 1
+    description: immutable_keys registry, write-once guard at all mutation helpers, db tests
+    task_file: tasks/001-immutable-keys-enforcement.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: SPEC-001 delta promotion, notes docstring alignment, api-docs regen
+    task_file: tasks/002-spec-promotion-docs.md
+    status: complete
+    blocked_by: [1]

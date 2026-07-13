@@ -11,6 +11,11 @@
   primitive is visible to every reader regardless of the decorating attributes a
   caller layers on its notes.
 
+  Note content is immutable by storage enforcement, not convention: `note/text`
+  and `note/at` are declared write-once keys (SPEC-001.P4), so once a note is
+  written its content and timestamp cannot be rewritten, deleted, or archived on
+  any mutation path. Only the caller's decorating attributes stay mutable.
+
   Callers own runtime selection and pass the target weaver runtime as the first
   argument, per the blessed-namespace convention.
 
@@ -68,8 +73,11 @@
   The note is born closed, carries `note/text`, a sub-second `note/at`
   timestamp, optional `note/by`/`note/round`, and any caller-supplied decorating
   attrs, and links to the target by an outgoing `notes` edge — never a
-  `note/for` attribute. Fails loudly on blank text, a missing target, or a
-  non-integer `:round` (the `note/round` contract is single-typed)."
+  `note/for` attribute. `note/text` and `note/at` are storage-enforced
+  write-once (SPEC-001.P4): the birth write here is legal, but no later mutation
+  path can rewrite, delete, or archive them. Fails loudly on blank text, a
+  missing target, or a non-integer `:round` (the `note/round` contract is
+  single-typed)."
   [runtime target-id text {:keys [by round] :as opts}]
   (when (str/blank? text)
     (throw (ex-info "Note text must be non-blank" {})))

@@ -855,7 +855,9 @@
            :scenario scenario
            :rows (count rows)
            :omitted-descriptor (omitted-descriptor rows)
-           :sample-attribute-keys (some-> (first rows) attribute-keys))))
+           ;; sample the first row with hot attributes: strand ids are random, so the
+           ;; id-ordered first row may be a fully-archived strand whose lean map is empty
+           :sample-attribute-keys (some->> rows (map attribute-keys) (filter seq) first))))
 
 (defn- measure-text-search
   "Text-search `LIKE` scan through the shipped spool.
