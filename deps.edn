@@ -57,6 +57,9 @@
                            ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
   :lint/clj-kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "2025.06.05"}}
                    :main-opts ["-m" "clj-kondo.main" "--lint" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test"]}
+  :lint/conventions {:extra-paths ["scripts"]
+                     :extra-deps {clj-kondo/clj-kondo {:mvn/version "2025.06.05"}}
+                     :main-opts ["-m" "quality.conventions-check"]}
   :lint/splint {:extra-deps {io.github.noahtheduke/splint {:mvn/version "1.21.0"}}
                 :main-opts ["-m" "noahtheduke.splint" "--output" "clj-kondo" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test"]}
   :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"]

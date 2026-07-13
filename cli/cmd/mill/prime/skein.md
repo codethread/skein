@@ -22,9 +22,9 @@ This is the resolved Skein source checkout for the current world (from `SKEIN_SO
   approved local-root spools (agent-run, delegation, executors.subagent, chime) and the
   external devflow lifecycle and kanban board spools. Each row links a contract doc.
 - `{{.Source}}/AGENTS.md` — when working **inside a Skein-style repo**, read its
-  "Repo coordination workspace (.skein)" section: the installed runtime surface,
-  the `.skein` shared coordination world, the kanban board, the devflow
-  lifecycle, delegation, and branch-work visibility.
+  "Repo coordination workspace (.skein)" section: the `.skein` shared
+  coordination world and its working discipline, with pointers into the live
+  surface (kanban, devflow, delegation, landing, attention).
 
 ## Extending the .skein config
 

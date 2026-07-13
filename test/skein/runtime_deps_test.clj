@@ -70,10 +70,10 @@
     (try
       (let [world (test-world (.getCanonicalPath config-dir))
             rt (weaver-runtime/start! nil {:world world})
-            {:keys [root lib ns marker]} (write-hot-lib! config-dir suffix)]
+            {:keys [root lib marker] lib-ns :ns} (write-hot-lib! config-dir suffix)]
         (try
           (is (= ":missing"
-                 (daemon-value rt `(try (require '~ns)
+                 (daemon-value rt `(try (require '~lib-ns)
                                         :present
                                         (catch java.io.FileNotFoundException _#
                                           :missing)))))
@@ -92,7 +92,7 @@
                                                 (skein.api.current.alpha/runtime)
                                                 :runtime-spike
                                                 {:spools ['~lib]
-                                                 :ns '~ns
+                                                 :ns '~lib-ns
                                                  :call '~marker})
                                                [:call :return])))))
           (finally
@@ -106,7 +106,7 @@
     (try
       (let [world (test-world (.getCanonicalPath config-dir))
             rt (weaver-runtime/start! nil {:world world})
-            {:keys [lib ns marker]} (write-maven-spool! config-dir suffix)]
+            {:keys [lib marker] lib-ns :ns} (write-maven-spool! config-dir suffix)]
         (try
           (is (= ":skipped"
                  (daemon-value rt `(do (require 'skein.api.current.alpha
@@ -115,7 +115,7 @@
                                                  (skein.api.current.alpha/runtime)
                                                  :maven-spike
                                                  {:spools ['~lib]
-                                                  :ns '~ns
+                                                  :ns '~lib-ns
                                                   :call '~marker}))))))
           (is (= ":loaded"
                  (daemon-value rt `(do (require 'skein.api.current.alpha
@@ -130,7 +130,7 @@
                                                  (skein.api.current.alpha/runtime)
                                                  :maven-spike
                                                  {:spools ['~lib]
-                                                  :ns '~ns
+                                                  :ns '~lib-ns
                                                   :call '~marker}))))))
           (is (= "\"daemon-maven-added\""
                  (daemon-value rt `(do (require 'skein.api.current.alpha

@@ -181,7 +181,7 @@
   (let [approved (spool-sync/approved-spools runtime)
         syncs @(approved-spool-sync-state runtime)]
     (some (fn [lib]
-            (let [sync (get syncs lib)]
+            (let [sync-entry (get syncs lib)]
               (cond
                 (not (contains? (:spools approved) lib))
                 [:not-approved {:lib lib}]
@@ -189,8 +189,8 @@
                 (not (contains? syncs lib))
                 [:not-synced {:lib lib}]
 
-                (= :failed (:status sync))
-                [:sync-failed {:lib lib :sync sync}]
+                (= :failed (:status sync-entry))
+                [:sync-failed {:lib lib :sync sync-entry}]
 
                 :else
                 nil)))

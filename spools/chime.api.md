@@ -140,7 +140,7 @@ Evaluate registered rules against currently affected strands.
 
 ## <a name="skein.spools.chime/set-notifier!">`set-notifier!`</a>
 ``` clojure
-(set-notifier! binding)
+(set-notifier! notifier)
 ```
 Function.
 

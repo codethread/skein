@@ -2095,7 +2095,7 @@
 
 (defn- runs*
   [opts incoming-edges-fn]
-  (let [{:keys [active for]} opts]
+  (let [{:keys [active] for-target :for} opts]
     (try (supervise!) (catch Exception _ nil))
    (let [run-strands (weaver/list (rt)
                                (if active [:and [:= :state "active"] run-query] run-query)
@@ -2104,11 +2104,11 @@
          ;; incoming `serves` edge from the target, and a helper has a structural
          ;; `parent-of` edge from it. Narrow to the union up front (two indexed
          ;; edge lookups) rather than summarising every run.
-         run-strands (if for
+         run-strands (if for-target
                        (let [children (set (map :to_strand_id
-                                                (graph/outgoing-edges (rt) [for] "parent-of")))
+                                                (graph/outgoing-edges (rt) [for-target] "parent-of")))
                              servers (set (map :from_strand_id
-                                               (graph/incoming-edges (rt) [for] "serves")))
+                                               (graph/incoming-edges (rt) [for-target] "serves")))
                              relevant (into children servers)]
                          (filterv #(relevant (:id %)) run-strands))
                        run-strands)
@@ -2116,8 +2116,8 @@
          parents (parents-by-run run-ids incoming-edges-fn)
          serving (serving-targets-by-run run-ids)
          summaries (mapv #(run-summary % (get parents (:id %) []) (get serving (:id %))) run-strands)]
-      (if for
-        (filterv #(= for (:for %)) summaries)
+      (if for-target
+        (filterv #(= for-target (:for %)) summaries)
         summaries))))
 
 (defn runs
@@ -2125,8 +2125,8 @@
   Listing doubles as an interactive liveness checkpoint (there is no
   background poller): dead sessions are failed here, best-effort."
   ([] (runs {}))
-  ([{:keys [active for]}]
-   (runs* {:active active :for for} graph/incoming-edges)))
+  ([{:keys [active] for-target :for}]
+   (runs* {:active active :for for-target} graph/incoming-edges)))
 
 ;; ---------------------------------------------------------------------------
 ;; Spend aggregation

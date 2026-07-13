@@ -79,14 +79,14 @@
   (reset! (scanned-batch-ids) [])
   {:seen 0})
 
-(defn- validate-notifier! [binding]
-  (when-not (map? binding)
-    (fail! "Notifier binding must be a map" {:binding binding}))
-  (when-let [unknown (seq (remove #{:argv} (keys binding)))]
+(defn- validate-notifier! [notifier]
+  (when-not (map? notifier)
+    (fail! "Notifier binding must be a map" {:binding notifier}))
+  (when-let [unknown (seq (remove #{:argv} (keys notifier)))]
     (fail! "Notifier binding contains unknown keys" {:unknown (vec unknown)}))
-  (when-not (and (vector? (:argv binding)) (seq (:argv binding)) (every? non-blank-string? (:argv binding)))
-    (fail! "Notifier :argv must be a non-empty vector of non-blank strings" {:argv (:argv binding)}))
-  binding)
+  (when-not (and (vector? (:argv notifier)) (seq (:argv notifier)) (every? non-blank-string? (:argv notifier)))
+    (fail! "Notifier :argv must be a non-empty vector of non-blank strings" {:argv (:argv notifier)}))
+  notifier)
 
 (defn set-notifier!
   "Bind the local notifier command for this weaver lifetime.
@@ -94,8 +94,8 @@
   The binding is `{:argv [..]}`. Chime appends the notification title as the
   final argument and writes the body to stdin. Rebinding replaces the prior
   value; pass a valid binding after every weaver startup or config reload."
-  [binding]
-  (reset! (notifier-binding) (validate-notifier! binding))
+  [notifier]
+  (reset! (notifier-binding) (validate-notifier! notifier))
   {:notifier @(notifier-binding)})
 
 (defn notifier
@@ -114,8 +114,8 @@
     (fail! "Notification :body must be a string when present" {:body (:body notification)}))
   notification)
 
-(defn- process-thread! [binding notification result]
-  (let [argv (conj (:argv binding) (:title notification))]
+(defn- process-thread! [notifier notification result]
+  (let [argv (conj (:argv notifier) (:title notification))]
     (doto (Thread.
            (fn []
              (try
@@ -147,11 +147,11 @@
   failure instead of silently dropping the notification."
   [notification]
   (let [notification (validate-notification! notification)]
-    (if-let [binding @(notifier-binding)]
+    (if-let [notifier @(notifier-binding)]
       (let [result (atom {:status :started
-                          :argv (conj (:argv binding) (:title notification))
+                          :argv (conj (:argv notifier) (:title notification))
                           :title (:title notification)})]
-        (process-thread! binding notification result)
+        (process-thread! notifier notification result)
         @result)
       (let [failure (record-failure! {:kind :notifier-missing
                                       :title (:title notification)

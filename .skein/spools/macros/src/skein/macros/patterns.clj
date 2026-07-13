@@ -112,8 +112,8 @@
                         :known-namespaces (vec (keys @pattern-registry))})))
      (let [runtime (current/runtime)
            entries (vals remembered)]
-       (doseq [{:keys [name doc fn input-spec]} entries]
-         (patterns/register-pattern! runtime name doc fn input-spec))
+       (doseq [{:keys [name doc input-spec] pattern-fn :fn} entries]
+         (patterns/register-pattern! runtime name doc pattern-fn input-spec))
        {:installed (count entries)
         :patterns (mapv :name entries)}))))
 
