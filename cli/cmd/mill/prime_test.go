@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"skein-strand-cli/internal/config"
 )
 
 // writeSourceFixture lays out a minimal Skein checkout: deps.edn (so source
@@ -67,17 +70,32 @@ func TestRenderPrimeReadsManifestTopicsAndInterpolatesSource(t *testing.T) {
 }
 
 func TestRenderPrimeFailsWhenSourceUnresolvable(t *testing.T) {
-	t.Setenv("SKEIN_SOURCE", filepath.Join(t.TempDir(), "does-not-exist"))
-	if _, err := renderPrime("skein"); err == nil {
-		t.Fatal("expected error when SKEIN_SOURCE points at a missing directory")
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	t.Setenv("SKEIN_SOURCE", missing)
+	if _, err := renderPrime("skein"); err == nil || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("expected source error naming missing path %q, got: %v", missing, err)
+	}
+}
+
+func TestRenderPrimeSourceFallbackFailureNamesCWD(t *testing.T) {
+	t.Setenv("SKEIN_SOURCE", "")
+	origInstalled := config.InstalledSource
+	config.InstalledSource = ""
+	t.Cleanup(func() { config.InstalledSource = origInstalled })
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	if _, err := renderPrime("skein"); err == nil || !strings.Contains(err.Error(), cwd) {
+		t.Fatalf("expected source-resolution error naming cwd %q, got: %v", cwd, err)
 	}
 }
 
 func TestRenderPrimeFailsWithoutManifest(t *testing.T) {
 	src := writeSourceFixture(t, "", nil)
 	t.Setenv("SKEIN_SOURCE", src)
-	if _, err := renderPrime("skein"); err == nil {
-		t.Fatal("expected error when the checkout ships no prime manifest")
+	manifestPath := filepath.Join(src, filepath.FromSlash(primeManifestPath))
+	if _, err := renderPrime("skein"); err == nil || !strings.Contains(err.Error(), manifestPath) {
+		t.Fatalf("expected missing-manifest error naming %q, got: %v", manifestPath, err)
 	}
 }
 
@@ -97,8 +115,45 @@ func TestRenderPrimeFailsOnUnknownTopic(t *testing.T) {
 		`{"version": 1, "topics": {"skein": "docs/prime/skein.md"}}`,
 		map[string]string{"docs/prime/skein.md": "ok\n"})
 	t.Setenv("SKEIN_SOURCE", src)
-	if _, err := renderPrime("nope"); err == nil {
-		t.Fatal("expected error for a topic the manifest does not declare")
+	manifestPath := filepath.Join(src, filepath.FromSlash(primeManifestPath))
+	if _, err := renderPrime("nope"); err == nil || !strings.Contains(err.Error(), manifestPath) || !strings.Contains(err.Error(), `"nope"`) {
+		t.Fatalf("expected unknown-topic error naming manifest %q and topic, got: %v", manifestPath, err)
+	}
+}
+
+func TestRenderPrimeRejectsInvalidManifestTopicPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "traversal", path: "../../x"},
+		{name: "absolute", path: "/tmp/x"},
+		{name: "empty", path: ""},
+		{name: "Windows volume", path: "C:/tmp/x"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := fmt.Sprintf(`{"version": 1, "topics": {"skein": %q}}`, tt.path)
+			src := writeSourceFixture(t, manifest, nil)
+			t.Setenv("SKEIN_SOURCE", src)
+			manifestPath := filepath.Join(src, filepath.FromSlash(primeManifestPath))
+
+			_, err := renderPrime("skein")
+			if err == nil || !strings.Contains(err.Error(), manifestPath) || !strings.Contains(err.Error(), `topic "skein"`) || !strings.Contains(err.Error(), fmt.Sprintf("%q", tt.path)) {
+				t.Fatalf("expected invalid-path error naming manifest %q, topic, and path %q; got: %v", manifestPath, tt.path, err)
+			}
+		})
+	}
+}
+
+func TestRenderPrimeUnreadableTopicNamesPath(t *testing.T) {
+	const rel = "docs/prime/missing.md"
+	src := writeSourceFixture(t,
+		`{"version": 1, "topics": {"skein": "docs/prime/missing.md"}}`, nil)
+	t.Setenv("SKEIN_SOURCE", src)
+
+	if _, err := renderPrime("skein"); err == nil || !strings.Contains(err.Error(), rel) {
+		t.Fatalf("expected unreadable-topic error naming %q, got: %v", rel, err)
 	}
 }
 
@@ -126,6 +181,11 @@ func TestRepoPrimeManifestPointsAtRealFiles(t *testing.T) {
 	}
 	if len(manifest.Topics) == 0 {
 		t.Fatal("repo prime manifest declares no topics")
+	}
+	for _, topic := range []string{"skein", "strand"} {
+		if _, ok := manifest.Topics[topic]; !ok {
+			t.Fatalf("repo prime manifest does not declare required topic %q", topic)
+		}
 	}
 	tokenRe := regexp.MustCompile(`\{\{[^}]*\}\}`)
 	for topic, rel := range manifest.Topics {

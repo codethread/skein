@@ -31,9 +31,13 @@ type primeManifest struct {
 // resolved checkout path, and no other template construct is interpreted, so
 // any future implementation can reproduce it with a string substitution.
 func renderPrime(topic string) (string, error) {
-	source, err := resolveLaunchSource("")
+	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("mill %s prime cannot resolve the Skein source that hosts the docs: %w", topic, err)
+		return "", fmt.Errorf("mill %s prime cannot determine the cwd used to resolve the Skein source: %w", topic, err)
+	}
+	source, err := resolveLaunchSource(cwd)
+	if err != nil {
+		return "", fmt.Errorf("mill %s prime cannot resolve the Skein source that hosts the docs from cwd %s: %w", topic, cwd, err)
 	}
 	manifestPath := filepath.Join(source, filepath.FromSlash(primeManifestPath))
 	raw, err := os.ReadFile(manifestPath)
@@ -51,11 +55,35 @@ func renderPrime(topic string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("mill %s prime: manifest %s declares no %q topic", topic, manifestPath, topic)
 	}
+	if err := validatePrimeTopicPath(rel); err != nil {
+		return "", fmt.Errorf("mill %s prime: manifest %s topic %q has invalid path %q: %w", topic, manifestPath, topic, rel, err)
+	}
 	body, err := os.ReadFile(filepath.Join(source, filepath.FromSlash(rel)))
 	if err != nil {
 		return "", fmt.Errorf("mill %s prime: reading manifest topic file %s: %w", topic, rel, err)
 	}
 	return strings.ReplaceAll(string(body), "{{.Source}}", source), nil
+}
+
+func validatePrimeTopicPath(rel string) error {
+	if rel == "" {
+		return fmt.Errorf("path is empty")
+	}
+	if strings.HasPrefix(rel, "/") {
+		return fmt.Errorf("path must be relative")
+	}
+	if len(rel) >= 2 && ((rel[0] >= 'A' && rel[0] <= 'Z') || (rel[0] >= 'a' && rel[0] <= 'z')) && rel[1] == ':' {
+		return fmt.Errorf("path must not have a Windows volume prefix")
+	}
+	if strings.Contains(rel, `\`) {
+		return fmt.Errorf("path must use slash separators")
+	}
+	for _, segment := range strings.Split(rel, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("path contains invalid segment %q", segment)
+		}
+	}
+	return nil
 }
 
 func runPrime(topic string) error {
