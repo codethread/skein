@@ -352,6 +352,11 @@ this checkout.
 - **PLAN-Dcr-001.TC7:** Use each phase's cold focused test namespaces. The full
   locked suite is coordinator-only at queue acceptance and land.
 
+- **PLAN-Dcr-001.TC8:** The task queue maps Tasks 1-9 directly to PH1-PH9.
+  Tasks 1, 3, and 5 use `sol-med` for the shape validator, CI coverage gate,
+  and spool-to-spool seam. The remaining phases use `sol-low`. Every task is
+  AFK; PH6-PH9 carry A7 as a dispatch precondition rather than a HITL task.
+
 ## PLAN-Dcr-001.P9 Developer Notes
 
 Append notes here. Do not rewrite earlier notes.
@@ -371,3 +376,10 @@ Append notes here. Do not rewrite earlier notes.
   CI coverage to enumerate production registry provenance before deriving
   leaves. Added scalar-only nullability for known typed nils. Ordered PH9 after
   all of PH4 because both phases edit `.skein/config.clj`.
+
+### PLAN-Dcr-001.DN3 AFK queue transcription — 2026-07-14
+
+- Transcribed one task per implementation phase without changing phase edges.
+  External upstream work stays inside PH4 and PH9; coordinators provide those
+  checkouts before dispatch, and workers validate upstream commits before
+  advancing synchronized pins.

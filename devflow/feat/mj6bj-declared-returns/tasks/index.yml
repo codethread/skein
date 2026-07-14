@@ -1,0 +1,46 @@
+tasks:
+  - id: 1
+    description: Return-shape foundation and registry declaration
+    task_file: tasks/001-return-shape-foundation.md
+    status: pending
+    blocked_by: []
+  - id: 2
+    description: Full help rendering
+    task_file: tasks/002-full-help-rendering.md
+    status: pending
+    blocked_by: [1]
+  - id: 3
+    description: Author-side output check and coverage contract
+    task_file: tasks/003-output-check-coverage-contract.md
+    status: pending
+    blocked_by: [1]
+  - id: 4
+    description: Entity projection and exact-copy adoption
+    task_file: tasks/004-entity-projection-adoption.md
+    status: pending
+    blocked_by: []
+  - id: 5
+    description: Agent-run result consumption seam
+    task_file: tasks/005-agent-run-consumption-seam.md
+    status: pending
+    blocked_by: [1]
+  - id: 6
+    description: Core help and batteries declarations
+    task_file: tasks/006-core-batteries-declarations.md
+    status: pending
+    blocked_by: [2, 3]
+  - id: 7
+    description: Shipped reference-spool declarations
+    task_file: tasks/007-reference-spool-declarations.md
+    status: pending
+    blocked_by: [2, 3]
+  - id: 8
+    description: Repo-local spool declarations
+    task_file: tasks/008-repo-spool-declarations.md
+    status: pending
+    blocked_by: [2, 3]
+  - id: 9
+    description: Repo coordination and pinned-spool declarations
+    task_file: tasks/009-coordination-pinned-declarations.md
+    status: pending
+    blocked_by: [2, 3, 4]
