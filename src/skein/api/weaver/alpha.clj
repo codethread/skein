@@ -437,20 +437,20 @@
          payloads (or (:payloads envelope) {})]
      (if-let [alias (help-alias-result entry argv envelope)]
        alias
-       (let [ctx (cond-> {:op/name name
-                          :op/argv argv
-                          :op/runtime runtime
-                          :op/runtime-metadata (:metadata runtime)
-                          :op/payloads payloads}
-                   (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope))
-                   (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
-                   (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope))
-                   (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
-                   (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope))
-                   (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))]
-         (with-spool-classloader
-           runtime
-           #((requiring-resolve fn-sym) ctx)))))))
+       (let [ctx (cond-> {:op/name name :op/argv argv :op/runtime runtime
+                          :op/runtime-metadata (:metadata runtime) :op/payloads payloads}
+                   (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope)) (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
+                   (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope)) (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
+                   (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope)) (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))
+             result (with-spool-classloader runtime #((requiring-resolve fn-sym) ctx)) parsed-args (:op/args ctx)]
+         (if-not (and (map? result) (contains? parsed-args :subcommand))
+           result
+           (let [expected (str name " " (:subcommand parsed-args)) actual (:operation result)]
+             (cond
+               (not (contains? result :operation)) (assoc result :operation expected)
+               (= expected actual) result
+               :else (throw (ex-info "Operation result label disagrees with dispatch"
+                                     {:expected expected :actual actual}))))))))))
 
 (def ^:private help-arg-spec
   "Arg-spec for the built-in `help` op: an optional positional op name.
