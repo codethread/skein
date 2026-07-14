@@ -229,3 +229,11 @@ The slice gate used the focused-runnable downstream
 `clojure -M:test --shard B --summary-file <file>`. This exercises the direct
 delegation surface and the authoritative agent-run suite without running the
 full locked test suite, which remains land-time work.
+
+### PLAN-Ucs-001.DN4 Config validation correction — 2026-07-14
+
+Task 5's named focused command is likewise rejected before execution because
+`skein.config-test` belongs to add-libs shard C and is not focused-runnable.
+The slice gate used cold shard C through
+`clojure -M:test --shard C --summary-file <file>`, covering the authoritative
+config suite without running the full locked test suite.

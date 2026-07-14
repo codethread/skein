@@ -22,5 +22,5 @@ tasks:
   - id: 5
     description: Migrate land operation labels
     task_file: tasks/005-migrate-land-operation-labels.md
-    status: pending
+    status: complete
     blocked_by: [3]
