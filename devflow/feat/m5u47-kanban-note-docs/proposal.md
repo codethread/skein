@@ -17,15 +17,15 @@ the kanban docs.
 
 The same surface uses `--author`, while the settled spool CLI vocabulary uses `--by` for
 attribution. The flag is declared in the note arg-spec and translated back into the stored
-`:author` decoration (`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1230`,
-`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:544`). TEN-000 permits dropping the old flag
+`:author` decoration (`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:561`,
+`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1230-1232`). TEN-000 permits dropping the old flag
 without a migration alias (`devflow/TENETS.md:3`), and TEN-003 requires the removed spelling to
 fail loudly (`devflow/TENETS.md:10`).
 
 This feature crosses repository ownership. The contract, cookbook, operation, embedded manuals,
 and attribution tests live in `kanban.spool`. Skein consumes that repo by a SHA recorded in both
-`.skein/spools.edn` and `deps.edn` (`.skein/spools.edn:17`, `deps.edn:20`), with a test enforcing
-that the two coordinates match (`test/skein/config_test.clj:218`).
+`.skein/spools.edn` and `deps.edn` (`.skein/spools.edn:20`, `deps.edn:25-27`), with a test enforcing
+that the two coordinates match (`test/skein/config_test.clj:225`).
 
 ## PROP-KanbanNoteDocs-001.P2 Goals
 
@@ -59,8 +59,8 @@ that the two coordinates match (`test/skein/config_test.clj:218`).
 ### PROP-KanbanNoteDocs-001.S1 kanban.spool
 
 - Change the note arg-spec from `:author` to `:by` and keep `--by` mapped to the existing
-  `:author` decoration (`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:544`,
-  `~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1230`). Unknown `--author` calls fail in
+  `:author` decoration (`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:561`,
+  `~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1230-1232`). Unknown `--author` calls fail in
   the declared parser.
 - Update the contract's note examples and command synopsis
   (`~/dev/projects/kanban.spool/kanban.md:68`, `~/dev/projects/kanban.spool/kanban.md:90`). Keep
@@ -81,12 +81,12 @@ that the two coordinates match (`test/skein/config_test.clj:218`).
   this feature changes: `note`, `about`, and `prime`
   (`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:566`,
   `~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1046`,
-  `~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1114`). Other operation stamps remain.
+  `~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1125`). Other operation stamps remain.
 
 ### PROP-KanbanNoteDocs-001.S2 skein-src
 
 - After the kanban.spool change is merged, set the same merged SHA in `.skein/spools.edn` and
-  `deps.edn` (`.skein/spools.edn:17`, `deps.edn:20`). The coordinate-pair test remains the guard
+  `deps.edn` (`.skein/spools.edn:20`, `deps.edn:25-27`). The coordinate-pair test remains the guard
   against drift (`test/skein/config_test.clj:225`).
 - Move the SHA-specific kanban documentation links in `spools/kanban.md` and `spools/README.md` to
   that revision (`spools/kanban.md:3`, `spools/README.md:52`).
