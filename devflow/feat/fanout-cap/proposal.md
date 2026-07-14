@@ -88,9 +88,13 @@ The window is a bounded admission step between `ready-runs` and `claimed`:
 - **Admit up to the budget, in readiness order.** With workspace ceiling `W` and current headless running count `R`,
   the global budget is `W − R`. `scan!` walks `ready-runs` in the order weaver readiness returns them and admits each
   only while the global budget remains and its fan-out group (PROP-Foc-001.C3) has a free group slot; every admitted run
-  decrements the budgets it consumes. Admission is `claim!` (`agent_run.clj:1695-1700`) exactly as today — the CAS into
-  in-flight is the atomic gate, so two concurrent `scan!`s never both admit past the budget for one run id, and the
-  count/admit pass is cheap and idempotent.
+  decrements the budgets it consumes.
+- **Admission is atomic inside `claim!`, not a pre-read in `scan!`.** A budget read taken before the admission loop
+  would race: two concurrent `scan!`s could each observe the same `R` and together admit up to `2×(W − R)`. The window
+  check therefore moves *into* `claim!`'s existing `swap-vals!` (`agent_run.clj:1695-1700`): the swap function refuses
+  the claim when the in-flight map already holds `W` headless entries (or the run's group is at its cap), so counting
+  and claiming are one atomic compare-and-swap on the in-flight atom. Concurrent `scan!`s then compose safely with no
+  assumption about event-lane serialization; the pass stays cheap and idempotent.
 - **Deferred runs stay pending.** A ready run that finds no slot is simply *not claimed* this pass. It keeps
   `agent-run/phase "pending"` and no attribute is written — there is no "deferred" phase, no queue row, nothing durable
   to reconcile after a crash. On the next scan it is reconsidered from scratch.
