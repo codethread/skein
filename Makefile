@@ -2,7 +2,10 @@
 
 GO_CLI := ./cli/cmd/strand
 MILL_CLI := ./cli/cmd/mill
-SOURCE_LDFLAGS := -X skein-strand-cli/internal/config.InstalledSource=$(CURDIR)
+# BuildID falls back to the compiled-in "dev" when git is unavailable; it is
+# informational (skew attribution), so unlike InstalledSource it may degrade.
+BUILD_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+SOURCE_LDFLAGS := -X skein-strand-cli/internal/config.InstalledSource=$(CURDIR) -X skein-strand-cli/internal/config.BuildID=$(BUILD_ID)
 GOFUMPT_VERSION := v0.8.0
 GOLANGCI_LINT_VERSION := v2.1.6
 GOVULNCHECK_VERSION := v1.1.4
@@ -32,9 +35,9 @@ install:
 		echo "make install: resolved canonical Skein source '$$src' is empty or not a directory" >&2; \
 		exit 1; \
 	fi; \
-	echo "make install: stamping InstalledSource=$$src"; \
-	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(GO_CLI) && \
-	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src" $(MILL_CLI)
+	echo "make install: stamping InstalledSource=$$src BuildID=$(BUILD_ID)"; \
+	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src -X skein-strand-cli/internal/config.BuildID=$(BUILD_ID)" $(GO_CLI) && \
+	go install -ldflags "-X skein-strand-cli/internal/config.InstalledSource=$$src -X skein-strand-cli/internal/config.BuildID=$(BUILD_ID)" $(MILL_CLI)
 
 # code-owner TUI over live agent runs; polls the strand CLI
 dash:

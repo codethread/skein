@@ -152,7 +152,7 @@ func start() error {
 	defer func() { _ = os.Remove(socketPath) }()
 	defer func() { _ = os.Remove(metadataPath) }()
 
-	meta := client.MillMetadata{ProtocolVersion: client.MillProtocolVersion, PID: os.Getpid(), MillID: fmt.Sprintf("mill-%d-%d", os.Getpid(), time.Now().UnixNano()), StateRoot: root, SocketPath: socketPath, StartedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	meta := client.MillMetadata{ProtocolVersion: client.MillProtocolVersion, PID: os.Getpid(), MillID: fmt.Sprintf("mill-%d-%d", os.Getpid(), time.Now().UnixNano()), StateRoot: root, SocketPath: socketPath, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), MillBuild: config.BuildID}
 	b, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err

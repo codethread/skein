@@ -18,6 +18,11 @@ var allowedKeys = map[string]bool{"configFormat": true, "name": true}
 
 var InstalledSource string
 
+// BuildID identifies the build of both shipped binaries; ldflags stamp it with
+// the git short sha so metadata written by one build is attributable from the
+// other when their mill protocol versions diverge.
+var BuildID = "dev"
+
 type World struct {
 	ConfigDir  string
 	StateDir   string

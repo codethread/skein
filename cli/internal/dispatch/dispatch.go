@@ -18,8 +18,9 @@ import (
 )
 
 // Version is the strand bin version reported by --version and carried in the
-// invoke envelope's client identity.
-var Version = "dev"
+// invoke envelope's client identity; it is the stamped build id (git short
+// sha under make build/install, "dev" otherwise).
+var Version = config.BuildID
 
 // Seams overridden in tests.
 var (
