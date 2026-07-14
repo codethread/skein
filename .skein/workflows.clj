@@ -242,9 +242,29 @@
 ;; landed. COORDINATOR-ONLY: worker agents never land — they stop at
 ;; implemented+committed. The ordering is the enforcement: sign-off is only
 ;; valid on a pushed branch with a draft PR and green CI, and a merge to main
-;; requires green CI plus a green local smoke run. Step `workflow/instruction`
-;; text is the enforcement surface, shipped as data on each step.
+;; requires green CI plus a green local smoke run. The two CI watches are
+;; `:shell` gates the shell executor (skein.spools.executors.shell) fulfils
+;; mechanically — a red watch stamps `shell/error` on the gate for a
+;; fix-push-clear retry, and `land complete` refuses gates. Human steps keep
+;; `workflow/instruction` text as the enforcement surface, shipped as data.
 ;; ---------------------------------------------------------------------------
+
+(def ^:private main-ci-watch-script
+  "POSIX script for the main-ci-green shell gate: resolve the pushed main
+  sha, wait for its workflow runs to register, then watch every run to
+  completion, failing on the first unsuccessful conclusion. The gate's
+  `shell/timeout-secs` bounds the whole watch, including the initial wait
+  for GitHub to register the runs."
+  (str "set -eu\n"
+       "sha=$(git rev-parse origin/main)\n"
+       "runs=\"\"\n"
+       "while [ -z \"$runs\" ]; do\n"
+       "  runs=$(gh run list --commit \"$sha\" --json databaseId --jq '.[].databaseId')\n"
+       "  [ -n \"$runs\" ] || sleep 10\n"
+       "done\n"
+       "for id in $runs; do\n"
+       "  gh run watch \"$id\" --exit-status\n"
+       "done\n"))
 
 (def ^:private land-abort-reason-input
   "Declared choice input for the land sign-off abort choice: a required
@@ -284,9 +304,12 @@
   linear DAG plus an abort cutover: push + draft PR, green CI at HEAD,
   roster sign-off (only valid on a pushed branch with green CI), a coordinator
   sign-off checkpoint, squash-merge to LOCAL main behind the singleton merge
-  lock, green main CI, then cleanup. Card-backed runs move the card to
-  `in_review` when review starts and back to `claimed` on abort. `params` carry
-  `:feature`, `:branch`, `:worktree`, and optional `:card`; step
+  lock, push main, green main CI, then cleanup. Both CI watches are `:shell`
+  gates the shell executor fulfils by running the recorded `gh` watch; the
+  coordinator only sees them when a red watch stamps `shell/error`. Card-backed
+  runs move the card to `in_review` when push-draft-pr completes (the automated
+  CI watch and review pipeline starts there) and back to `claimed` on abort.
+  `params` carry `:feature`, `:branch`, `:worktree`, and optional `:card`; step
   `workflow/instruction` text is command-precise and fail-loud, so the
   discipline lives in the data."
   [_opts]
@@ -308,20 +331,29 @@
                                       " Open a draft PR against main: `gh pr create --draft --title <semantic subject> --body <summary>`."
                                       " If an open PR for " branch " already exists, reuse it instead"
                                       " (`gh pr view " branch " --json url,number,state`). Record the PR url"
-                                      " and number in this step's notes before completing."))})
-   (workflow/step :ci-green
+                                      " and number in this step's notes before completing. Completing this"
+                                      " step starts the automated ci-green shell gate and, for card-backed"
+                                      " runs, moves the kanban card to in_review."))})
+   (workflow/gate :ci-green
                   (fn [{:keys [branch]}] (str "Watch CI to green at " branch " HEAD"))
-                  :self
+                  :shell
                   :depends-on [:push-draft-pr]
                   :attributes {"workflow/action-ref" "land.ci.green"
+                               "shell/argv" (fn [{:keys [branch]}]
+                                              ["gh" "pr" "checks" branch "--watch" "--fail-fast"])
+                               "shell/cwd" (fn [{:keys [worktree]}] worktree)
+                               "shell/timeout-secs" 5400
                                "workflow/instruction"
-                               (format-alpha/reflow
-                                "|Watch CI to green at the current branch HEAD: `gh pr checks <pr> --watch`.
-                                 |ALL checks must pass at HEAD. If any check is red, fix it in the
-                                 |worktree, commit, `git push`, and re-watch — stay in THIS step until
-                                 |every check is green. Completing this step asserts green CI at the
-                                 |current HEAD sha; record the HEAD sha (`git rev-parse HEAD`) and the
-                                 |check evidence in notes.")})
+                               (fn [{:keys [branch]}]
+                                 (str "Machine gate: the shell executor watches CI at the branch HEAD"
+                                      " (`gh pr checks " branch " --watch --fail-fast`) and closes this"
+                                      " gate only when ALL checks are green — `land complete` refuses"
+                                      " gates. A red or unstarted watch stamps `shell/error` with the"
+                                      " captured output: fix in the worktree, commit, `git push`, then"
+                                      " clear the stamp (`strand update <gate-id> --attr shell/error=`)"
+                                      " to re-run the watch. The gate closing asserts green CI at the"
+                                      " watched HEAD sha; the exit code and output tail are recorded on"
+                                      " the gate."))})
    (workflow/step :signoff-review
                   (fn [{:keys [branch]}] (str "Run roster sign-off review for " branch))
                   :self
@@ -339,11 +371,13 @@
                                         "Target the task strand for this work under the work root. ")
                                       "Then: `strand agent review <task-id> --roster change-review --cwd " worktree
                                       " --commit-range origin/main..HEAD`. Drive every fix round to done; each fix"
-                                      " round re-pushes the branch and MUST re-establish green CI (the ci-green bar)"
-                                      " before this step may complete. SIGN-OFF IS ONLY VALID WITH A PUSHED BRANCH"
-                                      " AND GREEN CI — that is why this step follows CI. Record the review pass ids"
-                                      " and the final verdict in notes. For card-backed land runs, entering this step"
-                                      " moves the kanban card to in_review; aborting sign-off moves it back to claimed."))})
+                                      " round re-pushes the branch and MUST re-establish green CI at the new HEAD"
+                                      " (`gh pr checks <branch> --watch` — the ci-green gate closed at an earlier sha"
+                                      " and does not re-run) before this step may complete. SIGN-OFF IS ONLY VALID"
+                                      " WITH A PUSHED BRANCH AND GREEN CI — that is why this step follows the CI"
+                                      " gate. Record the review pass ids and the final verdict in notes. For"
+                                      " card-backed land runs the card moved to in_review when push-draft-pr"
+                                      " completed; aborting sign-off moves it back to claimed."))})
    (workflow/checkpoint :signoff
                         (fn [{:keys [branch]}] (str "Sign off landing " branch))
                         :depends-on [:signoff-review]
@@ -376,25 +410,45 @@
                                       " `(cd cli && go test ./...)`, `make fmt-check lint reflect-check docs-check`,"
                                       " the smoke suite `clojure -M:smoke`, and the spool-suite gate"
                                       " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" make spool-suite-gate`. If any gate fails:"
-                                      " `git reset --hard origin/main`, fix on the branch, and re-satisfy the"
-                                      " ci-green and signoff-review steps before re-attempting. Record every gate"
-                                      " result in notes. Do NOT push in this step."))})
-   (workflow/step :push-main-ci-green
-                  "Push main and watch main CI to green"
+                                      " `git reset --hard origin/main`, fix on the branch, re-establish green CI at"
+                                      " the new HEAD (`gh pr checks <branch> --watch`), and re-run the"
+                                      " signoff-review bar before re-attempting. Record every gate result in notes."
+                                      " Do NOT push in this step."))})
+   (workflow/step :push-main
+                  "Push the merged main to origin"
                   :self
                   :depends-on [:merge-local-verify]
-                  :attributes {"workflow/action-ref" "land.main.ci-green"
+                  :attributes {"workflow/action-ref" "land.main.push"
                                "workflow/instruction"
                                (format-alpha/reflow
-                                "|Push main: `git push origin main`. Watch ALL main workflows to
-                                 |completion (`gh run list --branch main`, `gh run watch <run-id>`).
-                                 |Transient infra failures may be re-run with `gh run rerun <run-id>`.
-                                 |Completing this step asserts green CI on the main sha. Record the run
-                                 |ids in notes.")})
+                                "|Push main: `git push origin main`. Completing this step hands the
+                                 |watch to the main-ci-green shell gate, which follows every workflow
+                                 |run at the pushed sha. Record the pushed sha
+                                 |(`git rev-parse origin/main`) in notes.")})
+   (workflow/gate :main-ci-green
+                  "Watch main CI to green at the pushed sha"
+                  :shell
+                  :depends-on [:push-main]
+                  :attributes {"workflow/action-ref" "land.main.ci-green"
+                               "shell/argv" ["sh" "-c" main-ci-watch-script]
+                               ;; The feature worktree shares the repo's refs and outlives this
+                               ;; gate (cleanup runs after), so it is a safe cwd for the watch.
+                               "shell/cwd" (fn [{:keys [worktree]}] worktree)
+                               "shell/timeout-secs" 5400
+                               "workflow/instruction"
+                               (format-alpha/reflow
+                                "|Machine gate: the shell executor waits for every workflow run at the
+                                 |pushed main sha to register, then watches each to completion
+                                 |(`gh run list --commit <sha>`, `gh run watch <id> --exit-status`).
+                                 |A failed run stamps `shell/error`: re-run transient infra failures
+                                 |(`gh run rerun <run-id>`), then clear the stamp
+                                 |(`strand update <gate-id> --attr shell/error=`) to re-watch. The
+                                 |gate closing asserts green CI on the main sha; run output is
+                                 |recorded on the gate.")})
    (workflow/step :cleanup
                   (fn [{:keys [branch]}] (str "Clean up " branch " and close the land run"))
                   :self
-                  :depends-on [:push-main-ci-green]
+                  :depends-on [:main-ci-green]
                   :attributes {"workflow/action-ref" "land.cleanup"
                                "workflow/instruction"
                                (fn [{:keys [branch card worktree]}]
@@ -445,26 +499,33 @@
    :coordinator-only "Worker agents never land — they stop at implemented+committed. Only a coordinator, holding delegated sign-off authority, drives a land run."
    :discipline (format-alpha/reflow
                 "|Sign-off is only valid on a pushed branch with an open draft PR and
-                 |green CI at HEAD — that is the point of the ordering. For card-backed
-                 |runs, entering signoff-review moves the card to in_review, and aborting
-                 |sign-off moves it back to claimed. A merge is a squash into LOCAL main
-                 |guarded by a singleton merge lock. The lock is
-                 |acquired after sign-off approval, immediately before the local merge step,
-                 |so review/CI work can run concurrently but only one coordinator mutates
-                 |main. Local main must pass the full verification gate (tests + go tests +
-                 |fmt/lint/reflect/docs + smoke) before main is pushed; main is only landed
-                 |once its own CI is green. Aborting at sign-off records a reason and leaves
-                 |the branch/worktree untouched.")
-   :steps [{:step "push-draft-pr" :purpose "Push the branch and open (or reuse) a draft PR against main."}
-           {:step "ci-green" :purpose "Watch CI to green at the branch HEAD; fix-push-repeat within the step."}
+                 |green CI at HEAD — the ci-green shell gate enforces that ordering
+                 |mechanically: the shell executor runs the recorded `gh pr checks`
+                 |watch and only its green exit opens signoff-review. A red watch
+                 |stamps shell/error on the gate; fix, push, and clear the stamp
+                 |(`strand update <gate-id> --attr shell/error=`) to re-run it. For
+                 |card-backed runs, completing push-draft-pr moves the card to
+                 |in_review, and aborting sign-off moves it back to claimed. A merge
+                 |is a squash into LOCAL main guarded by a singleton merge lock. The
+                 |lock is acquired after sign-off approval, immediately before the
+                 |local merge step, so review/CI work can run concurrently but only
+                 |one coordinator mutates main. Local main must pass the full
+                 |verification gate (tests + go tests + fmt/lint/reflect/docs +
+                 |smoke) before main is pushed; main is only landed once the
+                 |main-ci-green shell gate watches its CI to green. Aborting at
+                 |sign-off records a reason and leaves the branch/worktree
+                 |untouched.")
+   :steps [{:step "push-draft-pr" :purpose "Push the branch and open (or reuse) a draft PR against main; completing it starts the automated CI watch and moves a card-backed run's card to in_review."}
+           {:step "ci-green" :purpose "Machine shell gate: the executor watches CI to green at the branch HEAD; a red watch stamps shell/error for a fix-push-clear retry."}
            {:step "signoff-review" :purpose "Run the declared roster review and drive fix rounds; every fix round re-establishes green CI."}
            {:step "signoff" :purpose "Coordinator sign-off checkpoint (:agent): approved continues in the molecule, abort routes to a reason-recording step."}
            {:step "merge-local-verify" :purpose "Squash-merge into local main without pushing, then run the full local verification gate + smoke."}
-           {:step "push-main-ci-green" :purpose "Push main and watch all main workflows to green."}
+           {:step "push-main" :purpose "Push main; hands the watch to the main-ci-green gate."}
+           {:step "main-ci-green" :purpose "Machine shell gate: the executor watches every main workflow run at the pushed sha to green."}
            {:step "cleanup" :purpose "Delete the remote branch/PR, remove the worktree+branch, finish the card, and close the run."}]
    :commands [{:verb "start" :purpose "Pour and start the land run: land start <feature> --branch <b> --worktree <path> [--card <id>]."}
               {:verb "next" :purpose "Show the ready land step views for a feature."}
-              {:verb "complete" :purpose "Close the current non-checkpoint land step, optionally with notes and a step=<id> selector."}
+              {:verb "complete" :purpose "Close the current non-checkpoint land step, optionally with notes and a step=<id> selector. CI shell gates are closed by the executor, never by complete."}
               {:verb "choose" :purpose "Decide the sign-off checkpoint: approved, or abort with {\"reason\":\"...\"}."}
               {:verb "status" :purpose "Show the land root, ready steps, done state, run history, and merge lock."}
               {:verb "break-lock" :purpose "Explicitly break a stale merge lock with a reason."}]
@@ -494,7 +555,10 @@
                          root (workflow/current-root feature)
                          context (attr-value root :workflow/context)
                          card (or (:card context) (get context "card"))
-                         reviewing? (some #(= "land.ci.green" (:action-ref %)) ready-before)]
+                         ;; Completing push-draft-pr starts the automated CI watch and the
+                         ;; review pipeline; the shell executor closes the CI gates, so this
+                         ;; is the last human completion before review.
+                         reviewing? (some #(= "land.pr.open" (:action-ref %)) ready-before)]
                      (when reviewing?
                        (move-card-to-review! card))
                      (try

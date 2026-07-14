@@ -805,18 +805,35 @@
         (is (= "Start the devflow lifecycle for a feature."
                (get-in (op! "help" ["devflow-start"]) [:arg-spec :doc])))))))
 
+(defn- shell-gate-complete!
+  "Close the ready :shell land gate for feature the way the shell executor
+  does — `complete!` with `:by \"shell\"`. The config fixture loads
+  workflows.clj without installing the shell executor, so tests stand in
+  for its pass path."
+  [feature notes]
+  (workflow/complete! feature {:by "shell" :notes notes}))
+
 (deftest land-ops-drive-a-poured-run-end-to-end
   (with-config-runtime
-    (fn [_rt]
+    (fn [rt]
       (let [started (op! "land" ["start" "land-x" "--branch" "land-x" "--worktree" "/tmp/land-x"])]
         (is (= "land-start" (:operation started)))
         (is (false? (:done started)))
         (is (= "land.pr.open" (:action-ref (first (:ready started))))))
-      ;; drive the linear steps up to the sign-off checkpoint
-      (is (= "land.ci.green"
-             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "pushed; PR #1"]))))))
+      ;; completing push-draft-pr leaves the machine ci-green shell gate ready,
+      ;; carrying the interpolated watch command for the shell executor
+      (let [gate (first (:ready (op! "land" ["complete" "land-x" "pushed; PR #1"])))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))]
+        (is (= "land.ci.green" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (= ["gh" "pr" "checks" "land-x" "--watch" "--fail-fast"] (:shell/argv gate-attrs)))
+        (is (= "/tmp/land-x" (:shell/cwd gate-attrs))))
+      ;; a coordinator cannot hand-close a CI gate; the shell executor owns it
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Gate steps require a non-blank :by"
+                            (op! "land" ["complete" "land-x" "trying to skip CI"])))
+      (shell-gate-complete! "land-x" "checks green")
       (is (= "land.signoff.review"
-             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "HEAD green"]))))))
+             (:action-ref (first (:ready (op! "land" ["next" "land-x"]))))))
       (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])]
         (is (= "checkpoint" (:kind (first (:ready at-checkpoint)))))
         (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
@@ -835,13 +852,22 @@
         (is (= "merge-lock" (get-in (op! "land" ["status" "land-x"]) [:merge-lock :attributes :kind]))))
       (op! "land" ["start" "land-z" "--branch" "land-z" "--worktree" "/tmp/land-z"])
       (op! "land" ["complete" "land-z"])
-      (op! "land" ["complete" "land-z"])
+      (shell-gate-complete! "land-z" "checks green")
       (op! "land" ["complete" "land-z"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"another land run holds the merge lock"
                             (op! "land" ["choose" "land-z" "approved"])))
-      (is (= "land.main.ci-green"
+      ;; merge-local-verify hands off to the explicit main push step, then the
+      ;; machine main-ci-green shell gate carrying the pushed-sha watch script
+      (is (= "land.main.push"
              (:action-ref (first (:ready (op! "land" ["complete" "land-x" "merged; gates green"]))))))
-      (let [ready-cleanup (op! "land" ["complete" "land-x" "main pushed"])
+      (let [gate (first (:ready (op! "land" ["complete" "land-x" "main pushed"])))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))]
+        (is (= "land.main.ci-green" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (= "sh" (first (:shell/argv gate-attrs))))
+        (is (str/includes? (last (:shell/argv gate-attrs)) "gh run watch")))
+      (shell-gate-complete! "land-x" "main runs green")
+      (let [ready-cleanup (op! "land" ["next" "land-x"])
             cleanup-step (first (:ready ready-cleanup))]
         (is (= "land.cleanup" (:action-ref cleanup-step)))
         ;; cardless run: the cleanup instruction must omit kanban-finish
@@ -866,12 +892,14 @@
                                                       :kanban/status "claimed"
                                                       :kanban/type "feature"}}))]
         (op! "land" ["start" "land-y" "--branch" "land-y" "--worktree" "/tmp/land-y" "--card" card-id]))
+      ;; completing push-draft-pr starts the automated CI watch and review
+      ;; pipeline, so it is the completion that moves the card to in_review
       (op! "land" ["complete" "land-y"])           ; push-draft-pr
-      (op! "land" ["complete" "land-y"])           ; ci-green
       (let [root (workflow/current-root "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
         (is (= "in_review" (get-in (weaver/show rt card-id) [:attributes :kanban/status]))))
+      (shell-gate-complete! "land-y" "checks green") ; ci-green
       (op! "land" ["complete" "land-y"])           ; signoff-review
       (let [aborted (op! "land" ["choose" "land-y" "abort" "{\"reason\":\"scope changed\"}"])]
         (is (= "land-choose" (:operation aborted)))
@@ -894,11 +922,13 @@
                                                       :kanban/type "feature"}}))]
         (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" card-id])
         (op! "land" ["complete" "land-w"])                          ; push-draft-pr
-        (op! "land" ["complete" "land-w"])                          ; ci-green
+        (shell-gate-complete! "land-w" "checks green")              ; ci-green
         (op! "land" ["complete" "land-w"])                          ; signoff-review
         (op! "land" ["choose" "land-w" "approved"])
         (op! "land" ["complete" "land-w"])                          ; merge-local-verify
-        (let [ready-cleanup (op! "land" ["complete" "land-w"])      ; push-main-ci-green
+        (op! "land" ["complete" "land-w"])                          ; push-main
+        (shell-gate-complete! "land-w" "main runs green")           ; main-ci-green
+        (let [ready-cleanup (op! "land" ["next" "land-w"])
               cleanup-step (first (:ready ready-cleanup))]
           (is (= "land.cleanup" (:action-ref cleanup-step)))
           (is (str/includes? (:instruction cleanup-step)
@@ -910,7 +940,7 @@
     (fn [_rt]
       (op! "land" ["start" "land-lock-x" "--branch" "land-lock-x" "--worktree" "/tmp/land-lock-x"])
       (op! "land" ["complete" "land-lock-x"])
-      (op! "land" ["complete" "land-lock-x"])
+      (shell-gate-complete! "land-lock-x" "checks green")
       (op! "land" ["complete" "land-lock-x"])
       (op! "land" ["choose" "land-lock-x" "approved"])
       (is (= "merge-lock" (get-in (op! "land" ["status" "land-lock-x"])
