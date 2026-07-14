@@ -1029,6 +1029,73 @@
           (is (empty? (:skipped ready))
               "a task delegated this pass is never re-reported as skipped"))))))
 
+(deftest fanout-verbs-stamp-max-concurrent-group
+  ;; V2 (PROP-Foc-001.C3, TASK-Foc-002.DW1): review, council, and delegate
+  ;; --ready each parse --max-concurrent and stamp one shared
+  ;; agent-run/fanout-group plus the requested agent-run/fanout-cap on every run
+  ;; of the fan-out, so the PH1 window bounds each group to min(W, K). A raw
+  ;; spawn or single delegate creates a single run, so it carries no group and
+  ;; is governed by the workspace ceiling W alone.
+  (with-agents
+    (fn [rt]
+      (letfn [(fan [run-ids]
+                (let [runs (mapv #(weaver/show rt %) run-ids)]
+                  {:groups (set (map #(get-in % [:attributes :agent-run/fanout-group]) runs))
+                   :caps (set (map #(get-in % [:attributes :agent-run/fanout-cap]) runs))}))]
+        (testing "review stamps one group across reviewers and the synthesizer"
+          (let [target (weaver/add rt {:title "review target" :attributes {:body "x"}})
+                review (agents/agent-op {:op/argv ["review" (:id target)
+                                                   "--members" "2" "--synthesize"
+                                                   "--max-concurrent" "3"]})
+                {:keys [groups caps]} (fan (conj (:reviewers review) (:synthesizer review)))]
+            (is (some? (:synthesizer review)) "the review fans out a synthesizer too")
+            (is (= 1 (count groups)) "every review run shares one fan-out group")
+            (is (not (contains? groups nil)) "no review run is left ungrouped")
+            (is (= #{3} caps) "every review run carries the requested cap")))
+        (testing "council stamps one group across seats and the synthesizer"
+          (let [council (agents/agent-op {:op/argv ["council" "--topic" "decide"
+                                                    "--harness" "sh" "--members" "2"
+                                                    "--rounds" "1" "--max-concurrent" "2"]})
+                run-ids (conj (vec (mapcat identity (:turns council))) (:synthesizer council))
+                {:keys [groups caps]} (fan run-ids)]
+            (is (= 1 (count groups)) "every council run shares one fan-out group")
+            (is (not (contains? groups nil)) "no council run is left ungrouped")
+            (is (= #{2} caps) "every council run carries the requested cap")))
+        (testing "delegate --ready stamps one group across the classified batch"
+          (let [plan (weaver/add rt {:title "plan"})
+                tasks (mapv (fn [n] (weaver/add rt {:title (str "task " n)
+                                                    :attributes {:body "body" :harness "sh"}}))
+                            (range 3))
+                _ (weaver/update rt (:id plan) {:edges (mapv (fn [t] {:type "parent-of" :to (:id t)}) tasks)})
+                ready (agents/agent-op {:op/argv ["delegate" "--ready" (:id plan) "--max-concurrent" "2"]})
+                run-ids (mapv #(get-in % [:run :id]) (:delegated ready))
+                {:keys [groups caps]} (fan run-ids)]
+            (is (= 3 (count run-ids)) "every ready task is delegated into the fan-out")
+            (is (= 1 (count groups)) "the whole batch shares one fan-out group")
+            (is (not (contains? groups nil)) "no delegated run is left ungrouped")
+            (is (= #{2} caps) "every delegated run carries the requested cap")))
+        (testing "raw spawn and single delegate carry no fan-out group"
+          (let [spawned (agents/agent-op {:op/argv ["spawn" "--harness" "sh" "--prompt" "echo x"]})
+                task (weaver/add rt {:title "single" :attributes {:body "body" :harness "sh"}})
+                single (agents/agent-op {:op/argv ["delegate" (:id task)]})
+                ;; --max-concurrent on a single delegate is inert: one run is
+                ;; governed by W alone and never joins a group (MI3)
+                capped (weaver/add rt {:title "single capped" :attributes {:body "body" :harness "sh"}})
+                single-capped (agents/agent-op {:op/argv ["delegate" (:id capped) "--max-concurrent" "5"]})]
+            (doseq [id [(:id spawned) (get-in single [:run :id]) (get-in single-capped [:run :id])]]
+              (let [run (weaver/show rt id)]
+                (is (nil? (get-in run [:attributes :agent-run/fanout-group]))
+                    "a single run carries no fan-out group")
+                (is (nil? (get-in run [:attributes :agent-run/fanout-cap]))
+                    "a single run carries no fan-out cap")))))
+        (testing "--max-concurrent must be a positive integer"
+          (let [target (weaver/add rt {:title "bad-cap target" :attributes {:body "x"}})]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+                                  (agents/agent-op {:op/argv ["review" (:id target) "--max-concurrent" "0"]})))
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+                                  (agents/agent-op {:op/argv ["council" "--topic" "t" "--harness" "sh"
+                                                              "--max-concurrent" "0"]})))))))))
+
 (defn- serves? [rt run-id target-id]
   (some #(= target-id (:to_strand_id %)) (graph/outgoing-edges rt [run-id] "serves")))
 
