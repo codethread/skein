@@ -448,6 +448,48 @@ works after `mine` has been registered in the weaver's named-query registry.
 `strand list --query mine --state active` when you only want active matches. `strand ready --query
 mine` always applies readiness semantics, so returned strands are active and unblocked.
 
+### Query expression grammar
+
+A query definition is either a bare where expression, or a map with `:where` and declared
+`:params`:
+
+```clojure
+[:= [:attr :owner] "ct"]                                       ; bare expression
+{:params [:owner]
+ :where  [:= [:attr :owner] [:param :owner]]}                  ; parameterized
+```
+
+A where expression is an EDN vector of `[operator & args]`:
+
+| Form | Meaning |
+| --- | --- |
+| `[:= f v]` `[:!= f v]` `[:< f v]` `[:<= f v]` `[:> f v]` `[:>= f v]` | compare field `f` against value `v` |
+| `[:in f [v …]]` | `f` matches one of a non-empty collection of values |
+| `[:exists f]` / `[:missing f]` | `f` has a value / has none |
+| `[:and e …]` / `[:or e …]` | compose one or more child expressions |
+| `[:not e]` | negate exactly one child expression |
+| `[:edge/out rel q]` / `[:edge/in rel q]` | an edge of relation `rel` points from this strand to one matching `q` / points to it from one matching `q` |
+
+A field `f` is a core column — `:id`, `:title`, `:state`, `:created_at`, `:updated_at` — or an
+attribute path `[:attr :key]`. Extra path segments read inside the attribute's JSON value:
+`[:attr :external :issue]` matches the `issue` field of the JSON stored under `external`.
+
+Values compare against the stored JSON. The CLI writes strings, so a strand added with
+`--attr temporary=true` matches `[:= [:attr :temporary] "true"]`, not `true`. Archived attributes
+never match, so `[:missing [:attr :k]]` is true when the strand has no hot value under `k`.
+
+`[:param :name]` can stand in for a comparison value, an `:in` collection, or an edge relation
+name; the CLI supplies values with repeated `--param key=value`. Edge endpoint queries are
+strand-local — nesting another `:edge/out` / `:edge/in` inside `q` fails loudly, as does any
+malformed expression at registration or compile time; nothing coerces to an empty or match-all
+predicate.
+
+`ready` speaks the same grammar: it is equivalent to
+`[:and [:= :state "active"] [:not [:edge/out "depends-on" [:= :state "active"]]]]`, and
+`ready --query <name>` adds your expression on top. The contractual grammar lives in
+[SPEC-001.P9](../devflow/specs/strand-model.md) and the edge predicates in
+[SPEC-003.C13a](../devflow/specs/repl-api.md).
+
 ## REPL
 
 The REPL is the trusted, high-power surface. `mill weaver repl` attaches directly to the selected

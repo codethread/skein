@@ -136,6 +136,13 @@ From the REPL you can register a named query and see it immediately from the pla
 (defquery! 'code '[:= [:attr :type] "code"])
 ```
 
+<details markdown>
+<summary>New notation? That vector is EDN</summary>
+
+EDN is Clojure's data format — roughly what JSON is to JavaScript. `[:= [:attr :type] "code"]` is plain data: a vector that reads "the `type` attribute equals `"code"`". Queries are written in this small DSL rather than raw SQL so the weaver can compile them to efficient SQLite reads, whatever shape your attributes take. The [queries section of the reference](./docs/reference.md#queries) covers registering, discovering, and keeping queries across restarts, and ends with the [full expression grammar](./docs/reference.md#query-expression-grammar).
+
+</details>
+
 ```sh
 strand list --query code    # just "Build the CLI"
 mill weaver stop
