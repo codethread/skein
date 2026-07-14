@@ -1063,6 +1063,23 @@
             :explain (s/explain-str :skein.spools.delegation/change-context change-context)}))
   change-context)
 
+(defn- reject-card-target!
+  "Fail loudly when `strand` (nilable) is a kanban card.
+
+  Notes append to the target, and card notes stay lean for handover, so any
+  note-accumulating seam (reviews, target-blackboard panels) must point at the
+  card's task tier instead. Enforced at the spawn seams that resolve a live
+  strand — pure spec builders like `roster-review-specs` never see a runtime
+  and stay unchecked by design. Reads only the `kanban/card` marker attribute;
+  no kanban spool code is involved. `caller` opens the failure message."
+  [caller id strand]
+  (when (= "true" (attr strand :kanban/card))
+    (fail! (str caller " targets a task strand, never a kanban card — notes append to the"
+                " target and card notes stay lean for handover. Pick the card's task"
+                " tracking this work (`strand kanban task list " id "`), adding one"
+                " first if none fits (`strand kanban task add " id " <title>`)")
+           {:id id :kanban/card "true" :caller caller})))
+
 (defn- review-synthesis-prompt [{:keys [target-id review-runs contract note-tag]}]
   (let [cmd (agent-run/pinned-strand-command)]
     (str contract "\n\n"
@@ -1094,8 +1111,11 @@
   `:attrs` merge into the gate's attributes, and the synthesizer gate
   depends on every reviewer gate. Specs are pure data built from the
   roster and the workspace base review contract; `:target` is the strand id
-  under review (existence is checked where runs are spawned, not here).
-  Unknown rosters and a blank target fail loudly.
+  under review. Existence and the kanban-card prohibition are checked where
+  runs are spawned, not here: specs are pure data with no runtime, so a
+  workflow composition consuming them enforces the card policy at its own
+  spawn seam (as `review!` and `panel!` do). Unknown rosters and a blank
+  target fail loudly.
 
   `roster` is a registered roster name **or an inline roster value** — a map
   conforming to `:skein.spools.delegation/roster`, validated identically to
@@ -1440,7 +1460,12 @@
         {:keys [target review-id spawned-by cwd]} opts
         specs (panel-specs panel {:target target :review-id review-id})
         board-id (case (get-in specs [:blackboard :kind])
-                   :target (get-in specs [:blackboard :id])
+                   :target (let [id (get-in specs [:blackboard :id])]
+                             ;; a card blackboard would accumulate seat notes on
+                             ;; the card; deliberation belongs on its task tier
+                             (reject-card-target! "A :target-blackboard panel" id
+                                                  (weaver/show (rt) id))
+                             id)
                    :fresh (:id (weaver/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
                                               :attributes (cond-> {"panel/role" "panel"
                                                                    "review/pass" (:review-pass specs)}
@@ -1539,12 +1564,7 @@
               :as opts}]
   (let [target (or (weaver/show (rt) target-id)
                    (fail! "Review target strand not found" {:id target-id}))]
-    (when (= "true" (attr target :kanban/card))
-      (fail! (str "Review targets a task strand, never a kanban card — findings append as notes"
-                  " on the target and card notes stay lean for handover. Pick the card's task"
-                  " tracking this work (`strand kanban task list " target-id "`), adding one"
-                  " first if none fits (`strand kanban task add " target-id " <title>`)")
-             {:id target-id :kanban/card "true"})))
+    (reject-card-target! "Review" target-id target))
   ;; validate the diff surface on every path — the roster path re-checks it in
   ;; roster-review-specs, but a direct :members/:harnesses caller with no
   ;; :roster would otherwise thread a malformed :change-context straight into

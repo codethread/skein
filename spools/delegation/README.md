@@ -232,6 +232,7 @@ agent review <target-id> [--roster name | --members n --harness a,b --contract t
                          [--synthesize] [--spawned-by <run-id>]
 ```
 Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature.
+A kanban card is never a valid target and fails loudly: findings append as notes on the target, and card notes stay lean for handover, so point the review at the card's task tracking the work (`strand kanban task list <card>`, `strand kanban task add <card> <title>`).
 Reviewer and synthesizer runs carry no `serves` edge: they hang under the target but never gate a later `delegate` of it, so a target can be reviewed before or after it is delegated.
 Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target.
 `--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract.

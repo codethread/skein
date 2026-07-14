@@ -134,11 +134,12 @@ Honest source: the retry semantics in [`delegation/README.md` §3](./delegation/
 
 **Situation.** A change needs reviewing. Two generalist reviewers reading the whole diff miss things and repeat each other; you want many small reviewers, each hunting one class of defect, fanned in to a single verdict.
 
-**Composition.** For the review policy your workspace runs on every change, use a declared **roster** — one authoritative document naming the reviewers, their harnesses, and their single-concern contracts. For a one-off concern the roster doesn't cover, use an ad hoc `--members`/`--harness` pass instead.
+**Composition.** For the review policy your workspace runs on every change, use a declared **roster** — one authoritative document naming the reviewers, their harnesses, and their single-concern contracts. For a one-off concern the roster doesn't cover, use an ad hoc `--members`/`--harness` pass instead. The target is a task or plan strand, never a kanban card — findings append as notes on the target, and card notes stay lean for handover, so card-backed work points the review at the card's task tier (`strand kanban task list <card>`, adding a task if none fits); a card target fails loudly.
 
 ```sh
 # The workspace roster: one run per declared reviewer, always synthesized.
 # --commit-range names the diff surface so reviewers stop re-deriving it.
+# <target> is the task/plan strand tracking the work — never the kanban card.
 strand agent review <target> --roster change-review \
   --cwd /path/to/worktree --commit-range main..HEAD
 # => {"target":"<target>","reviewers":["<r1>","<r2>",...],"synthesizer":"<syn>"}

@@ -278,7 +278,14 @@
         (testing "a kanban task target stays reviewable"
           (let [review (agents/review! (:id task) {:reviewers [{:harness :sh :focus "any"}]
                                                    :contract "C"})]
-            (is (= (:id task) (:target review)))))))))
+            (is (= (:id task) (:target review)))))
+        (testing "a :target-blackboard panel rejects a kanban card the same way"
+          ;; seat notes accumulate on the blackboard, so a card board is the
+          ;; same pollution vector the review guard closes
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"never a kanban card"
+                                (agents/panel! {:seats [{:name "a" :harness :sh :brief "b"}]
+                                                :blackboard :target}
+                                               {:target (:id card)}))))))))
 
 (deftest review-consumes-workspace-default-contract
   (with-agents
