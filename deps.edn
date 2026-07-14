@@ -24,7 +24,7 @@
                       ;; coordinate.
                       io.github.codethread/kanban.spool
                       {:git/url "https://github.com/codethread/kanban.spool.git"
-                       :git/sha "1b38ef2b14720913d9b0ab9e2a7e2f866342f22c"}
+                       :git/sha "3a344e9ea18705ede170c319edcffe214d30e624"}
                       ;; Test-only ergonomics: readable nested-map/JSON assertions
                       ;; (match?) and spec-driven property tests (defspec). Kept
                       ;; off the main src/weaver classpath.
@@ -50,11 +50,11 @@
   :format {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.1"}}
            :main-opts ["-m" "cljfmt.main" "check" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test" "dev" "scripts"
                        ".skein/init.clj" ".skein/config.clj" ".skein/workflows.clj" ".skein/harnesses.clj"
-                       ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
+                       ".skein/kanban_tracker.clj" ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
   :format/fix {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.13.1"}}
                :main-opts ["-m" "cljfmt.main" "fix" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test" "dev" "scripts"
                            ".skein/init.clj" ".skein/config.clj" ".skein/workflows.clj" ".skein/harnesses.clj"
-                           ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
+                           ".skein/kanban_tracker.clj" ".skein/attention.clj" ".skein/nvd_scan.clj" ".skein/reviewers.clj"]}
   :lint/clj-kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "2025.06.05"}}
                    :main-opts ["-m" "clj-kondo.main" "--lint" "src" "spools/batteries/src" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "test"]}
   :lint/conventions {:extra-paths ["scripts"]

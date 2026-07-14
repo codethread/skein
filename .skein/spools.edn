@@ -18,4 +18,4 @@
           ;; extra-deps (config_test enforces the pairing); developers override
           ;; with a spools.local.edn local root to work against a checkout.
           codethread/kanban {:git/url "https://github.com/codethread/kanban.spool.git"
-                             :git/sha "1b38ef2b14720913d9b0ab9e2a7e2f866342f22c"}}}
+                             :git/sha "3a344e9ea18705ede170c319edcffe214d30e624"}}}

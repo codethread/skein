@@ -49,7 +49,7 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 | `skein.spools.delegation` | `../spools/delegation` | [delegation/README.md](./delegation/README.md) | [delegation.api.md](./delegation.api.md) · [cookbook](./delegation.cookbook.md) | Cross-harness subagent surface over agent-run: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
 | `skein.spools.executors.subagent` | `../spools/agent-run` (folded into the agent-run root) | [executors/subagent.md](./executors/subagent.md) | [executors/subagent.api.md](./executors/subagent.api.md) · [cookbook](./executors/subagent.cookbook.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning agent-run runs and delivering successful results through `workflow/complete!`. |
 | `skein.spools.chime` | `../spools/chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) · [cookbook](./chime.cookbook.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
-| `skein.spools.kanban` | git, sha-pinned (see below) | [kanban.md](https://github.com/codethread/kanban.spool/blob/1b38ef2b14720913d9b0ab9e2a7e2f866342f22c/kanban.md) | — | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`. |
+| `skein.spools.kanban` | git, sha-pinned (see below) | [kanban.md](https://github.com/codethread/kanban.spool/blob/3a344e9ea18705ede170c319edcffe214d30e624/kanban.md) | — | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`; this repo binds devflow as its tracker through `.skein/kanban_tracker.clj`. |
 | `skein.spools.cron` | `../spools/cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) · [cookbook](./cron.cookbook.md) | Userland recurrence layer over durable scheduler wakes: registers named interval+jitter jobs, records last-outcome/failure status, and leaves next-fire timing to scheduler introspection. Ships no jobs. |
 | `skein.spools.bench` | `../spools/bench` | [bench/README.md](./bench/README.md) | [bench.api.md](./bench.api.md) | Deterministic, containerized benchmarking of coding-agent harnesses: pinned repo/prompt/memory overlays, bench-owned entry execution, normalized metrics, and an agent-run served judge. |
 | `skein.spools.devflow` | git, sha-pinned (see below) | [devflow.md](https://github.com/codethread/devflow.spool/blob/6c0f8c7e20a7f6de4cf81c98f4d7a33388663592/devflow.md) | — | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
@@ -66,7 +66,12 @@ with `:required? true` in `.skein/init.clj`, and pins the same sha as a tools.de
 test JVM; developers override the coordinate with a gitignored `spools.local.edn` local root to work
 against a checkout.
 
-`skein.spools.kanban` is the second external spool: it lives in [`codethread/kanban.spool`](https://github.com/codethread/kanban.spool) and requires `skein.spools.devflow` (the `kanban card` devflow join), so `.skein/init.clj` activates it after devflow with both coordinates in its `:spools` guard. Like devflow, `.skein/spools.edn` and the test JVM (`deps.edn`) pin the same sha-pinned `:git/url`+`:git/sha` coordinate — config_test enforces the pairing — and developers override it with a gitignored `spools.local.edn` local root.
+`skein.spools.kanban` is the second external spool: it lives in
+[`codethread/kanban.spool`](https://github.com/codethread/kanban.spool). Kanban loads independently
+of a tracker; this repo's `.skein/kanban_tracker.clj` binds devflow after both spools are active.
+Like devflow, `.skein/spools.edn` and the test JVM (`deps.edn`) pin the same sha-pinned
+`:git/url`+`:git/sha` coordinate — config_test enforces the pairing — and developers override it
+with a gitignored `spools.local.edn` local root.
 
 `skein.spools.dresser` ([`codethread/dresser.loom`](https://github.com/codethread/dresser.loom)) is also external, but this repo approves no coordinate for it. Dresser is activated in whichever workspace drives a setup run, and the repo being set up needs no weaver or spool approvals of its own, so consumption is a per-operator choice. Its README carries the dependency and activation recipe.
 

@@ -17,6 +17,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.spools.devflow :as devflow]
             [skein.spools.workflow :as workflow]
             [skein.test.alpha :as test-alpha]))
 
@@ -73,7 +74,7 @@
   (.mkdirs (io/file target))
   (doseq [name ["init.clj" "config.clj" "workflows.clj" "harnesses.clj"
                 "attention.clj" "nvd_scan.clj" "reviewers.clj" "analytics.clj"
-                "spools.edn"]]
+                "kanban_tracker.clj" "spools.edn"]]
     (io/copy (io/file ".skein" name) (io/file target name)))
   ;; The shipped spools.edn approves local roots relative to the config dir,
   ;; which does not resolve from a copy. Rewrite it to the repo's canonical
@@ -1085,6 +1086,32 @@
              (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/loom, skein.spools/workflow, and skein.spools/delegation")))))
 
+(defn- assert-kanban-tracker-installed
+  "Assert startup loaded the required devflow tracker binding."
+  [rt]
+  (let [tracker-use (get (runtime/uses rt) :kanban/tracker)]
+    (is (= :loaded (:status tracker-use)))
+    (is (true? (get-in tracker-use [:opts :required?])))
+    (is (re-find #"Bound tracker: devflow" (:tracker (op! "kanban" ["about"]))))))
+
+(deftest kanban-tracker-devflow-projection-contract
+  (load-file ".skein/kanban_tracker.clj")
+  (let [project (requiring-resolve 'kanban-tracker/devflow-projection)]
+    (testing "an active root projects its stage and ready steps"
+      (with-redefs [devflow/feature-roots (constantly [{:attributes {:devflow/stage "tasks"}}])
+                    devflow/next-steps (constantly [{:id "next" :title "Do next" :kind "step"}])]
+        (is (= {:status "tasks"
+                :next-steps [{:id "next" :title "Do next" :kind "step"}]}
+               (project "active-run")))))
+    (testing "no active root is the accepted nil-status projection"
+      (with-redefs [devflow/feature-roots (constantly [])
+                    devflow/next-steps (fn [_] (throw (ex-info "must not read steps" {})))]
+        (is (= {:status nil :next-steps []}
+               (project "inactive-run")))))
+    (testing "a malformed run id fails at the adapter boundary"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string"
+                            (project ""))))))
+
 (defn- assert-ephemeral-spool-consent-edge
   "Assert repo startup guards the activated ephemeral spool with its coordinate."
   [rt]
@@ -1112,6 +1139,7 @@
       (assert-config-registrations rt)
       (assert-treadle-installed-after-config rt)
       (assert-workflow-spool-consent-edges rt)
+      (assert-kanban-tracker-installed rt)
       (assert-ephemeral-spool-consent-edge rt)
       (assert-roster-spool-consent-edge rt)
       (assert-loom-spool-consent-edge rt)
@@ -1119,6 +1147,7 @@
       (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
+      (assert-kanban-tracker-installed rt)
       (assert-ephemeral-spool-consent-edge rt)
       (assert-roster-spool-consent-edge rt)
       (assert-loom-spool-consent-edge rt)
