@@ -25,13 +25,17 @@ author-side op-result check. It extends `SPEC-003.C60/C62` and
 - **DELTA-Dcr-repl-001.CC2 — define the minimal shape language.** A shape is a
   finite inline EDN tree. Scalar leaves are `:string`, `:integer`, `:number`,
   `:boolean`, `:null`, and `:json`; `:json` accepts any JSON-compatible value.
+  `[:nullable <scalar>]` accepts either `nil` or the named scalar, where
+  `<scalar>` is `:string`, `:integer`, `:number`, or `:boolean`. Nullability
+  cannot wrap maps, collections, `:json`, `:null`, or another nullable form.
   A map uses `{:type :map :required {<keyword> <shape> ...} :optional
   {<keyword> <shape> ...} :extra <shape>}`. `:required` and `:optional` default
   to empty maps; overlapping keys fail declaration validation; undeclared keys
   fail value checking unless `:extra` supplies their common value shape. A
   homogeneous sequential collection uses `{:type :collection :items <shape>}`.
-  There are no functions, arbitrary predicates, coercions, defaults, unions,
-  named references, or recursive declarations.
+  Scalar nullability is the only union-like form. There are no functions,
+  arbitrary predicates, coercions, defaults, general unions, named references,
+  or recursive declarations.
 
 - **DELTA-Dcr-repl-001.CC3 — define declaration routing.** A flat non-stream op
   uses a shape directly. A subcommand op uses `{:subcommands {<name-string>
@@ -61,6 +65,15 @@ author-side op-result check. It extends `SPEC-003.C60/C62` and
   captured by an op-owner test and does not invoke an op, start a CLI process,
   or add a spool activation wrapper.
 
+- **DELTA-Dcr-repl-001.CC7 — derive owner-suite coverage from registry
+  provenance.** Each owner suite enumerates every registered production op whose
+  provenance belongs to its spool and fails if any such entry lacks `:returns`.
+  It derives the required flat, subcommand, and stream leaves from those
+  declarations and requires one value checked through `check-op-return!` for
+  each leaf. A parallel hand-maintained op or expected-leaf list cannot define
+  the must-declare set. This is an owner-suite rule, not another test helper or
+  an op auto-invocation facility.
+
 ## DELTA-Dcr-repl-001.P3 Design decisions
 
 ### DELTA-Dcr-repl-001.D1 Return shapes have their own public namespace
@@ -89,6 +102,16 @@ author-side op-result check. It extends `SPEC-003.C60/C62` and
   fixtures. A generic helper cannot safely invent invocations for mutating or
   blocking ops.
 - **Rejected:** A test helper that discovers and invokes every registered op.
+
+### DELTA-Dcr-repl-001.D4 Nullability stays scalar-only
+
+- **Decision:** Use `[:nullable <scalar>]` only for a present key whose value is
+  either null or one known scalar type.
+- **Rationale:** Fields such as kanban-tree `:epic` keep useful type checking
+  when top-level rows carry `nil`. General unions and nullable containers would
+  widen the language beyond the declared-return use cases.
+- **Rejected:** Describing known nullable fields as `:json`, general unions,
+  nullable maps or collections, and predicate-based alternatives.
 
 ## DELTA-Dcr-repl-001.P4 Open questions
 

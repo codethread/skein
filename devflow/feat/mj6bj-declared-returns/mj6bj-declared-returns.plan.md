@@ -28,10 +28,10 @@ boundary; this plan supplies the build order and test boundary.
 
 - **PLAN-Dcr-001.A1 — one public return language:** Add the pure
   `skein.api.return-shape.alpha` namespace with `validate!`, `explain`, and
-  `check!`. The finite inline language has scalar leaves, closed maps with
-  required/optional keys and an explicit extra-value shape, and homogeneous
-  sequential collections. It has no functions, arbitrary predicates, unions,
-  named references, or recursive schemas.
+  `check!`. The finite inline language has scalar leaves, scalar nullability,
+  closed maps with required/optional keys and an explicit extra-value shape,
+  and homogeneous sequential collections. It has no functions, arbitrary
+  predicates, general unions, named references, or recursive schemas.
 
 - **PLAN-Dcr-001.A2 — declaration routing stays outside shapes:** A flat op uses
   one shape. A subcommand op declares one return case per arg-spec subcommand.
@@ -49,12 +49,14 @@ boundary; this plan supplies the build order and test boundary.
 - **PLAN-Dcr-001.A4 — CI has an exact leaf boundary:** A return leaf is one
   successful flat-op result, one successful subcommand result, or one stream
   channel (`:emits` or `:result`). Every production op registered by the suites
-  in `PLAN-Dcr-001.V2` must declare returns, and its owner suite must pass at
-  least one representative captured value through `check-op-return!` for every
-  declared leaf. Suite-local expected-leaf sets are compared with the registry
-  declarations so a new op/subcommand/channel cannot land with declaration-only
-  coverage. Failure paths remain ordinary `clojure.test` failures/errors in the
-  cold suite.
+  in `PLAN-Dcr-001.V2` must declare returns. Each owner suite enumerates its
+  production registry entries by spool provenance and fails first on any entry
+  without `:returns`. It then derives the required return-leaf set from those
+  declarations and requires at least one representative captured value through
+  `check-op-return!` for every leaf. No hand-maintained op or expected-leaf list
+  defines the must-declare side, so a wholly undeclared production op fails the
+  gate. Failure paths remain ordinary `clojure.test` failures/errors in the cold
+  suite.
 
 - **PLAN-Dcr-001.A5 — construct exact entities, declare richer rows:** Add
   `skein.api.spool.alpha/entity-projection`, which requires and returns exactly
@@ -69,12 +71,14 @@ boundary; this plan supplies the build order and test boundary.
   loud delivery-error path and leaves the gate incomplete. No producer write or
   unrelated stored attribute gains a runtime check.
 
-- **PLAN-Dcr-001.A7 — merge order with `uson2`:** The sibling `uson2` feature
-  may add `:operation` auto-stamping where `op!` returns a handler result. Keep
-  this feature's dispatch seam read-only: registry/help work may land on either
-  side, but rebase or merge `uson2` before the declaration sweep and capture the
-  post-stamp values in return shapes. If `uson2` is not ready, declaration maps
-  must not pre-guess its field or temporarily open otherwise closed shapes.
+- **PLAN-Dcr-001.A7 — merge order with `uson2`:** The sibling
+  `uson2-cli-style-guide` feature lands on main before PH6-PH9 begin, and this
+  branch rebases on that main. Its registered-op dispatch boundary adds
+  `:operation` to returned maps, so every declaration sweep captures the
+  post-dispatch values. Its arg-spec fragment helpers are also available before
+  those sweeps. Keep the dispatch boundary read-only in this feature. The
+  `.skein/config.clj` ops already hand-stamp `:operation`; their PH9 shapes
+  include that field independently of the sibling change.
 
 ## PLAN-Dcr-001.P3 Affected areas
 
@@ -118,10 +122,11 @@ boundary; this plan supplies the build order and test boundary.
 **Depends on:** none.
 
 Outcome: `skein.api.return-shape.alpha` implements the approved scalar, map, and
-collection language; finite declaration validation; JSON-safe explanation; and
-path-rich value checks. Op register/replace accepts and retains `:returns`,
-checks flat/subcommand/stream alignment, and leaves invocation untouched. Add
-the new test namespace to the focused runner inventory.
+collection language, including scalar-only `[:nullable <scalar>]`; finite
+declaration validation; JSON-safe explanation; and path-rich value checks. Op
+register/replace accepts and retains `:returns`, checks
+flat/subcommand/stream alignment, and leaves invocation untouched. Add the new
+test namespace to the focused runner inventory.
 
 Cold focused gate:
 `clojure -M:test skein.api.return-shape.alpha-test skein.weaver-test`.
@@ -144,9 +149,10 @@ Cold focused gate:
 
 Outcome: `skein.test.alpha/check-op-return!` selects the registered flat,
 subcommand, emitted-item, or terminal-result shape and reports operation,
-declaration, path, and actual value on mismatch. Test support for suite-local
-expected-leaf comparisons enforces `PLAN-Dcr-001.A4` without invoking ops or
-becoming a general assertion DSL.
+declaration, path, and actual value on mismatch. Owner-suite coverage enumerates
+production ops by registry provenance, fails on missing declarations, and
+derives its required leaves from the declarations under `PLAN-Dcr-001.A4`. It
+does not invoke ops or become a general assertion DSL.
 
 Cold focused gate:
 `clojure -M:test skein.test.alpha-test skein.weaver-test`.
@@ -184,7 +190,7 @@ Cold focused gate:
 
 ### PLAN-Dcr-001.PH6 Core help and batteries declarations
 
-**Depends on:** PH2, PH3, and the `uson2` merge/rebase decision in A7.
+**Depends on:** PH2, PH3, and the A7 landing precondition.
 
 Outcome: the built-in help op and all batteries ops declare actual post-dispatch
 return cases. `skein.spools.batteries-test` checks every leaf. `show` and `list`
@@ -195,7 +201,7 @@ Cold focused gate:
 
 ### PLAN-Dcr-001.PH7 Shipped reference-spool declarations
 
-**Depends on:** PH2 and PH3.
+**Depends on:** PH2, PH3, and the A7 landing precondition.
 
 Outcome: text-search `search`, roster and every roster subcommand,
 `guild.describe`, and guild-declared test ops carry returns. Their owner suites
@@ -208,7 +214,7 @@ skein.guild-test`.
 
 ### PLAN-Dcr-001.PH8 Repo-local spool declarations
 
-**Depends on:** PH2, PH3, and the `uson2` merge/rebase decision in A7.
+**Depends on:** PH2, PH3, and the A7 landing precondition.
 
 Outcome: delegation's `agent` subcommands and bench's subcommands declare and
 check every return leaf. Agent `ps` retains its domain-specific summary. No
@@ -220,13 +226,13 @@ Cold focused gate:
 
 ### PLAN-Dcr-001.PH9 Repo coordination and pinned-spool declarations
 
-**Depends on:** PH2, PH3, PH4's upstream pin, and the `uson2` merge/rebase
-decision in A7.
+**Depends on:** PH2, PH3, all of PH4, and the A7 landing precondition.
 
 Outcome: the `.skein` defop macro passes `:returns`; config, analytics, and land
 ops declare and check every leaf in a focus-eligible config-op suite. The pinned
 devflow and kanban op suites adopt the same contract and their synchronized
-pins advance only after their focused tests pass. Existing add-libs config tests
+pins advance only after their focused tests pass. The config-op shapes include
+their existing hand-stamped `:operation` field. Existing add-libs config tests
 remain integration coverage, not a per-slice substitute for the focused suite.
 
 Cold focused gates:
@@ -237,11 +243,12 @@ spool runs its named op-return test namespaces before pinning. Then
 ## PLAN-Dcr-001.P6 Validation strategy
 
 - **PLAN-Dcr-001.V1 — language and registry:**
-  `skein.api.return-shape.alpha-test` covers every scalar, required/optional and
-  extra map fields, homogeneous collections, malformed declarations, paths,
-  JSON-safe explanation, subcommands, and stream cases. `skein.weaver-test`
-  covers register/replace atomic failure, retained metadata, full help, and the
-  invariant that ordinary invocation does not call the evaluator.
+  `skein.api.return-shape.alpha-test` covers every scalar, nullable scalar,
+  required/optional and extra map fields, homogeneous collections, malformed
+  declarations, paths, JSON-safe explanation, subcommands, and stream cases.
+  `skein.weaver-test` covers register/replace atomic failure, retained metadata,
+  full help, and the invariant that ordinary invocation does not call the
+  evaluator.
 
 - **PLAN-Dcr-001.V2 — exact CI owner suites:** The in-checkout boundary is
   `skein.weaver-test` (built-in help), `skein.spools.batteries-test` (batteries),
@@ -250,8 +257,9 @@ spool runs its named op-return test namespaces before pinning. Then
   `skein.bench-test` (bench), and the new focus-eligible
   `skein.config-ops-test` (config/analytics/workflows). The pinned external
   boundary is the devflow and kanban owner suites run by
-  `make spool-suite-gate`. Each suite applies the leaf rule in A4; unrelated
-  spool suites do not gain synthetic op coverage.
+  `make spool-suite-gate`. Each suite discovers its production ops from registry
+  provenance and applies the declaration and leaf rules in A4; unrelated spool
+  suites do not gain synthetic op coverage.
 
 - **PLAN-Dcr-001.V3 — constructor and seam:** `skein.api.spool-test` proves
   exact keys and loud missing-field failure; `skein.spools.loom-test`,
@@ -273,11 +281,10 @@ spool runs its named op-return test namespaces before pinning. Then
 
 ## PLAN-Dcr-001.P7 Risks and open questions
 
-- **PLAN-Dcr-001.R1 — sibling dispatch transform:** `uson2` can change every
-  captured map after handlers return. Mitigation: do not edit that return
-  boundary here; merge/rebase it before PH6/PH8/PH9; author declarations and
-  examples from post-stamp values. A later merge requires rerunning every owner
-  suite because closed maps will expose drift.
+- **PLAN-Dcr-001.R1 — sibling dispatch transform:** A7 closes the scheduling
+  risk for the initial declaration sweep. If that landing order changes, stop
+  PH6-PH9 and return the plan to architecture review; closed maps make a later
+  dispatch transform a contract change.
 
 - **PLAN-Dcr-001.R2 — external kanban/devflow coordination:** The exact kanban
   copies and both external op suites live outside this branch. The coordinator
@@ -289,13 +296,15 @@ spool runs its named op-return test namespaces before pinning. Then
 - **PLAN-Dcr-001.R3 — polymorphic ops can become vague:** Falling back to
   `:json` for a whole agent, bench, roster, devflow, or kanban subcommand would
   satisfy syntax while losing drift detection. Mitigation: declare one closed
-  or deliberately open shape per subcommand, using `:json` only at genuinely
-  dynamic leaves such as attribute values.
+  or deliberately open shape per subcommand, use `[:nullable <scalar>]` for
+  known scalar fields such as kanban-tree `:epic`, and reserve `:json` for
+  genuinely dynamic leaves such as attribute values.
 
 - **PLAN-Dcr-001.R4 — false CI coverage:** A declaration can exist without a
   checked successful example if suites merely call the helper opportunistically.
-  Mitigation: owner suites compare their expected return-leaf set to registry
-  declarations and retain one checked representative per leaf under A4/V2.
+  Mitigation: owner suites enumerate every production op by registry provenance,
+  fail on missing declarations, derive required leaves from the declarations,
+  and retain one checked representative per leaf under A4/V2.
 
 - **PLAN-Dcr-001.Q1 (resolved):** The public namespace is
   `skein.api.return-shape.alpha`. The CLI layer delegates explanation to it.
@@ -312,8 +321,8 @@ spool runs its named op-return test namespaces before pinning. Then
 
 - **PLAN-Dcr-001.TC2:** Shape declarations are finite inline EDN. Map shapes are
   closed unless `:extra` is explicit. Keep `:json` at dynamic leaves; do not add
-  functions, arbitrary predicates, recursive references, unions, coercion, or
-  defaults while declaring complex ops.
+  functions, arbitrary predicates, recursive references, unions beyond
+  scalar-only nullability, coercion, or defaults while declaring complex ops.
 
 - **PLAN-Dcr-001.TC3:** Registration failure must be atomic for register and
   replace. Help uses the shared explainer. Ordinary `op!` and `:op/emit!` do not
@@ -322,7 +331,9 @@ spool runs its named op-return test namespaces before pinning. Then
 
 - **PLAN-Dcr-001.TC4:** One checked example is required for every flat result,
   subcommand result, and stream channel in the owner suites enumerated by V2.
-  Negative-path tests do not count as return coverage.
+  Registry provenance, not a hand-maintained list, defines the production ops
+  that must declare returns. Negative-path tests do not count as return
+  coverage.
 
 - **PLAN-Dcr-001.TC5:** `entity-projection` belongs in
   `skein.api.spool.alpha`. Its output is exactly four fields. It may be the base
@@ -348,3 +359,10 @@ Append notes here. Do not rewrite earlier notes.
   existing `skein.config-test` is an add-libs shard and cannot serve as a cold
   focused slice gate. External kanban/devflow changes and the `uson2` merge
   order require coordinator scheduling before declaration sweeps finish.
+
+### PLAN-Dcr-001.DN2 Architecture review fixes — 2026-07-14
+
+- Recorded the fixed sibling landing order for every declaration sweep. Changed
+  CI coverage to enumerate production registry provenance before deriving
+  leaves. Added scalar-only nullability for known typed nils. Ordered PH9 after
+  all of PH4 because both phases edit `.skein/config.clj`.
