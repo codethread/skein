@@ -77,9 +77,10 @@ and never a durable queue (`PROP-Foc-001.NG3`, `NG4`; `PLAN-Foc-001.A2`, `A4`).
   `W`); (4) N interactive `running` + ceiling 2 → two headless gated runs still admit; (5)
   `set-fanout-ceiling!` rejects zero/negative/non-integer loudly, default with no setter is 4, and
   a `state-version` reload preserves a configured ceiling through `migrate-state`. **PH1 has no
-  delegation flag yet**: cases (2)/(3) must stamp `agent-run/fanout-group` / `agent-run/fanout-cap`
+  delegation flag yet**: case (3) must stamp `agent-run/fanout-group` / `agent-run/fanout-cap`
   manually as fixtures via the `spawn-run!` `:attrs` path (`agent_run.clj:1849`, merge at
-  `:1901-1913`) — the flag surface arrives in PH2 (synthesis note `vo7pb` item 4).
+  `:1901-1913`) — the flag surface arrives in PH2 (synthesis note `vo7pb` item 4). Cases (1)/(2)
+  exercise the plain ceiling and need no group attrs.
 
 ## TASK-Foc-001.P3 Done when
 

@@ -1,6 +1,6 @@
 # Weaver Runtime delta for fanout-cap
 
-**Document ID:** `DELTA-Foc-001` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (SPEC-004) **Feature:** [../proposal.md](../proposal.md) (PROP-Foc-001) **Status:** Draft **Last Updated:** 2026-07-14
+**Document ID:** `DELTA-Foc-001` **Root spec:** [daemon-runtime.md](../../../specs/daemon-runtime.md) (SPEC-004) **Feature:** [../proposal.md](../proposal.md) (PROP-Foc-001) **Status:** Reviewed **Last Updated:** 2026-07-14
 
 ## DELTA-Foc-001.P1 Summary
 
