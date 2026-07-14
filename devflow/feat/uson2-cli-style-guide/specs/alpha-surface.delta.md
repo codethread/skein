@@ -8,16 +8,15 @@
 
 ## DELTA-Ucs-001.P1 Summary
 
-`SPEC-005.C3` enumerates the public helpers in `skein.api.spool.alpha`. This
-feature adds four composable arg-spec fragments to that enumerated Alpha
-surface. `SPEC-005.C2` already places the namespace in the blessed,
-accretion-compatible tier, so its tier boundary does not change.
+`SPEC-005.C2` places `skein.api.spool.alpha` in the blessed,
+accretion-compatible tier. This feature adds four composable arg-spec
+fragments to that public Alpha surface without changing its tier boundary.
 
 ## DELTA-Ucs-001.P2 Contract changes
 
 - **DELTA-Ucs-001.CC1:** Add the public plain-data fragments `note-surface`,
   `work-root`, `timeout-secs`, and `outcome` to the `skein.api.spool.alpha`
-  helper set named by `SPEC-005.C3`. Each fragment is a partial declared
+  helper set covered by `SPEC-005.C2`. Each fragment is a partial declared
   arg-spec that spool authors compose with domain-specific flags and
   positionals. The fragments add no parser behavior or domain-aware flag type.
 

@@ -51,14 +51,11 @@ helper accretion and registered-op result semantics in the two linked deltas.
   `bench about` already emit the canonical value, so equal-label tolerance
   keeps them working and fix-on-touch defers their cleanup. Flat repo-config
   projections remain handler-labelled because no subcommand was selected.
-- **PLAN-Ucs-001.A5:** Pinned kanban is a prerequisite to the dispatch slice.
-  Its `task` subcommand currently returns the finer labels `kanban task add`
-  and `kanban task list`, which would correctly trip the disagreement failure.
-  Before the Skein boundary lands, update kanban upstream to omit the
-  hand-written subcommand label, then move the paired `deps.edn` and
-  `.skein/spools.edn` pins together. Other equal kanban labels may migrate
-  later on fix-on-touch. Current-source evidence uses the proposal's citation
-  key, `kanban.spool@03707e5/<path>`.
+- **PLAN-Ucs-001.A5:** Keep external kanban changes outside this feature.
+  Feature card `m5u47` owns its upstream branch and the paired `deps.edn` and
+  `.skein/spools.edn` pin machinery. Its fix-on-touch work removes kanban's
+  hand-written `:operation` labels while changing the note surface. This plan
+  neither edits kanban nor advances its pins.
 
 ## PLAN-Ucs-001.P3 Affected areas
 
@@ -68,7 +65,7 @@ helper accretion and registered-op result semantics in the two linked deltas.
 | PLAN-Ucs-001.AA2 | Spool Alpha API, focused test, generated API doc | Add and test the four public data fragments. |
 | PLAN-Ucs-001.AA3 | `src/skein/api/weaver/alpha.clj`, `test/skein/weaver_test.clj` | Stamp declared-subcommand map results and reject conflicting labels. |
 | PLAN-Ucs-001.AA4 | Agent/delegation spools, land workflow, tests | Remove mismatching labels and update expectations. |
-| PLAN-Ucs-001.AA5 | Pinned kanban coordinate | Remove the `task add|list` mismatch upstream, then advance both repository pins before enabling fail-loud stamping. |
+| PLAN-Ucs-001.AA5 | External kanban handoff (`m5u47`) | No uson2 change; the sibling card owns upstream cleanup and paired pin movement. |
 | PLAN-Ucs-001.AA6 | `devflow/specs/alpha-surface.md`, `devflow/specs/daemon-runtime.md` | Promote `DELTA-Ucs-001` and `DELTA-Ucs-002` when the feature ships. |
 
 ## PLAN-Ucs-001.P4 Contract and migration impact
@@ -89,9 +86,8 @@ helper accretion and registered-op result semantics in the two linked deltas.
 
 ## PLAN-Ucs-001.P5 Implementation slices
 
-Each slice fits one worker context. S1 and S2 may proceed in parallel. S3 is
-code-independent of them but waits for the pinned-kanban prerequisite in A5.
-Feature acceptance waits for all three.
+Each slice fits one worker context. S1, S2, and S3 may proceed in parallel. S4
+and S5 depend on S3. Feature acceptance waits for all five.
 
 ### PLAN-Ucs-001.S1 Style-guide section
 
@@ -121,22 +117,40 @@ Feature acceptance waits for all three.
 
 ### PLAN-Ucs-001.S3 Dispatch-owned operation labels
 
-- **Depends-on:** the pinned kanban `task` mismatch is removed and the paired
-  pin update is available; no dependency on S1 or S2.
+- **Depends-on:** none.
 - **Owned files:** `src/skein/api/weaver/alpha.clj`,
-  `test/skein/weaver_test.clj`, the agent spend producer/tests,
-  `.skein/workflows.clj`, and its operation-label assertions.
+  `test/skein/weaver_test.clj`.
 - **Outcome:** Declared-subcommand map results receive `<op> <subcommand>` at
   dispatch. Tests cover absent, equal, and conflicting labels plus unchanged
-  flat/raw/non-map/help behavior. Agent and land emit the canonical form;
-  equal existing roster/bench labels and flat projections remain unchanged.
-- **Validation:** `clojure -M:test skein.weaver-test skein.delegation-test`;
-  `make api-docs` if public docstrings change; `make docs-check`. The
-  add-libs-sharded `skein.agent-run-test` and `skein.config-test` cannot run in
-  cold focused mode and are proved by the land-time locked suite.
-- **Done-when:** No mismatching in-repo subcommand label remains, disagreement
-  throws instead of overriding, the cold focused namespaces pass, and the
-  pinned kanban suite accepts the advanced pin.
+  flat/raw/non-map/help behavior. Equal existing labels remain unchanged.
+- **Validation:** `clojure -M:test skein.weaver-test`; `make api-docs` if public
+  docstrings change; `make docs-check`.
+- **Done-when:** Dispatch stamps absent labels, preserves equal labels, rejects
+  disagreements, leaves excluded paths unchanged, and the cold focused
+  namespace passes.
+
+### PLAN-Ucs-001.S4 Agent operation-label migration
+
+- **Depends-on:** S3.
+- **Owned files:** the agent spend producer and its focused delegation and
+  agent-run tests.
+- **Outcome:** Agent spend stops emitting `agent-spend`; dispatch supplies
+  `agent spend`, and both direct and agent-run consumers expect that form.
+- **Validation:** `clojure -M:test skein.delegation-test
+  skein.agent-run-test`; `make api-docs` if public docstrings change; `make
+  docs-check`.
+- **Done-when:** The hand-written mismatch is gone and both cold focused
+  namespaces pass.
+
+### PLAN-Ucs-001.S5 Land operation-label migration
+
+- **Depends-on:** S3.
+- **Owned files:** `.skein/workflows.clj` and its operation-label assertions.
+- **Outcome:** Land subcommands stop emitting `land-*`; dispatch supplies
+  `land <verb>` while flat repo-config projections remain handler-labelled.
+- **Validation:** `clojure -M:test skein.config-test`; `make docs-check`.
+- **Done-when:** No land subcommand emits a mismatching label and the cold
+  focused namespace passes.
 
 ## PLAN-Ucs-001.P6 Validation strategy
 
@@ -149,17 +163,17 @@ Feature acceptance waits for all three.
   slices are assembled.
 - **PLAN-Ucs-001.V4:** The full locked Clojure suite runs only at land-time,
   alongside `(cd cli && go test ./...)`, `clojure -M:smoke`,
-  `make spool-suite-gate`, and the blocking quality gates. The locked suite is
-  the authoritative proof for the add-libs-sharded agent/config tests.
+  `make spool-suite-gate`, and the blocking quality gates.
 - **PLAN-Ucs-001.V5:** End validation with `git status --short`; no generated
   SQLite or runtime metadata may remain.
 
 ## PLAN-Ucs-001.P7 Risks and open questions
 
 - **PLAN-Ucs-001.R1:** Pinned kanban's `task add|list` labels disagree with the
-  approved one-level `<op> <subcommand>` rule. Mitigation: treat its upstream
-  cleanup and paired pin movement as an explicit S3 prerequisite; do not weaken
-  the fail-loud boundary or add a kanban-specific exception.
+  approved one-level `<op> <subcommand>` rule. Feature card `m5u47` owns the
+  upstream fix-on-touch cleanup and paired pin movement. Keep that work outside
+  these slices; do not weaken the fail-loud boundary or add a kanban-specific
+  exception here.
 - **PLAN-Ucs-001.R2:** A handler may return a collection or scalar, which cannot
   carry `:operation` without a breaking wrapper shape. Mitigation: stamp maps
   only, as `DELTA-Ucs-002.CC1` states, and leave other result shapes unchanged.
@@ -183,7 +197,8 @@ Feature acceptance waits for all three.
   `~/.gitlibs/libs/io.github.codethread/kanban.spool/03707e525185cbd5685522a45c6e779b22ceb6b8/<path>`.
 - **PLAN-Ucs-001.TC5:** Equal hand-written labels are compatible but still
   duplicate dispatch knowledge. Remove them when their owning surface is next
-  changed; this feature removes only disagreements required for S3.
+  changed; this feature removes only the in-repo disagreements assigned to S4
+  and S5.
 
 ## PLAN-Ucs-001.P9 Developer Notes
 
@@ -195,3 +210,12 @@ Root-spec review found two genuine deltas. `SPEC-005.C3` enumerates the
 `skein.api.spool.alpha` helpers, and `SPEC-004.C63b` says handler results are
 transported without the new operation-label rule. `cli.md` remains true, and
 the style section is authored guidance rather than a durable root contract.
+
+### PLAN-Ucs-001.DN2 Review corrections and kanban handoff — 2026-07-14
+
+`SPEC-005.C2`, not C3, owns the blessed `skein.api.spool.alpha` surface; DN1's
+earlier citation is superseded. External kanban work is handed to sibling
+feature card `m5u47`, which already owns a kanban.spool branch and the paired
+pin-bump machinery. Its note-surface change will remove kanban's hand-written
+`:operation` labels as fix-on-touch work. The uson2 feature does not edit
+kanban.spool or advance its pins.
