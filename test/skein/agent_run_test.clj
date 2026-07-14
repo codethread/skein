@@ -14,6 +14,7 @@
             [skein.api.notes.alpha :as notes]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
+            [skein.spools.delegation :as agents]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-shuttle
@@ -1560,15 +1561,16 @@
 (deftest spend-aggregates-totals-and-groups-by-harness
   (with-shuttle
     (fn [rt]
+      (agents/install!)
       (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:04Z"
                           :cost 0.10 :tokens-total 100 :tokens {"input" 60 "output" 40}})
       (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:10:00Z" :finished "2026-07-08T10:10:06Z"
                           :cost 0.20 :tokens-total 200})
       (add-spend-run! rt {:harness "claude" :started "2026-07-08T10:20:00Z" :finished "2026-07-08T10:20:01Z"
                           :cost 0.05 :tokens-total 50})
-      (let [{:keys [operation totals groups runs]} (shuttle/spend)
+      (let [{:keys [operation totals groups runs]} (weaver/op! rt 'agent ["spend"])
             by-key (into {} (map (juxt :key identity) groups))]
-        (is (= "agent-spend" operation))
+        (is (= "agent spend" operation))
         (testing "totals sum every run's cost, tokens, and derived duration"
           (is (= 3 (:runs totals)))
           (is (about= 0.35 (:cost-usd totals)))

@@ -167,9 +167,9 @@
       (seed-run! rt {:harness "raw"
                      :started "2026-07-03T08:00:00Z" :finished "2026-07-03T08:02:00Z"})
       (testing "default report groups by harness and totals every run"
-        (let [report (agents/agent-op {:op/argv ["spend"]})
+        (let [report (weaver/op! rt 'agent ["spend"])
               groups (into {} (map (juxt :key identity)) (:groups report))]
-          (is (= "agent-spend" (:operation report)))
+          (is (= "agent spend" (:operation report)))
           (is (= :harness (get-in report [:filters :group-by])))
           (is (= 4 (get-in report [:totals :runs])))
           (is (== 4.0 (get-in report [:totals :cost-usd])))
@@ -188,20 +188,20 @@
           (is (== 120000 (get-in report [:totals :duration-ms]))
               "duration is derived from timestamps even with no cost/tokens")))
       (testing "--harness narrows to one harness"
-        (let [report (agents/agent-op {:op/argv ["spend" "--harness" "claude"]})]
+        (let [report (weaver/op! rt 'agent ["spend" "--harness" "claude"])]
           (is (= "claude" (get-in report [:filters :harness])))
           (is (= 2 (get-in report [:totals :runs])))
           (is (== 2.0 (get-in report [:totals :cost-usd])))))
       (testing "--since/--until window on started-at"
-        (let [report (agents/agent-op {:op/argv ["spend"
-                                                 "--since" "2026-07-02T00:00:00Z"
-                                                 "--until" "2026-07-02T23:59:59Z"]})]
+        (let [report (weaver/op! rt 'agent ["spend"
+                                            "--since" "2026-07-02T00:00:00Z"
+                                            "--until" "2026-07-02T23:59:59Z"])]
           (is (= "2026-07-02T00:00:00Z" (get-in report [:filters :since])))
           (is (= "2026-07-02T23:59:59Z" (get-in report [:filters :until])))
           (is (= 1 (get-in report [:totals :runs])))
           (is (== 0.5 (get-in report [:totals :cost-usd])))))
       (testing "--group-by day rebuckets by calendar day"
-        (let [report (agents/agent-op {:op/argv ["spend" "--group-by" "day"]})
+        (let [report (weaver/op! rt 'agent ["spend" "--group-by" "day"])
               groups (into {} (map (juxt :key identity)) (:groups report))]
           (is (= :day (get-in report [:filters :group-by])))
           (is (= 2 (get-in groups ["2026-07-01" :runs])))
@@ -210,12 +210,12 @@
           (is (= 1 (get-in groups ["2026-07-03" :runs])))))
       (testing "an unknown --group-by fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"group-by"
-                              (agents/agent-op {:op/argv ["spend" "--group-by" "week"]}))))
+                              (weaver/op! rt 'agent ["spend" "--group-by" "week"]))))
       (testing "a malformed --since/--until fails loudly instead of a silent lexical window"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ISO-8601 instant"
-                              (agents/agent-op {:op/argv ["spend" "--since" "yesterday"]})))
+                              (weaver/op! rt 'agent ["spend" "--since" "yesterday"])))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ISO-8601 instant"
-                              (agents/agent-op {:op/argv ["spend" "--until" "2026-07-02"]})))))))
+                              (weaver/op! rt 'agent ["spend" "--until" "2026-07-02"])))))))
 
 (deftest spawn-for-creates-task-edge
   (with-agents
