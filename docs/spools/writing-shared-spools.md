@@ -198,6 +198,30 @@ means:
    prints them, generated from the same definitions the spool installs so the discipline can never
    drift from the installed surface.
 
+## CLI style
+
+The authoritative [discovery-tier contract](../reference.md#discovery-tiers-help-about-prime)
+applies to shared-spool CLIs. The naming guidance below is advisory. Apply it
+fix-on-touch when a surface changes for another reason. Do not rename a working
+surface only for consistency or add compatibility aliases for the old name.
+
+- Choose verbs by role. For entity lifecycles, prefer `start`, `finish
+  --outcome`, `abort` only for real teardown, `status <id>`, and `list`. For
+  workflow steps, prefer `start`, `next`, `complete`, `choose`, and `status`.
+  For processes, prefer `spawn`, `kill`, `retry`, `await`, `logs`, and `ps`.
+- Use `--by` for attribution. Name attribute-stamping flags after the attribute:
+  `--owner`, `--branch`, `--worktree`, and `--feature`. Prefer seconds-first,
+  unit-suffixed durations such as `--timeout-secs`, and use `--outcome` for
+  closing state.
+- Prefer `list` for live, filterable work. Use a plural noun such as `harnesses`,
+  `suites`, or `backends` for a fixed catalog.
+- Prefer one op with declared subcommands for a cohesive multi-verb domain. Keep
+  single-purpose projections and config-registered ops flat.
+
+One rule is mandatory, and it is the sole MUST in this section: every
+text-bearing flag or positional MUST use the declared arg-spec parser so
+whole-value `:stdin` and `:payload/<name>` references resolve.
+
 ## Publishing a shared spool with git distribution
 
 A shared spool can be published as an ordinary git repository and consumed from a workspace
