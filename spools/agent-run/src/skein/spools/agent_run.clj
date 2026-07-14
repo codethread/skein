@@ -251,10 +251,11 @@
 
 (defn- fanout-ceiling-atom [] (:fanout-ceiling (state)))
 
-(defn fanout-ceiling
+(defn- fanout-ceiling
   "Return the workspace headless fan-out ceiling the claim! window enforces.
 
-  Defaults to 4; trusted config overrides it with `set-fanout-ceiling!`."
+  Internal read for the window and the setter's guard; the trusted-config
+  surface is `set-fanout-ceiling!`. Defaults to 4."
   []
   @(fanout-ceiling-atom))
 
@@ -1175,7 +1176,7 @@
   (when-let [deferred-until (sattr run "recovery-deferred-until")]
     (.isAfter (Instant/parse deferred-until) (Instant/now))))
 
-(declare claim! launch-run! note! scan!)
+(declare claim! claim-ready! launch-run! note! scan!)
 
 (defn- schedule-deferred-recovery!
   "Schedule a recovered run retry on the runtime-owned recovery executor."
@@ -1185,7 +1186,7 @@
                          (binding [*runtime* runtime]
                            (swap! (in-flight) dissoc id)
                            (when-let [run (first (weaver/ready runtime [:and pending-query [:= :id id]] {}))]
-                             (when (claim! run)
+                             (when (claim-ready! run)
                                (launch-run! runtime run)))))
              (long recovery-harness-retry-ms)
              TimeUnit/MILLISECONDS))
@@ -1745,6 +1746,27 @@
               (finally (swap! (in-flight) dissoc id)))))
         (launch-headless! id run)))))
 
+(defn- coherent-fanout
+  "Validate a run's fan-out metadata as a coherent contract, returning the
+  `[group cap]` the window enforces (TEN-003 fail-loudly).
+
+  Allowed shapes: an ungrouped run (neither `agent-run/fanout-group` nor
+  `agent-run/fanout-cap`), or a non-blank `group` paired with a positive-integer
+  `cap`. Any other combination — a group without a positive-integer cap, or a
+  cap without a group — is malformed persisted or hand-stamped data that would
+  otherwise silently evade its group bound under the workspace width, so it
+  fails loudly with the run `id` and the offending values rather than widening."
+  [id group cap]
+  (let [grouped? (and (string? group) (not (str/blank? group)))
+        capped? (and (integer? cap) (pos? cap))]
+    (cond
+      (and (nil? group) (nil? cap)) [group cap]
+      (and grouped? capped?) [group cap]
+      :else (fail! (str "Fan-out metadata is incoherent: a run must be ungrouped "
+                        "(no fanout-group and no fanout-cap) or carry a non-blank "
+                        "fanout-group with a positive-integer fanout-cap")
+                   {:run-id id :fanout-group group :fanout-cap cap}))))
+
 (defn- window-admits?
   "Does the in-flight map `m` have room to admit one more headless run under the
   workspace ceiling `w`?
@@ -1752,25 +1774,28 @@
   Interactive runs consume no slot and are always admitted. A headless run is
   refused when `m` already holds `w` headless entries (the workspace ceiling), or
   when its fan-out `group` is already at `min(w, cap)` — group tightening never
-  exceeds the workspace width. Both `:claimed` and `:running` entries count, so
-  the check composes with concurrent scan!s over the same map."
+  exceeds the workspace width. `group`/`cap` arrive validated by
+  `coherent-fanout`, so a grouped run always carries a positive-integer cap. Both
+  `:claimed` and `:running` entries count, so the check composes with concurrent
+  scan!s over the same map."
   [m w headless? group cap]
   (or (not headless?)
       (let [headless-entries (filterv :headless? (vals m))]
         (and (< (count headless-entries) w)
              (or (nil? group)
                  (< (count (filterv #(= group (:fanout-group %)) headless-entries))
-                    (min w (or cap w))))))))
+                    (min w cap)))))))
 
 (defn- claim! [run]
   ;; The budget check lives inside the swap fn so counting and claiming are one
   ;; atomic compare-and-swap: concurrent scan!s each see the other's claimed
-  ;; entries and never over-admit past the window (PROP-Foc-001.C1).
+  ;; entries and never over-admit past the window (PROP-Foc-001.C1). Fan-out
+  ;; metadata is validated as a coherent contract before the swap, so malformed
+  ;; data fails this run loudly rather than silently widening past its cap.
   (let [id (:id run)
         ceiling (fanout-ceiling)
         headless? (not (interactive? run))
-        group (sattr run "fanout-group")
-        cap (sattr run "fanout-cap")
+        [group cap] (coherent-fanout id (sattr run "fanout-group") (sattr run "fanout-cap"))
         [old after] (swap-vals! (in-flight)
                                 (fn [m]
                                   (if (or (contains? m id)
@@ -1784,16 +1809,29 @@
     ;; `old`, a window refusal leaves it out of the post-swap map.
     (and (not (contains? old id)) (contains? after id))))
 
+(defn- claim-ready!
+  "Claim `run` for launch, isolating a fan-out contract violation to that run.
+  Incoherent fan-out metadata fails this run loudly (`mark-failed!`) and returns
+  false, so one malformed run never aborts a scan for its ready siblings
+  (TEN-003). Returns true only when this pass claimed the run."
+  [run]
+  (try
+    (boolean (claim! run))
+    (catch clojure.lang.ExceptionInfo t
+      (mark-failed! (:id run) (str (ex-message t) (some->> (ex-data t) (str " "))))
+      false)))
+
 (defn scan!
-  "Spawn every ready pending run the window admits and that is not already
-  claimed. Runs the window admits no slot for this pass stay pending with no new
-  attribute; a later completion re-fires on-event → scan! to admit the next.
-  Returns claimed run ids."
+  "Spawn every ready pending run the fan-out window admits and that is not
+  already claimed. Runs the window admits no slot for this pass stay pending with
+  no new attribute; a later completion re-fires on-event → scan! to admit the
+  next. A run whose persisted fan-out metadata is incoherent fails loudly on its
+  own without disturbing its siblings. Returns claimed run ids."
   []
   (let [runtime (rt)
         workers (worker-executor)
         ready-runs (remove recovery-deferred? (weaver/ready runtime pending-query {}))
-        claimed (filterv claim! ready-runs)]
+        claimed (filterv claim-ready! ready-runs)]
     (doseq [run claimed]
       (.execute workers ^Runnable (fn [] (launch-run! runtime run))))
     (mapv :id claimed)))

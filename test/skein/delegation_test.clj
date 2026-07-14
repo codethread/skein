@@ -1096,6 +1096,36 @@
                                   (agents/agent-op {:op/argv ["council" "--topic" "t" "--harness" "sh"
                                                               "--max-concurrent" "0"]})))))))))
 
+(deftest panel-and-council-reject-incoherent-fanout-attrs
+  ;; Trusted Clojure callers of panel!/council! can hand-build :fanout-attrs, so
+  ;; the input specs enforce the same coherent contract the agent-run window
+  ;; does: a non-blank group paired with a positive-integer cap. A malformed stamp
+  ;; is rejected at the boundary rather than reaching the window as a bad record.
+  (with-agents
+    (fn [_rt]
+      (let [seats [{:name "a" :harness :sh :brief "b"}]]
+        (testing "a coherent stamp is accepted"
+          (is (s/valid? :skein.spools.delegation.council-input/fanout-attrs
+                        {"agent-run/fanout-group" "grp" "agent-run/fanout-cap" 2})))
+        (testing "incoherent stamps fail the spec"
+          (doseq [bad [{"agent-run/fanout-group" "grp"}                      ; group, no cap
+                       {"agent-run/fanout-group" "grp" "agent-run/fanout-cap" 0}
+                       {"agent-run/fanout-group" "grp" "agent-run/fanout-cap" "2"}
+                       {"agent-run/fanout-group" "" "agent-run/fanout-cap" 2} ; blank group
+                       {"agent-run/fanout-cap" 3}]]                          ; cap, no group
+            (is (not (s/valid? :skein.spools.delegation.council-input/fanout-attrs bad))
+                (str "incoherent " bad " must fail the spec"))))
+        (testing "panel! rejects a malformed :fanout-attrs stamp loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not conform"
+                                (agents/panel! {:seats seats :blackboard :fresh}
+                                               {:fanout-attrs {"agent-run/fanout-group" "grp"
+                                                               "agent-run/fanout-cap" 0}}))))
+        (testing "council! rejects a malformed :fanout-attrs stamp loudly"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not conform"
+                                (agents/council! "topic"
+                                                 {:harness :sh :members 2 :rounds 1
+                                                  :fanout-attrs {"agent-run/fanout-cap" 3}}))))))))
+
 (defn- serves? [rt run-id target-id]
   (some #(= target-id (:to_strand_id %)) (graph/outgoing-edges rt [run-id] "serves")))
 

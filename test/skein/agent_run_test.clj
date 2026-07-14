@@ -1833,21 +1833,23 @@
   ;; configured ceiling survives a state-version reload through migrate-state.
   (with-shuttle
     (fn [rt]
+      ;; fanout-ceiling is internal (the window's read); the setter is the config
+      ;; surface, so the test reaches the getter through the var per repo idiom.
       (testing "default with no setter is 4"
-        (is (= 4 (shuttle/fanout-ceiling))))
+        (is (= 4 (#'shuttle/fanout-ceiling))))
       (testing "the setter stores a positive integer and rejects the rest loudly"
         (is (= 3 (shuttle/set-fanout-ceiling! 3)))
-        (is (= 3 (shuttle/fanout-ceiling)))
+        (is (= 3 (#'shuttle/fanout-ceiling)))
         (doseq [bad [0 -1 2.5 "4" nil]]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
                                 (shuttle/set-fanout-ceiling! bad))))
-        (is (= 3 (shuttle/fanout-ceiling)) "a rejected set leaves the prior ceiling intact"))
+        (is (= 3 (#'shuttle/fanout-ceiling)) "a rejected set leaves the prior ceiling intact"))
       (testing "a configured ceiling survives a state-version reload via migrate-state"
         ;; an untagged map has no stored version, so accessing state reinits
         ;; through migrate-state (as a post-bump reload of a preserved map would)
         (let [preserved (assoc (#'shuttle/new-state) :fanout-ceiling (atom 7))]
           (swap! (:spool-state rt) assoc :skein.spools.agent-run/state preserved)
-          (is (= 7 (shuttle/fanout-ceiling))
+          (is (= 7 (#'shuttle/fanout-ceiling))
               "migrate-state carries the configured ceiling forward")))
       (testing "a pre-feature map lacking the ceiling reinits to the default"
         (let [pre-v4 {:harness-registry (atom {})
@@ -1856,5 +1858,58 @@
                       :preamble-extension (atom nil)
                       :default-review-contract (atom nil)}]
           (swap! (:spool-state rt) assoc :skein.spools.agent-run/state pre-v4)
-          (is (= 4 (shuttle/fanout-ceiling))
+          (is (= 4 (#'shuttle/fanout-ceiling))
               "select-keys omits the absent key so new-state's default survives"))))))
+
+(deftest coherent-fanout-validates-the-contract-shapes
+  ;; V1 fail-loud: the window treats a run's group/cap as a coherent contract.
+  ;; Only two shapes are legal — ungrouped, or a non-blank group with a
+  ;; positive-integer cap; every other combination fails loudly with the run id
+  ;; and offending values so malformed data cannot silently widen (TEN-003).
+  (testing "legal shapes pass and return [group cap]"
+    (is (= [nil nil] (#'shuttle/coherent-fanout "r" nil nil)))
+    (is (= ["g" 2] (#'shuttle/coherent-fanout "r" "g" 2))))
+  (testing "incoherent shapes fail loudly, carrying the run id and offending values"
+    (doseq [[group cap] [["g" nil]    ; group without a cap
+                         ["g" 0]      ; non-positive cap
+                         ["g" -1]
+                         ["g" "2"]    ; non-integer cap
+                         ["  " 2]     ; blank group
+                         [nil 3]]]    ; cap without a group
+      (let [ex (try (#'shuttle/coherent-fanout "run-x" group cap)
+                    (catch clojure.lang.ExceptionInfo e e))]
+        (is (instance? clojure.lang.ExceptionInfo ex)
+            (str "incoherent " [group cap] " must fail loudly"))
+        (is (re-find #"incoherent" (ex-message ex)))
+        (is (= {:run-id "run-x" :fanout-group group :fanout-cap cap}
+               (ex-data ex))
+            "the offending run id and values are in ex-data")))))
+
+(deftest malformed-fanout-fails-its-own-run-without-disturbing-siblings
+  ;; V1 fail-loud, end to end: a grouped run whose persisted cap is malformed
+  ;; reaches admission and fails THAT run loudly, while a coherent sibling in the
+  ;; same scan admits and runs — one bad record never aborts the scan (TEN-003).
+  (with-shuttle
+    (fn [rt]
+      (let [dir (gate-dir!)
+            _ (shuttle/set-fanout-ceiling! 4)
+            malformed (gate-run! dir "bad" {"agent-run/fanout-group" "grp"
+                                            "agent-run/fanout-cap" 0})
+            sibling (gate-run! dir "ok")]
+        (try
+          (settle! rt)
+          (let [failed (await-phase rt (:id malformed) #{"failed"})
+                error (get-in failed [:attributes :agent-run/error])]
+            (is (re-find #"incoherent" error)
+                "the malformed run fails loudly with the contract message")
+            (is (re-find #":fanout-cap 0" error)
+                "the offending cap value is recorded on the failed run")
+            (is (not (contains? (shuttle/in-flight-run-ids) (:id malformed)))
+                "the failed run never entered the window"))
+          (test-support/poll-until
+           #(contains? (shuttle/in-flight-run-ids) (:id sibling))
+           {:on-timeout #(throw (ex-info "coherent sibling never admitted"
+                                         {:in-flight (shuttle/in-flight-run-ids)}))})
+          (is (contains? (shuttle/in-flight-run-ids) (:id sibling))
+              "the coherent sibling admits despite its malformed peer")
+          (finally (drain-gated! rt [sibling] nil)))))))

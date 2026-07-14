@@ -796,6 +796,15 @@
   (or (keyword? v) (non-blank? v)))
 
 ;; Shared option map shapes for council/panel spawns.
+;; The fan-out stamp is a coherent contract even from trusted Clojure callers: a
+;; non-blank group paired with a positive-integer cap (the integer cap rides
+;; outside the string-typed panel-specs/review-specs seams, merged onto spawn
+;; attrs downstream). `fanout-attrs` builds this shape; validating it here keeps
+;; a hand-built option map from stamping a cap the agent-run window would reject.
+(s/def :skein.spools.delegation.council-input/fanout-attrs
+  (s/and map?
+         #(non-blank? (get % "agent-run/fanout-group"))
+         #(pos-int? (get % "agent-run/fanout-cap"))))
 (s/def :skein.spools.delegation.council-input/harness harness-ref?)
 (s/def :skein.spools.delegation.council-input/synthesizer harness-ref?)
 (s/def :skein.spools.delegation.council-input/members pos-int?)
@@ -821,13 +830,15 @@
                    :skein.spools.delegation.council-input/seats
                    :skein.spools.delegation.council-input/synthesizer
                    :skein.spools.delegation.council-input/spawned-by
-                   :skein.spools.delegation.council-input/cwd]))
+                   :skein.spools.delegation.council-input/cwd
+                   :skein.spools.delegation.council-input/fanout-attrs]))
 
 (s/def :skein.spools.delegation.panel-input/target non-blank?)
 (s/def :skein.spools.delegation.panel-input/review-id non-blank?)
 (s/def :skein.spools.delegation/panel-input
   (s/keys :opt-un [:skein.spools.delegation.council-input/spawned-by
                    :skein.spools.delegation.council-input/cwd
+                   :skein.spools.delegation.council-input/fanout-attrs
                    :skein.spools.delegation.panel-input/target
                    :skein.spools.delegation.panel-input/review-id]))
 
@@ -872,6 +883,8 @@
 
 ;; roster-review-specs output: the public seam shape workflow authors consume.
 (s/def :skein.spools.delegation.review-specs/prompt non-blank?)
+;; string->string compiler seam; the fan-out cap (an integer) never flows
+;; through here — it merges onto spawn attrs downstream of this contract.
 (s/def :skein.spools.delegation.review-specs/attrs (s/map-of string? string?))
 (s/def :skein.spools.delegation.review-specs/reviewer
   (s/keys :req-un [:skein.spools.delegation.roster/name
@@ -1268,6 +1281,8 @@
 (s/def :skein.spools.delegation.panel-specs/harness harness-ref?)
 (s/def :skein.spools.delegation.panel-specs/prompt non-blank?)
 (s/def :skein.spools.delegation.panel-specs/resume-prompt non-blank?)
+;; string->string compiler seam; the fan-out cap (an integer) never flows
+;; through here — it merges onto spawn attrs downstream of this contract.
 (s/def :skein.spools.delegation.panel-specs/attrs (s/map-of string? string?))
 (s/def :skein.spools.delegation.panel-specs/resume-ref nat-int?)
 (s/def :skein.spools.delegation.panel-specs/run
