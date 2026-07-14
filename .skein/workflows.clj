@@ -250,21 +250,37 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private main-ci-watch-script
-  "POSIX script for the main-ci-green shell gate: resolve the pushed main
-  sha, wait for its workflow runs to register, then watch every run to
-  completion, failing on the first unsuccessful conclusion. The gate's
-  `shell/timeout-secs` bounds the whole watch, including the initial wait
-  for GitHub to register the runs."
+  "POSIX script for the main-ci-green shell gate: poll the full workflow-run
+  set at the pushed main sha until it is non-empty, every run has completed,
+  and the all-green state holds across two consecutive polls — the
+  stabilisation window that catches workflows GitHub registers late, which a
+  one-shot snapshot of the first non-empty listing would miss. Any completed
+  conclusion other than success or skipped fails loudly with the run listing
+  on stderr. The gate's `shell/timeout-secs` bounds the whole watch."
   (str "set -eu\n"
        "sha=$(git rev-parse origin/main)\n"
-       "runs=\"\"\n"
-       "while [ -z \"$runs\" ]; do\n"
-       "  runs=$(gh run list --commit \"$sha\" --json databaseId --jq '.[].databaseId')\n"
-       "  [ -n \"$runs\" ] || sleep 10\n"
+       "stable=0\n"
+       "while :; do\n"
+       "  counts=$(gh run list --commit \"$sha\" --json status,conclusion --jq '"
+       "[length,"
+       " ([.[] | select(.status != \"completed\")] | length),"
+       " ([.[] | select(.status == \"completed\" and .conclusion != \"success\""
+       " and .conclusion != \"skipped\")] | length)] | @tsv')\n"
+       "  set -- $counts\n"
+       "  if [ \"$3\" -gt 0 ]; then\n"
+       "    echo \"unsuccessful workflow runs at $sha:\" >&2\n"
+       "    gh run list --commit \"$sha\" >&2\n"
+       "    exit 1\n"
+       "  fi\n"
+       "  if [ \"$1\" -gt 0 ] && [ \"$2\" -eq 0 ]; then\n"
+       "    stable=$((stable + 1))\n"
+       "    if [ \"$stable\" -ge 2 ]; then break; fi\n"
+       "  else\n"
+       "    stable=0\n"
+       "  fi\n"
+       "  sleep 30\n"
        "done\n"
-       "for id in $runs; do\n"
-       "  gh run watch \"$id\" --exit-status\n"
-       "done\n"))
+       "echo \"all $1 workflow runs at $sha completed successfully\"\n"))
 
 (def ^:private land-abort-reason-input
   "Declared choice input for the land sign-off abort choice: a required
@@ -437,10 +453,12 @@
                                "shell/timeout-secs" 5400
                                "workflow/instruction"
                                (format-alpha/reflow
-                                "|Machine gate: the shell executor waits for every workflow run at the
-                                 |pushed main sha to register, then watches each to completion
-                                 |(`gh run list --commit <sha>`, `gh run watch <id> --exit-status`).
-                                 |A failed run stamps `shell/error`: re-run transient infra failures
+                                "|Machine gate: the shell executor polls the full workflow-run set at
+                                 |the pushed main sha (`gh run list --commit <sha>`) until it is
+                                 |non-empty, every run has completed, and the all-green state holds
+                                 |across two consecutive polls, so late-registering workflows are
+                                 |caught. Any conclusion besides success or skipped stamps
+                                 |`shell/error` with the run listing: re-run transient infra failures
                                  |(`gh run rerun <run-id>`), then clear the stamp
                                  |(`strand update <gate-id> --attr shell/error=`) to re-watch. The
                                  |gate closing asserts green CI on the main sha; run output is

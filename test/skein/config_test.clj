@@ -865,7 +865,7 @@
         (is (= "land.main.ci-green" (:action-ref gate)))
         (is (= "shell" (:gate gate)))
         (is (= "sh" (first (:shell/argv gate-attrs))))
-        (is (str/includes? (last (:shell/argv gate-attrs)) "gh run watch")))
+        (is (str/includes? (last (:shell/argv gate-attrs)) "gh run list")))
       (shell-gate-complete! "land-x" "main runs green")
       (let [ready-cleanup (op! "land" ["next" "land-x"])
             cleanup-step (first (:ready ready-cleanup))]
