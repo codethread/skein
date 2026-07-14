@@ -39,9 +39,12 @@ main.
 ## PLAN-Isgl-001.V1 Validation
 
 - `make fmt-check lint docs-check` (config file is lint-checked prose-in-code).
-- Smoke the roster registration in a disposable workspace (`ws=$(mktemp -d)`;
-  `--workspace "${ws:?}"`): `strand agent rosters` shows the amended contract text after
-  the config loads there. Never against the canonical `.skein` world.
+- Smoke the roster registration in a disposable workspace: `ws=$(mktemp -d)`, initialize
+  it (`mill init --workspace "${ws:?}"`), copy this branch's `.skein` config files into the
+  disposable config dir (spools.edn local roots resolve relative to the config dir — fix
+  paths or omit spools.local.edn), start its weaver, then `strand --workspace "${ws:?}"
+  agent rosters` shows the amended contract text. Never against the canonical `.skein`
+  world.
 - Full locked suite is land-time (merge-local-verify) only.
 
 ## Developer Notes
