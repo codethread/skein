@@ -31,7 +31,9 @@ Owned files:
 - **TASK-Dcr-004.MI1:** Add `skein.api.spool.alpha/entity-projection`. Fail loudly if any canonical field is
   missing and return exactly `:id`, `:title`, `:state`, and `:attributes`, discarding every other key.
 - **TASK-Dcr-004.MI2:** Replace Loom's exact projection and use the constructor as the base for the repo
-  kanban-tree row before its domain fields are added. Do not narrow the final richer row.
+  kanban-tree row before its domain fields are added. Create `test/skein/config_ops_test.clj`, register
+  `skein.config-ops-test` in the focus-eligible runner inventory, and cover the kanban-tree base projection plus
+  the unchanged richer output. Do not narrow the final richer row.
 - **TASK-Dcr-004.MI3:** In the supplied kanban upstream checkout, replace the ten exact copies identified by the
   proposal, including `summarize-strand`, and cover exact output plus loud missing-field failure.
 - **TASK-Dcr-004.MI4:** Run the upstream kanban focused suite before advancing both synchronized kanban pins to

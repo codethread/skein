@@ -13,7 +13,7 @@ tasks:
     description: Author-side output check and coverage contract
     task_file: tasks/003-output-check-coverage-contract.md
     status: pending
-    blocked_by: [1]
+    blocked_by: [1, 2]
   - id: 4
     description: Entity projection and exact-copy adoption
     task_file: tasks/004-entity-projection-adoption.md

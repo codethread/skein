@@ -10,6 +10,8 @@ Execution seat: `sol-low`
 
 Implement `PLAN-Dcr-001.PH2`: expose the shared return explanation in full op help.
 
+Dispatch ordering: Task 3 is blocked until this task commits because both tasks edit `test/skein/weaver_test.clj`.
+
 Owned files:
 
 - `src/skein/api/weaver/alpha.clj`

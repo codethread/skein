@@ -10,6 +10,9 @@ Execution seat: `sol-med`
 
 Implement `PLAN-Dcr-001.PH3`: the captured-value check and exact CI return-leaf coverage contract.
 
+Dispatch precondition: Tasks 1 and 2 are committed. Task 2 owns the earlier mutation of
+`test/skein/weaver_test.clj`; begin this task from that committed result.
+
 Owned files:
 
 - `src/skein/test/alpha.clj`
