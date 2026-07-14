@@ -1110,7 +1110,21 @@
                (project "inactive-run")))))
     (testing "a malformed run id fails at the adapter boundary"
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string"
-                            (project ""))))))
+                            (project ""))))
+    (testing "malformed active roots fail loudly"
+      (with-redefs [devflow/feature-roots (constantly [{:attributes {}}])]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank devflow/stage"
+                              (project "missing-stage"))))
+      (with-redefs [devflow/feature-roots
+                    (constantly [{:attributes {:devflow/stage "intake"}}
+                                 {:attributes {:devflow/stage "tasks"}}])]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at most one active root"
+                              (project "ambiguous-run")))))
+    (testing "malformed ready steps fail the owning kanban projection spec"
+      (with-redefs [devflow/feature-roots (constantly [{:attributes {:devflow/stage "tasks"}}])
+                    devflow/next-steps (constantly [{}])]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
+                              (project "malformed-step")))))))
 
 (defn- assert-ephemeral-spool-consent-edge
   "Assert repo startup guards the activated ephemeral spool with its coordinate."
