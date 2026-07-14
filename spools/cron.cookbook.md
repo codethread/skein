@@ -165,7 +165,7 @@ any later external call.
     {:run-cmd run-command
      :raise-card! (fn [card]
                     (current/with-runtime runtime
-                      ((requiring-resolve 'skein.spools.kanban/add!)
+                      ((requiring-resolve 'ct.spools.kanban/add!)
                        (:title card) {"--body" (:body card) "--priority" "p1"})))}))
 ```
 

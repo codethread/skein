@@ -2,7 +2,7 @@
   "Tests for the repo-local .skein config modules (config.clj plus the
   harnesses.clj, workflows.clj, and analytics.clj siblings): registration
   surface, the delegate-pipeline weave pattern, the land workflow, the
-  devflow op wrappers over skein.spools.devflow, and the feature-costs
+  devflow op wrappers over ct.spools.devflow, and the feature-costs
   usage rollup."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
@@ -17,7 +17,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime]
-            [skein.spools.devflow :as devflow]
+            [ct.spools.devflow :as devflow]
             [skein.spools.workflow :as workflow]
             [skein.test.alpha :as test-alpha]))
 
@@ -111,9 +111,9 @@
                           'skein.macros/macros
                           {:local/root (.getCanonicalPath (io/file ".skein/spools/macros"))}
                           'codethread/devflow
-                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "skein/spools/devflow.clj"))}
+                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "ct/spools/devflow.clj"))}
                           'codethread/kanban
-                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "skein/spools/kanban.clj"))}}}))
+                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "ct/spools/kanban.clj"))}}}))
   ;; The shipped config leaves chime's notifier to each developer's personal
   ;; init.local.clj. Bind an inert command through that same overlay hook
   ;; (loaded after init.clj on startup and on every reload) so the test also
@@ -285,13 +285,13 @@
               :spools [{:namespace "skein.spools.workflow"
                         :doc "spools/workflow.md"
                         :purpose "Workflow engine: definitions compiled to strand molecules with checkpoints, routing, and gates."}
-                       {:namespace "skein.spools.devflow"
+                       {:namespace "ct.spools.devflow"
                         :doc "spools/devflow.md"
                         :purpose "Feature lifecycle (intake -> proposal -> spec-plan -> tasks/implementation) keyed by feature name."}
                        {:namespace "skein.spools.ephemeral"
                         :doc "spools/ephemeral.md"
                         :purpose "Temporary parent-owned strands burned via a userland attribute."}
-                       {:namespace "skein.spools.kanban"
+                       {:namespace "ct.spools.kanban"
                         :doc "spools/kanban.md"
                         :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
               :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
@@ -1261,7 +1261,7 @@
   ;; coordinate) or a :file module's ns :require (each required coordinate) —
   ;; must declare that coordinate in :spools, batteries (the classpath exception
   ;; with no coordinate) excepted. Coordinates resolve through the synced root
-  ;; manifests, never a name heuristic: skein.spools.devflow lives in the
+  ;; manifests, never a name heuristic: ct.spools.devflow lives in the
   ;; codethread/devflow root and skein.spools.executors.shell in the
   ;; skein.spools/workflow root, so a prefix rule would both false-fail devflow
   ;; and false-pass a real miss.

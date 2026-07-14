@@ -16,7 +16,7 @@ This is userland spool code, not a separate scheduler or persistence system. Wor
 
 Core primitives: `workflow`, `step`, `gate`, `checkpoint`, `call`, `param`, `compile`, `pour!`, `wisp!`, and `explain`.
 
-The generic runtime API is `start!`, `next-steps`, `next-step`, `next-gates`, `next-checkpoint`, `complete!`, `choose!`, `advance!`, `choice-detail`, `choice-details`, and `done?`, keyed by `workflow/run-id`. Routing targets can be registered under stable names with `register-workflow!`/`workflow-definition`/`registered-workflows` (see §5). Higher-level spools such as `skein.spools.devflow` should define opinionated workflow definitions and thin convenience wrappers around this namespace.
+The generic runtime API is `start!`, `next-steps`, `next-step`, `next-gates`, `next-checkpoint`, `complete!`, `choose!`, `advance!`, `choice-detail`, `choice-details`, and `done?`, keyed by `workflow/run-id`. Routing targets can be registered under stable names with `register-workflow!`/`workflow-definition`/`registered-workflows` (see §5). Higher-level spools such as `ct.spools.devflow` should define opinionated workflow definitions and thin convenience wrappers around this namespace.
 
 Every run-mutating op (`start!`, `complete!`, `choose!`, `advance!`) returns one `{:ready [step-view ...] :done boolean}` map: `:ready` is the run's ready step views (as `next-steps` would return them) and `:done` is its done-ness, so an empty `:ready` never leaves a caller guessing whether the run finished or merely stalled. The pure queries `next-steps`/`next-step` still return step views directly.
 
@@ -417,7 +417,7 @@ Each event is a **closed** `step` or `checkpoint` strand (procedure joins, being
 
 ## 7. Attribute vocabulary
 
-This table is the extension API: spools built on top of `skein.spools.workflow` (like `skein.spools.devflow`) read and write these `workflow/*` attributes directly on strands. Unless noted, attributes are plain string-keyed `TEXT`/JSON values on the strand's `:attributes` map.
+This table is the extension API: spools built on top of `skein.spools.workflow` (like `ct.spools.devflow`) read and write these `workflow/*` attributes directly on strands. Unless noted, attributes are plain string-keyed `TEXT`/JSON values on the strand's `:attributes` map.
 
 | Attribute | Meaning | Set by |
 |---|---|---|
@@ -468,7 +468,7 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
 
 ## 9. See also
 
-- `skein.spools.devflow` — the reference higher-level spool built on this
+- `ct.spools.devflow` — the reference higher-level spool built on this
   namespace: opinionated devflow-stage workflow definitions and thin
   `start!`/`next-step`/`complete!`/`choose!` wrappers keyed by feature name
   instead of a raw run-id. It registers its stages under stable names and uses

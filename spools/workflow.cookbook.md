@@ -108,7 +108,7 @@ Each recipe cites the honest source it was distilled from — a shipped spool, t
   round pours a new molecule under the same `run-id`, so the whole loop history
   stays in the graph, inspectable via `run-history` and squashable later.
 
-Honest source: adapted from the end-to-end example that formerly lived in `workflow.md`, and mirrored by `skein.spools.devflow`'s `human-signoff-proposal` revise loop.
+Honest source: adapted from the end-to-end example that formerly lived in `workflow.md`, and mirrored by `ct.spools.devflow`'s `human-signoff-proposal` revise loop.
 
 ---
 
@@ -179,7 +179,7 @@ Honest source: adapted from the end-to-end example that formerly lived in `workf
   routed hand-off is visible in-band: the continuation's ready frontier comes
   straight back from `choose!`.
 
-Honest source: `skein.spools.devflow`'s `stage-workflows` registry and `proposal-workflow` (proposal → `:spec-plan` forward route, self `:revise` loop, `:abort` with declared reason input).
+Honest source: `ct.spools.devflow`'s `stage-workflows` registry and `proposal-workflow` (proposal → `:spec-plan` forward route, self `:revise` loop, `:abort` with declared reason input).
 
 ---
 
@@ -227,7 +227,7 @@ Honest source: `skein.spools.devflow`'s `stage-workflows` registry and `proposal
   params; a CI-round sub-flow can be recomposed by every stage that pushes
   commits. That is the point of `call` over duplication.
 
-Honest source: the `call` inlining test in `test/skein/spools/workflow_test.clj` (`workflow-spool-inlines-procedure-calls`), the toastie demo's `:quality` call, and `skein.spools.devflow`'s `:agent-review-proposal` call.
+Honest source: the `call` inlining test in `test/skein/spools/workflow_test.clj` (`workflow-spool-inlines-procedure-calls`), the toastie demo's `:quality` call, and `ct.spools.devflow`'s `:agent-review-proposal` call.
 
 ---
 

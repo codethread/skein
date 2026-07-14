@@ -49,15 +49,15 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 | `skein.spools.delegation` | `../spools/delegation` | [delegation/README.md](./delegation/README.md) | [delegation.api.md](./delegation.api.md) · [cookbook](./delegation.cookbook.md) | Cross-harness subagent surface over agent-run: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
 | `skein.spools.executors.subagent` | `../spools/agent-run` (folded into the agent-run root) | [executors/subagent.md](./executors/subagent.md) | [executors/subagent.api.md](./executors/subagent.api.md) · [cookbook](./executors/subagent.cookbook.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning agent-run runs and delivering successful results through `workflow/complete!`. |
 | `skein.spools.chime` | `../spools/chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) · [cookbook](./chime.cookbook.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
-| `skein.spools.kanban` | git, sha-pinned (see below) | [kanban.md](https://github.com/codethread/kanban.spool/blob/3a344e9ea18705ede170c319edcffe214d30e624/kanban.md) | — | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`; this repo binds devflow as its tracker through `.skein/kanban_tracker.clj`. |
+| `ct.spools.kanban` | git, sha-pinned (see below) | [kanban.md](https://github.com/codethread/kanban.spool/blob/03707e525185cbd5685522a45c6e779b22ceb6b8/kanban.md) | — | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`; this repo binds devflow as its tracker through `.skein/kanban_tracker.clj`. |
 | `skein.spools.cron` | `../spools/cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) · [cookbook](./cron.cookbook.md) | Userland recurrence layer over durable scheduler wakes: registers named interval+jitter jobs, records last-outcome/failure status, and leaves next-fire timing to scheduler introspection. Ships no jobs. |
 | `skein.spools.bench` | `../spools/bench` | [bench/README.md](./bench/README.md) | [bench.api.md](./bench.api.md) | Deterministic, containerized benchmarking of coding-agent harnesses: pinned repo/prompt/memory overlays, bench-owned entry execution, normalized metrics, and an agent-run served judge. |
-| `skein.spools.devflow` | git, sha-pinned (see below) | [devflow.md](https://github.com/codethread/devflow.spool/blob/6c0f8c7e20a7f6de4cf81c98f4d7a33388663592/devflow.md) | — | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
+| `ct.spools.devflow` | git, sha-pinned (see below) | [devflow.md](https://github.com/codethread/devflow.spool/blob/84c83f6a78812dd12ff74d330d58d6dc26b910ad/devflow.md) | — | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
 | `skein.spools.dresser` | *(none approved in this repo)* | [dresser.md](https://github.com/codethread/dresser.loom/blob/fea1d340be3591d008cf0ddeb72b0091d95a380d/dresser.md) | — | Brings a repo onto shared working conventions and surfaces convention upgrades later. Two flavours: scaffold a new shared-spool repo, or install a self-contained `.skein/` workspace into any host repo. Applied versions are recorded in the target at `.skein/conventions.edn`. |
 
 `bobbin`, `guild`, and `selvage` are never-activated reference roots: this repo carries their source and tests but adds no `.skein/spools.edn` coordinate for them — a downstream user opts in by adding one.
 
-`skein.spools.devflow` is consumed from
+`ct.spools.devflow` is consumed from
 [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
 than a local root — the worked example of publishing a spool for others (RFC-017, [Writing shared
 spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution)).
@@ -66,7 +66,7 @@ with `:required? true` in `.skein/init.clj`, and pins the same sha as a tools.de
 test JVM; developers override the coordinate with a gitignored `spools.local.edn` local root to work
 against a checkout.
 
-`skein.spools.kanban` is the second external spool: it lives in
+`ct.spools.kanban` is the second external spool: it lives in
 [`codethread/kanban.spool`](https://github.com/codethread/kanban.spool). Kanban loads independently
 of a tracker; this repo's `.skein/kanban_tracker.clj` binds devflow after both spools are active.
 Like devflow, `.skein/spools.edn` and the test JVM (`deps.edn`) pin the same sha-pinned

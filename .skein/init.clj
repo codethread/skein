@@ -63,9 +63,9 @@
 ;; approved codethread/devflow coordinate (spools.edn pin or a developer's
 ;; spools.local.edn checkout), never on an incidental classpath copy.
 (runtime/use! runtime :skein/spools-devflow
-              {:ns 'skein.spools.devflow
+              {:ns 'ct.spools.devflow
                :spools ['codethread/devflow]
-               :call 'skein.spools.devflow/install!
+               :call 'ct.spools.devflow/install!
                :required? true})
 (runtime/use! runtime :macros/patterns
               {:ns 'skein.macros.patterns
@@ -137,9 +137,9 @@
 ;; board loads independently; the repo-specific tracker binding below joins it
 ;; to devflow after both spools are active.
 (runtime/use! runtime :skein/spools-kanban
-              {:ns 'skein.spools.kanban
+              {:ns 'ct.spools.kanban
                :spools ['codethread/kanban]
-               :call 'skein.spools.kanban/install!
+               :call 'ct.spools.kanban/install!
                :required? true})
 (runtime/use! runtime :kanban/tracker
               {:file "kanban_tracker.clj"

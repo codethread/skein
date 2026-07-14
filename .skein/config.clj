@@ -2,7 +2,7 @@
   "Repo-local Skein runtime configuration for skein-src: named queries and the
   thin CLI op surface over the shipped spools.
 
-  Thin glue only: `skein.spools.devflow` owns the feature lifecycle,
+  Thin glue only: `ct.spools.devflow` owns the feature lifecycle,
   `skein.spools.workflow` is the engine, `skein.spools.delegation` owns the
   `strand agent` surface plus the `agent-plan` pattern, and `skein.spools.loom`
   owns the read-only work-graph projections (all activated from init.clj).
@@ -20,7 +20,7 @@
             [skein.macros.ops :refer [defop forget-ops! install-ops!]]
             [skein.macros.queries :refer [defquery forget-queries! install-queries! remembered-queries]]
             [skein.spools.carder :as carder]
-            [skein.spools.devflow :as devflow]
+            [ct.spools.devflow :as devflow]
             [skein.spools.loom :as loom]
             [skein.spools.agent-run :as shuttle]
             [skein.spools.workflow :as workflow]
@@ -236,7 +236,7 @@
     (kanban-tree-projection (current/runtime) (boolean all))))
 
 ;; ---------------------------------------------------------------------------
-;; devflow ops: thin CLI wrappers over skein.spools.devflow
+;; devflow ops: thin CLI wrappers over ct.spools.devflow
 ;; ---------------------------------------------------------------------------
 
 (defn require-non-blank!
@@ -537,13 +537,13 @@
    :spools [{:namespace "skein.spools.workflow"
              :doc "spools/workflow.md"
              :purpose "Workflow engine: definitions compiled to strand molecules with checkpoints, routing, and gates."}
-            {:namespace "skein.spools.devflow"
+            {:namespace "ct.spools.devflow"
              :doc "spools/devflow.md"
              :purpose "Feature lifecycle (intake -> proposal -> spec-plan -> tasks/implementation) keyed by feature name."}
             {:namespace "skein.spools.ephemeral"
              :doc "spools/ephemeral.md"
              :purpose "Temporary parent-owned strands burned via a userland attribute."}
-            {:namespace "skein.spools.kanban"
+            {:namespace "ct.spools.kanban"
              :doc "spools/kanban.md"
              :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
    ;; The config-owned entries below stay hand-authored: their editorial grouping

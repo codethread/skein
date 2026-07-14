@@ -16,7 +16,7 @@
          ;; while the weaver consumes the spools.edn coordinate.
          :extra-deps {io.github.codethread/devflow.spool
                       {:git/url "https://github.com/codethread/devflow.spool.git"
-                       :git/sha "e9b28f5db61820b28a1ac1b590cc87e70c835cac"}
+                       :git/sha "84c83f6a78812dd12ff74d330d58d6dc26b910ad"}
                       ;; kanban is a git-distributed spool. Keep this sha exactly
                       ;; synchronized with .skein/spools.edn (config_test enforces
                       ;; the pairing): config_test loads .skein/config.clj
@@ -24,7 +24,7 @@
                       ;; coordinate.
                       io.github.codethread/kanban.spool
                       {:git/url "https://github.com/codethread/kanban.spool.git"
-                       :git/sha "3a344e9ea18705ede170c319edcffe214d30e624"}
+                       :git/sha "03707e525185cbd5685522a45c6e779b22ceb6b8"}
                       ;; Test-only ergonomics: readable nested-map/JSON assertions
                       ;; (match?) and spec-driven property tests (defspec). Kept
                       ;; off the main src/weaver classpath.

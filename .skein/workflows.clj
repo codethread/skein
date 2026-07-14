@@ -3,7 +3,7 @@
   the coordinator `land` workflow (family \"land\") with its `land` op, and the
   `delegate-pipeline` weave pattern for sequential delegated subagent gates.
 
-  The devflow lifecycle itself is the external `skein.spools.devflow` spool;
+  The devflow lifecycle itself is the external `ct.spools.devflow` spool;
   its thin CLI wrapper ops live in config.clj. This file is loaded after
   config.clj and reuses its public CLI-tail helpers (`config/pop-step-selector`
   and friends) so the `step=<id>` tail convention has one definition."
@@ -104,7 +104,7 @@
       (when-not (= "true" (attr-value strand :kanban/card))
         (throw (ex-info "land card is not a kanban card" {:card card})))
       (case (attr-value strand :kanban/status)
-        "claimed" ((requiring-resolve 'skein.spools.kanban/request-review!) card)
+        "claimed" ((requiring-resolve 'ct.spools.kanban/request-review!) card)
         "in_review" nil
         (throw (ex-info "land card must be claimed before review"
                         {:card card :status (attr-value strand :kanban/status)}))))))
@@ -125,7 +125,7 @@
       (when-not (= "true" (attr-value strand :kanban/card))
         (throw (ex-info "land card is not a kanban card" {:card card})))
       (case (attr-value strand :kanban/status)
-        "in_review" ((requiring-resolve 'skein.spools.kanban/rework!) card)
+        "in_review" ((requiring-resolve 'ct.spools.kanban/rework!) card)
         "claimed" nil
         (throw (ex-info "land card must be in_review before abort rework"
                         {:card card :status (attr-value strand :kanban/status)}))))))

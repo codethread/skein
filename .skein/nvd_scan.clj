@@ -176,7 +176,7 @@
   (run-nvd-scan! {:run-cmd run-command
                   :raise-card! (fn [{:keys [title body]}]
                                  (current/with-runtime runtime
-                                   ((requiring-resolve 'skein.spools.kanban/add!)
+                                   ((requiring-resolve 'ct.spools.kanban/add!)
                                     title {"--body" body "--priority" "p1"})))}))
 
 (defn- register-nvd-scan-job!

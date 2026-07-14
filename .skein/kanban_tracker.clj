@@ -3,12 +3,12 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.spool.alpha :as spool]
-            [skein.spools.devflow :as devflow]
-            [skein.spools.kanban :as kanban]))
+            [ct.spools.devflow :as devflow]
+            [ct.spools.kanban :as kanban]))
 
 (s/def ::run-id (s/and string? (complement str/blank?)))
-(s/def ::projection :skein.spools.kanban/tracker-projection)
-(s/def ::binding :skein.spools.kanban/tracker-binding)
+(s/def ::projection :ct.spools.kanban/tracker-projection)
+(s/def ::binding :ct.spools.kanban/tracker-binding)
 (s/def ::install-result
   (s/and map?
          #(= #{:tracker} (set (keys %)))
