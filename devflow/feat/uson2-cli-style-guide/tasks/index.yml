@@ -12,7 +12,7 @@ tasks:
   - id: 3
     description: Stamp dispatch-owned operation labels
     task_file: tasks/003-stamp-dispatch-owned-operation-labels.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 4
     description: Migrate agent spend operation label
