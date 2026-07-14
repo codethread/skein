@@ -24,7 +24,7 @@
                       ;; coordinate.
                       io.github.codethread/kanban.spool
                       {:git/url "https://github.com/codethread/kanban.spool.git"
-                       :git/sha "54eea43e3afc50c3f17335d297a74af8d6767704"}
+                       :git/sha "1b38ef2b14720913d9b0ab9e2a7e2f866342f22c"}
                       ;; Test-only ergonomics: readable nested-map/JSON assertions
                       ;; (match?) and spec-driven property tests (defspec). Kept
                       ;; off the main src/weaver classpath.
