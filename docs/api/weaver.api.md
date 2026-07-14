@@ -139,9 +139,11 @@ Invoke a registered CLI operation with raw string argv from a root-level `strand
   result is supplied as `:op/args`; a parse failure throws before the handler
   runs. For subcommand ops, sole-token `help`, `-h`, or `--help` invocations
   with no payloads return the op's help detail instead of running the handler.
+  Subcommand map results receive a canonical `:operation` label containing the
+  registered op name and full resolved path, including a nested `:action`.
   Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L416-L453">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L422-L461">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op-help-handler">`op-help-handler`</a>
 ``` clojure
@@ -156,7 +158,7 @@ Project the op registry as help.
   name, return that op's full detail including the parser `explain` of its
   arg-spec (or a raw-envelope marker). Unknown names fail loudly through
   `resolve-op`, which carries the available names.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L488-L503">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L496-L511">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure
@@ -207,7 +209,7 @@ Return ready strands from the result set of a registered query definition.
 Function.
 
 Install Skein-provided CLI operations into the runtime op registry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L505-L512">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L513-L520">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-op!">`register-op!`</a>
 ``` clojure

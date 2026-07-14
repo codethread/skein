@@ -127,6 +127,13 @@
     "explicit-nil" {:operation nil :result :explicit-nil}
     "non-map" [:non-map]))
 
+(defn two-level-command-result-op
+  "Return operation-label variants selected by the parsed nested action."
+  [{:op/keys [name args]}]
+  (case (:action args)
+    "absent" {:result :absent}
+    "equal" {:operation (str name " " (:subcommand args) " equal") :result :equal}))
+
 (defn streaming-subcommand-op
   "Emit a handler-owned item and return an unstamped map result."
   [{emit! :op/emit!}]
@@ -1853,6 +1860,18 @@
               (is (= (str "result-labels " subcommand) (:expected (ex-data e))))
               (is (= actual (:actual (ex-data e))))))
           (is (= [:non-map] (weaver/op! rt 'result-labels ["non-map"])))))
+      (testing "two-level command map results receive the full operation path"
+        (weaver/register-op! rt :nested-result-labels
+                             {:arg-spec {:op "nested-result-labels"
+                                         :subcommands
+                                         {"task" {:doc "Manage tasks"
+                                                  :positionals
+                                                  [{:name :action :required? true}]}}}}
+                             'skein.weaver-test/two-level-command-result-op)
+        (is (= {:operation "nested-result-labels task absent" :result :absent}
+               (weaver/op! rt 'nested-result-labels ["task" "absent"])))
+        (is (= {:operation "nested-result-labels task equal" :result :equal}
+               (weaver/op! rt 'nested-result-labels ["task" "equal"]))))
       (testing "subcommand handler failures remain unchanged"
         (weaver/register-op! rt 'subcommand-failure
                              {:arg-spec {:op "subcommand-failure"

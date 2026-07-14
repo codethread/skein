@@ -40,10 +40,11 @@ helper accretion and registered-op result semantics in the two linked deltas.
   parser gains no special flag types.
 - **PLAN-Ucs-001.A3:** Stamp map results in `skein.api.weaver.alpha/op!`, after
   the handler returns and only when parsed args contain `:subcommand`. Derive
-  the label from the canonical registered op name and selected subcommand. If a
-  map already contains the exact label, preserve it; if it contains any other
-  value, fail loudly with expected and actual values. Flat/raw ops, non-map
-  results, failures, streams' emitted items, and the help alias stay unchanged.
+  the label from the canonical registered op name and full resolved subcommand
+  path, including a parsed nested `:action`. If a map already contains the exact
+  label, preserve it; if it contains any other value, fail loudly with expected
+  and actual values. Flat/raw ops, non-map results, failures, streams' emitted
+  items, and the help alias stay unchanged.
 - **PLAN-Ucs-001.A4:** Migrate only collisions required by the new boundary.
   The in-repo `agent spend` and `land` subcommand paths currently emit
   `agent-spend` and `land-*`; remove those hand-written labels now so dispatch
@@ -120,8 +121,8 @@ and S5 depend on S3. Feature acceptance waits for all five.
 - **Depends-on:** none.
 - **Owned files:** `src/skein/api/weaver/alpha.clj`,
   `test/skein/weaver_test.clj`.
-- **Outcome:** Declared-subcommand map results receive `<op> <subcommand>` at
-  dispatch. Tests cover absent, equal, and conflicting labels plus unchanged
+- **Outcome:** Declared-subcommand map results receive `<op> <full-subcommand-path>`
+  at dispatch. Tests cover absent, equal, and conflicting labels plus unchanged
   flat/raw/non-map/help behavior. Equal existing labels remain unchanged.
 - **Validation:** `clojure -M:test skein.weaver-test`; `make api-docs` if public
   docstrings change; `make docs-check`.
@@ -169,11 +170,9 @@ and S5 depend on S3. Feature acceptance waits for all five.
 
 ## PLAN-Ucs-001.P7 Risks and open questions
 
-- **PLAN-Ucs-001.R1:** Pinned kanban's `task add|list` labels disagree with the
-  approved one-level `<op> <subcommand>` rule. Feature card `m5u47` owns the
-  upstream fix-on-touch cleanup and paired pin movement. Keep that work outside
-  these slices; do not weaken the fail-loud boundary or add a kanban-specific
-  exception here.
+- **PLAN-Ucs-001.R1:** Pinned kanban's `task add|list` paths require dispatch to
+  include the parsed nested `:action`. The full-path rule keeps those shipped
+  labels and the fail-loud boundary aligned without a kanban-specific exception.
 - **PLAN-Ucs-001.R2:** A handler may return a collection or scalar, which cannot
   carry `:operation` without a breaking wrapper shape. Mitigation: stamp maps
   only, as `DELTA-Ucs-002.CC1` states, and leave other result shapes unchanged.

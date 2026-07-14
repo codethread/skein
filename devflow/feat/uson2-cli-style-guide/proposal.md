@@ -66,7 +66,7 @@ The underlying surfaces already contain most of the right pieces:
   `workflow-runs`, `flow-status`, `hitl`, and `branches`
   (`.skein/analytics.clj:156-159`; `.skein/config.clj:121,209,315-536,671,755,789`;
   pinned `kanban.spool@03707e5/src/ct/spools/kanban.clj:1330`). They have no
-  selected subcommand and are not part of the automatic `<spool> <verb>` slice.
+  selected subcommand and are not part of automatic dispatch labeling.
 
 This feature separates correctness from guidance. Declared parsing for
 text-bearing inputs is the one requirement. Naming guidance remains advisory,
@@ -86,8 +86,8 @@ prose explains them (`devflow/PHILOSOPHY.md:27-35`).
 - **PROP-Ucs-001.G3:** Make the common note, work-root, timeout, and closing
   declarations reusable as plain arg-spec data in `skein.api.spool.alpha`.
 - **PROP-Ucs-001.G4:** Make subcommand result maps carry
-  `:operation "<spool> <verb>"` from dispatch-owned context rather than requiring
-  every handler to repeat the label.
+  `:operation "<spool> <full-subcommand-path>"` from dispatch-owned context
+  rather than requiring every handler to repeat the label.
 - **PROP-Ucs-001.G5:** Apply advisory naming guidance fix-on-touch. Existing
   working surfaces do not move merely to match the guide.
 
@@ -168,15 +168,14 @@ a migration of every consumer in this slice.
 ### PROP-Ucs-001.S3 Dispatch-owned operation labels
 
 For a registered op whose arg-spec selects a subcommand, stamp the returned
-result map with `:operation "<op-name> <subcommand>"` at the registered-op result
-boundary. The parser remains responsible only for returning the selected
-`:subcommand` (`src/skein/api/cli/alpha.clj:410-445`); registered-op dispatch is
-the layer that has both that selection and the handler result
+result map with `:operation "<op-name> <full-subcommand-path>"` at the registered-op
+result boundary. The parser returns the selected `:subcommand` and any nested
+`:action`; registered-op dispatch has that resolved path and the handler result
 (`src/skein/api/weaver/alpha.clj:435-453`).
 
 This slice removes the need for subcommand handlers to hand-roll labels and
-normalizes current outliers such as `agent-spend` and `land-start` to the
-declared `<spool> <verb>` form. It does not infer verbs for flat ops.
+normalizes current outliers such as `agent-spend` and `land-start` to their
+declared command paths. It does not infer verbs for flat ops.
 
 ## PROP-Ucs-001.P5 Decision links
 

@@ -413,6 +413,12 @@
                (empty? payloads))
       (op-detail entry))))
 
+(defn- operation-label
+  "Return the canonical label for a parsed subcommand invocation."
+  [op-name parsed-args]
+  (str/join " " (cond-> [op-name (:subcommand parsed-args)]
+                  (contains? parsed-args :action) (conj (:action parsed-args)))))
+
 (defn op!
   "Invoke a registered CLI operation with raw string argv from a root-level `strand <name>` invoke.
 
@@ -427,6 +433,8 @@
   result is supplied as `:op/args`; a parse failure throws before the handler
   runs. For subcommand ops, sole-token `help`, `-h`, or `--help` invocations
   with no payloads return the op's help detail instead of running the handler.
+  Subcommand map results receive a canonical `:operation` label containing the
+  registered op name and full resolved path, including a nested `:action`.
   Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map."
   ([runtime op-name argv]
@@ -445,7 +453,7 @@
              result (with-spool-classloader runtime #((requiring-resolve fn-sym) ctx)) parsed-args (:op/args ctx)]
          (if-not (and (map? result) (contains? parsed-args :subcommand))
            result
-           (let [expected (str name " " (:subcommand parsed-args)) actual (:operation result)]
+           (let [expected (operation-label name parsed-args) actual (:operation result)]
              (cond
                (not (contains? result :operation)) (assoc result :operation expected)
                (= expected actual) result

@@ -126,7 +126,7 @@ Aggregate recorded run usage. With no flags it reads all runs and groups by harn
 `--group-by day` buckets by the started-at date; `--group-by harness` is the default.
 
 Output is JSON only:
-`{"operation":"agent-spend","filters":{...},"totals":{"runs","cost-usd","tokens-total","duration-ms"},"groups":[...],"runs":[...]}`.
+`{"operation":"agent spend","filters":{...},"totals":{"runs","cost-usd","tokens-total","duration-ms"},"groups":[...],"runs":[...]}`.
 Each run row includes `id`, `harness`, `phase`, `cost-usd`, `tokens-total`, optional `tokens`, `duration-ms`, `started-at`, and `finished-at`.
 Pi and Claude JSON runs record cost and tokens when the harness reports them. Raw runs, and older runs with no usage attributes, keep `null` cost and token fields.
 Every run can still contribute count and timestamp-derived duration, and totals skip null cost or token values rather than treating them as zero.

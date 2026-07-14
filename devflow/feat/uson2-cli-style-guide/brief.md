@@ -32,8 +32,8 @@ outlier issues only, no rename-only churn, and rely on a style guide + shared co
    `fail!`/`require-valid!` etc): note-surface, work-root, timeout-secs, and outcome fragments
    as plain data a spool author merges into a declared arg-spec.
 
-3. **Auto-stamp `:operation "<spool> <verb>"` on results from the subcommand dispatch layer**
-   so authors stop hand-rolling it.
+3. **Auto-stamp operation labels from the full subcommand path.** The
+   subcommand dispatch layer owns `:operation`, so authors stop hand-rolling it.
 
 ## Settled design constraints (do not relitigate)
 

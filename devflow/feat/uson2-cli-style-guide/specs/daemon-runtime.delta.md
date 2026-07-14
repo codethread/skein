@@ -11,15 +11,15 @@
 `SPEC-004.C63b` currently transports a registered operation handler's return
 value unchanged. This feature changes that result boundary for declared
 subcommand ops: map results carry a dispatch-owned `:operation` label derived
-from the registered op and selected subcommand.
+from the registered op and complete resolved subcommand path.
 
 ## DELTA-Ucs-002.P2 Contract changes
 
 - **DELTA-Ucs-002.CC1:** After a declared arg-spec selects a subcommand and its
   handler returns a map, registered-op dispatch sets `:operation` to
-  `"<op-name> <subcommand>"`. Flat arg-spec ops, raw-envelope ops, non-map
-  results, thrown failures, and the dispatch-level help alias retain their
-  current behavior.
+  `"<op-name> <full-subcommand-path>"`. The path includes a parsed nested
+  `:action` when present. Flat arg-spec ops, raw-envelope ops, non-map results,
+  thrown failures, and the dispatch-level help alias retain their current behavior.
 - **DELTA-Ucs-002.CC2:** If the returned map already contains `:operation`,
   dispatch accepts it only when it equals the derived label. A different value,
   including explicit nil, fails loudly with expected and actual labels; it is
