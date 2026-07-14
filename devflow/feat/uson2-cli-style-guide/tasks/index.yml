@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: Add shared-spool CLI style guidance
     task_file: tasks/001-add-shared-spool-cli-style-guidance.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: Add composable spool arg-spec fragments
