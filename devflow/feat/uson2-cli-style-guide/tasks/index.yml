@@ -7,7 +7,7 @@ tasks:
   - id: 2
     description: Add composable spool arg-spec fragments
     task_file: tasks/002-add-composable-spool-arg-spec-fragments.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 3
     description: Stamp dispatch-owned operation labels
