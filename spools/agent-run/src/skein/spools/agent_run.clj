@@ -88,6 +88,11 @@
 
 (def ^:private default-max-attempts 3)
 
+(def ^:private default-fanout-ceiling
+  "Smart default for the workspace headless fan-out ceiling the claim! window
+  enforces when trusted config never calls `set-fanout-ceiling!`."
+  4)
+
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous engine worker threads."
   nil)
@@ -125,8 +130,11 @@
 
   v3 split the single mixed harness registry into `:harness-registry` (tools)
   and `:alias-registry` (seats); `migrate-state` splits a preserved v2 registry
-  by entry shape."
-  3)
+  by entry shape. v4 added `:fanout-ceiling` (the workspace headless fan-out cap
+  the claim! window consults): a preserved v3 map lacks the key, so `reload!`
+  reinits through `migrate-state` and lets `new-state`'s default seed it rather
+  than reusing a map with no ceiling."
+  4)
 
 (defn- new-state []
   (let [scheduler (ScheduledThreadPoolExecutor. 1 (daemon-thread-factory "agent-run-recovery"))
@@ -135,8 +143,13 @@
     {:harness-registry (atom {})
      :alias-registry (atom {})
      :backend-registry (atom {})
-     ;; run-id -> {:phase :claimed|:running|:deferred-recovery, :process Process}
+     ;; run-id -> {:phase :claimed|:running|:deferred-recovery, :process Process,
+     ;; :headless? bool, :fanout-group str|nil, :fanout-cap int|nil} — the last
+     ;; three let claim!'s atomic window count headless width per workspace/group.
      :in-flight (atom {})
+     ;; workspace headless fan-out ceiling the claim! window enforces; trusted
+     ;; config overrides it via set-fanout-ceiling!.
+     :fanout-ceiling (atom default-fanout-ceiling)
      :recovery-scheduler scheduler
      :worker-executor workers
      :preamble-extension (atom nil)
@@ -176,9 +189,12 @@
 
   The v2 mixed `:harness-registry` is split by entry shape into the v3
   `:harness-registry` (tools) and `:alias-registry` (seats); backend registry,
-  in-flight tracking, and the set-once override atoms carry over; the executors
-  and close hook are rebuilt fresh so scan!/scheduling never runs against a
-  stale or missing executor. The old recovery scheduler is stopped (best-effort,
+  in-flight tracking, and the config override atoms (preamble extension, default
+  review contract, `:fanout-ceiling`) carry over; the executors and close hook
+  are rebuilt fresh so scan!/scheduling never runs against a stale or missing
+  executor. A pre-v4 map lacks `:fanout-ceiling`, so `select-keys` omits it and
+  `new-state`'s default survives (the `(merge (new-state) (select-keys old ...))`
+  order never leaves the ceiling nil); a v4 map's configured value is preserved. The old recovery scheduler is stopped (best-effort,
   accepting no new ticks) while the old worker pool is left to drain any
   in-flight run monitors as daemon threads rather than being interrupted
   mid-run."
@@ -193,7 +209,7 @@
     (merge (new-state)
            (select-keys old [:backend-registry :in-flight
                              :preamble-extension :preamble-conflicts
-                             :default-review-contract])
+                             :default-review-contract :fanout-ceiling])
            {:harness-registry (atom (into {} (:harness grouped)))
             :alias-registry (atom (into {} (:alias grouped)))})))
 
@@ -232,6 +248,39 @@
   scan! should have launched but did not — from one already in flight."
   []
   (set (keys @(in-flight))))
+
+(defn- fanout-ceiling-atom [] (:fanout-ceiling (state)))
+
+(defn fanout-ceiling
+  "Return the workspace headless fan-out ceiling the claim! window enforces.
+
+  Defaults to 4; trusted config overrides it with `set-fanout-ceiling!`."
+  []
+  @(fanout-ceiling-atom))
+
+(defn- validate-fanout-ceiling
+  "Return `n` when it is a positive integer, else fail loudly (TEN-003)."
+  [n]
+  (if (and (integer? n) (pos? n))
+    n
+    (fail! "Fan-out ceiling must be a positive integer" {:ceiling n})))
+
+(defn set-fanout-ceiling!
+  "Set the workspace ceiling on how many headless agent runs the engine admits
+  concurrently, workspace-wide.
+
+  Intended for trusted workspace config (mirrors `set-preamble-extension!` and
+  the batteries read cap). The window inside `claim!` refuses to admit a ready
+  headless run once this many are already in flight, and tightens to
+  `min(ceiling, cap)` for a stamped fan-out group; interactive sessions are
+  exempt and consume no slot. Invalid values (zero, negative, or non-integer)
+  fail loudly rather than falling back to a default. Reload-tolerant: the
+  configured value survives `reload!` through the engine's versioned state."
+  [limit]
+  (let [limit (validate-fanout-ceiling limit)]
+    (reset! (fanout-ceiling-atom) limit)
+    limit))
+
 (defn- default-review-contract
   "Workspace review-contract override atom; nil means the generic contract applies."
   []
@@ -1136,7 +1185,7 @@
                          (binding [*runtime* runtime]
                            (swap! (in-flight) dissoc id)
                            (when-let [run (first (weaver/ready runtime [:and pending-query [:= :id id]] {}))]
-                             (when (claim! id)
+                             (when (claim! run)
                                (launch-run! runtime run)))))
              (long recovery-harness-retry-ms)
              TimeUnit/MILLISECONDS))
@@ -1603,7 +1652,9 @@
           (let [handle (parse-handle backend-name out)]
             (when (seq handle)
               (update-run! id (into {} (map (fn [[k v]] [(str "agent-run/handle." k) v])) handle) {}))
-            (swap! (in-flight) assoc id {:phase :running}))
+            ;; merge over the claim entry so the window's headless?/group fields
+            ;; survive the :claimed -> :running transition.
+            (swap! (in-flight) update id merge {:phase :running}))
           (catch Throwable t
             ;; claim the teardown before stopping: once :stop kills the session,
             ;; a concurrent supervise! probe sees it dead and would race its
@@ -1654,7 +1705,9 @@
                                             :err-file err-file
                                             :stdin (when (= :stdin (:prompt-via harness)) prompt)})]
           (reset! process-ref process)
-          (swap! (in-flight) assoc id {:phase :running :process process})
+          ;; merge over the claim entry so the window's headless?/group fields
+          ;; survive the :claimed -> :running transition and keep counting.
+          (swap! (in-flight) update id merge {:phase :running :process process})
           (update-run! id (cond-> {"agent-run/pid" (.pid ^Process process)}
                             (process-start-instant process)
                             (assoc "agent-run/pid-started-at" (process-start-instant process)))
@@ -1692,20 +1745,55 @@
               (finally (swap! (in-flight) dissoc id)))))
         (launch-headless! id run)))))
 
-(defn- claim! [id]
-  (let [[old _new] (swap-vals! (in-flight) (fn [m]
-                                           (if (contains? m id)
-                                             m
-                                             (assoc m id {:phase :claimed}))))]
-    (not (contains? old id))))
+(defn- window-admits?
+  "Does the in-flight map `m` have room to admit one more headless run under the
+  workspace ceiling `w`?
+
+  Interactive runs consume no slot and are always admitted. A headless run is
+  refused when `m` already holds `w` headless entries (the workspace ceiling), or
+  when its fan-out `group` is already at `min(w, cap)` — group tightening never
+  exceeds the workspace width. Both `:claimed` and `:running` entries count, so
+  the check composes with concurrent scan!s over the same map."
+  [m w headless? group cap]
+  (or (not headless?)
+      (let [headless-entries (filterv :headless? (vals m))]
+        (and (< (count headless-entries) w)
+             (or (nil? group)
+                 (< (count (filterv #(= group (:fanout-group %)) headless-entries))
+                    (min w (or cap w))))))))
+
+(defn- claim! [run]
+  ;; The budget check lives inside the swap fn so counting and claiming are one
+  ;; atomic compare-and-swap: concurrent scan!s each see the other's claimed
+  ;; entries and never over-admit past the window (PROP-Foc-001.C1).
+  (let [id (:id run)
+        ceiling (fanout-ceiling)
+        headless? (not (interactive? run))
+        group (sattr run "fanout-group")
+        cap (sattr run "fanout-cap")
+        [old after] (swap-vals! (in-flight)
+                                (fn [m]
+                                  (if (or (contains? m id)
+                                          (not (window-admits? m ceiling headless? group cap)))
+                                    m
+                                    (assoc m id {:phase :claimed
+                                                 :headless? headless?
+                                                 :fanout-group group
+                                                 :fanout-cap cap}))))]
+    ;; claimed iff we were the one that added it: already-in-flight leaves it in
+    ;; `old`, a window refusal leaves it out of the post-swap map.
+    (and (not (contains? old id)) (contains? after id))))
 
 (defn scan!
-  "Spawn every ready pending run not already claimed. Returns claimed run ids."
+  "Spawn every ready pending run the window admits and that is not already
+  claimed. Runs the window admits no slot for this pass stay pending with no new
+  attribute; a later completion re-fires on-event → scan! to admit the next.
+  Returns claimed run ids."
   []
   (let [runtime (rt)
         workers (worker-executor)
         ready-runs (remove recovery-deferred? (weaver/ready runtime pending-query {}))
-        claimed (filterv (comp claim! :id) ready-runs)]
+        claimed (filterv claim! ready-runs)]
     (doseq [run claimed]
       (.execute workers ^Runnable (fn [] (launch-run! runtime run))))
     (mapv :id claimed)))
