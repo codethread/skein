@@ -6,7 +6,7 @@
 **RFC:** none
 **Root specs:** none; no-delta judgment in PLAN-Knd-001.CM2
 **Feature specs:** none; the public contract belongs to `kanban.spool`
-**Status:** Draft
+**Status:** Implemented
 **Last Updated:** 2026-07-14
 
 ## PLAN-Knd-001.P1 Goal and scope
