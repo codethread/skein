@@ -21,6 +21,7 @@ _No active features currently._
 ## Archived features
 
 Archived feature folders preserve historical planning context. Current shipped contracts are the root specs above, even if older archive notes describe pre-spec documentation locations.
+Default `rg` searches skip `archive/`; use `rg --no-ignore devflow/archive` when you need those records.
 
 - `26-06-24__agent-tool-interface` — shipped agent-operable CLI/REPL interface for the todo graph MVP.
 - `26-06-24__db-owned-task-ids` — shipped generated task ids and creation-time `--link` edges.
