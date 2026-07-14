@@ -108,6 +108,17 @@ mill init
 files (covered later) and never overwrites ones you already have. It fails loudly outside Git, does
 not run `git init`, and does not create the database; the weaver prepares storage when it starts.
 
+For personal use without tracked repository changes, use stealth bootstrap:
+
+```sh
+mill init --stealth
+```
+
+This keeps `.skein` in the repository, where tools and agents see ordinary paths, but adds the
+workspace and `CLAUDE.local.md` to Git's private exclude file. It prints every change and the
+Codex instruction you may add to your own agent guidance. Keep substantial personal config in a
+[local spool](./spools/customisation.md#a-private-repo-local-workspace).
+
 **Escape hatch — throwaway workspaces.** For experiments, tests, or agent work, use a disposable workspace so you never touch a real repo's config:
 
 ```sh

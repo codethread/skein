@@ -50,6 +50,7 @@ type MillWorldRequest struct {
 	Source         string `json:"source,omitempty"`
 	Name           string `json:"name,omitempty"`
 	ReadyTimeoutMs int64  `json:"ready_timeout_ms,omitempty"`
+	Stealth        bool   `json:"stealth,omitempty"`
 }
 
 type MillResponse struct {

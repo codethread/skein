@@ -34,6 +34,23 @@ when you want them: each shared file has a gitignored personal counterpart, so s
 reviewed while personal config stays on your machine. Explicit `--workspace` bootstrap works the same way on
 the selected directory, preserving whatever already exists.
 
+## A private repo-local workspace
+
+Run `mill init --stealth` when you want Skein in a repository without committing its config. The
+workspace remains a physical `.skein` directory at the Git root, so agents, `rg`, Make, Clojure,
+and weaver calls see normal repo-local paths. Mill adds its paths to `.git/info/exclude`, which is
+private to that clone, and reports each file it created, updated, skipped, or left unchanged.
+
+Stealth init does not write shared `AGENTS.md` or `CLAUDE.md`. It creates or updates an untracked
+`CLAUDE.local.md` when safe and prints the instruction Codex users may add to their own guidance.
+If `.skein` is already tracked or a mill-owned marker block was edited, it refuses before changing
+anything.
+
+Keep the generated startup small. Put personal activation in `init.local.clj`, approvals in
+`spools.local.edn`, and substantive code in a local spool. If that code needs history, keep the
+spool in its own Git repository and approve its external root from `spools.local.edn`; `.skein`
+then remains only the repo-local entry point.
+
 ## Startup files
 
 The weaver loads startup files in order: `init.clj`, then `init.local.clj`. Missing files are skipped; present

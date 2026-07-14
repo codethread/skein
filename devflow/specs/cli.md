@@ -1,6 +1,6 @@
 # CLI Surface
 
-**Document ID:** `SPEC-002` **Status:** Implemented **Last Updated:** 2026-07-12 **Related RFCs:** [RFC-019 Op-only CLI](../archive/26-07-04__op-only-cli/rfcs/2026-07-04-op-only-cli.md), [RFC-002 Task Query DSL](../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-go-cli-migration.md) **Code:** `cli/`, `src/skein/core/weaver`, `src/skein/api/weaver/alpha.clj`
+**Document ID:** `SPEC-002` **Status:** Implemented **Last Updated:** 2026-07-14 **Related RFCs:** [RFC-019 Op-only CLI](../archive/26-07-04__op-only-cli/rfcs/2026-07-04-op-only-cli.md), [RFC-002 Task Query DSL](../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-go-cli-migration.md) **Code:** `cli/`, `src/skein/core/weaver`, `src/skein/api/weaver/alpha.clj`
 
 ## SPEC-002.P1 Purpose
 
@@ -20,7 +20,7 @@ strand --dry-run [dispatcher-flags] <op-name> [args...]
 mill start
 mill status
 mill weaver list
-mill init [--workspace <dir>]
+mill init [--workspace <dir> | --stealth]
 mill weaver start [--workspace <dir>] [--name <name>] [--ready-timeout <dur>]
 mill weaver status|stop [--workspace <dir>]
 mill weaver repl [--stdin] [--workspace <dir>]
@@ -52,6 +52,19 @@ Dispatcher flags: `--workspace <dir>`, `--cwd <dir>`, `--worktree-root <dir>`, `
 ## SPEC-002.P4 Mill contracts
 
 - **SPEC-002.C14a:** `mill init` is the selected workspace bootstrap command only. It creates or completes missing alpha workspace files/directories and never contacts a weaver, initializes SQLite storage, or runs `git init`. Without `--workspace`, it creates or completes `.skein` at the canonical Git repository root and fails loudly outside supported Git layouts. With explicit `--workspace`, it bootstraps that directory directly as an isolated workspace. Bootstrap creates only missing files: selected workspace, `config.json`, `spools/`, `spools.edn`, `init.clj`, and `.gitignore`; it never overwrites existing files. A workspace carrying legacy `libs.edn`/`libs.local.edn` fails init loudly with rename remediation (`spools.edn`/`spools.local.edn`, top-level `:libs` to `:spools`) rather than being migrated or ignored. Created config uses only `"configFormat":"alpha"` and does not persist source. Repo `.skein/.gitignore` ignores local overlays and accidental runtime artifacts including `config.local.json`, `init.local.clj`, `spools.local.edn`, `state/`, `data/`, `weaver.*`, and SQLite artifacts. Generated `init.clj` requires `skein.api.current.alpha` and `skein.api.runtime.alpha`, captures `(current/runtime)`, calls `(runtime/sync! runtime)`, and activates `skein.spools.batteries` so fresh workspaces get the shipped command surface. Repo-world bootstrap (no `--workspace`) additionally ensures the repository-root agent guidance file carries a marker-guarded `## Skein / strand` section pointing new agents at `mill skein prime` and `mill strand prime`: it appends the section to whichever of `AGENTS.md`/`CLAUDE.md` exist (idempotent via the `<!-- mill:skein-prime -->` open marker with a matching `<!-- /mill:skein-prime -->` close marker bounding the block, append-only, never rewriting existing prose) and creates `AGENTS.md` when neither exists. Explicit `--workspace` bootstrap performs no guidance injection.
+- **SPEC-002.C14b:** `mill init --stealth` is the explicit exception to C14a's repository guidance injection. It is valid only without
+  `--workspace` and selects the canonical Git-root `.skein`. Before writing anything, it refuses tracked `.skein` paths and malformed
+  mill-owned marker blocks. It bootstraps ordinary workspace files without editing shared `AGENTS.md` or `CLAUDE.md`, then maintains this
+  exact block in `.git/info/exclude`: `# mill:skein-stealth`, `/.skein`, `/CLAUDE.local.md`, `# /mill:skein-stealth`. It maintains the
+  exact C14a guidance block in an untracked `CLAUDE.local.md`; a tracked `CLAUDE.local.md` is left untouched. An absent owned file is
+  created with the exact block. A non-empty marker-free file keeps its bytes and gains a separating newline plus the block. Exact blocks,
+  including their final newline, are unchanged; partial, duplicate, reordered, or edited blocks are semantic refusals. The existing `config_dir` and
+  `config_file` success keys gain a typed `stealth` object with closed `git_exclude` (`path`, `status`), `claude_guidance` (`path`,
+  `status`), and `codex_guidance` (`status`, `suggested_text`) children. File status values are `created`, `updated`, `unchanged`, and,
+  for Claude guidance only, `skipped-tracked`; Codex status is `manual-required`. Go response structs validate this shape before emission.
+  Semantic refusals use code `mill/init-stealth-refused` and exactly `path`, `target`, `state`, and `remediation` details. Target values are
+  `tracked-skein`, `git-exclude`, and `claude-guidance`; state values are `tracked`, `start-only`, `end-only`, `duplicate-start`,
+  `duplicate-end`, `reversed`, and `edited`. Ordinary `mill init` output remains unchanged.
 - **SPEC-002.C15:** `mill` uses Cobra for its command tree and help text. The `strand` dispatcher owns its fixed flag set directly and must clearly describe the dispatcher contract in `--help`; it has no command tree to document.
 - **SPEC-002.C16:** `mill weaver start` resolves the selected workspace and starts that workspace's Clojure weaver as a mill child process using mill-derived XDG state/data dirs and mill-resolved source, returning selected workspace JSON status without running the weaver in the foreground. `--name <name>` sets a non-empty friendly weaver name; when omitted, mill resolves the name from `config.local.json` `"name"`, then `config.json` `"name"`, then the selected workspace basename. `--ready-timeout <dur>` sets the startup wait budget as a positive Go duration; omitted uses 5m. If source resolution fails, startup fails with remediation naming the accepted sources. The weaver owns storage selection/preparation and loads selected workspace startup files in order: `init.clj`, then `init.local.clj`; missing files are skipped and present failing files fail startup loudly. Startup waiting allows for JVM boot plus trusted config work before reporting ready status. On timeout, mill terminates the still-starting weaver rather than leaving an orphan. Weaver stdout/stderr are captured to `weaver.log` in the weaver state dir — appended across restarts, never forwarded to mill's own log, and left in place by artifact cleanup so a failed boot stays post-mortem readable; startup failures carry the log path and its tail in the error, and weaver status JSON carries `log_path`.
 - **SPEC-002.C17:** `mill weaver repl` verifies the selected workspace's weaver is running and attaches to its nREPL endpoint using mill-resolved source launch context. Mill does not proxy nREPL traffic. Any launched local process is a thin transport/UI attach client only; user forms evaluate in the weaver JVM.

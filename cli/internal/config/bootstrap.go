@@ -15,6 +15,10 @@ const (
 )
 
 func BootstrapWorld(cwd, configDir, source string) (World, error) {
+	return bootstrapWorld(cwd, configDir, source, true)
+}
+
+func bootstrapWorld(cwd, configDir, source string, injectGuidance bool) (World, error) {
 	world, err := BootstrapTargetWorld(cwd, configDir)
 	if err != nil {
 		return World{}, err
@@ -48,7 +52,7 @@ func BootstrapWorld(cwd, configDir, source string) (World, error) {
 	if _, _, err := Load(world.ConfigDir); err != nil {
 		return World{}, err
 	}
-	if configDir == "" {
+	if configDir == "" && injectGuidance {
 		if err := ensureAgentGuidance(filepath.Dir(world.ConfigDir)); err != nil {
 			return World{}, err
 		}

@@ -44,11 +44,15 @@ func emitJSON(v any) error {
 	return json.NewEncoder(os.Stdout).Encode(v)
 }
 
-func runInit(workspace string) error {
+func runInit(workspace string, stealth bool) error {
+	if stealth && workspace != "" {
+		return errors.New("--stealth cannot be combined with --workspace; stealth init creates the repo-local .skein workspace")
+	}
 	world, err := worldRequest(workspace, "")
 	if err != nil {
 		return err
 	}
+	world.Stealth = stealth
 	result, err := client.MillCall("init", world)
 	if err != nil {
 		return err

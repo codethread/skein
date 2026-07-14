@@ -6,6 +6,11 @@ notes, dependencies, and workflow state behind a small machine-readable command 
 state, and the `strand` CLI is a thin JSON control surface. Your workflow model lives mostly
 in custom attributes and your own config/spool code.
 
+For personal use in a repository that does not commit Skein config, run `mill init --stealth`.
+It keeps a physical repo-local `.skein`, hides local files through Git's private exclude file,
+and prints the Codex instruction you may add yourself. The customisation guide below explains
+the local-spool convention for substantive personal config.
+
 The Skein source checkout for this world is `{{.Source}}`, resolved from `SKEIN_SOURCE`, the
 install-time source recorded by `make install`, or a canonical Skein checkout cwd. Every path
 below lives under it.

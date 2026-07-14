@@ -92,6 +92,14 @@ workspace, writes shareable `config.json` with the alpha format marker when abse
 shared config files ready to commit. It does not run `git init`, persist source, or initialize
 database storage; weaver startup prepares storage.
 
+`mill init --stealth` provides the same repo-local workspace for personal use without tracked
+config. It refuses if `.skein` is already tracked, maintains a marker-owned block in
+`.git/info/exclude`, avoids shared agent guidance, and reports every action. An untracked
+`CLAUDE.local.md` receives the standard Skein guidance when safe; Codex guidance is printed for
+the user to place according to their own repository policy. See
+[customising your workspace](./spools/customisation.md#a-private-repo-local-workspace) for the
+recommended local-spool layout.
+
 User-facing Skein documentation lives in the source checkout under `docs/`; the canonical user
 reference is this page, `docs/reference.md`. Two harness-agnostic orientation commands surface this
 to agents at runtime, with no running weaver required: `mill skein prime` resolves the Skein source
