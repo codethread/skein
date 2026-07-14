@@ -74,11 +74,13 @@ boundary; this plan supplies the build order and test boundary.
 - **PLAN-Dcr-001.A7 — merge order with `uson2`:** The sibling
   `uson2-cli-style-guide` feature lands on main before PH6-PH9 begin, and this
   branch rebases on that main. Its registered-op dispatch boundary adds
-  `:operation` to returned maps, so every declaration sweep captures the
-  post-dispatch values. Its arg-spec fragment helpers are also available before
-  those sweeps. Keep the dispatch boundary read-only in this feature. The
-  `.skein/config.clj` ops already hand-stamp `:operation`; their PH9 shapes
-  include that field independently of the sibling change.
+  `:operation` to declared-subcommand map results, so each declaration sweep
+  captures the post-dispatch value where that rule applies. Its arg-spec
+  fragment helpers are also available before those sweeps. Keep the dispatch
+  boundary read-only in this feature. The `.skein/config.clj` ops hand-stamp
+  `:operation` except for the flat `carder-report` and `flow-await` ops. PH9
+  shapes include the hand-stamped field where present and omit it for those two
+  unstamped results.
 
 ## PLAN-Dcr-001.P3 Affected areas
 
@@ -170,10 +172,10 @@ consumer files. Batteries is deliberately unchanged.
 
 Cold focused gates:
 `clojure -M:test skein.api.spool-test skein.spools.loom-test
-skein.config-ops-test`; the kanban upstream runs its named op/projection test
-namespaces before the pin bump. `make spool-suite-gate` validates the pinned
-kanban suite against this checkout; it supplements, and does not replace, those
-cold focused gates.
+skein.config-ops-test`; the kanban upstream runs
+`clojure -M:test ct.spools.kanban-test` before the pin bump.
+`make spool-suite-gate` validates the pinned kanban suite against this checkout;
+it supplements, and does not replace, those cold focused gates.
 
 ### PLAN-Dcr-001.PH5 Agent-run result consumption seam
 
@@ -232,13 +234,16 @@ Outcome: the `.skein` defop macro passes `:returns`; config, analytics, and land
 ops declare and check every leaf in a focus-eligible config-op suite. The pinned
 devflow and kanban op suites adopt the same contract and their synchronized
 pins advance only after their focused tests pass. The config-op shapes include
-their existing hand-stamped `:operation` field. Existing add-libs config tests
-remain integration coverage, not a per-slice substitute for the focused suite.
+their existing hand-stamped `:operation` field except for `carder-report` and
+`flow-await`, whose unstamped return shapes omit it. Existing add-libs config
+tests remain integration coverage, not a per-slice substitute for the focused
+suite.
 
 Cold focused gates:
-`clojure -M:test skein.macros.ops-test skein.config-ops-test`; each external
-spool runs its named op-return test namespaces before pinning. Then
-`make spool-suite-gate` runs both pinned external suites against this checkout.
+`clojure -M:test skein.macros.ops-test skein.config-ops-test`; the external
+spools run `clojure -M:test ct.spools.devflow-test ct.spools.kanban-test` before
+pinning. Then `make spool-suite-gate` runs both pinned external suites against
+this checkout.
 
 ## PLAN-Dcr-001.P6 Validation strategy
 
