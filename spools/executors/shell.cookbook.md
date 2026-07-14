@@ -163,7 +163,7 @@ Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../wor
 
 **Situation.** A shell check failed — the command exited non-zero, timed out, or the argv was malformed. The gate is stuck with `shell/error` and the shell executor is skipping it. You've fixed the underlying problem and want the check to run again.
 
-**Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `shell/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
+**Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `shell/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). A blank stamp counts as cleared; from the CLI, use `strand update <gate-id> --attr shell/error=`. The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
 
 ```clojure
 (require '[skein.api.weaver.alpha :as weaver]

@@ -39,7 +39,7 @@ Return durable stall detail for a ready `:shell` gate view, or nil.
   The failure detail lives on the gate itself (`shell/error`), so — unlike
   the subagent executor — there is no `delegates`-edge join back to a separate
   run row.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L296-L305">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L305-L314">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/install!">`install!`</a>
 ``` clojure
@@ -50,7 +50,7 @@ Function.
 Install the shell executor: register its event handler, the `:shell`
   workflow executor, and the `stalled-shell-gates` coordinator query, then
   perform an initial scan.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L307-L326">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L316-L337">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/on-event">`on-event`</a>
 ``` clojure
@@ -59,7 +59,7 @@ Install the shell executor: register its event handler, the `:shell`
 Function.
 
 Weaver event handler: graph changes may make a `:shell` gate ready.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L291-L294">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L300-L303">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/scan!">`scan!`</a>
 ``` clojure
@@ -71,4 +71,4 @@ Dispatch every ready `:shell` gate not already claimed or errored.
 
   Enumerates ready gates purely through the workflow surface and serializes on a
   runtime-owned monitor so concurrent scans cannot double-launch a gate.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L272-L289">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L281-L298">Source</a></sub></p>

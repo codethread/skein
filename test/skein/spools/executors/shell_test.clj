@@ -127,6 +127,37 @@
             (is (nil? (attr closed :shell/error)))
             (is (= 2 (run-count)))))))))
 
+(deftest blank-error-stamp-counts-as-cleared-for-rerun-and-stall-surfaces
+  (with-reed
+    (fn [rt]
+      (let [counter (temp-file ".count")
+            run-count (fn [] (count (remove str/blank? (str/split-lines (slurp counter)))))
+            argv (fn [exit] ["sh" "-c" (str "echo run >> '" (.getPath counter) "'; exit " exit)])]
+        (workflow/start! "blank" (single-gate "blank" {"shell/argv" (argv 5)}) {})
+        (events/await-quiescent! rt)
+        (let [gate-id (:id (ready-shell-gate "blank"))]
+          (await-eventually #(let [g (weaver/show rt gate-id)]
+                               (when (attr g :shell/error) g)))
+          (is (= 1 (run-count)))
+          ;; the CLI clearing idiom (`strand update <gate-id> --attr shell/error=`)
+          ;; stores a blank string rather than removing the attribute; a blank
+          ;; stamp must count as cleared so the next scan re-runs the check.
+          (weaver/update rt gate-id {:attributes {"shell/error" ""
+                                                  "shell/argv" (argv 0)}})
+          (events/await-quiescent! rt)
+          (let [closed (await-eventually #(let [g (weaver/show rt gate-id)]
+                                            (when (= "closed" (:state g)) g)))]
+            (is (zero? (attr closed :shell/exit-code)))
+            (is (= 2 (run-count)))))
+        ;; a blank-stamped active gate is not a stall: neither the predicate nor
+        ;; the coordinator query reports it
+        (let [decoy (weaver/add rt {:title "Blank decoy"
+                                    :attributes {"workflow/gate" "shell"
+                                                 "shell/error" ""}})]
+          (is (nil? (reed/gate-stalled? {:id (:id decoy)})))
+          (is (not-any? #(= (:id decoy) (:id %))
+                        (weaver/list-query rt 'stalled-shell-gates {}))))))))
+
 (deftest invalid-input-fails-loudly-and-spawns-no-process
   (with-reed
     (fn [rt]

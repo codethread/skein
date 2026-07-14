@@ -87,6 +87,15 @@
 (defn- attr [strand k]
   (attr-get strand k))
 
+(defn- non-blank
+  "Return s when it is a non-blank string, else nil.
+
+  A blank `shell/error` / `shell/running` stamp counts as cleared, so the
+  CLI clearing idiom (`strand update <gate-id> --attr shell/error=`) re-arms
+  a gate exactly as the subagent executor's `gate/error` idiom does."
+  [s]
+  (when (and (string? s) (not (str/blank? s))) s))
+
 (defn- stamp! [id attributes]
   (weaver/update (rt) id {:attributes attributes}))
 
@@ -260,8 +269,8 @@
   [runtime run-id gate-view]
   (let [gate (weaver/show (rt) (:id gate-view))]
     (when (and (= "active" (:state gate))
-               (not (attr gate :shell/error))
-               (not (attr gate :shell/running)))
+               (not (non-blank (attr gate :shell/error)))
+               (not (non-blank (attr gate :shell/running))))
       (stamp! (:id gate) {"shell/running" (now)})
       (.execute (worker-executor)
                 ^Runnable (fn []
@@ -301,7 +310,7 @@
   run row."
   [gate-view]
   (let [gate (weaver/show (rt) (:id gate-view))]
-    (when-let [error (attr gate :shell/error)]
+    (when-let [error (non-blank (attr gate :shell/error))]
       {:gate (:id gate) :error error})))
 
 (defn install!
@@ -315,12 +324,14 @@
                       {:spool "shell"})
     (workflow/register-executor! :shell gate-stalled?)
     ;; The coordinator attention surface for stuck shell gates: an active `:shell`
-    ;; gate carrying `shell/error`. No delegates-edge join is needed because the
-    ;; failure detail lives on the gate itself.
+    ;; gate carrying a non-blank `shell/error` (a blank stamp is the CLI clearing
+    ;; idiom). No delegates-edge join is needed because the failure detail lives
+    ;; on the gate itself.
     (graph/register-query! runtime 'stalled-shell-gates
                            [:and [:= :state "active"]
                             [:= [:attr "workflow/gate"] "shell"]
-                            [:exists [:attr "shell/error"]]])
+                            [:exists [:attr "shell/error"]]
+                            [:!= [:attr "shell/error"] ""]])
     (scan!)
     {:installed true
      :namespace 'skein.spools.executors.shell}))
