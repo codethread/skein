@@ -7,9 +7,9 @@
   own precise contract; a synthesizer fans all findings into one verdict.
 
   Findings append as notes on the review target, so run it over the feature's
-  task strand — never the kanban card, whose notes stay lean for handover —
-  from the worktree where the diff lives, and name the diff surface so
-  reviewers stop re-deriving it:
+  task strand — never the kanban card, whose notes stay lean for handover;
+  `agent review` rejects card targets outright — from the worktree where the
+  diff lives, and name the diff surface so reviewers stop re-deriving it:
 
       strand agent review <task-id> --roster change-review --cwd <worktree> \\
         --commit-range <base>..HEAD

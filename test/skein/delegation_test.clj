@@ -253,7 +253,32 @@
         (doseq [run-id (:reviewers review)]
           (let [run (weaver/show rt run-id)]
             (is (= (:id target) (get-in run [:attributes :review/target])))
-            (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "Review contract"))))))))
+            (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "Review contract"))
+            (is (str/includes? (get-in run [:attributes :agent-run/prompt])
+                               "--attr note/kind=review-dump")
+                "reviewer prompts instruct the review-dump view hint")))))))
+
+(deftest review-rejects-kanban-card-targets
+  ;; findings append as notes on the review target; card notes stay lean for
+  ;; handover, so a card-targeted review must fail toward the card's task tier
+  (with-agents
+    (fn [rt]
+      (let [card (weaver/add rt {:title "Feature card"
+                                 :attributes {:kanban/card "true"
+                                              :kanban/status "claimed"}})
+            task (weaver/add rt {:title "Review-bearing task"
+                                 :attributes {:kanban/task "true"}})]
+        (let [rejected (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                             #"never a kanban card"
+                                             (agents/review! (:id card)
+                                                             {:reviewers [{:harness :sh :focus "any"}]
+                                                              :contract "C"})))]
+          (is (str/includes? (ex-message rejected) "kanban task add")
+              "the failure names the task-tier remediation"))
+        (testing "a kanban task target stays reviewable"
+          (let [review (agents/review! (:id task) {:reviewers [{:harness :sh :focus "any"}]
+                                                   :contract "C"})]
+            (is (= (:id task) (:target review)))))))))
 
 (deftest review-consumes-workspace-default-contract
   (with-agents
@@ -398,6 +423,12 @@
                              (str "--attr review/pass=" (:review-pass review))))
           (is (str/includes? (get-in specs [:synthesizer :prompt])
                              (str "--attr review/pass=" (:review-pass review))))
+          (is (str/includes? (get (first (:reviewers specs)) :prompt)
+                             "--attr note/kind=review-dump")
+              "reviewer findings carry the review-dump view hint")
+          (is (str/includes? (get-in specs [:synthesizer :prompt])
+                             "--attr note/kind=summary")
+              "the synthesis note carries the summary view hint")
           (is (not= (:review-pass (agents/roster-review-specs :composed {:target (:id target)}))
                     (:review-pass (agents/roster-review-specs :composed {:target (:id target)})))
               "each pass mints a distinct tag"))
@@ -476,10 +507,17 @@
                            "--attr review/pass=pass-7"))
         (is (not (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag nil})
                                 "--attr review/pass"))))
+      (testing "post-with-tag threads the note/kind view hint and omits it when nil"
+        (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"
+                                                             :kind "review-dump"})
+                           "--attr note/kind=review-dump"))
+        (is (not (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"})
+                                "--attr note/kind"))))
       (testing "review-prompt is assembled from the shared fragments byte-for-byte"
         (let [prompt (#'agents/review-prompt {:target-id "s1" :contract "C" :note-tag "p1"})]
           (is (str/includes? prompt (#'agents/read-the-board-fragment {:view :strand :board-id "s1"})))
-          (is (str/includes? prompt (#'agents/post-with-tag-fragment {:board-id "s1" :tag "p1"}))))))))
+          (is (str/includes? prompt (#'agents/post-with-tag-fragment {:board-id "s1" :tag "p1"
+                                                                      :kind "review-dump"}))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Change context: the caller-supplied diff surface injected into reviewers
