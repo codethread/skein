@@ -219,3 +219,13 @@ feature card `m5u47`, which already owns a kanban.spool branch and the paired
 pin-bump machinery. Its note-surface change will remove kanban's hand-written
 `:operation` labels as fix-on-touch work. The uson2 feature does not edit
 kanban.spool or advance its pins.
+
+### PLAN-Ucs-001.DN3 Agent-run validation correction — 2026-07-14
+
+Task 4's named focused command is rejected before execution because
+`skein.agent-run-test` belongs to add-libs shard B and is not focused-runnable.
+The slice gate used the focused-runnable downstream
+`clojure -M:test skein.delegation-test` plus cold shard B through
+`clojure -M:test --shard B --summary-file <file>`. This exercises the direct
+delegation surface and the authoritative agent-run suite without running the
+full locked test suite, which remains land-time work.
