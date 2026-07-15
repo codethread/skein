@@ -14,6 +14,7 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
+            [skein.api.return-shape.alpha :as return-shape]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.vocab.alpha :as vocab]))
 
@@ -107,11 +108,11 @@
           (stamp! run-id {"gate/delivered" "gate-closed"})
 
           (ready-gate? workflow-run-id gate-id)
-          (do
-            (workflow/complete! workflow-run-id
-                                (cond-> {:step gate-id :by run-id}
-                                  (non-blank (attr run :agent-run/result))
-                                  (assoc :notes (attr run :agent-run/result))))
+          (let [result (attr run :agent-run/result)
+                completion (cond-> {:step gate-id :by run-id}
+                             (non-blank result) (assoc :notes result))]
+            (return-shape/check! :string result)
+            (workflow/complete! workflow-run-id completion)
             (stamp! run-id {"gate/delivered" "true"}))
 
           :else

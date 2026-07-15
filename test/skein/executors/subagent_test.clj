@@ -121,6 +121,37 @@
                (edge-row rt (:id run) (:id gate) "serves")))
         (is (nil? (edge-row rt (:id gate) (:id run) "parent-of")))))))
 
+(deftest invalid-success-result-stamps-delivery-error-and-leaves-gate-incomplete
+  (with-runtime
+    (fn [rt _]
+      (shuttle/install!)
+      (workflow/start! "invalid-result"
+                       (workflow/workflow
+                        "Invalid result"
+                        (workflow/gate :delegate "Delegate" :subagent)
+                        (workflow/step :after "After" :self :depends-on [:delegate]))
+                       {})
+      (let [gate-id (:id (ready-subagent-gate "invalid-result"))
+            run (weaver/add rt {:title "Malformed successful run"
+                                :state "closed"
+                                :attributes {:agent-run/run "true"
+                                             :agent-run/phase "done"
+                                             :agent-run/result 42
+                                             :gate/run-id "invalid-result"}
+                                :edges [{:type "serves" :to gate-id}]})]
+        (treadle/install!)
+        (events/await-quiescent! rt)
+        (let [run (weaver/show rt (:id run))
+              gate (weaver/show rt gate-id)]
+          (is (str/starts-with? (attr run :gate/delivered)
+                                "error: Return value does not match declaration at []"))
+          (is (str/includes? (attr run :gate/delivered) ":expected :string"))
+          (is (= "active" (:state gate)))
+          (is (nil? (attr gate :workflow/outcome-by)))
+          (is (nil? (attr gate :workflow/outcome-notes)))
+          (is (= [gate-id]
+                 (mapv :id (workflow/next-steps "invalid-result")))))))))
+
 (deftest blocked-gate-spawns-only-after-blocker-closes
   (with-treadle
     (fn [rt]
