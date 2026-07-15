@@ -390,3 +390,9 @@ Append notes here. Do not rewrite earlier notes.
   the generated Weaver API page or an API-doc gate. Task 3's strict docs gate
   exposed the drift. The Task 3 retry was narrowly authorized to regenerate
   and commit `docs/api/weaver.api.md` before sign-off.
+
+### PLAN-Dcr-001.DN5 PH5 generated API drift — 2026-07-15
+
+- Task 5 did not change public docstring text, but its source edit shifted the
+  generated anchors in `spools/executors/subagent.api.md`. The final docs gate
+  exposed the drift. A narrow repair task regenerated and committed that page.
