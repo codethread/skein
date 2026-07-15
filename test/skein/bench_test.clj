@@ -708,7 +708,7 @@ esac
           (testing "gc removes only the artifact dir; the run strand survives"
             (let [dir (entry-dir rt run slug)]
               (is (.exists dir))
-              (is (= {:removed [run]} (bench-op! rt "gc" "--run" run)))
+              (is (= {:removed [run] :operation "bench gc"} (bench-op! rt "gc" "--run" run)))
               (is (not (.exists dir)))
               (is (= "true" (get-in (weaver/show rt run) [:attributes :bench/run]))))))))))
 
