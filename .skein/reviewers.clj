@@ -84,9 +84,21 @@
                     "new flag on an existing op, or userland composition of existing surface "
                     "serve instead? State the answer even when it is no - the enumeration is "
                     "the deliverable, not an afterthought behind doc/test coverage. Also flag "
-                    "any new surface left undocumented or untested. Work from the "
-                    "changed-file list with targeted diff reads; do not read whole namespaces "
-                    "or re-read a file in slices after a whole read. Budget ~12-15 calls.")}
+                    "any new surface left undocumented or untested. For every new or changed "
+                    "op, verb, or flag, compare its name and shape with the CLI style section "
+                    "of docs/spools/writing-shared-spools.md#cli-style and note whether it uses "
+                    "the applicable skein.api.spool.alpha arg-spec fragment (note-surface, "
+                    "work-root, timeout-secs, or outcome). Style or fragment divergence is an "
+                    "ADVISORY finding for the synthesizer to weigh, never a gate. If the "
+                    "guide section, anchor, or a named fragment is absent or unreadable, "
+                    "do not skip silently or guess applicability: report the missing "
+                    "reference by path and mark that comparison blocked. The sole "
+                    "must-fix class is a text-bearing flag or positional declared outside the "
+                    "declared arg-spec parser: it loses whole-value :stdin and :payload/<name> "
+                    "resolution, so that is correctness rather than style. Work from the "
+                    "changed-file list with targeted diff reads and one bounded guide read; do "
+                    "not read whole namespaces or re-read a file in slices after a whole read. "
+                    "Budget ~15-18 calls.")}
 
     {:name "spec-shapes"
      :harness :luna-low
