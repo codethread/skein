@@ -154,9 +154,10 @@ Project the op registry as help.
   With no positional op name, return every registered op's summary (name, doc,
   provenance, stream?, deadline-class, hook-class) sorted by name. With one op
   name, return that op's full detail including the parser `explain` of its
-  arg-spec (or a raw-envelope marker). Unknown names fail loudly through
-  `resolve-op`, which carries the available names.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L550-L565">Source</a></sub></p>
+  arg-spec (or a raw-envelope marker) and a JSON-safe explanation of any
+  declared return shape. Unknown names fail loudly through `resolve-op`, which
+  carries the available names.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L552-L568">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure
@@ -207,7 +208,7 @@ Return ready strands from the result set of a registered query definition.
 Function.
 
 Install Skein-provided CLI operations into the runtime op registry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L567-L574">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L570-L577">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-op!">`register-op!`</a>
 ``` clojure
