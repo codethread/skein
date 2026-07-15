@@ -540,12 +540,14 @@
   "Project one op registry entry to its full help detail.
 
   Arg-spec ops carry the parser `explain` rendering; raw-envelope ops carry a
-  `:raw-envelope true` marker instead."
+  `:raw-envelope true` marker instead. Declared return shapes carry the
+  JSON-safe return-shape `explain` rendering."
   [entry]
-  (merge (op-summary entry)
-         (if-let [arg-spec (:arg-spec entry)]
-           {:arg-spec (cli/explain arg-spec)}
-           {:raw-envelope true})))
+  (cond-> (merge (op-summary entry)
+                 (if-let [arg-spec (:arg-spec entry)]
+                   {:arg-spec (cli/explain arg-spec)}
+                   {:raw-envelope true}))
+    (contains? entry :returns) (assoc :returns (return-shape/explain (:returns entry)))))
 
 (defn op-help-handler
   "Project the op registry as help.
@@ -553,8 +555,9 @@
   With no positional op name, return every registered op's summary (name, doc,
   provenance, stream?, deadline-class, hook-class) sorted by name. With one op
   name, return that op's full detail including the parser `explain` of its
-  arg-spec (or a raw-envelope marker). Unknown names fail loudly through
-  `resolve-op`, which carries the available names."
+  arg-spec (or a raw-envelope marker) and a JSON-safe explanation of any
+  declared return shape. Unknown names fail loudly through `resolve-op`, which
+  carries the available names."
   [ctx]
   (let [runtime (:op/runtime ctx)
         op-name (:op (:op/args ctx))]

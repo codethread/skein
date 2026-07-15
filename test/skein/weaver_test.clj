@@ -1917,7 +1917,8 @@
                            {:doc "Echo argv"
                             :arg-spec {:op "custom"
                                        :flags {:limit {:type :int :doc "Max"}}
-                                       :positionals [{:name :name}]}}
+                                       :positionals [{:name :name}]}
+                            :returns {:type :collection :items :string}}
                            'skein.weaver-test/test-op)
       (weaver/register-op! rt 'subbed
                            {:doc "Subcommand op"
@@ -1926,12 +1927,21 @@
                                        :subcommands {"add" {:doc "Add an item"
                                                             :flags {:force {:type :boolean :doc "Force add"}}
                                                             :positionals [{:name :title :required? true :doc "Item title"}]}
-                                                     "list" {:doc "List items"}}}}
+                                                     "list" {:doc "List items"}}}
+                            :returns {:subcommands
+                                      {"add" {:type :map :required {:id :integer}}
+                                       "list" {:type :collection :items :string}}}}
                            'skein.weaver-test/context-echo-op)
+      (weaver/register-op! rt 'streamed
+                           {:stream? true
+                            :returns {:stream {:emits :string
+                                               :result [:nullable :boolean]}}}
+                           'skein.weaver-test/test-op)
       (weaver/register-op! rt 'raw "Raw op" 'skein.weaver-test/context-echo-op)
       (testing "no argv lists every op summary sorted by name"
         (let [{:keys [ops]} (weaver/op! rt 'help [])]
-          (is (= ["custom" "help" "raw" "subbed"] (mapv :name ops)))
+          (is (= ["custom" "help" "raw" "streamed" "subbed"] (mapv :name ops)))
+          (is (every? #(not (contains? % :returns)) ops))
           (let [help-entry (first (filter #(= "help" (:name %)) ops))]
             (is (= :read (:hook-class help-entry)))
             (is (= 'skein.api.weaver.alpha (:provenance help-entry)))
@@ -1945,6 +1955,7 @@
           (is (= [{:name "limit" :flag "--limit" :type "int" :required false
                    :repeat false :parse nil :doc "Max"}]
                  (get-in detail [:arg-spec :flags])))
+          (is (= {:type "collection" :items "string"} (:returns detail)))
           (is (not (contains? detail :raw-envelope)))))
       (testing "subcommand op detail includes parser-rendered subcommands"
         (let [detail (weaver/op! rt 'help ["subbed"])]
@@ -1957,7 +1968,17 @@
                            :repeat false :parse nil :doc "Force add"}]
                   :positionals [{:name "title" :type "string" :required true
                                  :variadic false :parse nil :doc "Item title"}]}
-                 (first (get-in detail [:arg-spec :subcommands]))))))
+                 (first (get-in detail [:arg-spec :subcommands]))))
+          (is (= {:subcommands
+                  {"add" {:type "map"
+                          :required {"id" "integer"}
+                          :optional {}}
+                   "list" {:type "collection" :items "string"}}}
+                 (:returns detail)))))
+      (testing "streaming op detail includes its channel projections"
+        (is (= {:stream {:emits "string"
+                         :result ["nullable" "boolean"]}}
+               (:returns (weaver/op! rt 'help ["streamed"])))))
       (testing "raw-envelope op detail carries a marker instead of an arg-spec"
         (let [detail (weaver/op! rt 'help ["raw"])]
           (is (true? (:raw-envelope detail)))
