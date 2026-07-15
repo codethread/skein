@@ -475,6 +475,12 @@
                (empty? payloads))
       (op-detail entry))))
 
+(defn- operation-label
+  "Return the canonical label for a parsed subcommand invocation."
+  [op-name parsed-args]
+  (str/join " " (cond-> [op-name (:subcommand parsed-args)]
+                  (contains? parsed-args :action) (conj (:action parsed-args)))))
+
 (defn op!
   "Invoke a registered CLI operation with raw string argv from a root-level `strand <name>` invoke.
 
@@ -489,6 +495,11 @@
   result is supplied as `:op/args`; a parse failure throws before the handler
   runs. For subcommand ops, sole-token `help`, `-h`, or `--help` invocations
   with no payloads return the op's help detail instead of running the handler.
+  Subcommand map results receive a canonical `:operation` label containing the
+  registered op name and full resolved path, including a nested `:action`. A
+  handler-supplied `:operation` equal to the derived label is preserved; any
+  other value, including explicit nil, fails loudly with the expected and
+  actual labels.
   Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map."
   ([runtime op-name argv]
@@ -499,20 +510,20 @@
          payloads (or (:payloads envelope) {})]
      (if-let [alias (help-alias-result entry argv envelope)]
        alias
-       (let [ctx (cond-> {:op/name name
-                          :op/argv argv
-                          :op/runtime runtime
-                          :op/runtime-metadata (:metadata runtime)
-                          :op/payloads payloads}
-                   (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope))
-                   (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
-                   (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope))
-                   (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
-                   (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope))
-                   (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))]
-         (with-spool-classloader
-           runtime
-           #((requiring-resolve fn-sym) ctx)))))))
+       (let [ctx (cond-> {:op/name name :op/argv argv :op/runtime runtime
+                          :op/runtime-metadata (:metadata runtime) :op/payloads payloads}
+                   (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope)) (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
+                   (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope)) (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
+                   (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope)) (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))
+             result (with-spool-classloader runtime #((requiring-resolve fn-sym) ctx)) parsed-args (:op/args ctx)]
+         (if-not (and (map? result) (contains? parsed-args :subcommand))
+           result
+           (let [expected (operation-label name parsed-args) actual (:operation result)]
+             (cond
+               (not (contains? result :operation)) (assoc result :operation expected)
+               (= expected actual) result
+               :else (throw (ex-info "Operation result label disagrees with dispatch"
+                                     {:expected expected :actual actual}))))))))))
 
 (def ^:private help-arg-spec
   "Arg-spec for the built-in `help` op: an optional positional op name.

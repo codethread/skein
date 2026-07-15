@@ -818,13 +818,15 @@
   (with-config-runtime
     (fn [rt]
       (let [started (op! "land" ["start" "land-x" "--branch" "land-x" "--worktree" "/tmp/land-x"])]
-        (is (= "land-start" (:operation started)))
+        (is (= "land start" (:operation started)))
         (is (false? (:done started)))
         (is (= "land.pr.open" (:action-ref (first (:ready started))))))
       ;; completing push-draft-pr leaves the machine ci-green shell gate ready,
       ;; carrying the interpolated watch command for the shell executor
-      (let [gate (first (:ready (op! "land" ["complete" "land-x" "pushed; PR #1"])))
+      (let [completed (op! "land" ["complete" "land-x" "pushed; PR #1"])
+            gate (first (:ready completed))
             gate-attrs (:attributes (weaver/show rt (:id gate)))]
+        (is (= "land complete" (:operation completed)))
         (is (= "land.ci.green" (:action-ref gate)))
         (is (= "shell" (:gate gate)))
         (is (= ["gh" "pr" "checks" "land-x" "--watch" "--fail-fast"] (:shell/argv gate-attrs)))
@@ -848,7 +850,7 @@
                             (op! "land" ["choose" "land-x" "abort"])))
       ;; approved is terminal-in-molecule: it continues to the local merge/verify
       (let [approved (op! "land" ["choose" "land-x" "approved"])]
-        (is (= "land-choose" (:operation approved)))
+        (is (= "land choose" (:operation approved)))
         (is (= "land.merge.local-verify" (:action-ref (first (:ready approved)))))
         (is (= "merge-lock" (get-in (op! "land" ["status" "land-x"]) [:merge-lock :attributes :kind]))))
       (op! "land" ["start" "land-z" "--branch" "land-z" "--worktree" "/tmp/land-z"])
@@ -870,6 +872,7 @@
       (shell-gate-complete! "land-x" "main runs green")
       (let [ready-cleanup (op! "land" ["next" "land-x"])
             cleanup-step (first (:ready ready-cleanup))]
+        (is (= "land next" (:operation ready-cleanup)))
         (is (= "land.cleanup" (:action-ref cleanup-step)))
         ;; cardless run: the cleanup instruction must omit kanban-finish
         ;; entirely rather than render a literal "<card>" placeholder
@@ -879,7 +882,7 @@
         (is (true? (:done done)))
         (is (empty? (:ready done))))
       (let [status (op! "land" ["status" "land-x"])]
-        (is (= "land-status" (:operation status)))
+        (is (= "land status" (:operation status)))
         (is (true? (:done status)))
         (is (empty? (:ready status)))
         (is (nil? (:merge-lock status)))
@@ -903,7 +906,7 @@
       (shell-gate-complete! "land-y" "checks green") ; ci-green
       (op! "land" ["complete" "land-y"])           ; signoff-review
       (let [aborted (op! "land" ["choose" "land-y" "abort" "{\"reason\":\"scope changed\"}"])]
-        (is (= "land-choose" (:operation aborted)))
+        (is (= "land choose" (:operation aborted)))
         ;; routing is a hard cutover to the reason-recording continuation
         (is (= "land.abort.record" (:action-ref (first (:ready aborted))))))
       (let [root (workflow/current-root "land-y")
@@ -953,7 +956,7 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required argument tail"
                             (op! "land" ["break-lock"])))
       (let [broken (op! "land" ["break-lock" "coordinator confirmed stale lock"])]
-        (is (= "land-break-lock" (:operation broken)))
+        (is (= "land break-lock" (:operation broken)))
         (is (= "closed" (get-in broken [:broken :state])))
         (is (= "coordinator confirmed stale lock"
                (get-in broken [:broken :attributes :land/broken-reason])))
@@ -980,7 +983,7 @@
                                          "--worktree" "/tmp/land-blank-card"
                                          "--card" ""])))
       ;; absent --card stays legal: not every land run has a card
-      (is (= "land-start"
+      (is (= "land start"
              (:operation (op! "land" ["start" "land-no-card"
                                       "--branch" "land-no-card"
                                       "--worktree" "/tmp/land-no-card"])))))))
@@ -991,6 +994,7 @@
       (let [help (op! "help" ["land"])
             subs (get-in help [:arg-spec :subcommands])
             by-name (into {} (map (juxt :name identity)) subs)]
+        (is (= "land about" (:operation (op! "land" ["about"]))))
         (is (= #{"about" "start" "next" "complete" "choose" "status" "break-lock"}
                (set (map :name subs))))
         (is (str/starts-with? (get-in help [:arg-spec :doc])

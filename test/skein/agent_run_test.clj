@@ -10,10 +10,12 @@
             [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
             [skein.spools.agent-run :as shuttle]
+            [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
+            [skein.spools.delegation :as agents]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-shuttle
@@ -935,7 +937,7 @@
    #'shuttle/new-state
    #{:harness-registry :alias-registry :backend-registry :in-flight
      :recovery-scheduler :worker-executor :preamble-extension :preamble-conflicts
-     :default-review-contract :close-fn}))
+     :default-review-contract :fanout-ceiling :close-fn}))
 
 (deftest set-preamble-extension-tolerates-reload
   (with-shuttle
@@ -1560,15 +1562,16 @@
 (deftest spend-aggregates-totals-and-groups-by-harness
   (with-shuttle
     (fn [rt]
+      (agents/install!)
       (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:04Z"
                           :cost 0.10 :tokens-total 100 :tokens {"input" 60 "output" 40}})
       (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:10:00Z" :finished "2026-07-08T10:10:06Z"
                           :cost 0.20 :tokens-total 200})
       (add-spend-run! rt {:harness "claude" :started "2026-07-08T10:20:00Z" :finished "2026-07-08T10:20:01Z"
                           :cost 0.05 :tokens-total 50})
-      (let [{:keys [operation totals groups runs]} (shuttle/spend)
+      (let [{:keys [operation totals groups runs]} (weaver/op! rt 'agent ["spend"])
             by-key (into {} (map (juxt :key identity) groups))]
-        (is (= "agent-spend" operation))
+        (is (= "agent spend" operation))
         (testing "totals sum every run's cost, tokens, and derived duration"
           (is (= 3 (:runs totals)))
           (is (about= 0.35 (:cost-usd totals)))
@@ -1659,3 +1662,269 @@
         (is (= 12 (:runs (:totals result))))
         (is (= 1 @list-calls)
             "one bulk query resolves every run's spend, independent of strand count")))))
+
+;; ---------------------------------------------------------------------------
+;; Fan-out window enforcement (TASK-Foc-001.V1)
+;;
+;; A gate harness is the shipped `sh` harness (`:preamble? false`) running a
+;; script that blocks until its per-run sentinel file appears. A run stays
+;; `running` until the test creates that file, so admission width is asserted
+;; with no timing assumption. After each scan!-triggering mutation the tests
+;; settle the event lane (admission runs on it) before reading in-flight state.
+
+(defn- gate-dir! []
+  (.toFile (java.nio.file.Files/createTempDirectory
+            "skein-fanout-gate"
+            (make-array java.nio.file.attribute.FileAttribute 0))))
+
+(defn- gate-run!
+  "Spawn a headless run that blocks until its sentinel file exists. `attrs`
+  stamps fan-out group/cap fixtures — PH1 has no delegation flag, so V1 case 3
+  stamps them via the spawn-run! :attrs path. Returns {:id id :sentinel path}."
+  ([dir n] (gate-run! dir n {}))
+  ([dir n attrs]
+   (let [sentinel (.getPath (io/file dir (str "gate-" n)))
+         ;; echo a non-blank result on release: an exit-0 run with empty output
+         ;; fails loudly as an empty result, so the drain must end done, not failed.
+         run (shuttle/spawn-run!
+              {:harness :sh
+               :prompt (str "until [ -f '" sentinel "' ]; do sleep 0.02; done; echo released")
+               :attrs attrs})]
+     {:id (:id run) :sentinel sentinel})))
+
+(defn- release-gate! [gate] (spit (:sentinel gate) ""))
+
+(defn- settle! [rt] (events/await-quiescent! rt))
+
+(defn- await-in-flight-count
+  "Poll (fail-loud budget) until exactly `n` runs are in flight; return the set."
+  [n]
+  (test-support/poll-until
+   #(let [ids (shuttle/in-flight-run-ids)] (when (= n (count ids)) ids))
+   {:on-timeout #(throw (ex-info "in-flight count never reached target"
+                                 {:want n :in-flight (shuttle/in-flight-run-ids)}))}))
+
+(defn- pending-ids [rt]
+  (->> (weaver/list rt shuttle/run-query {})
+       (filter #(= "pending" (get-in % [:attributes :agent-run/phase])))
+       (map :id)
+       set))
+
+(defn- await-pending-count
+  "Poll (fail-loud budget) until exactly `n` runs read phase pending; return the
+  set. claim! marks a run in-flight before the async launch-run! transitions its
+  strand phase off pending, so a just-claimed run still reads pending until its
+  launch lands on the worker executor. Poll for the steady-state count rather
+  than sampling it one-shot, which over-counts by the not-yet-launched runs on a
+  slow host."
+  [rt n]
+  (test-support/poll-until
+   #(let [ids (pending-ids rt)] (when (= n (count ids)) ids))
+   {:on-timeout #(throw (ex-info "pending count never reached target"
+                                 {:want n :pending (pending-ids rt)}))}))
+
+(defn- drain-gated!
+  "Release every gate so no blocked sh process is left behind, wait for the
+  engine to drop the gated runs from in-flight, then kill any interactive
+  sessions the test held open."
+  [_rt gates sessions]
+  (doseq [g gates] (release-gate! g))
+  (let [gate-ids (map :id gates)]
+    (test-support/poll-until
+     #(let [in-flight (shuttle/in-flight-run-ids)] (not-any? in-flight gate-ids))
+     {:on-timeout #(throw (ex-info "gated runs never drained after release"
+                                   {:in-flight (shuttle/in-flight-run-ids)}))}))
+  (doseq [s sessions]
+    (try (shuttle/kill! (:id (:run s))) (catch Throwable _ nil))))
+
+(deftest window-caps-headless-width-at-the-ceiling
+  ;; V1 case 1: ceiling 2, five gated runs -> exactly 2 admitted, 3 stay pending
+  ;; with no window bookkeeping attribute (they never launched).
+  (with-shuttle
+    (fn [rt]
+      (let [dir (gate-dir!)
+            _ (shuttle/set-fanout-ceiling! 2)
+            gates (mapv #(gate-run! dir %) (range 5))]
+        (try
+          (settle! rt)
+          (let [in-flight (await-in-flight-count 2)]
+            (is (= 2 (count in-flight)) "exactly ceiling runs admitted")
+            (let [pending (await-pending-count rt 3)]
+              (is (= 3 (count pending)) "the rest stay pending")
+              (doseq [id pending]
+                (let [strand (weaver/show rt id)]
+                  (is (= "pending" (get-in strand [:attributes :agent-run/phase])))
+                  (is (nil? (get-in strand [:attributes :agent-run/started-at]))
+                      "a deferred run writes no new attribute and arms nothing")))))
+          (finally (drain-gated! rt gates nil)))))))
+
+(deftest window-readmits-a-slot-on-completion-without-exceeding-width
+  ;; V1 case 2: ceiling 2, five gated runs. Releasing one lets its close
+  ;; re-admit the next through on-event; width never exceeds 2 across the drain.
+  (with-shuttle
+    (fn [rt]
+      (let [dir (gate-dir!)
+            _ (shuttle/set-fanout-ceiling! 2)
+            gates (mapv #(gate-run! dir %) (range 5))
+            by-id (into {} (map (juxt :id identity)) gates)]
+        (settle! rt)
+        (await-in-flight-count 2)
+        ;; drain one at a time, releasing a currently-running run each pass; a
+        ;; released run leaves in-flight and never returns (it is done, not
+        ;; pending), so five passes retire all five runs.
+        (dotimes [_ 5]
+          (let [in-flight (shuttle/in-flight-run-ids)]
+            (is (<= (count in-flight) 2) "width never exceeds the ceiling")
+            (let [victim (first (filter by-id in-flight))]
+              (release-gate! (by-id victim))
+              (test-support/poll-until
+               #(not (contains? (shuttle/in-flight-run-ids) victim))
+               {:on-timeout #(throw (ex-info "released run never left in-flight"
+                                             {:victim victim}))})
+              (settle! rt))))
+        (is (<= (count (shuttle/in-flight-run-ids)) 2))
+        (doseq [g gates]
+          (is (= "done" (get-in (weaver/show rt (:id g)) [:attributes :agent-run/phase]))
+              "every gated run completes as the window drains"))))))
+
+(deftest window-group-cap-tightens-below-the-ceiling
+  ;; V1 case 3a: ceiling 4 but a fanout-cap 2 group admits only 2 (min(W, K)).
+  (with-shuttle
+    (fn [rt]
+      (let [dir (gate-dir!)
+            _ (shuttle/set-fanout-ceiling! 4)
+            gates (mapv #(gate-run! dir % {"agent-run/fanout-group" "g1"
+                                           "agent-run/fanout-cap" 2})
+                        (range 3))]
+        (try
+          (settle! rt)
+          (let [in-flight (await-in-flight-count 2)]
+            (is (= 2 (count in-flight)) "group cap 2 tightens below the ceiling of 4")
+            (is (= 1 (count (await-pending-count rt 1)))))
+          (finally (drain-gated! rt gates nil)))))))
+
+(deftest window-group-cap-above-ceiling-stays-bounded-by-workspace-width
+  ;; V1 case 3b: ceiling 4, fanout-cap 20 group -> min(4, 20) = 4 admitted; the
+  ;; workspace width bounds the group, the cap never widens past it.
+  (with-shuttle
+    (fn [rt]
+      (let [dir (gate-dir!)
+            _ (shuttle/set-fanout-ceiling! 4)
+            gates (mapv #(gate-run! dir % {"agent-run/fanout-group" "g2"
+                                           "agent-run/fanout-cap" 20})
+                        (range 6))]
+        (try
+          (settle! rt)
+          (let [in-flight (await-in-flight-count 4)]
+            (is (= 4 (count in-flight)) "min(ceiling 4, cap 20) = 4")
+            (is (= 2 (count (await-pending-count rt 2)))))
+          (finally (drain-gated! rt gates nil)))))))
+
+(deftest interactive-runs-consume-no-window-slot
+  ;; V1 case 4: two interactive sessions running plus ceiling 2 still admits two
+  ;; headless gated runs — interactive sessions are exempt and hold no slot.
+  (with-shuttle
+    (fn [rt]
+      (let [dir (gate-dir!)
+            _ (shuttle/set-fanout-ceiling! 2)
+            sessions (mapv (fn [_] (spawn-interactive! rt)) (range 2))
+            gates (mapv #(gate-run! dir %) (range 2))
+            gate-ids (map :id gates)]
+        (try
+          (settle! rt)
+          ;; two interactive + two headless are all tracked in-flight
+          (await-in-flight-count 4)
+          (test-support/poll-until
+           #(let [in-flight (shuttle/in-flight-run-ids)] (every? in-flight gate-ids))
+           {:on-timeout #(throw (ex-info "headless runs never admitted alongside interactive"
+                                         {:in-flight (shuttle/in-flight-run-ids)
+                                          :gate-ids gate-ids}))})
+          (is (every? (shuttle/in-flight-run-ids) gate-ids)
+              "both headless runs admit despite two interactive sessions and ceiling 2")
+          (finally (drain-gated! rt gates sessions)))))))
+
+(deftest fanout-ceiling-config-validates-and-survives-reload
+  ;; V1 case 5: setter defaults to 4, rejects invalid input loudly, and a
+  ;; configured ceiling survives a state-version reload through migrate-state.
+  (with-shuttle
+    (fn [rt]
+      ;; fanout-ceiling is internal (the window's read); the setter is the config
+      ;; surface, so the test reaches the getter through the var per repo idiom.
+      (testing "default with no setter is 4"
+        (is (= 4 (#'shuttle/fanout-ceiling))))
+      (testing "the setter stores a positive integer and rejects the rest loudly"
+        (is (= 3 (shuttle/set-fanout-ceiling! 3)))
+        (is (= 3 (#'shuttle/fanout-ceiling)))
+        (doseq [bad [0 -1 2.5 "4" nil]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
+                                (shuttle/set-fanout-ceiling! bad))))
+        (is (= 3 (#'shuttle/fanout-ceiling)) "a rejected set leaves the prior ceiling intact"))
+      (testing "a configured ceiling survives a state-version reload via migrate-state"
+        ;; an untagged map has no stored version, so accessing state reinits
+        ;; through migrate-state (as a post-bump reload of a preserved map would)
+        (let [preserved (assoc (#'shuttle/new-state) :fanout-ceiling (atom 7))]
+          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state preserved)
+          (is (= 7 (#'shuttle/fanout-ceiling))
+              "migrate-state carries the configured ceiling forward")))
+      (testing "a pre-feature map lacking the ceiling reinits to the default"
+        (let [pre-v4 {:harness-registry (atom {})
+                      :backend-registry (atom {})
+                      :in-flight (atom {})
+                      :preamble-extension (atom nil)
+                      :default-review-contract (atom nil)}]
+          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state pre-v4)
+          (is (= 4 (#'shuttle/fanout-ceiling))
+              "select-keys omits the absent key so new-state's default survives"))))))
+
+(deftest coherent-fanout-validates-the-contract-shapes
+  ;; V1 fail-loud: the window treats a run's group/cap as a coherent contract.
+  ;; Only two shapes are legal — ungrouped, or a non-blank group with a
+  ;; positive-integer cap; every other combination fails loudly with the run id
+  ;; and offending values so malformed data cannot silently widen (TEN-003).
+  (testing "legal shapes pass and return [group cap]"
+    (is (= [nil nil] (#'shuttle/coherent-fanout "r" nil nil)))
+    (is (= ["g" 2] (#'shuttle/coherent-fanout "r" "g" 2))))
+  (testing "incoherent shapes fail loudly, carrying the run id and offending values"
+    (doseq [[group cap] [["g" nil]    ; group without a cap
+                         ["g" 0]      ; non-positive cap
+                         ["g" -1]
+                         ["g" "2"]    ; non-integer cap
+                         ["  " 2]     ; blank group
+                         [nil 3]]]    ; cap without a group
+      (let [ex (try (#'shuttle/coherent-fanout "run-x" group cap)
+                    (catch clojure.lang.ExceptionInfo e e))]
+        (is (instance? clojure.lang.ExceptionInfo ex)
+            (str "incoherent " [group cap] " must fail loudly"))
+        (is (re-find #"incoherent" (ex-message ex)))
+        (is (= {:run-id "run-x" :fanout-group group :fanout-cap cap}
+               (ex-data ex))
+            "the offending run id and values are in ex-data")))))
+
+(deftest malformed-fanout-fails-its-own-run-without-disturbing-siblings
+  ;; V1 fail-loud, end to end: a grouped run whose persisted cap is malformed
+  ;; reaches admission and fails THAT run loudly, while a coherent sibling in the
+  ;; same scan admits and runs — one bad record never aborts the scan (TEN-003).
+  (with-shuttle
+    (fn [rt]
+      (let [dir (gate-dir!)
+            _ (shuttle/set-fanout-ceiling! 4)
+            malformed (gate-run! dir "bad" {"agent-run/fanout-group" "grp"
+                                            "agent-run/fanout-cap" 0})
+            sibling (gate-run! dir "ok")]
+        (try
+          (settle! rt)
+          (let [failed (await-phase rt (:id malformed) #{"failed"})
+                error (get-in failed [:attributes :agent-run/error])]
+            (is (re-find #"incoherent" error)
+                "the malformed run fails loudly with the contract message")
+            (is (re-find #":fanout-cap 0" error)
+                "the offending cap value is recorded on the failed run")
+            (is (not (contains? (shuttle/in-flight-run-ids) (:id malformed)))
+                "the failed run never entered the window"))
+          (test-support/poll-until
+           #(contains? (shuttle/in-flight-run-ids) (:id sibling))
+           {:on-timeout #(throw (ex-info "coherent sibling never admitted"
+                                         {:in-flight (shuttle/in-flight-run-ids)}))})
+          (is (contains? (shuttle/in-flight-run-ids) (:id sibling))
+              "the coherent sibling admits despite its malformed peer")
+          (finally (drain-gated! rt [sibling] nil)))))))

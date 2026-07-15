@@ -47,6 +47,29 @@
     (catch NumberFormatException _
       (fail! "Flag requires an integer value" {:flag flag :value value}))))
 
+(defn- max-concurrent!
+  "Parse a `--max-concurrent K` fan-out flag into a positive-int cap, or nil when
+  absent. Delegation only expresses intent: it stamps K as `agent-run/fanout-cap`
+  so the agent-run window tightens the fan-out group to `min(W, K)` — delegation
+  never polices concurrency itself, enforcement is the engine window's."
+  [flags]
+  (when-let [v (get flags "--max-concurrent")]
+    (let [k (parse-int! "--max-concurrent" v)]
+      (when-not (pos? k)
+        (fail! "--max-concurrent must be a positive integer" {:value v}))
+      k)))
+
+(defn- fanout-attrs
+  "Stamp for one fan-out: every run of the fan-out carries the same fresh
+  `agent-run/fanout-group` id and the requested `agent-run/fanout-cap` K, so the
+  agent-run window bounds that group to `min(W, K)`. Returns nil when K is absent
+  — the fan-out is then governed by the workspace ceiling W alone and mints no
+  group, exactly as a raw `spawn` or single `delegate` does."
+  [k]
+  (when k
+    {"agent-run/fanout-group" (str "fanout-" (subs (str (java.util.UUID/randomUUID)) 0 8))
+     "agent-run/fanout-cap" k}))
+
 (defn- truncate
   [s n]
   (if (> (count s) n)
@@ -213,7 +236,7 @@
                                 |2026-07-10T00:00:00Z); --group-by buckets by harness (default) or day.")
                    :fails ["--group-by other than harness or day"
                            "--since/--until not an ISO-8601 instant"]
-                   :returns {"operation" "agent-spend"
+                   :returns {"operation" "agent spend"
                              "filters" {"group-by" "harness|day" "harness" "optional string"
                                         "since" "optional ISO instant" "until" "optional ISO instant"}
                              "totals" {"runs" "integer" "cost-usd" "number|null"
@@ -328,7 +351,12 @@
                                          |ready task lacks harness.
                                          |
                                          |Idempotent: re-invoke after verifying and closing finished
-                                         |tasks to pick up newly unblocked work.")
+                                         |tasks to pick up newly unblocked work.
+                                         |
+                                         |--max-concurrent K stamps one shared fan-out group on every
+                                         |run of this pass so the agent-run window bounds them to
+                                         |min(W, K); without it the fan-out is governed by the
+                                         |workspace ceiling W alone.")
                             :skipped-reasons ["hitl" "has-active-run" "failed-needs-retry" "already-succeeded"]
                             :fails ["positional task supplied with --ready" "selected ready tasks missing harness"]
                             :returns {"plan" "plan id"
@@ -427,7 +455,11 @@
                                  |--commit-range names the diff surface (e.g. main..HEAD): its
                                  |changed files are expanded via git at --cwd and injected into
                                  |every reviewer prompt so reviewers stop re-deriving the diff.
-                                 |--changed-files overrides the file list explicitly (csv).")
+                                 |--changed-files overrides the file list explicitly (csv).
+                                 |
+                                 |--max-concurrent K stamps one shared fan-out group on every
+                                 |reviewer and the synthesizer so the agent-run window bounds them
+                                 |to min(W, K).")
                     :fails ["target not found" "target is a kanban card" "no reviewers"
                             "reviewer missing harness" "unknown roster"
                             "--roster with --members/--harness/--contract"
@@ -467,7 +499,11 @@
                                   |The CLI is scalar-only. Per-seat harness/brief (the :seats
                                   |vector) is trusted-Clojure / inline-panel territory
                                   |(skein.spools.delegation/council! or panel!), keeping rich
-                                  |structured data out of shell argv.")
+                                  |structured data out of shell argv.
+                                  |
+                                  |--max-concurrent K stamps one shared fan-out group on every
+                                  |seat and the synthesizer so the agent-run window bounds them to
+                                  |min(W, K).")
                      :fails ["blank topic" "non-positive members or rounds" "no resolvable harness" ":members combined with :seats"]
                      :returns {"council" "shared council strand id" "turns" [["run ids per round"]] "synthesizer" "run id"}}}
    :plan-creation {:help-topic "strand pattern explain agent-plan"
@@ -602,7 +638,7 @@
 (defn- harness-for [task flags]
   (or (get flags "--harness") (attr task :harness) (fail! "delegate requires --harness or task harness attribute" {:task (:id task)})))
 
-(defn- delegate-task [task flags]
+(defn- delegate-task [task flags fanout]
   (let [interactive? (boolean (get flags "--interactive"))]
     (when (and (not interactive?) (or (get flags "--backend") (get flags "--reap")))
       (fail! "delegate --backend/--reap require --interactive"
@@ -632,7 +668,8 @@
                                                                      (fail! "delegate --interactive requires --backend or task backend attribute" {:task (:id task)}))
                                                         :reap (get flags "--reap"))
                                     (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
-                                    (attr task :max-attempts) (assoc :max-attempts (attr task :max-attempts))))]
+                                    (attr task :max-attempts) (assoc :max-attempts (attr task :max-attempts))
+                                    fanout (assoc :attrs fanout)))]
       {:task (:id task) :run (select-keys (agent-run/run-summary run) [:id :phase :harness :attach])})))
 
 (defn- skip-reason
@@ -650,7 +687,7 @@
 
 (defn- op-delegate [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--ready" :single "--harness" :single "--cwd" :single "--prompt" :single "--spawned-by" :single
-                                                     "--interactive" :bool "--backend" :single "--reap" :single})]
+                                                     "--interactive" :bool "--backend" :single "--reap" :single "--max-concurrent" :single})]
     (if-let [plan (get flags "--ready")]
       (do (when (seq positional) (fail! "delegate --ready takes no task positional" {:got positional}))
           (when (or (get flags "--interactive") (get flags "--backend") (get flags "--reap"))
@@ -664,13 +701,17 @@
                 to-delegate (mapv first (remove second classified))
                 missing (remove #(non-blank? (attr % :harness)) to-delegate)]
             (when (seq missing) (fail! "ready tasks missing harness" {:tasks (mapv :id missing)}))
-            {:plan plan
-             :delegated (mapv #(delegate-task % flags) to-delegate)
-             :skipped (mapv (fn [[t reason]] {:task (:id t) :reason reason})
-                            (filter second classified))}))
+            ;; one fresh group for the whole classified batch, so --max-concurrent
+            ;; bounds this fan-out to min(W, K) across every task it delegates
+            (let [fanout (fanout-attrs (max-concurrent! flags))]
+              {:plan plan
+               :delegated (mapv #(delegate-task % flags fanout) to-delegate)
+               :skipped (mapv (fn [[t reason]] {:task (:id t) :reason reason})
+                              (filter second classified))})))
       (let [[task-id] positional]
         (when-not (= 1 (count positional)) (fail! "delegate requires <task-id> or --ready <plan-id>" {:got positional}))
-        (delegate-task (active-task! task-id) flags)))))
+        ;; a single delegate creates a single run — governed by W alone, no group
+        (delegate-task (active-task! task-id) flags nil)))))
 
 (defn- op-spawn [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--prompt" :single
@@ -755,6 +796,15 @@
   (or (keyword? v) (non-blank? v)))
 
 ;; Shared option map shapes for council/panel spawns.
+;; The fan-out stamp is a coherent contract even from trusted Clojure callers: a
+;; non-blank group paired with a positive-integer cap (the integer cap rides
+;; outside the string-typed panel-specs/review-specs seams, merged onto spawn
+;; attrs downstream). `fanout-attrs` builds this shape; validating it here keeps
+;; a hand-built option map from stamping a cap the agent-run window would reject.
+(s/def :skein.spools.delegation.council-input/fanout-attrs
+  (s/and map?
+         #(non-blank? (get % "agent-run/fanout-group"))
+         #(pos-int? (get % "agent-run/fanout-cap"))))
 (s/def :skein.spools.delegation.council-input/harness harness-ref?)
 (s/def :skein.spools.delegation.council-input/synthesizer harness-ref?)
 (s/def :skein.spools.delegation.council-input/members pos-int?)
@@ -780,13 +830,15 @@
                    :skein.spools.delegation.council-input/seats
                    :skein.spools.delegation.council-input/synthesizer
                    :skein.spools.delegation.council-input/spawned-by
-                   :skein.spools.delegation.council-input/cwd]))
+                   :skein.spools.delegation.council-input/cwd
+                   :skein.spools.delegation.council-input/fanout-attrs]))
 
 (s/def :skein.spools.delegation.panel-input/target non-blank?)
 (s/def :skein.spools.delegation.panel-input/review-id non-blank?)
 (s/def :skein.spools.delegation/panel-input
   (s/keys :opt-un [:skein.spools.delegation.council-input/spawned-by
                    :skein.spools.delegation.council-input/cwd
+                   :skein.spools.delegation.council-input/fanout-attrs
                    :skein.spools.delegation.panel-input/target
                    :skein.spools.delegation.panel-input/review-id]))
 
@@ -831,6 +883,8 @@
 
 ;; roster-review-specs output: the public seam shape workflow authors consume.
 (s/def :skein.spools.delegation.review-specs/prompt non-blank?)
+;; string->string compiler seam; the fan-out cap (an integer) never flows
+;; through here — it merges onto spawn attrs downstream of this contract.
 (s/def :skein.spools.delegation.review-specs/attrs (s/map-of string? string?))
 (s/def :skein.spools.delegation.review-specs/reviewer
   (s/keys :req-un [:skein.spools.delegation.roster/name
@@ -1227,6 +1281,8 @@
 (s/def :skein.spools.delegation.panel-specs/harness harness-ref?)
 (s/def :skein.spools.delegation.panel-specs/prompt non-blank?)
 (s/def :skein.spools.delegation.panel-specs/resume-prompt non-blank?)
+;; string->string compiler seam; the fan-out cap (an integer) never flows
+;; through here — it merges onto spawn attrs downstream of this contract.
 (s/def :skein.spools.delegation.panel-specs/attrs (s/map-of string? string?))
 (s/def :skein.spools.delegation.panel-specs/resume-ref nat-int?)
 (s/def :skein.spools.delegation.panel-specs/run
@@ -1455,9 +1511,9 @@
   Returns `{:panel :blackboard :turns [[run-ids...]...] :synthesizer? :review-pass}`."
   [panel opts]
   (let [opts (require-valid! :skein.spools.delegation/panel-input
-                              (reject-unknown-keys! "panel! options" #{:target :review-id :spawned-by :cwd} opts)
+                              (reject-unknown-keys! "panel! options" #{:target :review-id :spawned-by :cwd :fanout-attrs} opts)
                               "panel! options do not conform to spec")
-        {:keys [target review-id spawned-by cwd]} opts
+        {:keys [target review-id spawned-by cwd fanout-attrs]} opts
         specs (panel-specs panel {:target target :review-id review-id})
         board-id (case (get-in specs [:blackboard :kind])
                    :target (let [id (get-in specs [:blackboard :id])]
@@ -1482,9 +1538,12 @@
                           ;; them under the target task, they carry parent-of
                           ;; placement alone and no serves edge, so they never
                           ;; gate the target's delegation
-                          attrs (cond-> (into {}
-                                              (map (fn [[k v]] [k (resolve-board v)]))
-                                              (:attrs spec))
+                          ;; the fan-out group carries no board placeholder, so
+                          ;; it merges in unresolved onto every seat and synth run
+                          attrs (cond-> (merge fanout-attrs
+                                               (into {}
+                                                     (map (fn [[k v]] [k (resolve-board v)]))
+                                                     (:attrs spec)))
                                   resume-run (assoc "panel/fresh-prompt" (resolve-board (:prompt spec))))]
                       (agent-run/spawn-run!
                        (cond-> (merge {:harness (:harness spec)
@@ -1559,7 +1618,7 @@
   target, and card notes stay lean for handover, so a card-targeted review
   fails loudly toward the card's task tier. The check reads only the
   `kanban/card` marker attribute — no kanban spool code is involved."
-  [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd roster change-context]
+  [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd roster change-context fanout-attrs]
               :or {members 2}
               :as opts}]
   (let [target (or (weaver/show (rt) target-id)
@@ -1603,6 +1662,8 @@
         ;; reviewers and the synthesizer are read-only helpers of the target:
         ;; they carry parent-of placement alone with no serves edge, so they
         ;; never gate a later delegation of the target task
+        ;; the fan-out group rides onto every reviewer and the synthesizer, so
+        ;; --max-concurrent bounds the whole review to min(W, K)
         spawn-spec! (fn [spec extra]
                       (agent-run/spawn-run!
                        (merge {:harness (:harness spec)
@@ -1610,7 +1671,7 @@
                                :parent target-id
                                :spawned-by spawned-by
                                :cwd cwd
-                               :attrs (:attrs spec)}
+                               :attrs (merge (:attrs spec) fanout-attrs)}
                               extra)))
         review-runs (mapv (fn [{spec-name :name :as spec}]
                             (spawn-spec! spec {:title (truncate (str "Review " target-id
@@ -1662,11 +1723,11 @@
   <run id>}`."
   [topic opts]
   (let [opts (require-valid! :skein.spools.delegation/council-input
-                              (cond-> (reject-unknown-keys! "council! options" #{:harness :members :rounds :seats :synthesizer :spawned-by :cwd} opts)
+                              (cond-> (reject-unknown-keys! "council! options" #{:harness :members :rounds :seats :synthesizer :spawned-by :cwd :fanout-attrs} opts)
                                 (contains? opts :seats)
                                 (update :seats #(mapv (partial reject-unknown-keys! "council! seat" council-seat-input-keys) %)))
                               "council! options do not conform to spec")
-        {:keys [harness members rounds seats synthesizer spawned-by cwd]
+        {:keys [harness members rounds seats synthesizer spawned-by cwd fanout-attrs]
          :or {members 2 rounds 2}} opts]
     (when (str/blank? topic)
     (fail! "Council topic must be non-blank" {}))
@@ -1704,7 +1765,8 @@
                            :brief (str "Synthesize the council deliberation on:\n" topic)}}
         result (panel! panel (cond-> {}
                                spawned-by (assoc :spawned-by spawned-by)
-                               cwd (assoc :cwd cwd)))]
+                               cwd (assoc :cwd cwd)
+                               fanout-attrs (assoc :fanout-attrs fanout-attrs)))]
     (cond-> {:council (:blackboard result)
              :turns (:turns result)}
       (:synthesizer result) (assoc :synthesizer (:synthesizer result))))))
@@ -1787,10 +1849,12 @@
   (let [{:keys [positional flags]}
         (parse-argv argv {"--members" :single "--harness" :single "--synthesize" :bool
                           "--contract" :single "--spawned-by" :single "--cwd" :single
-                          "--roster" :single "--commit-range" :single "--changed-files" :single})]
+                          "--roster" :single "--commit-range" :single "--changed-files" :single
+                          "--max-concurrent" :single})]
     (when-not (= 1 (count positional))
       (fail! "review requires <target-id>" {:got positional}))
-    (let [change-context (change-context-from-flags flags)]
+    (let [change-context (change-context-from-flags flags)
+          fanout (fanout-attrs (max-concurrent! flags))]
       (review! (first positional)
                (cond-> {}
                  (get flags "--roster") (assoc :roster (get flags "--roster"))
@@ -1800,6 +1864,7 @@
                  (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
                  (get flags "--cwd") (assoc :cwd (get flags "--cwd"))
                  change-context (assoc :change-context change-context)
+                 fanout (assoc :fanout-attrs fanout)
                  (get flags "--synthesize") (assoc :synthesize? true))))))
 
 (defn- op-rosters [argv]
@@ -1813,17 +1878,19 @@
   (let [{:keys [positional flags]}
         (parse-argv argv {"--topic" :single "--members" :single "--rounds" :single
                           "--harness" :single "--synthesizer" :single
-                          "--spawned-by" :single "--cwd" :single})]
+                          "--spawned-by" :single "--cwd" :single "--max-concurrent" :single})]
     (when (seq positional)
       (fail! "council takes only flags" {:unexpected positional}))
-    (council! (or (get flags "--topic") (fail! "council requires --topic" {}))
-              (cond-> {}
-                (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
-                (get flags "--rounds") (assoc :rounds (parse-int! "--rounds" (get flags "--rounds")))
-                (get flags "--harness") (assoc :harness (get flags "--harness"))
-                (get flags "--synthesizer") (assoc :synthesizer (get flags "--synthesizer"))
-                (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
-                (get flags "--cwd") (assoc :cwd (get flags "--cwd"))))))
+    (let [fanout (fanout-attrs (max-concurrent! flags))]
+      (council! (or (get flags "--topic") (fail! "council requires --topic" {}))
+                (cond-> {}
+                  (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
+                  (get flags "--rounds") (assoc :rounds (parse-int! "--rounds" (get flags "--rounds")))
+                  (get flags "--harness") (assoc :harness (get flags "--harness"))
+                  (get flags "--synthesizer") (assoc :synthesizer (get flags "--synthesizer"))
+                  (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
+                  (get flags "--cwd") (assoc :cwd (get flags "--cwd"))
+                  fanout (assoc :fanout-attrs fanout))))))
 
 ;; Structural run attrs the agents spool stamps at spawn (panel/review shape).
 ;; A raw-run retry carries these onto the respawn so the deliberation stays
@@ -1990,7 +2057,8 @@
                         :spawned-by {:doc "Caller run id for provenance."}
                         :interactive {:type :boolean :doc "Delegate as an interactive session."}
                         :backend {:doc "Interactive backend override."}
-                        :reap {:doc "Interactive session reap policy: auto or manual."}}
+                        :reap {:doc "Interactive session reap policy: auto or manual."}
+                        :max-concurrent {:type :int :doc "With --ready, cap this fan-out to K concurrent runs (min(W, K)); ignored on single delegation."}}
                 :positionals [{:name :task-id :doc "Task id for single-task delegation."}]}
     "retry" {:doc "Supersede and retry a failed/exhausted task or run."
              :flags {:fresh {:type :boolean :doc "Start cold instead of resuming a previous session."}
@@ -2018,7 +2086,8 @@
                       :spawned-by {:doc "Caller run id for provenance."}
                       :roster {:doc "Named declarative reviewer roster."}
                       :commit-range {:doc "Git commit range under review."}
-                      :changed-files {:doc "Comma-separated changed files under review."}}
+                      :changed-files {:doc "Comma-separated changed files under review."}
+                      :max-concurrent {:type :int :doc "Cap this review fan-out to K concurrent runs (min(W, K))."}}
               :positionals [{:name :target-id :required? true :doc "Target strand id."}]}
     "rosters" {:doc "List configured reviewer rosters."}
     "council" {:doc "Convene a fresh-blackboard deliberation panel."
@@ -2028,7 +2097,8 @@
                        :harness {:doc "Seat harness."}
                        :synthesizer {:doc "Synthesizer harness."}
                        :cwd {:doc "Working directory."}
-                       :spawned-by {:doc "Caller run id for provenance."}}}}})
+                       :spawned-by {:doc "Caller run id for provenance."}
+                       :max-concurrent {:type :int :doc "Cap this council fan-out to K concurrent runs (min(W, K))."}}}}})
 
 (defn- flag-token [[k v]]
   (when (and (not= k :subcommand) (some? v))

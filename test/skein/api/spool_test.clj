@@ -1,7 +1,6 @@
 (ns skein.api.spool-test
-  "Tests for skein.api.spool.alpha: the shared fail!/reject-unknown-keys!/
-  require-valid!/attr-key->str/attr-get/poll-until-deadline! seams other
-  spools compose from."
+  "Tests for skein.api.spool.alpha: shared arg-spec, validation, attribute, and
+  polling seams that other spools compose from."
   (:require [clojure.test :refer [deftest is]]
             [skein.api.spool.alpha :as util]))
 
@@ -15,6 +14,38 @@
                                     #"missing canonical entity fields"
                                     (util/entity-projection (dissoc strand field))))]
         (is (= [field] (:missing (ex-data e))))))))
+
+(deftest arg-spec-fragments-pin-the-shared-declarations
+  (is (= {:flags {:by {:doc "Attribution recorded with the note."}}
+          :positionals [{:name :id :required? true :doc "Target id."}
+                        {:name :text :required? true :doc "Note text."}]}
+         util/note-surface))
+  (is (= {:flags {:feature {:doc "Feature or work slug."}
+                  :owner {:doc "Owner identity."}
+                  :branch {:doc "Branch name."}
+                  :worktree {:doc "Worktree path."}}}
+         util/work-root))
+  (is (= {:flags {:timeout-secs {:type :int
+                                 :doc "Maximum seconds to wait."}}}
+         util/timeout-secs))
+  (is (= {:flags {:outcome {:doc "Outcome recorded when closing the entity."}}}
+         util/outcome)))
+
+(deftest arg-spec-fragments-compose-with-spool-owned-declarations
+  (is (= {:flags {:feature {:doc "Feature or work slug."}
+                  :owner {:doc "Owner identity."}
+                  :branch {:doc "Branch name."}
+                  :worktree {:doc "Worktree path."}
+                  :engine {:doc "Spool-owned execution engine."}}
+          :positionals [{:name :root-id
+                         :required? true
+                         :doc "Spool-owned root id."}]}
+         (merge-with into
+                     util/work-root
+                     {:flags {:engine {:doc "Spool-owned execution engine."}}
+                      :positionals [{:name :root-id
+                                     :required? true
+                                     :doc "Spool-owned root id."}]}))))
 
 (deftest poll-until-deadline!-polls-until-pred-result-then-stops
   (let [calls (atom 0)]

@@ -607,9 +607,9 @@
               {:usage "strand roster heartbeat <entry-id>"}
               {:usage "strand roster finish <entry-id> [--status finished|abandoned] [--result <text>]"}
               {:usage (str "strand roster list [--feature <slug>] [--owner <owner>] [--branch <branch>] "
-                           "[--worktree <path>] [--engine <engine>] [--stale-after-ms <n>]")}
+                           "[--worktree <path>] [--engine <engine>] [--stale-after-secs <n>]")}
               {:usage (str "strand roster await-quiet [--feature <slug>] [--branch <branch>] "
-                           "[--worktree <path>] [--timeout-ms <n>] [--stale-after-ms <n>]")}
+                           "[--worktree <path>] [--timeout-secs <n>] [--stale-after-secs <n>]")}
               {:usage "strand list --query roster / strand ready --query roster — named query over active roster entries"}]})
 
 (defn prime
@@ -687,7 +687,7 @@
 
 (defn- list-op
   [ctx]
-  (let [{:keys [feature owner branch worktree engine stale-after-ms]} (:op/args ctx)]
+  (let [{:keys [feature owner branch worktree engine stale-after-secs]} (:op/args ctx)]
     (roster (:op/runtime ctx)
             (cond-> {}
               feature (assoc :feature feature)
@@ -695,18 +695,18 @@
               branch (assoc :branch branch)
               worktree (assoc :worktree worktree)
               engine (assoc :engine engine)
-              stale-after-ms (assoc :stale-after-ms stale-after-ms)))))
+              stale-after-secs (assoc :stale-after-ms (* 1000 stale-after-secs))))))
 
 (defn- await-quiet-op
   [ctx]
-  (let [{:keys [feature branch worktree timeout-ms stale-after-ms]} (:op/args ctx)]
+  (let [{:keys [feature branch worktree timeout-secs stale-after-secs]} (:op/args ctx)]
     (await-quiet! (:op/runtime ctx)
                   (cond-> {}
                     feature (assoc :feature feature)
                     branch (assoc :branch branch)
                     worktree (assoc :worktree worktree)
-                    timeout-ms (assoc :timeout-ms timeout-ms)
-                    stale-after-ms (assoc :stale-after-ms stale-after-ms)))))
+                    timeout-secs (assoc :timeout-ms (* 1000 timeout-secs))
+                    stale-after-secs (assoc :stale-after-ms (* 1000 stale-after-secs))))))
 
 (defn roster-op
   "Dispatch parsed `strand roster ...` subcommands."
@@ -748,14 +748,14 @@
                     :branch {:doc "Scope by branch."}
                     :worktree {:doc "Scope by worktree path."}
                     :engine {:doc "Scope by engine label."}
-                    :stale-after-ms {:type :int
-                                     :doc "Override the staleness threshold in milliseconds (default fifteen minutes)."}}}
+                    :stale-after-secs {:type :int
+                                       :doc "Override the staleness threshold in seconds (default fifteen minutes)."}}}
     "await-quiet" {:doc "Block until the selected scope has no active non-stale entries."
                    :flags {:feature {:doc "Scope by feature slug."}
                            :branch {:doc "Scope by branch."}
                            :worktree {:doc "Scope by worktree path."}
-                           :timeout-ms {:type :int :doc "Optional timeout in milliseconds."}
-                           :stale-after-ms {:type :int :doc "Override the staleness threshold in milliseconds."}}}}})
+                           :timeout-secs {:type :int :doc "Optional timeout in seconds."}
+                           :stale-after-secs {:type :int :doc "Override the staleness threshold in seconds."}}}}})
 
 (def ^:private roster-namespace-declaration
   "The roster-owned `roster/*` attribute namespace stamped onto entry strands by

@@ -145,6 +145,29 @@
                                 :nested {:reason :policy/nope}
                                 :opaque (Object.)})))
 
+(defn subcommand-result-op
+  "Return operation-label variants selected by the parsed subcommand."
+  [{:op/keys [name args]}]
+  (case (:subcommand args)
+    "absent" {:result :absent}
+    "equal" {:operation (str name " equal") :result :equal}
+    "conflicting" {:operation "handler-owned" :result :conflicting}
+    "explicit-nil" {:operation nil :result :explicit-nil}
+    "non-map" [:non-map]))
+
+(defn two-level-command-result-op
+  "Return operation-label variants selected by the parsed nested action."
+  [{:op/keys [name args]}]
+  (case (:action args)
+    "absent" {:result :absent}
+    "equal" {:operation (str name " " (:subcommand args) " equal") :result :equal}))
+
+(defn streaming-subcommand-op
+  "Emit a handler-owned item and return an unstamped map result."
+  [{emit! :op/emit!}]
+  (emit! {:operation "emitted-item"})
+  {:result :streamed})
+
 ;; Namespace-level on purpose: handlers/hooks/patterns are registered by
 ;; symbol and resolved to top-level vars, so their capture state cannot be
 ;; per-test locals. The runner never splits a namespace across threads, and
@@ -1919,6 +1942,7 @@
                              'skein.weaver-test/context-echo-op)
         (let [ctx (weaver/op! rt 'parsed ["--limit" "5" "widget"])]
           (is (= {:limit 5 :name "widget"} (:op/args ctx)))
+          (is (not (contains? ctx :operation)))
           (is (= ["--limit" "5" "widget"] (:op/argv ctx)))))
       (testing "parse failures throw the parser's structured error and short-circuit"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
@@ -1944,10 +1968,65 @@
         (let [ctx (weaver/op! rt 'subbed ["add" "--force" "Widget"])]
           (is (= {:subcommand "add" :force true :title "Widget"} (:op/args ctx)))
           (is (= ["add" "--force" "Widget"] (:op/argv ctx)))))
+      (testing "subcommand map results receive the canonical operation label"
+        (let [subcommands (into {}
+                                (map (fn [name] [name {:doc (str "Run " name)}]))
+                                ["absent" "equal" "conflicting" "explicit-nil" "non-map"])]
+          (weaver/register-op! rt :result-labels
+                               {:arg-spec {:op "result-labels"
+                                           :subcommands subcommands}}
+                               'skein.weaver-test/subcommand-result-op)
+          (is (= {:operation "result-labels absent" :result :absent}
+                 (weaver/op! rt 'result-labels ["absent"])))
+          (is (= {:operation "result-labels equal" :result :equal}
+                 (weaver/op! rt 'result-labels ["equal"])))
+          (doseq [[subcommand actual] [["conflicting" "handler-owned"]
+                                       ["explicit-nil" nil]]]
+            (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                          #"label disagrees"
+                                          (weaver/op! rt 'result-labels [subcommand])))]
+              (is (= (str "result-labels " subcommand) (:expected (ex-data e))))
+              (is (= actual (:actual (ex-data e))))))
+          (is (= [:non-map] (weaver/op! rt 'result-labels ["non-map"])))))
+      (testing "two-level command map results receive the full operation path"
+        (weaver/register-op! rt :nested-result-labels
+                             {:arg-spec {:op "nested-result-labels"
+                                         :subcommands
+                                         {"task" {:doc "Manage tasks"
+                                                  :positionals
+                                                  [{:name :action :required? true}]}}}}
+                             'skein.weaver-test/two-level-command-result-op)
+        (is (= {:operation "nested-result-labels task absent" :result :absent}
+               (weaver/op! rt 'nested-result-labels ["task" "absent"])))
+        (is (= {:operation "nested-result-labels task equal" :result :equal}
+               (weaver/op! rt 'nested-result-labels ["task" "equal"]))))
+      (testing "subcommand handler failures remain unchanged"
+        (weaver/register-op! rt 'subcommand-failure
+                             {:arg-spec {:op "subcommand-failure"
+                                         :subcommands {"run" {:doc "Fail"}}}}
+                             'skein.weaver-test/throwing-op)
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"op blew up"
+                                      (weaver/op! rt 'subcommand-failure ["run"])))]
+          (is (= "op/failed" (:code (ex-data e))))))
+      (testing "stream emissions are unchanged while the final map is stamped"
+        (weaver/register-op! rt 'streaming-subcommand
+                             {:stream? true
+                              :arg-spec {:op "streaming-subcommand"
+                                         :subcommands {"run" {:doc "Stream"}}}}
+                             'skein.weaver-test/streaming-subcommand-op)
+        (let [emitted (atom [])
+              result (weaver/op! rt 'streaming-subcommand ["run"]
+                                 {:emit! #(swap! emitted conj %)})]
+          (is (= [{:operation "emitted-item"}] @emitted))
+          (is (= {:operation "streaming-subcommand run" :result :streamed}
+                 result))))
       (testing "help aliases return detail and skip the handler for subcommand ops"
         (let [expected (weaver/op! rt 'help ["subbed"])]
           (doseq [token ["help" "-h" "--help"]]
-            (is (= expected (weaver/op! rt 'subbed [token]))))))
+            (let [actual (weaver/op! rt 'subbed [token])]
+              (is (= expected actual))
+              (is (not (contains? actual :operation)))))))
       (testing "unknown subcommands fail during parse before the handler runs"
         (weaver/register-op! rt 'subbed-side-effect
                              {:arg-spec {:op "subbed-side-effect"
@@ -1979,10 +2058,12 @@
         (weaver/register-op! rt 'raw 'skein.weaver-test/context-echo-op)
         (let [ctx (weaver/op! rt 'raw ["help"])]
           (is (not (contains? ctx :op/args)))
+          (is (not (contains? ctx :operation)))
           (is (= ["help"] (:op/argv ctx)))))
       (testing "raw-envelope ops receive no :op/args and keep the raw payloads map"
         (let [ctx (weaver/op! rt 'raw ["a" "b"] {:payloads {"stdin" "hi"}})]
           (is (not (contains? ctx :op/args)))
+          (is (not (contains? ctx :operation)))
           (is (= {"stdin" "hi"} (:op/payloads ctx)))
           (is (= ["a" "b"] (:op/argv ctx))))))))
 

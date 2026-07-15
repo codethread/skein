@@ -556,11 +556,10 @@
   (let [{:keys [subcommand feature choice tail] :as args} (:op/args ctx)]
     (condp = subcommand
       "about" (land-about)
-      "start" (merge {:operation "land-start" :feature feature}
+      "start" (merge {:feature feature}
                      (land-start! feature (select-keys args [:branch :worktree :card])))
       "next" (do (config/require-non-blank! :feature feature)
-                 {:operation "land-next"
-                  :feature feature
+                 {:feature feature
                   :ready (workflow/next-steps feature)})
       "complete" (let [[rest-tokens step] (config/pop-step-selector "land complete" tail)
                        notes (first rest-tokens)]
@@ -585,7 +584,7 @@
                                                                   step (assoc :step step)))]
                          (when releasing?
                            (release-merge-lock! feature "land terminal cleanup"))
-                         (merge {:operation "land-complete" :feature feature} result))
+                         (merge {:feature feature} result))
                        (catch Throwable t
                          (when reviewing?
                            (suppressing-rollback! t #(move-card-to-rework! card)))
@@ -605,7 +604,7 @@
                    (when aborting?
                      (move-card-to-rework! card))
                    (try
-                     (merge {:operation "land-choose" :feature feature :choice choice}
+                     (merge {:feature feature :choice choice}
                             (workflow/choose! feature (keyword choice) input (if step {:step step} {})))
                      (catch Throwable t
                        (when lock
@@ -615,8 +614,7 @@
                        (throw t)))))
       "status" (do (config/require-non-blank! :feature feature)
                    (let [root (workflow/current-root feature)]
-                     {:operation "land-status"
-                      :feature feature
+                     {:feature feature
                       :roots (mapv loom/summarize (if root [root] []))
                       :done (workflow/done? feature)
                       :ready (workflow/next-steps feature)
@@ -626,8 +624,7 @@
                      (when (> (count tail) 1)
                        (throw (ex-info "land break-lock accepts one reason argument"
                                        {:op "land break-lock" :extra (vec (rest tail))})))
-                     (merge {:operation "land-break-lock"}
-                            (break-merge-lock! reason))))))
+                     (break-merge-lock! reason)))))
 
 (def ^:private land-arg-spec
   "Declared command surface for the `land` op (one level of subcommands; the

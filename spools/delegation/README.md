@@ -126,7 +126,7 @@ Aggregate recorded run usage. With no flags it reads all runs and groups by harn
 `--group-by day` buckets by the started-at date; `--group-by harness` is the default.
 
 Output is JSON only:
-`{"operation":"agent-spend","filters":{...},"totals":{"runs","cost-usd","tokens-total","duration-ms"},"groups":[...],"runs":[...]}`.
+`{"operation":"agent spend","filters":{...},"totals":{"runs","cost-usd","tokens-total","duration-ms"},"groups":[...],"runs":[...]}`.
 Each run row includes `id`, `harness`, `phase`, `cost-usd`, `tokens-total`, optional `tokens`, `duration-ms`, `started-at`, and `finished-at`.
 Pi and Claude JSON runs record cost and tokens when the harness reports them. Raw runs, and older runs with no usage attributes, keep `null` cost and token fields.
 Every run can still contribute count and timestamp-derived duration, and totals skip null cost or token values rather than treating them as zero.
@@ -170,11 +170,12 @@ Delegate one **active** task strand: builds the worker prompt from the task's cu
 → `{"task":"<task-id>","run":{"id","phase","harness","attach"?}}`
 
 ```
-agent delegate --ready <plan-id> [--cwd dir]
+agent delegate --ready <plan-id> [--cwd dir] [--max-concurrent K]
 ```
 Fan-out: delegate every **ready** task under the plan (all blockers closed) that has no active or successful **serving** run and is not `hitl`.
 Helper runs with no `serves` edge (recon/review) are ignored, so a reconned or reviewed task is still delegated.
 Every task is classified exactly once against pre-spawn state, so a task delegated this pass is never also reported in `skipped`.
+`--max-concurrent K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) on every run delegated this pass, so the agent-run window admits at most `min(W, K)` of them at once (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)). Delegation only expresses the intent — the engine enforces the cap. Absent, tasks run under the workspace ceiling alone; ignored on single delegation.
 Harness comes from **each task's** `harness` attribute (this is how mixed-harness fan-out works); fails loudly up front, delegating nothing, if any ready task lacks one.
 Idempotent: re-invoke after verifying + closing finished tasks to pick up newly-unblocked work.
 `--interactive` is deliberately rejected here — live sessions are delegated one task at a time so the human is never swamped.
@@ -229,7 +230,7 @@ agent notes <strand-id> [--round n]
 ```
 agent review <target-id> [--roster name | --members n --harness a,b --contract text]
                          [--cwd dir] [--commit-range range] [--changed-files a,b]
-                         [--synthesize] [--spawned-by <run-id>]
+                         [--synthesize] [--spawned-by <run-id>] [--max-concurrent K]
 ```
 Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature.
 A kanban card is never a valid target and fails loudly: findings append as notes on the target, and card notes stay lean for handover, so point the review at the card's task tracking the work (`strand kanban task list <card>`, `strand kanban task add <card> <title>`).
@@ -237,6 +238,7 @@ Reviewer and synthesizer runs carry no `serves` edge: they hang under the target
 Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target.
 `--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract.
 `--synthesize` adds a synthesizer run that depends on all reviewers; its `result` is the verdict (await it), with raw findings in the target's notes.
+`--max-concurrent K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) across the reviewers and synthesizer, so the agent-run window admits at most `min(W, K)` of the review's runs at once (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)).
 `--commit-range <range>` (e.g. `main..HEAD`) names the **diff surface**: its changed files are expanded via `git -C <cwd> diff --name-only <range>` and injected into every reviewer prompt as the authoritative diff surface, so reviewers stop re-deriving the diff.
 `--changed-files a,b` overrides the file list explicitly (csv).
 A `--commit-range` with no `--cwd` to expand it, or one git cannot expand at `--cwd`, fails loudly — a range is never injected without its resolved file list.
@@ -289,9 +291,9 @@ Each specs call mints a `:review-pass` tag (override with `:review-id`): reviewe
 
 ```
 agent council --topic "..." [--members n] [--rounds n] [--harness name] [--synthesizer name]
-                            [--cwd dir] [--spawned-by <run-id>]
+                            [--cwd dir] [--spawned-by <run-id>] [--max-concurrent K]
 ```
-Convene a fresh-blackboard **panel** (see [§6](#6-panels-presets-and-the-composition-layer)): `--members n` seats N identical agents on `--harness`, they deliberate over one shared council strand across `--rounds` turn-as-run barrier rows (default 2), then a synthesizer weighs the whole deliberation — await it for the verdict. Harness has **no default**: a council with no resolvable harness fails loudly, mirroring `delegate`. The synthesizer runs `--synthesizer` or the first seat's harness. The CLI is scalar-only; per-seat harness/brief (the `:seats` vector — e.g. a cross-vendor panel) is trusted-Clojure `council!`/`panel!` territory (TEN-006: rich data does not ride the control surface). → `{"council":"<strand-id>","turns":[["<run-id>"...]...],"synthesizer":"<run-id>"}`
+Convene a fresh-blackboard **panel** (see [§6](#6-panels-presets-and-the-composition-layer)): `--members n` seats N identical agents on `--harness`, they deliberate over one shared council strand across `--rounds` turn-as-run barrier rows (default 2), then a synthesizer weighs the whole deliberation — await it for the verdict. Harness has **no default**: a council with no resolvable harness fails loudly, mirroring `delegate`. The synthesizer runs `--synthesizer` or the first seat's harness. The CLI is scalar-only; per-seat harness/brief (the `:seats` vector — e.g. a cross-vendor panel) is trusted-Clojure `council!`/`panel!` territory (TEN-006: rich data does not ride the control surface). `--max-concurrent K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) across the council's seats, so the agent-run window admits at most `min(W, K)` of them per turn (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)). → `{"council":"<strand-id>","turns":[["<run-id>"...]...],"synthesizer":"<run-id>"}`
 
 ### Plan creation (weave pattern, not an agent verb)
 

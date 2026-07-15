@@ -6,10 +6,11 @@
 Blessed spool-authoring helpers: the accretion-compatible home for the shared
   fail-loud and validation seams every reference spool leans on.
 
-  Living in the `skein.api.*.alpha` tier freezes this helper set (`fail!`,
-  `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`,
-  `poll-until-deadline!`) as a compat commitment, so no blessed namespace has to
-  reach down into a `skein.spools.*` peer to reuse them.
+  Living in the `skein.api.*.alpha` tier freezes this helper set (`note-surface`,
+  `work-root`, `timeout-secs`, `outcome`, `fail!`, `reject-unknown-keys!`,
+  `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`) as a
+  compat commitment, so no blessed namespace has to reach down into a
+  `skein.spools.*` peer to reuse them.
 
   Reference spools all need the same tiny fail-loud and validation seams: throw
   an `ex-info` with a contextual data map (TEN-003), reject unknown option keys,
@@ -49,7 +50,7 @@ Read attribute `k` from a normalized strand, tolerating keyword- or
 
   Fails loudly if the selected value is a lean-read omission descriptor, because
   trusted spool readers require a raw full-fidelity attribute value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L123-L148">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L152-L177">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/attr-key->str">`attr-key->str`</a>
 ``` clojure
@@ -62,7 +63,7 @@ Coerce an attribute key to its string wire form.
   Keyword keys render as their bare name (dropping the leading colon), preserving
   any namespace; string keys pass through. This is the write-side key coercion,
   not a tolerant reader.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L70-L77">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L99-L106">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/entity-projection">`entity-projection`</a>
 ``` clojure
@@ -74,7 +75,7 @@ Return the canonical exact strand entity projection.
 
   Fails loudly when any of `:id`, `:title`, `:state`, or `:attributes` is
   absent. Other fields are discarded.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L35-L45">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L64-L74">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/fail!">`fail!`</a>
 ``` clojure
@@ -87,7 +88,26 @@ Throw an `ex-info` carrying `message` and a contextual `data` map (TEN-003).
 
   The optional `cause` arity threads an underlying throwable so a spool can fail
   loudly without discarding the original exception.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L23-L31">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L52-L60">Source</a></sub></p>
+
+## <a name="skein.api.spool.alpha/note-surface">`note-surface`</a>
+
+
+
+
+Partial arg-spec for a note target, text, and optional attribution.
+
+  Merge this plain-data declaration with spool-owned flags or positionals before
+  registering an op.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L24-L31">Source</a></sub></p>
+
+## <a name="skein.api.spool.alpha/outcome">`outcome`</a>
+
+
+
+
+Partial arg-spec for the `--outcome` recorded when closing an entity.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L48-L50">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/poll-until-deadline!">`poll-until-deadline!`</a>
 ``` clojure
@@ -112,7 +132,7 @@ The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
   integer, or `check`/`pred->result`/`on-timeout` is not a function, rather
   than surfacing a bare NPE/`IllegalArgumentException` once the loop actually
   runs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L83-L112">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L112-L141">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/reject-unknown-keys!">`reject-unknown-keys!`</a>
 ``` clojure
@@ -125,7 +145,7 @@ Return `m`, failing loudly when it carries keys outside `allowed`.
   `context` is a label (typically the builder/op name) that names the offending
   surface in the message, so a spool never silently ignores a mistyped option
   key. `allowed` is a set of permitted keys.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L47-L57">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L76-L86">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/require-valid!">`require-valid!`</a>
 ``` clojure
@@ -138,4 +158,23 @@ Return `value`, failing loudly with spec explain data when it is invalid.
   The canonical spool boundary-shape seam: pairs a `clojure.spec` check with an
   `:explain` payload (`s/explain-data`) so a rejected shape carries actionable
   context, not just the raw value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L59-L68">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L88-L97">Source</a></sub></p>
+
+## <a name="skein.api.spool.alpha/timeout-secs">`timeout-secs`</a>
+
+
+
+
+Partial arg-spec for an integer `--timeout-secs` wait bound.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L43-L46">Source</a></sub></p>
+
+## <a name="skein.api.spool.alpha/work-root">`work-root`</a>
+
+
+
+
+Partial arg-spec for the shared flags that identify a work root.
+
+  The fragment leaves requiredness to the composing spool because each work
+  domain has different identity requirements.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L33-L41">Source</a></sub></p>
