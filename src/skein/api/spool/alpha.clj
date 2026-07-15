@@ -2,10 +2,11 @@
   "Blessed spool-authoring helpers: the accretion-compatible home for the shared
   fail-loud and validation seams every reference spool leans on.
 
-  Living in the `skein.api.*.alpha` tier freezes this helper set (`fail!`,
-  `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`,
-  `poll-until-deadline!`) as a compat commitment, so no blessed namespace has to
-  reach down into a `skein.spools.*` peer to reuse them.
+  Living in the `skein.api.*.alpha` tier freezes this helper set (`note-surface`,
+  `work-root`, `timeout-secs`, `outcome`, `fail!`, `reject-unknown-keys!`,
+  `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`) as a
+  compat commitment, so no blessed namespace has to reach down into a
+  `skein.spools.*` peer to reuse them.
 
   Reference spools all need the same tiny fail-loud and validation seams: throw
   an `ex-info` with a contextual data map (TEN-003), reject unknown option keys,
@@ -19,6 +20,34 @@
   than adopting this one."
   (:require [clojure.spec.alpha :as s]
             [skein.core.specs :as specs]))
+
+(def note-surface
+  "Partial arg-spec for a note target, text, and optional attribution.
+
+  Merge this plain-data declaration with spool-owned flags or positionals before
+  registering an op."
+  {:flags {:by {:doc "Attribution recorded with the note."}}
+   :positionals [{:name :id :required? true :doc "Target id."}
+                 {:name :text :required? true :doc "Note text."}]})
+
+(def work-root
+  "Partial arg-spec for the shared flags that identify a work root.
+
+  The fragment leaves requiredness to the composing spool because each work
+  domain has different identity requirements."
+  {:flags {:feature {:doc "Feature or work slug."}
+           :owner {:doc "Owner identity."}
+           :branch {:doc "Branch name."}
+           :worktree {:doc "Worktree path."}}})
+
+(def timeout-secs
+  "Partial arg-spec for an integer `--timeout-secs` wait bound."
+  {:flags {:timeout-secs {:type :int
+                          :doc "Maximum seconds to wait."}}})
+
+(def outcome
+  "Partial arg-spec for the `--outcome` recorded when closing an entity."
+  {:flags {:outcome {:doc "Outcome recorded when closing the entity."}}})
 
 (defn fail!
   "Throw an `ex-info` carrying `message` and a contextual `data` map (TEN-003).

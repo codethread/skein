@@ -236,7 +236,7 @@
                                 |2026-07-10T00:00:00Z); --group-by buckets by harness (default) or day.")
                    :fails ["--group-by other than harness or day"
                            "--since/--until not an ISO-8601 instant"]
-                   :returns {"operation" "agent-spend"
+                   :returns {"operation" "agent spend"
                              "filters" {"group-by" "harness|day" "harness" "optional string"
                                         "since" "optional ISO instant" "until" "optional ISO instant"}
                              "totals" {"runs" "integer" "cost-usd" "number|null"

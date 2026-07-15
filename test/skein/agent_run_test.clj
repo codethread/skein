@@ -15,6 +15,7 @@
             [skein.api.notes.alpha :as notes]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
+            [skein.spools.delegation :as agents]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-shuttle
@@ -1561,15 +1562,16 @@
 (deftest spend-aggregates-totals-and-groups-by-harness
   (with-shuttle
     (fn [rt]
+      (agents/install!)
       (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:00:00Z" :finished "2026-07-08T10:00:04Z"
                           :cost 0.10 :tokens-total 100 :tokens {"input" 60 "output" 40}})
       (add-spend-run! rt {:harness "pi" :started "2026-07-08T10:10:00Z" :finished "2026-07-08T10:10:06Z"
                           :cost 0.20 :tokens-total 200})
       (add-spend-run! rt {:harness "claude" :started "2026-07-08T10:20:00Z" :finished "2026-07-08T10:20:01Z"
                           :cost 0.05 :tokens-total 50})
-      (let [{:keys [operation totals groups runs]} (shuttle/spend)
+      (let [{:keys [operation totals groups runs]} (weaver/op! rt 'agent ["spend"])
             by-key (into {} (map (juxt :key identity) groups))]
-        (is (= "agent-spend" operation))
+        (is (= "agent spend" operation))
         (testing "totals sum every run's cost, tokens, and derived duration"
           (is (= 3 (:runs totals)))
           (is (about= 0.35 (:cost-usd totals)))
@@ -1708,6 +1710,19 @@
        (map :id)
        set))
 
+(defn- await-pending-count
+  "Poll (fail-loud budget) until exactly `n` runs read phase pending; return the
+  set. claim! marks a run in-flight before the async launch-run! transitions its
+  strand phase off pending, so a just-claimed run still reads pending until its
+  launch lands on the worker executor. Poll for the steady-state count rather
+  than sampling it one-shot, which over-counts by the not-yet-launched runs on a
+  slow host."
+  [rt n]
+  (test-support/poll-until
+   #(let [ids (pending-ids rt)] (when (= n (count ids)) ids))
+   {:on-timeout #(throw (ex-info "pending count never reached target"
+                                 {:want n :pending (pending-ids rt)}))}))
+
 (defn- drain-gated!
   "Release every gate so no blocked sh process is left behind, wait for the
   engine to drop the gated runs from in-flight, then kill any interactive
@@ -1734,7 +1749,7 @@
           (settle! rt)
           (let [in-flight (await-in-flight-count 2)]
             (is (= 2 (count in-flight)) "exactly ceiling runs admitted")
-            (let [pending (pending-ids rt)]
+            (let [pending (await-pending-count rt 3)]
               (is (= 3 (count pending)) "the rest stay pending")
               (doseq [id pending]
                 (let [strand (weaver/show rt id)]
@@ -1785,7 +1800,7 @@
           (settle! rt)
           (let [in-flight (await-in-flight-count 2)]
             (is (= 2 (count in-flight)) "group cap 2 tightens below the ceiling of 4")
-            (is (= 1 (count (pending-ids rt)))))
+            (is (= 1 (count (await-pending-count rt 1)))))
           (finally (drain-gated! rt gates nil)))))))
 
 (deftest window-group-cap-above-ceiling-stays-bounded-by-workspace-width
@@ -1802,7 +1817,7 @@
           (settle! rt)
           (let [in-flight (await-in-flight-count 4)]
             (is (= 4 (count in-flight)) "min(ceiling 4, cap 20) = 4")
-            (is (= 2 (count (pending-ids rt)))))
+            (is (= 2 (count (await-pending-count rt 2)))))
           (finally (drain-gated! rt gates nil)))))))
 
 (deftest interactive-runs-consume-no-window-slot

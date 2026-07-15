@@ -2357,8 +2357,7 @@
                     (map (fn [[k grp]] (assoc (spend-totals grp) :key k)))
                     (sort-by (comp str :key))
                     vec)]
-    {:operation "agent-spend"
-     :filters (cond-> {:group-by group-dim}
+    {:filters (cond-> {:group-by group-dim}
                 harness (assoc :harness harness)
                 since (assoc :since since)
                 until (assoc :until until))
@@ -2368,8 +2367,8 @@
 
 (defn spend
   "Aggregate recorded agent-run spend into the C7 read shape (PROP-Ru-001.C7):
-  `{:operation \"agent-spend\", :filters, :totals, :groups, :runs}`. Optional
-  opts filter and shape the report:
+  `{:filters, :totals, :groups, :runs}`. Registered `agent spend` dispatch adds
+  the canonical `:operation` label. Optional opts filter and shape the report:
 
     :harness   restrict to one harness/alias name
     :since     lower ISO-8601 instant bound on the run's started-at (inclusive)

@@ -90,7 +90,7 @@ Function.
 
 Block until every id is terminal (closed, failed, or exhausted) or
   `timeout-secs` (default 300) elapses. Returns run summaries plus :timed-out.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2395-L2412">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2394-L2411">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/backends">`backends`</a>
 ``` clojure
@@ -112,7 +112,7 @@ Capture an interactive run's transcript right now, persist it as the run's
   coordinator peek without attaching) and, when the harness capture source
   outlives the session (hook-written logs), on finished runs too. Fails
   loudly when the run is not interactive or no capture op is configured.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2446-L2459">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2445-L2458">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/defalias!">`defalias!`</a>
 ``` clojure
@@ -141,7 +141,7 @@ Register `name` as an alias (seat) layered over another harness or alias.
 Function.
 
 Return the effective workspace review contract text.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2502-L2505">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2501-L2504">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/defbackend!">`defbackend!`</a>
 ``` clojure
@@ -200,7 +200,7 @@ Register a harness definition under `name`.
 
 
 Default contract text for independent agent-run reviews.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2484-L2490">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2483-L2489">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/harnesses">`harnesses`</a>
 ``` clojure
@@ -248,7 +248,7 @@ Install the agent-run engine into the active weaver: default harnesses, the grap
   `agent-run/usage-source`. Pi JSON folds per-message usage deltas; Claude JSON
   reads the final result object's usage fields; raw output records no cost or
   token attributes.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2510-L2540">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2509-L2539">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/kill!">`kill!`</a>
 ``` clojure
@@ -257,7 +257,7 @@ Install the agent-run engine into the active weaver: default harnesses, the grap
 Function.
 
 Kill a run's harness process (or interactive session) and mark it failed.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2414-L2444">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2413-L2443">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/note!">`note!`</a>
 ``` clojure
@@ -273,7 +273,7 @@ Append a note strand to `target-id`'s memory via the blessed
   edge alone — no `note/for` attribute — and carries optional `note/by`/`note/round`.
   Its `note/text`/`note/at` content is storage-enforced write-once; the strand
   stays open to decorating attrs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2461-L2470">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2460-L2469">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/notes">`notes`</a>
 ``` clojure
@@ -287,7 +287,7 @@ Return `target-id`'s notes in `note/at` order, optionally one `:round`, via
 
   Walks the incoming `notes` edges to the target, so it reads every writer's
   notes regardless of decorating attrs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2472-L2479">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2471-L2478">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/on-event">`on-event`</a>
 ``` clojure
@@ -468,7 +468,7 @@ Spawn every ready pending run the fan-out window admits and that is not
 Function.
 
 Set the workspace default review contract text; nil restores the generic one.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2494-L2500">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2493-L2499">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/set-fanout-ceiling!">`set-fanout-ceiling!`</a>
 ``` clojure
@@ -548,8 +548,8 @@ Create one agent-run strand; the engine spawns it when it becomes ready.
 Function.
 
 Aggregate recorded agent-run spend into the C7 read shape (PROP-Ru-001.C7):
-  `{:operation "agent-spend", :filters, :totals, :groups, :runs}`. Optional
-  opts filter and shape the report:
+  `{:filters, :totals, :groups, :runs}`. Registered `agent spend` dispatch adds
+  the canonical `:operation` label. Optional opts filter and shape the report:
 
     :harness   restrict to one harness/alias name
     :since     lower ISO-8601 instant bound on the run's started-at (inclusive)
@@ -563,7 +563,7 @@ Aggregate recorded agent-run spend into the C7 read shape (PROP-Ru-001.C7):
   format including `:raw`; a run that recorded no cost/tokens contributes null for
   those, and every sum skips nils so a missing figure is never inflated to 0. The
   read costs one bulk query for many runs, never one per run (PROP-Ru-001.R4).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2369-L2387">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2368-L2386">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/supersede-and-respawn!">`supersede-and-respawn!`</a>
 ``` clojure

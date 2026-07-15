@@ -1,0 +1,26 @@
+tasks:
+  - id: 1
+    description: Add shared-spool CLI style guidance
+    task_file: tasks/001-add-shared-spool-cli-style-guidance.md
+    status: complete
+    blocked_by: []
+  - id: 2
+    description: Add composable spool arg-spec fragments
+    task_file: tasks/002-add-composable-spool-arg-spec-fragments.md
+    status: complete
+    blocked_by: []
+  - id: 3
+    description: Stamp dispatch-owned operation labels
+    task_file: tasks/003-stamp-dispatch-owned-operation-labels.md
+    status: complete
+    blocked_by: []
+  - id: 4
+    description: Migrate agent spend operation label
+    task_file: tasks/004-migrate-agent-spend-operation-label.md
+    status: complete
+    blocked_by: [3]
+  - id: 5
+    description: Migrate land operation labels
+    task_file: tasks/005-migrate-land-operation-labels.md
+    status: complete
+    blocked_by: [3]
