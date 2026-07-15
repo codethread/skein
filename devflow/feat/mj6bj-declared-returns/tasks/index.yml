@@ -17,7 +17,7 @@ tasks:
   - id: 4
     description: Entity projection and exact-copy adoption
     task_file: tasks/004-entity-projection-adoption.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 5
     description: Agent-run result consumption seam
