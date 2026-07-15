@@ -27,7 +27,7 @@ tasks:
   - id: 6
     description: Core help and batteries declarations
     task_file: tasks/006-core-batteries-declarations.md
-    status: pending
+    status: complete
     blocked_by: [2, 3]
   - id: 7
     description: Shipped reference-spool declarations
