@@ -402,3 +402,16 @@ Append notes here. Do not rewrite earlier notes.
 - Task 6 changed built-in help and batteries declarations without an API-doc
   gate. Task 7's API-doc gate exposed and committed the corresponding Weaver
   and batteries generated-reference drift alongside its owned spool pages.
+
+### PLAN-Dcr-001.DN7 PH8 generated API drift — 2026-07-15
+
+- Task 8 shifted delegation and bench source anchors without an API-doc gate.
+  Task 9's docs gate exposed and committed the two generated spool API pages.
+
+### PLAN-Dcr-001.DN8 PH9 dispatch and upstream validation — 2026-07-15
+
+- The first Task 9 run compared against moving `origin/main` despite the
+  binding `d534add`/`3045373` confirmation; it made no edits and was superseded.
+  Upstream owner suites used `-Sdeps` overrides to this feature checkout because
+  their default sibling path resolves the separate main checkout. The pinned
+  spool gate independently fetched and tested both advanced SHAs.

@@ -42,5 +42,5 @@ tasks:
   - id: 9
     description: Repo coordination and pinned-spool declarations
     task_file: tasks/009-coordination-pinned-declarations.md
-    status: pending
+    status: complete
     blocked_by: [2, 3, 4]
