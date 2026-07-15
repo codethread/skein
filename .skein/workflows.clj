@@ -673,6 +673,15 @@
                                  :variadic? true
                                  :doc "Reason text."}]}}})
 
+(def ^:private land-returns
+  {:subcommands
+   (into {}
+         (map (fn [subcommand]
+                [subcommand {:type :map
+                             :required {:operation :string}
+                             :extra :json}]))
+         (keys (:subcommands land-arg-spec)))})
+
 (defn install!
   "Install the repo's hand-authored workflows: the delegate-pipeline pattern
   and the coordinator land workflow with its op."
@@ -690,6 +699,7 @@
             runtime
             'land
             {:doc (:doc land-arg-spec)
-             :arg-spec land-arg-spec}
+             :arg-spec land-arg-spec
+             :returns land-returns}
             'workflows/land-op)]
      :land-workflows (register-land-workflows!)}))

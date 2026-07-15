@@ -19,6 +19,9 @@
 ;; forms below re-register them, mirroring config.clj (TEN-003).
 (forget-ops! 'analytics)
 
+(def ^:private feature-costs-return
+  {:type :map :required {:operation :string} :extra :json})
+
 (defn- attr
   "Read strand attribute k, tolerating keyword- or string-keyed maps."
   [strand k]
@@ -135,12 +138,12 @@
   bounds, per-harness rollups, and the ids of runs that recorded no usage.
   Pure data by design — no formatting, no rounding — so one payload serves a
   rich doc, a CSV, or an in-chat summary. Fails loudly on an unknown root."
-  {:arg-spec {:op "feature-costs"
-              :doc "Show the agent-run cost and usage rollup beneath a work root."
-              :positionals [{:name :root-id
-                             :type :string
-                             :required? true
-                             :doc "Work-root strand id (kanban card, plan, or ad hoc root)."}]}}
+  {:returns feature-costs-return :arg-spec {:op "feature-costs"
+                                            :doc "Show the agent-run cost and usage rollup beneath a work root."
+                                            :positionals [{:name :root-id
+                                                           :type :string
+                                                           :required? true
+                                                           :doc "Work-root strand id (kanban card, plan, or ad hoc root)."}]}}
   [ctx]
   (let [{:keys [root-id]} (:op/args ctx)
         rt (current/runtime)

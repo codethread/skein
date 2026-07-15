@@ -12,7 +12,7 @@
   handler symbol remembered for registration is `<current-ns>/<name>-op`.
 
   The options map carries `:arg-spec` (a named arg-spec var/symbol or an inline
-  arg-spec map), any extra `register-op!` metadata keys such as `:deadline-class`
+  arg-spec map), any extra `register-op!` metadata keys such as `:returns` or `:deadline-class`
   passed straight through to registration, and an optional `:convention` map of
   extra `devflow-conventions` `:ops` fields (`:manual`/`:purpose`/...) beyond the
   mechanically-derived `{:name :help}`, remembered but never registered."
@@ -75,7 +75,8 @@
   and returns a vector of the registration entries, matching today's `install!`
   `:ops` vector shape. Registration metadata is `{:doc <arg-spec :doc>
   :arg-spec <arg-spec>}` merged with any extra remembered metadata keys (e.g.
-  `:deadline-class`); the `:convention` data is not passed to `register-op!`.
+  `:returns` and `:deadline-class`); the `:convention` data is not passed to
+  `register-op!`.
 
   Throws if `ns-sym` has no remembered ops — a typo'd or stale quoted ns
   literal, or a file that defined nothing, must fail loudly rather than silently
@@ -91,8 +92,8 @@
      (let [runtime (current/runtime)]
        (mapv (fn [{:keys [name arg-spec metadata] fn-sym :fn}]
                (weaver/register-op! runtime name
-                                 (merge {:doc (:doc arg-spec) :arg-spec arg-spec} metadata)
-                                 fn-sym))
+                                    (merge {:doc (:doc arg-spec) :arg-spec arg-spec} metadata)
+                                    fn-sym))
              entries)))))
 
 (defmacro defop

@@ -13,9 +13,9 @@
           ;; Keep this devflow sha exactly synchronized with deps.edn :test
           ;; extra-deps until config_test no longer needs the spool on its JVM classpath.
           codethread/devflow {:git/url "https://github.com/codethread/devflow.spool.git"
-                              :git/sha "84c83f6a78812dd12ff74d330d58d6dc26b910ad"}
+                              :git/sha "108b820ac8382ad2d9caf592e75269c5ba24036b"}
           ;; Keep this kanban sha exactly synchronized with deps.edn :test
           ;; extra-deps (config_test enforces the pairing); developers override
           ;; with a spools.local.edn local root to work against a checkout.
           codethread/kanban {:git/url "https://github.com/codethread/kanban.spool.git"
-                             :git/sha "8154a9b85d75bb69bf3f1087a65cf0bd5a0bf1a1"}}}
+                             :git/sha "51c4dc177c02589193714eec0fd03e58d2e60a6c"}}}

@@ -76,7 +76,7 @@ Dispatch parsed `strand bench ...` subcommands to the engine functions.
   supplies flags and positionals; rich data stays in trusted Clojure. A bare
   `strand bench` or an unknown verb fails during parser routing (the declared
   `:subcommands` machinery), never here.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L1327-L1348">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L1357-L1378">Source</a></sub></p>
 
 ## <a name="skein.spools.bench/cross">`cross`</a>
 ``` clojure
@@ -182,7 +182,7 @@ Activate bench on the current runtime.
   the `bench` CLI op and the `bench-runs` named query. Registers no suites or
   agent definitions — those are trusted config. Called as a no-arg module
   `:call` at startup/reload.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L1392-L1424">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L1422-L1455">Source</a></sub></p>
 
 ## <a name="skein.spools.bench/judge-spec">`judge-spec`</a>
 ``` clojure
@@ -239,7 +239,7 @@ Fail entries orphaned by a weaver restart and best-effort kill their
   `preparing`/`running` entry with no claim is orphaned: it becomes `failed`
   with `bench/error "orphaned by weaver restart"` and its container is killed
   by name. Returns the reconciled entry ids.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L1370-L1390">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/bench/src/skein/spools/bench.clj#L1400-L1420">Source</a></sub></p>
 
 ## <a name="skein.spools.bench/report">`report`</a>
 ``` clojure
