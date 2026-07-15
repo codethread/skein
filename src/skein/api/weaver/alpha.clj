@@ -434,7 +434,10 @@
   runs. For subcommand ops, sole-token `help`, `-h`, or `--help` invocations
   with no payloads return the op's help detail instead of running the handler.
   Subcommand map results receive a canonical `:operation` label containing the
-  registered op name and full resolved path, including a nested `:action`.
+  registered op name and full resolved path, including a nested `:action`. A
+  handler-supplied `:operation` equal to the derived label is preserved; any
+  other value, including explicit nil, fails loudly with the expected and
+  actual labels.
   Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map."
   ([runtime op-name argv]
