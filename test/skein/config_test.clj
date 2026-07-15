@@ -341,8 +341,9 @@
 
 (deftest converted-config-surface-is-byte-identical-to-pre-refactor
   ;; TASK-Srm-009.MI1 acceptance gate. surface_baseline.edn is the config-owned
-  ;; op-help + named-query surface captured from the pre-refactor config (base
-  ;; ad5d2eb, before the defquery/defop conversion) via capture-config-surface.
+  ;; op-help + named-query surface captured via capture-config-surface; it was
+  ;; snapshotted pre-defquery/defop-conversion (base ad5d2eb) and re-captured
+  ;; when declared :returns joined the op-help surface (PLAN-Dcr-001).
   ;; Asserting the current converted config reproduces it byte-for-byte proves the
   ;; refactor changed no generated `help <op>` and no registered query definition;
   ;; the devflow-conventions payload is pinned by the test above. The golden is a
