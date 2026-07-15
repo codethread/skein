@@ -2,10 +2,80 @@
   "Tests for the blessed skein.test.alpha weaver-world helpers."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [skein.api.weaver.alpha :as weaver]
             [skein.test.alpha :as t]))
 
 (def ^:private require-api
   "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as weaver] '[skein.api.graph.alpha :as graph])")
+
+(deftest check-op-return-selects-declared-return-leaves
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)
+          flat-shape {:type :map :required {:items {:type :collection :items :integer}}}
+          flat-value {:items [1 2]}
+          stream-returns {:subcommands
+                          {"watch" {:stream {:emits :string
+                                             :result [:nullable :boolean]}}}}]
+      (weaver/register-op! rt 'flat
+                           {:returns flat-shape}
+                           'skein.test.alpha-test/unused-op)
+      (weaver/register-op! rt 'subcommand
+                           {:arg-spec {:op "subcommand"
+                                       :subcommands {"show" {}}}
+                            :returns {:subcommands {"show" :integer}}}
+                           'skein.test.alpha-test/unused-op)
+      (weaver/register-op! rt 'stream
+                           {:arg-spec {:op "stream"
+                                       :subcommands {"watch" {}}}
+                            :stream? true
+                            :returns stream-returns}
+                           'skein.test.alpha-test/unused-op)
+      (testing "flat success preserves identity"
+        (is (identical? flat-value (t/check-op-return! rt 'flat flat-value))))
+      (testing "subcommand result"
+        (is (= 42 (t/check-op-return! rt 'subcommand {:subcommand "show"} 42))))
+      (testing "stream emitted item and terminal result"
+        (is (= "line" (t/check-op-return! rt 'stream
+                                          {:subcommand "watch" :channel :emits}
+                                          "line")))
+        (is (nil? (t/check-op-return! rt 'stream
+                                      {:subcommand "watch" :channel :result}
+                                      nil))))
+      (testing "mismatch diagnostics preserve selected declaration and shape path"
+        (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                      #"Operation return value does not match declaration"
+                                      (t/check-op-return! rt 'flat {:items [1 "bad"]})))]
+          (is (= "flat" (:operation (ex-data e))))
+          (is (= flat-shape (:declaration (ex-data e))))
+          (is (= [:items 1] (:path (ex-data e))))
+          (is (= "bad" (:actual (ex-data e)))))))))
+
+(deftest check-op-return-fails-loudly-on-absent-or-misaligned-declarations
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)]
+      (weaver/register-op! rt 'undeclared 'skein.test.alpha-test/unused-op)
+      (weaver/register-op! rt 'flat
+                           {:returns :string}
+                           'skein.test.alpha-test/unused-op)
+      (weaver/register-op! rt 'stream
+                           {:stream? true
+                            :returns {:stream {:emits :string :result :boolean}}}
+                           'skein.test.alpha-test/unused-op)
+      (doseq [[operation context value reason]
+              [['undeclared {} "value" :missing-return-declaration]
+               ['flat {:subcommand "show"} "value" :unexpected-return-subcommand]
+               ['flat {:channel :result} "value" :unexpected-return-channel]
+               ['stream {} true :missing-return-channel]
+               ['stream {:channel :unknown} true :unknown-return-channel]]]
+        (let [e (is (thrown? clojure.lang.ExceptionInfo
+                             (t/check-op-return! rt operation context value)))]
+          (is (= (name operation) (:operation (ex-data e))))
+          (is (= reason (:reason (ex-data e)))))))))
+
+(defn unused-op
+  "Test-only registered operation handler; output checks consume captured values."
+  [_]
+  nil)
 
 (deftest with-weaver-world-runs-file-backed-world-and-cleans-up
   (let [captured (atom nil)

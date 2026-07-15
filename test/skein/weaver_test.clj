@@ -3,6 +3,7 @@
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -20,7 +21,8 @@
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
-            [skein.spools.test-support :as test-support])
+            [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as t])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
            [java.nio.channels Channels SocketChannel]))
@@ -59,6 +61,32 @@
 
 (defn test-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
+
+(defn- return-case-leaves
+  [operation context return-case]
+  (if (and (map? return-case) (contains? return-case :stream))
+    (set (map (fn [channel] [operation (assoc context :channel channel)])
+              [:emits :result]))
+    #{[operation context]}))
+
+(defn- op-return-leaves
+  [{:keys [name returns]}]
+  (if (and (map? returns) (contains? returns :subcommands))
+    (into #{}
+          (mapcat (fn [[subcommand return-case]]
+                    (return-case-leaves name {:subcommand subcommand} return-case)))
+          (:subcommands returns))
+    (return-case-leaves name {} returns)))
+
+(defn- owner-return-coverage
+  [rt provenance checked-leaves]
+  (let [entries (filterv #(= provenance (:provenance %)) (weaver/ops rt))
+        missing (filterv #(not (contains? % :returns)) entries)
+        required (into #{} (mapcat op-return-leaves) (filter #(contains? % :returns) entries))]
+    {:entries entries
+     :missing (mapv :name missing)
+     :required required
+     :unchecked (set/difference required checked-leaves)}))
 
 (defn context-echo-op
   "Return the handler context so tests can inspect threaded envelope fields."
@@ -1620,6 +1648,54 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Operation function"
                             (weaver/register-op! rt 'bad 'unqualified))))))
+
+(deftest owner-return-coverage-is-derived-from-registry-provenance
+  (testing "a wholly undeclared production op is reported before leaf coverage"
+    (with-runtime
+      (fn [rt _]
+        (let [{:keys [entries missing required unchecked]}
+              (owner-return-coverage rt 'skein.api.weaver.alpha #{})]
+          (is (= ["help"] (mapv :name entries)))
+          (is (= ["help"] missing))
+          (is (empty? required))
+          (is (empty? unchecked))))))
+  (testing "required leaves come from declarations and remain unchecked until successful checks"
+    (with-runtime
+      (fn [rt _]
+        (weaver/register-op! rt 'flat
+                             {:returns :string}
+                             'skein.weaver-test/test-op)
+        (weaver/register-op! rt 'subcommand
+                             {:arg-spec {:op "subcommand"
+                                         :subcommands {"show" {}}}
+                              :returns {:subcommands {"show" :integer}}}
+                             'skein.weaver-test/test-op)
+        (weaver/register-op! rt 'stream
+                             {:stream? true
+                              :returns {:stream {:emits :string :result :boolean}}}
+                             'skein.weaver-test/test-op)
+        (let [initial (owner-return-coverage rt 'skein.weaver-test #{})
+              checked (atom #{})]
+          (is (empty? (:missing initial)))
+          (is (= 4 (count (:required initial))))
+          (is (= (:required initial) (:unchecked initial)))
+
+          (t/check-op-return! rt 'flat "ok")
+          (swap! checked conj ["flat" {}])
+          (t/check-op-return! rt 'subcommand {:subcommand "show"} 42)
+          (swap! checked conj ["subcommand" {:subcommand "show"}])
+          (t/check-op-return! rt 'stream {:channel :emits} "line")
+          (swap! checked conj ["stream" {:channel :emits}])
+
+          (let [partial (owner-return-coverage rt 'skein.weaver-test @checked)]
+            (is (= #{["stream" {:channel :result}]} (:unchecked partial))))
+
+          (t/check-op-return! rt 'stream {:channel :result} true)
+          (swap! checked conj ["stream" {:channel :result}])
+          (let [{:keys [missing unchecked]}
+                (owner-return-coverage rt 'skein.weaver-test @checked)]
+            (is (empty? missing))
+            (is (empty? unchecked))))))))
 
 (deftest weaver-op-metadata-defaults-and-validation
   (with-runtime
