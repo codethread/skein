@@ -17,6 +17,8 @@ and composes only the documented `skein.repl` and
 
 ## 2. Usage
 
+Bobbin is opt-in: approve `skein.spools/bobbin {:local/root "../spools/bobbin"}` in `.skein/spools.edn` and activate it from trusted config (`runtime/sync!` + `runtime/use!`, see [the customisation guide](../docs/spools/customisation.md)) before requiring it.
+
 ```clojure
 (require '[skein.spools.bobbin :as bobbin])
 
