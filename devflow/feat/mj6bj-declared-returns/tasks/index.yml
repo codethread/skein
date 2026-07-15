@@ -2,7 +2,7 @@ tasks:
   - id: 1
     description: Return-shape foundation and registry declaration
     task_file: tasks/001-return-shape-foundation.md
-    status: pending
+    status: complete
     blocked_by: []
   - id: 2
     description: Full help rendering
