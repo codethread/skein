@@ -293,6 +293,37 @@ selected Skein checkout. Every other reference spool is never a shipped-classpat
 your spool depends on one, list it as an ordinary `spools.edn` coordinate above, the same as any
 other spool prerequisite.
 
+### Nested-spool prerequisites
+
+When your spool's prerequisite is one of Skein's in-repo spool roots (the workflow engine is the
+common case), your dependency snippet should offer the consumer both coordinate forms for that
+root. A local root points into the consumer's own Skein checkout, which is what this repo's
+`spools.edn` does:
+
+```clojure
+{:spools {skein.spools/workflow {:local/root "/path/to/your/skein/spools/workflow"}}}
+```
+
+A sha-pinned nested-root git coordinate on the Skein repo pins the engine independently of any
+checkout, using the `:deps/root` monorepo key described above. This block is schematic, not
+copyable: the `:git/sha` placeholder fails the 40-lowercase-hex validation by design, so a consumer
+must substitute the sha of the Skein commit they are consenting to before approval:
+
+```clojure
+{:spools {skein.spools/workflow
+          {:git/url "https://github.com/codethread/skein.git"
+           :git/sha "<40-hex-sha-for-the-pinned-commit>"
+           :deps/root "spools/workflow"}}}
+```
+
+Both forms resolve to the same spool root; which one a consumer approves is their consent decision,
+not yours.
+
+State the version-skew convention plainly in your README: a runtime loads one version of a
+namespace, so a spool pinned at sha X always runs against the consumer's single chosen workflow
+version, whichever coordinate supplied it. Compatibility across that skew is managed by accretion
+as a convention (the engine adds, it does not break), not by a contract your spool can pin against.
+
 ### README activation snippet
 
 Include an **Activation** section with the complete trusted `init.clj` snippet. The consumer owns
