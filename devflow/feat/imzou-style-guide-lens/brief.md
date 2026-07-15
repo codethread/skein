@@ -21,8 +21,8 @@ declared arg-spec parser, because it silently loses `:stdin`/`:payload/<name>` r
 - Guide not rule per PHILOSOPHY ("prose guides, code decides"): the lens surfaces
   divergence to human review; it does not police.
 - This is repo config (`.skein/reviewers.clj`), picked up per the reload ladder — no
-  weaver restart; roster definitions are read at review fan-out from config, so the change
-  takes effect for new reviews after `runtime/reload!` (verify the pickup path; never
-  restart the weaver).
+  weaver restart; the roster registry is weaver-lifetime state, so the change is invisible
+  until `runtime/reload!` re-runs trusted config and re-registers the roster. Only reviews
+  fanned out after that reload receive the amended contract (never restart the weaver).
 - Keep the contract within the existing roster-entry budget style (call budgets, scope
   notes) and consistent with neighboring lens contracts.
