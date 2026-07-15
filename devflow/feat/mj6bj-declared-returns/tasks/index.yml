@@ -22,7 +22,7 @@ tasks:
   - id: 5
     description: Agent-run result consumption seam
     task_file: tasks/005-agent-run-consumption-seam.md
-    status: pending
+    status: complete
     blocked_by: [1]
   - id: 6
     description: Core help and batteries declarations
