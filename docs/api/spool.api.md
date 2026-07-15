@@ -49,7 +49,7 @@ Read attribute `k` from a normalized strand, tolerating keyword- or
 
   Fails loudly if the selected value is a lean-read omission descriptor, because
   trusted spool readers require a raw full-fidelity attribute value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L109-L134">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L123-L148">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/attr-key->str">`attr-key->str`</a>
 ``` clojure
@@ -62,7 +62,19 @@ Coerce an attribute key to its string wire form.
   Keyword keys render as their bare name (dropping the leading colon), preserving
   any namespace; string keys pass through. This is the write-side key coercion,
   not a tolerant reader.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L56-L63">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L70-L77">Source</a></sub></p>
+
+## <a name="skein.api.spool.alpha/entity-projection">`entity-projection`</a>
+``` clojure
+(entity-projection strand)
+```
+Function.
+
+Return the canonical exact strand entity projection.
+
+  Fails loudly when any of `:id`, `:title`, `:state`, or `:attributes` is
+  absent. Other fields are discarded.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L35-L45">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/fail!">`fail!`</a>
 ``` clojure
@@ -100,7 +112,7 @@ The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
   integer, or `check`/`pred->result`/`on-timeout` is not a function, rather
   than surfacing a bare NPE/`IllegalArgumentException` once the loop actually
   runs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L69-L98">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L83-L112">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/reject-unknown-keys!">`reject-unknown-keys!`</a>
 ``` clojure
@@ -113,7 +125,7 @@ Return `m`, failing loudly when it carries keys outside `allowed`.
   `context` is a label (typically the builder/op name) that names the offending
   surface in the message, so a spool never silently ignores a mistyped option
   key. `allowed` is a set of permitted keys.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L33-L43">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L47-L57">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/require-valid!">`require-valid!`</a>
 ``` clojure
@@ -126,4 +138,4 @@ Return `value`, failing loudly with spec explain data when it is invalid.
   The canonical spool boundary-shape seam: pairs a `clojure.spec` check with an
   `:explain` payload (`s/explain-data`) so a rejected shape carries actionable
   context, not just the raw value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L45-L54">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L59-L68">Source</a></sub></p>

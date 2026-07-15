@@ -27,7 +27,7 @@
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
             [skein.api.graph.alpha :as graph]
-            [skein.api.spool.alpha :refer [attr-get]]
+            [skein.api.spool.alpha :refer [attr-get entity-projection]]
             [skein.api.weaver.alpha :as weaver]))
 
 ;; Reload correctness: clear this namespace's remembered ops/queries before the
@@ -208,15 +208,12 @@
                                  {} task-edges)]
     {:operation "kanban-tree"
      :cards (mapv (fn [s]
-                    {:id (:id s)
-                     :title (:title s)
-                     :state (:state s)
-                     :attributes (:attributes s)
-                     :created_at (:created_at s)
-                     :updated_at (:updated_at s)
-                     :type (kanban-card-type s)
-                     :epic (get epic-of-feature (:id s))
-                     :tasks (vec (sort-by :id (get tasks-of-feature (:id s) [])))})
+                    (assoc (entity-projection s)
+                           :created_at (:created_at s)
+                           :updated_at (:updated_at s)
+                           :type (kanban-card-type s)
+                           :epic (get epic-of-feature (:id s))
+                           :tasks (vec (sort-by :id (get tasks-of-feature (:id s) [])))))
                   cards)}))
 
 (defop kanban-tree

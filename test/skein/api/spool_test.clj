@@ -5,6 +5,17 @@
   (:require [clojure.test :refer [deftest is]]
             [skein.api.spool.alpha :as util]))
 
+(deftest entity-projection-is-exact-and-requires-every-canonical-field
+  (let [strand {:id "abc123" :title "Work" :state "active"
+                :attributes {:kind "task"} :created_at "discarded"}
+        expected (dissoc strand :created_at)]
+    (is (= expected (util/entity-projection strand)))
+    (doseq [field (keys expected)]
+      (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                    #"missing canonical entity fields"
+                                    (util/entity-projection (dissoc strand field))))]
+        (is (= [field] (:missing (ex-data e))))))))
+
 (deftest poll-until-deadline!-polls-until-pred-result-then-stops
   (let [calls (atom 0)]
     (is (= :ready
