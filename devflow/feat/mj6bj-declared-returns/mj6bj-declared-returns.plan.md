@@ -383,3 +383,10 @@ Append notes here. Do not rewrite earlier notes.
   External upstream work stays inside PH4 and PH9; coordinators provide those
   checkouts before dispatch, and workers validate upstream commits before
   advancing synchronized pins.
+
+### PLAN-Dcr-001.DN4 PH2 generated API drift — 2026-07-15
+
+- Task 2 changed the public `help` docstring but its contract did not include
+  the generated Weaver API page or an API-doc gate. Task 3's strict docs gate
+  exposed the drift. The Task 3 retry was narrowly authorized to regenerate
+  and commit `docs/api/weaver.api.md` before sign-off.
