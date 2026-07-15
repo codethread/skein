@@ -26,7 +26,9 @@ main.
     CLI style section of `docs/spools/writing-shared-spools.md` and note whether the
     applicable `skein.api.spool.alpha` arg-spec fragments (note-surface, work-root,
     timeout-secs, outcome) were used; report divergence as ADVISORY findings for the
-    synthesizer to weigh — never a gate.
+    synthesizer to weigh — never a gate. When the guide section, anchor, or a named
+    fragment is absent or unreadable, name the missing reference by path and mark that
+    comparison blocked rather than skipping silently or guessing applicability.
   - Add the one must-fix class: a text-bearing flag or positional declared outside the
     declared arg-spec parser (loses whole-value `:stdin`/`:payload/<name>` resolution) —
     correctness, not style.

@@ -30,7 +30,9 @@ both kinds of divergence.
   fragments were used.
 - **PROP-Isgl-001.G2:** Report style and fragment divergence as advisory
   findings for the synthesizer. The reviewer explains the divergence; it does
-  not gate the change.
+  not gate the change. A missing or unreadable guide section, anchor, or named
+  fragment is named by path and that comparison marked blocked, never skipped
+  silently or guessed.
 - **PROP-Isgl-001.G3:** Treat one finding class as must-fix: a text-bearing flag
   or positional declared outside the declared arg-spec parser, because it loses
   whole-value `:stdin` and `:payload/<name>` resolution.

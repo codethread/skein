@@ -10,7 +10,9 @@ Extend the `surface-minimalism` reviewer contract in `.skein/reviewers.clj`
 (change-review roster): for every new or changed op, verb, or flag in a change, check the
 name and shape against the style-guide section in `docs/spools/writing-shared-spools.md`
 and whether the blessed `skein.api.spool.alpha` fragments were used; report divergence as
-ADVISORY findings for the synthesizer, never a gate.
+ADVISORY findings for the synthesizer, never a gate. When the guide section, anchor, or a
+named fragment is absent or unreadable, the reviewer names the missing reference by path
+and marks that comparison blocked instead of skipping silently or guessing.
 
 The single must-fix finding class: a text-bearing flag or positional declared outside the
 declared arg-spec parser, because it silently loses `:stdin`/`:payload/<name>` references
