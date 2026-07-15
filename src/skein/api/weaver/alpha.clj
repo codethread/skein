@@ -541,10 +541,10 @@
   "Project one op registry entry to its help-listing summary."
   [entry]
   (cond-> {:name (:name entry)
-           :provenance (:provenance entry)
+           :provenance (str (:provenance entry))
            :stream? (:stream? entry)
-           :deadline-class (:deadline-class entry)
-           :hook-class (:hook-class entry)}
+           :deadline-class (name (:deadline-class entry))
+           :hook-class (name (:hook-class entry))}
     (:doc entry) (assoc :doc (:doc entry))))
 
 (defn- op-detail

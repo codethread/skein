@@ -14,6 +14,7 @@
             [skein.api.views.alpha :as views]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
+            [skein.api.return-shape.alpha :as return-shape]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
@@ -1682,9 +1683,10 @@
           (is (empty? missing))
           (is (= #{["help" {}]} required))
           (is (= required unchecked))
-          (let [result (weaver/op! rt 'help [])]
-            (t/check-op-return! rt 'help
-                                (json/read-str (json/write-str result) :key-fn keyword))
+          (let [result (weaver/op! rt 'help ["help"])
+                declaration (:returns (weaver/resolve-op rt 'help))]
+            (is (= result (return-shape/check! declaration result)))
+            (t/check-op-return! rt 'help result)
             (is (empty? (:unchecked
                          (owner-return-coverage rt 'skein.api.weaver.alpha
                                                 #{["help" {}]})))))))))
@@ -2106,10 +2108,10 @@
           (is (= ["custom" "help" "raw" "streamed" "subbed"] (mapv :name ops)))
           (is (every? #(not (contains? % :returns)) ops))
           (let [help-entry (first (filter #(= "help" (:name %)) ops))]
-            (is (= :read (:hook-class help-entry)))
-            (is (= 'skein.api.weaver.alpha (:provenance help-entry)))
+            (is (= "read" (:hook-class help-entry)))
+            (is (= "skein.api.weaver.alpha" (:provenance help-entry)))
             (is (false? (:stream? help-entry)))
-            (is (= :standard (:deadline-class help-entry)))
+            (is (= "standard" (:deadline-class help-entry)))
             (is (string? (:doc help-entry))))))
       (testing "op name returns arg-spec detail via explain"
         (let [detail (weaver/op! rt 'help ["custom"])]

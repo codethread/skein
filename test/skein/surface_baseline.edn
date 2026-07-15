@@ -1,10 +1,10 @@
 {:op-help
  {"branches"
   {:name "branches",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Show active branch-stamped work roots grouped by branch.",
    :arg-spec
    {:op "branches",
@@ -24,10 +24,10 @@
     :extra "json"}},
   "devflow-advance"
   {:name "devflow-advance",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc
    "Advance the current devflow step or checkpoint for a feature.",
    :arg-spec
@@ -57,10 +57,10 @@
     :extra "json"}},
   "workflow-runs"
   {:name "workflow-runs",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc
    "Show active workflow molecule roots, optionally filtered by family.",
    :arg-spec
@@ -82,10 +82,10 @@
     :extra "json"}},
   "devflow-status"
   {:name "devflow-status",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc
    "Show the devflow root, ready steps, and done state for a feature.",
    :arg-spec
@@ -108,10 +108,10 @@
     :extra "json"}},
   "flow-status"
   {:name "flow-status",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Show workflow flow status for renderer consumption.",
    :arg-spec
    {:op "flow-status",
@@ -131,10 +131,10 @@
     :extra "json"}},
   "carder-report"
   {:name "carder-report",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Show the read-only carder graph hygiene report.",
    :arg-spec
    {:op "carder-report",
@@ -159,10 +159,10 @@
    :returns {:type "map", :required {}, :optional {}, :extra "json"}},
   "devflow-describe"
   {:name "devflow-describe",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Describe the devflow cycle or one registered stage.",
    :arg-spec
    {:op "devflow-describe",
@@ -182,10 +182,10 @@
     :extra "json"}},
   "devflow-next"
   {:name "devflow-next",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Show the ready devflow step views for a feature.",
    :arg-spec
    {:op "devflow-next",
@@ -206,10 +206,10 @@
     :extra "json"}},
   "devflow-complete"
   {:name "devflow-complete",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Close the current non-checkpoint devflow step for a feature.",
    :arg-spec
    {:op "devflow-complete",
@@ -237,10 +237,10 @@
     :extra "json"}},
   "devflow-choose"
   {:name "devflow-choose",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc
    "Record a devflow checkpoint choice for a feature, optionally with JSON input.",
    :arg-spec
@@ -276,10 +276,10 @@
     :extra "json"}},
   "devflow-archive"
   {:name "devflow-archive",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Archive a finished devflow run into one digest strand.",
    :arg-spec
    {:op "devflow-archive",
@@ -300,10 +300,10 @@
     :extra "json"}},
   "flow-await"
   {:name "flow-await",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :unbounded,
-   :hook-class :mutating,
+   :deadline-class "unbounded",
+   :hook-class "mutating",
    :doc "Block until a workflow run needs coordinator attention.",
    :arg-spec
    {:op "flow-await",
@@ -327,10 +327,10 @@
    :returns {:type "map", :required {}, :optional {}, :extra "json"}},
   "devflow-history"
   {:name "devflow-history",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Show ordered devflow run history for a feature.",
    :arg-spec
    {:op "devflow-history",
@@ -351,10 +351,10 @@
     :extra "json"}},
   "hitl"
   {:name "hitl",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc
    "Open an interactive HITL session: tracking strand + multiplexer run.",
    :arg-spec
@@ -414,10 +414,10 @@
     :extra "json"}},
   "devflow-start"
   {:name "devflow-start",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Start the devflow lifecycle for a feature.",
    :arg-spec
    {:op "devflow-start",
@@ -445,10 +445,10 @@
     :extra "json"}},
   "devflow-conventions"
   {:name "devflow-conventions",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc "Show repo-local spools, ops, patterns, and queries.",
    :arg-spec
    {:op "devflow-conventions",
@@ -462,10 +462,10 @@
     :extra "json"}},
   "current-dags"
   {:name "current-dags",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc
    "Show active parent-of work DAGs with active depends-on edges.",
    :arg-spec
@@ -481,10 +481,10 @@
     :extra "json"}},
   "devflow-choices"
   {:name "devflow-choices",
-   :provenance config,
+   :provenance "config",
    :stream? false,
-   :deadline-class :standard,
-   :hook-class :mutating,
+   :deadline-class "standard",
+   :hook-class "mutating",
    :doc
    "Explain the current devflow checkpoint choices for a feature.",
    :arg-spec
