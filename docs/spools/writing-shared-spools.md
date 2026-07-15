@@ -305,7 +305,9 @@ root. A local root points into the consumer's own Skein checkout, which is what 
 ```
 
 A sha-pinned nested-root git coordinate on the Skein repo pins the engine independently of any
-checkout, using the `:deps/root` monorepo key described above:
+checkout, using the `:deps/root` monorepo key described above. This block is schematic, not
+copyable: the `:git/sha` placeholder fails the 40-lowercase-hex validation by design, so a consumer
+must substitute the sha of the Skein commit they are consenting to before approval:
 
 ```clojure
 {:spools {skein.spools/workflow

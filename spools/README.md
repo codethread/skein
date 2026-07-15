@@ -57,8 +57,8 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 
 `bobbin`, `guild`, and `selvage` are never-activated reference roots: this repo carries their source and tests but adds no `.skein/spools.edn` coordinate for them — a downstream user opts in by adding one.
 
-`skein.spools.workflow` is deliberately a spool, and deliberately an in-repo one (decided 2026-07-11;
-do not relitigate without new evidence). It is replaceable library code: use it, rebuild it, or find
+`skein.spools.workflow` is deliberately a spool, and deliberately an in-repo one (decided
+2026-07-11). It is replaceable library code: use it, rebuild it, or find
 something better. Promotion to `skein.api.*` was rejected because that tier promises more stability
 than a deliberately swappable engine should; extraction to its own repo was rejected because
 workflow is a hub (devflow.spool, `executors.subagent` in the agent-run root, loom, and this repo's
