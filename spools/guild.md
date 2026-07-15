@@ -16,17 +16,32 @@ Use it when a repo wants other local weavers to call stable, intentional entry p
 
 ## Loading
 
-Because `skein.spools.guild` ships on the weaver classpath, no `spools.edn` approval is needed:
+Approve the Guild root in `.skein/spools.edn`:
 
 ```clojure
-(require '[skein.spools.guild :as guild])
+{:spools {skein.spools/guild {:local/root "../spools/guild"}}}
+```
 
-(guild/install!)
+Then sync and activate it from trusted config:
+
+```clojure
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.runtime.alpha :as runtime])
+
+(def runtime (current/runtime))
+
+(runtime/sync! runtime)
+(runtime/use! runtime :skein/spools-guild
+  {:ns 'skein.spools.guild
+   :spools #{'skein.spools/guild}
+   :call 'skein.spools.guild/install!})
 ```
 
 `install!` registers the built-in `guild.describe` op and resets the spool's runtime-local weaver-lifetime declaration state for reload-friendly startup. The declaration state is isolated from other runtimes in the same JVM. It may also take a non-blank fallback guild name for contexts without runtime metadata:
 
 ```clojure
+(require '[skein.spools.guild :as guild])
+
 (guild/install! "backend")
 ```
 
