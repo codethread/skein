@@ -25,7 +25,7 @@
 (defn- deprecated-ops [rt] (:deprecated-ops (state rt)))
 (defn- fallback-guild-name [rt] (:fallback-guild-name (state rt)))
 
-(def ^:private defop-opt-keys #{:doc :spec})
+(def ^:private defop-opt-keys #{:doc :spec :returns})
 (def ^:private deprecate-opt-keys #{:replacement :since})
 
 (defn- reject-unknown-keys! [opts allowed context]
@@ -86,10 +86,11 @@
   The guild owns its op lifecycle through its own state atoms and (re)declares
   ops as it installs, deprecates, and reloads; the registry's loud-collision
   default is the wrong policy here, so re-declaration is an explicit replace."
-  ([rt name doc handler-sym]
-   (register-or-replace-op! rt name doc handler-sym (op-arg-spec name doc)))
-  ([rt name doc handler-sym arg-spec]
-   (let [metadata {:doc doc :arg-spec arg-spec}]
+  ([rt name doc handler-sym returns]
+   (register-or-replace-op! rt name doc handler-sym (op-arg-spec name doc) returns))
+  ([rt name doc handler-sym arg-spec returns]
+   (let [metadata (cond-> {:doc doc :arg-spec arg-spec}
+                    (some? returns) (assoc :returns returns))]
      (if (op-registered? rt name)
        (weaver/replace-op! rt name metadata handler-sym)
        (weaver/register-op! rt name metadata handler-sym)))))
@@ -117,8 +118,10 @@
   "Register a guild operation in the CLI operation registry.
 
   `name` is a simple unqualified registry handle, conventionally dotted and
-  version-suffixed such as `gate.close.v1`. `opts` supports `:doc` and optional
-  `:spec`; unknown options fail loudly. `handler-fn-sym` must be a fully
+  version-suffixed such as `gate.close.v1`. `opts` supports `:doc`, optional
+  `:spec`, and optional `:returns`; unknown options fail loudly. `:returns` is
+  the shared registry return-shape declaration, not a Guild-specific schema.
+  `handler-fn-sym` must be a fully
   qualified symbol resolving in the weaver JVM. The handler receives the usual
   op context plus parsed JSON input at `:guild/input`."
   [name opts handler-fn-sym]
@@ -130,11 +133,13 @@
   (requiring-resolve handler-fn-sym)
   (when-let [spec (:spec opts)]
     (require-spec-name! spec))
-  (let [registered (register-or-replace-op! (current/runtime) name (:doc opts) 'skein.spools.guild/dispatch-op)
+  (let [registered (register-or-replace-op! (current/runtime) name (:doc opts)
+                                            'skein.spools.guild/dispatch-op (:returns opts))
         entry (cond-> {:name (:name registered)
                        :handler handler-fn-sym}
                 (:doc opts) (assoc :doc (:doc opts))
-                (:spec opts) (assoc :spec (:spec opts)))]
+                (:spec opts) (assoc :spec (:spec opts))
+                (contains? opts :returns) (assoc :returns (:returns opts)))]
     (swap! (guild-ops (current/runtime)) assoc (:name entry) entry)
     (swap! (deprecated-ops (current/runtime)) dissoc (:name entry))
     entry))
@@ -160,7 +165,8 @@
         entry (or (get @(guild-ops (current/runtime)) op-name)
                   (fail! "Guild op is not registered" {:op name}))
         deprecated (select-keys opts [:replacement :since])]
-    (register-or-replace-op! (current/runtime) name (:doc entry) 'skein.spools.guild/deprecated-op)
+    (register-or-replace-op! (current/runtime) name (:doc entry)
+                             'skein.spools.guild/deprecated-op (:returns entry))
     (swap! (guild-ops (current/runtime)) dissoc (:name entry))
     (swap! (deprecated-ops (current/runtime)) assoc (:name entry) (assoc deprecated :doc (:doc entry)))
     (assoc deprecated :name (:name entry))))
@@ -202,4 +208,17 @@
                             'skein.spools.guild/describe-op
                             (op-arg-spec 'guild.describe
                                          "Describe this weaver's guild operation API"
-                                         false))))
+                                         false)
+                            {:type :map
+                             :required
+                             {:guild [:nullable :string]
+                              :active
+                              {:type :collection
+                               :items {:type :map
+                                       :required {:name :string}
+                                       :optional {:doc :string :spec :string}}}
+                              :deprecated
+                              {:type :collection
+                               :items {:type :map
+                                       :required {:name :string :replacement :json}
+                                       :optional {:doc :string :since :string}}}}})))

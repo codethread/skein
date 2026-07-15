@@ -1,12 +1,15 @@
 (ns skein.roster-test
   "Tests for the explicit-runtime roster model and helpers, and the installed
   `roster` op/named query."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.data.json :as json]
+            [clojure.set :as set]
+            [clojure.test :refer [deftest is testing]]
             [skein.api.events.alpha :as events]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.roster :as roster]
-            [skein.spools.test-support :as test-support :refer [with-runtime]])
+            [skein.spools.test-support :as test-support :refer [with-runtime]]
+            [skein.test.alpha :as t])
   (:import [java.time Duration Instant]))
 
 (defn- attr
@@ -18,6 +21,35 @@
 
 (defn- op-entry [rt op-name]
   (some #(when (= (name op-name) (:name %)) %) (weaver/ops rt)))
+
+(defn- wire-value [value]
+  (json/read-str (json/write-str value) :key-fn keyword))
+
+(defn- declared-subcommand-leaves [{:keys [name returns]}]
+  (set (map (fn [subcommand] [name {:subcommand subcommand}])
+            (keys (:subcommands returns)))))
+
+(deftest production-return-coverage-is-derived-from-roster-provenance
+  (with-runtime
+    (fn [rt _]
+      (roster/install!)
+      (let [entries (filterv #(= 'skein.spools.roster (:provenance %)) (weaver/ops rt))
+            missing (mapv :name (filter #(not (contains? % :returns)) entries))
+            required (into #{} (mapcat declared-subcommand-leaves) entries)
+            checked (atom #{})
+            check! (fn [subcommand value]
+                     (t/check-op-return! rt 'roster {:subcommand subcommand} (wire-value value))
+                     (swap! checked conj ["roster" {:subcommand subcommand}])
+                     value)
+            _ (check! "about" (op! rt "about"))
+            _ (check! "prime" (op! rt "prime"))
+            tracked (check! "track" (op! rt "track" "--feature" "coverage" "--owner" "agent"))
+            _ (check! "heartbeat" (op! rt "heartbeat" (:id tracked)))
+            _ (check! "list" (op! rt "list" "--feature" "coverage"))
+            _ (check! "await-quiet" (op! rt "await-quiet" "--feature" "coverage" "--timeout-secs" "0"))
+            _ (check! "finish" (op! rt "finish" (:id tracked)))]
+        (is (= [] missing))
+        (is (= #{} (set/difference required @checked)))))))
 
 (deftest track!-creates-a-new-active-entry
   (with-runtime

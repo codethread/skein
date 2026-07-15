@@ -24,11 +24,13 @@ Function.
 Register a guild operation in the CLI operation registry.
 
   `name` is a simple unqualified registry handle, conventionally dotted and
-  version-suffixed such as `gate.close.v1`. `opts` supports `:doc` and optional
-  `:spec`; unknown options fail loudly. `handler-fn-sym` must be a fully
+  version-suffixed such as `gate.close.v1`. `opts` supports `:doc`, optional
+  `:spec`, and optional `:returns`; unknown options fail loudly. `:returns` is
+  the shared registry return-shape declaration, not a Guild-specific schema.
+  `handler-fn-sym` must be a fully
   qualified symbol resolving in the weaver JVM. The handler receives the usual
   op context plus parsed JSON input at `:guild/input`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L116-L140">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L117-L145">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/deprecate!">`deprecate!`</a>
 ``` clojure
@@ -40,7 +42,7 @@ Replace a registered guild operation with a loud deprecation stub.
 
   `opts` requires `:replacement` and may include `:since`. Deprecated ops never
   return success; invocation throws ex-info with `:code :op/deprecated`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L148-L166">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L153-L172">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/deprecated-op">`deprecated-op`</a>
 ``` clojure
@@ -49,7 +51,7 @@ Replace a registered guild operation with a loud deprecation stub.
 Function.
 
 Fail loudly for a deprecated guild operation.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L105-L114">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L106-L115">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/describe-op">`describe-op`</a>
 ``` clojure
@@ -58,7 +60,7 @@ Fail loudly for a deprecated guild operation.
 Function.
 
 Return JSON-safe metadata describing the installed guild API.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L168-L183">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L174-L189">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/dispatch-op">`dispatch-op`</a>
 ``` clojure
@@ -67,7 +69,7 @@ Return JSON-safe metadata describing the installed guild API.
 Function.
 
 Dispatch a guild-declared operation after parsing and validating input.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L97-L103">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L98-L104">Source</a></sub></p>
 
 ## <a name="skein.spools.guild/install!">`install!`</a>
 ``` clojure
@@ -81,4 +83,4 @@ Install the built-in `guild.describe` operation.
   The guild name is read from runtime metadata when available. Passing
   `guild-name` records a fallback value for contexts without runtime metadata.
   Re-running is reload-safe and clears prior guild declarations in this weaver JVM.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L185-L205">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/guild/src/skein/spools/guild.clj#L191-L224">Source</a></sub></p>

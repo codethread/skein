@@ -134,7 +134,7 @@ Update `roster/heartbeat-at` on an active roster entry.
 Function.
 
 Install the roster op and named query into the active weaver.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L772-L790">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/roster/src/skein/spools/roster.clj#L798-L817">Source</a></sub></p>
 
 ## <a name="skein.spools.roster/mutation-handler">`mutation-handler`</a>
 ``` clojure

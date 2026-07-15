@@ -213,7 +213,7 @@ Return ready strands from the result set of a registered query definition.
 Function.
 
 Install Skein-provided CLI operations into the runtime op registry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L581-L588">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L581-L606">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-op!">`register-op!`</a>
 ``` clojure
