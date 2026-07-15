@@ -37,7 +37,7 @@ tasks:
   - id: 8
     description: Repo-local spool declarations
     task_file: tasks/008-repo-spool-declarations.md
-    status: pending
+    status: complete
     blocked_by: [2, 3]
   - id: 9
     description: Repo coordination and pinned-spool declarations
