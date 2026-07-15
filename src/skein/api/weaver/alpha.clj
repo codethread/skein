@@ -18,6 +18,7 @@
             [clojure.string :as str]
             [next.jdbc :as jdbc]
             [skein.api.cli.alpha :as cli]
+            [skein.api.return-shape.alpha :as return-shape]
             [skein.core.db :as db]
             [skein.core.weaver.access :refer [ds normalize query-registry op-registry
                                               with-spool-classloader validate-fn-symbol!]]
@@ -266,7 +267,7 @@
     (throw (ex-info "Operation doc must be a non-blank string" {:doc doc})))
   doc)
 
-(def ^:private op-metadata-keys #{:doc :arg-spec :stream? :deadline-class :hook-class})
+(def ^:private op-metadata-keys #{:doc :arg-spec :returns :stream? :deadline-class :hook-class})
 (def ^:private op-deadline-classes #{:standard :unbounded})
 (def ^:private op-hook-classes #{:read :mutating})
 
@@ -309,6 +310,62 @@
                       (assoc (ex-data e) :operation (canonical-op-name op-name))
                       e)))))
 
+(defn- invalid-returns!
+  [op-name reason message data]
+  (throw (ex-info message
+                  (merge {:operation (canonical-op-name op-name)
+                          :reason reason}
+                         data))))
+
+(defn- stream-return-case?
+  [return-case]
+  (and (map? return-case) (contains? return-case :stream)))
+
+(defn- validate-return-case-alignment!
+  [op-name stream? return-case context]
+  (when (not= stream? (stream-return-case? return-case))
+    (invalid-returns! op-name
+                      :return-stream-misalignment
+                      "Operation :returns does not align with :stream?"
+                      (assoc context :stream? stream? :returns return-case))))
+
+(defn- validate-op-returns!
+  [op-name arg-spec stream? returns]
+  (try
+    (return-shape/validate! returns)
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info "Operation :returns declaration is invalid"
+                      (assoc (ex-data e) :operation (canonical-op-name op-name))
+                      e))))
+  (let [arg-subcommands (:subcommands arg-spec)
+        return-subcommands (when (and (map? returns) (contains? returns :subcommands))
+                             (:subcommands returns))]
+    (if arg-subcommands
+      (do
+        (when-not return-subcommands
+          (invalid-returns! op-name
+                            :return-routing-misalignment
+                            "Subcommand operation :returns must declare :subcommands"
+                            {:returns returns}))
+        (let [expected (set (keys arg-subcommands))
+              actual (set (keys return-subcommands))]
+          (when-not (= expected actual)
+            (invalid-returns! op-name
+                              :return-subcommand-misalignment
+                              "Operation :returns subcommands must exactly match :arg-spec"
+                              {:expected-subcommands (vec (sort expected))
+                               :actual-subcommands (vec (sort actual))})))
+        (doseq [[subcommand return-case] return-subcommands]
+          (validate-return-case-alignment! op-name stream? return-case {:subcommand subcommand})))
+      (do
+        (when return-subcommands
+          (invalid-returns! op-name
+                            :return-routing-misalignment
+                            "Flat operation :returns cannot declare :subcommands"
+                            {:returns returns}))
+        (validate-return-case-alignment! op-name stream? returns {}))))
+  returns)
+
 (defn- build-op-entry
   "Build a validated op registry entry with metadata defaults and provenance.
 
@@ -326,7 +383,11 @@
              :hook-class (or (:hook-class opts) :mutating)
              :provenance (symbol (namespace validated-fn))}
       (:doc opts) (assoc :doc (validate-op-doc! (:doc opts)))
-      (some? (:arg-spec opts)) (assoc :arg-spec (validate-op-arg-spec! op-name (:arg-spec opts))))))
+      (some? (:arg-spec opts)) (assoc :arg-spec (validate-op-arg-spec! op-name (:arg-spec opts)))
+      (contains? opts :returns) (assoc :returns (validate-op-returns! op-name
+                                                                      (:arg-spec opts)
+                                                                      stream?
+                                                                      (:returns opts))))))
 
 (defn register-op!
   "Register a trusted weaver-side CLI operation.
@@ -335,7 +396,8 @@
   symbol must resolve to a function that accepts one context map (see `op!` for
   the context keys) and returns JSON-compatible data. The third positional
   argument is either a doc string or an op metadata map with keys `:doc`,
-  `:arg-spec` (parser spec, structurally validated at registration),
+  `:arg-spec` (parser spec, structurally validated at registration), `:returns`
+  (validated return-shape declaration),
   `:stream?` (default false), `:deadline-class`
   (`:standard`/`:unbounded`, defaulting to `:unbounded` for stream ops), and
   `:hook-class` (`:read`/`:mutating`, default `:mutating`); unknown keys fail

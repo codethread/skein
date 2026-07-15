@@ -77,6 +77,7 @@ nav:
       - skein.api.patterns.alpha: docs/api/patterns.api.md
       - skein.api.peers.alpha: docs/api/peers.api.md
       - skein.api.relations.alpha: docs/api/relations.api.md
+      - skein.api.return-shape.alpha: docs/api/return-shape.api.md
       - skein.api.runtime.alpha: docs/api/runtime.api.md
       - skein.api.scheduler.alpha: docs/api/scheduler.api.md
       - skein.api.spool.alpha: docs/api/spool.api.md

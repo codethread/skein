@@ -1647,6 +1647,47 @@
                                      :stream? true
                                      :hook-class :read}
                                     'skein.weaver-test/test-op))))
+      (testing "valid return declarations are retained"
+        (is (= {:type :collection :items :string}
+               (:returns (weaver/register-op! rt 'declared
+                                              {:returns {:type :collection :items :string}}
+                                              'skein.weaver-test/test-op))))
+        (is (= {:subcommands
+                {"list" {:stream {:emits :string :result :boolean}}}}
+               (:returns
+                (weaver/register-op! rt 'declared-subcommands
+                                     {:arg-spec {:op "declared-subcommands"
+                                                 :subcommands {"list" {}}}
+                                      :stream? true
+                                      :returns {:subcommands
+                                                {"list" {:stream {:emits :string
+                                                                  :result :boolean}}}}}
+                                     'skein.weaver-test/test-op)))))
+      (testing "return routing and stream alignment fail before registration"
+        (doseq [[name opts reason]
+                [['bad-return-shape
+                  {:returns [:nullable :json]}
+                  :invalid-nullable]
+                 ['flat-with-subcommands
+                  {:returns {:subcommands {"run" :string}}}
+                  :return-routing-misalignment]
+                 ['subcommands-missing-case
+                  {:arg-spec {:op "subcommands-missing-case"
+                              :subcommands {"run" {} "list" {}}}
+                   :returns {:subcommands {"run" :string}}}
+                  :return-subcommand-misalignment]
+                 ['stream-with-flat-return
+                  {:stream? true :returns :string}
+                  :return-stream-misalignment]
+                 ['flat-with-stream-return
+                  {:returns {:stream {:emits :string :result :boolean}}}
+                  :return-stream-misalignment]]]
+          (let [before (weaver/ops rt)
+                e (is (thrown? clojure.lang.ExceptionInfo
+                               (weaver/register-op! rt name opts 'skein.weaver-test/test-op)))]
+            (is (= reason (:reason (ex-data e))))
+            (is (= before (weaver/ops rt)))
+            (is (not-any? #(= (clojure.core/name name) (:name %)) (weaver/ops rt))))))
       (testing "flat arg-specs are validated at registration"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                       #"arg-spec is invalid"
@@ -1700,6 +1741,17 @@
           (is (= "replaceable" (:operation (ex-data e))))
           (is (= :invalid-subcommands (:reason (ex-data e))))
           (is (= 'skein.weaver-test/test-op (:fn (weaver/resolve-op rt 'replaceable))))))
+      (testing "replace-op! retains the old entry when returns are invalid"
+        (weaver/register-op! rt 'replace-returns
+                             {:returns :string}
+                             'skein.weaver-test/test-op)
+        (let [before (weaver/resolve-op rt 'replace-returns)
+              e (is (thrown? clojure.lang.ExceptionInfo
+                             (weaver/replace-op! rt 'replace-returns
+                                                 {:stream? true :returns :string}
+                                                 'skein.weaver-test/context-echo-op)))]
+          (is (= :return-stream-misalignment (:reason (ex-data e))))
+          (is (= before (weaver/resolve-op rt 'replace-returns)))))
       (testing "explicit deadline-class overrides the stream default"
         (is (= :standard
                (:deadline-class (weaver/register-op! rt 'bounded-stream
