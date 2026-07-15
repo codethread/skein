@@ -1679,9 +1679,15 @@
         (let [{:keys [entries missing required unchecked]}
               (owner-return-coverage rt 'skein.api.weaver.alpha #{})]
           (is (= ["help"] (mapv :name entries)))
-          (is (= ["help"] missing))
-          (is (empty? required))
-          (is (empty? unchecked))))))
+          (is (empty? missing))
+          (is (= #{["help" {}]} required))
+          (is (= required unchecked))
+          (let [result (weaver/op! rt 'help [])]
+            (t/check-op-return! rt 'help
+                                (json/read-str (json/write-str result) :key-fn keyword))
+            (is (empty? (:unchecked
+                         (owner-return-coverage rt 'skein.api.weaver.alpha
+                                                #{["help" {}]})))))))))
   (testing "required leaves come from declarations and remain unchecked until successful checks"
     (with-runtime
       (fn [rt _]

@@ -584,5 +584,23 @@
   (register-op! runtime 'help
                 {:doc (:doc help-arg-spec)
                  :hook-class :read
-                 :arg-spec help-arg-spec}
+                 :arg-spec help-arg-spec
+                 :returns {:type :map
+                           :optional {:ops {:type :collection
+                                            :items {:type :map
+                                                    :required {:name :string
+                                                               :doc :string
+                                                               :provenance :string
+                                                               :stream? :boolean
+                                                               :deadline-class :string
+                                                               :hook-class :string}}}
+                                      :name :string
+                                      :doc :string
+                                      :provenance :string
+                                      :stream? :boolean
+                                      :deadline-class :string
+                                      :hook-class :string
+                                      :arg-spec {:type :map :extra :json}
+                                      :raw-envelope :boolean
+                                      :returns :json}}}
                 'skein.api.weaver.alpha/op-help-handler))
