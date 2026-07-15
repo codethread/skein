@@ -2,6 +2,7 @@
   "Tests for the delegation spool layered over the agent-run engine."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
+            [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
@@ -11,7 +12,8 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.delegation :as agents]
             [skein.spools.agent-run :as shuttle]
-            [skein.spools.test-support :as test-support :refer [await-phase]]))
+            [skein.spools.test-support :as test-support :refer [await-phase]]
+            [skein.test.alpha :as t]))
 
 (defn- with-agents
   "Run f with a fresh weaver runtime that has the agent-run and delegation spools installed.
@@ -42,6 +44,48 @@
                                 (some? cost-usd) (assoc :agent-run/cost-usd cost-usd)
                                 (some? tokens-total) (assoc :agent-run/tokens-total tokens-total)
                                 (some? tokens) (assoc :agent-run/tokens tokens))}))
+
+(defn- wire-value [value]
+  (json/read-str (json/write-str value) :key-fn keyword))
+
+(deftest production-return-coverage-is-derived-from-delegation-provenance
+  (with-agents
+    (fn [rt]
+      (let [entries (filterv #(= 'skein.spools.delegation (:provenance %)) (weaver/ops rt))
+            missing (mapv :name (filter #(not (contains? % :returns)) entries))
+            required (into #{} (mapcat (fn [{:keys [name returns]}]
+                                         (for [subcommand (keys (:subcommands returns))]
+                                           [name {:subcommand subcommand}]))) entries)
+            run {:id "run-1" :title "run" :state "active" :phase "pending" :harness "sh"}
+            representatives
+            {"about" (assoc (agents/agent-op {:op/argv ["about"]}) :operation "agent about")
+             "spawn" (assoc run :operation "agent spawn")
+             "ps" [run]
+             "spend" {:operation "agent spend" :filters {} :totals {} :groups [] :runs []}
+             "await" {:operation "agent await" :timed-out false :runs [run]}
+             "logs" {:operation "agent logs" :id "run-1" :out {:path "/tmp/out" :text "ok"}}
+             "kill" {:operation "agent kill" :killed "run-1"}
+             "harnesses" [{:name "sh" :kind "harness"}]
+             "backends" [{:name "tmux" :ops ["start" "alive"]}]
+             "delegate" {:operation "agent delegate" :task "task-1"
+                         :run {:id "run-1" :phase "pending" :harness "sh"}}
+             "retry" {:operation "agent retry" :superseded "run-0"
+                      :run {:id "run-1" :phase "pending" :harness "sh"}}
+             "status" {:operation "agent status" :tree [] :ready [] :running [] :failed []
+                       :awaiting_verification [] :blocked []}
+             "note" {:operation "agent note" :id "note-1" :note "finding"}
+             "notes" [{:id "note-1" :note "finding"}]
+             "review" {:operation "agent review" :target "task-1" :reviewers ["run-1"]}
+             "rosters" [{:name "repo" :reviewers []}]
+             "council" {:operation "agent council" :council "board-1" :turns [["run-1"]]}}
+            checked (into #{}
+                          (map (fn [[subcommand value]]
+                                 (t/check-op-return! rt 'agent {:subcommand subcommand}
+                                                     (wire-value value))
+                                 ["agent" {:subcommand subcommand}]))
+                          representatives)]
+        (is (= [] missing))
+        (is (= #{} (set/difference required checked)))))))
 
 (deftest agents-install-registers-op-pattern-query
   (with-agents

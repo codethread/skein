@@ -4,9 +4,9 @@
 > <op>` surface. Its two companions are
 > [`batteries.cookbook.md`](./batteries.cookbook.md) — worked scripting recipes (how you
 > compose the ops in a shell or pipeline) — and [`batteries.api.md`](./batteries.api.md)
-> — the generated op/arg-spec reference. Reach for the cookbook when you want a runnable
-> pipeline, the API doc when you want an exact flag list, and this doc for what each op
-> promises.
+> — the generated handler and arg-spec reference. Reach for the cookbook when you want a runnable
+> pipeline, the API doc when you want an exact flag list, `strand help <op>` when you want the live
+> declared output shape, and this doc for what each op promises.
 
 ## 1. Overview
 
@@ -40,8 +40,9 @@ approval — `require` it and call `activate!`:
 
 `activate!` registers every op below and returns `{:installed true :namespace
 'skein.spools.batteries :ops [<register-op! result> ...]}`. Each op carries `{:doc … :arg-spec …
-:hook-class …}` metadata; re-running `activate!` against a live runtime collides loudly under the
-accretion registry (use `reload!`, which clears registries first).
+:returns … :hook-class …}` metadata; re-running `activate!` against a live
+runtime collides loudly under the accretion registry (use `reload!`, which
+clears registries first).
 
 ## 2. Invocation and payloads
 
@@ -72,7 +73,8 @@ attached payload that no reference consumed fails `:unused-payloads`.
 - **BAT-C4 (result shapes):** Handlers return JSON-safe data (strings,
   numbers, booleans, nil, vectors, string/keyword-keyed maps). `attributes`
   and `state` are normalized; the old lifecycle fields `active` / `inactive_at`
-  are never emitted (old C9).
+  are never emitted (old C9). Every batteries op declares `:returns`; use
+  `strand help <op>` for the live flat, subcommand, or stream-channel shape.
 
 ## 3. Op reference
 

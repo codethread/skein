@@ -59,6 +59,20 @@
   ([message data cause]
    (throw (ex-info message data cause))))
 
+(def ^:private entity-projection-keys [:id :title :state :attributes])
+
+(defn entity-projection
+  "Return the canonical exact strand entity projection.
+
+  Fails loudly when any of `:id`, `:title`, `:state`, or `:attributes` is
+  absent. Other fields are discarded."
+  [strand]
+  (let [missing (filterv #(not (contains? strand %)) entity-projection-keys)]
+    (when (seq missing)
+      (fail! "Strand is missing canonical entity fields"
+             {:missing missing :required entity-projection-keys :strand strand}))
+    (select-keys strand entity-projection-keys)))
+
 (defn reject-unknown-keys!
   "Return `m`, failing loudly when it carries keys outside `allowed`.
 

@@ -30,6 +30,9 @@
 (defop test-alpha
   "Alpha op handler."
   {:arg-spec test-alpha-arg-spec
+   :returns {:type :map
+             :required {:operation :string
+                        :x :string}}
    :convention {:manual "strand test-alpha about"}}
   [ctx]
   {:operation "test-alpha" :x (:x (:op/args ctx))})
@@ -41,7 +44,9 @@
   {:arg-spec {:op "test-beta"
               :doc "Beta test op."
               :positionals [{:name :run-id :type :string :required? true :doc "A run id."}]}
-   :deadline-class :unbounded}
+   :deadline-class :unbounded
+   :returns {:type :map
+             :required {:operation :string}}}
   [_ctx]
   {:operation "test-beta"})
 
@@ -66,11 +71,15 @@
           (let [entry (weaver/resolve-op rt 'test-alpha)]
             (is (= 'skein.macros.ops-test/test-alpha-op (:fn entry)))
             (is (= "Alpha test op." (:doc entry)))
-            (is (= "test-alpha" (:op (:arg-spec entry))))))
+            (is (= "test-alpha" (:op (:arg-spec entry))))
+            (is (= {:type :map :required {:operation :string :x :string}}
+                   (:returns entry)))))
         (testing "the inline-arg-spec op registers and its extra :deadline-class metadata survives to registration"
           (let [entry (weaver/resolve-op rt 'test-beta)]
             (is (= 'skein.macros.ops-test/test-beta-op (:fn entry)))
             (is (= "test-beta" (:op (:arg-spec entry))))
+            (is (= {:type :map :required {:operation :string}}
+                   (:returns entry)))
             (is (= :unbounded (:deadline-class entry)))))))))
 
 (deftest install-ops-double-registration-fails-loudly
@@ -138,4 +147,15 @@
                           (expand '(skein.macros.ops/defop bad-doc :not-a-string {:arg-spec {:op "x" :doc "d"}} [ctx] nil)))))
   (testing "a missing :arg-spec throws at macroexpansion"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require an :arg-spec"
-                          (expand '(skein.macros.ops/defop no-spec "doc" {} [ctx] nil))))))
+                          (expand '(skein.macros.ops/defop no-spec "doc" {} [ctx] nil)))))
+  (testing "invalid :returns survives expansion and fails during installation"
+    (let [ns-key 'skein.macros.ops-test.bad-returns]
+      (ops/remember-op! ns-key {:name 'bad-returns
+                                :fn 'skein.macros.ops-test/test-alpha-op
+                                :arg-spec {:op "bad-returns" :doc "d"}
+                                :metadata {:returns :not-a-shape}
+                                :convention {:name "bad-returns"}})
+      (with-runtime
+        (fn [_rt _]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #":returns declaration is invalid"
+                                (ops/install-ops! ns-key))))))))

@@ -10,6 +10,7 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.java.shell :refer [sh]]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
@@ -17,7 +18,8 @@
             [skein.spools.bench :as bench]
             [skein.spools.bench.exec :as exec]
             [skein.spools.agent-run :as shuttle]
-            [skein.spools.test-support :as test-support])
+            [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as t])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]
            [java.util.concurrent CyclicBarrier Semaphore]))
@@ -156,6 +158,41 @@ esac
 
 (defn- entry-dir [rt run-id slug]
   (io/file (get-in (weaver/show rt run-id) [:attributes :bench/data-dir]) slug))
+
+(defn- wire-value [value]
+  (json/read-str (json/write-str value) :key-fn keyword))
+
+(deftest production-return-coverage-is-derived-from-bench-provenance
+  (with-bench
+    (fn [rt _]
+      (let [entries (filterv #(= 'skein.spools.bench (:provenance %)) (weaver/ops rt))
+            missing (mapv :name (filter #(not (contains? % :returns)) entries))
+            required (into #{} (mapcat (fn [{:keys [name returns]}]
+                                         (for [subcommand (keys (:subcommands returns))]
+                                           [name {:subcommand subcommand}]))) entries)
+            representatives
+            {"run" {:operation "bench run" :run "bench-1" :entries {"cell" "entry-1"} :judge nil}
+             "runs" [{:run "bench-1" :suite "demo" :sha "abc" :state "active"
+                      :entries 1 :phases {"done" 1}}]
+             "status" {:operation "bench status" :run "bench-1" :suite "demo" :repo "repo"
+                       :sha "abc" :entries [] :judge nil :blocking-failures []}
+             "report" {:operation "bench report" :run "bench-1" :suite "demo" :repo "repo"
+                       :sha "abc" :data-dir "/tmp/bench" :entries [] :judge nil}
+             "retry" {:operation "bench retry" :retried "entry-1" :attempt 2}
+             "abort" {:operation "bench abort" :aborted "bench-1"
+                      :failed ["cell"] :judge nil}
+             "suites" [{:name "demo" :repo "repo"}]
+             "agents" [{:name "fake" :image "image"}]
+             "gc" {:operation "bench gc" :removed ["bench-1"]}
+             "about" (assoc (bench/about) :operation "bench about")}
+            checked (into #{}
+                          (map (fn [[subcommand value]]
+                                 (t/check-op-return! rt 'bench {:subcommand subcommand}
+                                                     (wire-value value))
+                                 ["bench" {:subcommand subcommand}]))
+                          representatives)]
+        (is (= [] missing))
+        (is (= #{} (set/difference required checked)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Registry validation

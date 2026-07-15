@@ -3,6 +3,7 @@
   (:require [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -13,6 +14,7 @@
             [skein.api.views.alpha :as views]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
+            [skein.api.return-shape.alpha :as return-shape]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
@@ -20,7 +22,8 @@
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
-            [skein.spools.test-support :as test-support])
+            [skein.spools.test-support :as test-support]
+            [skein.test.alpha :as t])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
            [java.nio.channels Channels SocketChannel]))
@@ -59,6 +62,32 @@
 
 (defn test-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
+
+(defn- return-case-leaves
+  [operation context return-case]
+  (if (and (map? return-case) (contains? return-case :stream))
+    (set (map (fn [channel] [operation (assoc context :channel channel)])
+              [:emits :result]))
+    #{[operation context]}))
+
+(defn- op-return-leaves
+  [{:keys [name returns]}]
+  (if (and (map? returns) (contains? returns :subcommands))
+    (into #{}
+          (mapcat (fn [[subcommand return-case]]
+                    (return-case-leaves name {:subcommand subcommand} return-case)))
+          (:subcommands returns))
+    (return-case-leaves name {} returns)))
+
+(defn- owner-return-coverage
+  [rt provenance checked-leaves]
+  (let [entries (filterv #(= provenance (:provenance %)) (weaver/ops rt))
+        missing (filterv #(not (contains? % :returns)) entries)
+        required (into #{} (mapcat op-return-leaves) (filter #(contains? % :returns) entries))]
+    {:entries entries
+     :missing (mapv :name missing)
+     :required required
+     :unchecked (set/difference required checked-leaves)}))
 
 (defn context-echo-op
   "Return the handler context so tests can inspect threaded envelope fields."
@@ -1644,6 +1673,61 @@
                             #"Operation function"
                             (weaver/register-op! rt 'bad 'unqualified))))))
 
+(deftest owner-return-coverage-is-derived-from-registry-provenance
+  (testing "a wholly undeclared production op is reported before leaf coverage"
+    (with-runtime
+      (fn [rt _]
+        (let [{:keys [entries missing required unchecked]}
+              (owner-return-coverage rt 'skein.api.weaver.alpha #{})]
+          (is (= ["help"] (mapv :name entries)))
+          (is (empty? missing))
+          (is (= #{["help" {}]} required))
+          (is (= required unchecked))
+          (let [result (weaver/op! rt 'help ["help"])
+                declaration (:returns (weaver/resolve-op rt 'help))]
+            (is (= result (return-shape/check! declaration result)))
+            (t/check-op-return! rt 'help result)
+            (is (empty? (:unchecked
+                         (owner-return-coverage rt 'skein.api.weaver.alpha
+                                                #{["help" {}]})))))))))
+  (testing "required leaves come from declarations and remain unchecked until successful checks"
+    (with-runtime
+      (fn [rt _]
+        (weaver/register-op! rt 'flat
+                             {:returns :string}
+                             'skein.weaver-test/test-op)
+        (weaver/register-op! rt 'subcommand
+                             {:arg-spec {:op "subcommand"
+                                         :subcommands {"show" {}}}
+                              :returns {:subcommands {"show" :integer}}}
+                             'skein.weaver-test/test-op)
+        (weaver/register-op! rt 'stream
+                             {:stream? true
+                              :returns {:stream {:emits :string :result :boolean}}}
+                             'skein.weaver-test/test-op)
+        (let [initial (owner-return-coverage rt 'skein.weaver-test #{})
+              checked (atom #{})]
+          (is (empty? (:missing initial)))
+          (is (= 4 (count (:required initial))))
+          (is (= (:required initial) (:unchecked initial)))
+
+          (t/check-op-return! rt 'flat "ok")
+          (swap! checked conj ["flat" {}])
+          (t/check-op-return! rt 'subcommand {:subcommand "show"} 42)
+          (swap! checked conj ["subcommand" {:subcommand "show"}])
+          (t/check-op-return! rt 'stream {:channel :emits} "line")
+          (swap! checked conj ["stream" {:channel :emits}])
+
+          (let [partial (owner-return-coverage rt 'skein.weaver-test @checked)]
+            (is (= #{["stream" {:channel :result}]} (:unchecked partial))))
+
+          (t/check-op-return! rt 'stream {:channel :result} true)
+          (swap! checked conj ["stream" {:channel :result}])
+          (let [{:keys [missing unchecked]}
+                (owner-return-coverage rt 'skein.weaver-test @checked)]
+            (is (empty? missing))
+            (is (empty? unchecked))))))))
+
 (deftest weaver-op-metadata-defaults-and-validation
   (with-runtime
     (fn [rt _]
@@ -1670,6 +1754,47 @@
                                      :stream? true
                                      :hook-class :read}
                                     'skein.weaver-test/test-op))))
+      (testing "valid return declarations are retained"
+        (is (= {:type :collection :items :string}
+               (:returns (weaver/register-op! rt 'declared
+                                              {:returns {:type :collection :items :string}}
+                                              'skein.weaver-test/test-op))))
+        (is (= {:subcommands
+                {"list" {:stream {:emits :string :result :boolean}}}}
+               (:returns
+                (weaver/register-op! rt 'declared-subcommands
+                                     {:arg-spec {:op "declared-subcommands"
+                                                 :subcommands {"list" {}}}
+                                      :stream? true
+                                      :returns {:subcommands
+                                                {"list" {:stream {:emits :string
+                                                                  :result :boolean}}}}}
+                                     'skein.weaver-test/test-op)))))
+      (testing "return routing and stream alignment fail before registration"
+        (doseq [[name opts reason]
+                [['bad-return-shape
+                  {:returns [:nullable :json]}
+                  :invalid-nullable]
+                 ['flat-with-subcommands
+                  {:returns {:subcommands {"run" :string}}}
+                  :return-routing-misalignment]
+                 ['subcommands-missing-case
+                  {:arg-spec {:op "subcommands-missing-case"
+                              :subcommands {"run" {} "list" {}}}
+                   :returns {:subcommands {"run" :string}}}
+                  :return-subcommand-misalignment]
+                 ['stream-with-flat-return
+                  {:stream? true :returns :string}
+                  :return-stream-misalignment]
+                 ['flat-with-stream-return
+                  {:returns {:stream {:emits :string :result :boolean}}}
+                  :return-stream-misalignment]]]
+          (let [before (weaver/ops rt)
+                e (is (thrown? clojure.lang.ExceptionInfo
+                               (weaver/register-op! rt name opts 'skein.weaver-test/test-op)))]
+            (is (= reason (:reason (ex-data e))))
+            (is (= before (weaver/ops rt)))
+            (is (not-any? #(= (clojure.core/name name) (:name %)) (weaver/ops rt))))))
       (testing "flat arg-specs are validated at registration"
         (let [e (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                       #"arg-spec is invalid"
@@ -1723,6 +1848,17 @@
           (is (= "replaceable" (:operation (ex-data e))))
           (is (= :invalid-subcommands (:reason (ex-data e))))
           (is (= 'skein.weaver-test/test-op (:fn (weaver/resolve-op rt 'replaceable))))))
+      (testing "replace-op! retains the old entry when returns are invalid"
+        (weaver/register-op! rt 'replace-returns
+                             {:returns :string}
+                             'skein.weaver-test/test-op)
+        (let [before (weaver/resolve-op rt 'replace-returns)
+              e (is (thrown? clojure.lang.ExceptionInfo
+                             (weaver/replace-op! rt 'replace-returns
+                                                 {:stream? true :returns :string}
+                                                 'skein.weaver-test/context-echo-op)))]
+          (is (= :return-stream-misalignment (:reason (ex-data e))))
+          (is (= before (weaver/resolve-op rt 'replace-returns)))))
       (testing "explicit deadline-class overrides the stream default"
         (is (= :standard
                (:deadline-class (weaver/register-op! rt 'bounded-stream
@@ -1946,7 +2082,8 @@
                            {:doc "Echo argv"
                             :arg-spec {:op "custom"
                                        :flags {:limit {:type :int :doc "Max"}}
-                                       :positionals [{:name :name}]}}
+                                       :positionals [{:name :name}]}
+                            :returns {:type :collection :items :string}}
                            'skein.weaver-test/test-op)
       (weaver/register-op! rt 'subbed
                            {:doc "Subcommand op"
@@ -1955,17 +2092,26 @@
                                        :subcommands {"add" {:doc "Add an item"
                                                             :flags {:force {:type :boolean :doc "Force add"}}
                                                             :positionals [{:name :title :required? true :doc "Item title"}]}
-                                                     "list" {:doc "List items"}}}}
+                                                     "list" {:doc "List items"}}}
+                            :returns {:subcommands
+                                      {"add" {:type :map :required {:id :integer}}
+                                       "list" {:type :collection :items :string}}}}
                            'skein.weaver-test/context-echo-op)
+      (weaver/register-op! rt 'streamed
+                           {:stream? true
+                            :returns {:stream {:emits :string
+                                               :result [:nullable :boolean]}}}
+                           'skein.weaver-test/test-op)
       (weaver/register-op! rt 'raw "Raw op" 'skein.weaver-test/context-echo-op)
       (testing "no argv lists every op summary sorted by name"
         (let [{:keys [ops]} (weaver/op! rt 'help [])]
-          (is (= ["custom" "help" "raw" "subbed"] (mapv :name ops)))
+          (is (= ["custom" "help" "raw" "streamed" "subbed"] (mapv :name ops)))
+          (is (every? #(not (contains? % :returns)) ops))
           (let [help-entry (first (filter #(= "help" (:name %)) ops))]
-            (is (= :read (:hook-class help-entry)))
-            (is (= 'skein.api.weaver.alpha (:provenance help-entry)))
+            (is (= "read" (:hook-class help-entry)))
+            (is (= "skein.api.weaver.alpha" (:provenance help-entry)))
             (is (false? (:stream? help-entry)))
-            (is (= :standard (:deadline-class help-entry)))
+            (is (= "standard" (:deadline-class help-entry)))
             (is (string? (:doc help-entry))))))
       (testing "op name returns arg-spec detail via explain"
         (let [detail (weaver/op! rt 'help ["custom"])]
@@ -1974,6 +2120,7 @@
           (is (= [{:name "limit" :flag "--limit" :type "int" :required false
                    :repeat false :parse nil :doc "Max"}]
                  (get-in detail [:arg-spec :flags])))
+          (is (= {:type "collection" :items "string"} (:returns detail)))
           (is (not (contains? detail :raw-envelope)))))
       (testing "subcommand op detail includes parser-rendered subcommands"
         (let [detail (weaver/op! rt 'help ["subbed"])]
@@ -1986,7 +2133,17 @@
                            :repeat false :parse nil :doc "Force add"}]
                   :positionals [{:name "title" :type "string" :required true
                                  :variadic false :parse nil :doc "Item title"}]}
-                 (first (get-in detail [:arg-spec :subcommands]))))))
+                 (first (get-in detail [:arg-spec :subcommands]))))
+          (is (= {:subcommands
+                  {"add" {:type "map"
+                          :required {"id" "integer"}
+                          :optional {}}
+                   "list" {:type "collection" :items "string"}}}
+                 (:returns detail)))))
+      (testing "streaming op detail includes its channel projections"
+        (is (= {:stream {:emits "string"
+                         :result ["nullable" "boolean"]}}
+               (:returns (weaver/op! rt 'help ["streamed"])))))
       (testing "raw-envelope op detail carries a marker instead of an arg-spec"
         (let [detail (weaver/op! rt 'help ["raw"])]
           (is (true? (:raw-envelope detail)))

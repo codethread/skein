@@ -769,6 +769,32 @@
           "roster/body"]
    :doc "Active-work roster entry attributes written by skein.spools.roster/track!."})
 
+(def ^:private strand-return
+  {:type :map
+   :required {:id :string :title :string :state :string
+              :created_at :string :updated_at :string
+              :attributes {:type :map :extra :json}}})
+
+(def ^:private roster-row-return
+  {:type :map
+   :required {:strand strand-return :stale? :boolean :age-ms :integer}})
+
+(def ^:private op-strand-return
+  (update strand-return :required assoc :operation :string))
+
+(def ^:private roster-returns
+  {:subcommands
+   {"about" {:type :map :required {:operation :string} :extra :json}
+    "prime" {:type :map :required {:operation :string} :extra :json}
+    "track" op-strand-return
+    "heartbeat" op-strand-return
+    "finish" op-strand-return
+    "list" {:type :collection :items roster-row-return}
+    "await-quiet" {:type :map
+                   :required {:operation :string
+                              :reason :string
+                              :entries {:type :collection :items roster-row-return}}}}})
+
 (defn install!
   "Install the roster op and named query into the active weaver."
   []
@@ -781,6 +807,7 @@
      :ops [(weaver/register-op! rt 'roster
                                 {:doc "Manage active-work roster entries: track, heartbeat, finish, list, and await quiet."
                                  :arg-spec roster-arg-spec
+                                 :returns roster-returns
                               ;; await-quiet blocks for arbitrarily long coordination waits (SPEC-RosterSpool-001.C10)
                                  :deadline-class :unbounded}
                                 'skein.spools.roster/roster-op)]

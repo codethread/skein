@@ -2,12 +2,28 @@
   "Tests for the UNSAFE substring-search spool: title and attribute-value hits,
   archived-row visibility, literal metacharacter matching, and the loud
   blank-pattern and overflow failures."
-  (:require [clojure.string :as str]
+  (:require [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.weaver.alpha :as weaver]
             [skein.repl :as repl]
             [skein.spools.test-support :refer [with-runtime]]
-            [skein.spools.text-search :as text-search]))
+            [skein.spools.text-search :as text-search]
+            [skein.test.alpha :as t]))
+
+(deftest production-return-coverage-is-derived-from-text-search-provenance
+  (with-runtime
+    (fn [rt _]
+      (text-search/install!)
+      (repl/strand! "Search return coverage" {"topic" "returns"})
+      (let [entries (filterv #(= 'skein.spools.text-search (:provenance %)) (weaver/ops rt))
+            missing (mapv :name (filter #(not (contains? % :returns)) entries))
+            required (set (map (juxt :name (constantly {})) entries))
+            value (weaver/op! rt 'search ["returns"])
+            _ (t/check-op-return! rt 'search value)
+            checked #{["search" {}]}]
+        (is (= [] missing))
+        (is (= #{} (set/difference required checked)))))))
 
 (deftest search-hits-titles-and-attribute-values
   (with-runtime

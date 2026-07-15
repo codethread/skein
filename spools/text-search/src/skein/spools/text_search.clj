@@ -184,6 +184,14 @@
    :positionals [{:name :text :type :string :required? true
                   :doc "Substring to search for, matched literally."}]})
 
+(def ^:private search-return
+  {:type :collection
+   :items {:type :map
+           :required {:id :string
+                      :title :string
+                      :key [:nullable :string]
+                      :snippet :string}}})
+
 (defn install!
   "Install the UNSAFE `search` op into the active weaver.
 
@@ -199,5 +207,6 @@
      :ops [(weaver/register-op! rt 'search
                                 {:doc search-doc
                                  :arg-spec search-arg-spec
+                                 :returns search-return
                                  :hook-class :read}
                                 'skein.spools.text-search/search-op)]}))

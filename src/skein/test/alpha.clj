@@ -16,6 +16,8 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [skein.api.return-shape.alpha :as return-shape]
+            [skein.api.weaver.alpha :as weaver]
             [skein.core.client :as client]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime])
@@ -28,6 +30,108 @@
   nil)
 
 (def ^:private default-timeout-ms 10000)
+
+(def ^:private return-context-keys #{:subcommand :channel})
+(def ^:private stream-channels #{:emits :result})
+
+(defn- return-selection-error!
+  [entry declaration context reason message data]
+  (throw (ex-info message
+                  (merge {:operation (:name entry)
+                          :declaration declaration
+                          :context context
+                          :reason reason}
+                         data))))
+
+(defn- select-return-shape!
+  [entry context]
+  (when-not (map? context)
+    (return-selection-error! entry (:returns entry) context
+                             :invalid-return-context
+                             "Operation return context must be a map"
+                             {:value context}))
+  (when-let [unknown (seq (remove return-context-keys (keys context)))]
+    (return-selection-error! entry (:returns entry) context
+                             :unknown-return-context-keys
+                             "Operation return context contains unknown keys"
+                             {:keys (vec unknown)}))
+  (when-not (contains? entry :returns)
+    (return-selection-error! entry nil context
+                             :missing-return-declaration
+                             "Operation has no :returns declaration"
+                             {}))
+  (let [declaration (:returns entry)
+        subcommands (when (and (map? declaration) (contains? declaration :subcommands))
+                      (:subcommands declaration))
+        return-case (if subcommands
+                      (let [subcommand (:subcommand context)]
+                        (when-not (contains? context :subcommand)
+                          (return-selection-error! entry declaration context
+                                                   :missing-return-subcommand
+                                                   "Subcommand return declaration requires :subcommand context"
+                                                   {}))
+                        (when-not (contains? subcommands subcommand)
+                          (return-selection-error! entry declaration context
+                                                   :unknown-return-subcommand
+                                                   "Operation return subcommand is not declared"
+                                                   {:subcommand subcommand
+                                                    :available-subcommands (vec (sort (keys subcommands)))}))
+                        (get subcommands subcommand))
+                      (do
+                        (when (contains? context :subcommand)
+                          (return-selection-error! entry declaration context
+                                                   :unexpected-return-subcommand
+                                                   "Flat return declaration does not accept :subcommand context"
+                                                   {:subcommand (:subcommand context)}))
+                        declaration))
+        stream (when (and (map? return-case) (contains? return-case :stream))
+                 (:stream return-case))]
+    (if stream
+      (let [channel (:channel context)]
+        (when-not (contains? context :channel)
+          (return-selection-error! entry return-case context
+                                   :missing-return-channel
+                                   "Stream return declaration requires :channel context"
+                                   {}))
+        (when-not (stream-channels channel)
+          (return-selection-error! entry return-case context
+                                   :unknown-return-channel
+                                   "Operation return stream channel must be :emits or :result"
+                                   {:channel channel
+                                    :available-channels [:emits :result]}))
+        (get stream channel))
+      (do
+        (when (contains? context :channel)
+          (return-selection-error! entry return-case context
+                                   :unexpected-return-channel
+                                   "Non-stream return declaration does not accept :channel context"
+                                   {:channel (:channel context)}))
+        return-case))))
+
+(defn check-op-return!
+  "Check a captured operation return value against its registered declaration.
+
+  `runtime` is explicit and `operation` resolves through its live op registry.
+  The three-argument form checks a flat result. The four-argument form accepts
+  a context map with optional `:subcommand` and `:channel` (`:emits` or
+  `:result`) selectors. Returns `value` unchanged on success. Missing or
+  misaligned declarations fail loudly. Shape mismatches carry the canonical
+  operation name, selected declaration, failing path, and actual value.
+
+  This helper only checks an already-captured value; it never invokes an op."
+  ([runtime operation value]
+   (check-op-return! runtime operation {} value))
+  ([runtime operation context value]
+   (let [entry (weaver/resolve-op runtime operation)
+         declaration (select-return-shape! entry context)]
+     (try
+       (return-shape/check! declaration value)
+       (catch clojure.lang.ExceptionInfo e
+         (throw (ex-info "Operation return value does not match declaration"
+                         (assoc (ex-data e)
+                                :operation (:name entry)
+                                :declaration declaration)
+                         e)))))))
 
 ;; Unix domain socket paths have a small platform limit (~104 bytes on macOS),
 ;; so generated worlds live under a short /tmp root rather than java.io.tmpdir.

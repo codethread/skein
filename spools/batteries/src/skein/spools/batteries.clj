@@ -492,6 +492,101 @@
    :flags {:kind {:type :string
                   :doc "Narrow to one declaration kind: attr-namespace or edge."}}})
 
+(def ^:private attributes-return
+  {:type :map :extra :json})
+
+(def ^:private strand-return
+  {:type :map
+   :required {:id :string
+              :title :string
+              :state :string
+              :created_at :string
+              :updated_at :string
+              :attributes attributes-return}})
+
+(def ^:private edge-return
+  {:type :map
+   :required {:from_strand_id :string
+              :to_strand_id :string
+              :edge_type :string
+              :attributes attributes-return}})
+
+(def ^:private strand-collection-return
+  {:type :collection :items strand-return})
+
+(def ^:private query-metadata-return
+  {:type :map
+   :required {:name :string
+              :params {:type :collection :items :string}
+              :referenced-params {:type :collection :items :string}}})
+
+(def ^:private pattern-key-return
+  {:type :map
+   :required {:key :string :spec :string :spec-form :string}})
+
+(def ^:private op-returns
+  {'add strand-return
+   'update strand-return
+   'show strand-return
+   'supersede
+   {:type :map
+    :required {:old {:type :map :required {:before strand-return :after strand-return}}
+               :replacement-id :string
+               :supersedes-edge edge-return
+               :rewired-dependencies
+               {:type :collection
+                :items {:type :map
+                        :required {:from :string :old-to :string :new-to :string :type :string
+                                   :deleted-edge edge-return :edge edge-return}}}}}
+   'burn {:type :map
+          :required {:burned {:type :collection :items :string}
+                     :count :integer}}
+   'list strand-collection-return
+   'ready strand-collection-return
+   'subgraph {:type :map
+              :required {:root_ids {:type :collection :items :string}
+                         :strands strand-collection-return
+                         :edges {:type :collection :items edge-return}}}
+   'weave {:type :map
+           :required {:created strand-collection-return
+                      :refs {:type :map :extra :string}}}
+   'query {:subcommands
+           {"list" {:type :collection :items query-metadata-return}
+            "explain" {:type :map
+                       :required {:name :string
+                                  :operation :string
+                                  :params {:type :collection :items :string}
+                                  :referenced-params {:type :collection :items :string}
+                                  :where :json
+                                  :definition :json
+                                  :where-form :string
+                                  :definition-form :string
+                                  :summary :string}}}}
+   'pattern {:subcommands
+             {"list" {:type :collection
+                      :items {:type :map
+                              :required {:name :string :fn :string :input-spec :string}
+                              :optional {:doc :string}}}
+              "explain" {:type :map
+                         :required {:name :string :operation :string :fn :string :input-spec :string
+                                    :spec-form :string :summary :string}
+                         :optional {:doc :string
+                                    :required {:type :collection :items pattern-key-return}
+                                    :optional {:type :collection :items pattern-key-return}}}}}
+   'note {:type :map :required {:id :string :target :string}}
+   'notes {:type :collection
+           :items {:type :map
+                   :required {:id :string :note :string :at :string}
+                   :optional {:by :string :round :integer}}}
+   'vocab {:type :collection
+           :items {:type :map
+                   :required {:kind :string :name :string :owner :string}
+                   :optional {:keys {:type :collection :items :string}
+                              :doc :string
+                              :family :string
+                              :direction :string
+                              :declared-acyclic? :boolean}}}})
+
 (def ^:private op-registrations
   "Each shipped op: [op-name arg-spec hook-class handler-symbol]."
   [['add add-arg-spec :mutating 'skein.spools.batteries/add-op]
@@ -522,6 +617,7 @@
                  (weaver/register-op! rt op-name
                                       {:doc (:doc arg-spec)
                                        :arg-spec arg-spec
+                                       :returns (get op-returns op-name)
                                        :hook-class hook-class}
                                       handler))
                op-registrations)}))

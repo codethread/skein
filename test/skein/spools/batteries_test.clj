@@ -3,7 +3,9 @@
   op registration/provenance, each op's happy path, attribute merge precedence,
   payload-ref attributes, loud failures, and JSON-shape equivalence with the
   underlying weaver API the old socket dispatch delegates to."
-  (:require [clojure.spec.alpha :as s]
+  (:require [clojure.data.json :as json]
+            [clojure.set :as set]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [matcher-combinators.matchers :as m]
@@ -16,7 +18,8 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.specs :as specs]
             [skein.spools.batteries :as batteries]
-            [skein.spools.test-support :refer [with-runtime]]))
+            [skein.spools.test-support :refer [with-runtime]]
+            [skein.test.alpha :as t]))
 
 (s/def ::title string?)
 (s/def ::weave-input (s/keys :req-un [::title]))
@@ -36,6 +39,29 @@
 
 (defn- op-entry [rt op-name]
   (some #(when (= (name op-name) (:name %)) %) (weaver/ops rt)))
+
+(defn- return-case-leaves [operation context return-case]
+  (if (and (map? return-case) (contains? return-case :stream))
+    (set (map (fn [channel] [operation (assoc context :channel channel)]) [:emits :result]))
+    #{[operation context]}))
+
+(defn- op-return-leaves [{:keys [name returns]}]
+  (if (and (map? returns) (contains? returns :subcommands))
+    (into #{} (mapcat (fn [[subcommand return-case]]
+                        (return-case-leaves name {:subcommand subcommand} return-case)))
+          (:subcommands returns))
+    (return-case-leaves name {} returns)))
+
+(defn- owner-return-coverage [rt checked-leaves]
+  (let [entries (filterv #(= 'skein.spools.batteries (:provenance %)) (weaver/ops rt))
+        missing (filterv #(not (contains? % :returns)) entries)
+        required (into #{} (mapcat op-return-leaves) (filter #(contains? % :returns) entries))]
+    {:missing (mapv :name missing)
+     :required required
+     :unchecked (set/difference required checked-leaves)}))
+
+(defn- wire-value [value]
+  (json/read-str (json/write-str value) :key-fn keyword))
 
 (deftest activate-registers-ops-with-provenance-and-hook-classes
   (with-batteries
@@ -63,6 +89,45 @@
         (is (= :mutating (:hook-class (op-entry rt 'note))))
         (is (= :read (:hook-class (op-entry rt 'notes))))
         (is (= :read (:hook-class (op-entry rt 'vocab))))))))
+
+(deftest production-return-coverage-is-derived-from-batteries-provenance
+  (with-batteries
+    (fn [rt]
+      (patterns/register-pattern! rt 'task 'skein.spools.batteries-test/weave-test-pattern ::weave-input)
+      (graph/register-query! rt 'all [:exists :id])
+      (let [checked (atom #{})
+            check! (fn
+                     ([operation value]
+                      (t/check-op-return! rt operation (wire-value value))
+                      (swap! checked conj [(name operation) {}])
+                      value)
+                     ([operation subcommand value]
+                      (t/check-op-return! rt operation {:subcommand subcommand} (wire-value value))
+                      (swap! checked conj [(name operation) {:subcommand subcommand}])
+                      value))
+            first-row (check! 'add (weaver/op! rt 'add ["First"]))
+            replacement (weaver/add rt {:title "Replacement" :attributes {}})
+            burnable (weaver/add rt {:title "Burnable" :attributes {}})
+            note (check! 'note (weaver/op! rt 'note [(:id first-row) "covered" "--by" "inuli"]))]
+        (check! 'update (weaver/op! rt 'update [(:id first-row) "--title" "Updated"]))
+        (check! 'show (weaver/op! rt 'show [(:id first-row)]))
+        (check! 'list (weaver/op! rt 'list []))
+        (check! 'ready (weaver/op! rt 'ready []))
+        (check! 'subgraph (weaver/op! rt 'subgraph [(:id first-row)]))
+        (check! 'weave (weaver/op! rt 'weave ["--pattern" "task" "--input" "{\"title\":\"Woven\"}"]))
+        (check! 'query "list" (weaver/op! rt 'query ["list"]))
+        (check! 'query "explain" (weaver/op! rt 'query ["explain" "all"]))
+        (check! 'pattern "list" (weaver/op! rt 'pattern ["list"]))
+        (check! 'pattern "explain" (weaver/op! rt 'pattern ["explain" "task"]))
+        (check! 'notes (weaver/op! rt 'notes [(:id first-row)]))
+        (check! 'vocab (weaver/op! rt 'vocab []))
+        (check! 'supersede (weaver/op! rt 'supersede [(:id first-row) (:id replacement)]))
+        (check! 'burn (weaver/op! rt 'burn [(:id burnable)]))
+        (let [{:keys [missing required unchecked]} (owner-return-coverage rt @checked)]
+          (is (empty? missing))
+          (is (= required @checked))
+          (is (empty? unchecked)))
+        (is (= (:id first-row) (:target note)))))))
 
 (deftest add-happy-path-and-json-shape
   (with-batteries

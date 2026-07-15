@@ -20,7 +20,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.workflow :as workflow]
-            [skein.api.spool.alpha :refer [attr-get fail! reject-unknown-keys! require-valid!]]))
+            [skein.api.spool.alpha :refer [attr-get entity-projection fail! reject-unknown-keys! require-valid!]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Graph primitives
@@ -36,7 +36,7 @@
 (defn summarize
   "Return the compact strand shape used by read-only projections."
   [strand]
-  (select-keys strand [:id :title :state :attributes]))
+  (entity-projection strand))
 
 (defn- internal-active-edges
   "Return edges whose endpoints are both active strands, sorted and deduped-safe.

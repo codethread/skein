@@ -62,7 +62,7 @@ Install the UNSAFE `search` op into the active weaver.
   other shipped spools; the op handler and `search` itself take the runtime
   explicitly. Returns installation metadata carrying `:unsafe true` so callers
   can see what they activated.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L187-L203">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L195-L212">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/search">`search`</a>
 ``` clojure

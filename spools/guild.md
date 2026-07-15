@@ -39,7 +39,10 @@ At invocation time, `guild.describe` prefers the runtime metadata name published
 ```clojure
 (guild/defop! 'gate.status.v1
   {:doc "Return whether the named gate is satisfied."
-   :spec ::gate-status-input}
+   :spec ::gate-status-input
+   :returns {:type :map
+             :required {:gate :string
+                        :satisfied :boolean}}}
   'my.repo.guild/gate-status)
 ```
 
@@ -48,10 +51,17 @@ At invocation time, `guild.describe` prefers the runtime metadata name published
 | Argument | Meaning |
 |---|---|
 | `name` | Simple unqualified symbol or keyword. By convention use a dotted, version-suffixed handle such as `gate.status.v1`. |
-| `opts` | Map supporting `:doc` and optional `:spec`. Unknown keys fail loudly. |
+| `opts` | Map supporting `:doc`, optional input `:spec`, and optional output `:returns`. Unknown keys fail loudly. |
 | `handler-fn-sym` | Fully qualified symbol resolving to the handler function in the weaver JVM. |
 
 Guild op invocation accepts zero arguments or one JSON input argument. The spool parses that JSON to `:guild/input`, validates it against `:spec` when supplied, and then calls the resolved handler with the ordinary op context plus `:guild/input`.
+
+`:returns` uses the shared registry return declaration from
+[`skein.api.return-shape.alpha`](../docs/api/return-shape.api.md). It describes
+JSON scalar, closed-map, and homogeneous-collection output; routed and streaming
+wrappers are also shared with ordinary registered ops. The canonical language
+contract is [SPEC-003.C60a/C60b](../devflow/specs/repl-api.md). Run
+`strand help <op>` to inspect its JSON-safe explanation.
 
 ### `deprecate!`
 
@@ -127,7 +137,10 @@ In the backend repo's checked-in `.skein/init.clj`, publish a guild API:
 (guild/install!)
 (guild/defop! 'gate.status.v1
   {:doc "Return whether a backend gate is satisfied."
-   :spec ::gate-status-input}
+   :spec ::gate-status-input
+   :returns {:type :map
+             :required {:gate :string
+                        :satisfied :boolean}}}
   'user/gate-status)
 ```
 

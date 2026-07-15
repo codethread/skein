@@ -40,6 +40,7 @@ Two conventions hold across the tier:
 | [`patterns`](./patterns.api.md) | Agents should submit intent and your config decides the graph shape: spec-checked, create-only weave patterns invokable from the CLI. |
 | [`views`](./views.api.md) | Registering named read-only projections callable from trusted Clojure. |
 | [`cli`](./cli.api.md) | Declaring an op's argv shape as data — the parser and help renderer behind every registered op; never hand-write usage strings. |
+| [`return-shape`](./return-shape.api.md) | Declaring and checking the JSON-compatible values returned by registered ops. |
 
 ### Vocabulary and prose
 
