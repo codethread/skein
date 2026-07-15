@@ -106,6 +106,9 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
 
 ## Namespace claims
 
+This section covers vocab and attribute namespaces, not Clojure source namespaces; see
+[Namespace tiers](#namespace-tiers-why-this-split-exists) for source naming.
+
 A shared spool declares each namespace it owns from its `install!` path with `vocab/declare!`. Qualify those namespaces with a project prefix, such as
 `acme/priority`, so they do not collide with Skein core or with another author's spool. The prefix is an authoring convention, not a parser rule. The registry
 backs it with the duplicate-owner check: if two owners claim the same namespace, install fails loudly instead of choosing one.
@@ -521,6 +524,10 @@ See [AGENTS.md](../../AGENTS.md) and [SPEC-003](../../devflow/specs/repl-api.md)
 - `skein.userland.alpha` — userland-only terse ergonomics; a strict *downstream*
   consumer tier. No `skein.*` namespace may require it, and neither may a shared
   spool.
+- External/shared spool source namespaces use the author's org prefix; codethread
+  spools use `ct.spools.<name>`. The `skein.*` prefix is reserved for source
+  shipped by the Skein checkout. A source namespace is separate from the
+  `.skein/spools.edn` coordinate symbol, such as `codethread/<name>`.
 
 ## Enforcement
 
