@@ -57,6 +57,17 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 
 `bobbin`, `guild`, and `selvage` are never-activated reference roots: this repo carries their source and tests but adds no `.skein/spools.edn` coordinate for them — a downstream user opts in by adding one.
 
+`skein.spools.workflow` is deliberately a spool, and deliberately an in-repo one (decided 2026-07-11;
+do not relitigate without new evidence). It is replaceable library code: use it, rebuild it, or find
+something better. Promotion to `skein.api.*` was rejected because that tier promises more stability
+than a deliberately swappable engine should; extraction to its own repo was rejected because
+workflow is a hub (devflow.spool, `executors.subagent` in the agent-run root, loom, and this repo's
+`.skein` config all require it), so an external pin would put bump ceremony on the hottest path of
+engine development. Consumers who want the engine pinned independently of a checkout address it
+with a sha-pinned nested-root git coordinate (`:git/url` + `:git/sha` + `:deps/root
+"spools/workflow"`); see [Nested-spool
+prerequisites](../docs/spools/writing-shared-spools.md#nested-spool-prerequisites).
+
 `ct.spools.devflow` is consumed from
 [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
 than a local root — the worked example of publishing a spool for others (RFC-017, [Writing shared
