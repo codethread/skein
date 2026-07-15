@@ -2100,6 +2100,89 @@
                        :spawned-by {:doc "Caller run id for provenance."}
                        :max-concurrent {:type :int :doc "Cap this council fan-out to K concurrent runs (min(W, K))."}}}}})
 
+(def ^:private run-summary-return
+  {:type :map
+   :required {:id :string :title :string :state :string :phase :string :harness :string}
+   :optional {:for :string :spawned-by :string :attempt :integer
+              :result :string :error :string :mode :string :backend :string
+              :session :string :attach :string}})
+
+(def ^:private delegated-run-return
+  {:type :map
+   :required {:id :string :phase :string :harness :string}
+   :optional {:attach :string}})
+
+(def ^:private agent-returns
+  {:subcommands
+   {"about" {:type :map
+             :required {:operation :string :concepts {:type :map :extra :json}
+                        :verbs {:type :map :extra :json}}
+             :extra :json}
+    "spawn" (update run-summary-return :required assoc :operation :string)
+    ;; This is intentionally the agent-run domain summary, not an entity projection.
+    "ps" {:type :collection :items run-summary-return}
+    "spend" {:type :map
+             :required {:operation :string
+                        :filters {:type :map :extra :json}
+                        :totals {:type :map :extra :json}
+                        :groups {:type :collection :items {:type :map :extra :json}}
+                        :runs {:type :collection :items {:type :map :extra :json}}}}
+    "await" {:type :map
+             :required {:operation :string :timed-out :boolean
+                        :runs {:type :collection :items run-summary-return}}}
+    "logs" {:type :map
+            :required {:operation :string :id :string
+                       :out {:type :map :required {:path :string :text :string}}}
+            :optional {:err {:type :map :required {:path :string :text :string}}}}
+    "kill" {:type :map :required {:operation :string :killed :string}}
+    "harnesses" {:type :collection
+                 :items {:type :map
+                         :required {:name :string :kind :string}
+                         :optional {:alias-of :string :doc :string :harness :string
+                                    :harness-doc :string
+                                    :argv {:type :collection :items :string}}}}
+    "backends" {:type :collection
+                :items {:type :map
+                        :required {:name :string
+                                   :ops {:type :collection :items :string}}
+                        :optional {:doc :string}}}
+    "delegate" {:type :map
+                :required {:operation :string}
+                :optional {:plan :string :task :string :run delegated-run-return
+                           :delegated {:type :collection
+                                       :items {:type :map
+                                               :required {:task :string :run delegated-run-return}}}
+                           :skipped {:type :collection
+                                     :items {:type :map
+                                             :required {:task :string :reason :string}}}}}
+    "retry" {:type :map
+             :required {:operation :string :superseded :string :run delegated-run-return}
+             :optional {:task :string}}
+    "status" {:type :map
+              :required {:operation :string
+                         :tree {:type :collection :items {:type :map :extra :json}}
+                         :ready {:type :collection :items :string}
+                         :running {:type :collection :items :string}
+                         :failed {:type :collection :items {:type :map :extra :json}}
+                         :awaiting_verification {:type :collection :items :string}
+                         :blocked {:type :collection :items {:type :map :extra :json}}}}
+    "note" {:type :map :required {:operation :string :id :string :note :string}
+            :optional {:by :string :round :integer}}
+    "notes" {:type :collection
+             :items {:type :map :required {:id :string :note :string}
+                     :optional {:by :string :round :integer}}}
+    "review" {:type :map
+              :required {:operation :string :target :string
+                         :reviewers {:type :collection :items :string}}
+              :optional {:review-pass :string :synthesizer :string}}
+    "rosters" {:type :collection
+               :items {:type :map :required {:name :string} :extra :json}}
+    "council" {:type :map
+               :required {:operation :string :council :string
+                          :turns {:type :collection
+                                  :items {:type :collection :items :string}}}
+               :optional {:synthesizer :string}}}})
+
 (defn- flag-token [[k v]]
   (when (and (not= k :subcommand) (some? v))
     (let [flag (str "--" (name k))]
@@ -2231,6 +2314,7 @@
      :op (weaver/register-op! runtime 'agent
                            {:doc (:doc agent-arg-spec)
                             :arg-spec agent-arg-spec
+                            :returns agent-returns
                             ;; await blocks for arbitrarily long coordination waits
                             :deadline-class :unbounded}
                            'skein.spools.delegation/agent-op)

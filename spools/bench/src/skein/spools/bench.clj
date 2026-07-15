@@ -1319,6 +1319,36 @@
           :flags {:run {:doc "Only this run's artifact directory."}}}
     "about" {:doc "Return the authored bench manual."}}})
 
+(def ^:private bench-returns
+  {:subcommands
+   {"run" {:type :map :required {:operation :string :run :string
+                                  :entries {:type :map :extra :string}
+                                  :judge :json}}
+    "runs" {:type :collection
+            :items {:type :map
+                    :required {:run :string :suite :string :sha :string :state :string
+                               :entries :integer :phases {:type :map :extra :integer}}}}
+    "status" {:type :map
+              :required {:operation :string :run :string :suite :string :repo :string :sha :string
+                         :entries {:type :collection :items {:type :map :extra :json}}
+                         :judge :json
+                         :blocking-failures {:type :collection :items :string}}}
+    "report" {:type :map
+              :required {:operation :string :run :string :suite :string :repo :string :sha :string
+                         :data-dir :string
+                         :entries {:type :collection :items {:type :map :extra :json}}
+                         :judge :json}}
+    "retry" {:type :map :required {:operation :string :retried :string :attempt :integer}}
+    "abort" {:type :map
+             :required {:operation :string :aborted :string
+                        :failed {:type :collection :items :string}
+                        :judge :json}}
+    "suites" {:type :collection :items {:type :map :required {:name :string} :extra :json}}
+    "agents" {:type :collection :items {:type :map :required {:name :string} :extra :json}}
+    "gc" {:type :map
+          :required {:operation :string :removed {:type :collection :items :string}}}
+    "about" {:type :map :required {:operation :string :summary :string} :extra :json}}})
+
 (defn- split-csv
   "Split a comma-separated flag value into trimmed, non-blank tokens."
   [s]
@@ -1416,6 +1446,7 @@
        :op (weaver/register-op! runtime 'bench
                              {:doc (:doc bench-arg-spec)
                               :arg-spec bench-arg-spec
+                              :returns bench-returns
                               ;; run/reconcile may fetch a git mirror synchronously
                               :deadline-class :unbounded
                               :hook-class :mutating}
