@@ -396,3 +396,9 @@ Append notes here. Do not rewrite earlier notes.
 - Task 5 did not change public docstring text, but its source edit shifted the
   generated anchors in `spools/executors/subagent.api.md`. The final docs gate
   exposed the drift. A narrow repair task regenerated and committed that page.
+
+### PLAN-Dcr-001.DN6 PH6 generated API drift — 2026-07-15
+
+- Task 6 changed built-in help and batteries declarations without an API-doc
+  gate. Task 7's API-doc gate exposed and committed the corresponding Weaver
+  and batteries generated-reference drift alongside its owned spool pages.

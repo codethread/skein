@@ -32,7 +32,7 @@ tasks:
   - id: 7
     description: Shipped reference-spool declarations
     task_file: tasks/007-reference-spool-declarations.md
-    status: pending
+    status: complete
     blocked_by: [2, 3]
   - id: 8
     description: Repo-local spool declarations
