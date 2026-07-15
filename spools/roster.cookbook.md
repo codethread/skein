@@ -97,7 +97,7 @@ Honest source: the AFK example in [`roster.md`](./roster.md) and the lifecycle b
 ```
 
 ```sh
-strand roster await-quiet --feature roster-spool --timeout-ms 60000
+strand roster await-quiet --feature roster-spool --timeout-secs 60
 ```
 
 **Why this shape.**

@@ -379,15 +379,22 @@
     (fn [rt _]
       (roster/install!)
       (testing "quiet when the scope has no active entries"
-        (let [result (op! rt "await-quiet" "--feature" "roster-spool" "--timeout-ms" "0")]
+        (let [result (op! rt "await-quiet" "--feature" "roster-spool" "--timeout-secs" "0")]
           (is (= :quiet (:reason result)))
           (is (= [] (:entries result)))))
       (testing "stale short-circuits before the timeout"
         (roster/track! rt {:feature "roster-spool" :owner "agent-a"
                            :now (.minus (Instant/now) (Duration/ofMinutes 20))})
-        (let [result (op! rt "await-quiet" "--feature" "roster-spool"
-                          "--timeout-ms" "60000" "--stale-after-ms" "900000")]
-          (is (= :stale (:reason result))))))))
+        (let [rows (op! rt "list" "--feature" "roster-spool" "--stale-after-secs" "900")
+              result (op! rt "await-quiet" "--feature" "roster-spool"
+                          "--timeout-secs" "60" "--stale-after-secs" "900")]
+          (is (true? (:stale? (first rows))))
+          (is (= :stale (:reason result)))))
+      (testing "removed millisecond flags fail loudly"
+        (doseq [[subcommand flag] [["await-quiet" "--timeout-ms"]
+                                   ["list" "--stale-after-ms"]]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown flag"
+                                (op! rt subcommand flag "1"))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; workflow/devflow graph integration (async event handler)

@@ -95,8 +95,8 @@ strand roster about
 strand roster track --feature <slug> --owner <owner> [--branch <branch>] [--worktree <path>] [--engine <engine>] [--run-id <id>] [--source-id <strand-id>] [--body <text>]
 strand roster heartbeat <entry-id>
 strand roster finish <entry-id> [--status finished|abandoned] [--result <text>]
-strand roster list [--feature <slug>] [--owner <owner>] [--branch <branch>] [--worktree <path>] [--engine <engine>] [--stale-after-ms <n>]
-strand roster await-quiet [--feature <slug>] [--branch <branch>] [--worktree <path>] [--timeout-ms <n>] [--stale-after-ms <n>]
+strand roster list [--feature <slug>] [--owner <owner>] [--branch <branch>] [--worktree <path>] [--engine <engine>] [--stale-after-secs <n>]
+strand roster await-quiet [--feature <slug>] [--branch <branch>] [--worktree <path>] [--timeout-secs <n>] [--stale-after-secs <n>]
 ```
 
 - `prime` is the agent onboarding surface: a superset of `about` that adds the working discipline — when automatic tracking applies, when explicit `track!` is required, how to heartbeat, and how to finish (SPEC-RosterSpool-001.C7).
