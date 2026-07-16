@@ -45,7 +45,7 @@
 ;; gates by running the gate command directly. Its install! runs an initial
 ;; scan, so it is ordered after workflow (which owns the executor registry it
 ;; registers into).
-(runtime/use! runtime :skein/spools-reed
+(runtime/use! runtime :skein/spools-shell
               {:ns 'skein.spools.executors.shell
                :spools ['skein.spools/workflow]
                :after [:skein/spools-workflow]

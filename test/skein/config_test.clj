@@ -1077,7 +1077,7 @@
   "Assert repo startup guards every module that now relies on the workflow coordinate."
   [rt]
   (let [uses (runtime/uses rt)]
-    (doseq [use-id [:skein/spools-workflow :skein/spools-reed]]
+    (doseq [use-id [:skein/spools-workflow :skein/spools-shell]]
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow")))
     (is (= ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow

@@ -244,7 +244,7 @@
 ;; valid on a pushed branch with a draft PR and green CI, and a merge to main
 ;; requires green CI plus a green local smoke run. The two CI watches are
 ;; `:shell` gates the shell executor (skein.spools.executors.shell) fulfils
-;; mechanically — a red watch stamps `shell/error` on the gate for a
+;; mechanically — a red watch stamps `gate/error` on the gate for a
 ;; fix-push-clear retry, and `land complete` refuses gates. Human steps keep
 ;; `workflow/instruction` text as the enforcement surface, shipped as data.
 ;; ---------------------------------------------------------------------------
@@ -322,7 +322,7 @@
   sign-off checkpoint, squash-merge to LOCAL main behind the singleton merge
   lock, push main, green main CI, then cleanup. Both CI watches are `:shell`
   gates the shell executor fulfils by running the recorded `gh` watch; the
-  coordinator only sees them when a red watch stamps `shell/error`. Card-backed
+  coordinator only sees them when a red watch stamps `gate/error`. Card-backed
   runs move the card to `in_review` when push-draft-pr completes (the automated
   CI watch and review pipeline starts there) and back to `claimed` on abort.
   `params` carry `:feature`, `:branch`, `:worktree`, and optional `:card`; step
@@ -364,9 +364,9 @@
                                  (str "Machine gate: the shell executor watches CI at the branch HEAD"
                                       " (`gh pr checks " branch " --watch --fail-fast`) and closes this"
                                       " gate only when ALL checks are green — `land complete` refuses"
-                                      " gates. A red or unstarted watch stamps `shell/error` with the"
+                                      " gates. A red or unstarted watch stamps `gate/error` with the"
                                       " captured output: fix in the worktree, commit, `git push`, then"
-                                      " clear the stamp (`strand update <gate-id> --attr shell/error=`)"
+                                      " clear the stamp (`strand update <gate-id> --attr gate/error=`)"
                                       " to re-run the watch. The gate closing asserts green CI at the"
                                       " watched HEAD sha; the exit code and output tail are recorded on"
                                       " the gate."))})
@@ -458,9 +458,9 @@
                                  |non-empty, every run has completed, and the all-green state holds
                                  |across two consecutive polls, so late-registering workflows are
                                  |caught. Any conclusion besides success or skipped stamps
-                                 |`shell/error` with the run listing: re-run transient infra failures
+                                 |`gate/error` with the run listing: re-run transient infra failures
                                  |(`gh run rerun <run-id>`), then clear the stamp
-                                 |(`strand update <gate-id> --attr shell/error=`) to re-watch. The
+                                 |(`strand update <gate-id> --attr gate/error=`) to re-watch. The
                                  |gate closing asserts green CI on the main sha; run output is
                                  |recorded on the gate.")})
    (workflow/step :cleanup
@@ -520,8 +520,8 @@
                  |green CI at HEAD — the ci-green shell gate enforces that ordering
                  |mechanically: the shell executor runs the recorded `gh pr checks`
                  |watch and only its green exit opens signoff-review. A red watch
-                 |stamps shell/error on the gate; fix, push, and clear the stamp
-                 |(`strand update <gate-id> --attr shell/error=`) to re-run it. For
+                 |stamps gate/error on the gate; fix, push, and clear the stamp
+                 |(`strand update <gate-id> --attr gate/error=`) to re-run it. For
                  |card-backed runs, completing push-draft-pr moves the card to
                  |in_review, and aborting sign-off moves it back to claimed. A merge
                  |is a squash into LOCAL main guarded by a singleton merge lock. The
@@ -534,7 +534,7 @@
                  |sign-off records a reason and leaves the branch/worktree
                  |untouched.")
    :steps [{:step "push-draft-pr" :purpose "Push the branch and open (or reuse) a draft PR against main; completing it starts the automated CI watch and moves a card-backed run's card to in_review."}
-           {:step "ci-green" :purpose "Machine shell gate: the executor watches CI to green at the branch HEAD; a red watch stamps shell/error for a fix-push-clear retry."}
+           {:step "ci-green" :purpose "Machine shell gate: the executor watches CI to green at the branch HEAD; a red watch stamps gate/error for a fix-push-clear retry."}
            {:step "signoff-review" :purpose "Run the declared roster review and drive fix rounds; every fix round re-establishes green CI."}
            {:step "signoff" :purpose "Coordinator sign-off checkpoint (:agent): approved continues in the molecule, abort routes to a reason-recording step."}
            {:step "merge-local-verify" :purpose "Squash-merge into local main without pushing, then run the full local verification gate + smoke."}

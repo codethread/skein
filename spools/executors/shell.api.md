@@ -9,7 +9,7 @@ Fulfil workflow `:shell` gates by running their command off the event thread.
   `:shell`, runs the gate's `shell/argv` directly (no implicit shell) on a
   spool-owned worker pool, and closes the gate through
   `skein.spools.workflow/complete!` on a zero exit. A non-zero exit, timeout,
-  spawn error, or invalid argv stamps a loud, distinct `shell/error` and leaves
+  spawn error, or invalid argv stamps a loud, distinct `gate/error` and leaves
   the gate ready and stamped rather than masquerading as a completed run. It is
   a subagent-executor sibling minus everything agent-run-specific: the failure
   detail lives on the gate itself, so there is no separate run strand, no
@@ -26,7 +26,7 @@ Fulfil workflow `:shell` gates by running their command off the event thread.
 
 
 Runtime captured for asynchronous shell-executor worker threads.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L48-L50">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L49-L51">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/gate-stalled?">`gate-stalled?`</a>
 ``` clojure
@@ -36,10 +36,10 @@ Function.
 
 Return durable stall detail for a ready `:shell` gate view, or nil.
 
-  The failure detail lives on the gate itself (`shell/error`), so — unlike
+  The failure detail lives on the gate itself (`gate/error`), so — unlike
   the subagent executor — there is no `delegates`-edge join back to a separate
   run row.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L305-L314">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L306-L315">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/install!">`install!`</a>
 ``` clojure
@@ -50,7 +50,11 @@ Function.
 Install the shell executor: register its event handler, the `:shell`
   workflow executor, and the `stalled-shell-gates` coordinator query, then
   perform an initial scan.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L316-L337">Source</a></sub></p>
+
+  Declares only the `shell` attribute namespace: failure detail is written as
+  the subagent executor's inherited `gate/error`, whose namespace that spool
+  owns.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L317-L349">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/on-event">`on-event`</a>
 ``` clojure
@@ -59,7 +63,7 @@ Install the shell executor: register its event handler, the `:shell`
 Function.
 
 Weaver event handler: graph changes may make a `:shell` gate ready.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L300-L303">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L301-L304">Source</a></sub></p>
 
 ## <a name="skein.spools.executors.shell/scan!">`scan!`</a>
 ``` clojure
@@ -71,4 +75,4 @@ Dispatch every ready `:shell` gate not already claimed or errored.
 
   Enumerates ready gates purely through the workflow surface and serializes on a
   runtime-owned monitor so concurrent scans cannot double-launch a gate.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L281-L298">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/workflow/src/skein/spools/executors/shell.clj#L282-L299">Source</a></sub></p>
