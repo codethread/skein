@@ -14,6 +14,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.bench :as bench]
             [skein.spools.bench.exec :as exec]
@@ -142,13 +143,13 @@ esac
       (bench/install!)
       (f rt config-dir))))
 
-(defn- fake-agent! [rt]
-  (bench/defagent! rt :fake
-    {:image "fake-image:1"
-     :argv ["AGENT"]
-     :prompt-via :stdin
-     :model-flag "--model"
-     :metrics :generic}))
+(defn- fake-harness! [rt]
+  (bench/register-harness! rt :fake
+                           {:image "fake-image:1"
+                            :argv ["AGENT"]
+                            :prompt-via :stdin
+                            :model-flag "--model"
+                            :extractor :generic}))
 
 (defn- await-phase [rt id phases]
   (test-support/poll-until
@@ -172,7 +173,7 @@ esac
                                            [name {:subcommand subcommand}]))) entries)
             representatives
             {"run" {:operation "bench run" :run "bench-1" :entries {"cell" "entry-1"} :judge nil}
-             "runs" [{:run "bench-1" :suite "demo" :sha "abc" :state "active"
+             "list" [{:run "bench-1" :suite "demo" :sha "abc" :state "active"
                       :entries 1 :phases {"done" 1}}]
              "status" {:operation "bench status" :run "bench-1" :suite "demo" :repo "repo"
                        :sha "abc" :entries [] :judge nil :blocking-failures []}
@@ -182,7 +183,7 @@ esac
              "abort" {:operation "bench abort" :aborted "bench-1"
                       :failed ["cell"] :judge nil}
              "suites" [{:name "demo" :repo "repo"}]
-             "agents" [{:name "fake" :image "image"}]
+             "harnesses" [{:name "fake" :image "image"}]
              "gc" {:operation "bench gc" :removed ["bench-1"]}
              "about" (assoc (bench/about) :operation "bench about")}
             checked (into #{}
@@ -197,53 +198,53 @@ esac
 ;; ---------------------------------------------------------------------------
 ;; Registry validation
 
-(deftest defagent-validates
+(deftest register-harness-validates
   (with-bench
     (fn [rt _]
       (testing "required keys and closed key set"
-        (is (thrown-with-msg? Exception #"invalid" (bench/defagent! rt :x {:image "i"})))
-        (is (thrown-with-msg? Exception #"unknown keys" (bench/defagent! rt :x {:image "i" :argv ["a"] :nope 1})))
-        (is (thrown-with-msg? Exception #"invalid" (bench/defagent! rt :x {:image "i" :argv ["a"] :prompt-via :pipe}))))
+        (is (thrown-with-msg? Exception #"invalid" (bench/register-harness! rt :x {:image "i"})))
+        (is (thrown-with-msg? Exception #"unknown keys" (bench/register-harness! rt :x {:image "i" :argv ["a"] :nope 1})))
+        (is (thrown-with-msg? Exception #"invalid" (bench/register-harness! rt :x {:image "i" :argv ["a"] :prompt-via :pipe}))))
       (testing "a valid agent is stored"
-        (bench/defagent! rt :ok {:image "i" :argv ["run"]})
-        (is (= [:ok] (mapv :name (bench/agents rt))))))))
+        (bench/register-harness! rt :ok {:image "i" :argv ["run"]})
+        (is (= [:ok] (mapv :name (bench/harnesses rt))))))))
 
-(deftest defsuite-validates
+(deftest register-suite-validates
   (with-bench
     (fn [rt _]
       (let [base {:repo "r" :sha (str/join (repeat 40 "a"))
-                  :prompt "p" :entries [{:agent :fake}] :judge :none}]
+                  :prompt "p" :entries [{:harness :fake}] :judge :none}]
         (testing "unknown keys and bad shapes fail"
-          (is (thrown-with-msg? Exception #"unknown keys" (bench/defsuite! rt :s (assoc base :bogus 1))))
-          (is (thrown-with-msg? Exception #"invalid" (bench/defsuite! rt :s (assoc base :sha "short")))))
+          (is (thrown-with-msg? Exception #"unknown keys" (bench/register-suite! rt :s (assoc base :bogus 1))))
+          (is (thrown-with-msg? Exception #"invalid" (bench/register-suite! rt :s (assoc base :sha "short")))))
         (testing "exactly one of :sha/:rev"
-          (is (thrown-with-msg? Exception #"one of :sha" (bench/defsuite! rt :s (assoc base :rev "main"))))
-          (is (thrown-with-msg? Exception #"one of :sha" (bench/defsuite! rt :s (dissoc base :sha)))))
+          (is (thrown-with-msg? Exception #"one of :sha" (bench/register-suite! rt :s (assoc base :rev "main"))))
+          (is (thrown-with-msg? Exception #"one of :sha" (bench/register-suite! rt :s (dissoc base :sha)))))
         (testing "exactly one of :prompts/:prompt"
           (is (thrown-with-msg? Exception #"one of :prompts"
-                                (bench/defsuite! rt :s (assoc base :prompts {:a "x"})))))
+                                (bench/register-suite! rt :s (assoc base :prompts {:a "x"})))))
         (testing "multi-prompt entries must name a known prompt"
           (is (thrown-with-msg? Exception #"unknown prompt"
-                                (bench/defsuite! rt :s (-> base (dissoc :prompt)
-                                                           (assoc :prompts {:a "x"})
-                                                           (assoc :entries [{:agent :fake :prompt :missing}])))))
+                                (bench/register-suite! rt :s (-> base (dissoc :prompt)
+                                                                 (assoc :prompts {:a "x"})
+                                                                 (assoc :entries [{:harness :fake :prompt :missing}])))))
           (is (thrown-with-msg? Exception #"must name a :prompt"
-                                (bench/defsuite! rt :s (-> base (dissoc :prompt)
-                                                           (assoc :prompts {:a "x"})
-                                                           (assoc :entries [{:agent :fake}]))))))
+                                (bench/register-suite! rt :s (-> base (dissoc :prompt)
+                                                                 (assoc :prompts {:a "x"})
+                                                                 (assoc :entries [{:harness :fake}]))))))
         (testing "slug collisions fail loudly"
           (is (thrown-with-msg? Exception #"slugs collide"
-                                (bench/defsuite! rt :s (assoc base :entries [{:agent :fake} {:agent :fake}])))))
+                                (bench/register-suite! rt :s (assoc base :entries [{:harness :fake} {:harness :fake}])))))
         (testing "a valid suite is stored"
-          (bench/defsuite! rt :s base)
+          (bench/register-suite! rt :s base)
           (is (= [:s] (mapv :name (bench/suites rt)))))))))
 
 (deftest cross-expands
-  (is (= [{:agent :claude :prompt :baseline}
-          {:agent :claude :prompt :strict}
-          {:agent :codex :prompt :baseline}
-          {:agent :codex :prompt :strict}]
-         (bench/cross {:agent [:claude :codex]} {:prompt [:baseline :strict]}))))
+  (is (= [{:harness :claude :prompt :baseline}
+          {:harness :claude :prompt :strict}
+          {:harness :codex :prompt :baseline}
+          {:harness :codex :prompt :strict}]
+         (bench/cross {:harness [:claude :codex]} {:prompt [:baseline :strict]}))))
 
 (deftest set-engine-validates
   (with-bench
@@ -253,11 +254,25 @@ esac
       (is (= ["podman"] (bench/set-engine! rt ["podman"])))
       (is (= ["podman"] (bench/engine rt))))))
 
+(deftest install-declares-the-bench-attribute-namespace
+  (with-bench
+    (fn [rt _]
+      (let [decl (vocab/declaration rt :attr-namespace "bench")
+            keys (set (:keys decl))]
+        (is (some? decl))
+        (is (= :skein/spools-bench (:owner decl)))
+        (testing "the renamed keys are declared under their new names"
+          (doseq [k ["bench/harness" "bench/run-id"]]
+            (is (contains? keys k) (str k " is listed in the bench vocab")))
+          (is (not (contains? keys "bench/agent")))
+          (is (not (contains? keys "bench/aborted"))
+              "bench/error \"aborted\" carries an abort; the redundant flag is gone"))))))
+
 (deftest state-shape-matches-declared-version
   (test-support/assert-state-shape
    #_{:clj-kondo/ignore [:unresolved-var]}
    #'bench/new-state
-   #{:agents :suites :extractors :engine :executor :semaphores :in-flight :close-fn}))
+   #{:harnesses :suites :extractors :engine :executor :semaphores :in-flight :close-fn}))
 
 ;; ---------------------------------------------------------------------------
 ;; Argv compilation / redaction (unit)
@@ -289,21 +304,21 @@ esac
       (let [{:keys [engine record]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
+        (fake-harness! rt)
        ;; a judge harness that ignores its prompt and yields a fixed verdict
         (shuttle/register-harness! :judge-echo {:argv ["sh" "-c" "echo verdict"]
-                                          :parse :raw :prompt-via :arg :preamble? false})
-        (bench/defsuite! rt :demo
-          {:repo path :sha sha
-           :prompt "do the thing"
-           :setup ["SETUP-OK"]
-           :validation ["VALIDATE-OK"]
-           :files {"CLAUDE.md" {:content "house rules"}}
-           :remove ["README.md"]
-           :entries [{:agent :fake :model "opus"}]
-           :parallel 1
-           :timeout-secs 60
-           :judge {:harness :judge-echo :contract "pick a winner"}})
+                                                :parse :raw :prompt-via :arg :preamble? false})
+        (bench/register-suite! rt :demo
+                               {:repo path :sha sha
+                                :prompt "do the thing"
+                                :setup ["SETUP-OK"]
+                                :validation ["VALIDATE-OK"]
+                                :files {"CLAUDE.md" {:content "house rules"}}
+                                :remove ["README.md"]
+                                :entries [{:harness :fake :model "opus"}]
+                                :parallel 1
+                                :timeout-secs 60
+                                :judge {:harness :judge-echo :contract "pick a winner"}})
         (let [{:keys [run entries judge]} (bench/run! rt :demo {})
               slug "fake-opus"
               entry-id (get entries slug)
@@ -348,12 +363,12 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :byrev
-          {:repo path :rev "main"
-           :prompt "p"
-           :entries [{:agent :fake}]
-           :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :byrev
+                               {:repo path :rev "main"
+                                :prompt "p"
+                                :entries [{:harness :fake}]
+                                :judge :none})
         (let [{:keys [run]} (bench/run! rt :byrev {})]
           (is (= sha (get-in (weaver/show rt run) [:attributes :bench/sha]))
               "the resolved sha is stamped so the run reproduces"))))))
@@ -381,10 +396,10 @@ esac
             {:keys [path]} (fixture-repo!)
             bogus-sha (str/join (repeat 40 "f"))]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :badsha
-          {:repo path :sha bogus-sha :prompt "p"
-           :entries [{:agent :fake}] :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :badsha
+                               {:repo path :sha bogus-sha :prompt "p"
+                                :entries [{:harness :fake}] :judge :none})
         (let [{:keys [entries]} (bench/run! rt :badsha {})
               failed (await-phase rt (get entries "fake") #{"failed"})
               err (get-in failed [:attributes :bench/error])
@@ -406,12 +421,12 @@ esac
       (let [{:keys [engine record]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :flaky
-          {:repo path :sha sha :prompt "p"
-           :setup ["SETUP-FAIL"]
-           :entries [{:agent :fake}]
-           :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :flaky
+                               {:repo path :sha sha :prompt "p"
+                                :setup ["SETUP-FAIL"]
+                                :entries [{:harness :fake}]
+                                :judge :none})
         (let [{:keys [entries]} (bench/run! rt :flaky {})
               entry-id (get entries "fake")
               failed (await-phase rt entry-id #{"failed"})]
@@ -433,12 +448,12 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
-        (bench/defsuite! rt :slowsuite
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :slow}]
-           :timeout-secs 1
-           :judge :none})
+        (bench/register-harness! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
+        (bench/register-suite! rt :slowsuite
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :slow}]
+                                :timeout-secs 1
+                                :judge :none})
         (let [{:keys [entries]} (bench/run! rt :slowsuite {})
               failed (await-phase rt (get entries "slow") #{"failed"})]
           (is (= "active" (:state failed)))
@@ -450,12 +465,12 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
-        (bench/defsuite! rt :longsuite
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :slow}]
-           :parallel 1 :timeout-secs 120
-           :judge {:harness :sh}})
+        (bench/register-harness! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
+        (bench/register-suite! rt :longsuite
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :slow}]
+                                :parallel 1 :timeout-secs 120
+                                :judge {:harness :sh}})
         (let [{:keys [run entries judge]} (bench/run! rt :longsuite {})
               entry-id (get entries "slow")]
           (await-phase rt entry-id #{"running"})
@@ -488,12 +503,12 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :streams
-          {:image "i" :argv ["AGENT-BOTH-STREAMS"] :prompt-via :stdin :metrics :generic})
-        (bench/defsuite! rt :demo
-          {:repo path :sha sha :prompt "p"
-           :setup ["SETUP-BOTH-STREAMS"]
-           :entries [{:agent :streams}] :parallel 1 :timeout-secs 60 :judge :none})
+        (bench/register-harness! rt :streams
+                                 {:image "i" :argv ["AGENT-BOTH-STREAMS"] :prompt-via :stdin :extractor :generic})
+        (bench/register-suite! rt :demo
+                               {:repo path :sha sha :prompt "p"
+                                :setup ["SETUP-BOTH-STREAMS"]
+                                :entries [{:harness :streams}] :parallel 1 :timeout-secs 60 :judge :none})
         (let [{:keys [run entries]} (bench/run! rt :demo {})
               done (await-phase rt (get entries "streams") #{"done"})
               dir (entry-dir rt run "streams")]
@@ -510,13 +525,13 @@ esac
   (with-bench
     (fn [rt _]
       (bench/set-engine! rt ["docker"])
-      (bench/defagent! rt :noflags {:image "i" :argv ["AGENT"] :prompt-via :stdin})
+      (bench/register-harness! rt :noflags {:image "i" :argv ["AGENT"] :prompt-via :stdin})
       (let [base {:repo "r" :sha (str/join (repeat 40 "a")) :prompt "p" :judge :none}]
         (testing ":model without :model-flag fails loudly before any strand"
-          (bench/defsuite! rt :m (assoc base :entries [{:agent :noflags :model "opus"}]))
+          (bench/register-suite! rt :m (assoc base :entries [{:harness :noflags :model "opus"}]))
           (is (thrown-with-msg? Exception #":model-flag" (bench/run! rt :m {}))))
         (testing ":thinking without :thinking-flag fails loudly"
-          (bench/defsuite! rt :t (assoc base :entries [{:agent :noflags :thinking "high"}]))
+          (bench/register-suite! rt :t (assoc base :entries [{:harness :noflags :thinking "high"}]))
           (is (thrown-with-msg? Exception #":thinking-flag" (bench/run! rt :t {}))))))))
 
 (deftest nonzero-agent-exit-with-artifacts-finalizes-done
@@ -525,11 +540,11 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :diffly
-          {:image "i" :argv ["AGENT-NOZERO-DIFF"] :prompt-via :stdin :metrics :generic})
-        (bench/defsuite! rt :s
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :diffly}] :parallel 1 :timeout-secs 60 :judge :none})
+        (bench/register-harness! rt :diffly
+                                 {:image "i" :argv ["AGENT-NOZERO-DIFF"] :prompt-via :stdin :extractor :generic})
+        (bench/register-suite! rt :s
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :diffly}] :parallel 1 :timeout-secs 60 :judge :none})
         (let [{:keys [entries]} (bench/run! rt :s {})
               done (await-phase rt (get entries "diffly") #{"done"})]
           (is (= "closed" (:state done)) "a non-zero exit with a diff still finalizes done")
@@ -542,11 +557,11 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :empty
-          {:image "i" :argv ["AGENT-NOZERO-EMPTY"] :prompt-via :stdin :metrics :generic})
-        (bench/defsuite! rt :s
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :empty}] :parallel 1 :timeout-secs 60 :judge :none})
+        (bench/register-harness! rt :empty
+                                 {:image "i" :argv ["AGENT-NOZERO-EMPTY"] :prompt-via :stdin :extractor :generic})
+        (bench/register-suite! rt :s
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :empty}] :parallel 1 :timeout-secs 60 :judge :none})
         (let [{:keys [entries]} (bench/run! rt :s {})
               failed (await-phase rt (get entries "empty") #{"failed"})]
           (is (= "active" (:state failed)))
@@ -558,10 +573,10 @@ esac
       (let [{:keys [engine record]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :block {:image "i" :argv ["BLOCK"] :prompt-via :stdin :metrics :generic})
-        (bench/defsuite! rt :blocksuite
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :block}] :parallel 1 :timeout-secs 120 :judge :none})
+        (bench/register-harness! rt :block {:image "i" :argv ["BLOCK"] :prompt-via :stdin :extractor :generic})
+        (bench/register-suite! rt :blocksuite
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :block}] :parallel 1 :timeout-secs 120 :judge :none})
         (let [{:keys [run entries]} (bench/run! rt :blocksuite {})
               entry-id (get entries "block")]
           (await-phase rt entry-id #{"running"})
@@ -584,10 +599,10 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :flaky
-          {:repo path :sha sha :prompt "p" :setup ["SETUP-FAIL"]
-           :entries [{:agent :fake}] :parallel 1 :timeout-secs 60 :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :flaky
+                               {:repo path :sha sha :prompt "p" :setup ["SETUP-FAIL"]
+                                :entries [{:harness :fake}] :parallel 1 :timeout-secs 60 :judge :none})
         (let [{:keys [run entries]} (bench/run! rt :flaky {})
               entry-id (get entries "fake")
               _ (await-phase rt entry-id #{"failed"})
@@ -611,13 +626,13 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defextractor! rt :bad
-          (fn [_ctx] {:cost-usd "not-a-number" :tokens {:input "x"} :bogus 1 :turns 3}))
-        (bench/defagent! rt :badagent
-          {:image "i" :argv ["AGENT"] :prompt-via :stdin :metrics :bad})
-        (bench/defsuite! rt :bads
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :badagent}] :parallel 1 :timeout-secs 60 :judge :none})
+        (bench/register-extractor! rt :bad
+                                   (fn [_ctx] {:cost-usd "not-a-number" :tokens {:input "x"} :bogus 1 :turns 3}))
+        (bench/register-harness! rt :badagent
+                                 {:image "i" :argv ["AGENT"] :prompt-via :stdin :extractor :bad})
+        (bench/register-suite! rt :bads
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :badagent}] :parallel 1 :timeout-secs 60 :judge :none})
         (let [{:keys [run entries]} (bench/run! rt :bads {})
               entry-id (get entries "badagent")
               done (await-phase rt entry-id #{"done"})]
@@ -640,10 +655,10 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :demo
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :fake}] :parallel 1 :timeout-secs 60 :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :demo
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :fake}] :parallel 1 :timeout-secs 60 :judge :none})
         (let [{:keys [run entries]} (bench/run! rt :demo {})
               entry-id (get entries "fake")]
           (await-phase rt entry-id #{"done"})
@@ -667,7 +682,7 @@ esac
       (testing "the help alias projects the declared verb surface"
         (let [detail (bench-op! rt "help")
               verbs (mapv :name (get-in detail [:arg-spec :subcommands]))]
-          (is (= ["abort" "about" "agents" "gc" "report" "retry" "run" "runs" "status" "suites"]
+          (is (= ["abort" "about" "gc" "harnesses" "list" "report" "retry" "run" "status" "suites"]
                  verbs))))
       (testing "bare op and unknown verb fail during parser routing"
         (let [missing (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing subcommand"
@@ -677,15 +692,15 @@ esac
           (is (= :missing-subcommand (:reason (ex-data missing))))
           (is (= :unknown-subcommand (:reason (ex-data unknown)))))))))
 
-(deftest bench-op-suites-agents-and-about
+(deftest bench-op-suites-harnesses-and-about
   (with-bench
     (fn [rt _]
-      (fake-agent! rt)
-      (bench/defsuite! rt :demo
-        {:repo "r" :sha (str/join (repeat 40 "a")) :prompt "p"
-         :entries [{:agent :fake}] :judge :none})
-      (testing "agents and suites list registered defs as JSON-safe maps"
-        (let [ags (bench-op! rt "agents")]
+      (fake-harness! rt)
+      (bench/register-suite! rt :demo
+                             {:repo "r" :sha (str/join (repeat 40 "a")) :prompt "p"
+                              :entries [{:harness :fake}] :judge :none})
+      (testing "harnesses and suites list registered defs as JSON-safe maps"
+        (let [ags (bench-op! rt "harnesses")]
           (is (= [:fake] (mapv :name ags)))
           (is (= "fake-image:1" (:image (first ags)))))
         (is (= [:demo] (mapv :name (bench-op! rt "suites")))))
@@ -697,18 +712,18 @@ esac
           (is (contains? (:attributes manual) :entry))
           (is (not (contains? manual :subcommands)) "arg shapes are help's job, not about's"))))))
 
-(deftest bench-op-run-status-report-runs-and-query
+(deftest bench-op-run-status-report-list-and-query
   (with-bench
     (fn [rt _]
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :demo
-          {:repo path :sha sha :prompt "do the thing"
-           :validation ["VALIDATE-OK"]
-           :entries [{:agent :fake :model "opus"}]
-           :parallel 1 :timeout-secs 60 :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :demo
+                               {:repo path :sha sha :prompt "do the thing"
+                                :validation ["VALIDATE-OK"]
+                                :entries [{:harness :fake :model "opus"}]
+                                :parallel 1 :timeout-secs 60 :judge :none})
         (let [started (bench-op! rt "run" "demo")
               run (:run started)
               slug "fake-opus"
@@ -736,8 +751,8 @@ esac
               (is (str/ends-with? (get-in entry [:artifacts :metrics]) "metrics.json"))
               (is (.exists (io/file (get-in entry [:artifacts :dir]))))
               (is (= [] (:judge-notes entry)))))
-          (testing "runs verb and the bench-runs query both surface the active root"
-            (let [listed (bench-op! rt "runs")]
+          (testing "list verb and the bench-runs query both surface the active root"
+            (let [listed (bench-op! rt "list")]
               (is (= [run] (mapv :run listed)))
               (is (= 1 (:entries (first listed))))
               (is (= {"done" 1} (:phases (first listed)))))
@@ -755,11 +770,11 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :multi
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :fake :model "opus"} {:agent :fake :model "sonnet"}]
-           :parallel 1 :timeout-secs 60 :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :multi
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :fake :model "opus"} {:harness :fake :model "sonnet"}]
+                                :parallel 1 :timeout-secs 60 :judge :none})
         (let [{:keys [entries]} (bench-op! rt "run" "multi" "--entries" "fake-opus")]
           (is (= ["fake-opus"] (keys entries)) "only the named cell is poured"))))))
 
@@ -769,10 +784,10 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :flaky
-          {:repo path :sha sha :prompt "p" :setup ["SETUP-FAIL"]
-           :entries [{:agent :fake}] :judge :none})
+        (fake-harness! rt)
+        (bench/register-suite! rt :flaky
+                               {:repo path :sha sha :prompt "p" :setup ["SETUP-FAIL"]
+                                :entries [{:harness :fake}] :judge :none})
         (let [{:keys [entries]} (bench-op! rt "run" "flaky")
               entry-id (get entries "fake")]
           (await-phase rt entry-id #{"failed"})
@@ -786,10 +801,10 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
-        (bench/defsuite! rt :longsuite
-          {:repo path :sha sha :prompt "p" :entries [{:agent :slow}]
-           :parallel 1 :timeout-secs 120 :judge :none})
+        (bench/register-harness! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
+        (bench/register-suite! rt :longsuite
+                               {:repo path :sha sha :prompt "p" :entries [{:harness :slow}]
+                                :parallel 1 :timeout-secs 120 :judge :none})
         (let [{:keys [run entries]} (bench-op! rt "run" "longsuite")
               entry-id (get entries "slow")]
           (await-phase rt entry-id #{"running"})
@@ -804,15 +819,15 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
+        (fake-harness! rt)
        ;; a judge harness that ignores its prompt and yields a fixed verdict
         (shuttle/register-harness! :judge-echo {:argv ["sh" "-c" "echo winner: fake-opus"]
-                                          :parse :raw :prompt-via :arg :preamble? false})
-        (bench/defsuite! rt :demo
-          {:repo path :sha sha :prompt "do it"
-           :entries [{:agent :fake :model "opus"}]
-           :parallel 1 :timeout-secs 60
-           :judge {:harness :judge-echo :contract "pick a winner"}})
+                                                :parse :raw :prompt-via :arg :preamble? false})
+        (bench/register-suite! rt :demo
+                               {:repo path :sha sha :prompt "do it"
+                                :entries [{:harness :fake :model "opus"}]
+                                :parallel 1 :timeout-secs 60
+                                :judge {:harness :judge-echo :contract "pick a winner"}})
         (let [{:keys [run entries judge]} (bench/run! rt :demo {})
               entry-id (get entries "fake-opus")]
           (await-phase rt entry-id #{"done"})
@@ -832,13 +847,13 @@ esac
   (with-bench
     (fn [rt _]
       (let [base {:repo "r" :sha (str/join (repeat 40 "a")) :prompt "p"
-                  :entries [{:agent :fake}]}]
+                  :entries [{:harness :fake}]}]
         (is (thrown-with-msg? Exception #"exactly one of :harness"
-                              (bench/defsuite! rt :both (assoc base :judge {:harness :x :external true}))))
+                              (bench/register-suite! rt :both (assoc base :judge {:harness :x :external true}))))
         (is (thrown-with-msg? Exception #"exactly one of :harness"
-                              (bench/defsuite! rt :neither (assoc base :judge {:contract "c"}))))
+                              (bench/register-suite! rt :neither (assoc base :judge {:contract "c"}))))
         (is (thrown-with-msg? Exception #"unknown keys"
-                              (bench/defsuite! rt :bogus (assoc base :judge {:external true :nope 1}))))))))
+                              (bench/register-suite! rt :bogus (assoc base :judge {:external true :nope 1}))))))))
 
 (deftest external-judge-pours-seam-without-spawning-a-run
   (with-bench
@@ -846,12 +861,12 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :ext
-          {:repo path :sha sha :prompt "do the thing"
-           :entries [{:agent :fake :model "opus"}]
-           :parallel 1 :timeout-secs 60
-           :judge {:external true :contract "pick a winner"}})
+        (fake-harness! rt)
+        (bench/register-suite! rt :ext
+                               {:repo path :sha sha :prompt "do the thing"
+                                :entries [{:harness :fake :model "opus"}]
+                                :parallel 1 :timeout-secs 60
+                                :judge {:external true :contract "pick a winner"}})
         (let [{:keys [run entries judge]} (bench/run! rt :ext {})
               slug "fake-opus"
               entry-id (get entries slug)
@@ -859,7 +874,7 @@ esac
           (testing "judge strand is a fulfilment seam, not an agent run"
             (is (some? judge))
             (is (= "true" (get-in js [:attributes :bench/judge])))
-            (is (= run (get-in js [:attributes :bench/run])))
+            (is (= run (get-in js [:attributes :bench/run-id])))
             (is (nil? (get-in js [:attributes :agent-run/run])) "external mode spawns no agent run")
             (is (str/includes? (get-in js [:attributes :bench/judge-prompt]) entry-id))
             (is (str/includes? (get-in js [:attributes :body]) "bench/verdict"))
@@ -869,11 +884,11 @@ esac
                                          {:run-id run :sha sha
                                           :entries [{:id entry-id :slug slug
                                                      :data-dir (.getCanonicalPath (entry-dir rt run slug))
-                                                     :agent :fake :model "opus"}]})]
+                                                     :harness :fake :model "opus"}]})]
               (is (= (:prompt spec) (get-in js [:attributes :bench/judge-prompt])))
               (is (= [entry-id] (:entry-ids spec)))
               (is (= (get (:attrs spec) "body") (get-in js [:attributes :body])))
-              (is (= (get (:attrs spec) "bench/run") (get-in js [:attributes :bench/run])))))
+              (is (= (get (:attrs spec) "bench/run-id") (get-in js [:attributes :bench/run-id])))))
           (testing "manual fulfilment: stamp bench/verdict + close completes the run"
             (await-phase rt entry-id #{"done"})
             (weaver/update rt judge {:state "closed"
@@ -891,12 +906,12 @@ esac
             prompt-file (io/file (temp-dir "skein-bench-prompt") "prompt.txt")]
         (spit prompt-file "do the file-backed thing\nacross multiple lines")
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :pathprompt
-          {:repo path :sha sha :prompts {:only {:path (.getCanonicalPath prompt-file)}}
-           :entries [{:agent :fake :prompt :only}]
-           :parallel 1 :timeout-secs 60
-           :judge {:external true}})
+        (fake-harness! rt)
+        (bench/register-suite! rt :pathprompt
+                               {:repo path :sha sha :prompts {:only {:path (.getCanonicalPath prompt-file)}}
+                                :entries [{:harness :fake :prompt :only}]
+                                :parallel 1 :timeout-secs 60
+                                :judge {:external true}})
         (let [{:keys [judge]} (bench/run! rt :pathprompt {})
               jp (get-in (weaver/show rt judge) [:attributes :bench/judge-prompt])]
           (is (str/includes? jp "do the file-backed thing across multiple lines")
@@ -908,13 +923,13 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
-        (bench/defsuite! rt :multiprompt
-          {:repo path :sha sha
-           :prompts {:alpha "prompt alpha text" :beta "prompt beta text"}
-           :entries [{:agent :fake :prompt :alpha} {:agent :fake :prompt :beta}]
-           :parallel 1 :timeout-secs 60
-           :judge {:external true}})
+        (fake-harness! rt)
+        (bench/register-suite! rt :multiprompt
+                               {:repo path :sha sha
+                                :prompts {:alpha "prompt alpha text" :beta "prompt beta text"}
+                                :entries [{:harness :fake :prompt :alpha} {:harness :fake :prompt :beta}]
+                                :parallel 1 :timeout-secs 60
+                                :judge {:external true}})
         (let [{:keys [judge]} (bench/run! rt :multiprompt {:entries ["fake-alpha"]})
               jp (get-in (weaver/show rt judge) [:attributes :bench/judge-prompt])]
           (is (str/includes? jp "alpha: prompt alpha text"))
@@ -927,14 +942,14 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (fake-agent! rt)
+        (fake-harness! rt)
         (shuttle/register-harness! :judge-echo {:argv ["sh" "-c" "echo run-result"]
-                                          :parse :raw :prompt-via :arg :preamble? false})
-        (bench/defsuite! rt :demo
-          {:repo path :sha sha :prompt "do it"
-           :entries [{:agent :fake :model "opus"}]
-           :parallel 1 :timeout-secs 60
-           :judge {:harness :judge-echo}})
+                                                :parse :raw :prompt-via :arg :preamble? false})
+        (bench/register-suite! rt :demo
+                               {:repo path :sha sha :prompt "do it"
+                                :entries [{:harness :fake :model "opus"}]
+                                :parallel 1 :timeout-secs 60
+                                :judge {:harness :judge-echo}})
         (let [{:keys [run entries judge]} (bench/run! rt :demo {})
               entry-id (get entries "fake-opus")]
           (await-phase rt entry-id #{"done"})
@@ -956,12 +971,12 @@ esac
       (let [{:keys [engine]} (fake-engine!)
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
-        (bench/defagent! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
-        (bench/defsuite! rt :extlong
-          {:repo path :sha sha :prompt "p"
-           :entries [{:agent :slow}]
-           :parallel 1 :timeout-secs 120
-           :judge {:external true}})
+        (bench/register-harness! rt :slow {:image "i" :argv ["SLEEP"] :prompt-via :stdin})
+        (bench/register-suite! rt :extlong
+                               {:repo path :sha sha :prompt "p"
+                                :entries [{:harness :slow}]
+                                :parallel 1 :timeout-secs 120
+                                :judge {:external true}})
         (let [{:keys [run entries judge]} (bench/run! rt :extlong {})
               entry-id (get entries "slow")]
           (await-phase rt entry-id #{"running"})

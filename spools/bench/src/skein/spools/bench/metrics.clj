@@ -256,7 +256,7 @@
 ;; Registry
 
 (def shipped
-  "The shipped extractor functions keyed by their agent-def `:metrics` key. Bench
+  "The shipped extractor functions keyed by their harness-def `:extractor` key. Bench
   registers these as install-time defaults, leaving any user-registered
   extractor of the same key untouched."
   {:claude claude-extractor

@@ -32,7 +32,7 @@ Approved local-root spool. Agent-run must be installed first (the default `:harn
    :after [:agent-run]})
 ```
 
-`install!` creates the runtime-owned spool state (executor, registries, in-flight tracking — versioned per `docs/spools/writing-shared-spools.md` with a `:close-fn`), registers the `bench` CLI op and the `bench-runs` named query, detects the container engine (see §4), and reconciles orphaned entries from a previous weaver lifetime (see §9). It registers **no suites and no agent definitions** — those are trusted config, exactly like harness aliases.
+`install!` creates the runtime-owned spool state (executor, registries, in-flight tracking — versioned per `docs/spools/writing-shared-spools.md` with a `:close-fn`), registers the `bench` CLI op and the `bench-runs` named query, detects the container engine (see §4), and reconciles orphaned entries from a previous weaver lifetime (see §9). It registers **no suites and no harness definitions** — those are trusted config, exactly like harness aliases.
 
 All public functions take `runtime` as the first argument (shared-spool rules). State lives in `skein.api.runtime.alpha/spool-state`; no module-level atoms.
 
@@ -40,53 +40,55 @@ All public functions take `runtime` as the first argument (shared-spool rules). 
 
 Two registries, both weaver-lifetime state re-registered by startup config, both validated loudly against clojure.specs at registration (closed key sets; unknown keys fail — TEN-003).
 
-### 3.1 Agent definitions — `defagent!`
+### 3.1 Harness definitions — `register-harness!`
 
-An agent definition says how one tool runs *inside a container*: image, argv, how matrix axes splice in, auth plumbing, and which metrics extractor understands its session artifacts.
+A bench harness definition says how one tool runs *inside a container*: image, argv, how matrix axes splice in, auth plumbing, and which metrics extractor understands its session artifacts.
+
+> **Two registries, one word.** A bench harness is *not* an [agent-run](../agent-run/README.md) harness, and they are not interchangeable. A bench harness is a **container** definition (`:image`, `:auth`, `:model-flag`, `:thinking-flag`, `:extractor`) resolved by bench's own registry; an agent-run harness is a **host process** definition (`:parse`, `:resume`, `:preamble?`). A bench harness cannot be passed to `agent-run/spawn-run!`. Both appear in one suite map: an entry cell's `:harness` resolves *here*, while the suite's `:judge :harness` (§8) resolves *agent-run's* registry.
 
 ```clojure
 (require '[skein.spools.bench :as bench])
 
-(bench/defagent! runtime :claude
+(bench/register-harness! runtime :claude
   {:image "ghcr.io/me/bench-claude:1.0"       ; digest refs recommended for strict pinning
    :argv ["claude" "-p" "--dangerously-skip-permissions" "--output-format" "json"]
-   :prompt-via :stdin                          ; :stdin (default) | :arg (appended last)
+   :prompt-via :stdin                          ; :stdin (bench default; agent-run defaults :arg) | :arg (appended last)
    :model-flag "--model"                       ; splices an entry's :model
    :thinking-flag "--effort"                   ; splices an entry's :thinking
    :env {"CLAUDE_CONFIG_DIR" "/bench/home/.claude"}
    :auth {:env ["ANTHROPIC_API_KEY"]           ; host env passed through at launch
           :mounts [{:host "~/.claude/.credentials.json"
                     :container "/bench/home/.claude/.credentials.json"}]} ; always read-only
-   :metrics :claude                            ; extractor key, see §7; default :generic
+   :extractor :claude                          ; extractor key, see §7; default :generic
    :doc "Claude Code headless in a container"})
 
-(bench/defagent! runtime :codex
+(bench/register-harness! runtime :codex
   {:image "ghcr.io/me/bench-codex:1.0"
    :argv ["codex" "exec" "--dangerously-bypass-approvals-and-sandbox" "-"]
    :prompt-via :stdin
    :auth {:env ["OPENAI_API_KEY"]}
-   :metrics :codex})
+   :extractor :codex})
 
-(bench/defagent! runtime :pi
+(bench/register-harness! runtime :pi
   {:image "ghcr.io/me/bench-pi:1.0"
    :argv ["pi" "--print" "--session" "/bench/home/session.jsonl"]
    :prompt-via :stdin
    :model-flag "--model"
    :thinking-flag "--thinking"
    :auth {:env ["PI_API_KEY"]}
-   :metrics :pi})
+   :extractor :pi})
 ```
 
-Required: `:image`, `:argv`. `(bench/agents runtime)` lists registered definitions.
+Required: `:image`, `:argv`. `(bench/harnesses runtime)` lists registered definitions.
 
 Images are userland-owned: build them with the agent CLI plus your project toolchain preinstalled. The spool never builds images; a missing image fails the entry loudly at launch with the engine's own error.
 
-### 3.2 Suites — `defsuite!`
+### 3.2 Suites — `register-suite!`
 
 A suite is the benchmark matrix plus its deterministic starting state.
 
 ```clojure
-(bench/defsuite! runtime :tmux-title-rewrite
+(bench/register-suite! runtime :tmux-title-rewrite
   {:repo "https://github.com/me/proj.git"      ; git URL or absolute local path
    :sha  "0123456789abcdef0123456789abcdef01234567" ; 40-hex pin, or :rev "main" resolved at run time
    :prompts {:baseline "Rewrite the tmux-window-title extension in clean code style."
@@ -97,11 +99,11 @@ A suite is the benchmark matrix plus its deterministic starting state.
            "AGENTS.md"  {:path "bench-fixtures/agents.md"} ; copied from host at pour time
            ".claude/skills/clean-code" {:dir "bench-fixtures/skills/clean-code"}}
    :remove ["docs/CONTRIBUTING.md"]            ; delete from the checkout before the run
-   :entries [{:agent :claude :model "opus"   :prompt :baseline}
-             {:agent :claude :model "sonnet" :thinking "high" :prompt :baseline}
-             {:agent :claude :model "sonnet" :thinking "high" :prompt :strict}
-             {:agent :codex  :prompt :baseline}
-             {:agent :pi     :model "gpt-5.4" :prompt :strict}]
+   :entries [{:harness :claude :model "opus"   :prompt :baseline}
+             {:harness :claude :model "sonnet" :thinking "high" :prompt :baseline}
+             {:harness :claude :model "sonnet" :thinking "high" :prompt :strict}
+             {:harness :codex  :prompt :baseline}
+             {:harness :pi     :model "gpt-5.4" :prompt :strict}]
    :parallel 2                                 ; max concurrent containers (default 2)
    :judge {:harness :build                     ; :harness spawns an agent run (or :external true → any fulfiller)
            :contract "Score each entry 1-10 on correctness, scope control, and code quality.
@@ -113,7 +115,7 @@ Rules:
 - `:repo` + (`:sha` | `:rev`) — exactly one of `:sha`/`:rev`. A `:rev` is resolved to a sha at **run** time (`git rev-parse` against the mirror) and the resolved sha is stamped on the run root; re-running the printed sha reproduces the run. `:sha` must be 40 lowercase hex.
 - `:prompts` — map of slug → prompt text (or `{:path ...}` read at pour time). A single-prompt suite may use `:prompt "..."` instead; entries then omit `:prompt`. With multiple prompts every entry must name one (no silent default — TEN-003).
 - `:files` values: `{:content s}` inline, `{:path p}` host file, `{:dir p}` host directory copied recursively (how skills are pinned). Relative host paths resolve against the workspace root. Overlay is applied after checkout, so it *replaces* repo files of the same name; `:remove` deletes paths (e.g. strip the repo's own CLAUDE.md to test memoryless behavior). The applied overlay is recorded in the run manifest.
-- `:entries` — each cell: required `:agent`; optional `:model`, `:thinking`, `:prompt`, `:slug` (defaults to `<agent>[-<model>][-<thinking>][-<prompt>]`, uniquified; collisions fail loudly), `:env` (extra container env). `(bench/cross {:agent [:claude :codex]} {:prompt [:baseline :strict]})` is a helper returning the expanded cross-product cells — the persisted suite always holds explicit entries.
+- `:entries` — each cell: required `:harness` (a bench harness, §3.1 — never an agent-run harness); optional `:model`, `:thinking`, `:prompt`, `:slug` (defaults to `<harness>[-<model>][-<thinking>][-<prompt>]`, uniquified; collisions fail loudly), `:env` (extra container env). `(bench/cross {:harness [:claude :codex]} {:prompt [:baseline :strict]})` is a helper returning the expanded cross-product cells — the persisted suite always holds explicit entries.
 - `:judge` — the fulfilment seam (§8): exactly one of `:harness` (an agent-run harness/alias, validated against the agent-run registry at run time) or `:external true` (pour the seam strand and stop); optional `:contract` layered onto the built-in judge protocol; `:judge :none` runs a judgeless suite (metrics only). The `:judge` map is closed — unknown keys, or both/neither of `:harness`/`:external`, fail loudly.
 
 `(bench/suites runtime)` lists registered suites. Suites are plain data; `run!` also accepts an **inline suite value** from trusted Clojure, validated identically (the CLI stays name-only, TEN-006).
@@ -170,7 +172,7 @@ Artifacts are kept until `strand bench gc [--run <id>]` removes them (metrics an
 
 ```
 bench-run root  bench/run=true, bench/suite, bench/repo, bench/sha (resolved), bench/data-dir
-├─ entry <slug>  bench/entry=true, bench/agent, bench/model?, bench/thinking?, bench/prompt-slug?,
+├─ entry <slug>  bench/entry=true, bench/harness, bench/model?, bench/thinking?, bench/prompt-slug?,
 │                bench/phase, bench/image-digest, bench/* metrics (§7)   [parent-of from root]
 ├─ entry ...
 └─ judge         bench/judge=true, bench/judge-prompt, body, depends-on every entry  (parent-of)
@@ -179,7 +181,7 @@ bench-run root  bench/run=true, bench/suite, bench/repo, bench/sha (resolved), b
 
 `(run! runtime suite-name-or-inline opts)` / `strand bench run <suite>`:
 
-1. Validate: suite exists/conforms, agents registered, judge harness resolvable (in `:harness` mode), engine resolvable. Resolve `:rev` → sha. Fail loudly on any of these **before** creating strands.
+1. Validate: suite exists/conforms, harnesses registered, judge harness resolvable (in `:harness` mode), engine resolvable. Resolve `:rev` → sha. Fail loudly on any of these **before** creating strands.
 2. Pour the graph (root under an optional `--for` parent, e.g. a kanban card) and stamp attributes. Each entry writes its manifest when it launches.
 3. Queue every entry on the spool executor bounded by `:parallel`; pour the judge seam strand (§8) `depends-on` every entry — in `:harness` mode as a serving agent run (`pending` until entries close), in `:external` mode as a bare strand nothing is spawned for.
 4. Return `{:run <root-id> :entries {<slug> <id>} :judge <id>}` immediately — execution is async; `bench status` / `bench await` observe it.
@@ -188,7 +190,7 @@ Entry phases (`bench/phase`): `pending → preparing → running → done | fail
 
 ## 7. Metrics (deterministic, code-owned)
 
-Extraction runs in the weaver JVM after the container exits — Clojure JSON parsing over the mounted `home/` and captured stdout; no jq, no model involvement. Extractors are a registry keyed by the agent def's `:metrics`; shipped: `:claude`, `:codex`, `:pi`, `:generic`. Userland may register more with `(defextractor! runtime k f)` where `f` is `(fn [ctx] -> partial metrics map)` and `ctx` carries the entry dir paths and parsed stdout.
+Extraction runs in the weaver JVM after the container exits — Clojure JSON parsing over the mounted `home/` and captured stdout; no jq, no model involvement. Extractors are a registry keyed by the harness def's `:extractor`; shipped: `:claude`, `:codex`, `:pi`, `:generic`. Userland may register more with `(register-extractor! runtime k f)` where `f` is `(fn [ctx] -> partial metrics map)` and `ctx` carries the entry dir paths and parsed stdout.
 
 Normalized schema (written to `metrics.json`, flattened onto the entry strand as `bench/*` attrs):
 
@@ -223,7 +225,7 @@ Attribute mapping (entry strand): `bench/cost-usd`, `bench/tokens-in`, `bench/to
 | Attribute / field | Meaning |
 |---|---|
 | `bench/judge` = `true` | Marks the seam strand. |
-| `bench/run` = `<root-id>` | The run this judges. |
+| `bench/run-id` = `<root-id>` | The run this judges. |
 | `bench/judge-prompt` | The complete built judge prompt (protocol + suite contract + entry strand ids + per-entry data-dir paths). Held as a strand attribute — the same convention delegated task/run strands use for large `body` text elsewhere in this repo. |
 | `body` | A short, mechanism-agnostic fulfilment contract: read `bench/judge-prompt`, judge, write one note per entry on the entry strands, stamp `bench/verdict` on this strand, then close it. |
 | `bench/verdict` | The canonical, durable verdict, stamped by whoever fulfils the strand. |
@@ -260,12 +262,12 @@ The judge is deliberately **not** asked to approve blind: validation exit codes 
 | Verb | Behavior |
 |---|---|
 | `run <suite> [--entries a,b] [--for <strand-id>]` | Pour + start a run (optionally only named cells; optionally rooted under a parent strand). → `{"run","entries":{slug:id},"judge"}` |
-| `runs [--suite s]` | List bench run roots with per-run entry phase counts. |
+| `list [--suite s]` | List bench run roots with per-run entry phase counts. |
 | `status <run-id>` | Entries with phase + headline metrics, judge strand state + verdict (`verdict-source`), blocking failures. |
 | `report <run-id>` | The full comparison document: per-entry normalized metrics table, extraction warnings, judge verdict (with `verdict-source`: `attr` \| `run` \| `none`) + per-entry notes, artifact paths. |
 | `retry <entry-id>` | Rerun one failed cell on a fresh workspace. |
 | `abort <run-id>` | Kill live containers, fail outstanding entries, close the judge strand (`bench/error "aborted"`). |
-| `suites` / `agents` | Registered suites / agent definitions (plain data). |
+| `suites` / `harnesses` | Registered suites / bench harness definitions (plain data). |
 | `gc [--run <id>]` | Delete artifact directories (strand-side metrics/verdicts survive). |
 | `about` | Authored JSON manual (concepts, determinism model, attribute vocabulary). |
 

@@ -11,7 +11,7 @@
   fulfillable by any mechanism) that writes a comparative verdict.
 
   Setup and measurement are code (this namespace plus `skein.spools.bench.exec`);
-  only judgment is a model. Two registries — agent definitions and suites — are
+  only judgment is a model. Two registries — harness definitions and suites — are
   weaver-lifetime trusted config validated loudly at registration. All public
   functions take `runtime` explicitly and keep state runtime-owned via
   `skein.api.runtime.alpha/spool-state` (shared-spool rules); the versioned
@@ -24,6 +24,7 @@
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.runtime.alpha :as runtime]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.bench.exec :as exec]
@@ -43,7 +44,7 @@
   otherwise reuse a preserved map missing a new key. The
   `state-shape-matches-declared-version` test fails loudly if `new-state` and
   this version drift apart."
-  2)
+  3)
 
 (defn- ^ThreadFactory daemon-thread-factory [prefix]
   (let [counter (atom 0)]
@@ -56,7 +57,7 @@
   (let [workers (Executors/newCachedThreadPool (daemon-thread-factory "bench"))
         engine (atom nil)
         in-flight (atom {})]
-    {:agents (atom {})
+    {:harnesses (atom {})
      :suites (atom {})
      :extractors (atom {})
      :engine engine
@@ -77,7 +78,7 @@
 (defn- state [runtime]
   (runtime/spool-state runtime ::state {:version state-version} new-state))
 
-(defn- agents-atom [runtime] (:agents (state runtime)))
+(defn- harnesses-atom [runtime] (:harnesses (state runtime)))
 (defn- suites-atom [runtime] (:suites (state runtime)))
 (defn- extractors-atom [runtime] (:extractors (state runtime)))
 (defn- engine-atom [runtime] (:engine (state runtime)))
@@ -105,37 +106,42 @@
 (s/def ::string-vec (s/coll-of string? :kind vector?))
 (s/def ::sha (s/and string? #(re-matches #"[0-9a-f]{40}" %)))
 
-(s/def :bench.agent/image ::non-blank)
-(s/def :bench.agent/argv (s/and ::string-vec seq))
-(s/def :bench.agent/prompt-via #{:stdin :arg})
-(s/def :bench.agent/model-flag string?)
-(s/def :bench.agent/thinking-flag string?)
-(s/def :bench.agent/env (s/map-of string? string?))
-(s/def :bench.agent.auth/env (s/coll-of string? :kind vector?))
-(s/def :bench.agent.auth.mount/host string?)
-(s/def :bench.agent.auth.mount/container string?)
-(s/def :bench.agent.auth/mount
-  (s/keys :req-un [:bench.agent.auth.mount/host :bench.agent.auth.mount/container]))
-(s/def :bench.agent.auth/mounts (s/coll-of :bench.agent.auth/mount :kind vector?))
-(s/def :bench.agent/auth (s/keys :opt-un [:bench.agent.auth/env :bench.agent.auth/mounts]))
-(s/def :bench.agent/metrics keyword?)
-(s/def :bench.agent/doc string?)
-(def ^:private agent-def-keys
-  #{:image :argv :prompt-via :model-flag :thinking-flag :env :auth :metrics :doc})
-(s/def ::agent-def
-  (s/keys :req-un [:bench.agent/image :bench.agent/argv]
-          :opt-un [:bench.agent/prompt-via :bench.agent/model-flag :bench.agent/thinking-flag
-                   :bench.agent/env :bench.agent/auth :bench.agent/metrics :bench.agent/doc]))
+(s/def :bench.harness/image ::non-blank)
+(s/def :bench.harness/argv (s/and ::string-vec seq))
+;; `:prompt-via` is agent-run's key and enum verbatim, but bench's default
+;; DIVERGES: bench defaults :stdin where `agent-run/register-harness!` defaults
+;; :arg. Container entries are non-interactive and prompts routinely exceed a
+;; safe argv, so :stdin is the safe default here; an entry that needs :arg says
+;; so explicitly. Read `(or (:prompt-via harness-def) :stdin)` in `run-entry!`.
+(s/def :bench.harness/prompt-via #{:stdin :arg})
+(s/def :bench.harness/model-flag string?)
+(s/def :bench.harness/thinking-flag string?)
+(s/def :bench.harness/env (s/map-of string? string?))
+(s/def :bench.harness.auth/env (s/coll-of string? :kind vector?))
+(s/def :bench.harness.auth.mount/host string?)
+(s/def :bench.harness.auth.mount/container string?)
+(s/def :bench.harness.auth/mount
+  (s/keys :req-un [:bench.harness.auth.mount/host :bench.harness.auth.mount/container]))
+(s/def :bench.harness.auth/mounts (s/coll-of :bench.harness.auth/mount :kind vector?))
+(s/def :bench.harness/auth (s/keys :opt-un [:bench.harness.auth/env :bench.harness.auth/mounts]))
+(s/def :bench.harness/extractor keyword?)
+(s/def :bench.harness/doc string?)
+(def ^:private harness-def-keys
+  #{:image :argv :prompt-via :model-flag :thinking-flag :env :auth :extractor :doc})
+(s/def ::harness-def
+  (s/keys :req-un [:bench.harness/image :bench.harness/argv]
+          :opt-un [:bench.harness/prompt-via :bench.harness/model-flag :bench.harness/thinking-flag
+                   :bench.harness/env :bench.harness/auth :bench.harness/extractor :bench.harness/doc]))
 
-(s/def :bench.cell/agent keyword?)
+(s/def :bench.cell/harness keyword?)
 (s/def :bench.cell/model string?)
 (s/def :bench.cell/thinking string?)
 (s/def :bench.cell/prompt keyword?)
 (s/def :bench.cell/slug ::non-blank)
 (s/def :bench.cell/env (s/map-of string? string?))
-(def ^:private cell-keys #{:agent :model :thinking :prompt :slug :env})
+(def ^:private cell-keys #{:harness :model :thinking :prompt :slug :env})
 (s/def ::cell
-  (s/keys :req-un [:bench.cell/agent]
+  (s/keys :req-un [:bench.cell/harness]
           :opt-un [:bench.cell/model :bench.cell/thinking :bench.cell/prompt
                    :bench.cell/slug :bench.cell/env]))
 
@@ -188,19 +194,34 @@
     (and (string? k) (not (str/blank? k))) (keyword k)
     :else (fail! "bench registry key must be a keyword or non-blank string" {:key k})))
 
-(defn defagent!
-  "Register an agent definition under `k` for this `runtime`.
+(defn register-harness!
+  "Register a bench harness definition under `k` for this `runtime`.
 
   Says how one tool runs inside a container: `:image` and `:argv` are required;
-  `:prompt-via`, `:model-flag`, `:thinking-flag`, `:env`, `:auth`, `:metrics`,
+  `:prompt-via`, `:model-flag`, `:thinking-flag`, `:env`, `:auth`, `:extractor`,
   and `:doc` are optional. Fails loudly on unknown keys (TEN-003) or a shape the
-  spec rejects. Returns the stored definition."
+  spec rejects. Returns the stored definition.
+
+  `:prompt-via` is `agent-run/register-harness!`'s key and `#{:stdin :arg}` enum
+  verbatim, but its DEFAULT diverges: bench defaults `:stdin`, agent-run
+  defaults `:arg`. Container entries are non-interactive and prompts routinely
+  exceed a safe argv, so a definition that needs `:arg` must say so explicitly.
+
+  A bench harness is NOT a `skein.spools.agent-run` harness, and the two
+  registries are not interchangeable. A bench harness is a *container*
+  definition (`:image`/`:auth`/`:model-flag`/`:thinking-flag`/`:extractor`)
+  resolved by bench's own registry to run one entry cell; an agent-run harness
+  is a *host process* definition (`:parse`/`:resume`/`:preamble?`) resolved by
+  `agent-run/resolve-harness`. A bench harness cannot be passed to
+  `agent-run/spawn-run!`, and an agent-run harness cannot run an entry. Both
+  words appear in one suite map: an entry cell's `:harness` resolves here, while
+  the suite's `:judge :harness` resolves agent-run's registry."
   [runtime k definition]
-  (reject-unknown-keys! "bench/defagent!" agent-def-keys definition)
-  (require-valid! ::agent-def definition "bench agent definition is invalid")
+  (reject-unknown-keys! "bench/register-harness!" harness-def-keys definition)
+  (require-valid! ::harness-def definition "bench harness definition is invalid")
   (let [key (reg-key k)]
-    (swap! (agents-atom runtime) assoc key (assoc definition :name key))
-    (get @(agents-atom runtime) key)))
+    (swap! (harnesses-atom runtime) assoc key (assoc definition :name key))
+    (get @(harnesses-atom runtime) key)))
 
 (def ^:private judge-spec-keys #{:harness :external :contract})
 
@@ -221,7 +242,7 @@
   (let [with-slugs (mapv (fn [cell]
                            (assoc cell :slug
                                   (or (:slug cell)
-                                      (->> [(name (:agent cell)) (:model cell) (:thinking cell)
+                                      (->> [(name (:harness cell)) (:model cell) (:thinking cell)
                                             (when-not single-prompt? (some-> (:prompt cell) name))]
                                            (remove nil?)
                                            (str/join "-")))))
@@ -244,7 +265,7 @@
   ;; validation so re-normalizing a stored suite (run!/retry!) does not trip the
   ;; closed key set.
   (let [definition (dissoc definition :name)]
-    (reject-unknown-keys! "bench/defsuite!" suite-def-keys definition)
+    (reject-unknown-keys! "bench/register-suite!" suite-def-keys definition)
     (require-valid! ::suite-def definition "bench suite definition is invalid")
     (when-not (= 1 (count (filter definition [:sha :rev])))
       (fail! "bench suite must declare exactly one of :sha or :rev" {:sha (:sha definition) :rev (:rev definition)}))
@@ -275,7 +296,7 @@
        :prompts prompts
        :entries (validate-slugs! entries single-prompt?)})))
 
-(defn defsuite!
+(defn register-suite!
   "Register a benchmark suite under `k` for this `runtime`.
 
   A suite is the matrix plus its deterministic starting state. Validated loudly
@@ -288,7 +309,7 @@
     (swap! (suites-atom runtime) assoc key (assoc definition :name key))
     (get @(suites-atom runtime) key)))
 
-(defn defextractor!
+(defn register-extractor!
   "Register a metrics extractor `f` under `k` for this `runtime`.
 
   `f` is `(fn [ctx] -> partial metrics map)`; `ctx` carries the entry dir paths
@@ -321,10 +342,10 @@
   [runtime]
   @(engine-atom runtime))
 
-(defn agents
-  "Return registered agent definitions for `runtime`, sorted by key."
+(defn harnesses
+  "Return registered bench harness definitions for `runtime`, sorted by key."
   [runtime]
-  (->> @(agents-atom runtime) vals (sort-by (comp str :name)) vec))
+  (->> @(harnesses-atom runtime) vals (sort-by (comp str :name)) vec))
 
 (defn suites
   "Return registered suite definitions for `runtime`, sorted by key."
@@ -339,8 +360,8 @@
 (defn cross
   "Return the cross-product of axis maps as an explicit vector of entry cells.
 
-  `(cross {:agent [:claude :codex]} {:prompt [:baseline :strict]})` expands to
-  the four `{:agent .. :prompt ..}` cells. A convenience for authoring suites;
+  `(cross {:harness [:claude :codex]} {:prompt [:baseline :strict]})` expands to
+  the four `{:harness .. :prompt ..}` cells. A convenience for authoring suites;
   the persisted suite always holds explicit entries."
   [& axes]
   (reduce (fn [cells axis]
@@ -358,7 +379,7 @@
   "The `:generic` metrics extractor: exit, duration, diff, and validation only.
 
   Those already ride in the engine's post-exit collection, so this contributes
-  no extra keys; it exists so every agent def resolves an extractor by key."
+  no extra keys; it exists so every harness def resolves an extractor by key."
   [_ctx]
   {})
 
@@ -391,7 +412,7 @@
     (if (= ".skein" (.getName cfg)) (.getParent cfg) (.getPath cfg))))
 
 ;; ---------------------------------------------------------------------------
-;; Prompt / agent-command resolution
+;; Prompt / harness-command resolution
 
 (defn- resolve-prompt-text [runtime prompts slug]
   (let [v (get prompts slug)]
@@ -401,30 +422,30 @@
                          (if (.isAbsolute f) f (io/file (workspace-root runtime) (:path v)))))
       :else (fail! "bench prompt is neither text nor {:path}" {:slug slug :value v}))))
 
-(defn- agent-command
+(defn- harness-command
   "Return the in-container agent argv with the cell's `:model`/`:thinking`
-  splices applied per the agent def's flags."
-  [agent-def cell]
-  (cond-> (vec (:argv agent-def))
-    (and (:model cell) (:model-flag agent-def))
-    (into [(:model-flag agent-def) (:model cell)])
-    (and (:thinking cell) (:thinking-flag agent-def))
-    (into [(:thinking-flag agent-def) (:thinking cell)])))
+  splices applied per the harness def's flags."
+  [harness-def cell]
+  (cond-> (vec (:argv harness-def))
+    (and (:model cell) (:model-flag harness-def))
+    (into [(:model-flag harness-def) (:model cell)])
+    (and (:thinking cell) (:thinking-flag harness-def))
+    (into [(:thinking-flag harness-def) (:thinking cell)])))
 
 (defn- validate-cell-axes!
   "Fail loudly (TEN-003) when `cell` names a `:model`/`:thinking` axis its
-  `agent-def` cannot splice for lack of the matching flag.
+  `harness-def` cannot splice for lack of the matching flag.
 
   Without this the axis would silently no-op and benchmark the agent's default
   config under an entry stamped with the requested — but never applied — axis,
   destroying the comparison guarantee."
-  [agent-def cell]
-  (when (and (:model cell) (not (:model-flag agent-def)))
-    (fail! "bench entry sets :model but its agent def declares no :model-flag"
-           {:agent (:agent cell) :model (:model cell)}))
-  (when (and (:thinking cell) (not (:thinking-flag agent-def)))
-    (fail! "bench entry sets :thinking but its agent def declares no :thinking-flag"
-           {:agent (:agent cell) :thinking (:thinking cell)})))
+  [harness-def cell]
+  (when (and (:model cell) (not (:model-flag harness-def)))
+    (fail! "bench entry sets :model but its harness def declares no :model-flag"
+           {:harness (:harness cell) :model (:model cell)}))
+  (when (and (:thinking cell) (not (:thinking-flag harness-def)))
+    (fail! "bench entry sets :thinking but its harness def declares no :thinking-flag"
+           {:harness (:harness cell) :thinking (:thinking cell)})))
 
 ;; ---------------------------------------------------------------------------
 ;; Extracted-metrics validation (README §7 schema; closed at the top level)
@@ -559,7 +580,7 @@
   [runtime ctx entry]
   (let [{:keys [run-id engine suite semaphore]} ctx
         {:keys [entry-id slug cell prompt-text]} entry
-        agent-def (get @(agents-atom runtime) (:agent cell))
+        harness-def (get @(harnesses-atom runtime) (:harness cell))
         entry-dir (io/file (run-dir runtime run-id) slug)
         container (exec/container-name run-id slug)]
     (.acquire ^Semaphore semaphore)
@@ -574,7 +595,7 @@
                                       :remove-paths (:remove suite)
                                       :workspace-root (workspace-root runtime)})]
         (set-phase! runtime entry-id "running")
-        (let [prompt-via (or (:prompt-via agent-def) :stdin)
+        (let [prompt-via (or (:prompt-via harness-def) :stdin)
               on-start (fn [proc]
                          (swap! (in-flight-atom runtime) assoc entry-id
                                 {:container container :process proc :run-id run-id}))
@@ -583,10 +604,10 @@
                        :run-id run-id
                        :slug slug
                        :entry-dir entry-dir
-                       :image (:image agent-def)
-                       :env (:env agent-def)
-                       :auth (:auth agent-def)
-                       :agent-cmd (agent-command agent-def cell)
+                       :image (:image harness-def)
+                       :env (:env harness-def)
+                       :auth (:auth harness-def)
+                       :agent-cmd (harness-command harness-def cell)
                        :agent-prompt prompt-text
                        :prompt-via prompt-via
                        :setup (:setup suite)
@@ -595,7 +616,7 @@
                        :overlay overlay
                        :sha (:sha ctx)
                        :on-start on-start})
-              extractor (get @(extractors-atom runtime) (or (:metrics agent-def) :generic) generic-extractor)
+              extractor (get @(extractors-atom runtime) (or (:extractor harness-def) :generic) generic-extractor)
               extracted (sanitize-extracted (extractor {:entry-dir entry-dir
                                                         :home (io/file entry-dir "home")
                                                         :workspace workspace
@@ -682,8 +703,8 @@
                             (str "  - " (if single-prompt? "prompt" (name slug)) ": "
                                  (str/replace text #"\s+" " ")))
                           prompts)
-        entry-lines (mapcat (fn [{:keys [slug id data-dir agent model thinking prompt-slug]}]
-                              [(str "- " slug " [agent=" (name agent)
+        entry-lines (mapcat (fn [{:keys [slug id data-dir harness model thinking prompt-slug]}]
+                              [(str "- " slug " [harness=" (name harness)
                                     (when model (str " model=" model))
                                     (when thinking (str " thinking=" thinking))
                                     (when prompt-slug (str " prompt=" (name prompt-slug)))
@@ -719,10 +740,10 @@
   source every fulfilment mode shares:
 
       {:prompt <full judge prompt>
-       :attrs  {\"bench/judge\" .. \"bench/run\" .. \"bench/judge-prompt\" .. \"body\" ..}
+       :attrs  {\"bench/judge\" .. \"bench/run-id\" .. \"bench/judge-prompt\" .. \"body\" ..}
        :entry-ids [<entry strand id> ..]}
 
-  `run-context` is `{:run-id <root id> :entries [{:id :slug :data-dir :agent?
+  `run-context` is `{:run-id <root id> :entries [{:id :slug :data-dir :harness?
   :model? :thinking? :prompt-slug?} ..] :sha?}`. `suite-name-or-inline` is a
   registered suite name or an inline suite value (validated identically); its
   `:judge :contract` is layered onto the built-in protocol, but the ground-truth
@@ -772,7 +793,7 @@
       {:prompt prompt
        :entry-ids (mapv :id entries)
        :attrs {"bench/judge" "true"
-               "bench/run" run-id
+               "bench/run-id" run-id
                "bench/judge-prompt" prompt
                "body" (judge-body)}})))
 
@@ -822,7 +843,7 @@
 
   `opts` may carry `:entries` (a subset of slugs to run) and `:for` (a parent
   strand id the run root hangs beneath). Validates everything — suite conforms,
-  agents registered, judge harness (in `:harness` mode) and engine resolvable —
+  harnesses registered, judge harness (in `:harness` mode) and engine resolvable —
   and resolves a `:rev` to a concrete sha before creating any strand (TEN-003).
   Pours the run root, one entry per matrix cell, and (unless `:judge :none`) the
   judge strand depending on every entry — a serving agent run in `:harness`
@@ -836,10 +857,10 @@
         judge (:judge normalized)
         selected (select-entries normalized (:entries opts))]
     (doseq [cell selected]
-      (let [agent-def (or (get @(agents-atom runtime) (:agent cell))
-                          (fail! "bench entry references an unregistered agent"
-                                 {:agent (:agent cell) :available (mapv :name (agents runtime))}))]
-        (validate-cell-axes! agent-def cell)))
+      (let [harness-def (or (get @(harnesses-atom runtime) (:harness cell))
+                            (fail! "bench entry references an unregistered harness"
+                                   {:harness (:harness cell) :available (mapv :name (harnesses runtime))}))]
+        (validate-cell-axes! harness-def cell)))
     (when (:harness judge)
       (binding [agent-run/*runtime* runtime]
         (agent-run/resolve-harness (:harness judge))))
@@ -862,7 +883,7 @@
                                                 {:title (str "Bench entry: " (:slug cell))
                                                  :attributes (cond-> {"bench/entry" "true"
                                                                       "bench/slug" (:slug cell)
-                                                                      "bench/agent" (clojure.core/name (:agent cell))
+                                                                      "bench/harness" (clojure.core/name (:harness cell))
                                                                       "bench/phase" "pending"
                                                                       "bench/attempt" 1}
                                                                (:model cell) (assoc "bench/model" (:model cell))
@@ -878,7 +899,7 @@
                                   {:id (:entry-id p)
                                    :slug (:slug p)
                                    :data-dir (:entry-dir p)
-                                   :agent (get-in p [:cell :agent])
+                                   :harness (get-in p [:cell :harness])
                                    :model (get-in p [:cell :model])
                                    :thinking (get-in p [:cell :thinking])
                                    :prompt-slug (when-not (:single-prompt? normalized)
@@ -933,8 +954,8 @@
           slug (attr-get entry "bench/slug")
           cell (or (first (filter #(= slug (:slug %)) (:entries (:suite ctx))))
                    (fail! "bench retry: entry slug not in suite" {:slug slug}))
-          agent-def (get @(agents-atom runtime) (:agent cell))
-          _ (validate-cell-axes! agent-def cell)
+          harness-def (get @(harnesses-atom runtime) (:harness cell))
+          _ (validate-cell-axes! harness-def cell)
           prompt-slug (if (:single-prompt? (:suite ctx)) ::single (:prompt cell))
           prompt-text (resolve-prompt-text runtime (:prompts (:suite ctx)) prompt-slug)
           attempt (or (attr-get entry "bench/attempt") 1)]
@@ -988,7 +1009,7 @@
     (when judge
       (weaver/update runtime (:id judge)
                   {:state "closed"
-                   :attributes (cond-> {"bench/aborted" "true" "bench/error" "aborted"}
+                   :attributes (cond-> {"bench/error" "aborted"}
                                  (attr-get judge "agent-run/run") (assoc "agent-run/phase" "superseded"))}))
     (drop-semaphore! runtime run-id)
     {:aborted run-id :failed failed :judge (:id judge)}))
@@ -1061,7 +1082,7 @@
   [entry]
   (cond-> {:id (:id entry)
            :slug (attr-get entry "bench/slug")
-           :agent (attr-get entry "bench/agent")
+           :harness (attr-get entry "bench/harness")
            :phase (attr-get entry "bench/phase")}
     (attr-get entry "bench/model") (assoc :model (attr-get entry "bench/model"))
     (attr-get entry "bench/thinking") (assoc :thinking (attr-get entry "bench/thinking"))
@@ -1215,7 +1236,7 @@
                        :not-pinned "model behavior (what is being measured), network-fetched deps during setup (pin via lockfiles in the repo sha), API-side model versions"
                        :note "Re-running a suite yields a comparable run, not a bit-identical one; the run manifest makes any drift diagnosable."}
    :run-lifecycle {:validate (fmt/reflow
-                              "|Suite conforms, agents registered, judge harness (in :harness mode)
+                              "|Suite conforms, harnesses registered, judge harness (in :harness mode)
                                |and engine resolvable, and any :rev resolved to a sha — all before
                                |any strand is created.")
                    :pour (fmt/reflow
@@ -1235,7 +1256,7 @@
                       "bench/data-dir" "host artifact root for the run"}
                 :entry {"bench/entry" "true on entry strands"
                         "bench/slug" "cell slug"
-                        "bench/agent" "agent def key"
+                        "bench/harness" "bench harness def key"
                         "bench/model" "optional model axis"
                         "bench/thinking" "optional thinking axis"
                         "bench/prompt-slug" "optional prompt axis"
@@ -1246,7 +1267,7 @@
                         "bench/error-detail" "full stderr when the failure carried one (e.g. a git command failure)"
                         "bench/*" "flattened §7 metrics: cost-usd, tokens-in/out, tokens-cache-read, turns, duration-ms, tools-*, tool-errors, diff-*, validation-exit, exit-code"}
                 :judge {"bench/judge" "true on the judge strand — the fulfilment seam, depending on every entry"
-                        "bench/run" "the run root id"
+                        "bench/run-id" "the run root id"
                         "bench/judge-prompt" "the complete built judge prompt (protocol + entry ids + data-dir paths); the one prompt source both modes share"
                         "body" "a short mechanism-agnostic fulfilment contract: read bench/judge-prompt, judge, note each entry, stamp bench/verdict, close"
                         "bench/verdict" "the canonical, durable verdict stamped by whoever fulfils the strand"}}
@@ -1303,7 +1324,7 @@
            :flags {:entries {:doc "Comma-separated subset of entry slugs to run."}
                    :for {:doc "Parent strand id to root the run beneath."}}
            :positionals [{:name :suite :required? true :doc "Registered suite name."}]}
-    "runs" {:doc "List bench run roots with per-run entry phase counts."
+    "list" {:doc "List bench run roots with per-run entry phase counts."
             :flags {:suite {:doc "Only runs of this suite."}}}
     "status" {:doc "Entries with phase and headline metrics, judge run state, and blocking failures."
               :positionals [{:name :run-id :required? true :doc "Bench run root id."}]}
@@ -1314,7 +1335,7 @@
     "abort" {:doc "Kill live containers, fail outstanding entries, and supersede the judge."
              :positionals [{:name :run-id :required? true :doc "Bench run root id."}]}
     "suites" {:doc "List registered benchmark suites."}
-    "agents" {:doc "List registered agent definitions."}
+    "harnesses" {:doc "List registered bench harness definitions (container definitions; not agent-run harnesses)."}
     "gc" {:doc "Delete bench artifact directories (strand-side metrics and verdicts survive)."
           :flags {:run {:doc "Only this run's artifact directory."}}}
     "about" {:doc "Return the authored bench manual."}}})
@@ -1324,7 +1345,7 @@
    {"run" {:type :map :required {:operation :string :run :string
                                   :entries {:type :map :extra :string}
                                   :judge :json}}
-    "runs" {:type :collection
+    "list" {:type :collection
             :items {:type :map
                     :required {:run :string :suite :string :sha :string :state :string
                                :entries :integer :phases {:type :map :extra :integer}}}}
@@ -1344,7 +1365,7 @@
                         :failed {:type :collection :items :string}
                         :judge :json}}
     "suites" {:type :collection :items {:type :map :required {:name :string} :extra :json}}
-    "agents" {:type :collection :items {:type :map :required {:name :string} :extra :json}}
+    "harnesses" {:type :collection :items {:type :map :required {:name :string} :extra :json}}
     "gc" {:type :map
           :required {:operation :string :removed {:type :collection :items :string}}}
     "about" {:type :map :required {:operation :string :summary :string} :extra :json}}})
@@ -1367,13 +1388,13 @@
                 (cond-> {}
                   (:entries args) (assoc :entries (split-csv (:entries args)))
                   (:for args) (assoc :for (:for args))))
-    "runs" (runs runtime (select-keys args [:suite]))
+    "list" (runs runtime (select-keys args [:suite]))
     "status" (status runtime (:run-id args))
     "report" (report runtime (:run-id args))
     "retry" (retry! runtime (:entry-id args))
     "abort" (abort! runtime (:run-id args))
     "suites" (suites runtime)
-    "agents" (agents runtime)
+    "harnesses" (harnesses runtime)
     "gc" (gc! runtime (select-keys args [:run]))
     "about" (about)))
 
@@ -1419,6 +1440,26 @@
                                 "bench/error" "orphaned by weaver restart"}}))
     (mapv :id orphans)))
 
+(def ^:private bench-namespace-declaration
+  "The bench-owned `bench/*` attribute namespace stamped onto run roots, entry
+  strands, and the judge strand. The judge also carries `agent-run/*` keys in
+  `:harness` mode and the bare cross-spool `body` convention key, neither of
+  which bench owns. `:keys` is advisory."
+  {:kind :attr-namespace
+   :name "bench"
+   :owner :skein/spools-bench
+   :keys ["bench/run" "bench/suite" "bench/repo" "bench/sha" "bench/data-dir"
+          "bench/entry" "bench/slug" "bench/harness" "bench/model" "bench/thinking"
+          "bench/prompt-slug" "bench/phase" "bench/attempt" "bench/image-digest"
+          "bench/error" "bench/error-detail"
+          "bench/cost-usd" "bench/tokens-in" "bench/tokens-out" "bench/tokens-cache-read"
+          "bench/turns" "bench/duration-ms" "bench/tools-file-reads"
+          "bench/tools-file-writes" "bench/tools-file-edits" "bench/tools-bash"
+          "bench/tool-errors" "bench/diff-files" "bench/diff-insertions"
+          "bench/diff-deletions" "bench/validation-exit" "bench/exit-code"
+          "bench/judge" "bench/run-id" "bench/judge-prompt" "bench/verdict"]
+   :doc "Bench run-root, entry, and judge attributes written by skein.spools.bench/run!."})
+
 (defn install!
   "Activate bench on the current runtime.
 
@@ -1428,19 +1469,20 @@
   `:generic`/`:claude`/`:pi`/`:codex` extractors (defaults; user registrations
   win), reconciles entries orphaned by a previous weaver lifetime, and registers
   the `bench` CLI op and the `bench-runs` named query. Registers no suites or
-  agent definitions — those are trusted config. Called as a no-arg module
+  harness definitions — those are trusted config. Called as a no-arg module
   `:call` at startup/reload."
   []
   (let [runtime (current/runtime)]
     (state runtime)
-    (defextractor! runtime :generic generic-extractor)
+    (vocab/declare! runtime bench-namespace-declaration)
+    (register-extractor! runtime :generic generic-extractor)
     (register-default-extractors! runtime)
     (detect-engine! runtime)
     (let [reconciled (reconcile! runtime)]
       {:installed true
        :namespace 'skein.spools.bench
        :engine (engine runtime)
-       :agents (mapv :name (agents runtime))
+       :harnesses (mapv :name (harnesses runtime))
        :suites (mapv :name (suites runtime))
        :reconciled reconciled
        :op (weaver/register-op! runtime 'bench
