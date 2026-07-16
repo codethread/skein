@@ -213,7 +213,7 @@
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
   (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
-    (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
+    (is (some #(= "test-sleeps" (:name %)) (:seats (first rosters))))))
 
 (def ^:private external-spool-coordinate-pairs
   "Pairs of weaver-side spools.edn keys and test-JVM deps.edn coordinates."
@@ -733,17 +733,17 @@
             complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))
             docs-roster (first (filter #(= :docs-review (:name %)) rosters))]
         (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
-        (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:reviewers roster)))]
-          (is (some? sleeps) "owner-required test-sleeps reviewer is declared")
-          (is (str/includes? (:contract sleeps) "time itself is a genuine component")))
-        (is (= :sol-med (get-in roster [:synthesizer :harness]))
+        (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:seats roster)))]
+          (is (some? sleeps) "owner-required test-sleeps seat is declared")
+          (is (str/includes? (:brief sleeps) "time itself is a genuine component")))
+        (is (= :sol-med (get-in roster [:synthesis :harness]))
             "sign-off synthesis stays on the cross-vendor GPT seat")
-        (is (= :terra-med (get-in complex-roster [:synthesizer :harness]))
+        (is (= :terra-med (get-in complex-roster [:synthesis :harness]))
             "complex patch review is synthesized outside its reviewer seats")
-        (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:reviewers docs-roster)))]
+        (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:seats docs-roster)))]
           (is (some? fact-check) "docs roster leads with the accuracy seat")
-          (is (str/includes? (:contract fact-check) "NEVER the canonical .skein")))
-        (is (= :sol-med (get-in docs-roster [:synthesizer :harness]))
+          (is (str/includes? (:brief fact-check) "NEVER the canonical .skein")))
+        (is (= :sol-med (get-in docs-roster [:synthesis :harness]))
             "docs sign-off synthesis stays on the cross-vendor GPT seat")))))
 
 (deftest codex-harness-persists-sessions-and-declares-resume

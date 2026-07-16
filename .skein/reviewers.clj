@@ -106,7 +106,7 @@
     {:name "spec-shapes"
      :harness :luna-low
      :brief (str "Check that every public data shape the change introduces or reshapes - "
-                 "registry inputs (defroster!/defharness!-style), weave pattern inputs, and "
+                 "registry inputs (defroster!/register-harness!-style), weave pattern inputs, and "
                  "the input/output shapes of public seam functions - is defined by a "
                  "clojure.spec that validation actually consults, not prose alone. Manual "
                  "checks are acceptable only for what a spec cannot express (closed key "
