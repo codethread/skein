@@ -139,6 +139,48 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    memory, not authority — and a rename ships a cutover for active rows when
    continuity needs it.
 
+### Applying the vocabulary rule
+
+- **Peers.** Spools with no invocation or reproduction relation between them
+  are peers: neither's word binds the other, and a peer synonym is evidence
+  of a shared miss, not precedent. A concept two peers share converges on the
+  word of the spool whose core purpose it is (lifecycle state is agent-run's;
+  board lanes are kanban's); when ownership is a wash, the surface every
+  world loads outranks opt-in peers. Dependency direction is depth: the
+  required spool's word wins over its requirer's. Two peers filling the same
+  extension point name their surfaces in parallel — `stalled-shell-gates`
+  beside `stalled-subagent-gates`, never one bare and one qualified.
+- **One concept, one name — including within your own spool.** The rule binds
+  a spool to itself: one concept carries one name across the whole surface
+  (attribute key, return key, function verb, prose), and a projection's
+  return key matches the attribute it projects. A second name for your own
+  concept is a rebrand even though nothing external is shadowed.
+- **The enumeration is illustrative, not exhaustive.** Ex-data keys,
+  error-code namespaces, event-type keywords, registry key spaces, and
+  public vars are all names a consumer meets. Private helpers are exempt
+  until one shadows a published name with different semantics or argument
+  order — the transfer argument protects the next author, not only the API
+  consumer.
+- **Inherit the bare verb.** Your Clojure namespace already carries the noun:
+  `events/register!`, never `register-handler!`; and a member name never
+  repeats its own namespace's noun. Mint keywords only into namespaces you
+  own — a spool that writes no attributes still squats when it coins an
+  event type or return value in someone else's namespace.
+- **Loud documentation, defined.** A sanctioned divergence under an inherited
+  name is loud when the docstring (or flag doc) names the primitive and
+  states the delta — that reaches the generated API doc and the source
+  reader at once.
+- **Run the test token by token.** A surface can be a rebrand in its verb and
+  novel in its payload nouns. A composition of inherited operations earns a
+  coined verb when the composition is itself a concept consumers name
+  (`pour!`); a pass-through with defaults does not. And generic nouns
+  (`text`, `key`, `id`) shared across unrelated ops are traps only when the
+  two readings are plausibly confusable in one context.
+- **The free detection heuristic.** If your return keys, docstring, or
+  contract doc must use the primitive's word to explain your name — an
+  `activate!` that returns `{:installed true}` — the name is the thing
+  that's wrong.
+
 ## Namespace claims
 
 This section covers vocab and attribute namespaces, not Clojure source namespaces; see
