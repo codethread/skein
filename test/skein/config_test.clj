@@ -471,7 +471,7 @@
                     {:strand strand :ready-ids #{}}))]
         (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked
                 :kanban-completed :kanban-started :parked-run]
-               (mapv :name rules)))
+               (mapv :key rules)))
         ;; gate-error fires on any strand stamped with a gate error
         (let [note (fire :gate-error {:id "g1" :state "active" :title "Gate A"
                                       :attributes {:gate/error "spawn failed"}})]
