@@ -291,7 +291,8 @@ and usage examples. Think man page, machine-readable. Purely structural ops (bat
 
 **`prime` is run-first context priming for agents.** A `prime` command prints the working discipline
 for an area — the conventions an agent must load *before* acting, with pointers to deeper docs.
-`mill skein prime` (source/docs orientation) and `mill strand prime` (the strand workflow) need no
+`mill strand prime` (the day-to-day strand workflow) and `mill skein prime` (building on `.skein`
+and the source docs, read on demand) need no
 running weaver: `mill` resolves the Skein source checkout and renders the topic file the manifest at
 `docs/prime/index.json` names, so an already-installed `mill` prints current orientation text from a
 newer checkout. Spool-level primes like `strand kanban prime` are spool-generated so they can never

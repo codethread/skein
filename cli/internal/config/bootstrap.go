@@ -73,8 +73,8 @@ const agentGuidanceSection = agentGuidanceMarker + `
 
 This repo uses Skein strands to track work. Orientation ships in the ` + "`mill`" + ` CLI:
 
-- ` + "`mill skein prime`" + ` — where the Skein source and docs live, and how to extend this repo's ` + "`.skein/`" + ` config.
-- ` + "`mill strand prime`" + ` — the strand planning/tracking workflow; run it before multi-step work.
+- ` + "`mill strand prime`" + ` — the day-to-day strand workflow; run it before multi-step work.
+- ` + "`mill skein prime`" + ` — read on demand, only when building on this repo's ` + "`.skein/`" + ` config or spools.
 ` + agentGuidanceEndMarker + `
 `
 

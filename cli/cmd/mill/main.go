@@ -116,7 +116,7 @@ func main() {
 	root.AddCommand(weaver)
 
 	skein := &cobra.Command{Use: "skein", Short: "Skein orientation for agents"}
-	skein.AddCommand(&cobra.Command{Use: "prime", Short: "Print Skein orientation: resolved source path and the docs/spools to read", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	skein.AddCommand(&cobra.Command{Use: "prime", Short: "Print orientation for building on .skein: resolved source path and the docs to read", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		return runPrime("skein")
 	}})
 	root.AddCommand(skein)
