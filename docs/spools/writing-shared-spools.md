@@ -104,21 +104,27 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    the map entirely. Omit a key you don't want to touch; only set it to `nil`
    when you deliberately mean "remove this attribute".
 8. **New names for new concepts; inherited names for inherited concepts.** A
-   spool that builds on another spool's primitives surfaces that spool's
-   vocabulary — function verbs, op subcommands, attribute keys, phase values,
-   edge relation names — exactly as the primitive publishes it, and mints
-   vocabulary only for the concepts it genuinely adds. A workflow is started,
-   advanced, and completed in the workflow engine's terms; a run is spawned,
-   awaited, retried, and killed in agent-run's terms. Wrapping a primitive
-   behind your own synonyms makes your spool a universe unto itself: nothing a
-   reader learned elsewhere transfers in, and nothing they learn from you
-   transfers out. The same rule covers attributes — read and write the
-   primitive's published keys (`workflow/*`, `agent-run/*`) rather than
-   shadowing them under your own namespace; your namespace is for state the
-   primitive does not carry. The worked contrast is
-   `skein.spools.delegation`: it reuses agent-run's verbs, phase enum, and
-   edge relations verbatim, and coins new nouns (panel, roster, turn) only for
-   the multi-agent coordination concepts agent-run has no word for.
+   spool builds on a primitive when it invokes it *or* reproduces its concept —
+   reimplementing a registry or lifecycle does not exempt its names. The
+   primitive may be another spool, a blessed `skein.api.*.alpha` namespace, or
+   a lower layer of your own spool that a preset wraps; in every case the
+   surface speaks the primitive's vocabulary exactly as published — function
+   verbs, op subcommands, flag names, return keys, attribute keys, phase
+   values, edge relation names, and their defaults (diverge from an inherited
+   default only with loud documentation at the key). The test for a genuinely
+   new concept: describe your thing in the primitive's documented vocabulary;
+   if no new noun or verb is needed, the name is inherited, and a synonym is a
+   rebrand. Wrapping a primitive behind synonyms makes your spool a universe
+   unto itself: nothing a reader learned elsewhere transfers in, and nothing
+   they learn from you transfers out. An `acme/gate-sweeper` spool that drives
+   workflow runs speaks `start`/`next`/`advance`, reads and writes
+   `workflow/*` keys, and coins a name only for the sweeping policy the
+   engine has no word for. Declare the namespaces you own with
+   `vocab/declare!` (see Namespace claims); write inherited keys in the
+   owner's namespace without declaring them. When a surface converges on this
+   rule the rename is a clean break (TEN-000): durable attributes on closed
+   strands stay as written — they are memory, not authority — and a rename
+   ships a cutover for active rows when continuity needs it.
 
 ## Namespace claims
 
@@ -233,8 +239,9 @@ applies to shared-spool CLIs.
   `--owner`, `--branch`, `--worktree`, and `--feature`. Prefer seconds-first,
   unit-suffixed durations such as `--timeout-secs`, and use `--outcome` for
   closing state.
-- Prefer `list` for live, filterable work. Use a plural noun such as `harnesses`,
-  `suites`, or `backends` for a fixed catalog.
+- Prefer `list` for live, filterable entities; `ps` already owns the live
+  process listing. Use a plural noun such as `harnesses`, `suites`, or
+  `backends` for a fixed catalog.
 - Prefer one op with declared subcommands for a cohesive multi-verb domain. Keep
   single-purpose projections and config-registered ops flat.
 - Renames are clean breaks (TEN-000): when a surface converges on this
