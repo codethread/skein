@@ -10,7 +10,7 @@
 
 ## Overview
 
-`skein.spools.guild` is a small reference spool for publishing a weaver's trusted operation API to sibling weavers. It does not add a new protocol, server operation, package manager, or permission system. Guild ops are ordinary weaver `op` registry entries with a documented naming/versioning convention and a built-in `guild.describe` operation for discovery.
+`skein.spools.guild` is a small reference spool for publishing a weaver's trusted operation API to sibling weavers. It does not add a new protocol, server operation, package manager, or permission system. Guild ops are ordinary weaver `op` registry entries with a documented naming/versioning convention and a built-in `guild list` operation for discovery.
 
 Use it when a repo wants other local weavers to call stable, intentional entry points such as `gate.status.v1` or `release.request.v1` instead of reaching into repo-private REPL helpers. The agreement surface is userland: a repo opts in by registering ops from trusted config, usually its checked-in `.skein/init.clj`. For a peering repo, that checked-in `init.clj` is effectively a published API file. Treat its guild declarations like public contract code.
 
@@ -33,43 +33,47 @@ Then sync and activate it from trusted config:
 (runtime/sync! runtime)
 (runtime/use! runtime :skein/spools-guild
   {:ns 'skein.spools.guild
-   :spools #{'skein.spools/guild}
-   :call 'skein.spools.guild/install!})
-```
+   :spools #{'skein.spools/guild}})
 
-`install!` registers the built-in `guild.describe` op and resets the spool's runtime-local weaver-lifetime declaration state for reload-friendly startup. The declaration state is isolated from other runtimes in the same JVM. It may also take a non-blank fallback guild name for contexts without runtime metadata:
-
-```clojure
 (require '[skein.spools.guild :as guild])
 
-(guild/install! "backend")
+(guild/install! runtime)
 ```
 
-At invocation time, `guild.describe` prefers the runtime metadata name published by the running weaver.
+Every Guild fn takes the runtime as its first argument and never reads the published singleton, so Guild works in unpublished and side-by-side runtimes. That is why activation calls `install!` explicitly rather than through `use!`'s `:call`, which invokes a no-arg fn and so cannot pass a runtime.
+
+`install!` registers the built-in `guild` op and resets the spool's runtime-local declaration state for reload-friendly startup. The declaration state is isolated from other runtimes in the same JVM. `install!` may also take a non-blank fallback guild name for contexts without runtime metadata:
+
+```clojure
+(guild/install! runtime "backend")
+```
+
+At invocation time, `guild list` prefers the runtime metadata name published by the running weaver.
 
 ## Operation declaration surface
 
-### `defop!`
+### `register-op!`
 
 ```clojure
-(guild/defop! 'gate.status.v1
+(guild/register-op! runtime 'gate.status.v1
   {:doc "Return whether the named gate is satisfied."
-   :spec ::gate-status-input
+   :input-spec ::gate-status-input
    :returns {:type :map
              :required {:gate :string
                         :satisfied :boolean}}}
   'my.repo.guild/gate-status)
 ```
 
-`defop!` registers a public guild op in the existing weaver op registry.
+`register-op!` registers a public guild op in the existing weaver op registry.
 
 | Argument | Meaning |
 |---|---|
+| `runtime` | The weaver runtime to register into. |
 | `name` | Simple unqualified symbol or keyword. By convention use a dotted, version-suffixed handle such as `gate.status.v1`. |
-| `opts` | Map supporting `:doc`, optional input `:spec`, and optional output `:returns`. Unknown keys fail loudly. |
-| `handler-fn-sym` | Fully qualified symbol resolving to the handler function in the weaver JVM. |
+| `opts` | Map supporting `:doc`, optional `:input-spec`, and optional output `:returns`. Unknown keys fail loudly. |
+| `fn-sym` | Fully qualified symbol resolving to the handler function in the weaver JVM. |
 
-Guild op invocation accepts zero arguments or one JSON input argument. The spool parses that JSON to `:guild/input`, validates it against `:spec` when supplied, and then calls the resolved handler with the ordinary op context plus `:guild/input`.
+Guild op invocation accepts zero arguments or one JSON input argument. The spool parses that JSON to `:guild/input`, validates it against `:input-spec` when supplied, and then calls the resolved handler with the ordinary op context plus `:guild/input`.
 
 `:returns` uses the shared registry return declaration from
 [`skein.api.return-shape.alpha`](../docs/api/return-shape.api.md). It describes
@@ -81,29 +85,30 @@ contract is [SPEC-003.C60a/C60b](../devflow/specs/repl-api.md). Run
 ### `deprecate!`
 
 ```clojure
-(guild/deprecate! 'gate.status.v1
+(guild/deprecate! runtime 'gate.status.v1
   {:replacement "gate.status.v2"
    :since "2026-07-02"})
 ```
 
-`deprecate!` replaces a registered guild op with a stub that always fails loudly. A deprecated stub may explain, redirect, or refuse — it must never pretend to succeed. The thrown data includes `{:code :op/deprecated}` plus the op name and replacement guidance.
+`deprecate!` replaces a registered guild op with a stub that always fails loudly. A deprecated stub may explain, redirect, or refuse — it must never pretend to succeed. The thrown data includes `{:code :operation/deprecated}` plus the op name and replacement guidance.
 
 ### `install!`
 
 ```clojure
-(guild/install!)
-(guild/install! "frontend")
+(guild/install! runtime)
+(guild/install! runtime "frontend")
 ```
 
-`install!` registers `guild.describe`, clears previous guild declarations in the current weaver JVM, and records an optional fallback name. Re-run it during trusted config reload before re-declaring ops.
+`install!` registers the `guild` op, clears previous guild declarations in that runtime, and records an optional fallback name. Re-run it during trusted config reload before re-declaring ops.
 
-### `guild.describe`
+### `guild list`
 
-Peers call `guild.describe` through the ordinary `op` socket operation. It returns JSON-safe metadata:
+Peers call `guild list` through the ordinary `op` socket operation. It returns JSON-safe metadata:
 
 ```clojure
 {:guild "backend"
- :active [{:name "gate.status.v1" :doc "Return whether the named gate is satisfied." :spec ":backend/gate-status-input"}]
+ :operation "guild list"
+ :active [{:name "gate.status.v1" :doc "Return whether the named gate is satisfied." :input-spec ":backend/gate-status-input"}]
  :deprecated [{:name "gate.old.v1" :replacement "gate.status.v1" :since "2026-07-02"}]}
 ```
 
@@ -147,11 +152,12 @@ With the Guild root approved in the backend repo's `.skein/spools.edn` and activ
 (runtime/sync! runtime)
 (runtime/use! runtime :skein/spools-guild
   {:ns 'skein.spools.guild
-   :spools #{'skein.spools/guild}
-   :call 'skein.spools.guild/install!})
+   :spools #{'skein.spools/guild}})
 
 ;; Loaded by the use! above; required here for the declarations below.
 (require '[skein.spools.guild :as guild])
+
+(guild/install! runtime)
 
 (s/def ::gate-name string?)
 (s/def ::gate-status-input (s/keys :req-un [::gate-name]))
@@ -161,9 +167,9 @@ With the Guild root approved in the backend repo's `.skein/spools.edn` and activ
   {:gate (:gate-name input)
    :satisfied false})
 
-(guild/defop! 'gate.status.v1
+(guild/register-op! runtime 'gate.status.v1
   {:doc "Return whether a backend gate is satisfied."
-   :spec ::gate-status-input
+   :input-spec ::gate-status-input
    :returns {:type :map
              :required {:gate :string
                         :satisfied :boolean}}}
@@ -178,8 +184,8 @@ From the frontend weaver (or a manager weaver), discover the backend by its port
 
 (def backend (peers/peer "backend"))
 
-(peers/call! backend "guild.describe")
-;; => {"guild" "backend", "active" [...], "deprecated" [...]}
+(peers/call! backend "guild" {:argv ["list"]})
+;; => {"guild" "backend", "operation" "guild list", "active" [...], "deprecated" [...]}
 
 (peers/call! backend "gate.status.v1"
   {:argv [(json/write-str {:gate-name "api-ready"})]})
