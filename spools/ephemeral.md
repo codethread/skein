@@ -12,7 +12,9 @@
 
 `skein.spools.ephemeral` is a small reference spool for temporary, parent-owned work strands: scratch notes, intermediate results, or throwaway sub-tasks an agent wants tracked while it works and cleaned up afterwards.
 
-It is deliberately a userland convention, not a core lifecycle: an ephemeral strand is an ordinary persistent strand carrying the attribute `ephemeral "true"` and a `parent-of` edge from its owner. Nothing in the engine treats it specially — the spool composes only the documented `skein.repl` and `skein.api.graph.alpha` surfaces, which also makes it the smallest worked example of attribute-convention spool design.
+An ephemeral strand is an ordinary persistent strand carrying the attribute `ephemeral/entry "true"` and a `parent-of` edge from its owner. Nothing in the engine treats it specially — the spool composes only the documented `skein.api.weaver.alpha`, `skein.api.graph.alpha`, and `skein.api.current.alpha` surfaces, which also makes it the smallest worked example of attribute-convention spool design. `install!` declares the `ephemeral` attribute namespace it owns.
+
+The marker key was the bare `ephemeral` until this reset; it is now `ephemeral/entry`, and the change is a clean break. Strands still carrying the bare `ephemeral "true"` attribute are invisible to `query`, `ids`, and `burn-all!` — burn them by id, or restamp them with `ephemeral/entry`.
 
 ## 2. Usage
 
@@ -23,14 +25,14 @@ It is deliberately a userland convention, not a core lifecycle: an ephemeral str
 (def parent (repl/strand! "Implement feature"))
 
 ;; create a scratch strand owned by the parent
-(ephemeral/ephemeral! (:id parent) "Scratch: API notes" {:owner "agent"})
+(ephemeral/add (:id parent) "Scratch: API notes" {:owner "agent"})
 
 ;; list active ephemeral strand ids
-(ephemeral/ephemeral-ids)
+(ephemeral/ids)
 ;; => ["s-..."]
 
 ;; burn every active ephemeral strand when done
-(ephemeral/burn-ephemeral!)
+(ephemeral/burn-all!)
 ;; => {:burned ["s-..."] :count 1}
 ```
 
@@ -38,13 +40,13 @@ It is deliberately a userland convention, not a core lifecycle: an ephemeral str
 
 | Fn / var | Behavior |
 |---|---|
-| `(ephemeral! parent-id title)` / `(ephemeral! parent-id title attributes)` | Create a strand with `ephemeral "true"` merged into `attributes` and add a `parent-of` edge from `parent-id`. Returns the created strand. |
-| `ephemeral-query` | The query form selecting active ephemeral strands: `[:and [:= [:attr :ephemeral] "true"] [:= :state "active"]]`. Reusable in named queries or views. |
-| `(ephemeral-ids)` | Ids of all active ephemeral strands. |
-| `(burn-ephemeral!)` | Burn all active ephemeral strands; returns `{:burned [...] :count n}` (empty result when nothing is active). |
-| `(install!)` | Installation metadata: the attribute convention plus creator/burner fns as a symbol map, for trusted registration by name. |
+| `(add parent-id title)` / `(add parent-id title attributes)` | Create a strand with `ephemeral/entry "true"` merged into `attributes` and add a `parent-of` edge from `parent-id`. Returns the created strand. |
+| `query` | The query form selecting active ephemeral strands: `[:and [:= [:attr "ephemeral/entry"] "true"] [:= :state "active"]]`. Reusable in named queries or views. |
+| `(ids)` | Ids of all active ephemeral strands. |
+| `(burn-all!)` | Burn all active ephemeral strands; returns `{:burned [...] :count n}` (empty result when nothing is active). |
+| `(install!)` | Declare the `ephemeral` attribute namespace and return installation metadata: the attribute convention plus the `add`/`burn` fns as a symbol map, for trusted registration by name. |
 
-Burning is workspace-wide by design: `burn-ephemeral!` clears **all** active ephemeral strands, not one parent's. Scope it yourself (e.g. compose `ephemeral-query` with a parent filter) if you need finer granularity.
+Burning is workspace-wide by design: `burn-all!` clears **all** active ephemeral strands, not one parent's. Scope it yourself (e.g. compose `query` with a parent filter) if you need finer granularity.
 
 ## 4. See also
 

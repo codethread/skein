@@ -3,55 +3,46 @@
 # <a name="skein.spools.ephemeral">skein.spools.ephemeral</a>
 
 
-Userland helpers for temporary, parent-owned work strands.
+Helpers for temporary, parent-owned work strands.
 
   This namespace is intentionally authorable example code: it composes the
-  documented explicit-runtime weaver and graph helper surfaces and owns no
-  privileged loader/config/runtime implementation.
+  documented weaver, graph, and current helper surfaces and owns no privileged
+  loader/config/runtime implementation.
 
 
 
 
-## <a name="skein.spools.ephemeral/burn-ephemeral!">`burn-ephemeral!`</a>
+## <a name="skein.spools.ephemeral/add">`add`</a>
 ``` clojure
-(burn-ephemeral!)
+(add parent-id title)
+(add parent-id title attributes)
 ```
 Function.
 
-Burn all active userland ephemeral strands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L37-L43">Source</a></sub></p>
+Create an ephemeral strand under parent-id.
 
-## <a name="skein.spools.ephemeral/ephemeral!">`ephemeral!`</a>
+  The strand is persistent, carries `:attr ephemeral/entry "true"`, and hangs
+  off a parent-of edge from the parent. It can be burned later with
+  `burn-all!`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L12-L25">Source</a></sub></p>
+
+## <a name="skein.spools.ephemeral/burn-all!">`burn-all!`</a>
 ``` clojure
-(ephemeral! parent-id title)
-(ephemeral! parent-id title attributes)
+(burn-all!)
 ```
 Function.
 
-Create a userland ephemeral strand under parent-id.
+Burn all active ephemeral strands.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L36-L42">Source</a></sub></p>
 
-  This uses userland attributes, not core :ephemeral lifecycle. The strand is
-  persistent with `:attr ephemeral true` and a parent-of edge from the parent.
-  It can be burned later with `burn-ephemeral!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L11-L24">Source</a></sub></p>
-
-## <a name="skein.spools.ephemeral/ephemeral-ids">`ephemeral-ids`</a>
+## <a name="skein.spools.ephemeral/ids">`ids`</a>
 ``` clojure
-(ephemeral-ids)
-(ephemeral-ids _opts)
+(ids)
 ```
 Function.
 
-Return active userland ephemeral strand ids.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L30-L35">Source</a></sub></p>
-
-## <a name="skein.spools.ephemeral/ephemeral-query">`ephemeral-query`</a>
-
-
-
-
-Query form selecting active userland ephemeral strands.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L26-L28">Source</a></sub></p>
+Return active ephemeral strand ids.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L31-L34">Source</a></sub></p>
 
 ## <a name="skein.spools.ephemeral/install!">`install!`</a>
 ``` clojure
@@ -60,4 +51,16 @@ Query form selecting active userland ephemeral strands.
 Function.
 
 Install ephemeral strand helpers into the active weaver.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L45-L52">Source</a></sub></p>
+
+  Declares the `ephemeral` attribute namespace this spool owns and returns the
+  installation metadata: the marker attribute plus the `add`/`burn` fns as a
+  symbol map.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L53-L65">Source</a></sub></p>
+
+## <a name="skein.spools.ephemeral/query">`query`</a>
+
+
+
+
+Query form selecting active ephemeral strands.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/ephemeral/src/skein/spools/ephemeral.clj#L27-L29">Source</a></sub></p>

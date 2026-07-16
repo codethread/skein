@@ -312,20 +312,21 @@
                 (is (contains? (ex-data e) k))))))))))
 
 (deftest ephemeral-spool-composes-public-helper-surfaces
-  (is (= '#{skein.api.current.alpha skein.api.graph.alpha skein.api.weaver.alpha}
+  (is (= '#{skein.api.current.alpha skein.api.graph.alpha skein.api.vocab.alpha
+            skein.api.weaver.alpha}
          (ns-requires "skein/spools/ephemeral.clj")))
   (with-runtime
     (fn [rt _]
       (let [parent (repl/strand! "Parent")
-            child (ephemeral/ephemeral! (:id parent) "Scratch" {:owner "agent"})]
-        (is (= "true" (get-in child [:attributes :ephemeral])))
+            child (ephemeral/add (:id parent) "Scratch" {:owner "agent"})]
+        (is (= "true" (get-in child [:attributes :ephemeral/entry])))
         (is (= [[(:id parent) (:id child) "parent-of"]]
                (mapv (juxt :from_strand_id :to_strand_id :edge_type)
                      (:edges (graph/subgraph rt [(:id parent)])))))
-        (is (= [(:id child)] (ephemeral/ephemeral-ids)))
+        (is (= [(:id child)] (ephemeral/ids)))
         (is (= {:burned [(:id child)] :count 1}
-               (select-keys (ephemeral/burn-ephemeral!) [:burned :count])))
-        (is (= [] (ephemeral/ephemeral-ids)))))))
+               (select-keys (ephemeral/burn-all!) [:burned :count])))
+        (is (= [] (ephemeral/ids)))))))
 
 (deftest event-helpers-register-list-replace-unregister-directly
   (with-runtime

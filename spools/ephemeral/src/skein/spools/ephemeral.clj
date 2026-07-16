@@ -1,52 +1,65 @@
 (ns skein.spools.ephemeral
-  "Userland helpers for temporary, parent-owned work strands.
+  "Helpers for temporary, parent-owned work strands.
 
   This namespace is intentionally authorable example code: it composes the
-  documented explicit-runtime weaver and graph helper surfaces and owns no
-  privileged loader/config/runtime implementation."
+  documented weaver, graph, and current helper surfaces and owns no privileged
+  loader/config/runtime implementation."
   (:require [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
+            [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]))
 
-(defn ephemeral!
-  "Create a userland ephemeral strand under parent-id.
+(defn add
+  "Create an ephemeral strand under parent-id.
 
-  This uses userland attributes, not core :ephemeral lifecycle. The strand is
-  persistent with `:attr ephemeral true` and a parent-of edge from the parent.
-  It can be burned later with `burn-ephemeral!`."
+  The strand is persistent, carries `:attr ephemeral/entry \"true\"`, and hangs
+  off a parent-of edge from the parent. It can be burned later with
+  `burn-all!`."
   ([parent-id title]
-   (ephemeral! parent-id title {}))
+   (add parent-id title {}))
   ([parent-id title attributes]
    (let [rt (current/runtime)
          strand (weaver/add rt {:title title
-                                :attributes (merge {:ephemeral "true"} attributes)})]
+                                :attributes (merge {:ephemeral/entry "true"} attributes)})]
      (weaver/update rt parent-id {:edges [{:type "parent-of" :to (:id strand)}]})
      strand)))
 
-(def ephemeral-query
-  "Query form selecting active userland ephemeral strands."
-  [:and [:= [:attr :ephemeral] "true"] [:= :state "active"]])
+(def query
+  "Query form selecting active ephemeral strands."
+  [:and [:= [:attr "ephemeral/entry"] "true"] [:= :state "active"]])
 
-(defn ephemeral-ids
-  "Return active userland ephemeral strand ids."
-  ([]
-   (ephemeral-ids {}))
-  ([_opts]
-   (graph/query-ids (current/runtime) ephemeral-query {})))
-
-(defn burn-ephemeral!
-  "Burn all active userland ephemeral strands."
+(defn ids
+  "Return active ephemeral strand ids."
   []
-  (let [ids (ephemeral-ids)]
-    (if (seq ids)
-      (graph/burn-by-ids! (current/runtime) ids)
+  (graph/query-ids (current/runtime) query {}))
+
+(defn burn-all!
+  "Burn all active ephemeral strands."
+  []
+  (let [entry-ids (ids)]
+    (if (seq entry-ids)
+      (graph/burn-by-ids! (current/runtime) entry-ids)
       {:burned [] :count 0})))
 
+(def ^:private ephemeral-namespace-declaration
+  "The ephemeral-owned `ephemeral/*` attribute namespace stamped onto scratch
+  strands by `add`. `:keys` is advisory."
+  {:kind :attr-namespace
+   :name "ephemeral"
+   :owner :skein/spools-ephemeral
+   :keys ["ephemeral/entry"]
+   :doc "Marker attribute on temporary parent-owned strands created by skein.spools.ephemeral/add."})
+
 (defn install!
-  "Install ephemeral strand helpers into the active weaver."
+  "Install ephemeral strand helpers into the active weaver.
+
+  Declares the `ephemeral` attribute namespace this spool owns and returns the
+  installation metadata: the marker attribute plus the `add`/`burn` fns as a
+  symbol map."
   []
+  (vocab/declare! (current/runtime) ephemeral-namespace-declaration)
   {:installed true
    :namespace 'skein.spools.ephemeral
-   :ephemeral {:attribute :ephemeral
-               :creator 'skein.spools.ephemeral/ephemeral!
-               :burner 'skein.spools.ephemeral/burn-ephemeral!}})
+   :ephemeral {:attribute :ephemeral/entry
+               :add 'skein.spools.ephemeral/add
+               :burn 'skein.spools.ephemeral/burn-all!}})
