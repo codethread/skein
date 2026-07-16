@@ -32,6 +32,26 @@
   rules agree by construction on \"the current serving run is dead.\""
   ["failed" "exhausted"])
 
+(def stalled-gates-query
+  "Query definition behind the registered `stalled-subagent-gates` query: an
+  active subagent gate whose spawn errored (non-blank `gate/error`), or whose
+  current serving run is dead in a terminal phase. The gate's incoming `serves`
+  edges reach each delegated run's `agent-run/phase`; a superseded run carries
+  `agent-run/phase \"superseded\"` (never `failed`/`exhausted`), so matching a
+  dead phase over `serves` selects exactly the gates whose current serving run
+  is dead — by construction in lockstep with the `gate-stalled?` predicate, no
+  `gate/superseded-by` bridge. `install!` registers it under the query name;
+  readers composing on the rule (loom's `flow-status`) list with this definition
+  directly, so membership cannot drift even on a runtime where the executor is
+  not installed."
+  [:and [:= :state "active"]
+   [:= [:attr "workflow/gate"] "subagent"]
+   [:or
+    [:and [:exists [:attr "gate/error"]]
+     [:not [:= [:attr "gate/error"] ""]]]
+    [:edge/in "serves"
+     [:in [:attr "agent-run/phase"] stalled-run-phases]]]])
+
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous subagent-executor scans."
   nil)
@@ -266,21 +286,9 @@
                       'skein.spools.executors.subagent/on-event
                       {:spool "subagent"})
     (workflow/register-executor! :subagent gate-stalled?)
-    ;; The human attention surface for stuck gates: an active subagent gate whose
-    ;; spawn errored, or whose current delegated run is dead in a terminal phase.
-    ;; The gate's incoming `serves` edges reach each delegated run's
-    ;; `agent-run/phase`; a superseded run carries `agent-run/phase "superseded"`
-    ;; (never `failed`/`exhausted`), so matching a dead phase over `serves` selects
-    ;; exactly the gates whose current serving run is dead — by construction in
-    ;; lockstep with the `gate-stalled?` predicate, no `gate/superseded-by` bridge.
-    (graph/register-query! runtime 'stalled-subagent-gates
-                         [:and [:= :state "active"]
-                          [:= [:attr "workflow/gate"] "subagent"]
-                          [:or
-                           [:and [:exists [:attr "gate/error"]]
-                            [:not [:= [:attr "gate/error"] ""]]]
-                           [:edge/in "serves"
-                            [:in [:attr "agent-run/phase"] stalled-run-phases]]]])
+    ;; The human attention surface for stuck gates; the rule lives on
+    ;; `stalled-gates-query` so composing readers share it without the registry.
+    (graph/register-query! runtime 'stalled-subagent-gates stalled-gates-query)
     (graph/register-query! runtime 'blocked-deliveries
                          [:and [:= :state "closed"]
                           [:exists [:attr "gate/delivery-blocked"]]

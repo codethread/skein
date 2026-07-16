@@ -17,7 +17,7 @@
 
   `flow-status` builds on agent-run rather than re-deriving it: serving runs come
   from `skein.spools.agent-run/runs-serving` and stalled-gate membership from the
-  subagent executor's registered `stalled-subagent-gates` query, so loom and the
+  subagent executor's `stalled-gates-query` definition, so loom and the
   executor cannot drift apart on which run serves a gate or which gate is stuck."
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
@@ -25,6 +25,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.agent-run :as agent-run]
+            [skein.spools.executors.subagent :as subagent]
             [skein.spools.workflow :as workflow]
             [skein.api.spool.alpha :refer [attr-get entity-projection fail! reject-unknown-keys! require-valid!]]))
 
@@ -274,11 +275,12 @@
   never surface in an unrelated run's payload. Includes a `:dev/mermaid` gate
   chain rendered by `gate-chain-mermaid`.
 
-  `:stalled-gates` reads the subagent executor's registered
-  `stalled-subagent-gates` query rather than re-deriving its rule, so membership
-  is the executor's: an active subagent gate whose `gate/error` is non-blank, or
-  whose current serving run is dead. The query must be registered — an
-  uninstalled subagent executor fails loudly here."
+  `:stalled-gates` lists with the subagent executor's `stalled-gates-query`
+  definition rather than re-deriving its rule, so membership is the executor's:
+  an active subagent gate whose `gate/error` is non-blank, or whose current
+  serving run is dead. Sharing the definition (not the registered name) keeps
+  the rule single-sourced while staying readable on runtimes where the executor
+  is not installed."
   [rt run-id]
   (let [history (workflow/run-history run-id)
         frontier (workflow/ready run-id)
@@ -288,7 +290,7 @@
         gate->run (into {} (keep (fn [g] (when-let [r (serving-run-id rt (:id g))] [(:id g) r]))) run-gates)
         run-delegated-ids (set (vals gate->run))
         stalled-gates (filterv #(contains? run-gate-ids (:id %))
-                               (weaver/list-query rt 'stalled-subagent-gates {}))
+                               (weaver/list rt subagent/stalled-gates-query {}))
         agent-failures (filterv #(contains? run-delegated-ids (:id %))
                                 (weaver/list rt [:in [:attr "agent-run/phase"] ["failed" "exhausted"]] {}))
         stalled-gate-ids (set (map :id stalled-gates))

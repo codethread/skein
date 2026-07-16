@@ -1062,7 +1062,7 @@
               (is (true? (get-in by-title ["Delegate B" :stalled?])))
               (is (= "failed" (get-in by-title ["Delegate B" :phase])))
               (is (= #{(:id run-b)} (set (map :id (:agent-failures status)))))
-              ;; membership is the executor's registered rule: gate B's serving run is dead
+              ;; membership is the executor's query rule: gate B's serving run is dead
               (is (= #{gate-b} (set (map :id (:stalled-gates status)))))
               (is (str/includes? (:dev/mermaid status) "Delegate B (stalled)")))))))))
 

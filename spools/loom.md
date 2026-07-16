@@ -81,11 +81,12 @@ Every function is **read-only** and composes the public `skein.api.graph.alpha` 
 - `:stalled-gates`, `:agent-failures` — compact summaries scoped to **this run's
   own** gates and delegated runs, so records from other workflows never leak into
   an unrelated run's payload. `:stalled-gates` membership is not loom's own rule:
-  it reads the subagent executor's registered `stalled-subagent-gates` query, so
+  it lists with the subagent executor's `stalled-gates-query` definition — the
+  same definition `install!` registers as the `stalled-subagent-gates` query — so
   a gate is a member when it is active, gated `subagent`, and either its
   `gate/error` is non-blank or its current serving run is dead
-  (`failed`/`exhausted`). That query must be registered — flow-status fails
-  loudly against a runtime with no subagent executor installed.
+  (`failed`/`exhausted`). Sharing the definition rather than the registered name
+  keeps flow-status readable on runtimes where the executor is not installed.
 - `:dev/mermaid` — the gate chain rendered by `gate-chain-mermaid`.
 
 ## 4. See also
