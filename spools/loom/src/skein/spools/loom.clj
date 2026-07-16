@@ -274,7 +274,7 @@
   chain rendered by `gate-chain-mermaid`."
   [rt run-id]
   (let [history (workflow/run-history run-id)
-        frontier (workflow/next-steps run-id)
+        frontier (workflow/ready run-id)
         done (workflow/done? run-id)
         run-gates (run-subagent-gates rt history)
         run-gate-ids (set (map :id run-gates))

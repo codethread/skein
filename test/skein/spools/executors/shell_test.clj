@@ -46,7 +46,7 @@
    (workflow/step :after "After" :self :depends-on [:check])))
 
 (defn- ready-shell-gate [run-id]
-  (first (filter #(= "shell" (:gate %)) (workflow/next-steps run-id))))
+  (first (filter #(= "shell" (:gate %)) (workflow/ready run-id))))
 
 (defn- shell-gate-strand [rt run-id]
   (first (weaver/list rt [:and [:= [:attr "workflow/gate"] "shell"]
@@ -69,7 +69,7 @@
         (is (zero? (attr closed :shell/exit-code)))
         (is (string? (attr closed :shell/output)))
         (is (nil? (attr closed :shell/error)))
-        (is (= "After" (:title (first (workflow/next-steps "pass")))))))))
+        (is (= "After" (:title (first (workflow/ready "pass")))))))))
 
 (deftest non-zero-exit-stamps-error-stays-ready-and-is-discoverable
   (with-reed
@@ -84,7 +84,7 @@
         (is (string? (attr errored :shell/output)))
         (is (str/includes? (attr errored :shell/error) "exited 1"))
         ;; the gate stays ready and stamped, not masquerading as a closed step
-        (is (= [gate-id] (mapv :id (filter #(= "shell" (:gate %)) (workflow/next-steps "fail")))))
+        (is (= [gate-id] (mapv :id (filter #(= "shell" (:gate %)) (workflow/ready "fail")))))
         (is (nil? (attr (weaver/show rt gate-id) :workflow/outcome-by)))
         ;; discoverable through both the stall predicate and the coordinator query
         (is (= gate-id (:gate (reed/gate-stalled? (ready-shell-gate "fail")))))
@@ -219,7 +219,7 @@
                               "Iso"
                               (workflow/gate :sub "Delegate" :subagent
                                              :attributes {"shell/argv" ["true"]})) {})
-      (let [sub-gate-id (:id (first (workflow/next-steps "iso")))]
+      (let [sub-gate-id (:id (first (workflow/ready "iso")))]
         (reed/scan!)
         (is (= "active" (:state (weaver/show rt sub-gate-id))))
         (is (nil? (attr (weaver/show rt sub-gate-id) :shell/running)))
@@ -240,7 +240,7 @@
   (with-reed
     (fn [rt]
       (workflow/start! "comp" (gated-gate "comp" {"shell/argv" ["true"]}) {})
-      (let [first-step (first (workflow/next-steps "comp"))]
+      (let [first-step (first (workflow/ready "comp"))]
         (is (= "First" (:title first-step)))
         ;; the :shell gate is not ready yet, so reed must not touch it
         (reed/scan!)
@@ -254,7 +254,7 @@
       (let [gate-id (:id (shell-gate-strand rt "comp"))]
         (await-eventually #(= "closed" (:state (weaver/show rt gate-id))))
         (is (zero? (attr (weaver/show rt gate-id) :shell/exit-code)))
-        (is (= "After" (:title (first (workflow/next-steps "comp")))))))))
+        (is (= "After" (:title (first (workflow/ready "comp")))))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for reed's versioned spool-state: a key added to new-state

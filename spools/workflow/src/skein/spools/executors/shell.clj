@@ -292,7 +292,7 @@
       (locking (scan-monitor)
         (doseq [root (workflow/active-runs)
                 :let [run-id (attr root :workflow/run-id)]
-                step (workflow/next-steps run-id)
+                step (workflow/ready run-id)
                 :when (= "shell" (:gate step))]
           (claim-and-dispatch! runtime run-id step))
         {:scanned true}))))

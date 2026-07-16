@@ -68,7 +68,7 @@ independently and never block each other.
 
 The subagent executor links each delegated run to its gate with a `serves` edge from the run to the
 gate. It must not use `parent-of` for this provenance because that structural relation would place
-the run inside the workflow subgraph and surface it as workflow `next-steps` work. Agent-run lineage
+the run inside the workflow subgraph and surface it as workflow `ready` work. Agent-run lineage
 uses `supersedes` edges; retry successors inherit the same `serves` target.
 
 ## Worked example

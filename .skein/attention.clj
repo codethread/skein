@@ -25,13 +25,12 @@
 (defrule hitl-checkpoint-ready
   "Notify when a human-in-the-loop workflow checkpoint is ready to decide."
   [{:keys [strand ready-ids]}]
-  (let [hitl (config-attr strand :workflow/hitl)]
-    (when (and (= "active" (:state strand))
-               (= "checkpoint" (config-attr strand :workflow/role))
-               (or (= true hitl) (= "true" hitl))
-               (contains? ready-ids (:id strand)))
-      {:title (str "HITL checkpoint ready: " (:title strand))
-       :body (str "Checkpoint " (:id strand) " is ready for human attention.")})))
+  (when (and (= "active" (:state strand))
+             (= "checkpoint" (config-attr strand :workflow/role))
+             (= "human" (config-attr strand :workflow/checkpoint-kind))
+             (contains? ready-ids (:id strand)))
+    {:title (str "HITL checkpoint ready: " (:title strand))
+     :body (str "Checkpoint " (:id strand) " is ready for human attention.")}))
 
 (defrule agent-failure
   "Notify when an agent run has failed or exhausted its attempts."

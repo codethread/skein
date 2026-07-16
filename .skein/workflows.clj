@@ -560,14 +560,14 @@
                      (land-start! feature (select-keys args [:branch :worktree :card])))
       "next" (do (config/require-non-blank! :feature feature)
                  {:feature feature
-                  :ready (workflow/next-steps feature)})
+                  :ready (workflow/ready feature)})
       "complete" (let [[rest-tokens step] (config/pop-step-selector "land complete" tail)
                        notes (first rest-tokens)]
                    (config/require-non-blank! :feature feature)
                    (when (> (count rest-tokens) 1)
                      (throw (ex-info "land complete accepts at most one notes argument"
                                      {:op "land complete" :help "strand help land" :extra (vec (rest rest-tokens))})))
-                   (let [ready-before (workflow/next-steps feature)
+                   (let [ready-before (workflow/ready feature)
                          releasing? (some #(contains? #{"land.cleanup" "land.abort.record"} (:action-ref %)) ready-before)
                          root (workflow/current-root feature)
                          context (attr-value root :workflow/context)
@@ -617,7 +617,7 @@
                      {:feature feature
                       :roots (mapv loom/summarize (if root [root] []))
                       :done (workflow/done? feature)
-                      :ready (workflow/next-steps feature)
+                      :ready (workflow/ready feature)
                       :history (workflow/run-history feature)
                       :merge-lock (inspect-merge-lock)}))
       "break-lock" (let [reason (first tail)]

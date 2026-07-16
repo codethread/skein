@@ -81,7 +81,7 @@
                  (weaver/list rt [:edge/out "serves" [:= :id gate-id]] {}))))
 
 (defn- ready-subagent-gate [run-id]
-  (first (filter #(= "subagent" (:gate %)) (workflow/next-steps run-id))))
+  (first (filter #(= "subagent" (:gate %)) (workflow/ready run-id))))
 
 (defn- edge-row [rt from-id to-id type]
   (db/execute-one! (:datasource rt)
@@ -97,7 +97,7 @@
     (fn [rt]
       (workflow/start! "happy" (workflow-with-gate {"agent-run/harness" "sh-tail"
                                                     "agent-run/prompt" "echo gate-result"}) {})
-      (let [[first-step] (workflow/next-steps "happy")]
+      (let [[first-step] (workflow/ready "happy")]
         (workflow/complete! "happy" {:step (:id first-step)}))
       ;; capture gate-id before settling: a fast gate (no subprocess delay)
       ;; can already be delivered and gone from next-steps by the time the
@@ -107,7 +107,7 @@
             run-id (:id (run-for-gate rt gate-id))
             run (await-delivered rt run-id)
             gate (weaver/show rt gate-id)
-            after (first (workflow/next-steps "happy"))]
+            after (first (workflow/ready "happy"))]
         (is (= "true" (attr run :gate/delivered)))
         (is (= (:id run) (attr gate :workflow/outcome-by)))
         (is (= "gate-result" (attr gate :workflow/outcome-notes)))
@@ -150,7 +150,7 @@
           (is (nil? (attr gate :workflow/outcome-by)))
           (is (nil? (attr gate :workflow/outcome-notes)))
           (is (= [gate-id]
-                 (mapv :id (workflow/next-steps "invalid-result")))))))))
+                 (mapv :id (workflow/ready "invalid-result")))))))))
 
 (deftest blocked-gate-spawns-only-after-blocker-closes
   (with-treadle
@@ -167,7 +167,7 @@
         (let [gate-id (:id (first (weaver/list rt [:= :title "Delegate"] {})))]
           (is (some? gate-id))
           (is (nil? (run-for-gate rt gate-id)))
-          (let [[blocker] (workflow/next-steps "blocked")]
+          (let [[blocker] (workflow/ready "blocked")]
             (workflow/complete! "blocked" {:step (:id blocker)}))
           (events/await-quiescent! rt)
           (is (some? (run-for-gate rt gate-id))))))))
@@ -204,7 +204,7 @@
         (is (= "active" (:state failed)))
         ;; the failed run serves the gate; the gate stays ready and does not respawn
         (is (= gate-id (:to_strand_id (edge-row rt (:id failed) gate-id "serves"))))
-        (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/next-steps "retry")))))
+        (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/ready "retry")))))
         ;; recover with `agent retry`: supersede the dead run with a fresh
         ;; successor that inherits the serves edge — no re-link step
         (let [fresh (shuttle/supersede-and-respawn! (:id failed)
@@ -243,7 +243,7 @@
         ;; (b) the gate is never delivered and its downstream step stays blocked
         (is (nil? (attr failed :gate/delivered)))
         (is (nil? (attr (weaver/show rt gate-id) :workflow/outcome-notes)))
-        (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/next-steps "blank")))))
+        (is (= [gate-id] (mapv :id (filter #(= "subagent" (:gate %)) (workflow/ready "blank")))))
         ;; (c) discoverable: the run through agent-failures, the gate through both
         ;; the stall predicate and the stalled-gates coordinator query.
         (is (some #(= (:id failed) (:id %)) (weaver/list-query rt 'agent-failures {})))
@@ -258,7 +258,7 @@
               delivered (await-delivered rt (:id fresh))]
           (is (= "true" (attr delivered :gate/delivered)))
           (is (= "recovered" (attr (weaver/show rt gate-id) :workflow/outcome-notes)))
-          (is (= "After" (:title (first (workflow/next-steps "blank"))))))))))
+          (is (= "After" (:title (first (workflow/ready "blank"))))))))))
 
 (deftest recovery-respawn-keeps-stalled-gates-in-lockstep-with-predicate
   ;; The `stalled-gates` query and the `gate-stalled?` predicate both resolve the
@@ -426,7 +426,7 @@
                              (workflow/gate :ci "Wait for CI" :ci
                                             :attributes {"agent-run/harness" "sh-tail"
                                                          "agent-run/prompt" "echo ignored"})) {})
-      (let [gate-id (:id (first (workflow/next-steps "ci")))]
+      (let [gate-id (:id (first (workflow/ready "ci")))]
         (events/await-quiescent! rt)
         (is (nil? (run-for-gate rt gate-id)))))))
 

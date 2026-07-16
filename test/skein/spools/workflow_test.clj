@@ -49,7 +49,7 @@
             root (repl/strand root-id)
             subgraph (graph/subgraph rt [root-id])]
         (is (= "Ship workflow spool" (:title root)))
-        (is (= "molecule" (get-in root [:attributes :workflow/role])))
+        (is (= "root" (get-in root [:attributes :workflow/role])))
         (is (= #{"Design workflow spool" "Implement workflow spool" "Review workflow spool" "Ship workflow spool"}
                (set (map :title (:strands subgraph)))))
         (is (= 3 (count (filter #(= "parent-of" (:edge_type %)) (:edges subgraph)))))))))
@@ -113,15 +113,15 @@
                                                     {:key :remake
                                                      :label "Remake"
                                                      :description "Start over with fresh bread."}]))]
-        (is (= [{:title "Butter bread" :kind "step"}]
-               (mapv #(select-keys % [:title :kind])
+        (is (= [{:title "Butter bread" :role "step"}]
+               (mapv #(select-keys % [:title :role])
                      (:ready (workflow/start! "toastie-demo" toastie {:filling "cheese"})))))
         (is (= "Check toastie melt and crunch" (:title (first (:ready (workflow/complete! "toastie-demo"))))))
         ;; completing the inner quality step auto-closes the procedure join, so
         ;; the checkpoint is next with no manual "Complete quality" step to close
         (is (= "Choose toastie finish" (:title (first (:ready (workflow/complete! "toastie-demo"))))))
-        (is (= ["serve" "remake"] (:choices (workflow/next-step "toastie-demo"))))
-        (is (not (contains? (workflow/next-step "toastie-demo") :choice-details)))
+        (is (= ["serve" "remake"] (:choices (workflow/ready-step "toastie-demo"))))
+        (is (not (contains? (workflow/ready-step "toastie-demo") :choice-details)))
         (is (= {"label" "Serve"
                 "description" "Plate the toastie and serve it hot."
                 "next" "skein.spools.workflow-test/toastie-serve-workflow"}
@@ -257,7 +257,7 @@
                        {:family "pull-request"
                         :definition 'skein.spools.workflow-test/pr-dev-workflow
                         :context {:feature "pr-42"}})
-      (is (= "Implement pr-42" (:title (workflow/next-step "pr-flow"))))
+      (is (= "Implement pr-42" (:title (workflow/ready-step "pr-flow"))))
       (is (= "Open the change for review" (:title (first (:ready (workflow/complete! "pr-flow"))))))
       ;; the CI round is inlined by call; its gate tells the driver to wait
       ;; (e.g. run a blocking `gh pr checks --watch`), not to do work
@@ -303,7 +303,7 @@
       (workflow/start! "pr-forge-ref" (pr-dev-workflow {}) {:feature "ref-feat"}
                        {:family "pull-request" :context {:feature "ref-feat"}})
       (workflow/complete! "pr-forge-ref")
-      (let [open-step (workflow/next-step "pr-forge-ref")]
+      (let [open-step (workflow/ready-step "pr-forge-ref")]
         (is (= "pr.open" (:action-ref open-step)))
         (is (= "gh pr create --fill" (:instruction open-step))))
       (let [gate (first (:ready (workflow/complete! "pr-forge-ref")))]
@@ -317,7 +317,7 @@
                        {:family "pull-request"
                         :context {:feature "gl-feat" :bindings gitlab-pr-bindings}})
       (workflow/complete! "pr-forge-gl")
-      (is (= "glab mr create --fill" (:instruction (workflow/next-step "pr-forge-gl"))))
+      (is (= "glab mr create --fill" (:instruction (workflow/ready-step "pr-forge-gl"))))
       (let [gate (first (:ready (workflow/complete! "pr-forge-gl")))]
         (is (= "pr.ci.wait" (:action-ref gate)))
         (is (= "glab ci status --live" (:instruction gate)))
@@ -359,8 +359,8 @@
             result (workflow/pour! definition {} {:run-id "blocked-run"})
             b-id (get-in result [:refs :b])]
         (repl/update! b-id {:edges [{:type "depends-on" :to (:id blocker)}]})
-        (is (= {:title "Do A" :kind "step"}
-               (select-keys (workflow/next-step "blocked-run") [:title :kind])))
+        (is (= {:title "Do A" :role "step"}
+               (select-keys (workflow/ready-step "blocked-run") [:title :role])))
         (is (= {:ready [] :done false} (workflow/complete! "blocked-run")))
         (is (not (workflow/done? "blocked-run")))
         (is (some? (workflow/current-root "blocked-run")))
@@ -380,8 +380,8 @@
                         (workflow/step :a "Do A" :self)
                         (workflow/step :b "Do B" :self :depends-on [:a]))]
         (workflow/start! "linear-run" definition {})
-        (is (= [{:title "Do B" :kind "step"}]
-               (mapv #(select-keys % [:title :kind]) (:ready (workflow/complete! "linear-run")))))
+        (is (= [{:title "Do B" :role "step"}]
+               (mapv #(select-keys % [:title :role]) (:ready (workflow/complete! "linear-run")))))
         (is (= {:ready [] :done true} (workflow/complete! "linear-run")))
         (is (workflow/done? "linear-run"))
         (is (nil? (workflow/current-root "linear-run")))))))
@@ -397,15 +397,15 @@
             a-id (:id (first (filter #(= "Do A" (:title %)) started)))
             b-id (:id (first (filter #(= "Do B" (:title %)) started)))]
         (is (= #{"Do A" "Do B"} (set (map :title started))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow next steps are ready"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow steps are ready"
                               (workflow/complete! "parallel-run")))
         (is (= "active" (:state (repl/strand a-id))))
         (is (= "active" (:state (repl/strand b-id))))
         (let [remaining (:ready (workflow/complete! "parallel-run" {:step a-id}))]
           (is (= "closed" (:state (repl/strand a-id))))
           (is (= "active" (:state (repl/strand b-id))))
-          (is (= [{:title "Do B" :kind "step"}]
-                 (mapv #(select-keys % [:title :kind]) remaining))))))))
+          (is (= [{:title "Do B" :role "step"}]
+                 (mapv #(select-keys % [:title :role]) remaining))))))))
 
 (deftest workflow-complete-records-notes-and-attributes
   (with-runtime
@@ -423,7 +423,7 @@
     (fn [_rt _]
       (let [definition (workflow/workflow "Bad step run" (workflow/step :a "Do A" :self))]
         (workflow/start! "bad-step-run" definition {})
-        (let [a-id (:id (workflow/next-step "bad-step-run"))]
+        (let [a-id (:id (workflow/ready-step "bad-step-run"))]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Requested workflow step is not ready"
                                 (workflow/complete! "bad-step-run" {:step "no-such-step"})))
           (is (= "active" (:state (repl/strand a-id)))))))))
@@ -441,7 +441,7 @@
         (let [gate (first (:ready (workflow/complete! "gated-run")))
               gate-id (:id gate)]
           (is (= "ci" (:gate gate)))
-          (is (= "step" (:kind gate)))
+          (is (= "step" (:role gate)))
           ;; the gate refuses to close without :by and stays active
           (try
             (workflow/complete! "gated-run")
@@ -462,8 +462,8 @@
             (is (= "closed" (:state closed)))
             (is (= "ci" (get-in closed [:attributes :workflow/outcome-by])))
             (is (= "green" (get-in closed [:attributes :workflow/outcome-notes])))
-            (is (= [{:title "Deploy" :kind "step"}]
-                   (mapv #(select-keys % [:title :kind]) remaining)))))))))
+            (is (= [{:title "Deploy" :role "step"}]
+                   (mapv #(select-keys % [:title :role]) remaining)))))))))
 
 (deftest workflow-non-gate-step-closes-without-by
   (with-runtime
@@ -522,8 +522,8 @@
         (let [old-root-id (:id (workflow/current-root "route-to-work"))
               remaining (:ready (workflow/choose! "route-to-work" :continue))]
           (is (= "closed" (:state (repl/strand old-root-id))))
-          (is (= [{:title "Do follow up work" :kind "step"}]
-                 (mapv #(select-keys % [:title :kind]) remaining)))
+          (is (= [{:title "Do follow up work" :role "step"}]
+                 (mapv #(select-keys % [:title :role]) remaining)))
           ;; current-root throws on more than one active root, so a non-nil
           ;; result asserts exactly one active root remains for the run-id
           (let [new-root (workflow/current-root "route-to-work")]
@@ -585,7 +585,7 @@
       (workflow/start! "keyword-start" :loopy-test {})
       (is (= "skein.spools.workflow-test/loopy-workflow"
              (get-in (workflow/current-root "keyword-start") [:attributes :workflow/definition])))
-      (is (= "Orient" (:title (workflow/next-step "keyword-start")))))))
+      (is (= "Orient" (:title (workflow/ready-step "keyword-start")))))))
 
 (deftest workflow-describe-accepts-registered-keyword
   (workflow/register-workflow! :loopy-describe 'skein.spools.workflow-test/loopy-workflow)
@@ -602,17 +602,17 @@
 (deftest workflow-revise-choice-loops-back-to-a-fresh-revision-round
   (with-runtime
     (fn [_rt _]
-      (is (= [{:title "Orient" :kind "step"}]
-             (mapv #(select-keys % [:title :kind])
+      (is (= [{:title "Orient" :role "step"}]
+             (mapv #(select-keys % [:title :role])
                    (:ready (workflow/start! "loopy" (loopy-workflow {}) {})))))
-      (is (= [{:title "Do work" :kind "step"}]
-             (mapv #(select-keys % [:title :kind]) (:ready (workflow/complete! "loopy")))))
-      (is (= [{:title "Sign off" :kind "checkpoint"}]
-             (mapv #(select-keys % [:title :kind]) (:ready (workflow/complete! "loopy")))))
-      (let [signoff (workflow/next-step "loopy")
+      (is (= [{:title "Do work" :role "step"}]
+             (mapv #(select-keys % [:title :role]) (:ready (workflow/complete! "loopy")))))
+      (is (= [{:title "Sign off" :role "checkpoint"}]
+             (mapv #(select-keys % [:title :role]) (:ready (workflow/complete! "loopy")))))
+      (let [signoff (workflow/ready-step "loopy")
             signoff-id (:id signoff)
             old-root-id (:id (workflow/current-root "loopy"))]
-        (is (= "checkpoint" (:kind signoff)))
+        (is (= "checkpoint" (:role signoff)))
         ;; revise routes back to a fresh revision round under the same run-id
         (let [remaining (:ready (workflow/choose! "loopy" :revise))]
           (is (= "closed" (:state (repl/strand signoff-id))))
@@ -622,10 +622,10 @@
             (is (some? new-root))
             (is (not= old-root-id (:id new-root))))
           ;; :orient is condition-skipped on the revision round, so :work is ready
-          (is (= [{:title "Do work" :kind "step"}]
-                 (mapv #(select-keys % [:title :kind]) remaining))))
-        (is (= [{:title "Sign off" :kind "checkpoint"}]
-               (mapv #(select-keys % [:title :kind]) (:ready (workflow/complete! "loopy")))))
+          (is (= [{:title "Do work" :role "step"}]
+                 (mapv #(select-keys % [:title :role]) remaining))))
+        (is (= [{:title "Sign off" :role "checkpoint"}]
+               (mapv #(select-keys % [:title :role]) (:ready (workflow/complete! "loopy")))))
         (is (= {:ready [] :done true} (workflow/choose! "loopy" :approved)))
         (is (workflow/done? "loopy"))))))
 
@@ -636,7 +636,7 @@
       (workflow/complete! "loopy-fail")
       (workflow/complete! "loopy-fail")
       (let [old-root-id (:id (workflow/current-root "loopy-fail"))
-            signoff-id (:id (workflow/next-step "loopy-fail"))]
+            signoff-id (:id (workflow/ready-step "loopy-fail"))]
         ;; a failed continuation apply must not leave the run in a false
         ;; terminal state; the checkpoint close and continuation pour are folded
         ;; into one batch, so a failing apply commits nothing
@@ -651,8 +651,8 @@
         (is (= "active" (:state (repl/strand signoff-id))))
         (is (false? (workflow/done? "loopy-fail")))
         ;; the run stays resumable: retrying the same choice now succeeds
-        (is (= [{:title "Do work" :kind "step"}]
-               (mapv #(select-keys % [:title :kind])
+        (is (= [{:title "Do work" :role "step"}]
+               (mapv #(select-keys % [:title :role])
                      (:ready (workflow/choose! "loopy-fail" :revise)))))))))
 
 (deftest workflow-runtime-selects-among-parallel-ready-checkpoints
@@ -667,9 +667,9 @@
             started (:ready (workflow/start! "parallel-checkpoints" definition {}))
             x-id (:id (first (filter #(= "Pick X" (:title %)) started)))
             y-id (:id (first (filter #(= "Pick Y" (:title %)) started)))]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow next steps are ready"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow steps are ready"
                               (workflow/choose! "parallel-checkpoints" :go)))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow next steps are ready"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow steps are ready"
                               (workflow/choice-details "parallel-checkpoints")))
         (is (= "active" (:state (repl/strand x-id))))
         (is (= "active" (:state (repl/strand y-id))))
@@ -692,7 +692,7 @@
             right-result (workflow/wisp! {:name "Right" :steps [{:id :b :title "B"}]})
             left-id (workflow/molecule-id left-result)
             right-id (workflow/molecule-id right-result)]
-        (is (= "true" (get-in (repl/strand left-id) [:attributes :workflow/wisp])))
+        (is (= "wisp" (get-in (repl/strand left-id) [:attributes :workflow/form])))
         (workflow/bond! left-id right-id)
         (let [digest (workflow/squash! left-id "Left digest" {:summary "done"})]
           (is (= "closed" (:state digest)))
@@ -709,14 +709,14 @@
         (workflow/bond! left-root-id right-root-id)
         ;; the right step has no deps of its own, but the dep-blocked root
         ;; hides the whole run until the left root closes
-        (is (= [] (workflow/next-steps "bond-right")))
+        (is (= [] (workflow/ready "bond-right")))
         (is (false? (workflow/done? "bond-right")))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"No ready workflow step"
                               (workflow/complete! "bond-right")))
-        (is (= "Do A" (:title (workflow/next-step "bond-left"))))
+        (is (= "Do A" (:title (workflow/ready-step "bond-left"))))
         (workflow/complete! "bond-left")
         (is (true? (workflow/done? "bond-left")))
-        (is (= ["Do B"] (mapv :title (workflow/next-steps "bond-right"))))))))
+        (is (= ["Do B"] (mapv :title (workflow/ready "bond-right"))))))))
 
 (deftest workflow-checkpoint-rejects-duplicate-choice-keys
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"choice keys must be unique"
@@ -823,7 +823,7 @@
                    :attributes {"workflow/role" "checkpoint"
                                 "workflow/choices" ["a" "b"]
                                 "skills" "clojure"}})]
-    (is (= {:id "s1" :title "Do it" :state "active" :kind "checkpoint"
+    (is (= {:id "s1" :title "Do it" :state "active" :role "checkpoint"
             :choices ["a" "b"] :skills "clojure"}
            keyworded))
     (is (= keyworded stringed))))
@@ -1046,15 +1046,15 @@
     (is (= #{:molecule :verify} refs))
     (is (not-any? (fn [[_ to _]] (= :migrate to)) edges))))
 
-(deftest workflow-human-checkpoint-auto-stamps-hitl
-  ;; :kind :human is the canonical HITL signal; the builder stamps it (and it is
-  ;; the default kind), while :agent checkpoints carry no hitl attribute.
+(deftest workflow-checkpoint-kind-carries-the-decision-owner
+  ;; workflow/checkpoint-kind is the canonical HITL signal: :human is the default
+  ;; kind, and an :agent checkpoint is distinguished by this one attribute.
   (let [human (workflow/checkpoint :signoff "Sign off" :kind :human :choices [:approved])
         default-kind (workflow/checkpoint :also "Also decide" :choices [:approved])
         agent (workflow/checkpoint :route "Route" :kind :agent :choices [:go])]
-    (is (= "true" (get-in human [:attributes "workflow/hitl"])))
-    (is (= "true" (get-in default-kind [:attributes "workflow/hitl"])))
-    (is (nil? (get-in agent [:attributes "workflow/hitl"])))))
+    (is (= "human" (get-in human [:attributes "workflow/checkpoint-kind"])))
+    (is (= "human" (get-in default-kind [:attributes "workflow/checkpoint-kind"])))
+    (is (= "agent" (get-in agent [:attributes "workflow/checkpoint-kind"])))))
 
 (deftest workflow-run-scoped-views-carry-run-id-and-filter-frontier
   (with-runtime
@@ -1065,13 +1065,13 @@
                                           (workflow/checkpoint :decide "Decide" :kind :agent :choices [:ok]))
             started (workflow/start! "runid-run" definition {})]
         (is (= "runid-run" (:run-id (first (:ready started)))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow next steps are ready"
-                              (workflow/next-step "runid-run")))
-        (is (= #{"Do A" "Hand off" "Decide"} (set (map :title (workflow/next-steps "runid-run")))))
-        (is (= ["runid-run" "runid-run" "runid-run"] (mapv :run-id (workflow/next-steps "runid-run"))))
-        (is (= ["Hand off"] (mapv :title (workflow/next-gates "runid-run" "subagent"))))
-        (is (= "Decide" (:title (workflow/next-checkpoint "runid-run"))))
-        (is (= ["Decide"] (mapv :title (workflow/next-steps "runid-run" {:kind "checkpoint"}))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Multiple workflow steps are ready"
+                              (workflow/ready-step "runid-run")))
+        (is (= #{"Do A" "Hand off" "Decide"} (set (map :title (workflow/ready "runid-run")))))
+        (is (= ["runid-run" "runid-run" "runid-run"] (mapv :run-id (workflow/ready "runid-run"))))
+        (is (= ["Hand off"] (mapv :title (workflow/ready-gates "runid-run" "subagent"))))
+        (is (= "Decide" (:title (workflow/ready-checkpoint "runid-run"))))
+        (is (= ["Decide"] (mapv :title (workflow/ready "runid-run" {:role "checkpoint"}))))
         ;; a bare step-view (no run context) stays unchanged
         (is (not (contains? (workflow/step-view {:id "x" :title "T" :state "active"
                                                  :attributes {"workflow/role" "step"}})
@@ -1095,7 +1095,7 @@
       (is (= [{"key" "reason" "required" true "description" "Why abort"}
               {"key" "note" "required" false}]
              (get (workflow/choice-detail "input-run" :abort) "input")))
-      (let [gate-id (:id (workflow/next-step "input-run"))]
+      (let [gate-id (:id (workflow/ready-step "input-run"))]
         ;; a missing required key fails loudly before any mutation, carrying the
         ;; declaration in ex-data, and the checkpoint stays active
         (try
@@ -1151,14 +1151,14 @@
                         (workflow/call :inner join-inner-workflow {} :depends-on [:prep])
                         (workflow/step :after "After" :self :depends-on [:inner]))]
         (workflow/start! "join-run" definition {})
-        (is (= "Prep" (:title (workflow/next-step "join-run"))))
+        (is (= "Prep" (:title (workflow/ready-step "join-run"))))
         ;; completing prep reveals the inner step, not the join
         (is (= "Do inner work" (:title (first (:ready (workflow/complete! "join-run"))))))
         ;; completing the last inner step auto-closes the join in the same
         ;; transaction: the join never appears as ready work and :after is next
         (let [after-inner (:ready (workflow/complete! "join-run"))]
           (is (= ["After"] (mapv :title after-inner)))
-          (is (not-any? #(= "procedure" (:kind %)) after-inner)))
+          (is (not-any? #(= "procedure" (:role %)) after-inner)))
         ;; the join strand is closed with engine provenance, though it was never
         ;; returned as a ready step nor manually completed
         (let [join (first (repl/query [:and
@@ -1215,13 +1215,13 @@
              (workflow/workflow-definition :wt-second)))
       (workflow/start! "named-run" (registry-router-stage {:target :wt-second}) {})
       ;; a registered keyword name routes just like a symbol :next target
-      (is (= [{:title "Do second" :kind "step"}]
-             (mapv #(select-keys % [:title :kind])
+      (is (= [{:title "Do second" :role "step"}]
+             (mapv #(select-keys % [:title :role])
                    (:ready (workflow/choose! "named-run" :advance)))))
       ;; an unregistered name fails loudly at choose! time, before any mutation,
       ;; so the checkpoint stays active and resumable
       (workflow/start! "unknown-run" (registry-router-stage {:target :wt-never}) {})
-      (let [go-id (:id (workflow/next-step "unknown-run"))]
+      (let [go-id (:id (workflow/ready-step "unknown-run"))]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
                               (workflow/choose! "unknown-run" :advance)))
         (is (= "active" (:state (repl/strand go-id))))))))
@@ -1258,13 +1258,13 @@
       (workflow/start! "revise-run" (revise-stage-workflow {}) {}
                        {:definition 'skein.spools.workflow-test/revise-stage-workflow
                         :context {}})
-      (is (= "Orient" (:title (workflow/next-step "revise-run"))))
-      (is (= [{:title "Sign off" :kind "checkpoint"}]
-             (mapv #(select-keys % [:title :kind]) (:ready (workflow/complete! "revise-run")))))
+      (is (= "Orient" (:title (workflow/ready-step "revise-run"))))
+      (is (= [{:title "Sign off" :role "checkpoint"}]
+             (mapv #(select-keys % [:title :role]) (:ready (workflow/complete! "revise-run")))))
       ;; :revise re-pours the run's own workflow/definition with :revision true;
       ;; the condition-gated :orient drops out, so signoff is immediately ready
-      (is (= [{:title "Sign off" :kind "checkpoint"}]
-             (mapv #(select-keys % [:title :kind]) (:ready (workflow/choose! "revise-run" :revise)))))
+      (is (= [{:title "Sign off" :role "checkpoint"}]
+             (mapv #(select-keys % [:title :role]) (:ready (workflow/choose! "revise-run" :revise)))))
       (let [revised-root (workflow/current-root "revise-run")]
         (is (true? (get-in revised-root [:attributes :workflow/context :revision])))
         ;; the override key is recorded stage-local so it can be shed on exit
@@ -1335,8 +1335,8 @@
     (is (= #{:draft :refine :signoff} (set (keys by-id))))
     (is (= "Draft widgets" (:title (:draft by-id))))
     (is (= [:!= :revision true] (:condition (:draft by-id))))
-    (is (= "checkpoint" (:kind signoff)))
-    (is (= "step" (:kind (:refine by-id))))
+    (is (= "checkpoint" (:role signoff)))
+    (is (= "step" (:role (:refine by-id))))
     (is (= "skein.spools.workflow-test/introspect-stage-b-workflow"
            (:next (get choices "approve"))))
     (is (= {:revision true} (:revise (get choices "revise"))))
@@ -1393,7 +1393,7 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow run"
                             (workflow/run-history "no-such-run"))))))
 
-(deftest workflow-archive-run-refuses-active-then-squashes-to-one-digest
+(deftest workflow-squash-run-refuses-active-then-squashes-to-one-digest
   (with-runtime
     (fn [_rt _]
       (workflow/start! "arch" (introspect-stage-a-workflow {}) {:feature "widgets"}
@@ -1403,14 +1403,14 @@
       (workflow/complete! "arch")             ; :refine
       ;; an active root cannot be archived
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"active root"
-                            (workflow/archive-run! "arch")))
+                            (workflow/squash-run! "arch")))
       (workflow/choose! "arch" :approve {})   ; hand off → stage B
       (workflow/complete! "arch")             ; :finish → done
       (is (workflow/done? "arch"))
-      (let [digest (workflow/archive-run! "arch")
+      (let [digest (workflow/squash-run! "arch")
             summary (get-in digest [:attributes :workflow/summary])
             molecules (repl/query [:and [:= [:attr "workflow/run-id"] "arch"]
-                                   [:= [:attr "workflow/role"] "molecule"]])
+                                   [:= [:attr "workflow/role"] "root"]])
             digests (repl/query [:and [:= [:attr "workflow/run-id"] "arch"]
                                  [:= [:attr "workflow/role"] "digest"]])]
         (is (= "closed" (:state digest)))
@@ -1459,7 +1459,7 @@
       (let [definition (workflow/workflow "Await executor gate"
                                           (workflow/gate :delegate "Delegate" :await-test-executor))]
         (workflow/start! "await-executor-gate" definition {})
-        (let [gate-id (:id (first (workflow/next-steps "await-executor-gate")))]
+        (let [gate-id (:id (first (workflow/ready "await-executor-gate")))]
           (is (= :await-test-executor
                  (workflow/register-executor! :await-test-executor (constantly nil))))
           ;; a healthy executor-owned gate stays silent: the run just times out
@@ -1506,6 +1506,6 @@
     (catch clojure.lang.ExceptionInfo e
       (is (= :self (:waiter (ex-data e)))))))
 
-(deftest registered-executors-reflects-registrations
+(deftest executors-reflects-registrations
   (workflow/register-executor! :registry-test-executor (constantly nil))
-  (is (contains? (workflow/registered-executors) :registry-test-executor)))
+  (is (contains? (workflow/executors) :registry-test-executor)))

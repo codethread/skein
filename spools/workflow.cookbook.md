@@ -73,7 +73,7 @@ Each recipe cites the honest source it was distilled from — a shipped spool, t
 ;; => {:ready [{:id :implement ...}] :done false}
 
 (workflow/complete! "ship-feature-x")
-;; => {:ready [{:id :signoff :kind "checkpoint" :choices ["approved" "revise"] ...}] :done false}
+;; => {:ready [{:id :signoff :role "checkpoint" :choices ["approved" "revise"] ...}] :done false}
 
 ;; revise: closes this round's root and pours a fresh one under the same
 ;; run-id; :design is condition-skipped, so the round is ready at :implement

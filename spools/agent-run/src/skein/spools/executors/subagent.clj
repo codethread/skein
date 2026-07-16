@@ -87,7 +87,7 @@
   (current-serving-run gate-id))
 
 (defn- ready-gate? [run-id gate-id]
-  (some #(= gate-id (:id %)) (workflow/next-steps run-id)))
+  (some #(= gate-id (:id %)) (workflow/ready run-id)))
 
 (defn- run-served-gate
   "The gate a run delegates: the target of its one outgoing `serves` edge, or nil."
@@ -191,7 +191,7 @@
 (defn- spawn-ready-gates! []
   (doseq [root (workflow/active-runs)
           :let [run-id (attr root :workflow/run-id)]
-          step (workflow/next-steps run-id)
+          step (workflow/ready run-id)
           :when (= "subagent" (:gate step))]
     (try
       (spawn-for-gate! run-id step)

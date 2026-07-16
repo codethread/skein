@@ -1025,7 +1025,7 @@
                         (workflow/checkpoint :accept "Accept" :depends-on [:b]
                                              :choices [:accepted]))]
         (workflow/start! "flow-status-test" definition {})
-        (let [gate-a (:id (first (workflow/next-steps "flow-status-test")))
+        (let [gate-a (:id (first (workflow/ready "flow-status-test")))
               run-a (weaver/add rt {:title "Run A"
                                     :state "closed"
                                     :attributes {:agent-run/run "true"
@@ -1034,7 +1034,7 @@
                                                  :gate/run-id "flow-status-test"}
                                     :edges [{:type "serves" :to gate-a}]})]
           (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
-          (let [gate-b (:id (first (workflow/next-steps "flow-status-test")))
+          (let [gate-b (:id (first (workflow/ready "flow-status-test")))
                 run-b (weaver/add rt {:title "Run B"
                                       :state "active"
                                       :attributes {:agent-run/run "true"

@@ -187,7 +187,7 @@ Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/age
   [{:keys [strand ready-ids]}]
   (when (and (= "active" (:state strand))
              (= "checkpoint" (get-in strand [:attributes "workflow/role"]))
-             (= "true" (str (get-in strand [:attributes "workflow/hitl"])))
+             (= "human" (get-in strand [:attributes "workflow/checkpoint-kind"]))
              (contains? ready-ids (:id strand)))       ; ready *now*, not merely active
     {:title (str "HITL checkpoint ready: " (:title strand))
      :body  (str "Checkpoint " (:id strand) " is ready for human attention.")}))
