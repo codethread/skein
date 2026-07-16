@@ -108,23 +108,36 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    reimplementing a registry or lifecycle does not exempt its names. The
    primitive may be another spool, a blessed `skein.api.*.alpha` namespace, or
    a lower layer of your own spool that a preset wraps; in every case the
-   surface speaks the primitive's vocabulary exactly as published — function
-   verbs, op subcommands, flag names, return keys, attribute keys, phase
-   values, edge relation names, and their defaults (diverge from an inherited
-   default only with loud documentation at the key). The test for a genuinely
-   new concept: describe your thing in the primitive's documented vocabulary;
-   if no new noun or verb is needed, the name is inherited, and a synonym is a
-   rebrand. Wrapping a primitive behind synonyms makes your spool a universe
-   unto itself: nothing a reader learned elsewhere transfers in, and nothing
-   they learn from you transfers out. An `acme/gate-sweeper` spool that drives
-   workflow runs speaks `start`/`next`/`advance`, reads and writes
-   `workflow/*` keys, and coins a name only for the sweeping policy the
-   engine has no word for. Declare the namespaces you own with
-   `vocab/declare!` (see Namespace claims); write inherited keys in the
-   owner's namespace without declaring them. When a surface converges on this
-   rule the rename is a clean break (TEN-000): durable attributes on closed
-   strands stay as written — they are memory, not authority — and a rename
-   ships a cutover for active rows when continuity needs it.
+   surface speaks the primitive's vocabulary exactly as published. That means
+   every name a consumer meets — function verbs, op subcommands, flag names,
+   return keys, option-map and spec keys, pattern input fields, attribute
+   keys, phase values, edge relation names — plus their defaults, types, and
+   arities (diverge from any of these under an inherited name only with loud
+   documentation at the key). The test for a genuinely new concept: describe
+   your thing in the primitive's documented vocabulary; if no new noun or
+   verb is needed, the name is inherited, and a synonym is a rebrand.
+   Layering is decided by who invokes or reproduces whom — never by doc
+   assertions or by which layer was written first. When the primitive itself
+   publishes synonyms for one concept, converge on the deepest layer's word:
+   a blessed `skein.api.*.alpha` name outranks a spool's, and a spool
+   primitive's outranks its preset's. When the canonical name is already
+   taken at your layer by a different shape, the concept keeps the canonical
+   name and the colliding shape takes a derived one. Wrapping a primitive
+   behind synonyms makes your spool a universe unto itself: nothing a reader
+   learned elsewhere transfers in, and nothing they learn from you transfers
+   out. An `acme/gate-sweeper` spool that drives workflow runs speaks
+   `start`/`next`/`advance`, reads and writes `workflow/*` keys, and coins a
+   name only for the sweeping policy the engine has no word for. Declare the
+   namespaces you own with `vocab/declare!` (see Namespace claims); write
+   inherited keys in the owner's namespace without declaring them. Bare
+   (un-namespaced) keys such as `body` are pre-existing cross-spool
+   convention, not a namespace to converge into: use them as found, and mint
+   no new ones. A concept unrelated to another spool's that happens to share
+   its noun is not inheritance — it is a reader trap; pick a different word.
+   When a surface converges on this rule the rename is a clean break
+   (TEN-000): durable attributes on closed strands stay as written — they are
+   memory, not authority — and a rename ships a cutover for active rows when
+   continuity needs it.
 
 ## Namespace claims
 
