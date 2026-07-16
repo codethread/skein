@@ -47,17 +47,17 @@
   Interactive runs are the second execution mode: instead of exec-and-wait, the
   engine launches the harness into a user-registered multiplexer backend
   (tmux by default) and supervises it through the graph — the run completes
-  when its interactive completion target (`agent-run/for`) closes (claims
-  model), not when a process exits. That interactive `agent-run/for` target is
-  the interactive completion signal, separate from the headless `serves`
-  delegation edge above and never folded into it.
-  Backends are data-first argv definitions (`defbackend!`) whose `:start` op
-  returns a durable handle stored as `agent-run/handle.*` attributes, so
+  when its interactive completion target (`agent-run/completes-on`) closes
+  (claims model), not when a process exits. That interactive
+  `agent-run/completes-on` target is the interactive completion signal, separate
+  from the headless `serves` delegation edge above and never folded into it.
+  Backends are data-first argv definitions (`register-backend!`) whose `:start`
+  op returns a durable handle stored as `agent-run/handle.*` attributes, so
   sessions survive weaver restarts and are adopted, never respawned.
 
   Harnesses (tools) and aliases (seats) live in two independent runtime
-  registries: `defharness!` writes one entry per tool (claude, pi, codex, sh),
-  `defalias!` writes named seats over them. Resolution is alias-first — an
+  registries: `register-harness!` writes one entry per tool (claude, pi, codex,
+  sh), `register-alias!` writes named seats over them. Resolution is alias-first — an
   unvisited alias shadows a same-named harness, so a seat may carry a tool's own
   name and still terminate at the tool. Re-registration replaces within a
   registry (reload idempotency); across registries names are independent.
@@ -328,7 +328,7 @@
 
 ;; Registry entry shapes. `::harness-def` and `::alias-def` are the source of
 ;; truth for the "is this a tool or a seat?" distinction: they are consulted by
-;; `defharness!`/`defalias!` and by the migrate split's exactly-one-shape
+;; `register-harness!`/`register-alias!` and by the migrate split's exactly-one-shape
 ;; classification. Mutual exclusivity rides on the required keys — a harness
 ;; needs `:argv`, an alias needs `:alias-of`, and the closed key sets forbid a
 ;; valid registration carrying both. `:capture`/`:resume` are intentionally left
@@ -432,7 +432,7 @@
           (fail! "Op argv keyword is not an available input"
                  {:owner owner :op op :token token :allowed allowed}))))))
 
-(defn defharness!
+(defn register-harness!
   "Register a harness definition under `name`.
 
   A harness def is plain data: required `:argv` (vector of strings; the run
@@ -473,18 +473,18 @@
     (swap! (harness-registry) assoc key def)
     {:harness key :def def}))
 
-(defn defalias!
+(defn register-alias!
   "Register `name` as an alias (seat) layered over another harness or alias.
 
   Alias defs take `:alias-of` (required), `:extra-args` appended to the base
   argv before the prompt, `:prompt-prefix` prepended to the run prompt, `:doc`,
-  and `:cost-rates` — a seat-level rate card (same shape as `defharness!`) that
-  overrides the tool's own card, since a seat is where the model is chosen.
+  and `:cost-rates` — a seat-level rate card (same shape as `register-harness!`)
+  that overrides the tool's own card, since a seat is where the model is chosen.
   Aliases are how userland exposes its own named agent seats.
 
   Writes only the alias (seat) registry, independent of the harness registry, so
-  a seat may intentionally carry a tool's name — `defalias! :pi {:alias-of :pi}`
-  is a lawful shadow that resolves through the seat and terminates at the tool.
+  a seat may intentionally carry a tool's name — `register-alias! :pi {:alias-of
+  :pi}` is a lawful shadow that resolves through the seat and terminates at the tool.
   The def shape is the `::alias-def` spec."
   [name def]
   (let [key (harness-key name)]
@@ -501,7 +501,7 @@
   "Return the effective harness definition for `name`, flattening alias layers.
 
   Resolution is alias-first: at each hop an unvisited alias shadows a same-named
-  harness, so `defalias! :pi {:alias-of :pi}` resolves through the seat and
+  harness, so `register-alias! :pi {:alias-of :pi}` resolves through the seat and
   terminates at the `pi` tool; otherwise the harness registry answers, otherwise
   the name is missing. A missing name fails `:error-class \"harness-not-found\"`
   and lists both registries' available names (recovery deferral keys off that
@@ -628,7 +628,7 @@
               :doc "Shell harness: the prompt is the script, stdout is the result. Intended for tests and plumbing."}}]
     (doseq [[key def] defaults]
       (when-not (contains? @(harness-registry) key)
-        (defharness! key def)))
+        (register-harness! key def)))
     (harnesses)))
 
 ;; ---------------------------------------------------------------------------
@@ -637,7 +637,7 @@
 (def ^:private backend-def-keys #{:start :alive :stop :capture :attach :doc})
 (def ^:private backend-required-ops [:start :alive :stop])
 
-(defn defbackend!
+(defn register-backend!
   "Register an interactive session backend under `name`.
 
   A backend def is plain data: required `:start`, `:alive`, and `:stop` argv
@@ -695,7 +695,7 @@
                 :doc "tmux: one detached session per run; honors the suggested session name."}}]
     (doseq [[key def] defaults]
       (when-not (contains? @(backend-registry) key)
-        (defbackend! key def)))
+        (register-backend! key def)))
     (backends)))
 
 (defn- splice-op-argv
@@ -780,7 +780,7 @@
 (def ^:private control-attrs
   #{"agent-run/run" "agent-run/harness" "agent-run/prompt" "agent-run/phase"
     "agent-run/cwd" "agent-run/spawned-by" "agent-run/max-attempts" "agent-run/mode"
-    "agent-run/backend" "agent-run/completion" "agent-run/for" "agent-run/reap"
+    "agent-run/backend" "agent-run/completion" "agent-run/completes-on" "agent-run/reap"
     "agent-run/session" "agent-run/session-id" "agent-run/resumes" "agent-run/error-class"
     "agent-run/recovered-at" "agent-run/recovery-deferred-until"})
 
@@ -790,6 +790,14 @@
   entry but never part of the spawn-time reservation set."
   #{"agent-run/cost-usd" "agent-run/tokens-total" "agent-run/tokens"
     "agent-run/usage-source"})
+
+(def ^:private carried-attrs
+  "Attributes in this spool's namespace that a higher-level spool writes onto a
+  run through the `:attrs`/`:carry-attrs` seam rather than the engine writing
+  them. Declared through the same vocab entry because the namespace is
+  agent-run's, but deliberately outside control-attrs: spawn reserves those
+  against callers, and these are exactly the keys callers must be able to pass."
+  #{"agent-run/fresh-prompt"})
 
 (defn- interactive? [run]
   (= "interactive" (sattr run "mode")))
@@ -883,7 +891,7 @@
   [run]
   (let [cmd (pinned-strand-command)
         id (:id run)
-        for-id (sattr run "for")]
+        for-id (sattr run "completes-on")]
     (str "[agent-run interactive session context]\n"
          "You are an interactive agent session managed by the Skein agent-run spool.\n"
          "run-id: " id "\n"
@@ -1472,7 +1480,7 @@
   "True when the run's served strand is no longer active work. A burned
   target counts as closed: the session would otherwise outlive the graph."
   [run]
-  (when-let [for-id (sattr run "for")]
+  (when-let [for-id (sattr run "completes-on")]
     (let [target (weaver/show (rt) for-id)]
       (or (nil? target) (not= "active" (:state target))))))
 
@@ -1589,7 +1597,7 @@
                      (update acc :reaped conj id))
 
                  (for-target-closed? run)
-                 (do (finish-interactive! id (str "served strand " (sattr run "for") " closed"))
+                 (do (finish-interactive! id (str "served strand " (sattr run "completes-on") " closed"))
                      (update acc :reaped conj id))
 
                  :else
@@ -1985,8 +1993,8 @@
   a required `:backend`, and optionally `:reap` (`auto` tears the session down on
   completion, `manual` leaves it to the human; default auto). An interactive run
   with a `:parent` completes when that strand closes (claim) — its interactive
-  completion target `agent-run/for`, distinct from the headless `serves` edge;
-  without one it completes when its own run strand is closed (manual-close).
+  completion target `agent-run/completes-on`, distinct from the headless `serves`
+  edge; without one it completes when its own run strand is closed (manual-close).
 
   `:resume <predecessor-run-id>` continues the predecessor's harness session:
   the run is stamped `agent-run/resumes` with a `resumes` annotation edge, and at
@@ -2022,7 +2030,7 @@
                           (merge {"agent-run/mode" "interactive"
                                   "agent-run/backend" (name (harness-key backend))
                                   "agent-run/completion" (if parent "claim" "manual-close")}
-                                 (when parent {"agent-run/for" parent})
+                                 (when parent {"agent-run/completes-on" parent})
                                  (when reap {"agent-run/reap" (name (keyword reap))}))))]
     (when-let [collisions (seq (filter #(or (contains? control-attrs %)
                                             (str/starts-with? (str %) "agent-run/handle."))
@@ -2131,7 +2139,18 @@
   `agent-run/supersedes` attr naming it. `runs-serving` keys on the `serves`
   edge and the absence of an incoming `supersedes` edge, which the `superseded`
   phase mirrors because this call writes edge and phase together. Returns the
-  successor run strand."
+  successor run strand.
+
+  Diverges from `skein.api.weaver.alpha/supersede` under the inherited name, in
+  two ways worth knowing before reading either as the other. The primitive
+  rewires the predecessor's dependents onto the replacement; this does not — it
+  copies the predecessor's own outgoing `depends-on` edges to the successor and
+  leaves dependents pointing at the closed predecessor. That is deliberate: a
+  run's dependents block on the task the run serves, not on the run, so the
+  `serves` target is the join they wait behind and re-pointing them at each
+  successor would churn the graph for no readiness change. The primitive also
+  enqueues `:strand/superseded`; this does not, so a succession here never
+  re-enters the engine's own handler for that event."
   [old-run-id {:keys [prompt harness cwd carry-attrs continuity]
                :or {continuity :fresh}}]
   (when-not (contains? #{:fresh :resume} continuity)
@@ -2156,7 +2175,7 @@
                      (sattr predecessor "max-attempts") (assoc :max-attempts (sattr predecessor "max-attempts"))
                      interactive? (assoc :mode :interactive :backend (sattr predecessor "backend"))
                      (and interactive? (sattr predecessor "reap")) (assoc :reap (sattr predecessor "reap"))
-                     (and interactive? (sattr predecessor "for")) (assoc :parent (sattr predecessor "for"))
+                     (and interactive? (sattr predecessor "completes-on")) (assoc :parent (sattr predecessor "completes-on"))
                      (= :resume continuity) (assoc :resume old-run-id)
                      (seq carry-attrs) (assoc :attrs carry-attrs)))]
     ;; Close the predecessor and record lineage only once the successor exists,
@@ -2515,7 +2534,9 @@
   `agent-run/cost-usd`, `agent-run/tokens-total`, `agent-run/tokens`, and
   `agent-run/usage-source`. Pi JSON folds per-message usage deltas; Claude JSON
   reads the final result object's usage fields; raw output records no cost or
-  token attributes."
+  token attributes. It also includes `agent-run/fresh-prompt`, which a
+  higher-level spool carries onto a run so `agent retry --fresh` has a
+  full-brief prompt to cold-start from."
   []
   (let [runtime (rt)]
     (register-default-harnesses!)
@@ -2524,8 +2545,8 @@
                     {:kind :attr-namespace
                      :name "agent-run"
                      :owner :skein/spools-shuttle
-                     :keys (vec (sort (into control-attrs usage-attrs)))
-                     :doc "Agent-run engine control attributes reserved by spawn-run! and the supervision engine, plus usage attributes finish-run! records at completion."})
+                     :keys (vec (sort (reduce into control-attrs [usage-attrs carried-attrs])))
+                     :doc "Agent-run engine control attributes reserved by spawn-run! and the supervision engine, plus usage attributes finish-run! records at completion and the prompt forms higher-level spools carry onto a run."})
     (events/register! runtime :agent-run/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}

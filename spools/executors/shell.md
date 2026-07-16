@@ -103,7 +103,7 @@ Crash-window recovery is strictly simpler than the subagent executor's, because 
 
 `install!` calls `(workflow/register-executor! :shell gate-stalled?)`, registering the shell executor as the executor for every gate whose `waiter` is `:shell`. Because an executor is registered, `await!` stays silent (`:waiting`) on a healthy `:shell` gate instead of surfacing it immediately as unattended; `gate-stalled?` reports a ready `:shell` gate as stalled (returning `{:gate id :error detail}`) when the gate carries `gate/error`, else it reports nothing. No wall-clock hang policy is applied — a stall is a graph fact.
 
-The spool also registers the `stalled-shell-gates` named query for coordinator inspection: active gates with `workflow/gate` = `"shell"` that carry a `gate/error`. It is the SQL-side mirror of the stall predicate, and — unlike the subagent executor's `stalled-gates` — it needs no `delegates`-edge join back to a run row, because the failure detail lives on the gate itself.
+The spool also registers the `stalled-shell-gates` named query for coordinator inspection: active gates with `workflow/gate` = `"shell"` that carry a `gate/error`. It is the SQL-side mirror of the stall predicate, and — unlike the subagent executor's `stalled-subagent-gates` — it needs no `delegates`-edge join back to a run row, because the failure detail lives on the gate itself.
 
 ## See also
 

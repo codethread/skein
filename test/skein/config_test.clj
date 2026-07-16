@@ -1031,7 +1031,7 @@
                                     :attributes {:agent-run/run "true"
                                                  :agent-run/phase "done"
                                                  :agent-run/result "A complete"
-                                                 :gate/run-id "flow-status-test"}
+                                                 :workflow/run-id "flow-status-test"}
                                     :edges [{:type "serves" :to gate-a}]})]
           (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
           (let [gate-b (:id (first (workflow/ready "flow-status-test")))
@@ -1040,7 +1040,7 @@
                                       :attributes {:agent-run/run "true"
                                                    :agent-run/phase "failed"
                                                    :agent-run/error "boom"
-                                                   :gate/run-id "flow-status-test"}
+                                                   :workflow/run-id "flow-status-test"}
                                       :edges [{:type "serves" :to gate-b}]})]
             ;; failure summaries are scoped to the requested run: an unrelated
             ;; failed run and an unrelated error-stamped gate must not leak in

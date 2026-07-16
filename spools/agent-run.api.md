@@ -51,17 +51,17 @@ Userland spool that spawns coding agents in user-chosen harnesses.
   Interactive runs are the second execution mode: instead of exec-and-wait, the
   engine launches the harness into a user-registered multiplexer backend
   (tmux by default) and supervises it through the graph — the run completes
-  when its interactive completion target (`agent-run/for`) closes (claims
-  model), not when a process exits. That interactive `agent-run/for` target is
-  the interactive completion signal, separate from the headless `serves`
-  delegation edge above and never folded into it.
-  Backends are data-first argv definitions (`defbackend!`) whose `:start` op
-  returns a durable handle stored as `agent-run/handle.*` attributes, so
+  when its interactive completion target (`agent-run/completes-on`) closes
+  (claims model), not when a process exits. That interactive
+  `agent-run/completes-on` target is the interactive completion signal, separate
+  from the headless `serves` delegation edge above and never folded into it.
+  Backends are data-first argv definitions (`register-backend!`) whose `:start`
+  op returns a durable handle stored as `agent-run/handle.*` attributes, so
   sessions survive weaver restarts and are adopted, never respawned.
 
   Harnesses (tools) and aliases (seats) live in two independent runtime
-  registries: `defharness!` writes one entry per tool (claude, pi, codex, sh),
-  `defalias!` writes named seats over them. Resolution is alias-first — an
+  registries: `register-harness!` writes one entry per tool (claude, pi, codex,
+  sh), `register-alias!` writes named seats over them. Resolution is alias-first — an
   unvisited alias shadows a same-named harness, so a seat may carry a tool's own
   name and still terminate at the tool. Re-registration replaces within a
   registry (reload idempotency); across registries names are independent.
@@ -90,7 +90,7 @@ Function.
 
 Block until every id is terminal (closed, failed, or exhausted) or
   `timeout-secs` (default 300) elapses. Returns run summaries plus :timed-out.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2394-L2411">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2413-L2430">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/backends">`backends`</a>
 ``` clojure
@@ -112,27 +112,7 @@ Capture an interactive run's transcript right now, persist it as the run's
   coordinator peek without attaching) and, when the harness capture source
   outlives the session (hook-written logs), on finished runs too. Fails
   loudly when the run is not interactive or no capture op is configured.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2445-L2458">Source</a></sub></p>
-
-## <a name="skein.spools.agent-run/defalias!">`defalias!`</a>
-``` clojure
-(defalias! name def)
-```
-Function.
-
-Register `name` as an alias (seat) layered over another harness or alias.
-
-  Alias defs take `:alias-of` (required), `:extra-args` appended to the base
-  argv before the prompt, `:prompt-prefix` prepended to the run prompt, `:doc`,
-  and `:cost-rates` — a seat-level rate card (same shape as `defharness!`) that
-  overrides the tool's own card, since a seat is where the model is chosen.
-  Aliases are how userland exposes its own named agent seats.
-
-  Writes only the alias (seat) registry, independent of the harness registry, so
-  a seat may intentionally carry a tool's name — `defalias! :pi {:alias-of :pi}`
-  is a lawful shadow that resolves through the seat and terminates at the tool.
-  The def shape is the `::alias-def` spec.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L476-L498">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2464-L2477">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/default-review-contract-text">`default-review-contract-text`</a>
 ``` clojure
@@ -141,58 +121,7 @@ Register `name` as an alias (seat) layered over another harness or alias.
 Function.
 
 Return the effective workspace review contract text.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2501-L2504">Source</a></sub></p>
-
-## <a name="skein.spools.agent-run/defbackend!">`defbackend!`</a>
-``` clojure
-(defbackend! name def)
-```
-Function.
-
-Register an interactive session backend under `name`.
-
-  A backend def is plain data: required `:start`, `:alive`, and `:stop` argv
-  vectors, optional `:capture` (scrollback forensics before teardown),
-  `:attach` (display-only hint rendered for humans, never executed), and
-  `:doc`. Argv tokens are literal strings, engine-input keywords (`:session`,
-  `:cwd`, `:command`, `:run-id` — `:start` only, except `:run-id`), or
-  `:handle/<key>` lookups into the handle `:start` returned. `:start` must
-  print one flat JSON object of strings as its last stdout line (empty output
-  means `{}`); that handle is stored durably on the run strand.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L640-L664">Source</a></sub></p>
-
-## <a name="skein.spools.agent-run/defharness!">`defharness!`</a>
-``` clojure
-(defharness! name def)
-```
-Function.
-
-Register a harness definition under `name`.
-
-  A harness def is plain data: required `:argv` (vector of strings; the run
-  prompt is appended per `:prompt-via`, default `:arg`), optional `:parse`
-  strategy (:raw, :claude-json, :pi-json, :codex-json — default :raw),
-  `:prompt-via` (:arg or :stdin), `:preamble?` (default true; when false the run
-  preamble is not injected), `:env` map, `:cwd`, `:doc`, `:cost-rates` — a rate
-  card `{:input :cache-read :output}` of USD per 1M tokens that derives
-  `agent-run/cost-usd` from a token-only tally (a parser like :codex-json that
-  reports tokens but no dollar cost); absent rates leave cost absent rather than
-  guessed — `:resume` — an argv
-  splice of literal strings and placeholder keywords (from the closed
-  `resume-placeholder-inputs` set) that continues a predecessor's session, each
-  placeholder resolving from that predecessor run's captured attributes at
-  launch — and `:capture` — a
-  spliced argv (interactive runs only) that prints this harness's best
-  transcript text to stdout, overriding the backend's scrollback capture.
-  Harness capture is the seam for harness-aware transcripts (session logs,
-  user hook-written dialogue logs) without the engine knowing any harness's
-  log format; correlate via the SKEIN_RUN_ID env var every session exports.
-
-  Writes only the harness (tool) registry; a same-named seat may coexist in the
-  alias registry and shadows this tool at resolution time. The def shape is the
-  `::harness-def` spec; `:capture`/`:resume` splice semantics keep their
-  dedicated validators.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L435-L474">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2520-L2523">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/generic-review-contract">`generic-review-contract`</a>
 
@@ -200,7 +129,7 @@ Register a harness definition under `name`.
 
 
 Default contract text for independent agent-run reviews.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2483-L2489">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2502-L2508">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/harnesses">`harnesses`</a>
 ``` clojure
@@ -247,8 +176,10 @@ Install the agent-run engine into the active weaver: default harnesses, the grap
   `agent-run/cost-usd`, `agent-run/tokens-total`, `agent-run/tokens`, and
   `agent-run/usage-source`. Pi JSON folds per-message usage deltas; Claude JSON
   reads the final result object's usage fields; raw output records no cost or
-  token attributes.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2509-L2539">Source</a></sub></p>
+  token attributes. It also includes `agent-run/fresh-prompt`, which a
+  higher-level spool carries onto a run so `agent retry --fresh` has a
+  full-brief prompt to cold-start from.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2528-L2560">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/kill!">`kill!`</a>
 ``` clojure
@@ -257,7 +188,7 @@ Install the agent-run engine into the active weaver: default harnesses, the grap
 Function.
 
 Kill a run's harness process (or interactive session) and mark it failed.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2413-L2443">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2432-L2462">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/note!">`note!`</a>
 ``` clojure
@@ -273,7 +204,7 @@ Append a note strand to `target-id`'s memory via the blessed
   edge alone — no `note/for` attribute — and carries optional `note/by`/`note/round`.
   Its `note/text`/`note/at` content is storage-enforced write-once; the strand
   stays open to decorating attrs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2460-L2469">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2479-L2488">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/notes">`notes`</a>
 ``` clojure
@@ -287,7 +218,7 @@ Return `target-id`'s notes in `note/at` order, optionally one `:round`, via
 
   Walks the incoming `notes` edges to the target, so it reads every writer's
   notes regardless of decorating attrs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2471-L2478">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2490-L2497">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/on-event">`on-event`</a>
 ``` clojure
@@ -297,7 +228,7 @@ Function.
 
 Weaver event handler: any graph mutation may unblock a pending run or
   complete the strand an interactive session serves.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1839-L1844">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1847-L1852">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/pinned-strand-command">`pinned-strand-command`</a>
 ``` clojure
@@ -310,7 +241,7 @@ Return the fully pinned strand invocation prefix for spawned agents.
   Harness shells may re-source user dotfiles and override ambient env, so the
   state root that selects the mill/weaver must ride inside the command text,
   not the inherited environment.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L807-L814">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L815-L822">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/preamble-extension-conflicts">`preamble-extension-conflicts`</a>
 ``` clojure
@@ -326,7 +257,7 @@ Return the durable record of genuine set-preamble-extension! conflicts.
   record survives for the weaver lifetime (and across `reload!`, carried through
   `migrate-state`) so a conflict stays visible to operators and attention
   detectors after the stderr warning has scrolled off.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L846-L856">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L854-L864">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/reconcile!">`reconcile!`</a>
 ``` clojure
@@ -349,7 +280,45 @@ Recover running runs whose owning weaver died.
   (auto-respawn would silently discard a human conversation).
 
   Returns a summary of respawned/exhausted/adopted/reaped/failed run ids.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1864-L1933">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1872-L1941">Source</a></sub></p>
+
+## <a name="skein.spools.agent-run/register-alias!">`register-alias!`</a>
+``` clojure
+(register-alias! name def)
+```
+Function.
+
+Register `name` as an alias (seat) layered over another harness or alias.
+
+  Alias defs take `:alias-of` (required), `:extra-args` appended to the base
+  argv before the prompt, `:prompt-prefix` prepended to the run prompt, `:doc`,
+  and `:cost-rates` — a seat-level rate card (same shape as `register-harness!`)
+  that overrides the tool's own card, since a seat is where the model is chosen.
+  Aliases are how userland exposes its own named agent seats.
+
+  Writes only the alias (seat) registry, independent of the harness registry, so
+  a seat may intentionally carry a tool's name — `register-alias! :pi {:alias-of
+  :pi}` is a lawful shadow that resolves through the seat and terminates at the tool.
+  The def shape is the `::alias-def` spec.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L476-L498">Source</a></sub></p>
+
+## <a name="skein.spools.agent-run/register-backend!">`register-backend!`</a>
+``` clojure
+(register-backend! name def)
+```
+Function.
+
+Register an interactive session backend under `name`.
+
+  A backend def is plain data: required `:start`, `:alive`, and `:stop` argv
+  vectors, optional `:capture` (scrollback forensics before teardown),
+  `:attach` (display-only hint rendered for humans, never executed), and
+  `:doc`. Argv tokens are literal strings, engine-input keywords (`:session`,
+  `:cwd`, `:command`, `:run-id` — `:start` only, except `:run-id`), or
+  `:handle/<key>` lookups into the handle `:start` returned. `:start` must
+  print one flat JSON object of strings as its last stdout line (empty output
+  means `{}`); that handle is stored durably on the run strand.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L640-L664">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/register-default-backends!">`register-default-backends!`</a>
 ``` clojure
@@ -369,6 +338,39 @@ Function.
 Register the shipped harness definitions, keeping any existing entries.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L595-L632">Source</a></sub></p>
 
+## <a name="skein.spools.agent-run/register-harness!">`register-harness!`</a>
+``` clojure
+(register-harness! name def)
+```
+Function.
+
+Register a harness definition under `name`.
+
+  A harness def is plain data: required `:argv` (vector of strings; the run
+  prompt is appended per `:prompt-via`, default `:arg`), optional `:parse`
+  strategy (:raw, :claude-json, :pi-json, :codex-json — default :raw),
+  `:prompt-via` (:arg or :stdin), `:preamble?` (default true; when false the run
+  preamble is not injected), `:env` map, `:cwd`, `:doc`, `:cost-rates` — a rate
+  card `{:input :cache-read :output}` of USD per 1M tokens that derives
+  `agent-run/cost-usd` from a token-only tally (a parser like :codex-json that
+  reports tokens but no dollar cost); absent rates leave cost absent rather than
+  guessed — `:resume` — an argv
+  splice of literal strings and placeholder keywords (from the closed
+  `resume-placeholder-inputs` set) that continues a predecessor's session, each
+  placeholder resolving from that predecessor run's captured attributes at
+  launch — and `:capture` — a
+  spliced argv (interactive runs only) that prints this harness's best
+  transcript text to stdout, overriding the backend's scrollback capture.
+  Harness capture is the seam for harness-aware transcripts (session logs,
+  user hook-written dialogue logs) without the engine knowing any harness's
+  log format; correlate via the SKEIN_RUN_ID env var every session exports.
+
+  Writes only the harness (tool) registry; a same-named seat may coexist in the
+  alias registry and shadows this tool at resolution time. The def shape is the
+  `::harness-def` spec; `:capture`/`:resume` splice semantics keep their
+  dedicated validators.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L435-L474">Source</a></sub></p>
+
 ## <a name="skein.spools.agent-run/resolve-backend">`resolve-backend`</a>
 ``` clojure
 (resolve-backend name)
@@ -387,7 +389,7 @@ Function.
 Return the effective harness definition for `name`, flattening alias layers.
 
   Resolution is alias-first: at each hop an unvisited alias shadows a same-named
-  harness, so `defalias! :pi {:alias-of :pi}` resolves through the seat and
+  harness, so `register-alias! :pi {:alias-of :pi}` resolves through the seat and
   terminates at the `pi` tool; otherwise the harness registry answers, otherwise
   the name is missing. A missing name fails `:error-class "harness-not-found"`
   and lists both registries' available names (recovery deferral keys off that
@@ -419,7 +421,7 @@ Project a run strand into the compact summary shape the op surface returns.
   X` still shows the helper "for X". Pass `parents` (the run's parent-of source
   ids) and `served-target` (its `serves` target) to reuse bulk fetches; when
   omitted single indexed lookups resolve them.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2186-L2220">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2205-L2239">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/runs">`runs`</a>
 ``` clojure
@@ -431,7 +433,7 @@ Function.
 Return summaries of agent-run runs; opts may filter to `:active` or `:for`.
   Listing doubles as an interactive liveness checkpoint (there is no
   background poller): dead sessions are failed here, best-effort.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2249-L2255">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2268-L2274">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/runs-serving">`runs-serving`</a>
 ``` clojure
@@ -446,7 +448,7 @@ Runs currently serving strand `target-id`: those with a `serves` edge to it
   "superseded"`; `supersede-and-respawn!` writes edge and phase together so the
   two criteria stay in lockstep. Read-only helpers carry `parent-of` placement
   with no `serves` edge, so they never appear here.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2083-L2097">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2091-L2105">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/scan!">`scan!`</a>
 ``` clojure
@@ -459,7 +461,7 @@ Spawn every ready pending run the fan-out window admits and that is not
   no new attribute; a later completion re-fires on-event → scan! to admit the
   next. A run whose persisted fan-out metadata is incoherent fails loudly on its
   own without disturbing its siblings. Returns claimed run ids.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1824-L1837">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1832-L1845">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/set-default-review-contract!">`set-default-review-contract!`</a>
 ``` clojure
@@ -468,7 +470,7 @@ Spawn every ready pending run the fan-out window admits and that is not
 Function.
 
 Set the workspace default review contract text; nil restores the generic one.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2493-L2499">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2512-L2518">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/set-fanout-ceiling!">`set-fanout-ceiling!`</a>
 ``` clojure
@@ -509,7 +511,7 @@ Register additional preamble text appended after the engine's worker contract.
     incident), which is worse than a recorded clash. The durable record is the
     fail-loud substitute — an operator/detector can see the conflict long after
     the stderr line has scrolled away, unlike the prior stderr-only signal.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L818-L844">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L826-L852">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/spawn-run!">`spawn-run!`</a>
 ``` clojure
@@ -530,15 +532,15 @@ Create one agent-run strand; the engine spawns it when it becomes ready.
   a required `:backend`, and optionally `:reap` (`auto` tears the session down on
   completion, `manual` leaves it to the human; default auto). An interactive run
   with a `:parent` completes when that strand closes (claim) — its interactive
-  completion target `agent-run/for`, distinct from the headless `serves` edge;
-  without one it completes when its own run strand is closed (manual-close).
+  completion target `agent-run/completes-on`, distinct from the headless `serves`
+  edge; without one it completes when its own run strand is closed (manual-close).
 
   `:resume <predecessor-run-id>` continues the predecessor's harness session:
   the run is stamped `agent-run/resumes` with a `resumes` annotation edge, and at
   launch the harness `:resume` splice resolves from the predecessor's captured
   attributes ahead of the prompt (see `validate-resume!` for the loud rules).
   Asynchronous: returns the created run strand immediately.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1975-L2045">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1983-L2053">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/spend">`spend`</a>
 ``` clojure
@@ -563,7 +565,7 @@ Aggregate recorded agent-run spend into the C7 read shape (PROP-Ru-001.C7):
   format including `:raw`; a run that recorded no cost/tokens contributes null for
   those, and every sum skips nils so a missing figure is never inflated to 0. The
   read costs one bulk query for many runs, never one per run (PROP-Ru-001.R4).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2368-L2386">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2387-L2405">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/supersede-and-respawn!">`supersede-and-respawn!`</a>
 ``` clojure
@@ -597,7 +599,18 @@ Succeed a dead run `old-run-id` with a fresh successor — the sole succession
   edge and the absence of an incoming `supersedes` edge, which the `superseded`
   phase mirrors because this call writes edge and phase together. Returns the
   successor run strand.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2108-L2169">Source</a></sub></p>
+
+  Diverges from `skein.api.weaver.alpha/supersede` under the inherited name, in
+  two ways worth knowing before reading either as the other. The primitive
+  rewires the predecessor's dependents onto the replacement; this does not — it
+  copies the predecessor's own outgoing `depends-on` edges to the successor and
+  leaves dependents pointing at the closed predecessor. That is deliberate: a
+  run's dependents block on the task the run serves, not on the run, so the
+  `serves` target is the join they wait behind and re-pointing them at each
+  successor would churn the graph for no readiness change. The primitive also
+  enqueues `:strand/superseded`; this does not, so a succession here never
+  re-enters the engine's own handler for that event.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L2116-L2188">Source</a></sub></p>
 
 ## <a name="skein.spools.agent-run/supervise!">`supervise!`</a>
 ``` clojure
@@ -611,4 +624,4 @@ Advance every interactive run in phase running: reap completed ones, fail
   in the same instant is reaped as done, not failed. This runs on graph
   events and inspection calls; the weaver deliberately has no timers, so
   there is no background poller. Returns {:reaped [..] :failed [..]}.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1573-L1615">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/agent_run.clj#L1581-L1623">Source</a></sub></p>

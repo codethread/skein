@@ -62,7 +62,7 @@ independently and never block each other.
 | Attribute | On | Meaning |
 |---|---|---|
 | `gate/error` | gate step | Durable spawn-side failure detail; the gate is skipped until a coordinator clears it. |
-| `gate/run-id` | run strand | Workflow `run-id` owning the gate. |
+| `workflow/run-id` | run strand | Workflow `run-id` owning the gate. Workflow's own key, stamped onto the run as-is: the executor inherits it rather than declaring a synonym. |
 | `gate/delivered` | run strand | `"true"`, `"gate-closed"`, or `"error: …"`; presence means delivery is terminal for this run. |
 | `gate/delivery-blocked` | run strand | Written once when a finished run's gate is active but not ready; delivery retries when the gate becomes ready. |
 
@@ -102,7 +102,7 @@ Only a genuinely successful run delivers a gate: delivery selects closed runs in
 result is recorded `failed` by agent-run (see the README blank-result paragraph), so it never
 completes the gate. A silently dead worker must not satisfy a subagent gate. Instead the failed run
 keeps its `serves` edge to the gate. The ready gate is discoverable via the stall predicate and
-`stalled-gates` query below and, as a delegated run, via `agent-failures`.
+`stalled-subagent-gates` query below and, as a delegated run, via `agent-failures`.
 
 A coordinator recovers such a gate with `agent retry <run-id>` on the failed or exhausted
 gate-serving run. Retry marks the dead run superseded and spawns a successor that inherits the run's
@@ -131,8 +131,8 @@ stays silent (`:waiting`) on a healthy subagent gate instead of surfacing it imm
 reports nothing. No wall-clock hang policy is applied. A superseded run is not itself a stall
 because `agent retry` moves service to the successor.
 
-The spool also registers `stalled-gates` and `blocked-deliveries` named queries for coordinator
-inspection. `stalled-gates` is the SQL-side mirror of the stall predicate: it returns active
+The spool also registers `stalled-subagent-gates` and `blocked-deliveries` named queries for coordinator
+inspection. `stalled-subagent-gates` is the SQL-side mirror of the stall predicate: it returns active
 subagent gates that either carry `gate/error` or have an incoming `serves` edge from a run in phase
 `failed` or `exhausted`. The same `serves`+lineage rule drives `gate-stalled?`: superseded runs are
 outside the dead-phase set, and their successors inherit the `serves` edge. After `agent retry`, the
