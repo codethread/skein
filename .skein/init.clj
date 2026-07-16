@@ -82,7 +82,7 @@
                :spools ['skein.spools/agent-run]
                :call 'skein.spools.agent-run/install!
                :required? true})
-(runtime/use! runtime :skein/spools-agents
+(runtime/use! runtime :skein/spools-delegation
               {:ns 'skein.spools.delegation
                :spools ['skein.spools/delegation]
                :after [:skein/spools-shuttle]
@@ -103,7 +103,7 @@
 (runtime/use! runtime :harnesses
               {:file "harnesses.clj"
                :spools ['skein.spools/delegation 'skein.spools/agent-run]
-               :after [:skein/spools-agents]
+               :after [:skein/spools-delegation]
                :call 'harnesses/install!
                :required? true})
 ;; The declarative reviewer roster lives in its own file so the "who reviews
@@ -113,7 +113,7 @@
 (runtime/use! runtime :reviewers
               {:file "reviewers.clj"
                :spools ['skein.spools/delegation]
-               :after [:skein/spools-agents]
+               :after [:skein/spools-delegation]
                :call 'reviewers/install!
                :required? true})
 ;; Chime is a vocabulary-agnostic notification engine: it installs bare here,
@@ -177,7 +177,7 @@
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
                :spools ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
-               :after [:skein/spools-workflow :skein/spools-agents :config]
+               :after [:skein/spools-workflow :skein/spools-delegation :config]
                :call 'workflows/install!
                :required? true})
 ;; The NVD scan job is its own module (not part of config.clj) so config_test's

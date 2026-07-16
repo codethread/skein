@@ -76,8 +76,8 @@
              "note" {:operation "agent note" :id "note-1" :note "finding"}
              "notes" [{:id "note-1" :note "finding"}]
              "review" {:operation "agent review" :target "task-1" :reviewers ["run-1"]}
-             "rosters" [{:name "repo" :reviewers []}]
-             "council" {:operation "agent council" :council "board-1" :turns [["run-1"]]}}
+             "rosters" [{:name "repo" :seats []}]
+             "council" {:operation "agent council" :blackboard "board-1" :turns [["run-1"]]}}
             checked (into #{}
                           (map (fn [[subcommand value]]
                                  (t/check-op-return! rt 'agent {:subcommand subcommand}
@@ -114,12 +114,14 @@
     (fn [rt]
       (let [review (vocab/declaration rt :attr-namespace "review")
             panel (vocab/declaration rt :attr-namespace "panel")]
-        (is (= :skein/spools-agents (:owner review))
+        (is (= :skein/spools-delegation (:owner review))
             "review/* is owned by the delegation spool's use-key")
-        (is (= :skein/spools-agents (:owner panel))
+        (is (= :skein/spools-delegation (:owner panel))
             "panel/* is owned by the delegation spool's use-key")
-        (is (contains? (set (:keys review)) "review/target"))
-        (is (contains? (set (:keys panel)) "panel/seat"))))))
+        (is (contains? (set (:keys review)) "review/focus"))
+        (is (contains? (set (:keys panel)) "panel/seat"))
+        (is (contains? (set (:keys panel)) "panel/blackboard")
+            "the deliberation board is panel's noun, not review's")))))
 
 (deftest agent-run-install-declares-agent-run-vocab
   (with-agents
@@ -178,14 +180,14 @@
         (let [target (weaver/add rt {:title "note target"})]
           (agents/agent-op {:op/argv ["note" (:id target) "decision recorded"
                                       "--attr" "note/kind=decision"
-                                      "--attr" "review/pass=p1"
+                                      "--attr" "panel/pass=p1"
                                       "--by" "run-x"]})
           (let [[note] (agents/agent-op {:op/argv ["notes" (:id target)]})
                 strand (weaver/show rt (:id note))]
             (is (= "decision recorded" (:note note)))
             (is (= "run-x" (:by note)))
             (is (= "decision" (get-in strand [:attributes :note/kind])))
-            (is (= "p1" (get-in strand [:attributes :review/pass]))))))
+            (is (= "p1" (get-in strand [:attributes :panel/pass]))))))
       (testing "a --attr spec without key=value fails loudly"
         (let [target (weaver/add rt {:title "bad attr target"})]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed --attr"
@@ -296,7 +298,7 @@
               "review --cwd rides onto each reviewer run"))
         (doseq [run-id (:reviewers review)]
           (let [run (weaver/show rt run-id)]
-            (is (= (:id target) (get-in run [:attributes :review/target])))
+            (is (= (:id target) (get-in run [:attributes :panel/blackboard])))
             (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "Review contract"))
             (is (str/includes? (get-in run [:attributes :agent-run/prompt])
                                "--attr note/kind=review-dump")
@@ -354,59 +356,59 @@
   (with-agents
     (fn [_]
       (testing "registration returns a summary and rosters lists full data"
-        (is (= {:roster :repo :reviewers 2}
+        (is (= {:roster :repo :seats 2}
                (agents/defroster! "repo"
-                 {:reviewers [{:name "tests" :harness :sh :contract "Judge the tests." :scope "test files"}
-                              {:name "docs" :harness "sh" :contract "Judge the docs."}]
-                  :synthesizer {:harness :sh}})))
+                 {:seats [{:name "tests" :harness :sh :brief "Judge the tests." :scope "test files"}
+                          {:name "docs" :harness "sh" :brief "Judge the docs."}]
+                  :synthesis {:harness :sh}})))
         (let [[roster] (agents/rosters)]
           (is (= :repo (:name roster)))
-          (is (= ["tests" "docs"] (mapv :name (:reviewers roster))))
-          (is (= {:harness :sh} (:synthesizer roster)))))
+          (is (= ["tests" "docs"] (mapv :name (:seats roster))))
+          (is (= {:harness :sh} (:synthesis roster)))))
       (testing "re-registration replaces the roster"
-        (agents/defroster! :repo {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
-        (is (= ["solo"] (mapv :name (:reviewers (first (agents/rosters)))))))
+        (agents/defroster! :repo {:seats [{:name "solo" :harness :sh :brief "One pass."}]})
+        (is (= ["solo"] (mapv :name (:seats (first (agents/rosters)))))))
       (testing "the roster shape is spec-defined and registered data conforms"
         (is (s/valid? :skein.spools.delegation/roster
-                      {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})))
+                      {:seats [{:name "solo" :harness :sh :brief "One pass."}]})))
       (testing "structurally malformed roster data fails loudly via the spec"
         (doseq [bad [[:not-a-map]
-                     {:reviewers []}
-                     {:reviewers [{:harness :sh :contract "c"}]}
-                     {:reviewers [{:name "r" :contract "c"}]}
-                     {:reviewers [{:name "r" :harness :sh}]}
-                     {:reviewers [{:name "r" :harness :sh :contract "c" :scope "  "}]}
-                     {:reviewers [{:name "r" :harness :sh :contract "c"}] :synthesizer :sh}
-                     {:reviewers [{:name "r" :harness :sh :contract "c"}] :synthesizer {}}]]
+                     {:seats []}
+                     {:seats [{:harness :sh :brief "c"}]}
+                     {:seats [{:name "r" :brief "c"}]}
+                     {:seats [{:name "r" :harness :sh}]}
+                     {:seats [{:name "r" :harness :sh :brief "c" :scope "  "}]}
+                     {:seats [{:name "r" :harness :sh :brief "c"}] :synthesis :sh}
+                     {:seats [{:name "r" :harness :sh :brief "c"}] :synthesis {}}]]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
                                 (agents/defroster! :bad bad)))))
       (testing "checks the spec cannot express stay loud"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "c" :contarct "typo"}]})))
+                              (agents/defroster! :bad {:seats [{:name "r" :harness :sh :brief "c" :breif "typo"}]})))
         ;; a typo REPLACING a required key must diagnose as the unknown key,
         ;; not as the missing-key spec explain it also causes
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contarct "c"}]})))
+                              (agents/defroster! :bad {:seats [{:name "r" :harness :sh :breif "c"}]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "c"}] :extra true})))
+                              (agents/defroster! :bad {:seats [{:name "r" :harness :sh :brief "c"}] :extra true})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "c"}]
-                                                       :synthesizer {:harness :sh :model "x"}})))
+                              (agents/defroster! :bad {:seats [{:name "r" :harness :sh :brief "c"}]
+                                                       :synthesis {:harness :sh :model "x"}})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be unique"
-                              (agents/defroster! :bad {:reviewers [{:name "r" :harness :sh :contract "a"}
-                                                                   {:name "r" :harness :sh :contract "b"}]})))
+                              (agents/defroster! :bad {:seats [{:name "r" :harness :sh :brief "a"}
+                                                               {:name "r" :harness :sh :brief "b"}]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"keyword or non-blank string"
-                              (agents/defroster! "  " {:reviewers [{:name "r" :harness :sh :contract "c"}]})))))))
+                              (agents/defroster! "  " {:seats [{:name "r" :harness :sh :brief "c"}]})))))))
 
 (deftest roster-review-fans-out-declared-reviewers
   (with-agents
     (fn [rt]
       (agents/defroster! :repo
-        {:reviewers [{:name "test-sleeps" :harness :sh
-                      :contract "Flag sleeps and arbitrary timeouts in tests."
-                      :scope "test files"}
-                     {:name "docs" :harness :sh :contract "Judge documentation drift."}]
-         :synthesizer {:harness :sh}})
+        {:seats [{:name "test-sleeps" :harness :sh
+                  :brief "Flag sleeps and arbitrary timeouts in tests."
+                  :scope "test files"}
+                 {:name "docs" :harness :sh :brief "Judge documentation drift."}]
+         :synthesis {:harness :sh}})
       (let [target (weaver/add rt {:title "Roster target" :attributes {:body "Inspect me"}})
             review (agents/review! (:id target) {:roster :repo :cwd "/tmp/claude/roster-cwd"})
             runs (mapv #(weaver/show rt %) (:reviewers review))
@@ -436,9 +438,9 @@
                       (filter #(= (:id synth) (:from_strand_id %)))
                       (map :to_strand_id)
                       set))))
-        (testing "without a declared synthesizer the first reviewer's harness is used"
+        (testing "without a declared synthesis the first seat's harness is used"
           (agents/defroster! :undeclared
-            {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
+            {:seats [{:name "solo" :harness :sh :brief "One pass."}]})
           (let [review* (agents/review! (:id target) {:roster :undeclared})
                 synth* (weaver/show rt (:synthesizer review*))]
             (is (= "sh" (get-in synth* [:attributes :agent-run/harness])))))))))
@@ -447,13 +449,13 @@
   (with-agents
     (fn [rt]
       (agents/defroster! :composed
-        {:reviewers [{:name "a" :harness :sh :contract "Contract A." :scope "src"}
-                     {:name "b" :harness :sh :contract "Contract B."}]
-         :synthesizer {:harness :sh}})
+        {:seats [{:name "a" :harness :sh :brief "Brief A." :scope "src"}
+                 {:name "b" :harness :sh :brief "Brief B."}]
+         :synthesis {:harness :sh}})
       (let [target (weaver/add rt {:title "Spec target"})
             review (agents/review! (:id target) {:roster :composed})
             specs (agents/roster-review-specs :composed {:target (:id target)
-                                                         :review-id (:review-pass review)})
+                                                         :review-id (:pass review)})
             runs (mapv #(weaver/show rt %) (:reviewers review))
             synth (weaver/show rt (:synthesizer review))]
         (testing "specs are gate-ready plain data"
@@ -471,23 +473,23 @@
             (is (= v (get-in run [:attributes (keyword k)])))))
         (testing "the pass tag threads notes together and separates rounds"
           (is (str/includes? (get (first (:reviewers specs)) :prompt)
-                             (str "--attr review/pass=" (:review-pass review))))
+                             (str "--attr panel/pass=" (:pass review))))
           (is (str/includes? (get-in specs [:synthesizer :prompt])
-                             (str "--attr review/pass=" (:review-pass review))))
+                             (str "--attr panel/pass=" (:pass review))))
           (is (str/includes? (get (first (:reviewers specs)) :prompt)
                              "--attr note/kind=review-dump")
               "reviewer findings carry the review-dump view hint")
           (is (str/includes? (get-in specs [:synthesizer :prompt])
                              "--attr note/kind=summary")
               "the synthesis note carries the summary view hint")
-          (is (not= (:review-pass (agents/roster-review-specs :composed {:target (:id target)}))
-                    (:review-pass (agents/roster-review-specs :composed {:target (:id target)})))
+          (is (not= (:pass (agents/roster-review-specs :composed {:target (:id target)}))
+                    (:pass (agents/roster-review-specs :composed {:target (:id target)})))
               "each pass mints a distinct tag"))
         (testing "the seam output conforms to its public spec"
           (is (s/valid? :skein.spools.delegation/review-specs specs)
               (s/explain-str :skein.spools.delegation/review-specs specs)))
         (testing "an inline roster value works anywhere a name does"
-          (let [inline {:reviewers [{:name "adhoc" :harness :sh :contract "One-off pass."}]}
+          (let [inline {:seats [{:name "adhoc" :harness :sh :brief "One-off pass."}]}
                 inline-specs (agents/roster-review-specs inline {:target (:id target)})
                 inline-review (agents/review! (:id target) {:roster inline})
                 run (weaver/show rt (first (:reviewers inline-review)))]
@@ -496,7 +498,7 @@
             (is (= "inline" (get-in run [:attributes :review/roster])))
             (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "One-off pass."))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
-                                  (agents/roster-review-specs {:reviewers []} {:target (:id target)})))))
+                                  (agents/roster-review-specs {:seats []} {:target (:id target)})))))
         (testing "specs fail loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank :target"
                                 (agents/roster-review-specs :composed {})))
@@ -508,17 +510,17 @@
 (deftest roster-review-fails-loudly
   (with-agents
     (fn [rt]
-      (agents/defroster! :repo {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})
+      (agents/defroster! :repo {:seats [{:name "solo" :harness :sh :brief "One pass."}]})
       (let [target (weaver/add rt {:title "Roster failure target"})]
         (testing "unknown roster"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Roster not found"
                                 (agents/review! (:id target) {:roster :nope}))))
         (testing "roster is the one authoritative source of reviewer settings"
-          (doseq [conflicting [{:members 3} {:harnesses ["sh"]} {:contract "c"} {:reviewers [{:harness :sh}]}]]
+          (doseq [conflicting [{:seat-count 3} {:harnesses ["sh"]} {:contract "c"} {:reviewers [{:harness :sh}]}]]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"from the roster"
                                   (agents/review! (:id target) (merge {:roster :repo} conflicting))))))
         (testing "CLI flag conflicts surface through the op"
-          (doseq [flag-pair [["--members" "3"] ["--harness" "sh"] ["--contract" "c"]]]
+          (doseq [flag-pair [["--seats" "3"] ["--harness" "sh"] ["--contract" "c"]]]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"from the roster"
                                   (agents/agent-op {:op/argv (into ["review" (:id target) "--roster" "repo"] flag-pair)})))))
         (testing "rosters verb lists and rejects arguments"
@@ -553,17 +555,22 @@
                            "agent notes s1"))
         (is (str/includes? (#'agents/read-the-board-fragment {:view :strand :form :continuation :board-id "s1"})
                            "The board is strand s1")))
-      (testing "post-with-tag threads the tag as a review/pass decoration attr and omits it when nil"
+      (testing "post-with-tag threads the tag as a panel/pass decoration attr and omits it when nil"
         (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"})
-                           "--attr review/pass=pass-7"))
+                           "--attr panel/pass=pass-7"))
         (is (not (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag nil})
-                                "--attr review/pass"))))
+                                "--attr panel/pass"))))
       (testing "post-with-tag threads the note/kind view hint and omits it when nil"
         (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"
                                                              :kind "review-dump"})
                            "--attr note/kind=review-dump"))
         (is (not (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"})
                                 "--attr note/kind"))))
+      (testing "post-with-tag threads --round and omits it when nil"
+        (is (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7" :round 2})
+                           "--round 2"))
+        (is (not (str/includes? (#'agents/post-with-tag-fragment {:board-id "s1" :tag "pass-7"})
+                                "--round"))))
       (testing "review-prompt is assembled from the shared fragments byte-for-byte"
         (let [prompt (#'agents/review-prompt {:target-id "s1" :contract "C" :note-tag "p1"})]
           (is (str/includes? prompt (#'agents/read-the-board-fragment {:view :strand :board-id "s1"})))
@@ -608,9 +615,9 @@
   (with-agents
     (fn [rt]
       (agents/defroster! :ctx
-        {:reviewers [{:name "a" :harness :sh :contract "Contract A."}
-                     {:name "b" :harness :sh :contract "Contract B."}]
-         :synthesizer {:harness :sh}})
+        {:seats [{:name "a" :harness :sh :brief "Brief A."}
+                 {:name "b" :harness :sh :brief "Brief B."}]
+         :synthesis {:harness :sh}})
       (let [target (weaver/add rt {:title "ctx target"})
             change-context {:commit-range "main..HEAD" :files ["src/a.clj" "test/a_test.clj"]}
             specs (agents/roster-review-specs :ctx {:target (:id target)
@@ -715,8 +722,8 @@
           (is (= [:sh "sh"] (mapv :harness row1))))
         (testing "every run spec stamps panel + review attrs"
           (doseq [spec row1]
-            (is (= (:id target) (get (:attrs spec) "review/target")))
-            (is (= (:review-pass specs) (get (:attrs spec) "review/pass")))
+            (is (= (:id target) (get (:attrs spec) "panel/blackboard")))
+            (is (= (:pass specs) (get (:attrs spec) "panel/pass")))
             (is (= "1" (get (:attrs spec) "panel/turn")))
             (is (= (:name spec) (get (:attrs spec) "panel/seat")))))
         (testing "blackboard directive names the target strand"
@@ -729,7 +736,7 @@
             (is (nil? (:synthesizer bare)))
             (is (s/valid? :skein.spools.delegation/panel-specs bare))))
         (testing ":review-id overrides the minted pass tag"
-          (is (= "pass-x" (:review-pass (agents/panel-specs panel {:target (:id target) :review-id "pass-x"})))))))))
+          (is (= "pass-x" (:pass (agents/panel-specs panel {:target (:id target) :review-id "pass-x"})))))))))
 
 (deftest panel-specs-multi-round-wires-barriers-and-prompt-forms
   (with-agents
@@ -758,7 +765,16 @@
             (is (every? #(str/includes? (:resume-prompt %) "Continuing as seat") row2))
             (is (str/includes? (:resume-prompt (first row2)) "Read peers' turn 1"))))
         (testing "turn 3 continuation references the prior turn"
-          (is (str/includes? (:resume-prompt (first (nth (:turns specs) 2))) "Read peers' turn 2")))))))
+          (is (str/includes? (:resume-prompt (first (nth (:turns specs) 2))) "Read peers' turn 2")))
+        ;; a seat that posts without --round lands a note with no note/round,
+        ;; and `agent notes <board> --round n` (which filters note/round) then
+        ;; returns nothing for every round of the deliberation
+        (testing "each seat is told to post with its own turn as --round, so notes stay round-filterable"
+          (doseq [[idx row] (map-indexed vector (:turns specs))
+                  spec row]
+            (is (str/includes? (:prompt spec) (str "--round " (inc idx))))
+            (when-let [resume (:resume-prompt spec)]
+              (is (str/includes? resume (str "--round " (inc idx)))))))))))
 
 (deftest panel-spawns-fresh-board-with-barriers-and-resume-threads
   (with-agents
@@ -776,8 +792,8 @@
                       (->> (:edges (graph/subgraph rt [id] {:type "depends-on"}))
                            (filter #(= id (:from_strand_id %)))
                            (map :to_strand_id) set))]
-        (testing "a fresh blackboard strand is minted"
-          (is (= "panel" (get-in board [:attributes :panel/role]))))
+        (testing "a fresh blackboard strand is minted carrying the panel's pass tag"
+          (is (= (:pass result) (get-in board [:attributes :panel/pass]))))
         (testing "each turn row has one run per seat"
           (is (= 2 (count row1)))
           (is (= 2 (count row2))))
@@ -795,9 +811,9 @@
             (is (not (str/includes? p2 "«panel-board»")))
             (is (str/includes? p2 (:blackboard result)))
             (is (= (:blackboard result)
-                   (get-in (weaver/show rt (first row1)) [:attributes :review/target])))))
+                   (get-in (weaver/show rt (first row1)) [:attributes :panel/blackboard])))))
         (testing "a resuming turn stashes its full-brief prompt for retry --fresh"
-          (let [f2 (get-in (weaver/show rt (first row2)) [:attributes :panel/fresh-prompt])]
+          (let [f2 (get-in (weaver/show rt (first row2)) [:attributes :agent-run/fresh-prompt])]
             (is (str/includes? f2 "You are seat")
                 "the full form, not the continuation, is durable for a cold restart")
             (is (not (str/includes? f2 "«panel-board»")))))
@@ -877,12 +893,12 @@
 (deftest roster->panel-produces-independent-target-panel
   (with-agents
     (fn [rt]
-      (let [roster {:reviewers [{:name "tests" :harness :sh :contract "Judge the tests." :scope "test files"}
-                                {:name "docs" :harness "sh" :contract "Judge the docs."}]
-                    :synthesizer {:harness :sh}}
+      (let [roster {:seats [{:name "tests" :harness :sh :brief "Judge the tests." :scope "test files"}
+                            {:name "docs" :harness "sh" :brief "Judge the docs."}]
+                    :synthesis {:harness :sh}}
             panel (agents/roster->panel roster)
             target (weaver/add rt {:title "roster-panel target"})]
-        (testing "each reviewer becomes an independent seat carrying its contract as brief"
+        (testing "each roster seat becomes an independent panel seat"
           (is (= [{:name "tests" :harness :sh :brief "Judge the tests." :continuity :fresh :scope "test files"}
                   {:name "docs" :harness "sh" :brief "Judge the docs." :continuity :fresh}]
                  (:seats panel)))
@@ -894,12 +910,12 @@
             (is (= 1 (count (:turns specs))))
             (is (every? #(str/includes? (:prompt %) "Work independently") (first (:turns specs))))
             (is (s/valid? :skein.spools.delegation/panel-specs specs))))
-        (testing "a synthesizer-less roster falls back to the first reviewer's harness"
+        (testing "a synthesis-less roster falls back to the first seat's harness"
           (is (= {:harness :sh}
-                 (:synthesis (agents/roster->panel {:reviewers [{:name "solo" :harness :sh :contract "One pass."}]})))))
+                 (:synthesis (agents/roster->panel {:seats [{:name "solo" :harness :sh :brief "One pass."}]})))))
         (testing "a malformed roster fails identically to defroster! input"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
-                                (agents/roster->panel {:reviewers []}))))))))
+                                (agents/roster->panel {:seats []}))))))))
 
 (deftest council-turn-rows-per-seat-harnesses-and-loud-harness
   (with-agents
@@ -908,17 +924,21 @@
                       (->> (:edges (graph/subgraph rt [id] {:type "depends-on"}))
                            (filter #(= id (:from_strand_id %)))
                            (map :to_strand_id) set))]
-        (testing "scalar members expand to identical seats across turn-as-run rows"
-          (let [{:keys [council turns synthesizer]}
-                (agents/council! "test topic" {:harness :sh :members 2 :rounds 2})
-                board (weaver/show rt council)
+        (testing "a scalar seat count expands to identical seats across turn-as-run rows"
+          (let [{:keys [blackboard turns synthesizer]}
+                (agents/council! "test topic" {:harness :sh :seat-count 2 :rounds 2})
+                board (weaver/show rt blackboard)
                 [row1 row2] turns]
-            (is (= "panel" (get-in board [:attributes :panel/role]))
-                "council re-ships as a fresh-blackboard panel")
+            (testing "council re-ships as a fresh-blackboard panel"
+              (is (some? (get-in board [:attributes :panel/pass]))
+                  "the minted board carries the panel pass tag")
+              (is (= ["seat-1" "seat-2"]
+                     (mapv #(get-in (weaver/show rt %) [:attributes :panel/seat]) row1))
+                  "seats are stamped with panel's seat identity"))
             (is (= [2 2] [(count row1) (count row2)]))
             (testing "the council strand parents every run"
               (is (= (set (concat row1 row2 [synthesizer]))
-                     (set (map :to_strand_id (:edges (graph/subgraph rt [council])))))))
+                     (set (map :to_strand_id (:edges (graph/subgraph rt [blackboard])))))))
             (testing "the poll-loop choreography is gone; the topic remains"
               (doseq [run-id (concat row1 row2 [synthesizer])]
                 (let [p (get-in (weaver/show rt run-id) [:attributes :agent-run/prompt])]
@@ -945,10 +965,10 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not conform"
                                 (agents/council! "t" {:harness :sh :rounds 0})))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires a harness"
-                                (agents/council! "t" {:members 2}))
+                                (agents/council! "t" {:seat-count 2}))
               "the silent :claude default is gone: no harness resolves loudly")
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not both"
-                                (agents/council! "t" {:harness :sh :members 2
+                                (agents/council! "t" {:harness :sh :seat-count 2
                                                       :seats [{:name "a" :harness :sh}]})))
           (let [bad {:harness 1 :rounds 2}
                 ex (try
@@ -960,7 +980,7 @@
                 "council invalid input carries the failing value")
             (is (str/includes? (ex-message ex) "council! options")))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                                (agents/council! "t" {:harness :sh :membres 2})))
+                                (agents/council! "t" {:harness :sh :seat-counts 2})))
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
                                 (agents/council! "t" {:harness :sh
                                                       :seats [{:name "a" :harnes :sh}]}))))))))
@@ -969,12 +989,12 @@
   (with-agents
     (fn [rt]
       (let [blocker (weaver/add rt {:title "blocker"})
-            blocked (weaver/add rt {:title "blocked" :attributes {:body "body" :harness "sh"}
+            blocked (weaver/add rt {:title "blocked" :attributes {:body "body" :agent-run/harness "sh"}
                                     :edges [{:type "depends-on" :to (:id blocker)}]})
             no-harness (weaver/add rt {:title "no harness" :attributes {:body "body"}})
-            hitl (weaver/add rt {:title "hitl" :attributes {:body "body" :harness "sh" :hitl true}})
-            active (weaver/add rt {:title "active" :attributes {:body "body" :harness "sh"}})
-            cwd-task (weaver/add rt {:title "cwd fallback" :attributes {:body "body" :harness "cwd-sh"}})]
+            hitl (weaver/add rt {:title "hitl" :attributes {:body "body" :agent-run/harness "sh" :hitl true}})
+            active (weaver/add rt {:title "active" :attributes {:body "body" :agent-run/harness "sh"}})
+            cwd-task (weaver/add rt {:title "cwd fallback" :attributes {:body "body" :agent-run/harness "cwd-sh"}})]
         (shuttle/register-harness! :cwd-sh {:argv ["sh" "-c"]
                                             :parse :raw
                                             :preamble? false
@@ -1000,8 +1020,8 @@
 (deftest agent-op-fail-loudly-matrix
   (with-agents
     (fn [rt]
-      (let [task (weaver/add rt {:title "empty task" :attributes {:harness "sh"}})
-            closed (weaver/add rt {:title "closed" :state "closed" :attributes {:body "body" :harness "sh"}})
+      (let [task (weaver/add rt {:title "empty task" :attributes {:agent-run/harness "sh"}})
+            closed (weaver/add rt {:title "closed" :state "closed" :attributes {:body "body" :agent-run/harness "sh"}})
             plan (weaver/add rt {:title "plan"})
             missing-harness (weaver/add rt {:title "ready missing harness" :attributes {:body "body"}})]
         (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id missing-harness)}]})
@@ -1009,7 +1029,7 @@
                               (agents/agent-op {:op/argv ["delegate" (:id task)]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"task must be active"
                               (agents/agent-op {:op/argv ["delegate" (:id closed)]})))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ready tasks missing harness"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ready tasks missing agent-run/harness"
                               (agents/agent-op {:op/argv ["delegate" "--ready" (:id plan)]})))
         (is (not-any? #{(:id missing-harness)}
                       (:ready (agents/agent-op {:op/argv ["status" (:id plan)]})))
@@ -1027,9 +1047,9 @@
 (deftest delegate-guards-all-non-superseded-runs
   (with-agents
     (fn [rt]
-      (let [active-task (weaver/add rt {:title "active run task" :attributes {:body "body" :harness "sh"}})
-            failed-task (weaver/add rt {:title "failed run task" :attributes {:body "body" :harness "sh"}})
-            done-task (weaver/add rt {:title "done run task" :attributes {:body "body" :harness "sh"}})
+      (let [active-task (weaver/add rt {:title "active run task" :attributes {:body "body" :agent-run/harness "sh"}})
+            failed-task (weaver/add rt {:title "failed run task" :attributes {:body "body" :agent-run/harness "sh"}})
+            done-task (weaver/add rt {:title "done run task" :attributes {:body "body" :agent-run/harness "sh"}})
             plan (weaver/add rt {:title "plan"})
             gate (weaver/add rt {:title "gate"})]
         (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id active-task)}
@@ -1062,7 +1082,7 @@
     (fn [rt]
       (let [plan (weaver/add rt {:title "plan"})
             tasks (mapv (fn [n] (weaver/add rt {:title (str "task " n)
-                                                :attributes {:body "body" :harness "sh"}}))
+                                                :attributes {:body "body" :agent-run/harness "sh"}}))
                         (range 3))]
         (weaver/update rt (:id plan) {:edges (mapv (fn [t] {:type "parent-of" :to (:id t)}) tasks)})
         (let [ready (agents/agent-op {:op/argv ["delegate" "--ready" (:id plan)]})]
@@ -1073,9 +1093,9 @@
           (is (empty? (:skipped ready))
               "a task delegated this pass is never re-reported as skipped"))))))
 
-(deftest fanout-verbs-stamp-max-concurrent-group
+(deftest fanout-verbs-stamp-fanout-cap-group
   ;; V2 (PROP-Foc-001.C3, TASK-Foc-002.DW1): review, council, and delegate
-  ;; --ready each parse --max-concurrent and stamp one shared
+  ;; --ready each parse --fanout-cap and stamp one shared
   ;; agent-run/fanout-group plus the requested agent-run/fanout-cap on every run
   ;; of the fan-out, so the PH1 window bounds each group to min(W, K). A raw
   ;; spawn or single delegate creates a single run, so it carries no group and
@@ -1089,8 +1109,8 @@
         (testing "review stamps one group across reviewers and the synthesizer"
           (let [target (weaver/add rt {:title "review target" :attributes {:body "x"}})
                 review (agents/agent-op {:op/argv ["review" (:id target)
-                                                   "--members" "2" "--synthesize"
-                                                   "--max-concurrent" "3"]})
+                                                   "--seats" "2" "--synthesize"
+                                                   "--fanout-cap" "3"]})
                 {:keys [groups caps]} (fan (conj (:reviewers review) (:synthesizer review)))]
             (is (some? (:synthesizer review)) "the review fans out a synthesizer too")
             (is (= 1 (count groups)) "every review run shares one fan-out group")
@@ -1098,8 +1118,8 @@
             (is (= #{3} caps) "every review run carries the requested cap")))
         (testing "council stamps one group across seats and the synthesizer"
           (let [council (agents/agent-op {:op/argv ["council" "--topic" "decide"
-                                                    "--harness" "sh" "--members" "2"
-                                                    "--rounds" "1" "--max-concurrent" "2"]})
+                                                    "--harness" "sh" "--seats" "2"
+                                                    "--rounds" "1" "--fanout-cap" "2"]})
                 run-ids (conj (vec (mapcat identity (:turns council))) (:synthesizer council))
                 {:keys [groups caps]} (fan run-ids)]
             (is (= 1 (count groups)) "every council run shares one fan-out group")
@@ -1108,10 +1128,10 @@
         (testing "delegate --ready stamps one group across the classified batch"
           (let [plan (weaver/add rt {:title "plan"})
                 tasks (mapv (fn [n] (weaver/add rt {:title (str "task " n)
-                                                    :attributes {:body "body" :harness "sh"}}))
+                                                    :attributes {:body "body" :agent-run/harness "sh"}}))
                             (range 3))
                 _ (weaver/update rt (:id plan) {:edges (mapv (fn [t] {:type "parent-of" :to (:id t)}) tasks)})
-                ready (agents/agent-op {:op/argv ["delegate" "--ready" (:id plan) "--max-concurrent" "2"]})
+                ready (agents/agent-op {:op/argv ["delegate" "--ready" (:id plan) "--fanout-cap" "2"]})
                 run-ids (mapv #(get-in % [:run :id]) (:delegated ready))
                 {:keys [groups caps]} (fan run-ids)]
             (is (= 3 (count run-ids)) "every ready task is delegated into the fan-out")
@@ -1120,25 +1140,25 @@
             (is (= #{2} caps) "every delegated run carries the requested cap")))
         (testing "raw spawn and single delegate carry no fan-out group"
           (let [spawned (agents/agent-op {:op/argv ["spawn" "--harness" "sh" "--prompt" "echo x"]})
-                task (weaver/add rt {:title "single" :attributes {:body "body" :harness "sh"}})
+                task (weaver/add rt {:title "single" :attributes {:body "body" :agent-run/harness "sh"}})
                 single (agents/agent-op {:op/argv ["delegate" (:id task)]})
-                ;; --max-concurrent on a single delegate is inert: one run is
+                ;; --fanout-cap on a single delegate is inert: one run is
                 ;; governed by W alone and never joins a group (MI3)
-                capped (weaver/add rt {:title "single capped" :attributes {:body "body" :harness "sh"}})
-                single-capped (agents/agent-op {:op/argv ["delegate" (:id capped) "--max-concurrent" "5"]})]
+                capped (weaver/add rt {:title "single capped" :attributes {:body "body" :agent-run/harness "sh"}})
+                single-capped (agents/agent-op {:op/argv ["delegate" (:id capped) "--fanout-cap" "5"]})]
             (doseq [id [(:id spawned) (get-in single [:run :id]) (get-in single-capped [:run :id])]]
               (let [run (weaver/show rt id)]
                 (is (nil? (get-in run [:attributes :agent-run/fanout-group]))
                     "a single run carries no fan-out group")
                 (is (nil? (get-in run [:attributes :agent-run/fanout-cap]))
                     "a single run carries no fan-out cap")))))
-        (testing "--max-concurrent must be a positive integer"
+        (testing "--fanout-cap must be a positive integer"
           (let [target (weaver/add rt {:title "bad-cap target" :attributes {:body "x"}})]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
-                                  (agents/agent-op {:op/argv ["review" (:id target) "--max-concurrent" "0"]})))
+                                  (agents/agent-op {:op/argv ["review" (:id target) "--fanout-cap" "0"]})))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive integer"
                                   (agents/agent-op {:op/argv ["council" "--topic" "t" "--harness" "sh"
-                                                              "--max-concurrent" "0"]})))))))))
+                                                              "--fanout-cap" "0"]})))))))))
 
 (deftest panel-and-council-reject-incoherent-fanout-attrs
   ;; Trusted Clojure callers of panel!/council! can hand-build :fanout-attrs, so
@@ -1167,7 +1187,7 @@
         (testing "council! rejects a malformed :fanout-attrs stamp loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not conform"
                                 (agents/council! "topic"
-                                                 {:harness :sh :members 2 :rounds 1
+                                                 {:harness :sh :seat-count 2 :rounds 1
                                                   :fanout-attrs {"agent-run/fanout-cap" 3}}))))))))
 
 (defn- serves? [rt run-id target-id]
@@ -1180,8 +1200,8 @@
   ;; skip it as has-active-run.
   (with-agents
     (fn [rt]
-      (let [spawn-task (weaver/add rt {:title "recon then delegate" :attributes {:body "body" :harness "sh"}})
-            review-task (weaver/add rt {:title "review then delegate" :attributes {:body "body" :harness "sh"}})
+      (let [spawn-task (weaver/add rt {:title "recon then delegate" :attributes {:body "body" :agent-run/harness "sh"}})
+            review-task (weaver/add rt {:title "review then delegate" :attributes {:body "body" :agent-run/harness "sh"}})
             plan (weaver/add rt {:title "plan"})]
         (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id spawn-task)}
                                               {:type "parent-of" :to (:id review-task)}]})
@@ -1206,7 +1226,7 @@
 (deftest retry-run-id-preserves-provenance-and-dependencies
   (with-agents
     (fn [rt]
-      (let [task (weaver/add rt {:title "served" :attributes {:body "body" :harness "sh"}})
+      (let [task (weaver/add rt {:title "served" :attributes {:body "body" :agent-run/harness "sh"}})
             spawner (shuttle/spawn-run! {:harness :sh :prompt "echo parent"})
             blocker (weaver/add rt {:title "retry blocker"})
             failed (shuttle/spawn-run! {:harness :sh
@@ -1259,7 +1279,7 @@
   ;; read-only helper (recon/review, no serves edge) shadow it.
   (with-agents
     (fn [rt]
-      (let [task (weaver/add rt {:title "served + reconned" :attributes {:body "body" :harness "sh"}})
+      (let [task (weaver/add rt {:title "served + reconned" :attributes {:body "body" :agent-run/harness "sh"}})
             helper (shuttle/spawn-run! {:harness :sh :prompt "exit 3" :parent (:id task)})
             serving (shuttle/spawn-run! {:harness :sh :prompt "exit 3" :parent (:id task) :serves (:id task)})]
         (await-phase rt (:id helper) #{"failed"})
@@ -1291,7 +1311,7 @@
                                                :attributes (merge {"agent-run/run" "true"
                                                                    "agent-run/harness" "session-fix"
                                                                    "agent-run/prompt" "CONTINUATION prompt"
-                                                                   "panel/fresh-prompt" "FULLBRIEF prompt"
+                                                                   "agent-run/fresh-prompt" "FULLBRIEF prompt"
                                                                    "agent-run/resumes" pred
                                                                    "agent-run/session-id" "sess-def"
                                                                    "agent-run/phase" "failed"}
@@ -1304,7 +1324,7 @@
             (is (= failed (:superseded retried)))
             (is (= failed (get-in new-run [:attributes :agent-run/resumes])))
             (is (str/includes? (get-in new-run [:attributes :agent-run/prompt]) "CONTINUATION prompt"))
-            (is (= "FULLBRIEF prompt" (get-in new-run [:attributes :panel/fresh-prompt]))
+            (is (= "FULLBRIEF prompt" (get-in new-run [:attributes :agent-run/fresh-prompt]))
                 "the full-brief form carries forward for a later --fresh")))
         (testing "--fresh severs the linkage and cold-starts on the full-brief prompt"
           (let [pred (make-pred)
@@ -1336,8 +1356,8 @@
                                                      "agent-run/harness" "sh"
                                                      "agent-run/prompt" "seat brief"
                                                      "agent-run/phase" "failed"
-                                                     "review/target" "tgt-1"
-                                                     "review/pass" "panel-abc123"
+                                                     "panel/blackboard" "tgt-1"
+                                                     "panel/pass" "panel-abc123"
                                                      "review/roster" "repo"
                                                      "review/focus" "skeptic"
                                                      "panel/seat" "skeptic"
@@ -1346,8 +1366,8 @@
                                                      "agent-run/result" "stale old result"}}))
             retried (agents/agent-op {:op/argv ["retry" failed]})
             attrs (:attributes (weaver/show rt (get-in retried [:run :id])))]
-        (is (= "tgt-1" (:review/target attrs)))
-        (is (= "panel-abc123" (:review/pass attrs)))
+        (is (= "tgt-1" (:panel/blackboard attrs)))
+        (is (= "panel-abc123" (:panel/pass attrs)))
         (is (= "repo" (:review/roster attrs)))
         (is (= "skeptic" (:review/focus attrs)))
         (is (= "skeptic" (:panel/seat attrs)))
@@ -1359,7 +1379,7 @@
   (with-agents
     (fn [rt]
       (let [plan (weaver/add rt {:title "plan"})
-            task (weaver/add rt {:title "task" :attributes {:body "body" :harness "sh"}})
+            task (weaver/add rt {:title "task" :attributes {:body "body" :agent-run/harness "sh"}})
             gate (weaver/add rt {:title "await gate"})
             _ (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id task)}]})
             delegated {:run (select-keys (shuttle/run-summary
@@ -1370,14 +1390,14 @@
         (let [{:keys [timed-out runs]} (agents/agent-op {:op/argv ["await" "--under" (:id plan) "--timeout-secs" (str (test-support/await-budget-secs))]})]
           (is (false? timed-out))
           (is (= (:id (get delegated :run)) (:id (first runs)))))
-        (let [failed-task (weaver/add rt {:title "fails" :attributes {:body "exit 2" :harness "sh"}})
+        (let [failed-task (weaver/add rt {:title "fails" :attributes {:body "exit 2" :agent-run/harness "sh"}})
               _ (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id failed-task)}]})
               d (agents/agent-op {:op/argv ["delegate" (:id failed-task)]})]
           (await-phase rt (get-in d [:run :id]) #{"failed"})
           (let [retried (agents/agent-op {:op/argv ["retry" (:id failed-task) "--prompt" "echo recovered"]})]
             (is (= (get-in d [:run :id]) (:superseded retried)))
             (is (= (:id failed-task) (:task retried))))
-          (let [fresh (weaver/add rt {:title "fresh" :attributes {:body "body" :harness "sh"}})]
+          (let [fresh (weaver/add rt {:title "fresh" :attributes {:body "body" :agent-run/harness "sh"}})]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"nothing to supersede"
                                   (agents/agent-op {:op/argv ["retry" (:id fresh)]})))))))))
 
@@ -1387,7 +1407,7 @@
 (deftest status-triage-lists-ready-running-failed-and-verification
   (with-agents
     (fn [rt]
-      (let [ready-task (weaver/add rt {:title "ready" :attributes {:body "body" :harness "sh"}})
+      (let [ready-task (weaver/add rt {:title "ready" :attributes {:body "body" :agent-run/harness "sh"}})
             implemented (weaver/add rt {:title "implemented" :attributes {:status "implemented"}})
             failed-run (shuttle/spawn-run! {:harness :sh :prompt "exit 9" :parent (:id ready-task)})]
         (await-phase rt (:id failed-run) #{"failed"})
@@ -1402,10 +1422,10 @@
             blocker (weaver/add rt {:title "closed blocker" :state "closed"})
             closed-implemented (weaver/add rt {:title "closed implemented"
                                                :state "closed"
-                                               :attributes {:status "implemented" :body "body" :harness "sh"}})
+                                               :attributes {:status "implemented" :body "body" :agent-run/harness "sh"}})
             closed-blocked (weaver/add rt {:title "closed blocked"
                                            :state "closed"
-                                           :attributes {:body "body" :harness "sh"}
+                                           :attributes {:body "body" :agent-run/harness "sh"}
                                            :edges [{:type "depends-on" :to (:id blocker)}]})]
         (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id closed-implemented)}
                                               {:type "parent-of" :to (:id closed-blocked)}]})
@@ -1456,7 +1476,7 @@
       (shuttle/register-backend! :fake-mux fake-mux)
       (let [task (weaver/add rt {:title "pair on the plan"
                                  :attributes {:body "Discuss and agree the plan with the user."
-                                              :harness "sh" :hitl "true"}})]
+                                              :agent-run/harness "sh" :hitl "true"}})]
         (testing "headless delegation of a hitl task fails loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"hitl"
                                 (agents/agent-op {:op/argv ["delegate" (:id task)]}))))
@@ -1490,7 +1510,7 @@
     (fn [rt]
       (shuttle/register-backend! :fake-mux fake-mux)
       (let [task (weaver/add rt {:title "session task"
-                                 :attributes {:body "work with the user" :harness "sh" :hitl "true"}})
+                                 :attributes {:body "work with the user" :agent-run/harness "sh" :hitl "true"}})
             d (agents/agent-op {:op/argv ["delegate" (:id task) "--interactive" "--backend" "fake-mux"]})
             run-id (get-in d [:run :id])]
         (await-handle-pid rt run-id)

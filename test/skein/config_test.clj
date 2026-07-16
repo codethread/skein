@@ -491,15 +491,16 @@
     (fn [rt]
       (let [plan (weaver/add rt {:title "Feature: plan feature"
                                  :state "active"
-                                 :attributes {:feature "plan-feature" :kind "plan" :workflow "agent-plan"}})
+                                 :attributes {:feature "plan-feature" :kind "agent-plan"}})
             impl (weaver/add rt {:title "Implement it"
                                  :state "active"
-                                 :attributes {:feature "plan-feature" :kind "task" :workflow "agent-plan"
-                                              :task_key "impl" :owner "agent-a" :harness "build"
-                                              :cwd "/tmp/work" :validation ["clojure -M:test"]}})
+                                 :attributes {:feature "plan-feature" :kind "task"
+                                              :task_key "impl" :owner "agent-a"
+                                              :agent-run/harness "build"
+                                              :agent-run/cwd "/tmp/work" :validation ["clojure -M:test"]}})
             review (weaver/add rt {:title "Review it"
                                    :state "active"
-                                   :attributes {:feature "plan-feature" :kind "review" :workflow "agent-plan"
+                                   :attributes {:feature "plan-feature" :kind "review"
                                                 :task_key "review" :hitl true}})]
         (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id impl)}
                                               {:type "parent-of" :to (:id review)}]})
