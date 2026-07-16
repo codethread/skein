@@ -20,7 +20,7 @@ These recipes assume the op is active (`.skein/init.clj` activates it in this re
 strand search "backoff"
 ```
 
-You get one row per hit: a strand whose title mentions backoff comes back with `key: null`; a strand whose `note` or `body` attribute mentions it comes back with that key and the matched value as `snippet`. From there, `strand show <id>` reads the full strand.
+You get one row per hit: a strand whose title mentions backoff comes back with `attr-key: null`; a strand whose `note` or `body` attribute mentions it comes back with that key and the matched value as `snippet`. From there, `strand show <id>` reads the full strand.
 
 **Why this shape.** Title-and-value search is the widest net for "where did we talk about X". Leaving `--archived` off keeps it to live work, which is usually what you want when you're reconstructing a still-open thread.
 
@@ -31,12 +31,12 @@ You get one row per hit: a strand whose title mentions backoff comes back with `
 **Search.**
 
 ```sh
-strand search "review" --key note
+strand search "review" --attr-key note
 ```
 
-Scoping with `--key` searches only that attribute's values and drops the title branch, so you see `note` hits and nothing else. If the result still overflows the default cap of 50, the op fails loudly and tells you to narrow further or raise `--limit` — it never hands you a silently truncated page.
+Scoping with `--attr-key` searches only that attribute's values and drops the title branch, so you see `note` hits and nothing else. If the result still overflows the default cap of 50, the op fails loudly and tells you to narrow further or raise `--limit` — it never hands you a silently truncated page.
 
-**Why this shape.** A specific `--key` turns a broad grep into a targeted one without a query rewrite. Reach for it whenever a term is common but you know which field carries the meaning you want.
+**Why this shape.** A specific `--attr-key` turns a broad grep into a targeted one without a query rewrite. Reach for it whenever a term is common but you know which field carries the meaning you want.
 
 ## Recipe 3: search archived transcripts, opt-in
 
@@ -48,7 +48,7 @@ Scoping with `--key` searches only that attribute's values and drops the title b
 strand search "the phrase you remember" --archived
 ```
 
-`--archived` widens the attribute branch to include cold rows. Without it, the archived `transcript` value does not exist as far as search is concerned; with it, the row comes back with `key: "transcript"` and the matched value.
+`--archived` widens the attribute branch to include cold rows. Without it, the archived `transcript` value does not exist as far as search is concerned; with it, the row comes back with `attr-key: "transcript"` and the matched value.
 
 **Why this shape.** Opt-in, never default. Archived attributes are memory, not authority (`devflow/PHILOSOPHY.md`), so reaching them is a deliberate act you spell out each time. Keeping `--archived` off the default path means routine searches stay scoped to live work, and pulling from the archive is always a choice you can see in the command you typed.
 

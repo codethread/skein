@@ -32,13 +32,13 @@ Neither is a gap waiting to be filled. Both are load-bearing invariants (TEN-004
 
 `skein.spools.text-search` registers one op, `search`: a `LIKE`-based substring search over strand titles and attribute values. Hot rows only by default; `--archived` opts the cold rows in. It mutates nothing.
 
-Every query pattern is a bound parameter — user text is escaped for `LIKE` metacharacters and never spliced into SQL. Because it reads the raw datasource, it requires an **in-process weaver runtime**: trusted startup config, the weaver's own REPL, or an in-process test runtime.
+Every search substring is a bound parameter — user input is escaped for `LIKE` metacharacters and never spliced into SQL. Because it reads the raw datasource, it requires an **in-process weaver runtime**: trusted startup config, the weaver's own REPL, or an in-process test runtime.
 
 ## 2. Usage
 
 ```sh
 strand search "retry backoff"                 # titles + all hot attribute values
-strand search "backoff" --key note            # one attribute key; skips titles
+strand search "backoff" --attr-key note       # one attribute key; skips titles
 strand search "secretword" --archived         # include cold (archived) rows
 strand search "widget" --limit 200            # raise the row cap
 ```
@@ -49,34 +49,36 @@ strand search "widget" --limit 200            # raise the row cap
 
 (def rt (current/runtime))
 
-(text-search/search rt {:text "retry backoff"})
-(text-search/search rt {:text "backoff" :key "note"})
-(text-search/search rt {:text "secretword" :archived? true})
+(text-search/search rt {:substring "retry backoff"})
+(text-search/search rt {:substring "backoff" :attr-key "note"})
+(text-search/search rt {:substring "secretword" :archived? true})
 ```
 
 ## 3. Surface
 
 | Op / fn | Behavior |
 |---|---|
-| `strand search <text> [--archived] [--key <k>] [--limit <n>]` | Substring search; JSON rows `{id, title, key, snippet}`. |
-| `(search rt opts)` | Explicit-runtime core; `opts` is `{:text :archived? :key :limit}`. |
+| `strand search <substring> [--archived] [--attr-key <k>] [--limit <n>]` | Substring search; JSON rows `{id, title, attr-key, snippet}`. |
+| `(search rt opts)` | Explicit-runtime core; `opts` is `{:substring :archived? :attr-key :limit}`. |
 | `(install!)` | Register the `search` op; returns metadata carrying `:unsafe true`. |
 
 Flags:
 
-- `<text>` — required substring, matched literally. A blank pattern fails
-  loudly.
+- `<substring>` — required, matched literally. A blank substring fails loudly.
 - `--archived` — include archived (cold) attribute rows the query language
   cannot see. Default off: hot rows only. Titles are never archived, so this
   flag only widens the attribute branch.
-- `--key <k>` — scope the attribute-value search to one attribute key. This is
-  an attribute search, so it drops the title branch (titles are not
+- `--attr-key <k>` — scope the attribute-value search to one attribute key. This
+  is an attribute search, so it drops the title branch (titles are not
   attributes).
-- `--limit <n>` — row cap (default 50).
+- `--limit <n>` — row cap (default 50). Search does not consult batteries'
+  `set-read-limit!`: that runtime-owned cap governs `list`/`ready`, which
+  truncate silently, not this op, which fails on overflow.
 
-Result rows are `{:id :title :key :snippet}`, ordered by strand id then key:
+Result rows are `{:id :title :attr-key :snippet}`, ordered by strand id then
+attribute key:
 
-- `:key` is `null` for a title hit, or the matching attribute key otherwise.
+- `:attr-key` is `null` for a title hit, or the matching attribute key otherwise.
 - `:snippet` is the matched text: the title, or the attribute value as stored
   JSON (so a string value reads back quoted, e.g. `"billing"`).
 - A strand that matches on its title and on two attribute values returns three
@@ -84,8 +86,8 @@ Result rows are `{:id :title :key :snippet}`, ordered by strand id then key:
 
 ## 4. Failure modes (TEN-003)
 
-- **Blank pattern** — a nil or whitespace-only `<text>` fails loudly. This op
-  never returns "everything" for an empty search.
+- **Blank substring** — a nil or whitespace-only `<substring>` fails loudly.
+  This op never returns "everything" for an empty search.
 - **Overflow** — `search` fetches one row past `--limit`. If the match set
   exceeds the limit it throws, naming `--limit` and query-narrowing, rather than
   returning a silently truncated page. Results are capped, never truncated: you

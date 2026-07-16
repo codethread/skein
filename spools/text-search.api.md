@@ -34,13 +34,14 @@ UNSAFE: uses skein.core.db for substring search over strand titles and
   this pattern earns no such guarantee and owns its own breakage.
 
   See `spools/text-search.md` for the full unsafe declaration and design
-  rationale. Every query pattern is parameter-bound — user text is never spliced
-  into SQL — and the op is read-only: it mutates no strands, edges, or state.
+  rationale. Every search substring is parameter-bound — user input is never
+  spliced into SQL — and the op is read-only: it mutates no strands, edges, or
+  state.
 
 
 
 
-## <a name="skein.spools.text-search/default-limit">`default-limit`</a>
+## <a name="skein.spools.text-search/default-search-limit">`default-search-limit`</a>
 
 
 
@@ -48,7 +49,13 @@ UNSAFE: uses skein.core.db for substring search over strand titles and
 Default row cap for `search`. Overflow fails loudly rather than truncating,
   so a caller always sees a complete result set or a clear instruction to narrow
   it.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L45-L49">Source</a></sub></p>
+
+  Search deliberately does not consult batteries' runtime-owned read cap
+  (`skein.spools.batteries/read-limit`, set via `set-read-limit!`): that cap
+  governs the silently-truncating `list`/`ready` reads, and this op's cap is a
+  different contract — it fails on overflow instead of truncating. A workspace
+  that raises its read limit does not thereby widen `search`; pass `:limit`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L46-L56">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/install!">`install!`</a>
 ``` clojure
@@ -62,7 +69,7 @@ Install the UNSAFE `search` op into the active weaver.
   other shipped spools; the op handler and `search` itself take the runtime
   explicitly. Returns installation metadata carrying `:unsafe true` so callers
   can see what they activated.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L195-L212">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L210-L227">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/search">`search`</a>
 ``` clojure
@@ -70,23 +77,23 @@ Install the UNSAFE `search` op into the active weaver.
 ```
 Function.
 
-Return strand rows whose title or an attribute value contains `text`.
+Return strand rows whose title or an attribute value contains `substring`.
 
-  `opts` is a map: `:text` (required, non-blank substring matched literally),
+  `opts` is a map: `:substring` (required, non-blank, matched literally),
   `:archived?` (include archived/cold attribute rows the query language cannot
-  see; default false — hot rows only), `:key` (scope the attribute-value search
-  to one attribute key, which also skips the title branch), and `:limit`
-  (default `default-limit`).
+  see; default false — hot rows only), `:attr-key` (scope the attribute-value
+  search to one attribute key, which also skips the title branch), and `:limit`
+  (default `default-search-limit`).
 
-  Each row is `{:id :title :key :snippet}`: `:key` is nil for a title hit or the
-  matching attribute key otherwise, and `:snippet` is the matched text (the
-  title, or the attribute value as stored JSON). Rows are ordered by strand id
-  then key.
+  Each row is `{:id :title :attr-key :snippet}`: `:attr-key` is nil for a title
+  hit or the matching attribute key otherwise, and `:snippet` is the matched
+  text (the title, or the attribute value as stored JSON). Rows are ordered by
+  strand id then attribute key.
 
   Read-only. Fails loudly (TEN-003) on malformed opts or overflow: `search`
   fetches one row past `:limit` and, if the result exceeds it, throws naming
   `--limit` and query-narrowing rather than silently truncating.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L121-L157">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L128-L170">Source</a></sub></p>
 
 ## <a name="skein.spools.text-search/search-op">`search-op`</a>
 ``` clojure
@@ -98,4 +105,4 @@ Handle `strand search ...`, threading parsed args into `search`.
 
   The registered op handler; resolved by symbol at dispatch time, so it is public
   like the other spools' op handlers.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L159-L169">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/text-search/src/skein/spools/text_search.clj#L172-L182">Source</a></sub></p>
