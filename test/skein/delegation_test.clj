@@ -976,9 +976,9 @@
             active (weaver/add rt {:title "active" :attributes {:body "body" :harness "sh"}})
             cwd-task (weaver/add rt {:title "cwd fallback" :attributes {:body "body" :harness "cwd-sh"}})]
         (shuttle/register-harness! :cwd-sh {:argv ["sh" "-c"]
-                                      :parse :raw
-                                      :preamble? false
-                                      :cwd "/tmp/harness-cwd"})
+                                            :parse :raw
+                                            :preamble? false
+                                            :cwd "/tmp/harness-cwd"})
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not ready"
                               (agents/agent-op {:op/argv ["delegate" (:id blocked)]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"harness"
