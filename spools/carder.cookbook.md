@@ -114,7 +114,7 @@ Honest source: `suppress-expected-carder-orphans` / `kanban-card-orphan?` and th
 
 **Situation.** A delegated agent run failed and stayed active (failures are loud and visible on purpose). Downstream strands that `depends-on` it are now stuck — ready-looking but still blocked on the failed run. You want to find that stuck work and route it back into recovery.
 
-**Composition.** `blocked-by-failure` returns each active strand that has an active `depends-on` blocker whose `agent-run/phase` is `"failed"` or `"exhausted"`, with a `:blockers` vector carrying each blocker's id, phase, and `agent-run/error`. Feed those blocker ids to `strand agent retry`, the recovery verb.
+**Composition.** `blocked-by-failure` returns each active strand that has an active `depends-on` blocker that is an agent-run record (`agent-run/run "true"`) whose `agent-run/phase` is `"failed"` or `"exhausted"`, with a `:blockers` vector carrying each blocker's id, phase, and `agent-run/error`. Feed those blocker ids to `strand agent retry`, the recovery verb.
 
 ```clojure
 (require '[skein.spools.carder :as carder])

@@ -13,7 +13,8 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.api.spool.alpha :refer [fail! attr-get attr-key->str]])
+            [skein.api.spool.alpha :refer [fail! attr-get attr-key->str entity-projection
+                                           reject-unknown-keys!]])
   (:import [java.time Duration Instant LocalDateTime ZoneOffset]))
 
 (def default-days
@@ -28,15 +29,8 @@
     (fail! "Carder options must be a map" {:context context :opts opts}))
   opts)
 
-(defn- reject-unknown-keys! [opts allowed context]
-  (when-let [unknown (seq (remove allowed (keys opts)))]
-    (fail! "Unknown carder option keys" {:context context :unknown (vec unknown) :allowed (vec allowed)}))
-  opts)
-
 (defn- normalize-opts [opts context]
-  (-> opts
-      (require-map! context)
-      (reject-unknown-keys! #{:days :include-plumbing?} context)))
+  (reject-unknown-keys! context #{:days :include-plumbing?} (require-map! opts context)))
 
 (defn- days-opt [opts]
   (let [days (get opts :days default-days)]
@@ -44,17 +38,14 @@
       (fail! "Carder :days must be a positive integer" {:days days}))
     days))
 
-(defn- attr [strand k]
-  (attr-get strand k))
-
 (defn- workflow-attr? [[k _]]
   (= "workflow" (namespace k)))
 
 (defn- workflow-plumbing? [strand]
-  (contains? excluded-workflow-roles (attr strand :workflow/role)))
+  (contains? excluded-workflow-roles (attr-get strand :workflow/role)))
 
 (defn- agent-run? [strand]
-  (= "true" (attr strand :agent-run/run)))
+  (= "true" (attr-get strand :agent-run/run)))
 
 (defn- excluded? [opts strand]
   (and (not (:include-plumbing? opts))
@@ -62,7 +53,8 @@
            (agent-run? strand))))
 
 (defn- summary [strand]
-  (select-keys strand [:id :title :state :attributes :updated_at]))
+  ;; entity-projection discards non-canonical fields; :updated_at is carder's documented extension
+  (assoc (entity-projection strand) :updated_at (:updated_at strand)))
 
 (defn- runtime []
   (current/runtime))
@@ -143,24 +135,22 @@
           vec))))
 
 (defn- failed-blocker? [strand]
-  (contains? failed-run-phases (attr strand :agent-run/phase)))
+  (and (agent-run? strand)
+       (contains? failed-run-phases (attr-get strand :agent-run/phase))))
 
 (defn- blocker-detail [strand]
   (cond-> (summary strand)
-    (attr strand :agent-run/phase) (assoc :agent-run/phase (attr strand :agent-run/phase))
-    (attr strand :agent-run/error) (assoc :agent-run/error (attr strand :agent-run/error))))
-
-(defn- depends-on-edges [rt]
-  (jdbc/execute! (datasource rt)
-                 ["SELECT from_strand_id, to_strand_id FROM strand_edges WHERE edge_type = 'depends-on'"]
-                 {:builder-fn rs/as-unqualified-lower-maps}))
+    (attr-get strand :agent-run/phase) (assoc :agent-run/phase (attr-get strand :agent-run/phase))
+    (attr-get strand :agent-run/error) (assoc :agent-run/error (attr-get strand :agent-run/error))))
 
 (defn blocked-by-failure
   "Return active strands blocked by active failed or exhausted depends-on targets.
 
-  A blocker is any active `depends-on` target whose `agent-run/phase` attribute is
-  the string `failed` or `exhausted`. Rows include the blocked strand summary and
-  a `:blockers` vector with compact blocker details."
+  A blocker is any active `depends-on` target that is an agent-run record
+  (`agent-run/run \"true\"`) whose `agent-run/phase` attribute is the string
+  `failed` or `exhausted` — the same failure concept the `agent-failures` query
+  publishes. Rows include the blocked strand summary and a `:blockers` vector
+  with compact blocker details."
   ([]
    (blocked-by-failure {}))
   ([opts]
@@ -168,7 +158,7 @@
          opts (normalize-opts opts :blocked-by-failure)
          candidates (active-strands opts)
          candidate-ids (set (map :id candidates))
-         edges (filter #(contains? candidate-ids (:from_strand_id %)) (depends-on-edges rt))
+         edges (graph/outgoing-edges rt (vec candidate-ids) "depends-on")
          blocker-ids (distinct (map :to_strand_id edges))
          blockers-by-id (->> (graph/strands-by-ids rt blocker-ids)
                              (filter #(= "active" (:state %)))
