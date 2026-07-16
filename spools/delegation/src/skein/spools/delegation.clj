@@ -132,6 +132,29 @@
                     |Keep delegation shallow; never spawn a second mutator inside your own
                     |file scope.")))))
 
+(def ^:private agent-plan-semantics
+  ;; single source for `about`'s plan-creation section and the registered
+  ;; pattern doc (`strand pattern explain agent-plan`), so the two cannot drift
+  ["Create a feature/plan strand plus task/review children."
+   "Task bodies are full worker contracts: scope, owned files, validation commands, and commit policy."
+   "depends_on values are sibling keys resolved to strand ids at weave time."
+   "Set harness on tasks; delegate --ready requires it."
+   "Harness and validation are independent axes: harness picks who does the work; validation lists commands that prove it."])
+
+(def ^:private agent-plan-pattern-doc
+  (str (str/join " " agent-plan-semantics)
+       " Input: {feature, title, body?, tasks [{...}]}."
+       " Task fields: key and title (required);"
+       " body (the full worker contract);"
+       " depends_on? (vector of sibling keys);"
+       " harness? (harness or alias name for delegation);"
+       " cwd? (working directory);"
+       " validation? (vector of commands that prove the work);"
+       " max-attempts?;"
+       " hitl? (true = human-in-the-loop: headless delegate refuses it, delegate --interactive opens a live session);"
+       " kind? (task or review, default task)."
+       " Returns {plan {id, title}, tasks {<key> {id, title}}}."))
+
 (def about-doc
   "Structured manual returned by `agent about`."
   {:manual (fmt/reflow "
@@ -507,11 +530,7 @@
                      :fails ["blank topic" "non-positive members or rounds" "no resolvable harness" ":members combined with :seats"]
                      :returns {"council" "shared council strand id" "turns" [["run ids per round"]] "synthesizer" "run id"}}}
    :plan-creation {:help-topic "strand pattern explain agent-plan"
-                   :semantics ["Create a feature/plan strand plus task/review children."
-                               "Task bodies are full worker contracts: scope, owned files, validation commands, and commit policy."
-                               "depends_on values are sibling keys resolved to strand ids at weave time."
-                               "Set harness on tasks; delegate --ready requires it."
-                               "Harness and validation are independent axes: harness picks who does the work; validation lists commands that prove it."]
+                   :semantics agent-plan-semantics
                    :task-fields ["key" "title" "body" "depends_on" "harness" "cwd" "validation" "max-attempts" "hitl" "kind"]
                    :returns {"plan" {"id" "strand id" "title" "string"} "tasks" {"<key>" {"id" "strand id" "title" "string"}}}}
    :coordinator-loop [{:step 1 :action "Provision working directories first; worktree management is deliberately outside this tool."}
@@ -2319,6 +2338,6 @@
                             :deadline-class :unbounded}
                            'skein.spools.delegation/agent-op)
      :pattern (patterns/register-pattern! runtime 'agent-plan
-                                          "Create a feature strand plus task/review children for agent work."
+                                          agent-plan-pattern-doc
                                           'skein.spools.delegation/agent-plan ::agent-plan-input)
      :query (graph/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "agent-run/run"] "true"] [:in [:attr "agent-run/phase"] ["failed" "exhausted"]]])}))
