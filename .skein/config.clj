@@ -513,7 +513,7 @@
   (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-status"
      :feature feature
-     :roots (mapv loom/summarize (devflow/feature-roots feature))
+     :roots (mapv entity-projection (devflow/feature-roots feature))
      :done (workflow/done? feature)
      :ready (devflow/next-steps feature)}))
 
@@ -528,7 +528,7 @@
   (let [{:keys [family]} (:op/args ctx)]
     {:operation "workflow-runs"
      :family family
-     :runs (mapv loom/summarize
+     :runs (mapv entity-projection
                  (if family (workflow/active-runs family) (workflow/active-runs)))}))
 
 (defop devflow-conventions

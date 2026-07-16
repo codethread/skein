@@ -7,13 +7,6 @@
             [skein.spools.loom :as loom]
             [skein.spools.test-support :refer [with-runtime]]))
 
-(deftest summarize-uses-the-exact-canonical-entity-projection
-  (is (= {:id "s1" :title "Work" :state "active" :attributes {:kind "task"}}
-         (loom/summarize {:id "s1" :title "Work" :state "active"
-                          :attributes {:kind "task"} :created_at "discarded"})))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing canonical entity fields"
-                        (loom/summarize {:id "s1" :title "Work" :state "active"}))))
-
 (deftest work-dags-projects-parent-of-roots-with-dependency-edges
   (with-runtime
     (fn [rt _]

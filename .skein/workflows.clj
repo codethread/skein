@@ -14,8 +14,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.delegation :as agents]
-            [skein.spools.loom :as loom]
-            [skein.api.spool.alpha :refer [attr-get]]
+            [skein.api.spool.alpha :refer [attr-get entity-projection]]
             [skein.spools.workflow :as workflow]))
 
 (def ^:private merge-lock-kind
@@ -79,7 +78,7 @@
 (defn- inspect-merge-lock
   "Return the active merge-lock snapshot, or nil."
   []
-  (some-> (first (active-merge-locks)) loom/summarize))
+  (some-> (first (active-merge-locks)) entity-projection))
 
 (defn- break-merge-lock!
   "Explicitly break a stale merge lock with a human-supplied reason."
@@ -90,10 +89,10 @@
       (throw (ex-info "multiple active merge locks found; inspect and repair manually"
                       {:locks (mapv :id locks)})))
     (if-let [lock (first locks)]
-      {:broken (loom/summarize (weaver/update (current/runtime)
-                                              (:id lock)
-                                              {:state "closed"
-                                               :attributes {:land/broken-reason reason}}))}
+      {:broken (entity-projection (weaver/update (current/runtime)
+                                                 (:id lock)
+                                                 {:state "closed"
+                                                  :attributes {:land/broken-reason reason}}))}
       {:broken nil})))
 
 (defn- move-card-to-review!
@@ -615,7 +614,7 @@
       "status" (do (config/require-non-blank! :feature feature)
                    (let [root (workflow/current-root feature)]
                      {:feature feature
-                      :roots (mapv loom/summarize (if root [root] []))
+                      :roots (mapv entity-projection (if root [root] []))
                       :done (workflow/done? feature)
                       :ready (workflow/ready feature)
                       :history (workflow/run-history feature)

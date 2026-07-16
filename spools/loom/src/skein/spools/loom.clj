@@ -13,12 +13,18 @@
 
   Every function is read-only: it composes the public weaver/graph surfaces and
   mutates no strands, edges, runtime config, or registered operations. Callers
-  supply the active runtime explicitly."
+  supply the active runtime explicitly.
+
+  `flow-status` builds on agent-run rather than re-deriving it: serving runs come
+  from `skein.spools.agent-run/runs-serving` and stalled-gate membership from the
+  subagent executor's registered `stalled-subagent-gates` query, so loom and the
+  executor cannot drift apart on which run serves a gate or which gate is stuck."
   (:require [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
+            [skein.spools.agent-run :as agent-run]
             [skein.spools.workflow :as workflow]
             [skein.api.spool.alpha :refer [attr-get entity-projection fail! reject-unknown-keys! require-valid!]]))
 
@@ -32,11 +38,6 @@
   (into {}
         (map (juxt :id identity))
         (weaver/list rt [:= :state "active"] {})))
-
-(defn summarize
-  "Return the compact strand shape used by read-only projections."
-  [strand]
-  (entity-projection strand))
 
 (defn- internal-active-edges
   "Return edges whose endpoints are both active strands, sorted and deduped-safe.
@@ -104,8 +105,8 @@
         roots (parent-root-ids active-ids parent-edges)
         dags (mapv (fn [root-id]
                      (let [{:keys [strand-ids parent-of]} (descendants-by-root rt active-ids root-id)]
-                       {:root (summarize (active root-id))
-                        :strands (mapv (comp summarize active) strand-ids)
+                       {:root (entity-projection (active root-id))
+                        :strands (mapv (comp entity-projection active) strand-ids)
                         :parent_of_edges parent-of
                         :depends_on_edges (dependency-edges-for rt strand-ids)}))
                    roots)]
@@ -128,11 +129,11 @@
                          (filter #(and (contains? active-ids (:id %))
                                        (not= (:id root) (:id %))))
                          (sort-by :id)
-                         (mapv summarize))]
-    {:root (summarize root)
+                         (mapv entity-projection))]
+    {:root (entity-projection root)
      :active_descendants descendants
      :ready (filterv #(contains? ready-ids (:id %))
-                     (into [(summarize root)] descendants))}))
+                     (into [(entity-projection root)] descendants))}))
 
 (s/def ::branch-attr keyword?)
 (s/def ::branch string?)
@@ -201,38 +202,38 @@
       (attr-get run :gate/delivered) (assoc :gate/delivered (attr-get run :gate/delivered))
       (attr-get run :gate/delivery-blocked) (assoc :gate/delivery-blocked (attr-get run :gate/delivery-blocked)))))
 
-(defn- gate-serving-run-id
-  "The gate's current delegated run id, or nil: the source of an incoming `serves`
-  edge whose run is not superseded. Mirrors the agent-run serving-resolution rule
-  (a superseded run carries an incoming `supersedes` edge / `agent-run/phase
-  \"superseded\"`) so flow-status and the subagent executor agree on the live run."
+(defn- serving-run-id
+  "The id of the gate's current delegated run, or nil.
+
+  `agent-run/runs-serving` is the C5 resolution rule; its unique element is the
+  live run, so flow-status and the subagent executor agree on which run serves a
+  gate. agent-run reads its runtime ambiently, so loom's explicit `rt` is bound
+  for the call."
   [rt gate-id]
-  (let [run-ids (mapv :from_strand_id (graph/incoming-edges rt [gate-id] "serves"))
-        superseded (set (map :to_strand_id (graph/incoming-edges rt run-ids "supersedes")))]
-    (->> run-ids
-         (remove superseded)
-         (map #(weaver/show rt %))
-         (remove #(= "superseded" (attr-get % :agent-run/phase)))
-         (map :id)
-         first)))
+  (binding [agent-run/*runtime* rt]
+    (:id (first (agent-run/runs-serving gate-id)))))
 
 (defn- compact-gate
-  "Return a compact workflow gate projection joined to its delegated run."
+  "Return a compact workflow gate projection joined to its delegated run.
+
+  Stall detail follows the subagent executor's `gate-stalled?` keys: `:error`
+  when spawn failed onto `gate/error`, `:phase` when the serving run is dead.
+  Both are present when a gate that errored on spawn also has a dead run."
   [rt gate->run failed-run-ids stalled-gate-ids gate]
   (let [run-id (get gate->run (:id gate))
         run (when run-id (weaver/show rt run-id))
         run-failed? (contains? failed-run-ids run-id)
-        spawn-stalled? (contains? stalled-gate-ids (:id gate))]
+        gate-error (attr-get gate :gate/error)]
     (cond-> {:id (:id gate)
              :title (:title gate)
              :state (:state gate)
              :gate (attr-get gate :workflow/gate)
-             :gate/run run-id
-             :run (compact-run run)
-             :stalled? (boolean (or spawn-stalled? run-failed?))}
-      (attr-get gate :gate/error) (assoc :gate/error (attr-get gate :gate/error))
-      spawn-stalled? (assoc :stall/reason "spawn-error")
-      run-failed? (assoc :stall/reason "agent-failure"))))
+             :run run-id
+             :run-view (compact-run run)
+             :stalled? (contains? stalled-gate-ids (:id gate))}
+      gate-error (assoc :gate/error gate-error)
+      (not (str/blank? gate-error)) (assoc :error gate-error)
+      run-failed? (assoc :phase (attr-get run :agent-run/phase)))))
 
 (defn- run-subagent-gates
   "Return all subagent gate strands reachable from run-history roots."
@@ -271,19 +272,23 @@
   workflow, agent-run, or gate state is mutated. Failure summaries are scoped to
   this run's own gates and their delegated runs so records from other workflows
   never surface in an unrelated run's payload. Includes a `:dev/mermaid` gate
-  chain rendered by `gate-chain-mermaid`."
+  chain rendered by `gate-chain-mermaid`.
+
+  `:stalled-gates` reads the subagent executor's registered
+  `stalled-subagent-gates` query rather than re-deriving its rule, so membership
+  is the executor's: an active subagent gate whose `gate/error` is non-blank, or
+  whose current serving run is dead. The query must be registered — an
+  uninstalled subagent executor fails loudly here."
   [rt run-id]
   (let [history (workflow/run-history run-id)
         frontier (workflow/ready run-id)
         done (workflow/done? run-id)
         run-gates (run-subagent-gates rt history)
         run-gate-ids (set (map :id run-gates))
-        gate->run (into {} (keep (fn [g] (when-let [r (gate-serving-run-id rt (:id g))] [(:id g) r]))) run-gates)
+        gate->run (into {} (keep (fn [g] (when-let [r (serving-run-id rt (:id g))] [(:id g) r]))) run-gates)
         run-delegated-ids (set (vals gate->run))
         stalled-gates (filterv #(contains? run-gate-ids (:id %))
-                               (weaver/list rt [:and [:= :state "active"]
-                                                [:= [:attr "workflow/gate"] "subagent"]
-                                                [:exists [:attr "gate/error"]]] {}))
+                               (weaver/list-query rt 'stalled-subagent-gates {}))
         agent-failures (filterv #(contains? run-delegated-ids (:id %))
                                 (weaver/list rt [:in [:attr "agent-run/phase"] ["failed" "exhausted"]] {}))
         stalled-gate-ids (set (map :id stalled-gates))
@@ -294,8 +299,8 @@
      :history history
      :frontier frontier
      :gates gates
-     :stalled-gates (mapv summarize stalled-gates)
-     :agent-failures (mapv summarize agent-failures)
+     :stalled-gates (mapv entity-projection stalled-gates)
+     :agent-failures (mapv entity-projection agent-failures)
      :done done
      :dev/mermaid (gate-chain-mermaid gates ready-ids)}))
 

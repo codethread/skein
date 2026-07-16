@@ -1057,11 +1057,13 @@
               (is (false? (:done status)))
               (is (= ["Delegate B"] (mapv :title (:frontier status))))
               (is (= [:gate-closed] (mapv :type (get-in status [:history 0 :events]))))
-              (is (= "done" (get-in by-title ["Delegate A" :run :agent-run/phase])))
-              (is (= "failed" (get-in by-title ["Delegate B" :run :agent-run/phase])))
+              (is (= "done" (get-in by-title ["Delegate A" :run-view :agent-run/phase])))
+              (is (= "failed" (get-in by-title ["Delegate B" :run-view :agent-run/phase])))
               (is (true? (get-in by-title ["Delegate B" :stalled?])))
+              (is (= "failed" (get-in by-title ["Delegate B" :phase])))
               (is (= #{(:id run-b)} (set (map :id (:agent-failures status)))))
-              (is (empty? (:stalled-gates status)))
+              ;; membership is the executor's registered rule: gate B's serving run is dead
+              (is (= #{gate-b} (set (map :id (:stalled-gates status)))))
               (is (str/includes? (:dev/mermaid status) "Delegate B (stalled)")))))))))
 
 (defn- assert-treadle-installed-after-config

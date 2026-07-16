@@ -12,7 +12,7 @@ This is the **how/why** half of the loom docs. The other two are:
 
 Division of truth: signatures and the payload/option tables live in the contract and generated API doc; narrative and composition live here. This cookbook never restates a signature — it links to them. When a recipe needs an exact arity, follow the link.
 
-Loom mutates nothing. Its graph projections — `work-dags`, `branch-views`, and `flow-status` — resolve no ambient runtime and take the active runtime as their first argument, so these recipes assume you already hold one — `(require '[skein.spools.loom :as loom] '[skein.api.current.alpha :as current])` and `(def rt (current/runtime))` inside trusted config or a live weaver REPL. The pure helpers `summarize` and `gate-chain-mermaid` take plain data instead and need no runtime.
+Loom mutates nothing. Its graph projections — `work-dags`, `branch-views`, and `flow-status` — resolve no ambient runtime and take the active runtime as their first argument, so these recipes assume you already hold one — `(require '[skein.spools.loom :as loom] '[skein.api.current.alpha :as current])` and `(def rt (current/runtime))` inside trusted config or a live weaver REPL. The pure helper `gate-chain-mermaid` takes plain data instead and needs no runtime.
 
 ## How to read a recipe
 
@@ -116,10 +116,10 @@ strand current-dags        # the same projection, as JSON, for a renderer or a h
   outward to external blockers and parents; loom filters every edge back down to
   endpoints that appear in the projection's own strand set. A renderer never has
   to guard against an edge that points at a strand it wasn't given.
-- **Compact rows, stable shape.** Each strand is summarized to `{:id :title
-  :state :attributes}` — enough to label a node, small enough to poll. The same
-  `summarize` shape appears across loom's projections, so a renderer's node
-  formatter is written once.
+- **Compact rows, stable shape.** Each strand is projected through the blessed
+  `skein.api.spool.alpha/entity-projection` to `{:id :title :state :attributes}`
+  — enough to label a node, small enough to poll. The same shape appears across
+  loom's projections, so a renderer's node formatter is written once.
 
 Honest source: `work-dags` and its `{:roots :dags}` contract in [`loom.clj`](./loom/src/skein/spools/loom.clj), the repo's `current-dags` op in [`.skein/config.clj`](../.skein/config.clj), and `work-dags-projects-parent-of-roots-with-dependency-edges` in [`test/skein/spools/loom_test.clj`](../test/skein/spools/loom_test.clj).
 
