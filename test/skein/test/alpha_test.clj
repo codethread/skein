@@ -85,9 +85,14 @@
                  (is (.isFile (io/file (:db-path ctx))))
                  (is (map? (:metadata ctx)))
                  (is (= (:config-dir ctx) (get-in ctx [:metadata :config-dir])))
-                 (let [strand (t/repl! ctx (str "(do " require-api
-                                                " (weaver/add (current/runtime) {:title \"From repl\"}))"))]
-                   (is (= "From repl" (:title strand))))
+                 (testing "quoted forms are rendered and evaluated in the weaver"
+                   (let [strand (t/repl! ctx
+                                         '(do
+                                            (require '[skein.api.current.alpha :as current]
+                                                     '[skein.api.weaver.alpha :as weaver])
+                                            (weaver/add (current/runtime)
+                                                        {:title "From repl"})))]
+                     (is (= "From repl" (:title strand)))))
                  (is (= 1 (count (t/repl! ctx (str "(do " require-api " (weaver/list (current/runtime)))")))))
                  :done)]
     (is (= :done result))

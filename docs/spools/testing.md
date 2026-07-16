@@ -78,10 +78,12 @@ transport:
 (deftest strands-flow-through-a-disposable-weaver
   (t/with-weaver-world [ctx {}]
     (is (= "Sketch model"
-           (:title (t/repl! ctx "
-             (require '[skein.api.current.alpha :as current]
-                      '[skein.api.weaver.alpha :as weaver])
-             (weaver/add (current/runtime) {:title \"Sketch model\"})"))))))
+           (:title (t/repl! ctx
+                    '(do
+                       (require '[skein.api.current.alpha :as current]
+                                '[skein.api.weaver.alpha :as weaver])
+                       (weaver/add (current/runtime)
+                                   {:title "Sketch model"}))))))))
 ```
 
 `weaver-world-fixture` provides the same lifecycle for `use-fixtures`, binding `skein.test.alpha/*weaver-world*`:
