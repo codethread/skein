@@ -209,7 +209,7 @@
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run]
-         (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
+         (mapv :key ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
   (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
@@ -465,7 +465,7 @@
   (with-startup-config-runtime
     (fn [_rt]
       (let [rules ((requiring-resolve 'skein.spools.chime/rules))
-            by-key (into {} (map (juxt :name identity)) rules)
+            by-key (into {} (map (juxt :key identity)) rules)
             fire (fn [rule-key strand]
                    (@(requiring-resolve (:fn (get by-key rule-key)))
                     {:strand strand :ready-ids #{}}))]

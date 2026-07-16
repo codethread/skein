@@ -38,7 +38,7 @@ orders mutations against rule registration. A useful setup then layers two
 things on top:
 
 - shared config (`init.clj` / a workspace spool) registers the workspace's
-  rules with `defrule!`, so the repo decides what needs attention;
+  rules with `register!`, so the repo decides what needs attention;
 - each developer binds their notifier in gitignored `init.local.clj` with
   `set-notifier!`, so how you get told (a notification daemon, `osascript`,
   a bell) stays a personal choice.
@@ -56,7 +56,7 @@ Bind the notifier with plain data:
 
 For each notification, chime spawns `:argv` with the title appended as the final argument and the body written to stdin — any command with the shape `my-notify <title>` (body on stdin) works, including a small wrapper script around whatever your platform uses.
 
-Notifier state is weaver-lifetime: re-bind on every startup/reload (which `init.local.clj` does naturally). With no notifier bound, a fired rule records a loud failure in `(chime/failures)` instead of silently dropping the event.
+Notifier state is weaver-lifetime: re-bind on every startup/reload (which `init.local.clj` does naturally). With no notifier bound, a fired rule records a loud failure in `(chime/recent-failures)` instead of silently dropping the event.
 
 Manual sends use the same path:
 
@@ -92,9 +92,9 @@ Worked example — notify when a strand that parents other work is closed:
 ```
 
 ```clojure
-(chime/defrule! :parent-completed 'my.rules/parent-completed)
+(chime/register! :parent-completed 'my.rules/parent-completed)
 (chime/rules)
-(chime/remove-rule! :parent-completed)
+(chime/unregister! :parent-completed)
 ```
 
 When a rule is registered, chime treats its currently matching strands as an
@@ -112,7 +112,7 @@ missing or failing notifier does not swallow the alert, and the mark clears when
 the rule stops matching so a recurrence notifies again. Use
 `(chime/reset-seen!)` from tests or config to clear that memory.
 
-Rule, notifier, and process failures are recorded by `(chime/failures)` and event handler failures remain visible through the Skein event failure surface.
+Rule, notifier, and process failures are recorded by `(chime/recent-failures)` and event handler failures remain visible through the Skein event failure surface.
 
 ## See also
 

@@ -60,13 +60,13 @@
   (with-chime
     (fn [_rt _dir]
       (let [result (rules/install-rules! this-ns)]
-        (testing "install returns a vector of chime/defrule! returns in author order"
-          (is (= [{:rule :test-alpha :fn 'skein.macros.rules-test/test-alpha-rule}
-                  {:rule :test-beta :fn 'skein.macros.rules-test/test-beta-rule}]
+        (testing "install returns a vector of chime/register! returns in author order"
+          (is (= [{:key :test-alpha :fn 'skein.macros.rules-test/test-alpha-rule}
+                  {:key :test-beta :fn 'skein.macros.rules-test/test-beta-rule}]
                  result)))
         (testing "the rules are registered with the chime engine under their keys"
           (is (= #{:test-alpha :test-beta}
-                 (set (map :name (chime/rules))))))))))
+                 (set (map :key (chime/rules))))))))))
 
 (deftest remember-rule-replaces-same-key-in-place
   (testing "re-remembering a key replaces its entry, preserving author order (reload-friendly)"
@@ -91,8 +91,8 @@
       (with-chime
         (fn [_rt _dir]
           (let [result (rules/install-rules! ns-key)]
-            (is (= [:stale-a] (mapv :rule result)) "install registers only the surviving rule")
-            (is (= #{:stale-a} (set (map :name (chime/rules))))
+            (is (= [:stale-a] (mapv :key result)) "install registers only the surviving rule")
+            (is (= #{:stale-a} (set (map :key (chime/rules))))
                 "the forgotten rule never reaches the chime engine")))))))
 
 (deftest install-rules-unknown-ns-fails-loudly

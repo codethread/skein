@@ -72,13 +72,13 @@
                                               :publish? false})]
         (try
           (weaver-runtime/with-runtime-binding rt-a
-            #(chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule))
+            #(chime/register! :phase-failed 'skein.chime-test/phase-failed-rule))
           (weaver-runtime/with-runtime-binding rt-b
-            #(chime/defrule! :needs-human 'skein.chime-test/needs-human-ready-rule))
+            #(chime/register! :needs-human 'skein.chime-test/needs-human-ready-rule))
           (is (= [:phase-failed]
-                 (weaver-runtime/with-runtime-binding rt-a #(mapv :name (chime/rules)))))
+                 (weaver-runtime/with-runtime-binding rt-a #(mapv :key (chime/rules)))))
           (is (= [:needs-human]
-                 (weaver-runtime/with-runtime-binding rt-b #(mapv :name (chime/rules)))))
+                 (weaver-runtime/with-runtime-binding rt-b #(mapv :key (chime/rules)))))
           (finally
             (weaver-runtime/stop! rt-a)
             (weaver-runtime/stop! rt-b))))
@@ -161,30 +161,30 @@
   (with-chime
     (fn [_ _]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified"
-                            (chime/defrule! :bad 'not-qualified)))
+                            (chime/register! :bad 'not-qualified)))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cannot be resolved"
-                            (chime/defrule! :bad 'missing.ns/fn)))
-      (is (= :phase-failed (:rule (chime/defrule! "phase-failed" 'skein.chime-test/phase-failed-rule))))
-      (is (= :phase-failed (:removed (chime/remove-rule! :phase-failed))))
+                            (chime/register! :bad 'missing.ns/fn)))
+      (is (= :phase-failed (:key (chime/register! "phase-failed" 'skein.chime-test/phase-failed-rule))))
+      (is (= :phase-failed (:unregistered (chime/unregister! :phase-failed))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Rule not found"
-                            (chime/remove-rule! :phase-failed))))))
+                            (chime/unregister! :phase-failed))))))
 
 (deftest missing-notifier-is-recorded-loudly
   (with-chime
     (fn [rt _]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
       (let [run (weaver/add rt {:title "failed run"
                                 :attributes {"phase" "failed"
                                              "error" "boom"}})]
         (chime/scan! {:strand/id (:id run)})
-        (is (= :notifier-missing (:kind (last (chime/failures)))))
-        (is (= "Run failed: failed run" (:title (last (chime/failures)))))))))
+        (is (= :notifier-missing (:kind (last (chime/recent-failures)))))
+        (is (= "Run failed: failed run" (:title (last (chime/recent-failures)))))))))
 
 (deftest registered-rules-fire-end-to-end
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
-      (chime/defrule! :parent-completed 'skein.chime-test/parent-completed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :parent-completed 'skein.chime-test/parent-completed-rule)
       (let [out-file (bind-file-notifier! config-dir)
             failed (weaver/add rt {:title "run a"
                                    :attributes {"phase" "failed"
@@ -232,7 +232,7 @@
             second-rt
             (fn []
               (chime/install!)
-              (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+              (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
               (let [out-file (bind-file-notifier! second-config)]
                 (weaver/add second-rt {:title "unrelated mutation"})
                 (events/await-quiescent! second-rt)
@@ -273,9 +273,9 @@
             (fn []
               (let [registration (future
                                    (binding [chime/*runtime* rt]
-                                     (chime/defrule!
-                                       :phase-failed
-                                       'skein.chime-test/phase-failed-rule)))]
+                                     (chime/register!
+                                      :phase-failed
+                                      'skein.chime-test/phase-failed-rule)))]
                 (.await baseline-entered)
                 (let [mutation (future
                                  (binding [chime/*runtime* rt]
@@ -297,7 +297,7 @@
 (deftest ready-rule-fires-born-ready-and-when-unblocked
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :needs-human 'skein.chime-test/needs-human-ready-rule)
+      (chime/register! :needs-human 'skein.chime-test/needs-human-ready-rule)
       (let [out-file (bind-file-notifier! config-dir)
             born (weaver/add rt {:title "Approve proposal"
                                  :attributes {"needs-human" "true"}})]
@@ -320,7 +320,7 @@
 (deftest dedup-and-reset-seen
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
       (let [out-file (bind-file-notifier! config-dir)
             run (weaver/add rt {:title "flaky run"
                                 :attributes {"phase" "failed"
@@ -346,7 +346,7 @@
   ;; double-notify. The atomic swap-vals! claim must let only one thread win.
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
       (let [out-file (bind-file-notifier! config-dir)
             run (weaver/add rt {:title "raced run"
                                 :attributes {"phase" "failed"
@@ -375,7 +375,7 @@
 (deftest dedup-rearms-when-rule-stops-matching
   (with-chime
     (fn [rt config-dir]
-      (chime/defrule! :phase-failed 'skein.chime-test/phase-failed-rule)
+      (chime/register! :phase-failed 'skein.chime-test/phase-failed-rule)
       (let [out-file (bind-file-notifier! config-dir)
             run (weaver/add rt {:title "retried run"
                                 :attributes {"phase" "failed"
@@ -394,14 +394,14 @@
   (with-chime
     (fn [rt _]
       (let [strand (weaver/add rt {:title "x"})]
-        (chime/defrule! :throwing 'skein.chime-test/throwing-rule)
+        (chime/register! :throwing 'skein.chime-test/throwing-rule)
         (chime/scan! {:strand/id (:id strand)})
-        (is (= :rule (:kind (last (chime/failures)))))
-        (is (= :throwing (:rule (last (chime/failures)))))
-        (chime/defrule! :invalid 'skein.chime-test/invalid-notification-rule)
+        (is (= :rule (:kind (last (chime/recent-failures)))))
+        (is (= :throwing (:rule (last (chime/recent-failures)))))
+        (chime/register! :invalid 'skein.chime-test/invalid-notification-rule)
         (chime/scan! {:strand/id (:id strand)})
-        (is (= :rule (:kind (last (chime/failures)))))
-        (is (= :invalid (:rule (last (chime/failures)))))))))
+        (is (= :rule (:kind (last (chime/recent-failures)))))
+        (is (= :invalid (:rule (last (chime/recent-failures)))))))))
 
 (deftest state-shape-matches-declared-version
   ;; Drift alarm for chime's versioned spool-state: a key added to new-state

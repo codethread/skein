@@ -52,8 +52,8 @@
 (defn install-rules!
   "Install all rules remembered for the current namespace, or for `ns-sym`.
 
-  Registers each remembered rule through `skein.spools.chime/defrule!` in author
-  order and returns a vector of the `defrule!` return maps, matching today's
+  Registers each remembered rule through `skein.spools.chime/register!` in author
+  order and returns a vector of the `register!` return maps, matching today's
   `register-chime-rules!` result shape so `attention/install!` keeps its
   `:chime-rules` return.
 
@@ -69,7 +69,7 @@
                        {:ns-sym ns-sym
                         :known-namespaces (vec (keys @rule-registry))})))
      (mapv (fn [{:keys [key] fn-sym :fn}]
-             (chime/defrule! key fn-sym))
+             (chime/register! key fn-sym))
            entries))))
 
 (defmacro defrule
@@ -84,7 +84,7 @@
   Expands to a real top-level `(defn <name>-rule docstring argv body...)` plus a
   `remember-rule!` call recording `{:key <keyword> :fn <ns>/<name>-rule}`. No
   registration happens at macroexpansion time; `install-rules!` performs it
-  through `chime/defrule!`. Fails loudly at macroexpansion for a non-symbol name
+  through `chime/register!`. Fails loudly at macroexpansion for a non-symbol name
   or a missing/non-string docstring."
   [name docstring argv & body]
   (when-not (symbol? name)
