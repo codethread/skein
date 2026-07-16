@@ -870,7 +870,7 @@
         limit (+ (:corpus-hot-count opts) (:corpus-archived-count opts) 50)
         result (volatile! nil)
         m (measure-workload
-           #(vreset! result (text-search/search rt (cond-> {:text needle :limit limit}
+           #(vreset! result (text-search/search rt (cond-> {:substring needle :limit limit}
                                                      archived? (assoc :archived? true))))
            opts)
         rows @result]

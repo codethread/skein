@@ -839,7 +839,7 @@
       (is (= "land.signoff.review"
              (:action-ref (first (:ready (op! "land" ["next" "land-x"]))))))
       (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])]
-        (is (= "checkpoint" (:kind (first (:ready at-checkpoint)))))
+        (is (= "checkpoint" (:role (first (:ready at-checkpoint)))))
         (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
       ;; the sign-off checkpoint offers approved + abort; abort requires a reason
       (let [choices (workflow/choice-details "land-x")
