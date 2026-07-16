@@ -103,6 +103,22 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    deletion instruction, not a stored `null` — `json_patch` drops that key from
    the map entirely. Omit a key you don't want to touch; only set it to `nil`
    when you deliberately mean "remove this attribute".
+8. **New names for new concepts; inherited names for inherited concepts.** A
+   spool that builds on another spool's primitives surfaces that spool's
+   vocabulary — function verbs, op subcommands, attribute keys, phase values,
+   edge relation names — exactly as the primitive publishes it, and mints
+   vocabulary only for the concepts it genuinely adds. A workflow is started,
+   advanced, and completed in the workflow engine's terms; a run is spawned,
+   awaited, retried, and killed in agent-run's terms. Wrapping a primitive
+   behind your own synonyms makes your spool a universe unto itself: nothing a
+   reader learned elsewhere transfers in, and nothing they learn from you
+   transfers out. The same rule covers attributes — read and write the
+   primitive's published keys (`workflow/*`, `agent-run/*`) rather than
+   shadowing them under your own namespace; your namespace is for state the
+   primitive does not carry. The worked contrast is
+   `skein.spools.delegation`: it reuses agent-run's verbs, phase enum, and
+   edge relations verbatim, and coins new nouns (panel, roster, turn) only for
+   the multi-agent coordination concepts agent-run has no word for.
 
 ## Namespace claims
 
@@ -204,14 +220,15 @@ means:
 ## CLI style
 
 The authoritative [discovery-tier contract](../reference.md#discovery-tiers-help-about-prime)
-applies to shared-spool CLIs. The naming guidance below is advisory. Apply it
-fix-on-touch when a surface changes for another reason. Do not rename a working
-surface only for consistency or add compatibility aliases for the old name.
+applies to shared-spool CLIs.
 
-- Choose verbs by role. For entity lifecycles, prefer `start`, `finish
-  --outcome`, `abort` only for real teardown, `status <id>`, and `list`. For
-  workflow steps, prefer `start`, `next`, `complete`, `choose`, and `status`.
-  For processes, prefer `spawn`, `kill`, `retry`, `await`, `logs`, and `ps`.
+- Verbs follow role, and a role a primitive already names is never renamed. For
+  entity lifecycles: `start`, `finish --outcome`, `abort` only for real
+  teardown, `status <id>`, and `list`. For workflow steps: `start`, `next`,
+  `complete`, `choose`, and `status`. For processes: `spawn`, `kill`, `retry`,
+  `await`, `logs`, and `ps`. An op that fronts one of these behaviors takes the
+  role's verb — a subcommand that reaches `workflow/advance!` is `next`, not a
+  domain synonym.
 - Use `--by` for attribution. Name attribute-stamping flags after the attribute:
   `--owner`, `--branch`, `--worktree`, and `--feature`. Prefer seconds-first,
   unit-suffixed durations such as `--timeout-secs`, and use `--outcome` for
@@ -220,9 +237,10 @@ surface only for consistency or add compatibility aliases for the old name.
   `suites`, or `backends` for a fixed catalog.
 - Prefer one op with declared subcommands for a cohesive multi-verb domain. Keep
   single-purpose projections and config-registered ops flat.
+- Renames are clean breaks (TEN-000): when a surface converges on this
+  vocabulary, the old name goes — no compatibility aliases.
 
-One rule is mandatory, and it is the sole MUST in this section: every
-text-bearing flag or positional MUST use the declared arg-spec parser so
+Every text-bearing flag or positional MUST use the declared arg-spec parser so
 whole-value `:stdin` and `:payload/<name>` references resolve.
 
 ## Publishing a shared spool with git distribution

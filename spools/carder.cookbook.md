@@ -155,7 +155,7 @@ Honest source: `blocked-by-failure-reports-failed-blocker-details` in [`test/ske
 
 **Situation.** A one-off `stale` or `orphans` call is easy to forget. You want the whole hygiene picture — stale, orphaned, failure-blocked — available on demand as a first-class command, or fired on a schedule so drift surfaces without anyone remembering to look.
 
-**Composition.** `report` rolls all three sections into one JSON-compatible map, each with a `:count` and `:rows`. Wrap that one call behind whatever surface your workspace already uses — a registered op for on-demand runs, or a scheduled job for a standing sweep — and keep any policy in the wrapper, not the spool.
+**Composition.** `report` rolls all three sections into one JSON-compatible map, each with a `:count` and `:rows`. Wrap that one call behind whatever surface your workspace already uses — a registered op for on-demand runs, or a scheduled job for a standing sweep — and keep any policy in the wrapper, not the spool. Keep carder's vocabulary too: the wrapper surfaces `stale`, `orphans`, and `blocked-by-failure` under those names — a wrapper adds reach, never synonyms ([the vocabulary rule](../docs/spools/writing-shared-spools.md#the-rules-for-shared-spools)).
 
 ```clojure
 (require '[skein.spools.carder :as carder])

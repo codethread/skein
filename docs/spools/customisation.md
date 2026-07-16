@@ -276,6 +276,13 @@ iterating. The shipped [kanban board spool](../../spools/kanban.md) is a complet
 pattern: a whole board surface built from ops, queries, and attributes, worth reading once your own
 command grows past a helper.
 
+Name an op by what it exposes. When your command fronts another spool's surface, keep that spool's
+verbs, nouns, and attribute keys — the op is your entry point to the primitive, not a new language
+over it ([the vocabulary
+rule](./writing-shared-spools.md#the-rules-for-shared-spools)). Kanban earns its own vocabulary
+(cards, lanes, claim) because a board is a concept the engine has no word for; a command that
+starts, advances, or lists an existing primitive speaks that primitive's terms.
+
 ## Terse daily driving
 
 Explicit-runtime code threads a `runtime` argument through every call, which is the right discipline for

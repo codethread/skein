@@ -113,7 +113,12 @@ with a gitignored `spools.local.edn` local root.
 - Strand **attributes are the extension surface**: `workflow.md` §7's
   attribute table is the workflow engine's extension API, and `devflow.md`
   §6 documents devflow's conventions on top of it. Build your own
-  conventions the same way instead of waiting for engine fields.
+  conventions the same way instead of waiting for engine fields — and give
+  them new names only for new concepts. A spool built on workflow or
+  agent-run reads and writes `workflow/*` / `agent-run/*` attributes
+  directly and reserves its own namespace for state the primitive does not
+  carry ([the vocabulary
+  rule](../docs/spools/writing-shared-spools.md#the-rules-for-shared-spools)).
 - Workflow definitions accept pure-data **tool bindings** (`workflow.md`
   §3), so a consumer rebinds steps to their own tooling from trusted config
   without touching these namespaces.
