@@ -444,7 +444,7 @@ For a simple persistent query, put it directly in `init.clj`:
 (require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
+   :call 'skein.spools.batteries/install!})
 (graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 

@@ -34,7 +34,7 @@
   [f]
   (with-runtime
     (fn [rt _config-dir]
-      (batteries/activate! rt)
+      (batteries/install! rt)
       (f rt))))
 
 (defn- op-entry [rt op-name]

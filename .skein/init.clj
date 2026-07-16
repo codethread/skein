@@ -22,7 +22,7 @@
 (require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
               {:ns 'skein.spools.batteries
-               :call 'skein.spools.batteries/activate!})
+               :call 'skein.spools.batteries/install!})
 (runtime/use! runtime :skein/spools-ephemeral
               {:ns 'skein.spools.ephemeral
                :spools ['skein.spools/ephemeral]

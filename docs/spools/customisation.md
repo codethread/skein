@@ -68,7 +68,7 @@ failing files fail loudly with file context. The generated `init.clj` is intenti
 (require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
+   :call 'skein.spools.batteries/install!})
 ```
 
 `skein.api.runtime.alpha` is a privileged built-in runtime loader/config helper namespace shipped with Skein —
