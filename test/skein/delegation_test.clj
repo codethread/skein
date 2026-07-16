@@ -763,7 +763,7 @@
 (deftest panel-spawns-fresh-board-with-barriers-and-resume-threads
   (with-agents
     (fn [rt]
-      (shuttle/defharness! :session-fix session-fix)
+      (shuttle/register-harness! :session-fix session-fix)
       (let [panel {:seats [{:name "alpha" :harness :session-fix :brief "Deliberate." :continuity :resume}
                            {:name "beta" :harness :session-fix :brief "Deliberate too." :continuity :resume}]
                    :turns {:rounds 2}
@@ -807,7 +807,7 @@
 (deftest panel-fails-loudly
   (with-agents
     (fn [rt]
-      (shuttle/defharness! :session-fix-no-resume session-fix-no-resume)
+      (shuttle/register-harness! :session-fix-no-resume session-fix-no-resume)
       (let [target (weaver/add rt {:title "panel fail target"})]
         (testing "malformed and structurally invalid panels fail via the spec"
           (doseq [bad [[:not-a-map]
@@ -975,7 +975,7 @@
             hitl (weaver/add rt {:title "hitl" :attributes {:body "body" :harness "sh" :hitl true}})
             active (weaver/add rt {:title "active" :attributes {:body "body" :harness "sh"}})
             cwd-task (weaver/add rt {:title "cwd fallback" :attributes {:body "body" :harness "cwd-sh"}})]
-        (shuttle/defharness! :cwd-sh {:argv ["sh" "-c"]
+        (shuttle/register-harness! :cwd-sh {:argv ["sh" "-c"]
                                       :parse :raw
                                       :preamble? false
                                       :cwd "/tmp/harness-cwd"})
@@ -1279,7 +1279,7 @@
   ;; succession primitive resumes the run it supersedes, not the origin).
   (with-agents
     (fn [rt]
-      (shuttle/defharness! :session-fix session-fix)
+      (shuttle/register-harness! :session-fix session-fix)
       (let [make-pred (fn [] (:id (weaver/add rt {:title "predecessor turn"
                                                   :state "closed"
                                                   :attributes {"agent-run/run" "true"
@@ -1445,7 +1445,7 @@
 (deftest backends-verb-lists-registered-backends
   (with-agents
     (fn [_]
-      (shuttle/defbackend! :fake-mux fake-mux)
+      (shuttle/register-backend! :fake-mux fake-mux)
       (let [names (set (map :name (agents/agent-op {:op/argv ["backends"]})))]
         (is (contains? names "tmux"))
         (is (contains? names "fake-mux"))))))
@@ -1453,7 +1453,7 @@
 (deftest hitl-task-delegates-only-interactively-and-reaps-on-close
   (with-agents
     (fn [rt]
-      (shuttle/defbackend! :fake-mux fake-mux)
+      (shuttle/register-backend! :fake-mux fake-mux)
       (let [task (weaver/add rt {:title "pair on the plan"
                                  :attributes {:body "Discuss and agree the plan with the user."
                                               :harness "sh" :hitl "true"}})]
@@ -1488,7 +1488,7 @@
 (deftest interactive-retry-preserves-mode-and-backend
   (with-agents
     (fn [rt]
-      (shuttle/defbackend! :fake-mux fake-mux)
+      (shuttle/register-backend! :fake-mux fake-mux)
       (let [task (weaver/add rt {:title "session task"
                                  :attributes {:body "work with the user" :harness "sh" :hitl "true"}})
             d (agents/agent-op {:op/argv ["delegate" (:id task) "--interactive" "--backend" "fake-mux"]})

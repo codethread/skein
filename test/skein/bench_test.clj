@@ -291,7 +291,7 @@ esac
         (bench/set-engine! rt engine)
         (fake-agent! rt)
        ;; a judge harness that ignores its prompt and yields a fixed verdict
-        (shuttle/defharness! :judge-echo {:argv ["sh" "-c" "echo verdict"]
+        (shuttle/register-harness! :judge-echo {:argv ["sh" "-c" "echo verdict"]
                                           :parse :raw :prompt-via :arg :preamble? false})
         (bench/defsuite! rt :demo
           {:repo path :sha sha
@@ -806,7 +806,7 @@ esac
         (bench/set-engine! rt engine)
         (fake-agent! rt)
        ;; a judge harness that ignores its prompt and yields a fixed verdict
-        (shuttle/defharness! :judge-echo {:argv ["sh" "-c" "echo winner: fake-opus"]
+        (shuttle/register-harness! :judge-echo {:argv ["sh" "-c" "echo winner: fake-opus"]
                                           :parse :raw :prompt-via :arg :preamble? false})
         (bench/defsuite! rt :demo
           {:repo path :sha sha :prompt "do it"
@@ -928,7 +928,7 @@ esac
             {:keys [path sha]} (fixture-repo!)]
         (bench/set-engine! rt engine)
         (fake-agent! rt)
-        (shuttle/defharness! :judge-echo {:argv ["sh" "-c" "echo run-result"]
+        (shuttle/register-harness! :judge-echo {:argv ["sh" "-c" "echo run-result"]
                                           :parse :raw :prompt-via :arg :preamble? false})
         (bench/defsuite! rt :demo
           {:repo path :sha sha :prompt "do it"
