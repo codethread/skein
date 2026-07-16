@@ -11,9 +11,11 @@
 
 `skein.spools.bobbin` assembles a compact context bundle for one strand: the target summary, nearby blocking and ownership graph, attached notes, and workflow metadata when present. The bundle is JSON-compatible and self-contained: every edge emitted by a section references strands summarized in that section.
 
-Bobbin is deliberately an opt-in reference spool. It owns no engine behavior
-and composes only the documented `skein.repl` and
-`skein.api.graph.alpha` surfaces.
+Bobbin is deliberately an opt-in reference spool. It owns no engine behavior: it
+composes the documented `skein.api.graph.alpha` and `skein.api.weaver.alpha`
+surfaces, and reads each borrowed concept through the primitive that owns it —
+notes order from `skein.api.notes.alpha`, strand rows from
+`skein.api.spool.alpha`, the active workflow root from `skein.spools.workflow`.
 
 ## 2. Usage
 
@@ -49,8 +51,10 @@ Section meanings:
 - `:dependents` — direct active strands with `depends-on` edges to the target.
 - `:parents` — active `parent-of` ancestry.
 - `:children` — direct active `parent-of` children.
-- `:notes` — strands attached by the `notes` edge, ordered by `agent-run/at`,
-  creation time, then id.
+- `:notes` — the target's notes, read through `skein.api.notes.alpha`: strands
+  attached by the catalog's `note --notes--> target` edge, ordered by `note/at`
+  parsed as an instant, then creation time, then id. The section shape is
+  bobbin's; the note concept and its order are the primitive's.
 - `:workflow` — present only for targets carrying `workflow/*` attributes;
   includes at least run id, role, workflow attributes, and the molecule root
   summary when resolvable.
