@@ -24,6 +24,10 @@
    ;; large-attr load harness structural smoke: boots its own :publish? false
    ;; world and hand-SQL fixtures in temp dirs — no JVM-global or shared state.
    'skein.large-attr-benchmark-test
+   ;; one-shot cutover script (scripts/cutover): each test drives its own
+   ;; disposable weaver world and migrates it over a private datasource, so
+   ;; there is no JVM-global or shared-world state.
+   'skein.cutover.vocab-reset-test
    ;; each test drives its own unpublished runtime, so the event lane it awaits
    ;; is per-runtime with no JVM-global or shared-lane state — parallel-safe.
    'skein.events-quiescence-test
