@@ -62,6 +62,13 @@
                    (constantly source-root)}
     f))
 
+(defn- with-runtime-resource [resource-url f]
+  (let [source-checkout-root (deref (ns-resolve 'skein.core.weaver.runtime
+                                                'source-checkout-root))]
+    (with-redefs-fn {(ns-resolve 'skein.core.weaver.runtime 'source-checkout-root)
+                     #(source-checkout-root resource-url)}
+      f)))
+
 (defn- with-started-runtime [source-root opts f]
   (let [root (temp-dir "skein-marker-world")
         world (test-world root)]
@@ -113,15 +120,10 @@
 (deftest compiled-classpath-release-marker-resolution
   (let [source-root (git-source! "v4")
         world-root (temp-dir "skein-compiled-marker-world")
-        resource-url (compiled-runtime-resource! source-root)
-        default-resource io/resource]
+        resource-url (compiled-runtime-resource! source-root)]
     (try
-      (with-redefs-fn
-        {(ns-resolve 'clojure.java.io 'resource)
-         (fn [name]
-           (if (= "skein/core/weaver/runtime.clj" name)
-             resource-url
-             (default-resource name)))}
+      (with-runtime-resource
+        resource-url
         #(let [rt (weaver-runtime/start! nil {:world (test-world world-root)
                                               :publish? false
                                               :storage :sqlite-memory})]
@@ -137,16 +139,11 @@
 (deftest git-inspection-failures-abort-release-marker-resolution
   (let [source-root (temp-dir "skein-non-git-source")
         world-root (temp-dir "skein-git-failure-world")
-        resource-url (compiled-runtime-resource! source-root)
-        default-resource io/resource]
+        resource-url (compiled-runtime-resource! source-root)]
     (try
       (let [error (try
-                    (with-redefs-fn
-                      {(ns-resolve 'clojure.java.io 'resource)
-                       (fn [name]
-                         (if (= "skein/core/weaver/runtime.clj" name)
-                           resource-url
-                           (default-resource name)))}
+                    (with-runtime-resource
+                      resource-url
                       #(weaver-runtime/start! nil {:world (test-world world-root)
                                                    :publish? false
                                                    :storage :sqlite-memory}))
@@ -170,8 +167,26 @@
                 {:marker nil :provenance :none}))
   (is (not (s/valid? ::specs/release-marker-result
                      {:marker "v2" :provenance :none})))
+  (is (s/valid? ::specs/weaver-start-options
+                {:world (test-world (io/file "/tmp/skein-start-options"))
+                 :name nil
+                 :publish? false
+                 :storage :sqlite-memory
+                 :release-marker "v2"}))
+  (is (not (s/valid? ::specs/weaver-start-options
+                     {:world (test-world (io/file "/tmp/skein-start-options"))
+                      :unknown true})))
   (is (s/valid? ::specs/config-dir-result "/tmp/config"))
   (is (s/valid? ::specs/spools-file-result (io/file "/tmp/config/spools.edn"))))
+
+(deftest start-options-are-validated-before-destructuring
+  (doseq [opts [nil {:unknown true} {:publish? :yes}]]
+    (let [error (try
+                  (weaver-runtime/start! nil opts)
+                  nil
+                  (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :invalid-start-options (:reason (ex-data error))))
+      (is (= ::specs/weaver-start-options (:spec (ex-data error)))))))
 
 (deftest malformed-release-marker-claims-fail-loudly
   (doseq [claim ["1" "v01" "v-1" :v2]]

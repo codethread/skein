@@ -70,10 +70,13 @@
 
   The result has marker `vN` and provenance `:claimed` for an explicit startup
   claim, marker `vN` and provenance `:tag` for an annotated tag on the source
-  checkout's HEAD, or `{:marker nil :provenance :none}` when neither resolves.
-  Consumers that require marker arithmetic must reject `:none` explicitly. The
-  result conforms to `:skein.core.specs/release-marker-result`; marker claims
-  conform to `:skein.core.specs/release-marker-claim`."
+  checkout's HEAD, or `{:marker nil :provenance :none}` when the checkout
+  resource is absent or non-filesystem, or successful inspection finds no
+  matching annotated tag. Git startup, checkout-root resolution, and nonzero
+  Git command failures throw. Consumers that require marker arithmetic must
+  reject `:none` explicitly. The result conforms to
+  `:skein.core.specs/release-marker-result`; marker claims conform to
+  `:skein.core.specs/release-marker-claim`."
   [runtime]
   (let [result (access/release-marker runtime)]
     (require-valid! ::specs/release-marker-result result

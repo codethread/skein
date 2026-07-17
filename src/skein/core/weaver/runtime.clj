@@ -484,6 +484,111 @@
                          {:reason :ambiguous-release-marker
                           :markers markers})))))))
 
+(defn- require-start-options! [opts]
+  (when-not (s/valid? ::specs/weaver-start-options opts)
+    ;; Preserve the claim-specific diagnostic, including v0's reserved-marker
+    ;; error, while the options spec remains the owning structural contract.
+    (when (and (map? opts) (contains? opts :release-marker))
+      (require-release-marker! (:release-marker opts) :claimed))
+    (throw (ex-info "Weaver start options have an invalid shape"
+                    {:reason :invalid-start-options
+                     :options opts
+                     :spec ::specs/weaver-start-options
+                     :explain (s/explain-data ::specs/weaver-start-options opts)})))
+  opts)
+
+(defn- start-with-options!
+  [db-file {:keys [world name publish? storage release-marker]
+            :or {publish? true}}]
+  (when (and publish? @current-runtime)
+    (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
+  (let [world (or world (weaver-config/world))
+        resolved-release-marker (resolve-release-marker release-marker)
+        existing (metadata/read-metadata world)
+        socket-file (metadata/socket-file world)]
+    (when-not (metadata/stale-or-missing? existing)
+      (throw (ex-info "Weaver metadata already exists for weaver world" {:config-dir (:config-dir world)
+                                                                         :metadata existing})))
+    (when (and (nil? existing) (.exists socket-file))
+      (throw (ex-info "Weaver socket exists without metadata; cannot prove weaver world is stale" {:config-dir (:config-dir world)
+                                                                                                   :socket-path (.getPath socket-file)})))
+    (.mkdirs (io/file (:state-dir world)))
+    (.mkdirs (io/file (:data-dir world)))
+    (let [storage (storage-for storage db-file world)
+          ds (:connectable storage)
+          _ (db/init! ds)
+          server (nrepl/start-server :bind loopback-host :port 0)
+          port (:port server)
+          nonce (metadata/new-nonce)
+          meta (metadata/metadata-shape {:pid (current-pid)
+                                         :host loopback-host
+                                         :port port
+                                         :storage-kind (:storage-kind storage)
+                                         :storage-label (:storage-label storage)
+                                         :canonical-db-path (:canonical-db-path storage)
+                                         :nonce nonce
+                                         :world world
+                                         :name (or name (default-name world))
+                                         :started-at (str (Instant/now))})
+          runtime-base {:storage storage
+                        :datasource ds
+                        :clock (atom (fn [] (Instant/now)))
+                        :clock-pumps (atom {})
+                        :query-registry (atom {})
+                        :view-registry (atom {})
+                        :pattern-registry (atom {})
+                        :op-registry (atom {})
+                        :hook-registry (atom {})
+                        :generation-id (str (java.util.UUID/randomUUID))
+                        :release-marker resolved-release-marker
+                        :approved-spool-sync-state (atom {})
+                        :approved-spool-generation-state (atom {})
+                        :approved-spool-generation-fingerprints (atom {})
+                        :approved-spool-generation-maven (atom {})
+                        :pending-spool-generation (atom nil)
+                        :module-use-state (atom {})
+                        :spool-state (atom {})
+                        :spool-classloader (clojure.lang.DynamicClassLoader.
+                                            (.getContextClassLoader (Thread/currentThread)))
+                        :server server
+                        :metadata meta}
+          runtime-base (start-event-system! runtime-base)
+          runtime-state (atom runtime-base)]
+      (try
+        (let [socket-runtime (socket/start! runtime-state (:socket-path meta))
+              runtime (assoc runtime-base :socket-runtime socket-runtime)]
+          (reset! runtime-state runtime)
+          (swap! nrepl-port-runtimes assoc port runtime)
+          (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
+            (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
+          (install-built-in-ops! runtime)
+          (load-startup-files! runtime world)
+           ;; Arm the scheduler only after startup files finish loading, so
+           ;; handlers supplied by approved spools/config resolve before any
+           ;; durable pending wake is re-armed (DELTA-...-runtime-001.CC5).
+          (scheduler/rearm! runtime)
+          (let [published-runtime (assoc runtime :metadata-file (metadata/publish! meta))]
+            (reset! runtime-state published-runtime)
+            (swap! nrepl-port-runtimes assoc port published-runtime)
+            (when publish?
+              (compare-and-set! current-runtime runtime published-runtime))
+            published-runtime))
+        (catch Throwable t
+          (swap! nrepl-port-runtimes dissoc port)
+          (when publish?
+            (compare-and-set! current-runtime @runtime-state nil))
+          (stop-event-system! @runtime-state)
+          (when-let [socket-runtime (:socket-runtime @runtime-state)]
+            (socket/stop! socket-runtime))
+          (nrepl/stop-server server)
+           ;; Spool state may own executors started by config before metadata is
+           ;; published. Close it on failed startup too, while storage remains
+           ;; available, without masking the original startup exception.
+          (close-spool-state! @runtime-state t)
+          (close-storage! @runtime-state)
+          (metadata/delete! world)
+          (throw t))))))
+
 (defn start!
   "Start a weaver runtime for `db-file` and optional `world`.
 
@@ -498,95 +603,9 @@
   when one can be resolved."
   ([] (start! nil {}))
   ([db-file] (start! db-file {}))
-  ([db-file {:keys [world name publish? storage release-marker] :or {publish? true}}]
-   (when (and publish? @current-runtime)
-     (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
-   (let [world (or world (weaver-config/world))
-         resolved-release-marker (resolve-release-marker release-marker)
-         existing (metadata/read-metadata world)
-         socket-file (metadata/socket-file world)]
-     (when-not (metadata/stale-or-missing? existing)
-       (throw (ex-info "Weaver metadata already exists for weaver world" {:config-dir (:config-dir world)
-                                                                          :metadata existing})))
-     (when (and (nil? existing) (.exists socket-file))
-       (throw (ex-info "Weaver socket exists without metadata; cannot prove weaver world is stale" {:config-dir (:config-dir world)
-                                                                                                    :socket-path (.getPath socket-file)})))
-     (.mkdirs (io/file (:state-dir world)))
-     (.mkdirs (io/file (:data-dir world)))
-     (let [storage (storage-for storage db-file world)
-           ds (:connectable storage)
-           _ (db/init! ds)
-           server (nrepl/start-server :bind loopback-host :port 0)
-           port (:port server)
-           nonce (metadata/new-nonce)
-           meta (metadata/metadata-shape {:pid (current-pid)
-                                          :host loopback-host
-                                          :port port
-                                          :storage-kind (:storage-kind storage)
-                                          :storage-label (:storage-label storage)
-                                          :canonical-db-path (:canonical-db-path storage)
-                                          :nonce nonce
-                                          :world world
-                                          :name (or name (default-name world))
-                                          :started-at (str (Instant/now))})
-           runtime-base {:storage storage
-                         :datasource ds
-                         :clock (atom (fn [] (Instant/now)))
-                         :clock-pumps (atom {})
-                         :query-registry (atom {})
-                         :view-registry (atom {})
-                         :pattern-registry (atom {})
-                         :op-registry (atom {})
-                         :hook-registry (atom {})
-                         :generation-id (str (java.util.UUID/randomUUID))
-                         :release-marker resolved-release-marker
-                         :approved-spool-sync-state (atom {})
-                         :approved-spool-generation-state (atom {})
-                         :approved-spool-generation-fingerprints (atom {})
-                         :approved-spool-generation-maven (atom {})
-                         :pending-spool-generation (atom nil)
-                         :module-use-state (atom {})
-                         :spool-state (atom {})
-                         :spool-classloader (clojure.lang.DynamicClassLoader.
-                                             (.getContextClassLoader (Thread/currentThread)))
-                         :server server
-                         :metadata meta}
-           runtime-base (start-event-system! runtime-base)
-           runtime-state (atom runtime-base)]
-       (try
-         (let [socket-runtime (socket/start! runtime-state (:socket-path meta))
-               runtime (assoc runtime-base :socket-runtime socket-runtime)]
-           (reset! runtime-state runtime)
-           (swap! nrepl-port-runtimes assoc port runtime)
-           (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
-             (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
-           (install-built-in-ops! runtime)
-           (load-startup-files! runtime world)
-           ;; Arm the scheduler only after startup files finish loading, so
-           ;; handlers supplied by approved spools/config resolve before any
-           ;; durable pending wake is re-armed (DELTA-...-runtime-001.CC5).
-           (scheduler/rearm! runtime)
-           (let [published-runtime (assoc runtime :metadata-file (metadata/publish! meta))]
-             (reset! runtime-state published-runtime)
-             (swap! nrepl-port-runtimes assoc port published-runtime)
-             (when publish?
-               (compare-and-set! current-runtime runtime published-runtime))
-             published-runtime))
-         (catch Throwable t
-           (swap! nrepl-port-runtimes dissoc port)
-           (when publish?
-             (compare-and-set! current-runtime @runtime-state nil))
-           (stop-event-system! @runtime-state)
-           (when-let [socket-runtime (:socket-runtime @runtime-state)]
-             (socket/stop! socket-runtime))
-           (nrepl/stop-server server)
-           ;; Spool state may own executors started by config before metadata is
-           ;; published. Close it on failed startup too, while storage remains
-           ;; available, without masking the original startup exception.
-           (close-spool-state! @runtime-state t)
-           (close-storage! @runtime-state)
-           (metadata/delete! world)
-           (throw t)))))))
+  ([db-file opts]
+   (require-start-options! opts)
+   (start-with-options! db-file opts)))
 
 (defn status
   "Return the published metadata for `runtime`."

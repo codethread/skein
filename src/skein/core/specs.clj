@@ -93,6 +93,29 @@
 (s/def ::config-dir-result non-blank-string?)
 (s/def ::spools-file-result #(instance? File %))
 
+(s/def :skein.weaver-start/config-dir non-blank-string?)
+(s/def :skein.weaver-start/state-dir non-blank-string?)
+(s/def :skein.weaver-start/data-dir non-blank-string?)
+(s/def :skein.weaver-start/config-file non-blank-string?)
+(s/def :skein.weaver-start/db-path non-blank-string?)
+(s/def :skein.weaver-start/world
+  (s/keys :req-un [:skein.weaver-start/config-dir
+                   :skein.weaver-start/state-dir
+                   :skein.weaver-start/data-dir
+                   :skein.weaver-start/config-file
+                   :skein.weaver-start/db-path]))
+(s/def :skein.weaver-start/name (s/nilable non-blank-string?))
+(s/def :skein.weaver-start/publish? boolean?)
+(s/def :skein.weaver-start/storage keyword?)
+(s/def :skein.weaver-start/release-marker ::release-marker-syntax)
+(s/def ::weaver-start-options
+  (s/and (s/keys :opt-un [:skein.weaver-start/world
+                          :skein.weaver-start/name
+                          :skein.weaver-start/publish?
+                          :skein.weaver-start/storage
+                          :skein.weaver-start/release-marker])
+         #(every? #{:world :name :publish? :storage :release-marker} (keys %))))
+
 (s/def ::add-command (s/cat :title ::title :opts (s/* string?)))
 (s/def ::update-command (s/cat :id ::id :opts (s/* string?)))
 (s/def ::one-id-command (s/cat :id ::id))
