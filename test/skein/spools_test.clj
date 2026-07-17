@@ -11,7 +11,6 @@
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
-            [skein.repl :as repl]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.views.alpha :as views]
             [skein.test.alpha :as t]))
@@ -29,17 +28,6 @@
 
 (defn fresh-reload-handler [event]
   (swap! reload-deliveries conj (:event/id event)))
-
-(defn- ns-requires [resource-path]
-  (->> (slurp (io/resource resource-path))
-       java.io.StringReader.
-       java.io.PushbackReader.
-       read
-       (filter #(and (seq? %) (= :require (first %))))
-       first
-       rest
-       (map first)
-       set))
 
 (defn- write-spools! [config-dir content]
   (spit (io/file config-dir "spools.edn") content))

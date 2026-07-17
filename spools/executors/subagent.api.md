@@ -81,7 +81,7 @@ Query definition behind the registered `stalled-subagent-gates` query: an
   dead phase over `serves` selects exactly the gates whose current serving run
   is dead — by construction in lockstep with the `gate-stalled?` predicate, no
   `gate/superseded-by` bridge. `install!` registers it under the query name;
-  readers composing on the rule (loom's `flow-status`) list with this definition
-  directly, so membership cannot drift even on a runtime where the executor is
-  not installed.
+  readers composing on the rule list with this definition directly, so
+  membership cannot drift even on a runtime where the executor is not
+  installed.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L35-L53">Source</a></sub></p>

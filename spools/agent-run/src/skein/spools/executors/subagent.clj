@@ -41,9 +41,9 @@
   dead phase over `serves` selects exactly the gates whose current serving run
   is dead — by construction in lockstep with the `gate-stalled?` predicate, no
   `gate/superseded-by` bridge. `install!` registers it under the query name;
-  readers composing on the rule (loom's `flow-status`) list with this definition
-  directly, so membership cannot drift even on a runtime where the executor is
-  not installed."
+  readers composing on the rule list with this definition directly, so
+  membership cannot drift even on a runtime where the executor is not
+  installed."
   [:and [:= :state "active"]
    [:= [:attr "workflow/gate"] "subagent"]
    [:or
