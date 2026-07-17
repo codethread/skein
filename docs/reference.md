@@ -27,7 +27,7 @@ selected workspace (normally canonical repo .skein)
   config.local.json  -> personal config overlay
   init.clj           -> shared trusted startup code loaded by the weaver
   init.local.clj     -> personal startup overlay loaded after init.clj
-  spools.edn         -> shared approved local spool roots
+  spools.edn         -> shared approved spool families and roots
   spools.local.edn   -> personal approved-spool overlay
   spools/            -> optional local spools
 
@@ -273,9 +273,9 @@ answers exact invocation questions. Each tier has a different source of truth:
 
 | Tier | Source | Question it answers | Examples |
 | --- | --- | --- | --- |
-| `help` | **Generated** from registered arg-spec data | "What can I type?" — verbs, flags, positionals, types | `strand help`, `strand help <op>`, `strand <op> help\|-h\|--help` |
+| `help` | **Generated** from registered arg-spec data | "What can I type?" | `strand help`, `strand help <op>` |
 | `about` | **Authored** per-op JSON manual | "What does this op mean?" — semantics, contracts, attribute conventions | `strand kanban about`, `strand agent about` |
-| `prime` | **Authored** prose orientation | "How do we work here?" — run **before** starting work | `mill skein prime`, `mill strand prime`, `strand kanban prime`, `strand agent prime` |
+| `prime` | **Authored** prose orientation | "How do we work here?" | `mill skein prime`, `strand kanban prime` |
 
 **`help` is never hand-written.** `strand help` lists every registered op; `strand help <op>`
 renders one op's detail from its arg-spec, including declared subcommands. Ops that declare

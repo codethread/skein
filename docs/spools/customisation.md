@@ -22,7 +22,7 @@ repo-local `.skein` workspace:
   config.local.json  -> personal config overlay
   init.clj           -> shared trusted startup code loaded by the weaver
   init.local.clj     -> personal startup overlay loaded after init.clj
-  spools.edn         -> shared approved local spool roots
+  spools.edn         -> shared approved spool families and roots
   spools.local.edn   -> personal approved-spool overlay
   spools/            -> optional local spools
 ```
@@ -199,15 +199,19 @@ workspace/
       src/my/workflow.clj
 ```
 
-Approve the local spool root in `spools.edn`:
+Approve the local spool as a one-root family in `spools.edn`:
 
 ```clojure
-{:spools {my/workflow {:local/root "spools/my-workflow"}}}
+{:spools {my/workflow-spool
+          {:local/root "spools/my-workflow"
+           :roots {my/workflow "."}}}}
 ```
 
-Relative `:local/root` values resolve against the selected workspace. Absolute paths are accepted as explicit
-user-approved paths, and `~` expands to your home directory. Create a minimal `deps.edn` in the spool root (if
-`:paths` is omitted, Skein's namespace loading defaults to `["src"]`):
+There is one entry per repository or release unit. Its `:roots` map assigns each library name to a
+path under that source. Relative `:local/root` values resolve against the selected workspace.
+Absolute paths are accepted as explicit user-approved paths, and `~` expands to your home
+directory. Create a minimal `deps.edn` in the root (if `:paths` is omitted, Skein's namespace
+loading defaults to `["src"]`):
 
 ```clojure
 {:paths ["src"]}
@@ -231,11 +235,11 @@ Activate it from `init.clj`, after the `sync!` and batteries activation already 
 ```clojure
 (runtime/use! runtime :my/workflow
   {:ns 'my.workflow
-   :spools #{'my/workflow}
+   :spools #{'my/workflow-spool}
    :call 'my.workflow/install!})
 ```
 
-Each piece has one job. `spools.edn` is approval: it says which local roots the weaver may load.
+Each piece has one job. `spools.edn` is approval: it says which source family and roots the weaver may load.
 `runtime/sync!` makes approved roots available to the weaver. `runtime/use!` activates one module and records
 whether it loaded, skipped, or failed; its `:call` must name a fully qualified zero-argument function. A
 direct `require` from `mill weaver repl` evaluates in the weaver JVM and is useful for trusted
