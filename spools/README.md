@@ -93,7 +93,7 @@ with a gitignored `spools.local.edn` local root.
 
 ## `util` and `format` left the spool family
 
-`skein.spools.util` and `skein.spools.format` were never activatable spools — they registered no ops and no world `use!`d them; they were authoring libraries other spools built on. Both have left `skein.spools.*` for base-classpath `src/`: `format` is deleted in favor of the already-blessed `skein.api.format.alpha` (`fill`/`reflow`), and `util` is promoted to the blessed `skein.api.spool.alpha` (`fail!`, `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`) — the accretion-compatible home for the spool-authoring helpers every reference spool leans on. After this move, `skein.spools.*` is exactly "activatable spools" and nothing else.
+`skein.spools.util` and `skein.spools.format` were never activatable spools — they registered no ops and no world `use!`d them; they were authoring libraries other spools built on. Both have left `skein.spools.*` for base-classpath `src/`: `format` is deleted in favor of the already-blessed `skein.api.format.alpha` (`fill`/`reflow`), and `util` is promoted to the blessed `skein.api.spool.alpha` (`fail!`, `reject-unknown-keys!`, `require-valid!`, `attr-key->str`, `attr-get`, `poll-until-deadline!`, and `entity-projection` — which fails loudly unless its strand-shaped input carries `:id`/`:title`/`:state`/`:attributes` and returns exactly those keys — plus the composable arg-spec fragments `note-surface`, `work-root`, `timeout-secs`, and `outcome`) — the accretion-compatible home for the spool-authoring helpers every reference spool leans on. After this move, `skein.spools.*` is exactly "activatable spools" and nothing else.
 
 ## Reference examples
 
