@@ -92,9 +92,11 @@ transport:
 (use-fixtures :each (t/weaver-world-fixture {:storage :sqlite-memory}))
 
 (deftest listing-starts-empty
-  (is (= [] (t/repl! t/*weaver-world* "
-    (require '[skein.api.weaver.alpha :as weaver] '[skein.api.current.alpha :as current])
-    (weaver/list (current/runtime))"))))
+  (is (= [] (t/repl! t/*weaver-world*
+             '(do
+                (require '[skein.api.weaver.alpha :as weaver]
+                         '[skein.api.current.alpha :as current])
+                (weaver/list (current/runtime)))))))
 ```
 
 The context map contains orchestration facts only: `:config-dir`, `:state-dir`, `:data-dir`,
@@ -138,11 +140,12 @@ Write the spool fixture and approval into the generated world, sync it from `ini
                           '[skein.api.runtime.alpha :as runtime])
                  (runtime/sync! (current/runtime))"}]
     (is (= :loaded
-           (get-in (t/repl! ctx "
-             (require '[skein.api.current.alpha :as current]
-                      '[skein.api.runtime.alpha :as runtime])
-             (runtime/use! (current/runtime) :demo/lib
-                                 {:ns 'demo.lib :spools #{'demo/lib}})")
+           (get-in (t/repl! ctx
+                    '(do
+                       (require '[skein.api.current.alpha :as current]
+                                '[skein.api.runtime.alpha :as runtime])
+                       (runtime/use! (current/runtime) :demo/lib
+                                     {:ns 'demo.lib :spools #{'demo/lib}})))
                    [:status])))))
 ```
 

@@ -327,7 +327,8 @@
   "Run `body` with `ctx-sym` bound to a disposable weaver world context.
 
   (with-weaver-world [ctx {:spools-edn {:spools {}}}]
-    (is (= [] (repl! ctx \"(skein.api.weaver.alpha/list (skein.api.current.alpha/runtime))\"))))"
+    (is (= [] (repl! ctx '(skein.api.weaver.alpha/list
+                           (skein.api.current.alpha/runtime))))))"
   [[ctx-sym opts] & body]
   `(run-with-weaver-world ~opts (fn [~ctx-sym] ~@body)))
 
@@ -390,11 +391,11 @@
 (defn repl!
   "Evaluate a weaver-routed form against ctx's weaver world and return data.
 
-  `form` is a string of Clojure source or a form to render with pr-str. It
-  evaluates in the weaver runtime over its real nREPL transport with the
-  runtime ambiently bound, so `(skein.api.current.alpha/runtime)` resolves to
-  the test weaver. Results must be EDN-readable; weaver-side and transport
-  failures throw ExceptionInfo."
+  `form` is a quoted form rendered with pr-str, or a string of Clojure
+  source. It evaluates in the weaver runtime over its real nREPL transport
+  with the runtime ambiently bound, so `(skein.api.current.alpha/runtime)`
+  resolves to the test weaver. Results must be EDN-readable; weaver-side and
+  transport failures throw ExceptionInfo."
   [ctx form]
   (client/eval-in-world (:config-dir ctx)
                         {:timeout-ms (:timeout-ms ctx default-timeout-ms)}

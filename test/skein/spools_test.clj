@@ -552,11 +552,17 @@
                                             "(spit " (pr-str (str result-file))
                                             " (pr-str (runtime/sync! (current/runtime))))\n")}]
         (is (= :loaded (get-in (read-string (slurp result-file)) [:spools lib :status])))
-        (is (= :loaded (get-in (t/repl! ctx "(require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime]) (runtime/syncs (current/runtime))")
+        (is (= :loaded (get-in (t/repl! ctx
+                                        '(do
+                                           (require '[skein.api.current.alpha :as current]
+                                                    '[skein.api.runtime.alpha :as runtime])
+                                           (runtime/syncs (current/runtime))))
                                [:spools lib :status])))
         (testing "repl! forms run under the spool classloader, so synced namespaces are requirable"
           (is (= :synced-lib-loaded
-                 (t/repl! ctx (str "(require '" ns-sym ") (" ns-sym "/marker)"))))))
+                 (t/repl! ctx `(do
+                                 (require '~ns-sym)
+                                 (~(symbol (str ns-sym) "marker"))))))))
       (finally
         (when-not (.exists result-file)
           (delete-recursive root))))))

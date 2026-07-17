@@ -5,9 +5,6 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.test.alpha :as t]))
 
-(def ^:private require-api
-  "(require '[skein.api.current.alpha :as current] '[skein.api.weaver.alpha :as weaver] '[skein.api.graph.alpha :as graph])")
-
 (deftest check-op-return-selects-declared-return-leaves
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]
     (let [rt (:runtime ctx)
@@ -93,7 +90,11 @@
                                             (weaver/add (current/runtime)
                                                         {:title "From repl"})))]
                      (is (= "From repl" (:title strand)))))
-                 (is (= 1 (count (t/repl! ctx (str "(do " require-api " (weaver/list (current/runtime)))")))))
+                 (is (= 1 (count (t/repl! ctx
+                                          '(do
+                                             (require '[skein.api.current.alpha :as current]
+                                                      '[skein.api.weaver.alpha :as weaver])
+                                             (weaver/list (current/runtime)))))))
                  :done)]
     (is (= :done result))
     (testing "generated workspace root is removed after the body"
@@ -102,14 +103,22 @@
 (deftest with-weaver-world-writes-fixtures-and-loads-init
   (t/with-weaver-world [ctx {:config-json "{}\n"
                              :spools-edn {:spools {}}
-                             :init (str require-api
-                                        " (graph/register-query! (current/runtime) 'from-init [:= :state \"active\"])")
+                             :init (pr-str '(do
+                                              (require '[skein.api.current.alpha :as current]
+                                                       '[skein.api.graph.alpha :as graph])
+                                              (graph/register-query! (current/runtime)
+                                                                     'from-init
+                                                                     [:= :state "active"])))
                              :files {"modules/demo.clj" "(ns demo)\n"}}]
     (is (= "{}\n" (slurp (io/file (:config-dir ctx) "config.json"))))
     (is (= "{:spools {}}" (slurp (io/file (:config-dir ctx) "spools.edn"))))
     (is (= "(ns demo)\n" (slurp (io/file (:config-dir ctx) "modules/demo.clj"))))
     (testing "init.clj ran inside the weaver runtime"
-      (is (contains? (t/repl! ctx (str "(do " require-api " (graph/queries (current/runtime)))"))
+      (is (contains? (t/repl! ctx
+                              '(do
+                                 (require '[skein.api.current.alpha :as current]
+                                          '[skein.api.graph.alpha :as graph])
+                                 (graph/queries (current/runtime))))
                      "from-init")))))
 
 (deftest weaver-world-fixture-binds-memory-storage-context
@@ -120,14 +129,27 @@
        (is (nil? (:db-path ctx)))
        (is (nil? (get-in ctx [:metadata :canonical-db-path])))
        (is (false? (.exists (io/file (:data-dir ctx) "skein.sqlite"))))
-       (is (= [] (t/repl! ctx (str "(do " require-api " (weaver/list (current/runtime)))"))))))))
+       (is (= [] (t/repl! ctx
+                          '(do
+                             (require '[skein.api.current.alpha :as current]
+                                      '[skein.api.weaver.alpha :as weaver])
+                             (weaver/list (current/runtime))))))))))
 
 (deftest weaver-worlds-nest-and-stay-isolated
   (t/with-weaver-world [outer {}]
     (t/with-weaver-world [inner {:storage :sqlite-memory}]
-      (t/repl! outer (str "(do " require-api " (weaver/add (current/runtime) {:title \"outer\"}))"))
-      (is (= 1 (count (t/repl! outer (str "(do " require-api " (weaver/list (current/runtime)))")))))
-      (is (= [] (t/repl! inner (str "(do " require-api " (weaver/list (current/runtime)))")))))))
+      (t/repl! outer '(do
+                        (require '[skein.api.current.alpha :as current]
+                                 '[skein.api.weaver.alpha :as weaver])
+                        (weaver/add (current/runtime) {:title "outer"})))
+      (is (= 1 (count (t/repl! outer '(do
+                                        (require '[skein.api.current.alpha :as current]
+                                                 '[skein.api.weaver.alpha :as weaver])
+                                        (weaver/list (current/runtime)))))))
+      (is (= [] (t/repl! inner '(do
+                                  (require '[skein.api.current.alpha :as current]
+                                           '[skein.api.weaver.alpha :as weaver])
+                                  (weaver/list (current/runtime)))))))))
 
 (deftest spool-checkout-root-resolves-directory-checkouts-from-classpath-entry
   (let [checkout (doto (io/file (System/getProperty "java.io.tmpdir")
@@ -173,7 +195,7 @@
   (testing "weaver-side eval failures throw with weaver context"
     (t/with-weaver-world [ctx {}]
       (let [ex (try
-                 (t/repl! ctx "(throw (ex-info \"weaver boom\" {:detail 1}))")
+                 (t/repl! ctx '(throw (ex-info "weaver boom" {:detail 1})))
                  nil
                  (catch clojure.lang.ExceptionInfo e e))]
         (is (some? ex))
