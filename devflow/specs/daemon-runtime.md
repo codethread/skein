@@ -101,6 +101,23 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 - **SPEC-004.C37:** Runtime extensions are normal trusted Clojure spools/modules made available to the weaver through selected workspace startup (`init.clj` then `init.local.clj`) or live weaver REPL workflows.
 - **SPEC-004.C38:** Extension code runs with weaver process authority. Sandboxing, untrusted execution, remote authorization, and capability restriction are outside this contract.
 - **SPEC-004.C39:** Skein ships the blessed source-visible `skein.api.runtime.alpha` privileged runtime loader/config helper for spool-workspace workflows. Privileged loader/config helpers do not live under `skein.spools.*`; that namespace family is reserved for authorable spools and examples.
+- **SPEC-004.C39a:** A runtime resolves one immutable release-marker record at
+  construction. An explicit `:release-marker` startup claim (or the foreground
+  weaver's `--release-marker` option) wins; otherwise an annotated `v<int>` Git
+  tag pointing exactly at the Skein source checkout's HEAD is used when the
+  checkout is resolvable. Otherwise the record is
+  `{:marker nil :provenance :none}`. Claims must use canonical `v<int>` syntax
+  without leading zeroes. `v0` is reserved and rejected with the first-public-
+  marker policy; malformed claims fail startup loudly. The read-only
+  `skein.api.runtime.alpha/release-marker` accessor returns
+  `{:marker "vN" :provenance :claimed|:tag}` or the `:none` shape. Operations
+  that require marker arithmetic must reject `:none`; they must not invent a
+  default.
+- **SPEC-004.C39b:** `skein.api.runtime.alpha/config-dir` returns the selected
+  config-directory path for its explicit runtime, and
+  `skein.api.runtime.alpha/spools-file` returns the `java.io.File` for that
+  directory's shared `spools.edn`. Both are read-only delegations to the core
+  weaver accessors; they do not expose a general filesystem mutation API.
 - **SPEC-004.C40:** Blessed `skein.api.*.alpha` namespaces and shipped reference spools are documented, tested, and used by examples. They are recommended maintenance paths, not enforcement boundaries; trusted code may require lower-level namespaces or use raw SQLite schema when it accepts compatibility cost.
 - **SPEC-004.C41:** The selected workspace is a trusted alpha spool workspace root. User-owned config may include `config.json` with only `"configFormat":"alpha"`, shared `init.clj`/`spools.edn`, local `init.local.clj`/`spools.local.edn`, local source directories, and user code. The CLI bootstrap path may initialize missing workspace files/directories, but must not initialize a Git repository, persist source checkout paths, or overwrite existing user files.
 - **SPEC-004.C42:** `spools.edn` and `spools.local.edn`, when present, declare approved weaver-wide spool coordinates of exactly one kind per entry. Local kind: `:local/root`, where relative entries resolve against selected workspace, absolute roots are accepted as explicit user-approved paths, and leading `~` and `~/` expand to the user home directory. Git kind: required `:git/url` (passed to system git verbatim; the user chooses the transport) and `:git/sha` (exactly 40 lowercase hex characters — the exact-content consent pin), optional `:git/tag` (human-readable label verified against the sha at fetch time), and optional `:deps/root` (relative subpath into the checkout, no leading `/`, `~`, or `..` segments; git-only). Mixed kind keys, unknown keys, and malformed values fail loudly as structural config errors.

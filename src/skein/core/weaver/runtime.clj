@@ -13,6 +13,9 @@
            [java.util.concurrent ArrayBlockingQueue]))
 
 (def ^:private loopback-host "127.0.0.1")
+(def ^:private release-marker-pattern #"v(?:0|[1-9][0-9]*)")
+(def ^:private reserved-release-marker-message
+  "Release marker v0 is reserved; the first public release marker is v1")
 
 (defonce ^{:doc "Atom containing the published ambient weaver runtime map for this process, or nil."} current-runtime
   (atom nil))
@@ -372,6 +375,76 @@
                      (db/memory-storage))
     (throw (ex-info "Unknown weaver storage kind" {:storage storage}))))
 
+(defn- require-release-marker! [marker provenance]
+  (when-not (and (string? marker) (re-matches release-marker-pattern marker))
+    (throw (ex-info "Release marker must be strictly v<int> with no leading zeroes"
+                    {:reason :invalid-release-marker
+                     :marker marker
+                     :provenance provenance})))
+  (when (= "v0" marker)
+    (throw (ex-info reserved-release-marker-message
+                    {:reason :reserved-release-marker
+                     :marker marker
+                     :provenance provenance})))
+  marker)
+
+(defn- source-checkout-root []
+  (when-let [url (io/resource "skein/core/weaver/runtime.clj")]
+    (when (= "file" (.getProtocol url))
+      ;; src/skein/core/weaver/runtime.clj -> checkout root is five parents up.
+      (-> (io/file (.toURI url))
+          .getParentFile
+          .getParentFile
+          .getParentFile
+          .getParentFile
+          .getParentFile
+          .getCanonicalFile))))
+
+(defn- run-git [dir & args]
+  (try
+    (let [process (-> (ProcessBuilder. ^"[Ljava.lang.String;" (into-array String (cons "git" args)))
+                      (.directory dir)
+                      (.redirectErrorStream false)
+                      (.start))
+          stderr (future (slurp (.getErrorStream process)))
+          stdout (future (slurp (.getInputStream process)))
+          exit (.waitFor process)]
+      {:exit exit :stdout @stdout :stderr @stderr})
+    (catch java.io.IOException e
+      {:exit 127 :stderr (ex-message e)})))
+
+(defn- annotated-head-release-markers [source-root]
+  (when source-root
+    (let [result (run-git source-root
+                          "for-each-ref"
+                          "--points-at"
+                          "HEAD"
+                          "--format=%(objecttype)%09%(refname:short)"
+                          "refs/tags")]
+      (when (zero? (:exit result))
+        (->> (str/split-lines (:stdout result))
+             (keep (fn [line]
+                     (let [[object-type tag] (str/split line #"\t" 2)]
+                       (when (and (= "tag" object-type)
+                                  (re-matches release-marker-pattern tag))
+                         tag))))
+             distinct
+             sort
+             vec)))))
+
+(defn- resolve-release-marker [claim]
+  (if (some? claim)
+    {:marker (require-release-marker! claim :claimed)
+     :provenance :claimed}
+    (let [markers (annotated-head-release-markers (source-checkout-root))]
+      (case (count markers)
+        0 {:marker nil :provenance :none}
+        1 {:marker (require-release-marker! (first markers) :tag)
+           :provenance :tag}
+        (throw (ex-info "Source HEAD has multiple annotated release marker tags"
+                        {:reason :ambiguous-release-marker
+                         :markers markers}))))))
+
 (defn start!
   "Start a weaver runtime for `db-file` and optional `world`.
 
@@ -380,13 +453,17 @@
   Set `:publish? false` to start an unpublished runtime that can coexist with
   other runtimes in the same JVM. Trusted callers may select `:storage
   :sqlite-memory` for a weaver-lifetime in-memory database; file-backed SQLite
-  in the selected workspace remains the default."
+  in the selected workspace remains the default. `:release-marker` explicitly
+  claims the running source generation as a canonical `v<int>` marker; without
+  a claim, startup uses an annotated marker tag on the source checkout's HEAD
+  when one can be resolved."
   ([] (start! nil {}))
   ([db-file] (start! db-file {}))
-  ([db-file {:keys [world name publish? storage] :or {publish? true}}]
+  ([db-file {:keys [world name publish? storage release-marker] :or {publish? true}}]
    (when (and publish? @current-runtime)
      (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
    (let [world (or world (weaver-config/world))
+         resolved-release-marker (resolve-release-marker release-marker)
          existing (metadata/read-metadata world)
          socket-file (metadata/socket-file world)]
      (when-not (metadata/stale-or-missing? existing)
@@ -423,6 +500,7 @@
                          :op-registry (atom {})
                          :hook-registry (atom {})
                          :generation-id (str (java.util.UUID/randomUUID))
+                         :release-marker resolved-release-marker
                          :approved-spool-sync-state (atom {})
                          :approved-spool-generation-state (atom {})
                          :approved-spool-generation-fingerprints (atom {})
@@ -508,7 +586,8 @@
       nil {:config-dir (require-main-dir! opts :config-dir "--workspace")
            :state-dir (require-main-dir! opts :state-dir "--state-dir")
            :data-dir (require-main-dir! opts :data-dir "--data-dir")
-           :name (:name opts)}
+           :name (:name opts)
+           :release-marker (:release-marker opts)}
       "--workspace" (let [[_ dir & more] remaining]
                       (when-not dir
                         (throw (ex-info "--workspace requires a directory" {:args args})))
@@ -525,7 +604,11 @@
                  (when (str/blank? name)
                    (throw (ex-info "--name requires a non-blank value" {:args args})))
                  (recur more (assoc opts :name name)))
-      (throw (ex-info "Usage: skein.core.weaver.runtime --workspace <dir> --state-dir <dir> --data-dir <dir> [--name <name>]" {:args args})))))
+      "--release-marker" (let [[_ marker & more] remaining]
+                           (when-not marker
+                             (throw (ex-info "--release-marker requires a marker" {:args args})))
+                           (recur more (assoc opts :release-marker marker)))
+      (throw (ex-info "Usage: skein.core.weaver.runtime --workspace <dir> --state-dir <dir> --data-dir <dir> [--name <name>] [--release-marker <vN>]" {:args args})))))
 
 (defn- install-signal-shutdown!
   "Run the clean stop path on SIGTERM/SIGINT (and normal JVM exit).
@@ -546,8 +629,10 @@
 (defn -main
   "Start a foreground weaver process from command-line arguments."
   [& args]
-  (let [{:keys [config-dir state-dir data-dir name]} (parse-main-args args)]
-    (start! nil {:world (weaver-config/world config-dir state-dir data-dir) :name name})
+  (let [{:keys [config-dir state-dir data-dir name release-marker]} (parse-main-args args)]
+    (start! nil (cond-> {:world (weaver-config/world config-dir state-dir data-dir)
+                         :name name}
+                  release-marker (assoc :release-marker release-marker)))
     (install-signal-shutdown!)
     (println "weaver started")
     (while @current-runtime

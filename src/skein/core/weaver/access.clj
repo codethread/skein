@@ -79,8 +79,15 @@
   [runtime]
   (get-in runtime [:metadata :config-dir]))
 
-(defn spools-file ^java.io.File [runtime name]
+(defn spools-file
+  "Return a named file beneath the runtime's selected config directory."
+  ^java.io.File [runtime name]
   (io/file (config-dir runtime) name))
+
+(defn release-marker
+  "Return the runtime's resolved release marker and provenance."
+  [runtime]
+  (:release-marker runtime))
 
 (defn expand-user-home
   "Expand a leading `~` or `~/` to the current user's home directory."
