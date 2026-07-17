@@ -104,7 +104,7 @@
 (s/def ::source #(and (map? %) (#{:shared :local} (:kind %)) (non-blank-string? (:file %))))
 (s/def ::normalized-family
   (s/keys :req-un [::family ::coordinate ::roots-map ::requires ::skein-min
-                    ::provenance ::source]
+                   ::provenance ::source]
           :opt-un [::claims]))
 
 (defn- duplicate-root-owners [families]
@@ -375,16 +375,30 @@
           findings))
 
 (defn- validate-family-requirements! [families running-marker]
-  (when running-marker
+  (when (= :none running-marker)
+    (let [floors (vec (keep (fn [{:keys [family skein-min]}]
+                              (when skein-min
+                                {:family family :skein/min skein-min}))
+                            families))]
+      (when (seq floors)
+        (throw (ex-info "Running Skein release marker is unavailable for declared floors"
+                        {:reason :release-marker-unavailable
+                         :floors floors
+                         :remedy "start the runtime with an explicit :release-marker claim"})))))
+  (when (and running-marker (not= :none running-marker))
     (validate-marker! running-marker {:field :running}))
   (let [findings (into (requirement-findings families)
-                       (skein-minimum-findings families running-marker))]
+                       (skein-minimum-findings families
+                                               (when-not (= :none running-marker)
+                                                 running-marker)))]
     (when (seq findings)
       (throw (ex-info "Approved spool requirements are not satisfied"
                       {:reason :spool-requirements-unsatisfied
                        :findings findings
                        :suggestions (requirement-suggestions findings)})))
-    (pending-skein-validations families running-marker)))
+    (pending-skein-validations families
+                               (when-not (= :none running-marker)
+                                 running-marker))))
 
 (def ^:private allowed-spool-maven-coordinate-keys
   #{:mvn/version :exclusions :classifier :extension})
@@ -570,8 +584,9 @@
   `spools.local.edn` coordinate overlays while inheriting family roots and floors.
   The returned `:spools` map remains keyed by root lib. Missing files contribute
   no spools, while malformed present files fail loudly. Stage 2 checks every root
-  floor before materialization. When `running-marker` is absent, declared
-  `:skein/min` checks are returned under `:pending-validations`."
+  floor before materialization. When `running-marker` is omitted, declared
+  `:skein/min` checks are returned under `:pending-validations`; explicit `:none`
+  rejects declared floors."
   ([runtime]
    (approved-spools runtime nil))
   ([runtime running-marker]
@@ -1149,8 +1164,9 @@
   `:pending-generation`, and throws before touching the classloader. Maven
   resolution is atomic: a cross-root version conflict or an unresolvable universe
   fails the whole sync loudly, leaving `{}` sync state rather than partial results.
-  An optional running release marker enables `:skein/min` validation; absent it,
-  those checks remain visible in the returned `:pending-validations`."
+  A running release marker enables `:skein/min` validation. An omitted marker
+  leaves those checks visible in `:pending-validations`; explicit `:none` rejects
+  declared floors."
   ([runtime]
    (sync-approved-spools runtime nil))
   ([runtime running-marker]
@@ -1337,17 +1353,17 @@
 (defn- index-sources-by-ns
   "Index parsed `sources` by declared `:ns`, failing loudly on a collision.
 
-  Two files under `coord`'s consented root-paths that declare the same namespace
+  Two files under `root-lib`'s consented root-paths that declare the same namespace
   would let a plain `(into {} …)` silently keep whichever parsed last and drop the
   other from the reload set. That violates the swallow-nothing contract, so a
   collision throws with the colliding namespace and both file paths instead of
   arbitrarily picking one."
-  [coord sources]
+  [root-lib sources]
   (reduce (fn [m source]
             (let [ns-sym (:ns source)]
               (if-let [prior (get m ns-sym)]
                 (throw (ex-info "Two synced spool sources declare the same namespace"
-                                {:status :failed :reason :duplicate-namespace :coord coord
+                                {:status :failed :reason :duplicate-namespace :root-lib root-lib
                                  :namespace ns-sym :files [(:file prior) (:file source)]}))
                 (assoc m ns-sym source))))
           {}
@@ -1357,10 +1373,11 @@
   "Build the intra-root dependency graph over `parsed`, restricted to `intra` edges.
 
   A genuine circular intra-root require makes `org.clojure/tools.namespace` throw a
-  raw `::circular-dependency` ex-info carrying no `:status`/`:coord`. Catch it and
-  rethrow under the same fixed `{:status :failed :reason … :coord …}` contract the
-  coordinate-resolution gates use, naming the cycle."
-  [coord intra parsed]
+  raw `::circular-dependency` ex-info carrying no `:status`/`:root-lib`. Catch it
+  and rethrow under the same fixed
+  `{:status :failed :reason … :root-lib …}` contract the root-resolution gates
+  use, naming the cycle."
+  [root-lib intra parsed]
   (try
     (reduce (fn [g {ns-sym :ns deps :deps}]
               (reduce (fn [g dep]
@@ -1375,13 +1392,13 @@
       (let [{:keys [reason node dependency]} (ex-data e)]
         (if (= ::ns-dep/circular-dependency reason)
           (throw (ex-info "Synced spool sources have a circular intra-root require"
-                          {:status :failed :reason :circular-requires :coord coord
+                          {:status :failed :reason :circular-requires :root-lib root-lib
                            :cycle {:namespace node :requires dependency}}
                           e))
           (throw e))))))
 
 (defn- dependency-ordered-sources
-  "Order `coord`'s `sources` dependencies-first within this root only.
+  "Order `root-lib`'s `sources` dependencies-first within this root only.
 
   Each source is parsed for its `ns` form, then topologically sorted so a
   namespace reloads after every intra-root namespace it requires. External
@@ -1389,21 +1406,21 @@
   the set and are neither ordered nor reloaded. Namespaces with no intra-root
   relationship keep their discovery order and follow the sorted set. Two sources
   declaring the same namespace, or a circular intra-root require, fail loudly
-  under the coordinate's `{:status :failed :reason …}` contract."
-  [coord sources]
+  under the root lib's `{:status :failed :reason …}` contract."
+  [root-lib sources]
   (let [parsed (mapv parse-source-ns sources)
-        by-ns (index-sources-by-ns coord parsed)
+        by-ns (index-sources-by-ns root-lib parsed)
         intra (set (keys by-ns))
-        graph (dependency-graph coord intra parsed)
+        graph (dependency-graph root-lib intra parsed)
         sorted (filter intra (ns-dep/topo-sort graph))
         remaining (remove (set sorted) (map :ns parsed))]
     (mapv by-ns (concat sorted remaining))))
 
 (defn reload-synced-spool!
-  "Make coordinate `coord`'s latest synced source live under the spool classloader.
+  "Make `root-lib`'s latest synced source live under the spool classloader.
 
-  Resolves `coord`'s synced root from the runtime's approved-spool sync state and
-  approved allowlist (a coordinate can be approved yet unsynced or sync-failed),
+  Resolves `root-lib` from the runtime's root-lib-keyed approved-spool sync state
+  and approved allowlist (a root can be approved yet unsynced or sync-failed),
   discovers its namespace sources under the consented `root-paths` classpath, sorts
   them dependencies-first with `org.clojure/tools.namespace` (intra-root edges only),
   and `load-file`s each inside `with-spool-classloader`. Unlike `load-synced-namespace!`
@@ -1425,42 +1442,43 @@
   loadable: `:duplicate-namespace` (two sources under the root declare the same
   namespace, which would otherwise silently drop one file) and `:circular-requires`
   (a circular intra-root require, rethrown from `org.clojure/tools.namespace` under
-  this same `{:status :failed :reason … :coord …}` shape rather than escaping raw).
+  this same `{:status :failed :reason … :root-lib …}` shape rather than escaping
+  raw).
 
-  Returns a data-first map naming the coordinate, its resolved canonical root, and
+  Returns a data-first map naming the root lib, its resolved canonical root, and
   the namespaces reloaded with their source files."
-  [runtime coord]
+  [runtime root-lib]
   (let [approved (approved-spools runtime)
         syncs (merge @(:approved-spool-generation-state runtime)
                      @(approved-spool-sync-state runtime))
-        sync-entry (get syncs coord)]
-    (when-not (contains? (:spools approved) coord)
-      (throw (ex-info "Spool coordinate is not approved"
-                      {:status :failed :reason :not-approved :coord coord})))
-    (when-not (contains? syncs coord)
-      (throw (ex-info "Spool coordinate is not synced"
-                      {:status :failed :reason :not-synced :coord coord})))
+        sync-entry (get syncs root-lib)]
+    (when-not (contains? (:spools approved) root-lib)
+      (throw (ex-info "Spool root lib is not approved"
+                      {:status :failed :reason :not-approved :root-lib root-lib})))
+    (when-not (contains? syncs root-lib)
+      (throw (ex-info "Spool root lib is not synced"
+                      {:status :failed :reason :not-synced :root-lib root-lib})))
     (when-not (#{:loaded :already-available} (:status sync-entry))
-      (throw (ex-info "Spool coordinate did not sync successfully"
-                      {:status :failed :reason :sync-failed :coord coord :sync sync-entry})))
+      (throw (ex-info "Spool root lib did not sync successfully"
+                      {:status :failed :reason :sync-failed :root-lib root-lib :sync sync-entry})))
     (let [root (:root sync-entry)
           root-file (io/file root)]
       (when-not (.exists root-file)
         (throw (ex-info "Synced spool root is missing on disk"
-                        {:status :failed :reason :missing-root :coord coord :root root})))
+                        {:status :failed :reason :missing-root :root-lib root-lib :root root})))
       (when (or (not (.isDirectory root-file)) (not (.canRead root-file)))
         (throw (ex-info "Synced spool root is not a readable directory"
-                        {:status :failed :reason :unreadable-root :coord coord :root root})))
+                        {:status :failed :reason :unreadable-root :root-lib root-lib :root root})))
       (let [canonical-root (.getCanonicalPath root-file)
             sources (spool-namespace-sources root)]
         (when (empty? sources)
           (throw (ex-info "Synced spool root has no namespace sources"
-                          {:status :failed :reason :no-namespaces :coord coord :root canonical-root})))
-        (let [ordered (dependency-ordered-sources coord sources)]
+                          {:status :failed :reason :no-namespaces :root-lib root-lib :root canonical-root})))
+        (let [ordered (dependency-ordered-sources root-lib sources)]
           (with-spool-classloader
             runtime
             (fn [] (doseq [{:keys [file]} ordered]
                      (load-file file))))
-          {:coord coord
+          {:root-lib root-lib
            :root canonical-root
            :namespaces (mapv #(select-keys % [:ns :file]) ordered)})))))

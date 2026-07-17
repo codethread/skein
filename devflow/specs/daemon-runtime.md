@@ -148,7 +148,25 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
   config remains keyed by root lib and carries kind-shaped coordinate data, the effective root
   path, source metadata, and internal family provenance. Missing files yield an empty contribution.
   Per-root missing, unreadable, or add-source failures remain sync outcomes.
-- **SPEC-004.C44@sync-owns-resolution:** `skein.api.runtime.alpha/sync!` takes an explicit runtime, materializes approved git coordinates (SPEC-004.C91), and resolves the union of every approved, materialized root's declared `deps.edn :deps` Maven coordinates in a single skein-owned `clojure -T:deps` subprocess (via `clojure.tools.deps.interop/invoke-tool`), against the weaver's immutable launch classpath as the provided universe, adding only the genuinely new resolved jar URLs to the runtime's single spool `DynamicClassLoader`. No `add-libs`, no `clojure.java.basis` read or mutation, no process-global retained resolution universe. Local roots' vetted source paths are added directly to the same classloader. Per-spool `:loaded`/`:already-available` outcomes are driven by whether this sync newly added that root's source dirs or its directly-declared Maven jars to the classloader; a re-sync that adds nothing new for a root reports `:already-available`. Sync outcome maps are kind-shaped: every result carries `:kind` with only kind-relevant source fields (`:local/root` for local; `:git/url`/`:git/sha` plus `:git/tag`/`:deps/root` when configured for git), never nil-stuffed cross-kind keys and never manifest-derived data. Per-spool failures report fetch, root, and runtime-add/dependency-policy failures loudly in the sync result.
+- **SPEC-004.C44@sync-owns-resolution:**
+  `skein.api.runtime.alpha/sync!` takes an explicit runtime, materializes approved
+  git coordinates (SPEC-004.C91), and resolves the union of every approved,
+  materialized root's declared `deps.edn :deps` Maven coordinates in one
+  skein-owned `clojure -T:deps` subprocess (via
+  `clojure.tools.deps.interop/invoke-tool`). Resolution uses the weaver's
+  immutable launch classpath as the provided universe and adds only new resolved
+  jar URLs to the runtime's single spool `DynamicClassLoader`. It does not call
+  `add-libs`, read or mutate `clojure.java.basis`, or retain a process-global
+  resolution universe. Local roots' vetted source paths are added directly to
+  the same classloader. Per-root-lib `:loaded`/`:already-available` outcomes show
+  whether this sync newly added that root's source dirs or directly declared
+  Maven jars; a re-sync that adds nothing new reports `:already-available`.
+  Sync outcome maps are keyed by root lib and name their owning `:family`, root
+  `:lib`, and kind-shaped `:coordinate`. They also carry `:kind` with only
+  kind-relevant source fields (`:local/root` for local; `:git/url`/`:git/sha` plus
+  `:git/tag` when configured for git), never nil-stuffed cross-kind keys or
+  manifest-derived data. Per-root failures report fetch, root, and
+  runtime-add/dependency-policy failures loudly in the sync result.
 - **SPEC-004.C44a@sync-owns-resolution:** Maven resolution over the approved universe is atomic. A well-formed but unresolvable universe (a missing artifact, an offline resolver) fails the whole `sync!` loudly rather than partially — distinct from the per-root validation/materialization failures of SPEC-004.C94a.2 and SPEC-004.C91, which remain per-spool `:failed` outcomes.
 - **SPEC-004.C44b@sync-owns-resolution:** Two approved roots declaring the same Maven lib with different `:mvn/version` is a cross-root conflict that fails the whole `sync!` loudly, naming the lib, the disagreeing versions, and the declaring roots. `spools.edn` and `spools.local.edn` accept an optional top-level `:mvn-overrides` map — lib symbol to a Maven coordinate map, validated by the same Maven-only policy as spool `:deps` — overlaid shared-then-local exactly like `:spools`. An override pins that lib's version across the universe and silences its conflict. `:mvn-overrides` is the only additional allowed top-level key; other unknown top-level keys still fail loudly.
 - **SPEC-004.C44c@sync-diff-classification:** `sync!` diffs the newly materialized approved roots against the runtime's currently successful sync state before adding source roots or Maven jars. A root whose coordinate has never successfully synced in this generation is additive and may be added to the existing spool `DynamicClassLoader`. A still-approved coordinate that fails materialization or validation in the current sync is a per-root `:failed` outcome, not a non-additive removal. Non-additive diffs are refused in-JVM; the refused classes are: a previously successful root removed from approval, a previously successful coordinate now resolving to a different source root, and changed source for a root that already has loaded namespaces in this generation. The failure is an `ExceptionInfo` with `:reason :non-additive-sync-diff`, the classified `:diff`, and the remedy text `recorded; takes effect at the next weaver generation (mill-supervised restart, user sign-off)`. A weaver generation is a process boundary: the spool `DynamicClassLoader` is minted at weaver boot and is never swapped by `sync!`, which removes no namespaces and unloads no code.

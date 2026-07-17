@@ -14,7 +14,7 @@
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
-(s/def ::coord symbol?)
+(s/def ::root-lib symbol?)
 (s/def ::status keyword?)
 (s/def ::lib symbol?)
 (s/def ::kind keyword?)
@@ -63,10 +63,18 @@
   (when (= :non-additive-sync-diff (:reason data))
     (require-valid! ::non-additive-sync-diff-ex-data data "runtime sync exception data has an invalid shape")))
 
+(defn- running-release-marker [runtime]
+  (let [result (access/release-marker runtime)
+        _ (require-valid! ::specs/release-marker-result result
+                          "runtime release marker has an invalid shape")
+        {:keys [marker provenance]} result]
+    (if (= :none provenance) :none marker)))
+
 (defn approved
   "Return the normalized approved spool roots for `runtime`'s config dir."
   [runtime]
-  (validate-approved-result! (spool-sync/approved-spools runtime)))
+  (validate-approved-result!
+   (spool-sync/approved-spools runtime (running-release-marker runtime))))
 
 (defn release-marker
   "Return the running Skein release marker and its provenance.
@@ -117,7 +125,8 @@
   pending generation until the weaver process is replaced."
   [runtime]
   (try
-    (validate-sync-result! (spool-sync/sync-approved-spools runtime))
+    (validate-sync-result!
+     (spool-sync/sync-approved-spools runtime (running-release-marker runtime)))
     (catch clojure.lang.ExceptionInfo ex
       (validate-sync-ex-data! (ex-data ex))
       (throw ex))))
@@ -148,11 +157,11 @@
   (weaver-runtime/reload-config! runtime))
 
 (defn reload-spool!
-  "Make `coord`'s latest synced source live in `runtime`.
+  "Make `root-lib`'s latest synced source live in `runtime`.
 
-  `coord` is a `spools.edn` coordinate symbol (e.g. `skein.spools/kanban`) — a
-  spool is many namespaces and sync state is keyed by coordinate, not namespace.
-  Returns a data-first map naming the coordinate, its resolved canonical root, and
+  `root-lib` is a root-lib symbol from a family's effective `:roots` map (e.g.
+  `skein.spools/kanban`). Sync state is keyed by root lib, not family or namespace.
+  Returns a data-first map naming the root lib, its resolved canonical root, and
   the namespaces reloaded in reload order with their source files.
 
   Fills the gap neither existing reload path covers: `reload!` re-runs startup
@@ -172,10 +181,11 @@
   the reload keeps its old definition. A revision that deletes or renames a
   namespace also leaves the old one loaded until restart.
 
-  Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data."
-  [runtime coord]
-  (require-valid! ::coord coord "reload-spool! coord must be a spool coordinate symbol")
-  (spool-sync/reload-synced-spool! runtime coord))
+  Fails loudly on an unresolvable `root-lib`, carrying a `:reason` keyword in
+  ex-data."
+  [runtime root-lib]
+  (require-valid! ::root-lib root-lib "reload-spool! root-lib must be a symbol")
+  (spool-sync/reload-synced-spool! runtime root-lib))
 
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.
@@ -187,38 +197,26 @@
 
 (def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
 
+(s/def ::use-key keyword?)
+(s/def ::ns symbol?)
+(s/def ::file (s/and string? (complement str/blank?)))
+(s/def ::spools (s/and #(or (vector? %) (set? %))
+                       #(every? symbol? %)))
+(s/def ::after (s/coll-of keyword? :kind vector?))
+(s/def ::call (s/and symbol? (comp some? namespace)))
+(s/def ::required? boolean?)
+(s/def ::use-opts
+  (s/and (s/keys :opt-un [::ns ::file ::spools ::after ::call ::required?])
+         #(every? allowed-use-keys (keys %))
+         #(not= (contains? % :ns) (contains? % :file))))
+(s/def ::use-registration (s/tuple ::use-key ::use-opts))
+
 (defn- validate-use-opts! [key opts]
-  (when-not (keyword? key)
-    (throw (ex-info "Module use key must be a keyword" {:key key})))
-  (when-not (map? opts)
-    (throw (ex-info "Module use opts must be a map" {:key key :opts opts})))
-  (when-let [unknown (seq (remove allowed-use-keys (keys opts)))]
-    (throw (ex-info "Module use opts contain unknown keys" {:key key :keys (vec unknown)})))
-  (when (= (contains? opts :ns) (contains? opts :file))
-    (throw (ex-info "Module use opts require exactly one of :ns or :file" {:key key :opts opts})))
-  (when (and (contains? opts :ns) (not (symbol? (:ns opts))))
-    (throw (ex-info "Module use :ns must be a symbol" {:key key :ns (:ns opts)})))
-  (when (and (contains? opts :file) (not (and (string? (:file opts)) (not (str/blank? (:file opts))))))
-    (throw (ex-info "Module use :file must be a non-blank string" {:key key :file (:file opts)})))
+  (require-valid! ::use-registration [key opts]
+                  "Module use key/options have an invalid shape")
   (when (and (contains? opts :file) (.isAbsolute (io/file (:file opts))))
     (throw (ex-info "Module use :file must be relative to selected config-dir" {:key key :file (:file opts)})))
-  (when (and (contains? opts :spools)
-             (not (or (vector? (:spools opts)) (set? (:spools opts)))))
-    (throw (ex-info "Module use :spools must be a vector or set of symbols" {:key key :spools (:spools opts)})))
-  (doseq [lib (:spools opts)]
-    (when-not (symbol? lib)
-      (throw (ex-info "Module use :spools entries must be symbols" {:key key :lib lib}))))
-  (when (and (contains? opts :after) (not (vector? (:after opts))))
-    (throw (ex-info "Module use :after must be a vector" {:key key :after (:after opts)})))
-  (doseq [after (:after opts)]
-    (when-not (keyword? after)
-      (throw (ex-info "Module use :after entries must be keywords" {:key key :after after}))))
-  (when (and (contains? opts :call) (not (symbol? (:call opts))))
-    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
-  (when (and (symbol? (:call opts)) (nil? (namespace (:call opts))))
-    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
-  (when (and (contains? opts :required?) (not (boolean? (:required? opts))))
-    (throw (ex-info "Module use :required? must be boolean" {:key key :required? (:required? opts)}))))
+  opts)
 
 (defn- record-use! [runtime key result]
   (swap! (access/module-use-state runtime) assoc key result)
@@ -267,7 +265,8 @@
   Opts load either a synced namespace via `:ns` or a file via `:file`, and may
   include `:call` to invoke a no-arg function after load. Returns a registry
   entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
-  rethrow after recording failure metadata."
+  rethrow after recording failure metadata. The key/options pair conforms to
+  `:skein.api.runtime.alpha/use-registration`."
   [runtime key opts]
   (validate-use-opts! key opts)
   (when-let [file (:file opts)]

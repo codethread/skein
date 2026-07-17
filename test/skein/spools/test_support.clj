@@ -79,19 +79,20 @@
 
   opts: `:publish?` (default false — the runtime is thread-bound for `f` via
   `with-runtime-binding` rather than published as the process ambient
-  runtime), and `:prefix`/`:nest-skein?`, threaded straight to
-  `temp-config-dir`. Set `:publish? true` when `f` (or code it calls, e.g.
+  runtime), `:release-marker`, and `:prefix`/`:nest-skein?`, threaded straight
+  to `temp-config-dir`. Set `:publish? true` when `f` (or code it calls, e.g.
   spawned worker threads that resolve the runtime via `current/runtime`
   rather than a per-call binding) needs the ambient singleton to actually
   exist."
   ([f] (with-runtime {} f))
   ([opts f]
-   (let [{:keys [publish?] :or {publish? false}} opts
+   (let [{:keys [publish? release-marker] :or {publish? false}} opts
          db-file (db-test/temp-db-file)
          config-dir (temp-config-dir (select-keys opts [:prefix :nest-skein?]))]
      (try
-       (let [rt (weaver-runtime/start! db-file {:world (test-world (.getCanonicalPath config-dir))
-                                                :publish? publish?})]
+       (let [rt (weaver-runtime/start! db-file (cond-> {:world (test-world (.getCanonicalPath config-dir))
+                                                        :publish? publish?}
+                                                 release-marker (assoc :release-marker release-marker)))]
          (try
            (weaver-runtime/with-runtime-binding rt #(f rt config-dir))
            (finally
