@@ -1,8 +1,11 @@
 (ns skein.core.weaver.runtime
   "Start, stop, and supervise the in-process weaver daemon runtime."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [nrepl.server :as nrepl]
+            [skein.api.cli.alpha :as cli]
+            [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.scheduler :as scheduler]
@@ -13,6 +16,8 @@
            [java.util.concurrent ArrayBlockingQueue]))
 
 (def ^:private loopback-host "127.0.0.1")
+(def ^:private reserved-release-marker-message
+  "Release marker v0 is reserved; the first public release marker is v1")
 
 (defonce ^{:doc "Atom containing the published ambient weaver runtime map for this process, or nil."} current-runtime
   (atom nil))
@@ -372,6 +377,228 @@
                      (db/memory-storage))
     (throw (ex-info "Unknown weaver storage kind" {:storage storage}))))
 
+(defn- require-release-marker! [marker provenance]
+  (when-not (s/valid? ::specs/release-marker-syntax marker)
+    (throw (ex-info "Release marker must be strictly v<int> with no leading zeroes"
+                    {:reason :invalid-release-marker
+                     :marker marker
+                     :provenance provenance
+                     :spec ::specs/release-marker-syntax
+                     :explain (s/explain-data ::specs/release-marker-syntax marker)})))
+  (when (= "v0" marker)
+    (throw (ex-info reserved-release-marker-message
+                    {:reason :reserved-release-marker
+                     :marker marker
+                     :provenance provenance})))
+  (when-not (s/valid? ::specs/release-marker-claim marker)
+    (throw (ex-info "Release marker claim has an invalid shape"
+                    {:reason :invalid-release-marker
+                     :marker marker
+                     :provenance provenance
+                     :spec ::specs/release-marker-claim
+                     :explain (s/explain-data ::specs/release-marker-claim marker)})))
+  marker)
+
+(defn- run-git [dir & args]
+  (let [command (vec (cons "git" args))
+        root (some-> dir io/file .getCanonicalFile)
+        failure-data (fn [exit stderr]
+                       {:reason :git-inspection-failed
+                        :command command
+                        :root (some-> root .getPath)
+                        :exit exit
+                        :stderr stderr})]
+    (try
+      (let [process (-> (ProcessBuilder. ^"[Ljava.lang.String;" (into-array String command))
+                        (.directory dir)
+                        (.redirectErrorStream false)
+                        (.start))
+            stderr (future (slurp (.getErrorStream process)))
+            stdout (future (slurp (.getInputStream process)))
+            exit (.waitFor process)
+            result {:command command
+                    :root (.getPath root)
+                    :exit exit
+                    :stdout @stdout
+                    :stderr @stderr}]
+        (when (or (not (zero? exit)) (not (str/blank? (:stderr result))))
+          (throw (ex-info "Git inspection command failed"
+                          (failure-data exit (:stderr result)))))
+        result)
+      (catch java.io.IOException e
+        (throw (ex-info "Git inspection command could not start"
+                        (failure-data 127 (ex-message e))
+                        e))))))
+
+(defn- non-repo-root-result? [data]
+  (and (= ["git" "rev-parse" "--show-toplevel"] (:command data))
+       (not (zero? (:exit data)))
+       (boolean (re-find #"(?i)not a git repository" (or (:stderr data) "")))))
+
+(defn- source-checkout-root
+  ([] (source-checkout-root (io/resource "skein/core/weaver/runtime.clj")))
+  ([^java.net.URL url]
+   (when (and url (= "file" (.getProtocol url)))
+     (let [resource-dir (-> (io/file (.toURI url)) .getCanonicalFile .getParentFile)
+           result (try
+                    (run-git resource-dir "rev-parse" "--show-toplevel")
+                    (catch clojure.lang.ExceptionInfo e
+                      (when-not (non-repo-root-result? (ex-data e))
+                        (throw e))))]
+       (when result
+         (let [root-path (str/trim (:stdout result))]
+           (when (str/blank? root-path)
+             (throw (ex-info "Git inspection returned no source checkout root"
+                             (assoc (select-keys result [:command :root :exit :stderr])
+                                    :reason :invalid-git-root))))
+           (.getCanonicalFile (io/file root-path))))))))
+
+(defn- annotated-head-release-markers [source-root]
+  (when source-root
+    (let [result (run-git source-root
+                          "for-each-ref"
+                          "--points-at"
+                          "HEAD"
+                          "--format=%(objecttype)%09%(refname:short)"
+                          "refs/tags")]
+      (->> (str/split-lines (:stdout result))
+           (keep (fn [line]
+                   (let [[object-type tag] (str/split line #"\t" 2)]
+                     (when (and (= "tag" object-type)
+                                (s/valid? ::specs/release-marker-syntax tag))
+                       tag))))
+           distinct
+           sort
+           vec))))
+
+(defn- require-release-marker-result! [result]
+  (when-not (s/valid? ::specs/release-marker-result result)
+    (throw (ex-info "Resolved release marker has an invalid shape"
+                    {:reason :invalid-release-marker-result
+                     :result result
+                     :spec ::specs/release-marker-result
+                     :explain (s/explain-data ::specs/release-marker-result result)})))
+  result)
+
+(defn- resolve-release-marker [claim]
+  (require-release-marker-result!
+   (if (some? claim)
+     {:marker (require-release-marker! claim :claimed)
+      :provenance :claimed}
+     (let [markers (annotated-head-release-markers (source-checkout-root))]
+       (case (count markers)
+         0 {:marker nil :provenance :none}
+         1 {:marker (require-release-marker! (first markers) :tag)
+            :provenance :tag}
+         (throw (ex-info "Source HEAD has multiple annotated release marker tags"
+                         {:reason :ambiguous-release-marker
+                          :markers markers})))))))
+
+(defn- require-start-options! [opts]
+  (when-not (s/valid? ::specs/weaver-start-options opts)
+    ;; Preserve the claim-specific diagnostic, including v0's reserved-marker
+    ;; error, while the options spec remains the owning structural contract.
+    (when (and (map? opts) (contains? opts :release-marker))
+      (require-release-marker! (:release-marker opts) :claimed))
+    (throw (ex-info "Weaver start options have an invalid shape"
+                    {:reason :invalid-start-options
+                     :options opts
+                     :spec ::specs/weaver-start-options
+                     :explain (s/explain-data ::specs/weaver-start-options opts)})))
+  opts)
+
+(defn- start-with-options!
+  [db-file {:keys [world name publish? storage release-marker]
+            :or {publish? true}}]
+  (when (and publish? @current-runtime)
+    (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
+  (let [world (or world (weaver-config/world))
+        resolved-release-marker (resolve-release-marker release-marker)
+        existing (metadata/read-metadata world)
+        socket-file (metadata/socket-file world)]
+    (when-not (metadata/stale-or-missing? existing)
+      (throw (ex-info "Weaver metadata already exists for weaver world" {:config-dir (:config-dir world)
+                                                                         :metadata existing})))
+    (when (and (nil? existing) (.exists socket-file))
+      (throw (ex-info "Weaver socket exists without metadata; cannot prove weaver world is stale" {:config-dir (:config-dir world)
+                                                                                                   :socket-path (.getPath socket-file)})))
+    (.mkdirs (io/file (:state-dir world)))
+    (.mkdirs (io/file (:data-dir world)))
+    (let [storage (storage-for storage db-file world)
+          ds (:connectable storage)
+          _ (db/init! ds)
+          server (nrepl/start-server :bind loopback-host :port 0)
+          port (:port server)
+          nonce (metadata/new-nonce)
+          meta (metadata/metadata-shape {:pid (current-pid)
+                                         :host loopback-host
+                                         :port port
+                                         :storage-kind (:storage-kind storage)
+                                         :storage-label (:storage-label storage)
+                                         :canonical-db-path (:canonical-db-path storage)
+                                         :nonce nonce
+                                         :world world
+                                         :name (or name (default-name world))
+                                         :started-at (str (Instant/now))})
+          runtime-base {:storage storage
+                        :datasource ds
+                        :clock (atom (fn [] (Instant/now)))
+                        :clock-pumps (atom {})
+                        :query-registry (atom {})
+                        :view-registry (atom {})
+                        :pattern-registry (atom {})
+                        :op-registry (atom {})
+                        :hook-registry (atom {})
+                        :generation-id (str (java.util.UUID/randomUUID))
+                        :release-marker resolved-release-marker
+                        :approved-spool-sync-state (atom {})
+                        :approved-spool-generation-state (atom {})
+                        :approved-spool-generation-fingerprints (atom {})
+                        :approved-spool-generation-maven (atom {})
+                        :pending-spool-generation (atom nil)
+                        :module-use-state (atom {})
+                        :spool-state (atom {})
+                        :spool-classloader (clojure.lang.DynamicClassLoader.
+                                            (.getContextClassLoader (Thread/currentThread)))
+                        :server server
+                        :metadata meta}
+          runtime-base (start-event-system! runtime-base)
+          runtime-state (atom runtime-base)]
+      (try
+        (let [socket-runtime (socket/start! runtime-state (:socket-path meta))
+              runtime (assoc runtime-base :socket-runtime socket-runtime)]
+          (reset! runtime-state runtime)
+          (swap! nrepl-port-runtimes assoc port runtime)
+          (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
+            (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
+          (install-built-in-ops! runtime)
+          (load-startup-files! runtime world)
+           ;; Arm the scheduler only after startup files finish loading, so
+           ;; handlers supplied by approved spools/config resolve before any
+           ;; durable pending wake is re-armed (DELTA-...-runtime-001.CC5).
+          (scheduler/rearm! runtime)
+          (let [published-runtime (assoc runtime :metadata-file (metadata/publish! meta))]
+            (reset! runtime-state published-runtime)
+            (swap! nrepl-port-runtimes assoc port published-runtime)
+            (when publish?
+              (compare-and-set! current-runtime runtime published-runtime))
+            published-runtime))
+        (catch Throwable t
+          (swap! nrepl-port-runtimes dissoc port)
+          (when publish?
+            (compare-and-set! current-runtime @runtime-state nil))
+          (stop-event-system! @runtime-state)
+          (when-let [socket-runtime (:socket-runtime @runtime-state)]
+            (socket/stop! socket-runtime))
+          (nrepl/stop-server server)
+           ;; Spool state may own executors started by config before metadata is
+           ;; published. Close it on failed startup too, while storage remains
+           ;; available, without masking the original startup exception.
+          (close-spool-state! @runtime-state t)
+          (close-storage! @runtime-state)
+          (metadata/delete! world)
+          (throw t))))))
+
 (defn start!
   "Start a weaver runtime for `db-file` and optional `world`.
 
@@ -380,96 +607,16 @@
   Set `:publish? false` to start an unpublished runtime that can coexist with
   other runtimes in the same JVM. Trusted callers may select `:storage
   :sqlite-memory` for a weaver-lifetime in-memory database; file-backed SQLite
-  in the selected workspace remains the default."
+  in the selected workspace remains the default. `:release-marker` explicitly
+  claims the running source generation as a canonical `v<int>` marker; without
+  a claim, startup uses an annotated marker tag on the source checkout's HEAD
+  when one can be resolved. Options conform to
+  `:skein.core.specs/weaver-start-options`."
   ([] (start! nil {}))
   ([db-file] (start! db-file {}))
-  ([db-file {:keys [world name publish? storage] :or {publish? true}}]
-   (when (and publish? @current-runtime)
-     (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
-   (let [world (or world (weaver-config/world))
-         existing (metadata/read-metadata world)
-         socket-file (metadata/socket-file world)]
-     (when-not (metadata/stale-or-missing? existing)
-       (throw (ex-info "Weaver metadata already exists for weaver world" {:config-dir (:config-dir world)
-                                                                          :metadata existing})))
-     (when (and (nil? existing) (.exists socket-file))
-       (throw (ex-info "Weaver socket exists without metadata; cannot prove weaver world is stale" {:config-dir (:config-dir world)
-                                                                                                    :socket-path (.getPath socket-file)})))
-     (.mkdirs (io/file (:state-dir world)))
-     (.mkdirs (io/file (:data-dir world)))
-     (let [storage (storage-for storage db-file world)
-           ds (:connectable storage)
-           _ (db/init! ds)
-           server (nrepl/start-server :bind loopback-host :port 0)
-           port (:port server)
-           nonce (metadata/new-nonce)
-           meta (metadata/metadata-shape {:pid (current-pid)
-                                          :host loopback-host
-                                          :port port
-                                          :storage-kind (:storage-kind storage)
-                                          :storage-label (:storage-label storage)
-                                          :canonical-db-path (:canonical-db-path storage)
-                                          :nonce nonce
-                                          :world world
-                                          :name (or name (default-name world))
-                                          :started-at (str (Instant/now))})
-           runtime-base {:storage storage
-                         :datasource ds
-                         :clock (atom (fn [] (Instant/now)))
-                         :clock-pumps (atom {})
-                         :query-registry (atom {})
-                         :view-registry (atom {})
-                         :pattern-registry (atom {})
-                         :op-registry (atom {})
-                         :hook-registry (atom {})
-                         :generation-id (str (java.util.UUID/randomUUID))
-                         :approved-spool-sync-state (atom {})
-                         :approved-spool-generation-state (atom {})
-                         :approved-spool-generation-fingerprints (atom {})
-                         :approved-spool-generation-maven (atom {})
-                         :pending-spool-generation (atom nil)
-                         :module-use-state (atom {})
-                         :spool-state (atom {})
-                         :spool-classloader (clojure.lang.DynamicClassLoader.
-                                             (.getContextClassLoader (Thread/currentThread)))
-                         :server server
-                         :metadata meta}
-           runtime-base (start-event-system! runtime-base)
-           runtime-state (atom runtime-base)]
-       (try
-         (let [socket-runtime (socket/start! runtime-state (:socket-path meta))
-               runtime (assoc runtime-base :socket-runtime socket-runtime)]
-           (reset! runtime-state runtime)
-           (swap! nrepl-port-runtimes assoc port runtime)
-           (when (and publish? (not (compare-and-set! current-runtime nil runtime)))
-             (throw (ex-info "A weaver runtime is already active in this process" {:metadata (:metadata @current-runtime)})))
-           (install-built-in-ops! runtime)
-           (load-startup-files! runtime world)
-           ;; Arm the scheduler only after startup files finish loading, so
-           ;; handlers supplied by approved spools/config resolve before any
-           ;; durable pending wake is re-armed (DELTA-...-runtime-001.CC5).
-           (scheduler/rearm! runtime)
-           (let [published-runtime (assoc runtime :metadata-file (metadata/publish! meta))]
-             (reset! runtime-state published-runtime)
-             (swap! nrepl-port-runtimes assoc port published-runtime)
-             (when publish?
-               (compare-and-set! current-runtime runtime published-runtime))
-             published-runtime))
-         (catch Throwable t
-           (swap! nrepl-port-runtimes dissoc port)
-           (when publish?
-             (compare-and-set! current-runtime @runtime-state nil))
-           (stop-event-system! @runtime-state)
-           (when-let [socket-runtime (:socket-runtime @runtime-state)]
-             (socket/stop! socket-runtime))
-           (nrepl/stop-server server)
-           ;; Spool state may own executors started by config before metadata is
-           ;; published. Close it on failed startup too, while storage remains
-           ;; available, without masking the original startup exception.
-           (close-spool-state! @runtime-state t)
-           (close-storage! @runtime-state)
-           (metadata/delete! world)
-           (throw t)))))))
+  ([db-file opts]
+   (require-start-options! opts)
+   (start-with-options! db-file opts)))
 
 (defn status
   "Return the published metadata for `runtime`."
@@ -497,35 +644,26 @@
     (metadata/delete! {:state-dir state-dir}))
   {:stopped true})
 
-(defn- require-main-dir! [opts k flag]
-  (or (get opts k)
-      (throw (ex-info (str flag " is required") {:args opts :missing flag}))))
+(def ^:private main-arg-spec
+  {:op :weaver-start
+   :flags {:workspace {:required? true
+                       :doc "Selected config directory."}
+           :state-dir {:required? true
+                       :doc "Selected runtime-state directory."}
+           :data-dir {:required? true
+                      :doc "Selected persistent-data directory."}
+           :name {:doc "Friendly weaver name."}
+           :release-marker {:doc "Explicit canonical vN release marker claim."}}})
 
-(defn- parse-main-args [args]
-  (loop [remaining args
-         opts {}]
-    (case (first remaining)
-      nil {:config-dir (require-main-dir! opts :config-dir "--workspace")
-           :state-dir (require-main-dir! opts :state-dir "--state-dir")
-           :data-dir (require-main-dir! opts :data-dir "--data-dir")
-           :name (:name opts)}
-      "--workspace" (let [[_ dir & more] remaining]
-                      (when-not dir
-                        (throw (ex-info "--workspace requires a directory" {:args args})))
-                      (recur more (assoc opts :config-dir dir)))
-      "--state-dir" (let [[_ dir & more] remaining]
-                      (when-not dir
-                        (throw (ex-info "--state-dir requires a directory" {:args args})))
-                      (recur more (assoc opts :state-dir dir)))
-      "--data-dir" (let [[_ dir & more] remaining]
-                     (when-not dir
-                       (throw (ex-info "--data-dir requires a directory" {:args args})))
-                     (recur more (assoc opts :data-dir dir)))
-      "--name" (let [[_ name & more] remaining]
-                 (when (str/blank? name)
-                   (throw (ex-info "--name requires a non-blank value" {:args args})))
-                 (recur more (assoc opts :name name)))
-      (throw (ex-info "Usage: skein.core.weaver.runtime --workspace <dir> --state-dir <dir> --data-dir <dir> [--name <name>]" {:args args})))))
+(defn- parse-main-args
+  ([args] (parse-main-args args {}))
+  ([args payloads]
+   (let [opts (cli/parse main-arg-spec args payloads)]
+     (when (and (contains? opts :name) (str/blank? (:name opts)))
+       (throw (ex-info "--name requires a non-blank value" {:args args})))
+     (-> opts
+         (assoc :config-dir (:workspace opts))
+         (dissoc :workspace)))))
 
 (defn- install-signal-shutdown!
   "Run the clean stop path on SIGTERM/SIGINT (and normal JVM exit).
@@ -546,8 +684,10 @@
 (defn -main
   "Start a foreground weaver process from command-line arguments."
   [& args]
-  (let [{:keys [config-dir state-dir data-dir name]} (parse-main-args args)]
-    (start! nil {:world (weaver-config/world config-dir state-dir data-dir) :name name})
+  (let [{:keys [config-dir state-dir data-dir name release-marker]} (parse-main-args args)]
+    (start! nil (cond-> {:world (weaver-config/world config-dir state-dir data-dir)
+                         :name name}
+                  release-marker (assoc :release-marker release-marker)))
     (install-signal-shutdown!)
     (println "weaver started")
     (while @current-runtime

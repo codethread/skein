@@ -9,8 +9,8 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.spool.alpha :refer [require-valid!]]
-            [skein.core.weaver.access :refer [approved-spool-sync-state module-use-state
-                                              with-spool-classloader]]
+            [skein.core.specs :as specs]
+            [skein.core.weaver.access :as access]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
@@ -64,6 +64,44 @@
   "Return the normalized approved spool roots for `runtime`'s config dir."
   [runtime]
   (spool-sync/approved-spools runtime))
+
+(defn release-marker
+  "Return the running Skein release marker and its provenance.
+
+  The result has marker `vN` and provenance `:claimed` for an explicit startup
+  claim, marker `vN` and provenance `:tag` for an annotated tag on the source
+  checkout's HEAD, or `{:marker nil :provenance :none}` when the checkout
+  resource is absent or non-filesystem, or successful inspection finds no
+  matching annotated tag. Git startup, checkout-root resolution, and nonzero
+  Git command failures throw. Consumers that require marker arithmetic must
+  reject `:none` explicitly. The result conforms to
+  `:skein.core.specs/release-marker-result`; marker claims conform to
+  `:skein.core.specs/release-marker-claim`."
+  [runtime]
+  (let [result (access/release-marker runtime)]
+    (require-valid! ::specs/release-marker-result result
+                    "runtime release marker has an invalid shape")
+    result))
+
+(defn config-dir
+  "Return the selected config directory path for `runtime`.
+
+  The result conforms to `:skein.core.specs/config-dir-result`."
+  [runtime]
+  (let [result (access/config-dir runtime)]
+    (require-valid! ::specs/config-dir-result result
+                    "runtime config directory has an invalid shape")
+    result))
+
+(defn spools-file
+  "Return the `java.io.File` for `runtime`'s shared `spools.edn`.
+
+  The result conforms to `:skein.core.specs/spools-file-result`."
+  [runtime]
+  (let [result (access/spools-file runtime "spools.edn")]
+    (require-valid! ::specs/spools-file-result result
+                    "runtime spools file has an invalid shape")
+    result))
 
 (defn sync!
   "Load approved spool roots and Maven jars into `runtime`.
@@ -168,7 +206,7 @@
     (throw (ex-info "Module use :required? must be boolean" {:key key :required? (:required? opts)}))))
 
 (defn- record-use! [runtime key result]
-  (swap! (module-use-state runtime) assoc key result)
+  (swap! (access/module-use-state runtime) assoc key result)
   result)
 
 (defn- skip-use [runtime key opts reason data]
@@ -179,7 +217,7 @@
 
 (defn- use-spool-skip [runtime opts]
   (let [approved (spool-sync/approved-spools runtime)
-        syncs @(approved-spool-sync-state runtime)]
+        syncs @(access/approved-spool-sync-state runtime)]
     (some (fn [lib]
             (let [sync-entry (get syncs lib)]
               (cond
@@ -197,7 +235,7 @@
           (:spools opts))))
 
 (defn- use-after-skip [runtime opts]
-  (let [uses @(module-use-state runtime)]
+  (let [uses @(access/module-use-state runtime)]
     (some (fn [after]
             (when-not (= :loaded (:status (get uses after)))
               [:missing-after {:after after :use (get uses after)}]))
@@ -224,7 +262,7 @@
     (if-let [[reason data] (use-after-skip runtime opts)]
       (skip-use runtime key opts reason data)
       (try
-        (let [load-result (with-spool-classloader
+        (let [load-result (access/with-spool-classloader
                             runtime
                             #(if-let [ns-sym (:ns opts)]
                                (spool-sync/load-synced-namespace! runtime ns-sym)
@@ -232,7 +270,7 @@
                                  (load-file file)
                                  {:file file})))
               call-result (when-let [call-sym (:call opts)]
-                            (with-spool-classloader
+                            (access/with-spool-classloader
                               runtime
                               #((requiring-resolve call-sym))))]
           (record-use! runtime key (cond-> {:key key
@@ -253,12 +291,12 @@
 (defn uses
   "Return `runtime`'s module-use registry as data-first maps."
   [runtime]
-  (into (sorted-map) @(module-use-state runtime)))
+  (into (sorted-map) @(access/module-use-state runtime)))
 
 (defn use
   "Return one module-use registry entry from `runtime` by key."
   [runtime key]
-  (get @(module-use-state runtime) key))
+  (get @(access/module-use-state runtime) key))
 
 (defn- warn!
   "Emit a loud-but-non-fatal runtime warning to the weaver's stderr log.
