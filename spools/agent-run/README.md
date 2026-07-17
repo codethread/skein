@@ -12,7 +12,7 @@
 
 ## 1. Overview
 
-`skein.spools.agent-run` is a trusted userland spool for spawning coding-agent runs from ordinary Skein strands. It is a pure run **engine**: it registers no CLI operations of its own. The agent-facing verb surface (`strand agent ...`), delegation, and coordinator/worker guidance live in the [delegation spool](../delegation/README.md), which composes this engine.
+`ct.spools.agent-run` is a trusted userland spool for spawning coding-agent runs from ordinary Skein strands. It is a pure run **engine**: it registers no CLI operations of its own. The agent-facing verb surface (`strand agent ...`), delegation, and coordinator/worker guidance live in the [delegation spool](../delegation/README.md), which composes this engine.
 
 A run is a strand carrying `agent-run/*` attributes. Creating the run strand is the API: the installed agent-run event handler watches graph mutations, asks Skein readiness which pending run strands are unblocked, launches the selected harness, records output back onto the run strand, and closes successful runs so downstream `depends-on` work can proceed.
 
@@ -26,7 +26,7 @@ Agent-run is shipped as an approved-local-root spool example under `spools/agent
 
 ```clojure
 ;; .skein/spools.edn
-{:spools {skein.spools/agent-run {:local/root "../spools/agent-run"}}}
+{:spools {ct.spools/agent-run {:local/root "../spools/agent-run"}}}
 ```
 
 ```clojure
@@ -36,9 +36,9 @@ Agent-run is shipped as an approved-local-root spool example under `spools/agent
 (def runtime (current/runtime))
 (runtime/sync! runtime)
 (runtime/use! runtime :agent-run
-  {:ns 'skein.spools.agent-run
-   :spools ['skein.spools/agent-run]
-   :call 'skein.spools.agent-run/install!
+  {:ns 'ct.spools.agent-run
+   :spools ['ct.spools/agent-run]
+   :call 'ct.spools.agent-run/install!
    :required? true})
 ```
 
@@ -232,7 +232,7 @@ After that block comes the engine's own worker contract, the one piece of contra
 | Fn | Behavior |
 |---|---|
 | `(set-preamble-extension! text)` | Register additional preamble text appended after the engine contract, for every preamble-carrying headless run. Reload-tolerant, distinguishing replay from conflict: re-registering the **same** text is a silent no-op, and **different** text (a genuine cross-spool clash) replaces the prior value (returned as `:replaced true`) rather than failing. A hard failure here would abort `reload!` mid-startup — the config re-runs this on every reload — and a preamble-text change between deploys must not leave the world with no ops. Instead of a stderr-only warning that scrolls off a long-lived daemon, a conflict is recorded durably in agent-run state (see `preamble-extension-conflicts`) in addition to the warning. |
-| `(set-default-task-contract! text)` / `(default-task-contract-text)` | Register the task-workflow text **serving runs only** receive (a run with an outgoing `serves` edge — the engine's delegation discriminator), appended last. Two literal placeholders in the text are replaced so injected commands are runnable as written: `<task-id>` with the served strand's id, and `<your-run-id>` with the receiving run's own id. Defaults to `nil`: an unconfigured workspace injects no task text, and an ad-hoc spawn that serves nothing never sees it. Non-blank string or `nil` (which clears it); anything else fails loudly. Re-registration replaces silently — this is workspace configuration, not a cross-spool claim. Weaver-lifetime state, carried across `reload!`. The delegation spool exports a fragment for it (`skein.spools.delegation/worker-contract`), but registering it is the workspace's opt-in. |
+| `(set-default-task-contract! text)` / `(default-task-contract-text)` | Register the task-workflow text **serving runs only** receive (a run with an outgoing `serves` edge — the engine's delegation discriminator), appended last. Two literal placeholders in the text are replaced so injected commands are runnable as written: `<task-id>` with the served strand's id, and `<your-run-id>` with the receiving run's own id. Defaults to `nil`: an unconfigured workspace injects no task text, and an ad-hoc spawn that serves nothing never sees it. Non-blank string or `nil` (which clears it); anything else fails loudly. Re-registration replaces silently — this is workspace configuration, not a cross-spool claim. Weaver-lifetime state, carried across `reload!`. The delegation spool exports a fragment for it (`ct.spools.delegation/worker-contract`), but registering it is the workspace's opt-in. |
 | `(preamble-extension-conflicts)` | Return the durable record of genuine `set-preamble-extension!` conflicts — a vector of `{:at <iso-instant> :previous <text> :replacement <text>}`, one per re-registration that replaced an existing non-identical value. Identical replays are not recorded. The record survives for the weaver lifetime and across `reload!` (carried through the state migrate hook), so a cross-spool worker-contract clash stays visible to operators and attention detectors after the stderr warning has scrolled away. |
 | `(pinned-strand-command)` | Return the fully pinned `strand` invocation prefix. Public accessor the delegation spool consumes to build worker/review prompts. |
 | `(set-default-review-contract! text)` / `(default-review-contract-text)` | Hold the workspace-default reviewer contract text as weaver-lifetime state (re-set by startup config like harness aliases); `nil` restores the generic default. The delegation spool's `review` verb consumes this when no explicit contract is passed. |

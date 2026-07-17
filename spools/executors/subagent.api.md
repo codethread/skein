@@ -1,6 +1,6 @@
 
 -----
-# <a name="skein.spools.executors.subagent">skein.spools.executors.subagent</a>
+# <a name="ct.spools.executors.subagent">ct.spools.executors.subagent</a>
 
 
 Bridge workflow subagent gates to agent-run runs.
@@ -14,15 +14,15 @@ Bridge workflow subagent gates to agent-run runs.
 
 
 
-## <a name="skein.spools.executors.subagent/*runtime*">`*runtime*`</a>
+## <a name="ct.spools.executors.subagent/*runtime*">`*runtime*`</a>
 
 
 
 
 Runtime captured for asynchronous subagent-executor scans.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L55-L57">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/ct/spools/executors/subagent.clj#L55-L57">Source</a></sub></p>
 
-## <a name="skein.spools.executors.subagent/gate-stalled?">`gate-stalled?`</a>
+## <a name="ct.spools.executors.subagent/gate-stalled?">`gate-stalled?`</a>
 ``` clojure
 (gate-stalled? gate-view)
 ```
@@ -36,9 +36,9 @@ Return durable stall detail for a ready subagent gate view, or nil.
   so its fresh successor is the current server; the gate stays discoverable only
   while that server is itself dead, with no re-link step. No wall-clock hang
   policy is applied.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L240-L257">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/ct/spools/executors/subagent.clj#L240-L257">Source</a></sub></p>
 
-## <a name="skein.spools.executors.subagent/install!">`install!`</a>
+## <a name="ct.spools.executors.subagent/install!">`install!`</a>
 ``` clojure
 (install!)
 ```
@@ -46,29 +46,29 @@ Function.
 
 Install the subagent executor's event handler and perform an initial scan.
 
-  Fails loudly unless `skein.spools.agent-run/install!` has already registered
+  Fails loudly unless `ct.spools.agent-run/install!` has already registered
   the agent-run engine in this weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L259-L298">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/ct/spools/executors/subagent.clj#L259-L298">Source</a></sub></p>
 
-## <a name="skein.spools.executors.subagent/on-event">`on-event`</a>
+## <a name="ct.spools.executors.subagent/on-event">`on-event`</a>
 ``` clojure
 (on-event _event)
 ```
 Function.
 
 Weaver event handler: graph changes may finish or unblock subagent executor work.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L235-L238">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/ct/spools/executors/subagent.clj#L235-L238">Source</a></sub></p>
 
-## <a name="skein.spools.executors.subagent/scan!">`scan!`</a>
+## <a name="ct.spools.executors.subagent/scan!">`scan!`</a>
 ``` clojure
 (scan!)
 ```
 Function.
 
 Deliver finished agent-run runs and spawn ready workflow subagent gates.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L223-L233">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/ct/spools/executors/subagent.clj#L223-L233">Source</a></sub></p>
 
-## <a name="skein.spools.executors.subagent/stalled-gates-query">`stalled-gates-query`</a>
+## <a name="ct.spools.executors.subagent/stalled-gates-query">`stalled-gates-query`</a>
 
 
 
@@ -84,4 +84,4 @@ Query definition behind the registered `stalled-subagent-gates` query: an
   readers composing on the rule list with this definition directly, so
   membership cannot drift even on a runtime where the executor is not
   installed.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/skein/spools/executors/subagent.clj#L35-L53">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/agent-run/src/ct/spools/executors/subagent.clj#L35-L53">Source</a></sub></p>

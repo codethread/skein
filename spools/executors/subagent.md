@@ -8,7 +8,7 @@
 
 ## Overview
 
-`skein.spools.executors.subagent` is the agent-run-backed adapter for workflow gates whose waiter is
+`ct.spools.executors.subagent` is the agent-run-backed adapter for workflow gates whose waiter is
 `subagent`. It watches ready workflow gates, spawns agent-run runs, and completes the gate with the
 run result when the run succeeds.
 
@@ -27,14 +27,14 @@ Load agent-run first, then the subagent executor from the same approved local-ro
 (def runtime (current/runtime))
 (runtime/sync! runtime)
 (runtime/use! runtime :agent-run
-  {:ns 'skein.spools.agent-run
-   :spools ['skein.spools/agent-run]
-   :call 'skein.spools.agent-run/install!
+  {:ns 'ct.spools.agent-run
+   :spools ['ct.spools/agent-run]
+   :call 'ct.spools.agent-run/install!
    :required? true})
 (runtime/use! runtime :subagent
-  {:ns 'skein.spools.executors.subagent
-   :spools ['skein.spools/agent-run]
-   :call 'skein.spools.executors.subagent/install!
+  {:ns 'ct.spools.executors.subagent
+   :spools ['ct.spools/agent-run]
+   :call 'ct.spools.executors.subagent/install!
    :required? true})
 ```
 
@@ -142,5 +142,5 @@ runs parked on `gate/delivery-blocked`.
 ## See also
 
 - [`skein.spools.workflow`](../workflow.md) — workflow gates and runtime API.
-- [`skein.spools.agent-run`](../agent-run/README.md) — agent-run run lifecycle and harness registry.
+- [`ct.spools.agent-run`](../agent-run/README.md) — agent-run run lifecycle and harness registry.
 - ``test/skein/executors/subagent_test.clj`` — executable contract tests.

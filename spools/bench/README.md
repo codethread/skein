@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-`skein.spools.bench` is a trusted userland spool for **deterministic, containerized benchmarking of coding-agent harnesses**. It answers one question reproducibly: *given this repository at this exact commit, this exact memory-file/skill surface, and this prompt — how do N agent configurations compare?*
+`ct.spools.bench` is a trusted userland spool for **deterministic, containerized benchmarking of coding-agent harnesses**. It answers one question reproducibly: *given this repository at this exact commit, this exact memory-file/skill surface, and this prompt — how do N agent configurations compare?*
 
 A bench run is a strand graph: a **run root**, one **entry** strand per matrix cell, and a **judge** strand that depends on every entry. Each entry executes its agent inside a fresh container (docker or podman) against a pristine checkout of the pinned repo+sha; when the container exits, the engine deterministically extracts metrics (cost, tokens, turns, tool usage, diff stats, validation outcome) in-process and stamps them onto the entry strand. When all entries close, readiness unblocks the judge — a **decoupled fulfilment seam** (§8) that reads every entry's artifacts and writes a comparative verdict: shipped as an agent run on a **chosen approver harness/model**. A workflow, a human, or a custom bridge can fulfill the same seam.
 
@@ -19,15 +19,15 @@ Approved local-root spool. Agent-run must be installed first (the default `:harn
 
 ```clojure
 ;; .skein/spools.edn
-{:spools {skein.spools/agent-run {:local/root "../spools/agent-run"}
-          skein.spools/bench   {:local/root "../spools/bench"}}}
+{:spools {ct.spools/agent-run {:local/root "../spools/agent-run"}
+          ct.spools/bench   {:local/root "../spools/bench"}}}
 ```
 
 ```clojure
 (runtime/use! runtime :bench
-  {:ns 'skein.spools.bench
-   :spools ['skein.spools/bench]
-   :call 'skein.spools.bench/install!
+  {:ns 'ct.spools.bench
+   :spools ['ct.spools/bench]
+   :call 'ct.spools.bench/install!
    :required? true
    :after [:agent-run]})
 ```
@@ -47,7 +47,7 @@ A bench harness definition says how one tool runs *inside a container*: image, a
 > **Two registries, one word.** A bench harness is *not* an [agent-run](../agent-run/README.md) harness, and they are not interchangeable. A bench harness is a **container** definition (`:image`, `:auth`, `:model-flag`, `:thinking-flag`, `:extractor`) resolved by bench's own registry; an agent-run harness is a **host process** definition (`:parse`, `:resume`, `:preamble?`). A bench harness cannot be passed to `agent-run/spawn-run!`. Both appear in one suite map: an entry cell's `:harness` resolves *here*, while the suite's `:judge :harness` (§8) resolves *agent-run's* registry.
 
 ```clojure
-(require '[skein.spools.bench :as bench])
+(require '[ct.spools.bench :as bench])
 
 (bench/register-harness! runtime :claude
   {:image "ghcr.io/me/bench-claude:1.0"       ; digest refs recommended for strict pinning
@@ -244,7 +244,7 @@ The verdict is resolved (in `bench report`/`status`) from `bench/verdict` first,
 
 ### Composition: `judge-spec` and workflow `:subagent` gates
 
-`(skein.spools.bench/judge-spec runtime suite-name-or-inline {:run-id .. :entries [{:id :slug :data-dir ..} ..] :sha ..})` returns the seam as plain data — `{:prompt <full judge prompt> :attrs {bench/* incl. body} :entry-ids [..]}` — the one source `run!` itself pours from. This mirrors `skein.spools.delegation/roster-review-specs`: a workflow author calls `judge-spec` at pour time and maps it onto a `:subagent` gate exactly as roster review specs map onto gates — `:prompt` becomes the gate's `agent-run/prompt`, the author picks the gate's `agent-run/harness`, `:attrs` merge into the gate, and the gate `depends-on` `:entry-ids`. The [executors.subagent](../executors/subagent.md) spool then bridges that gate to an agent run and delivers its result back into the workflow. Bench supplies the judging *contract*; the workflow spool supplies the *fulfilment*, and the two never take a dependency on each other.
+`(ct.spools.bench/judge-spec runtime suite-name-or-inline {:run-id .. :entries [{:id :slug :data-dir ..} ..] :sha ..})` returns the seam as plain data — `{:prompt <full judge prompt> :attrs {bench/* incl. body} :entry-ids [..]}` — the one source `run!` itself pours from. This mirrors `ct.spools.delegation/roster-review-specs`: a workflow author calls `judge-spec` at pour time and maps it onto a `:subagent` gate exactly as roster review specs map onto gates — `:prompt` becomes the gate's `agent-run/prompt`, the author picks the gate's `agent-run/harness`, `:attrs` merge into the gate, and the gate `depends-on` `:entry-ids`. The [executors.subagent](../executors/subagent.md) spool then bridges that gate to an agent run and delivers its result back into the workflow. Bench supplies the judging *contract*; the workflow spool supplies the *fulfilment*, and the two never take a dependency on each other.
 
 The judge is deliberately **not** asked to approve blind: validation exit codes and diffs are already extracted, so its job is the qualitative layer code cannot do.
 

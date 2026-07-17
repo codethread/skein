@@ -1,6 +1,6 @@
 # Skein Delegation Spool — Cookbook
 
-Composition recipes for `skein.spools.delegation`: the shapes real delegation takes as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape holds up.
+Composition recipes for `ct.spools.delegation`: the shapes real delegation takes as a loop — plan, delegate, await, verify, close, repeat — and *why* each shape holds up.
 
 This is the **how/why** half of the delegation docs. The other two halves are:
 
@@ -184,7 +184,7 @@ Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `ch
 **Composition.** Drop to trusted Clojure. `council!` (and the underlying `panel!`) take a `:seats` vector where each seat names its own harness, so one deliberation spans vendors. The CLI stays scalar-only on purpose — rich per-seat data doesn't ride the control surface.
 
 ```clojure
-(require '[skein.spools.delegation :as agents])
+(require '[ct.spools.delegation :as agents])
 
 ;; A cross-vendor council: an Anthropic seat and two GPT seats deliberate over
 ;; two rounds on a shared board, then a GPT synthesizer weighs the whole thing.

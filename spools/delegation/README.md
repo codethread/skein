@@ -1,6 +1,6 @@
 # Skein Delegation Spool
 
-`skein.spools.delegation` is the cross-harness subagent surface. It composes the [agent-run run engine](../agent-run/README.md) and owns the whole agent-facing vocabulary: the `strand agent ...` verbs, the `agent-plan` weave pattern, delegation and recovery, and both the worker contract and the coordinator guidance.
+`ct.spools.delegation` is the cross-harness subagent surface. It composes the [agent-run run engine](../agent-run/README.md) and owns the whole agent-facing vocabulary: the `strand agent ...` verbs, the `agent-plan` weave pattern, delegation and recovery, and both the worker contract and the coordinator guidance.
 
 This README is the contract — what each verb promises. For the *shapes* real coordination takes — the plan/delegate/await/verify/close loop, contract-first recovery, roster review, cross-vendor panels — see the composition recipes in [`delegation.cookbook.md`](../delegation.cookbook.md).
 
@@ -52,8 +52,8 @@ Move work onto this surface whenever the result should be **durable, awaitable b
 
 ```clojure
 ;; .skein/spools.edn
-{:spools {skein.spools/agent-run {:local/root "../spools/agent-run"}
-          skein.spools/delegation  {:local/root "../spools/delegation"}}}
+{:spools {ct.spools/agent-run {:local/root "../spools/agent-run"}
+          ct.spools/delegation  {:local/root "../spools/delegation"}}}
 ```
 
 ```clojure
@@ -63,14 +63,14 @@ Move work onto this surface whenever the result should be **durable, awaitable b
 (def runtime (current/runtime))
 (runtime/sync! runtime)
 (runtime/use! runtime :agent-run
-  {:ns 'skein.spools.agent-run
-   :spools ['skein.spools/agent-run]
-   :call 'skein.spools.agent-run/install!
+  {:ns 'ct.spools.agent-run
+   :spools ['ct.spools/agent-run]
+   :call 'ct.spools.agent-run/install!
    :required? true})
 (runtime/use! runtime :delegation
-  {:ns 'skein.spools.delegation
-   :spools ['skein.spools/delegation]
-   :call 'skein.spools.delegation/install!
+  {:ns 'ct.spools.delegation
+   :spools ['ct.spools/delegation]
+   :call 'ct.spools.delegation/install!
    :required? true
    :after [:agent-run]})
 ```
@@ -258,7 +258,7 @@ List the reviewer rosters registered by trusted config as full plain data. → `
 A roster turns "who reviews a change in this workspace" into declarative, git-reviewable data: many small, cheap, single-concern reviewers instead of a couple of generalists. Trusted config registers rosters (weaver-lifetime state, re-registered on startup like harness aliases):
 
 ```clojure
-(require '[skein.spools.delegation :as agents])
+(require '[ct.spools.delegation :as agents])
 
 (agents/defroster! :change-review
   {:seats [{:name "test-sleeps" :harness :explore
@@ -271,11 +271,11 @@ A roster turns "who reviews a change in this workspace" into declarative, git-re
 
 Route reviewers by **waste-type, not call count**: `grunt` (sonnet) is the default for read-through seats — it does targeted git-diff and ranged reads rather than thrashing a whole namespace for a small window — while `explore` (haiku) is reserved for trivially greppable single-file concerns whose contract tells it to do one global diff sweep (haiku is ~0.25–0.3× sonnet's per-call cost, so a few extra greps there stay net-cheaper). Give each contract a per-concern **call budget** and, on lenses that overlap (fail-loudly / spec-shapes / correctness on the same defect), tell each to state its angle concisely; the synthesizer de-duplicates overlapping findings by root cause.
 
-Data shape, validated loudly at registration against the **`:skein.spools.delegation/roster`** clojure.spec (inspect it with `s/form`; the seam output below is likewise specced as `:skein.spools.delegation/review-specs`): a roster is the panel primitive's seat vector, so it speaks panel's seat vocabulary: each seat requires a unique `:name` (doubles as the run's review focus), a `:harness` (resolved against the agent-run registry at **review time**, not registration time, so roster files may load before config registers aliases), and a `:brief` — the reviewer's precise single-concern mandate, layered onto the workspace base review contract in the prompt. `:scope` is optional prompt-level confinement text. `:synthesis` optionally overrides the synthesis run's harness (default: first seat's). Unknown keys fail loudly to catch typos (closed key sets and name uniqueness are checked beyond the spec, which is structurally open).
+Data shape, validated loudly at registration against the **`:ct.spools.delegation/roster`** clojure.spec (inspect it with `s/form`; the seam output below is likewise specced as `:ct.spools.delegation/review-specs`): a roster is the panel primitive's seat vector, so it speaks panel's seat vocabulary: each seat requires a unique `:name` (doubles as the run's review focus), a `:harness` (resolved against the agent-run registry at **review time**, not registration time, so roster files may load before config registers aliases), and a `:brief` — the reviewer's precise single-concern mandate, layered onto the workspace base review contract in the prompt. `:scope` is optional prompt-level confinement text. `:synthesis` optionally overrides the synthesis run's harness (default: first seat's). Unknown keys fail loudly to catch typos (closed key sets and name uniqueness are checked beyond the spec, which is structurally open).
 
 `agent review --roster <name>` spawns one read-only run per seat (stamped `review/roster` for attribution) plus the synthesizer, which receives the base review contract — synthesis weighs findings roster-independently. In this repository the roster lives in `.skein/reviewers.clj`; keep yours near the root of your workspace config so the review policy is one obvious document.
 
-**Composing rosters into workflows.** The verb is agent-run-native, but the prompt building is not verb-private: `skein.spools.delegation/roster-review-specs` returns the whole fan-out as plain, fully-built run specs, and `review!` itself spawns from them. A workflow author decorating a [workflow](../workflow.md) with roster review maps each spec onto a `:subagent` gate — `:harness`/`:prompt` onto the gate's `agent-run/harness`/`agent-run/prompt`, `:attrs` merged into the gate's attributes, and a synthesizer gate depending on every reviewer gate (the synthesis prompt is deliberately buildable before any run exists). Both paths share one prompt source, so roster contracts cannot drift between the verb and a composed workflow:
+**Composing rosters into workflows.** The verb is agent-run-native, but the prompt building is not verb-private: `ct.spools.delegation/roster-review-specs` returns the whole fan-out as plain, fully-built run specs, and `review!` itself spawns from them. A workflow author decorating a [workflow](../workflow.md) with roster review maps each spec onto a `:subagent` gate — `:harness`/`:prompt` onto the gate's `agent-run/harness`/`agent-run/prompt`, `:attrs` merged into the gate's attributes, and a synthesizer gate depending on every reviewer gate (the synthesis prompt is deliberately buildable before any run exists). Both paths share one prompt source, so roster contracts cannot drift between the verb and a composed workflow:
 
 ```clojure
 (agents/roster-review-specs :change-review {:target plan-id})
@@ -284,11 +284,11 @@ Data shape, validated loudly at registration against the **`:skein.spools.delega
 ;;     :synthesizer {:name "synthesis" :harness :review-gpt :prompt "..." :attrs {...}}}
 ```
 
-**Change context.** `roster-review-specs` (and `review!`'s `:change-context`) take an optional `:skein.spools.delegation/change-context` value — `{:commit-range "main..HEAD" :files ["a.clj" "b.clj"] :windows [{:path "a.clj" :lines "40-90"}]}` — that is injected into every reviewer prompt as the authoritative diff surface so reviewers read the changed files instead of re-deriving the diff. It is validated against its spec and fails loudly when malformed; the synthesizer never carries it. The `agent review` CLI builds this from `--commit-range`/`--changed-files`; trusted Clojure can also pass cheap code windows.
+**Change context.** `roster-review-specs` (and `review!`'s `:change-context`) take an optional `:ct.spools.delegation/change-context` value — `{:commit-range "main..HEAD" :files ["a.clj" "b.clj"] :windows [{:path "a.clj" :lines "40-90"}]}` — that is injected into every reviewer prompt as the authoritative diff surface so reviewers read the changed files instead of re-deriving the diff. It is validated against its spec and fails loudly when malformed; the synthesizer never carries it. The `agent review` CLI builds this from `--commit-range`/`--changed-files`; trusted Clojure can also pass cheap code windows.
 
 Each specs call mints a `:pass` tag (override with `:review-id`): reviewers prefix their notes with it, the synthesizer filters on it, and every run/gate carries it as `panel/pass` — so repeated rounds on one target stay separable without run ids, which don't exist at workflow-definition time. The single-prompt-source property is test-enforced; the gate→subagent-executor mapping itself is deliberately untested here in phase 1 (the subagent executor owns gate consumption and fails loudly on a missing `agent-run/harness`/`agent-run/prompt`).
 
-**Parameterised and one-off rosters.** `roster-review-specs` (and `review!`'s `:roster`) accept an **inline roster value** — any map conforming to `:skein.spools.delegation/roster`, validated identically to `defroster!` input — labelled `:inline` in specs and run attributes. Because rosters are plain data, pour-time code can filter, augment, or construct one (e.g. guarantee at least one cross-vendor reviewer given the authoring harness) and hand it straight to the seam; register a computed variant under a name with `defroster!` when durable attribution matters. The CLI stays name-only (TEN-006: rich data does not ride the control surface).
+**Parameterised and one-off rosters.** `roster-review-specs` (and `review!`'s `:roster`) accept an **inline roster value** — any map conforming to `:ct.spools.delegation/roster`, validated identically to `defroster!` input — labelled `:inline` in specs and run attributes. Because rosters are plain data, pour-time code can filter, augment, or construct one (e.g. guarantee at least one cross-vendor reviewer given the authoring harness) and hand it straight to the seam; register a computed variant under a name with `defroster!` when durable attribution matters. The CLI stays name-only (TEN-006: rich data does not ride the control surface).
 
 ```
 agent council --topic "..." [--seats n] [--rounds n] [--harness name] [--synthesizer name]
@@ -332,10 +332,10 @@ A delegated run is handed its contract in two parts.
 
 The [agent-run engine](../agent-run/README.md#7-preamble-and-contract-text) injects its own worker contract into every preamble-carrying headless run, whatever spools or workspace you run: never close your assigned strand, never mutate siblings or parents, never commit unless your contract says so; kill processes by PID only; keep delegation shallow, one mutator per file scope. A workspace cannot switch this off, because these are the rules the graph itself depends on.
 
-The task workflow below is this spool's, exported as `skein.spools.delegation/worker-contract`. Installing delegation does not inject it: the text a workspace hands its workers is the workspace's call, and a workspace that never runs this task workflow should not be told to `--attr progress=` against a plan it doesn't have. Opt in from trusted config, and the engine will deliver it to serving runs only, substituting the served strand's id for `<task-id>` and the run's own id for `<your-run-id>`:
+The task workflow below is this spool's, exported as `ct.spools.delegation/worker-contract`. Installing delegation does not inject it: the text a workspace hands its workers is the workspace's call, and a workspace that never runs this task workflow should not be told to `--attr progress=` against a plan it doesn't have. Opt in from trusted config, and the engine will deliver it to serving runs only, substituting the served strand's id for `<task-id>` and the run's own id for `<your-run-id>`:
 
 ```clojure
-(skein.spools.agent-run/set-default-task-contract! skein.spools.delegation/worker-contract)
+(ct.spools.agent-run/set-default-task-contract! ct.spools.delegation/worker-contract)
 ```
 
 - **Read your assigned strand AND its notes first:** `strand show <task-id>`; `agent notes <task-id>` — the body may be newer than your launch prompt, and a predecessor's notes may save you from repeating its mistakes.
@@ -368,7 +368,7 @@ Policy: sibling tasks own disjoint files; never two mutators in one file scope; 
 
 ### The panel shape
 
-A panel is plain data, validated loudly against the **`:skein.spools.delegation/panel`** clojure.spec (closed key sets and seat-name uniqueness are checked beyond the structurally-open spec):
+A panel is plain data, validated loudly against the **`:ct.spools.delegation/panel`** clojure.spec (closed key sets and seat-name uniqueness are checked beyond the structurally-open spec):
 
 ```clojure
 {:seats [{:name "skeptic" :harness :review-gpt :brief "…"
@@ -379,7 +379,7 @@ A panel is plain data, validated loudly against the **`:skein.spools.delegation/
  :synthesis? {:harness … :brief? …} | :none}
 ```
 
-`panel-specs` compiles a panel into fully-built run specs (output specced as **`:skein.spools.delegation/panel-specs`**); `panel!` spawns from them. Both apply the defaults above. `panel!` validates its option map against **`:skein.spools.delegation/panel-input`**.
+`panel-specs` compiles a panel into fully-built run specs (output specced as **`:ct.spools.delegation/panel-specs`**); `panel!` spawns from them. Both apply the defaults above. `panel!` validates its option map against **`:ct.spools.delegation/panel-input`**.
 
 - **Turn-as-run.** Seat *s* on turn *r* is one run, stamped `panel/seat`, `panel/turn`, `panel/blackboard`, and `panel/pass`, so the deliberation structure is queryable from *run* attributes. Seats post with their turn as the note's `--round`, so `agent notes <board> --round r` reads one round of the deliberation.
 - **Barriers.** Turn row *r* `depends-on` every seat's turn *r−1* run, so a round completes before the next opens.
@@ -392,7 +392,7 @@ A panel is plain data, validated loudly against the **`:skein.spools.delegation/
 ### The presets over the panel
 
 - **`review!` / rosters.** A single-round `:target` panel *is* the independent review shape; `roster->panel` converts a roster into exactly that panel — near-identity, since a roster is a panel's seat vector. `review!` keeps its own spawn path (`roster-review-specs`, §3) while sharing the same internal blackboard-protocol fragments as the panel compiler — so the two cannot drift.
-- **`council!`.** Re-shipped as a `:fresh`-blackboard panel preset. `:seat-count n` expands to N identical seats on a council-wide `:harness`; `:seats [{:name :harness? :brief?}]` gives per-seat harness/perspective (a cross-vendor council) and is mutually exclusive with `:seat-count` (the scalar takes the derived name because the `:seats` vector holds panel's noun). Harness has **no silent default** — a seat with neither its own nor a council-wide harness fails loudly, mirroring `delegate`. `:rounds` become turn-as-run barrier rows; the old poll-loop prompt choreography is gone (the panel compiler owns it). The option map is validated against **`:skein.spools.delegation/council-input`**.
+- **`council!`.** Re-shipped as a `:fresh`-blackboard panel preset. `:seat-count n` expands to N identical seats on a council-wide `:harness`; `:seats [{:name :harness? :brief?}]` gives per-seat harness/perspective (a cross-vendor council) and is mutually exclusive with `:seat-count` (the scalar takes the derived name because the `:seats` vector holds panel's noun). Harness has **no silent default** — a seat with neither its own nor a council-wide harness fails loudly, mirroring `delegate`. `:rounds` become turn-as-run barrier rows; the old poll-loop prompt choreography is gone (the panel compiler owns it). The option map is validated against **`:ct.spools.delegation/council-input`**.
 
 ### Subagent / workflow boundary
 
@@ -400,7 +400,7 @@ A **rounds=1** panel — i.e. a roster review — maps onto `:subagent` gates ex
 
 ### Parameterised and inline panels
 
-Like rosters, `panel-specs`/`panel!` take an **inline panel value** — any map conforming to `:skein.spools.delegation/panel`, validated identically to preset input. Because panels are plain data, pour-time Clojure can construct, filter, or augment one (e.g. guarantee a cross-vendor seat given the authoring harness) and hand it straight to the compiler or spawner. There is **no panel registry** in phase 1: panels are inline values or preset-derived, and the roster registry remains the only naming layer. Register a durable named review policy with `defroster!` when attribution matters; reach for a panel when you need multi-round deliberation or per-seat continuity.
+Like rosters, `panel-specs`/`panel!` take an **inline panel value** — any map conforming to `:ct.spools.delegation/panel`, validated identically to preset input. Because panels are plain data, pour-time Clojure can construct, filter, or augment one (e.g. guarantee a cross-vendor seat given the authoring harness) and hand it straight to the compiler or spawner. There is **no panel registry** in phase 1: panels are inline values or preset-derived, and the roster registry remains the only naming layer. Register a durable named review policy with `defroster!` when attribution matters; reach for a panel when you need multi-round deliberation or per-seat continuity.
 
 ---
 

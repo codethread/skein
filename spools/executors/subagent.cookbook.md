@@ -1,6 +1,6 @@
 # Skein Subagent Executor Spool — Cookbook
 
-Composition recipes for `skein.spools.executors.subagent`: how to let a workflow hand a step to a
+Composition recipes for `ct.spools.executors.subagent`: how to let a workflow hand a step to a
 spawned agent and get the result back, and *why* the bridge is shaped the way it is.
 
 This is the **how/why** half of the subagent executor docs. The other two halves are:
@@ -158,7 +158,7 @@ An empty string is treated as cleared.
 ```clojure
 (require '[skein.api.weaver.alpha :as weaver]
          '[skein.api.current.alpha :as current]
-         '[skein.spools.agent-run :as agent-run])
+         '[ct.spools.agent-run :as agent-run])
 
 (def rt (current/runtime))              ; the active weaver runtime
 

@@ -1,6 +1,6 @@
 # Skein Agent-run Spool — Cookbook
 
-Composition recipes for `skein.spools.agent-run`: how to wire the engine seams a workspace owner actually touches, and *why* each shape is the right one.
+Composition recipes for `ct.spools.agent-run`: how to wire the engine seams a workspace owner actually touches, and *why* each shape is the right one.
 
 This is the **how/why** half of the agent-run docs. The other two halves are:
 
@@ -19,7 +19,7 @@ Every recipe has the same four parts, so you can skim to the one that matches yo
 1. **Situation** — the shape of problem you're staring at.
 2. **Composition** — which primitives combine, and how.
 3. **Snippet** — a complete, runnable form (assume
-   `(require '[skein.spools.agent-run :as agent-run])`).
+   `(require '[ct.spools.agent-run :as agent-run])`).
 4. **Why this shape** — the reasoning: why these primitives, what the attribute
    conventions buy you, and what the alternative would cost.
 
@@ -36,7 +36,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
 **Composition.** One `register-harness!` describes the concrete launcher as plain data: the `:argv`, how output is parsed (`:parse`), and how the prompt reaches the process (`:prompt-via`). Then `register-alias!` registers seats in a separate alias registry — `:alias-of` plus `:extra-args` that splice into the argv before the prompt. Resolution checks aliases first, then harnesses, so a seat may intentionally share a tool's name without overwriting the tool. Aliases flatten (an alias may point at another alias), so the tier names are the only vocabulary a caller needs.
 
 ```clojure
-(require '[skein.spools.agent-run :as agent-run])
+(require '[ct.spools.agent-run :as agent-run])
 
 ;; A concrete harness. This agent prints only its final message on stdout, so
 ;; :raw parses cleanly; the prompt is appended to argv (:arg is the default).
@@ -93,7 +93,7 @@ Honest source: the registry tests `harness-registry-validates-and-resolves-alias
 **Composition.** The harness declares a `:resume` argv splice: literal flag strings interleaved with placeholder keywords (currently `:agent-run/session-id`) drawn from a closed input set. A `:parse` strategy that captures a session id (`:claude-json`, `:pi-json`) records `agent-run/session-id` on each run. Spawning with `:resume <predecessor-run-id>` then continues that predecessor's session.
 
 ```clojure
-(require '[skein.spools.agent-run :as agent-run])
+(require '[ct.spools.agent-run :as agent-run])
 
 ;; A harness that captures a session id (via :claude-json) and knows how to
 ;; continue one (via the :resume splice).
@@ -147,7 +147,7 @@ work. Helpers use placement only. When the serving run dies, call `supersede-and
 replacement prompt and harness.
 
 ```clojure
-(require '[skein.spools.agent-run :as agent-run])
+(require '[ct.spools.agent-run :as agent-run])
 
 ;; The run is placed under task and also serves task. A helper would omit :serves.
 (def run
@@ -183,7 +183,7 @@ replacement prompt and harness.
   supersession edge.
 
 Honest source: `spawn-run!`, `runs-serving`, and `supersede-and-respawn!` in [`agent-
-run.clj`](./agent-run/src/skein/spools/agent_run.clj), with coverage in
+run.clj`](./agent-run/src/ct/spools/agent_run.clj), with coverage in
 ``test/skein/agent_run_test.clj``.
 
 ---## Recipe: Fan out then collect, driven only by readiness
@@ -193,7 +193,7 @@ run.clj`](./agent-run/src/skein/spools/agent_run.clj), with coverage in
 **Composition.** Spawn each run with `spawn-run!`; express ordering with `:depends-on`. A run with no active blockers spawns immediately; one with active blockers waits until graph mutations clear them. Depending on several ids fans in — the collector spawns only when the last blocker closes.
 
 ```clojure
-(require '[skein.spools.agent-run :as agent-run]
+(require '[ct.spools.agent-run :as agent-run]
          '[skein.api.weaver.alpha :as weaver]
          '[skein.api.current.alpha :as current])
 
@@ -244,7 +244,7 @@ Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/age
 **Composition.** The engine already injects a minimal, role-blind preamble (run id, the pinned `strand` command, spawn/await/note one-liners) plus its own worker contract, which you cannot switch off. Layer your policy on from trusted startup config with two slots: `set-preamble-extension!` for text every preamble-carrying headless run gets, and `set-default-task-contract!` for text only runs serving a task get.
 
 ```clojure
-(require '[skein.spools.agent-run :as agent-run])
+(require '[ct.spools.agent-run :as agent-run])
 
 ;; run once from startup config (init.clj / a spool install!)
 (agent-run/set-preamble-extension!
@@ -293,7 +293,7 @@ Honest source: `preamble-composes-engine-contract-then-workspace-text`, `set-def
 **Composition.** Nothing to wire — `reconcile!` runs on `install!` because runs are durable strands. The two execution modes recover differently, and the shape you choose at spawn time (`:max-attempts` for headless, `:parent` for an interactive claim) is what governs recovery.
 
 ```clojure
-(require '[skein.spools.agent-run :as agent-run])
+(require '[ct.spools.agent-run :as agent-run])
 
 ;; headless: bounded crash-recovery attempts (default 3). An orphan left
 ;; `running` by a dead weaver is reset to pending and respawned, up to the bound,
@@ -339,7 +339,7 @@ Honest source: `reconcile-respawns-orphans-and-exhausts-bounded-attempts` and `i
 **Composition.** `register-backend!` registers the multiplexer as three argv vectors — `:start`, `:alive`, `:stop` — plus optional `:capture` and a display-only `:attach` hint. Argv tokens are keyword **splice points**, not string templates: engine inputs like `:session`/`:cwd`/`:command`, and `:handle/<key>` lookups into whatever `:start` returned. `:start` must print one flat JSON object as its last stdout line — the run's durable *handle*.
 
 ```clojure
-(require '[skein.spools.agent-run :as agent-run])
+(require '[ct.spools.agent-run :as agent-run])
 
 ;; The shipped tmux backend, verbatim — the reference shape.
 (agent-run/register-backend! :tmux
@@ -416,7 +416,7 @@ An alias-level card overrides the tool's own, so per-model pricing lives beside 
 no card, the run still records its tokens — cost just stays absent (a recorded token count without a
 cost beats a guessed number). See [`agent-run/README.md` §3.2](./agent-run/README.md#32-cost-rate-cards-cost-rates).
 
-Honest source: `skein.spools.agent-run/spend` and the `strand agent spend` subcommand in the
+Honest source: `ct.spools.agent-run/spend` and the `strand agent spend` subcommand in the
 delegation spool.
 
 ---
