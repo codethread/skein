@@ -90,7 +90,7 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    must be idempotent.
 7. **Write attribute deltas, not read-merged maps.** To change a strand's
    attributes, pass `weaver/update` **only the keys you are changing** —
-   `{:attributes {:kanban/status "claimed"}}` — and let `db/update-strand!`'s
+   `{:attributes {:kanban/lane "claimed"}}` — and let `db/update-strand!`'s
    `json_patch` merge fold them into the stored map. Never read the strand, merge
    your changes into its full `:attributes`, and write the whole map back: two
    concurrent updates each start from a possibly-stale read and the later write

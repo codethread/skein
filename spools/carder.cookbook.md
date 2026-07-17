@@ -85,7 +85,7 @@ Honest source: `stale-detects-doctored-updated-at-and-validates-options` in [`te
 ;; your board treats as legitimately edge-free.
 (defn- expected-orphan? [row]
   (and (= "true" (get-in row [:attributes :kanban/card]))
-       (contains? #{"pending" "refinement"} (get-in row [:attributes :kanban/status]))))
+       (contains? #{"pending" "refinement"} (get-in row [:attributes :kanban/lane]))))
 
 (remove expected-orphan? (carder/orphans))
 ```

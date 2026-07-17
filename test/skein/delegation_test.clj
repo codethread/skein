@@ -327,7 +327,7 @@
     (fn [rt]
       (let [card (weaver/add rt {:title "Feature card"
                                  :attributes {:kanban/card "true"
-                                              :kanban/status "claimed"}})
+                                              :kanban/lane "claimed"}})
             task (weaver/add rt {:title "Review-bearing task"
                                  :attributes {:kanban/task "true"}})]
         (let [rejected (is (thrown-with-msg? clojure.lang.ExceptionInfo

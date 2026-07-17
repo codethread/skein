@@ -29,7 +29,7 @@ Each recipe cites the honest source it was distilled from — a shipped attribut
 
 ## Recipe: Harden an attribute table you already wrote down
 
-**Situation.** A spool's contract doc already lists the attributes its work carries and the values each one allows — this repo's kanban board has a `kanban/status` lane set, a `kanban/priority` scale, a `kanban/type`. The table is a promise on paper, but nothing stops a strand from carrying `kanban/status "in-progress"` when the lanes are `pending`/`claimed`/…. You want that table enforced, not just documented.
+**Situation.** A spool's contract doc already lists the attributes its work carries and the values each one allows — this repo's kanban board has a `kanban/lane` set, a `kanban/priority` scale, a `kanban/type`. The table is a promise on paper, but nothing stops a strand from carrying `kanban/lane "in-progress"` when the lanes are `pending`/`claimed`/…. You want that table enforced, not just documented.
 
 **Composition.** Translate each row of the attribute table into one `:enum` or `:type` check and register them as a single named checkset with `register-checkset!`. The checkset name mirrors the attribute namespace, so a reader knows exactly which convention it guards.
 
@@ -42,23 +42,24 @@ Each recipe cites the honest source it was distilled from — a shipped attribut
   {:doc "Enforce the kanban board attribute table this repo committed to."
    :checks [{:attr "kanban/card"     :enum ["true"]}
             {:attr "kanban/type"     :enum ["feature" "epic"]}
-            ;; kanban.md fixes the lanes (refinement/pending/claimed) but leaves
-            ;; the closed outcome open-ended (done/abandoned/…). Pin the outcome
-            ;; set THIS board actually uses rather than treating it as a
-            ;; spool-fixed enum, and widen it when your board adopts a new one.
-            {:attr "kanban/status"   :enum ["refinement" "pending" "claimed" "done" "abandoned"]}
+            {:attr "kanban/lane"     :enum ["refinement" "pending" "claimed" "in_review"]}
+            ;; kanban.md fixes the lanes but leaves the closed outcome
+            ;; open-ended (done/abandoned/…). Pin the outcome set THIS board
+            ;; actually uses rather than treating it as a spool-fixed enum, and
+            ;; widen it when your board adopts a new one.
+            {:attr "kanban/outcome"  :enum ["done" "abandoned"]}
             {:attr "kanban/priority" :enum ["p1" "p2" "p3" "p4"]}]})
 
 (def good (repl/strand! "Ship docs" {:kanban/card "true" :kanban/type "feature"
-                                     :kanban/status "pending" :kanban/priority "p2"}))
+                                     :kanban/lane "pending" :kanban/priority "p2"}))
 (selvage/check (:id good))
 ;; => []
 
 (def bad (repl/strand! "Typo'd card" {:kanban/card "true"
-                                      :kanban/status "in-progress"
+                                      :kanban/lane "in-progress"
                                       :kanban/priority "urgent"}))
 (mapv #(select-keys % [:attr :check :value]) (selvage/check (:id bad)))
-;; => [{:attr "kanban/status" :check :enum :value "in-progress"}
+;; => [{:attr "kanban/lane" :check :enum :value "in-progress"}
 ;;     {:attr "kanban/priority" :check :enum :value "urgent"}]
 ```
 
@@ -78,7 +79,7 @@ Each recipe cites the honest source it was distilled from — a shipped attribut
   checkset is a convention you *check*, not a schema the engine enforces. That
   is the whole reason this lives in a spool and not in the core.
 
-Honest source: the `kanban/*` attribute table in [`kanban.md`](./kanban.md), which fixes `kanban/status` to `refinement`/`pending`/`claimed` or an explicit closed outcome (`done`, `abandoned`, …) — so the outcome values above are a workspace choice, not a spool-fixed enum — and the `agent-run` checkset in [selvage.md §2](./selvage.md#2-usage). The same shape hardens the `roster/*` table ([`roster.md`](./roster.md)) or the `workflow/role` enum ([`workflow.md`](./workflow.md#7-attribute-vocabulary)).
+Honest source: the `kanban/*` attribute table in [`kanban.md`](./kanban.md), which fixes `kanban/lane` to `refinement`/`pending`/`claimed`/`in_review` on active cards and records a closed card's outcome under `kanban/outcome` (`done`, `abandoned`, …) — so the outcome values above are a workspace choice, not a spool-fixed enum — and the `agent-run` checkset in [selvage.md §2](./selvage.md#2-usage). The same shape hardens the `roster/*` table ([`roster.md`](./roster.md)) or the `workflow/role` enum ([`workflow.md`](./workflow.md#7-attribute-vocabulary)).
 
 ---
 
@@ -101,7 +102,7 @@ Honest source: the `kanban/*` attribute table in [`kanban.md`](./kanban.md), whi
 ;; attribute is "agent" (full DSL: ../devflow/specs/repl-api.md, SPEC-003.C13a).
 (selvage/check-all [:= [:attr :owner] "agent"])
 (selvage/check-all [:= [:attr :kanban/card] "true"])
-;; => [{:strand-id "..." :checkset :kanban :attr "kanban/status" :check :enum :value "wip" ...}]
+;; => [{:strand-id "..." :checkset :kanban :attr "kanban/lane" :check :enum :value "wip" ...}]
 
 ;; Gate on it: non-empty means stop and fix before merging.
 (let [bad (selvage/check-all [:= [:attr :kanban/card] "true"])]
@@ -138,17 +139,17 @@ Honest source: `check-all-can-be-scoped-by-query-form` in [`test/skein/spools/se
 (require '[skein.repl :as repl]
          '[skein.spools.selvage :as selvage])
 
-(selvage/register-checkset! :board {:checks [{:attr "kanban/status" :enum ["pending"]}]})
+(selvage/register-checkset! :board {:checks [{:attr "kanban/lane" :enum ["pending"]}]})
 (selvage/install!)            ; registers the async watcher
 (selvage/clear-violations!)   ; start the review window clean
 
-(def card (repl/strand! "Watched card" {:kanban/status "pending"}))
-(repl/update! (:id card) {:attributes {:kanban/status "failed"}})
+(def card (repl/strand! "Watched card" {:kanban/lane "pending"}))
+(repl/update! (:id card) {:attributes {:kanban/lane "failed"}})
 
 ;; the watcher runs off-thread; give it a beat before reading in a REPL
 (Thread/sleep 250)
 (mapv #(select-keys % [:strand-id :attr :value]) (selvage/violations))
-;; => [{:strand-id "..." :attr "kanban/status" :value "failed"}]
+;; => [{:strand-id "..." :attr "kanban/lane" :value "failed"}]
 
 (selvage/clear-violations!)
 ;; => {:cleared true}
@@ -184,15 +185,15 @@ Honest source: `watch-records-and-clears-violations` in [`test/skein/spools/selv
 (require '[skein.repl :as repl]
          '[skein.spools.selvage :as selvage])
 
-(def card (repl/strand! "Feature card" {:kanban/status "in-review"}))
+(def card (repl/strand! "Feature card" {:kanban/lane "in-review"}))
 
 ;; Old convention allowed :in-review …
-(selvage/register-checkset! :board {:checks [{:attr "kanban/status" :enum ["pending" "in-review"]}]})
+(selvage/register-checkset! :board {:checks [{:attr "kanban/lane" :enum ["pending" "in-review"]}]})
 (selvage/check (:id card))
 ;; => []
 
 ;; … the lane was retired. Re-register the same name; the strand is now flagged.
-(selvage/register-checkset! :board {:checks [{:attr "kanban/status" :enum ["pending" "claimed"]}]})
+(selvage/register-checkset! :board {:checks [{:attr "kanban/lane" :enum ["pending" "claimed"]}]})
 (mapv :value (selvage/check (:id card)))
 ;; => ["in-review"]
 

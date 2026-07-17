@@ -54,7 +54,7 @@
   [{:keys [strand]}]
   (when (and (= "active" (:state strand))
              (= "true" (config-attr strand :kanban/card))
-             (= "claimed" (config-attr strand :kanban/status)))
+             (= "claimed" (config-attr strand :kanban/lane)))
     {:title (str "Kanban started: " (:title strand))
      :body (str "Kanban card " (:id strand) " has been claimed and work has started.")}))
 
@@ -63,7 +63,7 @@
   [{:keys [strand]}]
   (when (and (= "closed" (:state strand))
              (= "true" (config-attr strand :kanban/card))
-             (= "done" (config-attr strand :kanban/status)))
+             (= "done" (config-attr strand :kanban/outcome)))
     {:title (str "Kanban done: " (:title strand))
      :body (str "Kanban card " (:id strand) " completed fully.")}))
 

@@ -104,8 +104,8 @@
    [:= :state "active"]
    [:or [:missing [:attr "agent-run/run"]]
     [:not [:= [:attr "agent-run/run"] "true"]]]
-   [:or [:missing [:attr "kanban/status"]]
-    [:not [:= [:attr "kanban/status"] "refinement"]]]
+   [:or [:missing [:attr "kanban/lane"]]
+    [:not [:= [:attr "kanban/lane"] "refinement"]]]
    [:or
     [:missing [:attr "workflow/role"]]
     [:not [:in [:attr "workflow/role"] ["root" "digest" "procedure"]]]]])
@@ -319,16 +319,16 @@
             :feature feature}
            (devflow/start! feature (if worktree-check {:worktree-check worktree-check} {})))))
 
-(defop devflow-next
+(defop devflow-ready
   "Return the ready devflow step views for a feature."
-  {:returns stamped-op-return :arg-spec {:op "devflow-next"
+  {:returns stamped-op-return :arg-spec {:op "devflow-ready"
                                          :doc "Show the ready devflow step views for a feature."
                                          :positionals [feature-positional]}}
   [ctx]
   (let [{:keys [feature]} (:op/args ctx)]
-    {:operation "devflow-next"
+    {:operation "devflow-ready"
      :feature feature
-     :ready (devflow/next-steps feature)}))
+     :ready (devflow/ready feature)}))
 
 (defop devflow-choices
   "Return choice explanations for the feature's current checkpoint."
@@ -403,13 +403,13 @@
 (defn- checkpoint-ready?
   "Return true when the selected ready devflow step for feature is a checkpoint."
   [feature step]
-  (let [ready (devflow/next-steps feature)
+  (let [ready (devflow/ready feature)
         selected (if step
                    (or (first (filter #(= step (:id %)) ready))
                        (throw (ex-info "step selector did not match a ready devflow step"
                                        {:feature feature :step step :ready (mapv :id ready)})))
-                   (devflow/next-step feature))]
-    (= "checkpoint" (:kind selected))))
+                   (devflow/ready-step feature))]
+    (= "checkpoint" (:role selected))))
 
 (defn- parse-advance-tail
   "Parse devflow-advance tail tokens into workflow advance opts.
@@ -478,29 +478,31 @@
      :stage stage-key
      :description (if stage-key (devflow/describe (keyword stage-key)) (devflow/describe))}))
 
-(defop devflow-history
+(defop devflow-run-history
   "Return ordered devflow run history for a feature."
-  {:returns stamped-op-return :arg-spec {:op "devflow-history"
+  {:returns stamped-op-return :arg-spec {:op "devflow-run-history"
                                          :doc "Show ordered devflow run history for a feature."
                                          :positionals [feature-positional]}}
   [ctx]
   (let [{:keys [feature]} (:op/args ctx)]
-    {:operation "devflow-history"
+    {:operation "devflow-run-history"
      :feature feature
-     :history (devflow/history feature)}))
+     :run-history (devflow/run-history feature)}))
 
-(defop devflow-archive
-  "Archive a finished devflow run into one closed digest strand.
+(defop devflow-squash-run
+  "Squash a finished devflow run into one closed digest strand.
 
-  Fails loudly while any devflow stage root for the feature is still active."
-  {:returns stamped-op-return :arg-spec {:op "devflow-archive"
-                                         :doc "Archive a finished devflow run into one digest strand."
+  Fails loudly while any devflow stage root for the feature is still active.
+  This closes out the graph only; the workspace side of finishing a feature is
+  devflow's separate `(guidance :finish-archive)` procedure."
+  {:returns stamped-op-return :arg-spec {:op "devflow-squash-run"
+                                         :doc "Squash a finished devflow run into one digest strand."
                                          :positionals [feature-positional]}}
   [ctx]
   (let [{:keys [feature]} (:op/args ctx)]
-    {:operation "devflow-archive"
+    {:operation "devflow-squash-run"
      :feature feature
-     :digest (devflow/archive! feature)}))
+     :digest (devflow/squash-run! feature)}))
 
 (defop devflow-status
   "Return the active devflow root, ready steps, and done state for a feature.
@@ -513,9 +515,9 @@
   (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-status"
      :feature feature
-     :roots (mapv entity-projection (devflow/feature-roots feature))
+     :root (some-> (devflow/current-root feature) entity-projection)
      :done (workflow/done? feature)
-     :ready (devflow/next-steps feature)}))
+     :ready (devflow/ready feature)}))
 
 (defop workflow-runs
   "Return active workflow roots, optionally filtered by family."
@@ -560,14 +562,14 @@
           :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
          {:name "branches" :help "strand help branches"}
          {:name "devflow-start" :help "strand help devflow-start"}
-         {:name "devflow-next" :help "strand help devflow-next"}
+         {:name "devflow-ready" :help "strand help devflow-ready"}
          {:name "devflow-choices" :help "strand help devflow-choices"}
          {:name "devflow-choose" :help "strand help devflow-choose"}
          {:name "devflow-complete" :help "strand help devflow-complete"}
          {:name "devflow-advance" :help "strand help devflow-advance"}
          {:name "devflow-describe" :help "strand help devflow-describe"}
-         {:name "devflow-history" :help "strand help devflow-history"}
-         {:name "devflow-archive" :help "strand help devflow-archive"}
+         {:name "devflow-run-history" :help "strand help devflow-run-history"}
+         {:name "devflow-squash-run" :help "strand help devflow-squash-run"}
          {:name "devflow-status" :help "strand help devflow-status"}
          {:name "workflow-runs" :help "strand help workflow-runs"}
          {:name "current-dags" :help "strand help current-dags"}
@@ -589,8 +591,8 @@
                :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
    :queries (into [{:name "kanban-cards"
                     :usage "strand list --query kanban-cards"}
-                   {:name "kanban-unstarted"
-                    :usage "strand ready --query kanban-unstarted"}]
+                   {:name "kanban-pending"
+                    :usage "strand ready --query kanban-pending"}]
                   (map #(update % :name str))
                   (remembered-queries 'config))})
 
@@ -609,7 +611,7 @@
   stay visible."
   [row]
   (and (= "true" (config-attr row :kanban/card))
-       (contains? #{"pending" "refinement"} (config-attr row :kanban/status))))
+       (contains? #{"pending" "refinement"} (config-attr row :kanban/lane))))
 
 (defn- suppress-expected-carder-orphans
   "Return report with expected repo-local orphan rows removed."

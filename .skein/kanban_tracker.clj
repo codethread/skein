@@ -17,19 +17,12 @@
 (defn- active-stage
   "Return the active root's non-blank stage, or nil when no root is active."
   [run-id]
-  (let [roots (devflow/feature-roots run-id)]
-    (when-not (vector? roots)
-      (spool/fail! "Devflow feature-roots must return a vector"
-                   {:run-id run-id :roots roots}))
-    (case (count roots)
-      0 nil
-      1 (let [stage (spool/attr-get (first roots) :devflow/stage)]
-          (when-not (and (string? stage) (not (str/blank? stage)))
-            (spool/fail! "Active devflow root must carry a non-blank devflow/stage"
-                         {:run-id run-id :root (first roots) :stage stage}))
-          stage)
-      (spool/fail! "Devflow tracker expected at most one active root"
-                   {:run-id run-id :root-count (count roots) :roots roots}))))
+  (when-let [root (devflow/current-root run-id)]
+    (let [stage (spool/attr-get root :devflow/stage)]
+      (when-not (and (string? stage) (not (str/blank? stage)))
+        (spool/fail! "Active devflow root must carry a non-blank devflow/stage"
+                     {:run-id run-id :root root :stage stage}))
+      stage)))
 
 (defn devflow-projection
   "Project a devflow run into kanban's `::projection` tracker shape.
@@ -42,7 +35,7 @@
     (spool/require-valid!
      ::projection
      {:status stage
-      :next-steps (if stage (devflow/next-steps run-id) [])}
+      :ready (if stage (devflow/ready run-id) [])}
      "Devflow tracker projection must match its owning spec")))
 
 (s/fdef devflow-projection

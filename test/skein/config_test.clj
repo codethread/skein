@@ -148,9 +148,9 @@
   Every op authored as a `defop` in .skein/config.clj; the surrounding spool ops
   (kanban/agent/bench) and workflow ops (land) are untouched by the refactor and
   are covered by their own tests, so this holistic guard scopes to config.clj."
-  ["current-dags" "branches" "carder-report" "devflow-start" "devflow-next"
+  ["current-dags" "branches" "carder-report" "devflow-start" "devflow-ready"
    "devflow-choices" "devflow-choose" "devflow-complete" "devflow-advance"
-   "devflow-describe" "devflow-history" "devflow-archive" "devflow-status"
+   "devflow-describe" "devflow-run-history" "devflow-squash-run" "devflow-status"
    "workflow-runs" "devflow-conventions" "flow-await" "flow-status" "hitl"])
 
 (def ^:private named-query-names
@@ -188,13 +188,13 @@
 (defn- assert-config-registrations
   "Assert the repo-local query/op/pattern registrations are present."
   [rt]
-  (doseq [query-name ["kanban-cards" "kanban-unstarted" "feature-active" "feature-work"
+  (doseq [query-name ["kanban-cards" "kanban-pending" "feature-active" "feature-work"
                       "feature-owner-work" "feature-run" "workflow-runs" "devflow-runs" "work"]]
     (is (contains? (graph/queries rt) query-name)))
   (is (contains? (graph/queries rt) "bench-runs"))
-  (doseq [op-name ["kanban" "branches" "current-dags" "devflow-start" "devflow-next" "devflow-choices"
+  (doseq [op-name ["kanban" "branches" "current-dags" "devflow-start" "devflow-ready" "devflow-choices"
                    "devflow-choose" "devflow-complete" "devflow-advance"
-                   "devflow-describe" "devflow-history" "devflow-archive"
+                   "devflow-describe" "devflow-run-history" "devflow-squash-run"
                    "devflow-status" "workflow-runs" "devflow-conventions"
                    "flow-await" "flow-status" "hitl" "land" "agent" "bench"]]
     (is (some #(= op-name (:name %)) (weaver/ops rt))))
@@ -300,14 +300,14 @@
                      :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
                     {:name "branches" :help "strand help branches"}
                     {:name "devflow-start" :help "strand help devflow-start"}
-                    {:name "devflow-next" :help "strand help devflow-next"}
+                    {:name "devflow-ready" :help "strand help devflow-ready"}
                     {:name "devflow-choices" :help "strand help devflow-choices"}
                     {:name "devflow-choose" :help "strand help devflow-choose"}
                     {:name "devflow-complete" :help "strand help devflow-complete"}
                     {:name "devflow-advance" :help "strand help devflow-advance"}
                     {:name "devflow-describe" :help "strand help devflow-describe"}
-                    {:name "devflow-history" :help "strand help devflow-history"}
-                    {:name "devflow-archive" :help "strand help devflow-archive"}
+                    {:name "devflow-run-history" :help "strand help devflow-run-history"}
+                    {:name "devflow-squash-run" :help "strand help devflow-squash-run"}
                     {:name "devflow-status" :help "strand help devflow-status"}
                     {:name "workflow-runs" :help "strand help workflow-runs"}
                     {:name "current-dags" :help "strand help current-dags"}
@@ -328,7 +328,7 @@
                          {:name "delegate-pipeline"
                           :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
               :queries [{:name "kanban-cards" :usage "strand list --query kanban-cards"}
-                        {:name "kanban-unstarted" :usage "strand ready --query kanban-unstarted"}
+                        {:name "kanban-pending" :usage "strand ready --query kanban-pending"}
                         {:name "feature-active" :usage "strand list --query feature-active --param feature=<feature>"}
                         {:name "feature-work" :usage "strand ready --query feature-work --param feature=<feature>"}
                         {:name "feature-owner-work"
@@ -372,7 +372,7 @@
                              ["M1" {:workflow/role "root"}]
                              ["D1" {:workflow/role "root" :workflow/family "devflow"}]
                              ["S1" {:agent-run/run "true"}]
-                             ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
+                             ["K1" {:kanban/card "true" :kanban/lane "refinement"}]]]
         (weaver/add rt {:title title :state "active" :attributes attrs}))
       (let [rows (fn [query-name params]
                    (set (map :title (weaver/list rt (get (graph/queries rt) query-name) params))))]
@@ -586,7 +586,7 @@
     (fn [rt]
       (let [root (weaver/add rt {:title "Card: feature-x"
                                  :state "active"
-                                 :attributes {:kanban/card "true" :kanban/status "claimed"
+                                 :attributes {:kanban/card "true" :kanban/lane "claimed"
                                               :owner "agent-a" :branch "feature-x"
                                               :worktree "/tmp/feature-x"}})
             task (weaver/add rt {:title "Implement feature-x"
@@ -669,32 +669,32 @@
         (is (= "devflow.proposal.orient" (:action-ref (first (:ready in-proposal))))))
       (let [status (op! "devflow-status" ["ops-feature"])]
         (is (false? (:done status)))
-        (is (= "proposal" (get-in (first (:roots status)) [:attributes :devflow/stage])))
+        (is (= "proposal" (get-in (:root status) [:attributes :devflow/stage])))
         (is (= [{:attributes {:devflow/stage "proposal"}}]
                (->> (:runs (op! "workflow-runs" ["devflow"]))
                     (mapv (fn [run] {:attributes (select-keys (:attributes run) [:devflow/stage])})))))))))
 
-(deftest devflow-advance-describe-history-and-archive-ops
+(deftest devflow-advance-describe-run-history-and-squash-run-ops
   (with-config-runtime
     (fn [_rt]
       (let [description (op! "devflow-describe" ["proposal"])]
         (is (= "devflow-describe" (:operation description)))
         (is (= "proposal" (:stage description)))
         (is (= "Devflow proposal: <feature>" (get-in description [:description :name]))))
-      (op! "devflow-start" ["archive-feature" "already-in-worktree-ok"])
-      (let [aborted (op! "devflow-advance" ["archive-feature" "abort" "{\"reason\":\"not now\"}"])]
+      (op! "devflow-start" ["squash-feature" "already-in-worktree-ok"])
+      (let [aborted (op! "devflow-advance" ["squash-feature" "abort" "{\"reason\":\"not now\"}"])]
         (is (= "devflow-advance" (:operation aborted)))
         (is (= "abort" (:stage (first (:ready aborted)))))
         (is (= "devflow.abort.record" (:action-ref (first (:ready aborted))))))
-      (let [done (op! "devflow-advance" ["archive-feature" "recorded abort"])]
+      (let [done (op! "devflow-advance" ["squash-feature" "recorded abort"])]
         (is (true? (:done done)))
         (is (empty? (:ready done))))
-      (let [history (op! "devflow-history" ["archive-feature"])]
-        (is (= "devflow-history" (:operation history)))
-        (is (seq (:history history))))
-      (let [archived (op! "devflow-archive" ["archive-feature"])]
-        (is (= "devflow-archive" (:operation archived)))
-        (is (= "digest" (get-in archived [:digest :attributes :workflow/role])))))))
+      (let [history (op! "devflow-run-history" ["squash-feature"])]
+        (is (= "devflow-run-history" (:operation history)))
+        (is (seq (:run-history history))))
+      (let [squashed (op! "devflow-squash-run" ["squash-feature"])]
+        (is (= "devflow-squash-run" (:operation squashed)))
+        (is (= "digest" (get-in squashed [:digest :attributes :workflow/role])))))))
 
 (deftest work-query-excludes-workflow-plumbing-but-keeps-steps
   (with-config-runtime
@@ -714,9 +714,9 @@
                                       role (assoc :workflow/role role)
                                       (= title "Run record") (assoc :agent-run/run "true")
                                       (= title "Pending card") (assoc :kanban/card "true"
-                                                                      :kanban/status "pending")
+                                                                      :kanban/lane "pending")
                                       (= title "Refinement card") (assoc :kanban/card "true"
-                                                                         :kanban/status "refinement"))}))
+                                                                         :kanban/lane "refinement"))}))
       (is (= #{"Step" "Checkpoint" "Plain task" "Pending card"}
              (set (map :title (weaver/list rt (var-get (requiring-resolve 'config/work-query)) {})))))
       (is (= #{"Step" "Checkpoint" "Plain task" "Pending card"}
@@ -792,7 +792,7 @@
                      (mapv (juxt :name :required :variadic))))]
         (is (= [["feature" true false] ["worktree-check" false false]]
                (positionals "devflow-start")))
-        (is (= [["feature" true false]] (positionals "devflow-next")))
+        (is (= [["feature" true false]] (positionals "devflow-ready")))
         (is (= [["feature" true false] ["step-selector" false true]]
                (positionals "devflow-choices")))
         (is (= [["feature" true false] ["choice" true false] ["tail" false true]]
@@ -802,8 +802,8 @@
         (is (= [["feature" true false] ["tail" false true]]
                (positionals "devflow-advance")))
         (is (= [["stage-key" false false]] (positionals "devflow-describe")))
-        (is (= [["feature" true false]] (positionals "devflow-history")))
-        (is (= [["feature" true false]] (positionals "devflow-archive")))
+        (is (= [["feature" true false]] (positionals "devflow-run-history")))
+        (is (= [["feature" true false]] (positionals "devflow-squash-run")))
         (is (= [["feature" true false]] (positionals "devflow-status")))
         (is (= "Start the devflow lifecycle for a feature."
                (get-in (op! "help" ["devflow-start"]) [:arg-spec :doc])))))))
@@ -895,7 +895,7 @@
     (fn [rt]
       (let [card-id (:id (weaver/add rt {:title "Abort card"
                                          :attributes {:kanban/card "true"
-                                                      :kanban/status "claimed"
+                                                      :kanban/lane "claimed"
                                                       :kanban/type "feature"}}))]
         (op! "land" ["start" "land-y" "--branch" "land-y" "--worktree" "/tmp/land-y" "--card" card-id]))
       ;; completing push-draft-pr starts the automated CI watch and review
@@ -904,7 +904,7 @@
       (let [root (workflow/current-root "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
-        (is (= "in_review" (get-in (weaver/show rt card-id) [:attributes :kanban/status]))))
+        (is (= "in_review" (get-in (weaver/show rt card-id) [:attributes :kanban/lane]))))
       (shell-gate-complete! "land-y" "checks green") ; ci-green
       (op! "land" ["complete" "land-y"])           ; signoff-review
       (let [aborted (op! "land" ["choose" "land-y" "abort" "{\"reason\":\"scope changed\"}"])]
@@ -914,7 +914,7 @@
       (let [root (workflow/current-root "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
-        (is (= "claimed" (get-in (weaver/show rt card-id) [:attributes :kanban/status]))))
+        (is (= "claimed" (get-in (weaver/show rt card-id) [:attributes :kanban/lane]))))
       (let [done (op! "land" ["complete" "land-y" "abort recorded"])]
         (is (true? (:done done)))
         (is (empty? (:ready done)))))))
@@ -924,7 +924,7 @@
     (fn [rt]
       (let [card-id (:id (weaver/add rt {:title "Cleanup card"
                                          :attributes {:kanban/card "true"
-                                                      :kanban/status "claimed"
+                                                      :kanban/lane "claimed"
                                                       :kanban/type "feature"}}))]
         (op! "land" ["start" "land-w" "--branch" "land-w" "--worktree" "/tmp/land-w" "--card" card-id])
         (op! "land" ["complete" "land-w"])                          ; push-draft-pr
@@ -1106,31 +1106,26 @@
   (load-file ".skein/kanban_tracker.clj")
   (let [project (requiring-resolve 'kanban-tracker/devflow-projection)]
     (testing "an active root projects its stage and ready steps"
-      (with-redefs [devflow/feature-roots (constantly [{:attributes {:devflow/stage "tasks"}}])
-                    devflow/next-steps (constantly [{:id "next" :title "Do next" :kind "step"}])]
+      (with-redefs [devflow/current-root (constantly {:attributes {:devflow/stage "tasks"}})
+                    devflow/ready (constantly [{:id "next" :title "Do next" :role "step"}])]
         (is (= {:status "tasks"
-                :next-steps [{:id "next" :title "Do next" :kind "step"}]}
+                :ready [{:id "next" :title "Do next" :role "step"}]}
                (project "active-run")))))
     (testing "no active root is the accepted nil-status projection"
-      (with-redefs [devflow/feature-roots (constantly [])
-                    devflow/next-steps (fn [_] (throw (ex-info "must not read steps" {})))]
-        (is (= {:status nil :next-steps []}
+      (with-redefs [devflow/current-root (constantly nil)
+                    devflow/ready (fn [_] (throw (ex-info "must not read steps" {})))]
+        (is (= {:status nil :ready []}
                (project "inactive-run")))))
     (testing "a malformed run id fails at the adapter boundary"
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string"
                             (project ""))))
-    (testing "malformed active roots fail loudly"
-      (with-redefs [devflow/feature-roots (constantly [{:attributes {}}])]
+    (testing "an active root without a stage fails loudly"
+      (with-redefs [devflow/current-root (constantly {:attributes {}})]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank devflow/stage"
-                              (project "missing-stage"))))
-      (with-redefs [devflow/feature-roots
-                    (constantly [{:attributes {:devflow/stage "intake"}}
-                                 {:attributes {:devflow/stage "tasks"}}])]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at most one active root"
-                              (project "ambiguous-run")))))
+                              (project "missing-stage")))))
     (testing "malformed ready steps fail the owning kanban projection spec"
-      (with-redefs [devflow/feature-roots (constantly [{:attributes {:devflow/stage "tasks"}}])
-                    devflow/next-steps (constantly [{}])]
+      (with-redefs [devflow/current-root (constantly {:attributes {:devflow/stage "tasks"}})
+                    devflow/ready (constantly [{}])]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
                               (project "malformed-step")))))))
 

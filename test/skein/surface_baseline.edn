@@ -180,15 +180,15 @@
     :required {"operation" "string"},
     :optional {},
     :extra "json"}},
-  "devflow-next"
-  {:name "devflow-next",
+  "devflow-ready"
+  {:name "devflow-ready",
    :provenance "config",
    :stream? false,
    :deadline-class "standard",
    :hook-class "mutating",
    :doc "Show the ready devflow step views for a feature.",
    :arg-spec
-   {:op "devflow-next",
+   {:op "devflow-ready",
     :doc "Show the ready devflow step views for a feature.",
     :flags [],
     :positionals
@@ -274,16 +274,16 @@
     :required {"operation" "string"},
     :optional {},
     :extra "json"}},
-  "devflow-archive"
-  {:name "devflow-archive",
+  "devflow-squash-run"
+  {:name "devflow-squash-run",
    :provenance "config",
    :stream? false,
    :deadline-class "standard",
    :hook-class "mutating",
-   :doc "Archive a finished devflow run into one digest strand.",
+   :doc "Squash a finished devflow run into one digest strand.",
    :arg-spec
-   {:op "devflow-archive",
-    :doc "Archive a finished devflow run into one digest strand.",
+   {:op "devflow-squash-run",
+    :doc "Squash a finished devflow run into one digest strand.",
     :flags [],
     :positionals
     [{:name "feature",
@@ -325,15 +325,15 @@
       :parse nil,
       :doc "Workflow run id."}]},
    :returns {:type "map", :required {}, :optional {}, :extra "json"}},
-  "devflow-history"
-  {:name "devflow-history",
+  "devflow-run-history"
+  {:name "devflow-run-history",
    :provenance "config",
    :stream? false,
    :deadline-class "standard",
    :hook-class "mutating",
    :doc "Show ordered devflow run history for a feature.",
    :arg-spec
-   {:op "devflow-history",
+   {:op "devflow-run-history",
     :doc "Show ordered devflow run history for a feature.",
     :flags [],
     :positionals
@@ -554,8 +554,8 @@
     [:missing [:attr "agent-run/run"]]
     [:not [:= [:attr "agent-run/run"] "true"]]]
    [:or
-    [:missing [:attr "kanban/status"]]
-    [:not [:= [:attr "kanban/status"] "refinement"]]]
+    [:missing [:attr "kanban/lane"]]
+    [:not [:= [:attr "kanban/lane"] "refinement"]]]
    [:or
     [:missing [:attr "workflow/role"]]
     [:not
