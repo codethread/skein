@@ -86,14 +86,8 @@
                           {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
                           'skein.spools/workflow
                           {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
-                          'skein.spools/ephemeral
-                          {:local/root (.getCanonicalPath (io/file "spools/ephemeral"))}
                           'skein.spools/roster
                           {:local/root (.getCanonicalPath (io/file "spools/roster"))}
-                          'skein.spools/loom
-                          {:local/root (.getCanonicalPath (io/file "spools/loom"))}
-                          'skein.spools/carder
-                          {:local/root (.getCanonicalPath (io/file "spools/carder"))}
                           'skein.spools/text-search
                           {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
                           'skein.spools/delegation
@@ -148,10 +142,10 @@
   Every op authored as a `defop` in .skein/config.clj; the surrounding spool ops
   (kanban/agent/bench) and workflow ops (land) are untouched by the refactor and
   are covered by their own tests, so this holistic guard scopes to config.clj."
-  ["current-dags" "branches" "carder-report" "devflow-start" "devflow-ready"
-   "devflow-choices" "devflow-choose" "devflow-complete" "devflow-advance"
+  ["devflow-start" "devflow-ready" "devflow-choices" "devflow-choose"
+   "devflow-complete" "devflow-advance"
    "devflow-describe" "devflow-run-history" "devflow-squash-run" "devflow-status"
-   "workflow-runs" "devflow-conventions" "flow-await" "flow-status" "hitl"])
+   "workflow-runs" "devflow-conventions" "flow-await" "hitl"])
 
 (def ^:private named-query-names
   "The config-owned named queries whose registered definitions the refactor must
@@ -192,11 +186,11 @@
                       "feature-owner-work" "feature-run" "workflow-runs" "devflow-runs" "work"]]
     (is (contains? (graph/queries rt) query-name)))
   (is (contains? (graph/queries rt) "bench-runs"))
-  (doseq [op-name ["kanban" "branches" "current-dags" "devflow-start" "devflow-ready" "devflow-choices"
+  (doseq [op-name ["kanban" "devflow-start" "devflow-ready" "devflow-choices"
                    "devflow-choose" "devflow-complete" "devflow-advance"
                    "devflow-describe" "devflow-run-history" "devflow-squash-run"
                    "devflow-status" "workflow-runs" "devflow-conventions"
-                   "flow-await" "flow-status" "hitl" "land" "agent" "bench"]]
+                   "flow-await" "hitl" "land" "agent" "bench"]]
     (is (some #(= op-name (:name %)) (weaver/ops rt))))
   (is (some #(= "delegate-pipeline" (:name %)) (patterns/patterns rt)))
   ;; agent-plan is spool-owned now; a real startup wires the agents spool in
@@ -292,9 +286,6 @@
                        {:namespace "ct.spools.devflow"
                         :doc "spools/devflow.md"
                         :purpose "Feature lifecycle (intake -> proposal -> spec-plan -> tasks/implementation) keyed by feature name."}
-                       {:namespace "skein.spools.ephemeral"
-                        :doc "spools/ephemeral.md"
-                        :purpose "Temporary parent-owned strands burned via a userland attribute."}
                        {:namespace "ct.spools.kanban"
                         :doc "spools/kanban.md"
                         :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
@@ -302,7 +293,6 @@
                     {:name "kanban-export" :help "strand help kanban-export"}
                     {:name "kanban-tree" :help "strand help kanban-tree"
                      :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
-                    {:name "branches" :help "strand help branches"}
                     {:name "devflow-start" :help "strand help devflow-start"}
                     {:name "devflow-ready" :help "strand help devflow-ready"}
                     {:name "devflow-choices" :help "strand help devflow-choices"}
@@ -314,13 +304,10 @@
                     {:name "devflow-squash-run" :help "strand help devflow-squash-run"}
                     {:name "devflow-status" :help "strand help devflow-status"}
                     {:name "workflow-runs" :help "strand help workflow-runs"}
-                    {:name "current-dags" :help "strand help current-dags"}
-                    {:name "carder-report" :help "strand help carder-report"}
                     {:name "feature-costs" :help "strand help feature-costs"
                      :purpose "Agent-run cost/usage rollup beneath a work root, as pure data. Registered by .skein/analytics.clj."}
                     {:name "agent" :help "strand help agent" :manual "strand agent about"}
                     {:name "flow-await" :help "strand help flow-await"}
-                    {:name "flow-status" :help "strand help flow-status"}
                     {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
                     {:name "land" :help "strand help land" :manual "strand land about"
                      :purpose (format-alpha/reflow
@@ -490,51 +477,6 @@
           (is (= "Agent run failed: Run" (:title note)))
           (is (str/includes? (:body note) "boom")))))))
 
-(deftest current-dags-op-builds-self-contained-plan-task-projection
-  (with-config-runtime
-    (fn [rt]
-      (let [plan (weaver/add rt {:title "Feature: plan feature"
-                                 :state "active"
-                                 :attributes {:feature "plan-feature" :kind "agent-plan"}})
-            impl (weaver/add rt {:title "Implement it"
-                                 :state "active"
-                                 :attributes {:feature "plan-feature" :kind "task"
-                                              :task_key "impl" :owner "agent-a"
-                                              :agent-run/harness "build"
-                                              :agent-run/cwd "/tmp/work" :validation ["clojure -M:test"]}})
-            review (weaver/add rt {:title "Review it"
-                                   :state "active"
-                                   :attributes {:feature "plan-feature" :kind "review"
-                                                :task_key "review" :hitl true}})]
-        (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id impl)}
-                                              {:type "parent-of" :to (:id review)}]})
-        (weaver/update rt (:id review) {:edges [{:type "depends-on" :to (:id impl)}]})
-        (let [strands (weaver/list rt (var-get (requiring-resolve 'config/feature-active-query))
-                                   {:feature "plan-feature"})
-              children (:edges (graph/subgraph rt [(:id plan)] {:type "parent-of"}))
-              ready (weaver/ready rt (var-get (requiring-resolve 'config/feature-work-query))
-                                  {:feature "plan-feature"})]
-          (is (= 3 (count strands)))
-          (is (= #{(:id impl) (:id review)}
-                 (set (map :to_strand_id children))))
-          ;; review depends on impl, so only impl is ready
-          (is (= ["Implement it"] (mapv :title ready)))
-          ;; current-dags stays self-contained: a blocker outside the plan DAG
-          ;; must not surface as a dangling depends-on edge
-          (let [external (weaver/add rt {:title "External blocker"
-                                         :state "active"
-                                         :attributes {:kind "task"}})]
-            (weaver/update rt (:id impl)
-                           {:edges [{:type "depends-on" :to (:id external)}]})
-            (let [dag (->> (:dags (op! "current-dags" []))
-                           (filter #(= (:id plan) (get-in % [:root :id])))
-                           first)
-                  dag-ids (set (map :id (:strands dag)))]
-              (is (some? dag))
-              (is (every? #(and (contains? dag-ids (:from_strand_id %))
-                                (contains? dag-ids (:to_strand_id %)))
-                          (concat (:parent_of_edges dag) (:depends_on_edges dag)))))))))))
-
 (deftest kanban-tree-op-projects-epic-feature-task-hierarchy
   ;; The kanban-tree projection joins the parent-of tiers (epic -> feature ->
   ;; task) the flat query surface can't, and derives task status. Uses the full
@@ -584,39 +526,6 @@
           ;; --all surfaces the closed (done) task alongside the active ones
           (is (= {"Doing task" "doing" "Ready task" "ready" "Blocked task" "blocked" "Done task" "done"}
                  (task-status (full (:id f1))))))))))
-
-(deftest branches-op-groups-branch-stamped-work-roots
-  (with-config-runtime
-    (fn [rt]
-      (let [root (weaver/add rt {:title "Card: feature-x"
-                                 :state "active"
-                                 :attributes {:kanban/card "true" :kanban/lane "claimed"
-                                              :owner "agent-a" :branch "feature-x"
-                                              :worktree "/tmp/feature-x"}})
-            task (weaver/add rt {:title "Implement feature-x"
-                                 :state "active"
-                                 :attributes {:kind "task"}})
-            review (weaver/add rt {:title "Review feature-x"
-                                   :state "active"
-                                   :attributes {:kind "review"}})]
-        (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id task)}
-                                              {:type "parent-of" :to (:id review)}]})
-        (weaver/update rt (:id review) {:edges [{:type "depends-on" :to (:id task)}]})
-        ;; a branch-stamped child (task assigned owner+branch) must not
-        ;; surface as a second work root for the branch
-        (weaver/update rt (:id task) {:attributes {:kind "task" :branch "feature-x" :owner "agent-b"}})
-        (let [result (op! "branches" [])
-              branch (first (:branches result))
-              view (first (:roots branch))]
-          (is (= ["feature-x"] (mapv :branch (:branches result))))
-          (is (= [(:id root)] (mapv #(get-in % [:root :id]) (:roots branch))))
-          (is (= #{(:id task) (:id review)}
-                 (set (map :id (:active_descendants view)))))
-          ;; review depends on the task, so the frontier is root + task
-          (is (= #{(:id root) (:id task)} (set (map :id (:ready view))))))
-        (is (= 1 (count (:branches (op! "branches" ["feature-x"])))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no active work root"
-                              (op! "branches" ["missing-branch"])))))))
 
 (deftest delegate-pipeline-weave-creates-chain-loop-gates
   (with-config-runtime
@@ -1023,57 +932,6 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown workflow run"
                             (op! "land" ["status" "never-landed"]))))))
 
-(deftest flow-status-op-joins-history-frontier-gates-runs-and-stalls
-  (with-config-runtime
-    (fn [rt]
-      (let [definition (workflow/workflow
-                        "Flow status test"
-                        (workflow/gate :a "Delegate A" :subagent)
-                        (workflow/gate :b "Delegate B" :subagent :depends-on [:a])
-                        (workflow/checkpoint :accept "Accept" :depends-on [:b]
-                                             :choices [:accepted]))]
-        (workflow/start! "flow-status-test" definition {})
-        (let [gate-a (:id (first (workflow/ready "flow-status-test")))
-              run-a (weaver/add rt {:title "Run A"
-                                    :state "closed"
-                                    :attributes {:agent-run/run "true"
-                                                 :agent-run/phase "done"
-                                                 :agent-run/result "A complete"
-                                                 :workflow/run-id "flow-status-test"}
-                                    :edges [{:type "serves" :to gate-a}]})]
-          (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
-          (let [gate-b (:id (first (workflow/ready "flow-status-test")))
-                run-b (weaver/add rt {:title "Run B"
-                                      :state "active"
-                                      :attributes {:agent-run/run "true"
-                                                   :agent-run/phase "failed"
-                                                   :agent-run/error "boom"
-                                                   :workflow/run-id "flow-status-test"}
-                                      :edges [{:type "serves" :to gate-b}]})]
-            ;; failure summaries are scoped to the requested run: an unrelated
-            ;; failed run and an unrelated error-stamped gate must not leak in
-            (weaver/add rt {:title "Unrelated failed run"
-                            :attributes {:agent-run/run "true"
-                                         :agent-run/phase "failed"
-                                         :agent-run/error "other workflow"}})
-            (weaver/add rt {:title "Unrelated stalled gate"
-                            :attributes {:workflow/gate "subagent"
-                                         :gate/error "spawn failed elsewhere"}})
-            (let [status (op! "flow-status" ["flow-status-test"])
-                  by-title (into {} (map (juxt :title identity)) (:gates status))]
-              (is (= "flow-status" (:operation status)))
-              (is (false? (:done status)))
-              (is (= ["Delegate B"] (mapv :title (:frontier status))))
-              (is (= [:gate-closed] (mapv :type (get-in status [:history 0 :events]))))
-              (is (= "done" (get-in by-title ["Delegate A" :run-view :agent-run/phase])))
-              (is (= "failed" (get-in by-title ["Delegate B" :run-view :agent-run/phase])))
-              (is (true? (get-in by-title ["Delegate B" :stalled?])))
-              (is (= "failed" (get-in by-title ["Delegate B" :phase])))
-              (is (= #{(:id run-b)} (set (map :id (:agent-failures status)))))
-              ;; membership is the executor's query rule: gate B's serving run is dead
-              (is (= #{gate-b} (set (map :id (:stalled-gates status)))))
-              (is (str/includes? (:dev/mermaid status) "Delegate B (stalled)")))))))))
-
 (defn- assert-treadle-installed-after-config
   "Assert the subagent executor loaded and declares :config in :after — its install! runs an
   initial gate scan, so config.clj's harness aliases must already exist or a
@@ -1090,16 +948,16 @@
     (doseq [use-id [:skein/spools-workflow :skein/spools-shell]]
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow")))
-    (is (= ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow
-            'skein.spools/agent-run 'codethread/devflow 'skein.macros/macros]
+    (is (= ['skein.spools/workflow 'skein.spools/agent-run
+            'codethread/devflow 'skein.macros/macros]
            (get-in uses [:config :opts :spools]))
         ":config must guard every spool coordinate its config.clj ns requires")
     (is (true? (get-in uses [:config :opts :required?]))
         ":config is required — a guarded but non-required module skips silently, dropping the op/query surface")
     (doseq [use-id [:workflows]]
-      (is (= ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
+      (is (= ['skein.spools/workflow 'skein.spools/delegation]
              (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/loom, skein.spools/workflow, and skein.spools/delegation")))))
+          (str use-id " must opt into skein.spools/workflow and skein.spools/delegation")))))
 
 (defn- assert-kanban-tracker-installed
   "Assert startup loaded the required devflow tracker binding."
@@ -1136,26 +994,12 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
                               (project "malformed-step")))))))
 
-(defn- assert-ephemeral-spool-consent-edge
-  "Assert repo startup guards the activated ephemeral spool with its coordinate."
-  [rt]
-  (let [uses (runtime/uses rt)]
-    (is (= ['skein.spools/ephemeral] (get-in uses [:skein/spools-ephemeral :opts :spools]))
-        ":skein/spools-ephemeral must opt into skein.spools/ephemeral")))
-
 (defn- assert-roster-spool-consent-edge
   "Assert repo startup guards the activated roster spool with its coordinate."
   [rt]
   (let [uses (runtime/uses rt)]
     (is (= ['skein.spools/roster] (get-in uses [:skein/spools-roster :opts :spools]))
         ":skein/spools-roster must opt into skein.spools/roster")))
-
-(defn- assert-loom-spool-consent-edge
-  "Assert repo startup guards the activated loom spool with its coordinate."
-  [rt]
-  (let [uses (runtime/uses rt)]
-    (is (= ['skein.spools/loom] (get-in uses [:skein/spools-loom :opts :spools]))
-        ":skein/spools-loom must opt into skein.spools/loom")))
 
 (deftest repo-local-startup-and-reload-preserve-registrations
   (with-startup-config-runtime
@@ -1164,17 +1008,13 @@
       (assert-treadle-installed-after-config rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
-      (assert-ephemeral-spool-consent-edge rt)
       (assert-roster-spool-consent-edge rt)
-      (assert-loom-spool-consent-edge rt)
       (op! "devflow-start" ["startup-feature" "already-in-worktree-ok"])
       (is (= :loaded (:status (runtime/reload! rt))))
       (assert-config-registrations rt)
       (assert-workflow-spool-consent-edges rt)
       (assert-kanban-tracker-installed rt)
-      (assert-ephemeral-spool-consent-edge rt)
       (assert-roster-spool-consent-edge rt)
-      (assert-loom-spool-consent-edge rt)
       ;; runtime registries reload; the strand graph and run state persist
       (let [status (op! "devflow-status" ["startup-feature"])]
         (is (false? (:done status)))
