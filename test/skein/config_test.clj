@@ -263,10 +263,16 @@
                    spools-key " <-> " deps-key))
           (cond
             (and (:git/sha spools-entry) (:git/sha deps-entry))
-            (is (= (:git/sha spools-entry) (:git/sha deps-entry))
-                (str spools-key " :git/sha in .skein/spools.edn (" (:git/sha spools-entry)
-                     ") must match " deps-key " :git/sha in deps.edn :test :extra-deps ("
-                     (:git/sha deps-entry) ")"))
+            (do
+              (is (= (:git/sha spools-entry) (:git/sha deps-entry))
+                  (str spools-key " :git/sha in .skein/spools.edn (" (:git/sha spools-entry)
+                       ") must match " deps-key " :git/sha in deps.edn :test :extra-deps ("
+                       (:git/sha deps-entry) ")"))
+              (is (= (:git/url spools-entry) (:git/url deps-entry))
+                  (str spools-key " :git/url in .skein/spools.edn (" (:git/url spools-entry)
+                       ") must match " deps-key " :git/url in deps.edn :test :extra-deps ("
+                       (:git/url deps-entry) ") — sha parity alone would accept the same sha"
+                       " from a different repository")))
 
             (and (:local/root spools-entry) (:local/root deps-entry))
             (let [spools-root (.getCanonicalFile (io/file ".skein" (:local/root spools-entry)))
