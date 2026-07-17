@@ -8,7 +8,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
             [skein.macros.rules :refer [defrule forget-rules! install-rules!]]
-            [skein.spools.agent-run :as shuttle]))
+            [ct.spools.agent-run :as shuttle]))
 
 ;; Reload correctness: clear this namespace's remembered rules before the
 ;; defrule forms below re-register them, so a targeted reload (load-file +

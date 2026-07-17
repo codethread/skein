@@ -9,13 +9,13 @@
    {:name "guild" :source "spools/guild/src/skein/spools/guild.clj" :outfile "spools/guild.api.md"}
    {:name "roster" :source "spools/roster/src/skein/spools/roster.clj" :outfile "spools/roster.api.md"}
    {:name "text-search" :source "spools/text-search/src/skein/spools/text_search.clj" :outfile "spools/text-search.api.md"}
-   {:name "agent-run" :source "spools/agent-run/src/skein/spools/agent_run.clj" :outfile "spools/agent-run.api.md"}
-   {:name "delegation" :source "spools/delegation/src/skein/spools/delegation.clj" :outfile "spools/delegation.api.md"}
+   {:name "agent-run" :source "spools/agent-run/src/ct/spools/agent_run.clj" :outfile "spools/agent-run.api.md"}
+   {:name "delegation" :source "spools/delegation/src/ct/spools/delegation.clj" :outfile "spools/delegation.api.md"}
    {:name "shell" :source "spools/workflow/src/skein/spools/executors/shell.clj" :outfile "spools/executors/shell.api.md"}
-   {:name "subagent" :source "spools/agent-run/src/skein/spools/executors/subagent.clj" :outfile "spools/executors/subagent.api.md"}
+   {:name "subagent" :source "spools/agent-run/src/ct/spools/executors/subagent.clj" :outfile "spools/executors/subagent.api.md"}
    {:name "chime" :source "spools/chime/src/skein/spools/chime.clj" :outfile "spools/chime.api.md"}
    {:name "cron" :source "spools/cron/src/skein/spools/cron.clj" :outfile "spools/cron.api.md"}
-   {:name "bench" :source "spools/bench/src/skein/spools/bench.clj" :outfile "spools/bench.api.md"}])
+   {:name "bench" :source "spools/bench/src/ct/spools/bench.clj" :outfile "spools/bench.api.md"}])
 
 ;; The blessed spool-facing API tier (SPEC-005.C2). Generated reference only —
 ;; the behavior contracts stay in the root specs.

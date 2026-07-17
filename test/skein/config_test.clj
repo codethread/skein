@@ -53,7 +53,7 @@
         ;; harnesses.clj's worker alias layers over the shipped :pi harness,
         ;; which shuttle/install! registers in real startups; this fixture
         ;; loads the config files alone, so register the defaults here.
-        ((requiring-resolve 'skein.spools.agent-run/register-default-harnesses!))
+        ((requiring-resolve 'ct.spools.agent-run/register-default-harnesses!))
         (load-file ".skein/config.clj")
         (load-file ".skein/harnesses.clj")
         (load-file ".skein/workflows.clj")
@@ -82,7 +82,7 @@
   ;; (tools.deps add-libs state is JVM-global; see skein.test-runner's
   ;; ordering note).
   (spit (io/file target "spools.edn")
-        (pr-str {:spools {'skein.spools/agent-run
+        (pr-str {:spools {'ct.spools/agent-run
                           {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
                           'skein.spools/workflow
                           {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
@@ -90,13 +90,13 @@
                           {:local/root (.getCanonicalPath (io/file "spools/roster"))}
                           'skein.spools/text-search
                           {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
-                          'skein.spools/delegation
+                          'ct.spools/delegation
                           {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
                           'skein.spools/chime
                           {:local/root (.getCanonicalPath (io/file "spools/chime"))}
                           'skein.spools/cron
                           {:local/root (.getCanonicalPath (io/file "spools/cron"))}
-                          'skein.spools/bench
+                          'ct.spools/bench
                           {:local/root (.getCanonicalPath (io/file "spools/bench"))}
                           ;; init.clj requires this spool; the omission used to be
                           ;; masked by fail-quiet required use!, which now throws.
@@ -197,19 +197,19 @@
   ;; via init.clj, so it must still be registered end to end
   (is (some #(= "agent-plan" (:name %)) (patterns/patterns rt)))
   ;; agent review must consume the one authoritative policy text by default;
-  ;; the text ships from skein.spools.delegation, the accessor stays on agent-run
-  (is (= (var-get (requiring-resolve 'skein.spools.delegation/review-contract))
-         ((requiring-resolve 'skein.spools.agent-run/default-review-contract-text))))
+  ;; the text ships from ct.spools.delegation, the accessor stays on agent-run
+  (is (= (var-get (requiring-resolve 'ct.spools.delegation/review-contract))
+         ((requiring-resolve 'ct.spools.agent-run/default-review-contract-text))))
   ;; this repo runs the agent-plan task workflow, which no spool registers for
   ;; it: harnesses.clj opts its serving runs into the exported fragment
-  (is (= (var-get (requiring-resolve 'skein.spools.delegation/worker-contract))
-         ((requiring-resolve 'skein.spools.agent-run/default-task-contract-text))))
+  (is (= (var-get (requiring-resolve 'ct.spools.delegation/worker-contract))
+         ((requiring-resolve 'ct.spools.agent-run/default-task-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run]
          (mapv :key ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
-  (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))]
+  (let [rosters ((requiring-resolve 'ct.spools.delegation/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:seats (first rosters))))))
 
@@ -315,7 +315,7 @@
                                 |sign-off, squash-merge to local main with full verification, then
                                 |green main CI. Registered by .skein/workflows.clj.")}]
               :patterns [{:name "agent-plan"
-                          :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.delegation."}
+                          :purpose "Create a feature strand plus task/review children for agent work; shipped by ct.spools.delegation."}
                          {:name "delegate-pipeline"
                           :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
               :queries [{:name "kanban-cards" :usage "strand list --query kanban-cards"}
@@ -644,7 +644,7 @@
     (fn [_rt]
       (load-file ".skein/reviewers.clj")
       ((requiring-resolve 'reviewers/install!))
-      (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))
+      (let [rosters ((requiring-resolve 'ct.spools.delegation/rosters))
             roster (first (filter #(= :change-review (:name %)) rosters))
             complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))
             docs-roster (first (filter #(= :docs-review (:name %)) rosters))]
@@ -667,7 +667,7 @@
   ;; persist) and declares the verified `codex exec resume <session-id>` splice.
   (with-config-runtime
     (fn [_rt]
-      (let [codex ((requiring-resolve 'skein.spools.agent-run/resolve-harness) :codex)]
+      (let [codex ((requiring-resolve 'ct.spools.agent-run/resolve-harness) :codex)]
         (is (not-any? #{"--ephemeral"} (:argv codex))
             "sessions persist so codex exec resume can continue them")
         (is (= ["resume" :agent-run/session-id] (:resume codex))
@@ -948,16 +948,16 @@
     (doseq [use-id [:skein/spools-workflow :skein/spools-shell]]
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow")))
-    (is (= ['skein.spools/workflow 'skein.spools/agent-run
+    (is (= ['skein.spools/workflow 'ct.spools/agent-run
             'codethread/devflow 'skein.macros/macros]
            (get-in uses [:config :opts :spools]))
         ":config must guard every spool coordinate its config.clj ns requires")
     (is (true? (get-in uses [:config :opts :required?]))
         ":config is required — a guarded but non-required module skips silently, dropping the op/query surface")
     (doseq [use-id [:workflows]]
-      (is (= ['skein.spools/workflow 'skein.spools/delegation]
+      (is (= ['skein.spools/workflow 'ct.spools/delegation]
              (get-in uses [use-id :opts :spools]))
-          (str use-id " must opt into skein.spools/workflow and skein.spools/delegation")))))
+          (str use-id " must opt into skein.spools/workflow and ct.spools/delegation")))))
 
 (defn- assert-kanban-tracker-installed
   "Assert startup loaded the required devflow tracker binding."

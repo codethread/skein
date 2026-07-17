@@ -10,8 +10,8 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.delegation :as agents]
-            [skein.spools.agent-run :as shuttle]
+            [ct.spools.delegation :as agents]
+            [ct.spools.agent-run :as shuttle]
             [skein.spools.test-support :as test-support :refer [await-phase]]
             [skein.test.alpha :as t]))
 
@@ -51,7 +51,7 @@
 (deftest production-return-coverage-is-derived-from-delegation-provenance
   (with-agents
     (fn [rt]
-      (let [entries (filterv #(= 'skein.spools.delegation (:provenance %)) (weaver/ops rt))
+      (let [entries (filterv #(= 'ct.spools.delegation (:provenance %)) (weaver/ops rt))
             missing (mapv :name (filter #(not (contains? % :returns)) entries))
             required (into #{} (mapcat (fn [{:keys [name returns]}]
                                          (for [subcommand (keys (:subcommands returns))]
@@ -427,7 +427,7 @@
         (agents/defroster! :repo {:seats [{:name "solo" :harness :sh :brief "One pass."}]})
         (is (= ["solo"] (mapv :name (:seats (first (agents/rosters)))))))
       (testing "the roster shape is spec-defined and registered data conforms"
-        (is (s/valid? :skein.spools.delegation/roster
+        (is (s/valid? :ct.spools.delegation/roster
                       {:seats [{:name "solo" :harness :sh :brief "One pass."}]})))
       (testing "structurally malformed roster data fails loudly via the spec"
         (doseq [bad [[:not-a-map]
@@ -544,15 +544,15 @@
                     (:pass (agents/roster-review-specs :composed {:target (:id target)})))
               "each pass mints a distinct tag"))
         (testing "the seam output conforms to its public spec"
-          (is (s/valid? :skein.spools.delegation/review-specs specs)
-              (s/explain-str :skein.spools.delegation/review-specs specs)))
+          (is (s/valid? :ct.spools.delegation/review-specs specs)
+              (s/explain-str :ct.spools.delegation/review-specs specs)))
         (testing "an inline roster value works anywhere a name does"
           (let [inline {:seats [{:name "adhoc" :harness :sh :brief "One-off pass."}]}
                 inline-specs (agents/roster-review-specs inline {:target (:id target)})
                 inline-review (agents/review! (:id target) {:roster inline})
                 run (weaver/show rt (first (:reviewers inline-review)))]
             (is (= :inline (:roster inline-specs)))
-            (is (s/valid? :skein.spools.delegation/review-specs inline-specs))
+            (is (s/valid? :ct.spools.delegation/review-specs inline-specs))
             (is (= "inline" (get-in run [:attributes :review/roster])))
             (is (str/includes? (get-in run [:attributes :agent-run/prompt]) "One-off pass."))
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not conform to spec"
@@ -767,8 +767,8 @@
             specs (agents/panel-specs panel {:target (:id target)})
             row1 (first (:turns specs))]
         (testing "output conforms to its public spec"
-          (is (s/valid? :skein.spools.delegation/panel-specs specs)
-              (s/explain-str :skein.spools.delegation/panel-specs specs)))
+          (is (s/valid? :ct.spools.delegation/panel-specs specs)
+              (s/explain-str :ct.spools.delegation/panel-specs specs)))
         (testing "a single default round is one turn row of independent seats"
           (is (= 1 (count (:turns specs))))
           (is (= ["correctness" "tests"] (mapv :name row1)))
@@ -792,7 +792,7 @@
         (testing "no synthesis yields no synthesizer and still conforms"
           (let [bare (agents/panel-specs (dissoc panel :synthesis) {:target (:id target)})]
             (is (nil? (:synthesizer bare)))
-            (is (s/valid? :skein.spools.delegation/panel-specs bare))))
+            (is (s/valid? :ct.spools.delegation/panel-specs bare))))
         (testing ":review-id overrides the minted pass tag"
           (is (= "pass-x" (:pass (agents/panel-specs panel {:target (:id target) :review-id "pass-x"})))))))))
 
@@ -806,8 +806,8 @@
             specs (agents/panel-specs panel {})]
         (testing "one turn row per round, conforming to the spec"
           (is (= 3 (count (:turns specs))))
-          (is (s/valid? :skein.spools.delegation/panel-specs specs)
-              (s/explain-str :skein.spools.delegation/panel-specs specs)))
+          (is (s/valid? :ct.spools.delegation/panel-specs specs)
+              (s/explain-str :ct.spools.delegation/panel-specs specs)))
         (testing "a fresh blackboard defers the id to the spawner via a placeholder"
           (is (= {:kind :fresh} (:blackboard specs)))
           (is (str/includes? (:prompt (ffirst (:turns specs))) "«panel-board»")))
@@ -942,11 +942,11 @@
   ;; the compiled seam is a consumer contract, so a malformed blackboard
   ;; directive must fail the spec rather than only being documented away
   (testing ":target carries an :id; :fresh omits it"
-    (is (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :target :id "s1"}))
-    (is (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :fresh})))
+    (is (s/valid? :ct.spools.delegation.panel-specs/blackboard {:kind :target :id "s1"}))
+    (is (s/valid? :ct.spools.delegation.panel-specs/blackboard {:kind :fresh})))
   (testing "kind/id disagreement is rejected"
-    (is (not (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :target})))
-    (is (not (s/valid? :skein.spools.delegation.panel-specs/blackboard {:kind :fresh :id "s1"})))))
+    (is (not (s/valid? :ct.spools.delegation.panel-specs/blackboard {:kind :target})))
+    (is (not (s/valid? :ct.spools.delegation.panel-specs/blackboard {:kind :fresh :id "s1"})))))
 
 (deftest roster->panel-produces-independent-target-panel
   (with-agents
@@ -967,7 +967,7 @@
           (let [specs (agents/panel-specs panel {:target (:id target)})]
             (is (= 1 (count (:turns specs))))
             (is (every? #(str/includes? (:prompt %) "Work independently") (first (:turns specs))))
-            (is (s/valid? :skein.spools.delegation/panel-specs specs))))
+            (is (s/valid? :ct.spools.delegation/panel-specs specs))))
         (testing "a synthesis-less roster falls back to the first seat's harness"
           (is (= {:harness :sh}
                  (:synthesis (agents/roster->panel {:seats [{:name "solo" :harness :sh :brief "One pass."}]})))))
@@ -1227,7 +1227,7 @@
     (fn [_rt]
       (let [seats [{:name "a" :harness :sh :brief "b"}]]
         (testing "a coherent stamp is accepted"
-          (is (s/valid? :skein.spools.delegation.council-input/fanout-attrs
+          (is (s/valid? :ct.spools.delegation.council-input/fanout-attrs
                         {"agent-run/fanout-group" "grp" "agent-run/fanout-cap" 2})))
         (testing "incoherent stamps fail the spec"
           (doseq [bad [{"agent-run/fanout-group" "grp"}                      ; group, no cap
@@ -1235,7 +1235,7 @@
                        {"agent-run/fanout-group" "grp" "agent-run/fanout-cap" "2"}
                        {"agent-run/fanout-group" "" "agent-run/fanout-cap" 2} ; blank group
                        {"agent-run/fanout-cap" 3}]]                          ; cap, no group
-            (is (not (s/valid? :skein.spools.delegation.council-input/fanout-attrs bad))
+            (is (not (s/valid? :ct.spools.delegation.council-input/fanout-attrs bad))
                 (str "incoherent " bad " must fail the spec"))))
         (testing "panel! rejects a malformed :fanout-attrs stamp loudly"
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not conform"

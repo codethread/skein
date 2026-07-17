@@ -16,9 +16,9 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.bench :as bench]
-            [skein.spools.bench.exec :as exec]
-            [skein.spools.agent-run :as shuttle]
+            [ct.spools.bench :as bench]
+            [ct.spools.bench.exec :as exec]
+            [ct.spools.agent-run :as shuttle]
             [skein.spools.test-support :as test-support]
             [skein.test.alpha :as t])
   (:import [java.nio.file Files]
@@ -166,7 +166,7 @@ esac
 (deftest production-return-coverage-is-derived-from-bench-provenance
   (with-bench
     (fn [rt _]
-      (let [entries (filterv #(= 'skein.spools.bench (:provenance %)) (weaver/ops rt))
+      (let [entries (filterv #(= 'ct.spools.bench (:provenance %)) (weaver/ops rt))
             missing (mapv :name (filter #(not (contains? % :returns)) entries))
             required (into #{} (mapcat (fn [{:keys [name returns]}]
                                          (for [subcommand (keys (:subcommands returns))]

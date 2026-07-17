@@ -20,7 +20,7 @@
   weaver-lifetime state: edits here need a weaver restart or config reload to
   take effect.
 
-  Seat shape (validated loudly by skein.spools.delegation/defroster!):
+  Seat shape (validated loudly by ct.spools.delegation/defroster!):
     :name     unique reviewer name; becomes the run's review focus
     :harness  harness alias from harnesses.clj (resolved at review time)
     :brief    the reviewer's single concern - precise, judgmental, actionable
@@ -47,7 +47,7 @@
   :codex-ro in harnesses.clj) - read-only stays prompt-discipline. Two
   sign-off invariants: the synthesizer is never a seat that reviewed, and at
   least one reviewing seat comes from outside the authoring model family."
-  (:require [skein.spools.delegation :as agents]))
+  (:require [ct.spools.delegation :as agents]))
 
 (def change-review
   "Roster fanned out over each reviewed change in this repository."

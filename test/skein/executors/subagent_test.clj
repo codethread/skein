@@ -2,9 +2,9 @@
   "Tests for the subagent executor: the workflow-gate to agent-run adapter."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [skein.spools.agent-run :as shuttle]
-            [skein.spools.executors.subagent :as treadle]
-            [skein.spools.delegation :as agents]
+            [ct.spools.agent-run :as shuttle]
+            [ct.spools.executors.subagent :as treadle]
+            [ct.spools.delegation :as agents]
             [skein.spools.workflow :as workflow]
             [skein.spools.test-support :as test-support :refer [with-runtime]]
             [skein.core.db :as db]

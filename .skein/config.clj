@@ -3,7 +3,7 @@
   thin CLI op surface over the shipped spools.
 
   Thin glue only: `ct.spools.devflow` owns the feature lifecycle,
-  `skein.spools.workflow` is the engine, `skein.spools.delegation` owns the
+  `skein.spools.workflow` is the engine, `ct.spools.delegation` owns the
   `strand agent` surface plus the `agent-plan` pattern (all activated from
   init.clj). This file registers the devflow wrapper ops, the `kanban-tree`
   board projection op, the `hitl` session op, and a few named queries. Sibling
@@ -16,7 +16,7 @@
             [skein.macros.ops :refer [defop forget-ops! install-ops!]]
             [skein.macros.queries :refer [defquery forget-queries! install-queries! remembered-queries]]
             [ct.spools.devflow :as devflow]
-            [skein.spools.agent-run :as shuttle]
+            [ct.spools.agent-run :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as format-alpha]
@@ -555,7 +555,7 @@
                      |sign-off, squash-merge to local main with full verification, then
                      |green main CI. Registered by .skein/workflows.clj.")}]
    :patterns [{:name "agent-plan"
-               :purpose "Create a feature strand plus task/review children for agent work; shipped by skein.spools.delegation."}
+               :purpose "Create a feature strand plus task/review children for agent work; shipped by ct.spools.delegation."}
               {:name "delegate-pipeline"
                :purpose "Sequential chain-loop workflow of subagent gates with optional acceptance checkpoint. Registered by .skein/workflows.clj."}]
    :queries (into [{:name "kanban-cards"

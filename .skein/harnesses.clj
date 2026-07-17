@@ -59,8 +59,8 @@
   the benched exception for cheap recon sweeps, and the pi harness itself
   stays registered via its spool."
   (:require [skein.api.format.alpha :as format-alpha]
-            [skein.spools.delegation :as agents]
-            [skein.spools.agent-run :as shuttle]))
+            [ct.spools.delegation :as agents]
+            [ct.spools.agent-run :as shuttle]))
 
 ;; gpt-5.6 rate cards, USD per 1M tokens, hand-pinned 2026-07-13 from
 ;; https://developers.openai.com/api/docs/pricing (gpt-5.x models are not in
@@ -344,7 +344,7 @@
    :namespace 'harnesses
    :harnesses (register-harness-aliases!)
    ;; agent review consumes the one authoritative policy text by default; the
-   ;; text itself ships from skein.spools.delegation, set-default-review-contract!
+   ;; text itself ships from ct.spools.delegation, set-default-review-contract!
    ;; still lives on the agent-run engine
    :review-contract (shuttle/set-default-review-contract! agents/review-contract)
    ;; this repo runs the agent-plan task workflow (progress=, the

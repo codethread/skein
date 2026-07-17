@@ -13,8 +13,8 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [skein.spools.bench :as bench]
-            [skein.spools.bench.metrics :as metrics]
+            [ct.spools.bench :as bench]
+            [ct.spools.bench.metrics :as metrics]
             [skein.spools.test-support :as test-support])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))

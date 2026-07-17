@@ -68,21 +68,21 @@
                :call 'skein.macros.demo/install!
                :required? true})
 (runtime/use! runtime :skein/spools-shuttle
-              {:ns 'skein.spools.agent-run
-               :spools ['skein.spools/agent-run]
-               :call 'skein.spools.agent-run/install!
+              {:ns 'ct.spools.agent-run
+               :spools ['ct.spools/agent-run]
+               :call 'ct.spools.agent-run/install!
                :required? true})
 (runtime/use! runtime :skein/spools-delegation
-              {:ns 'skein.spools.delegation
-               :spools ['skein.spools/delegation]
+              {:ns 'ct.spools.delegation
+               :spools ['ct.spools/delegation]
                :after [:skein/spools-shuttle]
-               :call 'skein.spools.delegation/install!
+               :call 'ct.spools.delegation/install!
                :required? true})
 (runtime/use! runtime :skein/spools-bench
-              {:ns 'skein.spools.bench
-               :spools ['skein.spools/bench]
+              {:ns 'ct.spools.bench
+               :spools ['ct.spools/bench]
                :after [:skein/spools-shuttle]
-               :call 'skein.spools.bench/install!
+               :call 'ct.spools.bench/install!
                :required? true})
 ;; Repo policy modules, split by use case (each file is one concern):
 ;; harnesses.clj — model seats + routing policy; workflows.clj — hand-authored
@@ -92,7 +92,7 @@
 ;; config.clj — named queries + the CLI op surface.
 (runtime/use! runtime :harnesses
               {:file "harnesses.clj"
-               :spools ['skein.spools/delegation 'skein.spools/agent-run]
+               :spools ['ct.spools/delegation 'ct.spools/agent-run]
                :after [:skein/spools-delegation]
                :call 'harnesses/install!
                :required? true})
@@ -102,7 +102,7 @@
 ;; order relative to harnesses.clj is not load-bearing.
 (runtime/use! runtime :reviewers
               {:file "reviewers.clj"
-               :spools ['skein.spools/delegation]
+               :spools ['ct.spools/delegation]
                :after [:skein/spools-delegation]
                :call 'reviewers/install!
                :required? true})
@@ -119,7 +119,7 @@
                :required? true})
 (runtime/use! runtime :attention
               {:file "attention.clj"
-               :spools ['skein.macros/macros 'skein.spools/agent-run]
+               :spools ['skein.macros/macros 'ct.spools/agent-run]
                :after [:skein/spools-chime :skein/spools-shuttle :macros/patterns]
                :call 'attention/install!
                :required? true})
@@ -147,7 +147,7 @@
                :required? true})
 (runtime/use! runtime :config
               {:file "config.clj"
-               :spools ['skein.spools/workflow 'skein.spools/agent-run
+               :spools ['skein.spools/workflow 'ct.spools/agent-run
                         'codethread/devflow 'skein.macros/macros]
                :after [:skein/spools-workflow :skein/spools-devflow
                        :skein/spools-shuttle :macros/patterns]
@@ -166,7 +166,7 @@
 ;; the :config module.
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
-               :spools ['skein.spools/workflow 'skein.spools/delegation]
+               :spools ['skein.spools/workflow 'ct.spools/delegation]
                :after [:skein/spools-workflow :skein/spools-delegation :config]
                :call 'workflows/install!
                :required? true})
@@ -183,8 +183,8 @@
 ;; already exist or a durable ready gate would be stamped gate/error on every
 ;; cold start.
 (runtime/use! runtime :skein/spools-treadle
-              {:ns 'skein.spools.executors.subagent
-               :spools ['skein.spools/agent-run]
+              {:ns 'ct.spools.executors.subagent
+               :spools ['ct.spools/agent-run]
                :after [:skein/spools-shuttle :skein/spools-workflow :harnesses :config :workflows]
-               :call 'skein.spools.executors.subagent/install!
+               :call 'ct.spools.executors.subagent/install!
                :required? true})

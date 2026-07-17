@@ -9,13 +9,13 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
-            [skein.spools.agent-run :as shuttle]
+            [ct.spools.agent-run :as shuttle]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.delegation :as agents]
+            [ct.spools.delegation :as agents]
             [skein.spools.test-support :as test-support :refer [await-phase]]))
 
 (defn- with-shuttle
@@ -1033,7 +1033,7 @@
         ;; through migrate-state (as a post-bump reload of a preserved map would)
         (let [preserved (assoc (#'shuttle/new-state)
                                :default-task-contract (atom "carried task text"))]
-          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state preserved)
+          (swap! (:spool-state rt) assoc :ct.spools.agent-run/state preserved)
           (is (= "carried task text" (shuttle/default-task-contract-text))
               "migrate-state carries the configured task contract forward")))
       (testing "a pre-v5 map lacking the slot reinits to the nil default"
@@ -1042,7 +1042,7 @@
                       :in-flight (atom {})
                       :preamble-extension (atom nil)
                       :default-review-contract (atom nil)}]
-          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state pre-v5)
+          (swap! (:spool-state rt) assoc :ct.spools.agent-run/state pre-v5)
           (is (nil? (shuttle/default-task-contract-text))
               "select-keys omits the absent key so new-state's default survives"))))))
 
@@ -1083,7 +1083,7 @@
   ;; now fails loudly (TEN-003) instead of NPE-ing into the event worker.
   (with-shuttle
     (fn [rt]
-      (swap! (:spool-state rt) update :skein.spools.agent-run/state
+      (swap! (:spool-state rt) update :ct.spools.agent-run/state
              (fn [s] (with-meta (dissoc s :worker-executor) (meta s))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Required engine spool-state entry is missing"
                             (#'shuttle/worker-executor))))))
@@ -1105,7 +1105,7 @@
                        :preamble-extension (atom "preserved preamble")
                        :default-review-contract (atom nil)}]
         ;; overwrite the installed (version 1) state with an untagged old-shape map
-        (swap! (:spool-state rt) assoc :skein.spools.agent-run/state old-state)
+        (swap! (:spool-state rt) assoc :ct.spools.agent-run/state old-state)
         (let [reinit (#'shuttle/state)]
           (is (some? (:worker-executor reinit)) "reinit supplies a fresh worker executor")
           (is (some? (:recovery-scheduler reinit)) "reinit supplies a fresh recovery scheduler")
@@ -1131,7 +1131,7 @@
                          :in-flight (atom {})
                          :preamble-extension (atom nil)
                          :default-review-contract (atom nil)}]
-          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state old-state)
+          (swap! (:spool-state rt) assoc :ct.spools.agent-run/state old-state)
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"neither or both"
                                 (#'shuttle/state)))))
       (testing "an entry carrying both shapes' required keys fails the migrate loudly"
@@ -1140,7 +1140,7 @@
                          :in-flight (atom {})
                          :preamble-extension (atom nil)
                          :default-review-contract (atom nil)}]
-          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state old-state)
+          (swap! (:spool-state rt) assoc :ct.spools.agent-run/state old-state)
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"neither or both"
                                 (#'shuttle/state))))))))
 
@@ -1940,7 +1940,7 @@
         ;; an untagged map has no stored version, so accessing state reinits
         ;; through migrate-state (as a post-bump reload of a preserved map would)
         (let [preserved (assoc (#'shuttle/new-state) :fanout-ceiling (atom 7))]
-          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state preserved)
+          (swap! (:spool-state rt) assoc :ct.spools.agent-run/state preserved)
           (is (= 7 (#'shuttle/fanout-ceiling))
               "migrate-state carries the configured ceiling forward")))
       (testing "a pre-feature map lacking the ceiling reinits to the default"
@@ -1949,7 +1949,7 @@
                       :in-flight (atom {})
                       :preamble-extension (atom nil)
                       :default-review-contract (atom nil)}]
-          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state pre-v4)
+          (swap! (:spool-state rt) assoc :ct.spools.agent-run/state pre-v4)
           (is (= 4 (#'shuttle/fanout-ceiling))
               "select-keys omits the absent key so new-state's default survives"))))))
 
