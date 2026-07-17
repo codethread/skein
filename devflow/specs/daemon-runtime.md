@@ -129,6 +129,22 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
   weaver accessors; they do not expose a general filesystem mutation API. Their
   results conform to `:skein.core.specs/config-dir-result` and
   `:skein.core.specs/spools-file-result`.
+- **SPEC-004.C39c:** `skein.api.runtime.alpha/approved` exposes each root's
+  effective config layer as `:provenance :spools-edn|:local-overlay`; an overlay
+  also exposes its explicit `:claims` marker. These keys accrete onto the
+  existing root entry shape. `upsert-spool-entry!` and `remove-spool-entry!`
+  are the blessed data-first write seam for the primary `spools.edn`; overlays
+  remain hand-edited. Both take a family symbol rather than serialized EDN and
+  return a map with status, family, entry, and primary file conforming to
+  `:skein.api.runtime.alpha/spool-write-result`. Upsert
+  accepts an entry conforming to `:skein.api.runtime.alpha/spool-entry`. Before
+  an atomic write, the full post-edit primary config passes the same stage-1
+  normalizer and specs as sync. The structural editor replaces only the
+  top-level `:spools` map, preserving header comments and other top-level text.
+  Remove fails when the family is absent or another family's `:requires` names
+  any root owned by it; the latter failure names every requiring family and
+  root. The verbs do not sync, fetch, edit overlays, or expose entry
+  serialization.
 - **SPEC-004.C40:** Blessed `skein.api.*.alpha` namespaces and shipped reference spools are documented, tested, and used by examples. They are recommended maintenance paths, not enforcement boundaries; trusted code may require lower-level namespaces or use raw SQLite schema when it accepts compatibility cost.
 - **SPEC-004.C41:** The selected workspace is a trusted alpha spool workspace root. User-owned config may include `config.json` with only `"configFormat":"alpha"`, shared `init.clj`/`spools.edn`, local `init.local.clj`/`spools.local.edn`, local source directories, and user code. The CLI bootstrap path may initialize missing workspace files/directories, but must not initialize a Git repository, persist source checkout paths, or overwrite existing user files.
 - **SPEC-004.C42:** `spools.edn` declares approved weaver-wide spool families. A local family is

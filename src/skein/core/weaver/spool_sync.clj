@@ -482,6 +482,19 @@
                      (normalize-entry source family entry))
                    (:spools config))})
 
+(defn validate-shared-spools-config!
+  "Return stage-1 normalized records for a shared `spools.edn` config.
+
+  `file` names the source in validation failures. This is the shared validation
+  seam used by runtime config writes; it applies the same entry specs and error
+  classes as sync before any file is changed."
+  [file config]
+  (normalize-approved-spools-file
+   "spools.edn"
+   {:kind :shared :file (.getPath (io/file file))}
+   config
+   normalize-shared-family))
+
 (defn- read-config-edn-file
   "Read an approved-spool EDN file, adding source context to expected failures."
   [file message context]
@@ -548,7 +561,8 @@
   (s/and map?
          kind-shaped-root?
          #(non-blank-string? (:root %))
-         #(s/valid? ::source (:source %))))
+         #(s/valid? ::source (:source %))
+         #(s/valid? ::provenance (:provenance %))))
 (s/def ::approved-root-map
   (s/and (s/map-of symbol? ::approved-root-entry)
          #(every? (fn [[lib entry]]
@@ -628,7 +642,8 @@
                                     [lib (with-meta
                                            (cond-> (assoc coordinate
                                                           :root (.getPath root)
-                                                          :source source)
+                                                          :source source
+                                                          :provenance provenance)
                                              claims (assoc :claims claims))
                                            {::family family
                                             ::coordinate coordinate

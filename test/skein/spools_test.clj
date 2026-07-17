@@ -167,11 +167,13 @@
         (is (= {:spools {'demo/shared {:kind :local
                                        :local/root "spools/shared"
                                        :root (.getCanonicalPath shared-root)
-                                       :source (shared-source config-dir)}
+                                       :source (shared-source config-dir)
+                                       :provenance :spools-edn}
                          'demo/local {:kind :local
                                       :local/root "spools/local"
                                       :root (.getCanonicalPath local-root)
-                                      :source (shared-source config-dir)}}}
+                                      :source (shared-source config-dir)
+                                      :provenance :spools-edn}}}
                (runtime/approved rt)))))))
 
 (deftest approved-local-spools-override-shared-by-coordinate
@@ -191,7 +193,8 @@
                 :local/root "spools/local"
                 :claims "v2"
                 :root (.getPath (io/file (.getCanonicalPath local-root) "nested"))
-                :source (local-source config-dir)}
+                :source (local-source config-dir)
+                :provenance :local-overlay}
                (get-in (runtime/approved rt) [:spools 'demo/override])))))))
 
 (deftest approved-fails-when-spools-edn-is-not-a-file
@@ -215,11 +218,13 @@
         (is (= {:spools {'demo/absolute {:kind :local
                                          :local/root (.getAbsolutePath absolute-root)
                                          :root (.getCanonicalPath absolute-root)
-                                         :source (shared-source config-dir)}
+                                         :source (shared-source config-dir)
+                                         :provenance :spools-edn}
                          'demo/relative {:kind :local
                                          :local/root "spools/demo"
                                          :root (.getCanonicalPath relative-root)
-                                         :source (shared-source config-dir)}}}
+                                         :source (shared-source config-dir)
+                                         :provenance :spools-edn}}}
                (runtime/approved rt)))))))
 
 (deftest approved-expands-home-relative-roots
@@ -231,7 +236,8 @@
         (is (= {:spools {'demo/home {:kind :local
                                      :local/root "~/dev/projects/my-lib"
                                      :root (.getCanonicalPath home-root)
-                                     :source (shared-source config-dir)}}}
+                                     :source (shared-source config-dir)
+                                     :provenance :spools-edn}}}
                (runtime/approved rt)))))))
 
 (deftest approved-canonicalizes-symlink-roots
@@ -246,7 +252,8 @@
         (is (= {:spools {'demo/link {:kind :local
                                      :local/root "spools/link"
                                      :root (.getCanonicalPath target)
-                                     :source (shared-source config-dir)}}}
+                                     :source (shared-source config-dir)
+                                     :provenance :spools-edn}}}
                (runtime/approved rt)))))))
 
 (deftest approved-does-not-reject-missing-local-roots
@@ -257,7 +264,8 @@
         (is (= {:spools {'demo/missing {:kind :local
                                         :local/root "spools/missing"
                                         :root (.getCanonicalPath missing)
-                                        :source (shared-source config-dir)}}}
+                                        :source (shared-source config-dir)
+                                        :provenance :spools-edn}}}
                (runtime/approved rt)))))))
 
 (deftest approved-normalizes-git-family-roots
@@ -277,7 +285,8 @@
                                          :git/sha sha
                                          :git/tag "v1"
                                          :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
-                                         :source (shared-source config-dir)}}}
+                                         :source (shared-source config-dir)
+                                         :provenance :spools-edn}}}
                    (runtime/approved rt)))))))))
 
 (deftest approved-rejects-malformed-git-spools

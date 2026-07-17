@@ -5,14 +5,18 @@
   argument. Use `skein.api.current.alpha/runtime` only at trusted in-process entry
   points that need to capture the active runtime."
   (:refer-clojure :exclude [sync use])
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [clojure.pprint :as pp]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.spool.alpha :refer [require-valid!]]
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.runtime :as weaver-runtime]
-            [skein.core.weaver.spool-sync :as spool-sync]))
+            [skein.core.weaver.spool-sync :as spool-sync])
+  (:import [java.nio.file Files StandardCopyOption]
+           [java.nio.file.attribute FileAttribute]))
 
 (s/def ::root-lib symbol?)
 (s/def ::ns symbol?)
@@ -56,6 +60,16 @@
 (defn- exact-keys? [allowed value]
   (and (map? value) (= allowed (set (keys value)))))
 
+(s/def ::spool-family symbol?)
+(s/def ::spool-entry :skein.core.weaver.spool-sync/family-entry)
+(s/def ::spool-write-status #{:inserted :updated :removed})
+(s/def ::spool-write-result
+  (s/and #(exact-keys? #{:status :lib :entry :file} %)
+         #(s/valid? ::spool-write-status (:status %))
+         #(s/valid? ::spool-family (:lib %))
+         #(s/valid? ::spool-entry (:entry %))
+         #(s/valid? ::specs/spools-file-result (:file %))))
+
 (s/def ::reload-namespace
   (s/and #(exact-keys? #{:ns :file} %)
          #(s/valid? ::ns (:ns %))
@@ -88,7 +102,11 @@
     (if (= :none provenance) :none marker)))
 
 (defn approved
-  "Return the normalized approved spool roots for `runtime`'s config dir."
+  "Return the normalized approved spool roots for `runtime`'s config dir.
+
+  Each root entry includes `:provenance :spools-edn|:local-overlay`; overlay
+  entries also include their explicit `:claims` marker. The result conforms to
+  `::approved-result`."
   [runtime]
   (validate-approved-result!
    (spool-sync/approved-spools runtime (running-release-marker runtime))))
@@ -131,6 +149,203 @@
                     "runtime spools file has an invalid shape")
     result))
 
+(defn- skip-comment [content offset]
+  (let [newline (.indexOf ^String content "\n" (int offset))]
+    (if (neg? newline) (count content) (inc newline))))
+
+(defn- skip-trivia [content offset]
+  (loop [offset offset]
+    (if (< offset (count content))
+      (let [ch (.charAt ^String content offset)]
+        (cond
+          (or (Character/isWhitespace ch) (= \, ch)) (recur (inc offset))
+          (= \; ch) (recur (skip-comment content offset))
+          :else offset))
+      offset)))
+
+(defn- scan-spools-map-span
+  "Return the source span of the top-level `:spools` map."
+  [content]
+  (let [length (count content)]
+    (loop [offset 0
+           stack []
+           string? false
+           escaped? false
+           comment? false]
+      (when (< offset length)
+        (let [ch (.charAt ^String content offset)]
+          (cond
+            comment?
+            (recur (inc offset) stack false false (not= \newline ch))
+
+            string?
+            (cond
+              escaped? (recur (inc offset) stack true false false)
+              (= \\ ch) (recur (inc offset) stack true true false)
+              (= \" ch) (recur (inc offset) stack false false false)
+              :else (recur (inc offset) stack true false false))
+
+            (= \; ch)
+            (recur (inc offset) stack false false true)
+
+            (= \" ch)
+            (recur (inc offset) stack true false false)
+
+            (#{\{ \[ \(} ch)
+            (recur (inc offset) (conj stack ch) false false false)
+
+            (#{\} \] \)} ch)
+            (recur (inc offset) (pop stack) false false false)
+
+            (and (= [\{] stack)
+                 (= \: ch)
+                 (str/starts-with? (subs content offset) ":spools")
+                 (let [end (+ offset (count ":spools"))]
+                   (or (= end length)
+                       (let [next (.charAt ^String content end)]
+                         (or (Character/isWhitespace next)
+                             (#{\, \{ \[ \( \} \] \)} next))))))
+            (let [start (skip-trivia content (+ offset (count ":spools")))
+                  open (.indexOf ^String content "{" (int start))
+                  prefix (when-not (neg? open) (subs content start open))]
+              (when-not (and (< start length)
+                             (not (neg? open))
+                             (or (empty? prefix)
+                                 (re-matches #"#:[^\s,{}\[\]()]+" prefix)))
+                (throw (ex-info "spools.edn :spools value must be a map form"
+                                {:offset start})))
+              (loop [cursor (inc open)
+                     depth 1
+                     string? false
+                     escaped? false
+                     comment? false]
+                (when-not (< cursor length)
+                  (throw (ex-info "spools.edn :spools map is unterminated" {:offset start})))
+                (let [current (.charAt ^String content cursor)]
+                  (cond
+                    comment? (recur (inc cursor) depth false false (not= \newline current))
+                    string? (cond
+                              escaped? (recur (inc cursor) depth true false false)
+                              (= \\ current) (recur (inc cursor) depth true true false)
+                              (= \" current) (recur (inc cursor) depth false false false)
+                              :else (recur (inc cursor) depth true false false))
+                    (= \; current) (recur (inc cursor) depth false false true)
+                    (= \" current) (recur (inc cursor) depth true false false)
+                    (= \{ current) (recur (inc cursor) (inc depth) false false false)
+                    (= \} current) (if (= 1 depth)
+                                     [start (inc cursor)]
+                                     (recur (inc cursor) (dec depth) false false false))
+                    :else (recur (inc cursor) depth false false false)))))
+
+            :else
+            (recur (inc offset) stack false false false)))))))
+
+(defn- read-primary-spools-config [file]
+  (if (.exists ^java.io.File file)
+    (try
+      {:content (slurp file)
+       :exists? true}
+      (catch java.io.IOException error
+        (throw (ex-info "spools.edn is malformed or unreadable"
+                        {:kind :shared :file (.getPath ^java.io.File file)}
+                        error))))
+    {:content nil :exists? false}))
+
+(defn- parse-primary-spools-config [{:keys [content exists?]} file]
+  (if exists?
+    (try
+      (edn/read-string content)
+      (catch RuntimeException error
+        (throw (ex-info (str "spools.edn is malformed or unreadable: " (ex-message error))
+                        {:kind :shared :file (.getPath ^java.io.File file)}
+                        error))))
+    {:spools {}}))
+
+(defn- render-spools-map [spools]
+  (binding [*print-namespace-maps* false]
+    (str/trimr (with-out-str (pp/pprint spools)))))
+
+(defn- replace-spools-map [content spools]
+  (let [[start end] (scan-spools-map-span content)]
+    (when-not start
+      (throw (ex-info "spools.edn requires :spools map" {})))
+    (str (subs content 0 start) (render-spools-map spools) (subs content end))))
+
+(defn- atomic-write! [^java.io.File file content]
+  (let [parent (.toPath (.getParentFile file))
+        tmp (Files/createTempFile parent ".spools.edn-" ".tmp" (make-array FileAttribute 0))]
+    (try
+      (spit (.toFile tmp) content)
+      (Files/move tmp (.toPath file)
+                  (into-array java.nio.file.CopyOption
+                              [StandardCopyOption/ATOMIC_MOVE
+                               StandardCopyOption/REPLACE_EXISTING]))
+      (finally
+        (Files/deleteIfExists tmp)))))
+
+(defn- write-primary-spools! [file original config]
+  (spool-sync/validate-shared-spools-config! file config)
+  (let [content (if (:exists? original)
+                  (replace-spools-map (:content original) (:spools config))
+                  (str (render-spools-map config) "\n"))]
+    (atomic-write! file content)))
+
+(defn upsert-spool-entry!
+  "Insert or replace `lib` in `runtime`'s primary `spools.edn`.
+
+  `lib` and `entry` conform to `::spool-family` and `::spool-entry`. The full
+  post-edit config is validated through sync's stage-1 contract before an atomic
+  write. Only the `:spools` map is rewritten, so comments outside it are kept.
+  The result conforms to `::spool-write-result`."
+  [runtime lib entry]
+  (require-valid! ::spool-family lib "upsert-spool-entry! lib must be a symbol")
+  (let [^java.io.File file (spools-file runtime)
+        original (read-primary-spools-config file)
+        config (parse-primary-spools-config original file)
+        _ (spool-sync/validate-shared-spools-config! file config)
+        existed? (contains? (:spools config) lib)
+        updated (assoc-in config [:spools lib] entry)]
+    (write-primary-spools! file original updated)
+    {:status (if existed? :updated :inserted)
+     :lib lib
+     :entry entry
+     :file file}))
+
+(defn remove-spool-entry!
+  "Remove `lib` from `runtime`'s primary `spools.edn`.
+
+  Refuses a missing family or a family whose root libs appear in another
+  family's `:requires`, naming all requirers. Inputs and result conform to
+  `::spool-family` and `::spool-write-result`. Only the primary file is changed."
+  [runtime lib]
+  (require-valid! ::spool-family lib "remove-spool-entry! lib must be a symbol")
+  (let [^java.io.File file (spools-file runtime)
+        original (read-primary-spools-config file)
+        config (parse-primary-spools-config original file)
+        _ (spool-sync/validate-shared-spools-config! file config)
+        entry (get-in config [:spools lib])]
+    (when-not entry
+      (throw (ex-info "Spool family is not present in spools.edn"
+                      {:reason :spool-family-not-found :lib lib :file (.getPath file)})))
+    (let [normalized (:families (spool-sync/validate-shared-spools-config! file config))
+          target (some #(when (= lib (:family %)) %) normalized)
+          roots (set (keys (:roots-map target)))
+          requirers (->> normalized
+                         (remove #(= lib (:family %)))
+                         (keep (fn [{:keys [family requires]}]
+                                 (let [required (set (filter roots (keys requires)))]
+                                   (when (seq required)
+                                     {:family family :roots required}))))
+                         vec)]
+      (when (seq requirers)
+        (throw (ex-info "Spool family is required by other families"
+                        {:reason :spool-family-required
+                         :lib lib
+                         :roots roots
+                         :requirers requirers})))
+      (write-primary-spools! file original (update config :spools dissoc lib))
+      {:status :removed :lib lib :entry entry :file file})))
+
 (defn sync!
   "Load approved spool roots and Maven jars into `runtime`.
 
@@ -159,6 +374,14 @@
 (s/fdef approved
   :args (s/cat :runtime map?)
   :ret ::approved-result)
+
+(s/fdef upsert-spool-entry!
+  :args (s/cat :runtime map? :lib ::spool-family :entry ::spool-entry)
+  :ret ::spool-write-result)
+
+(s/fdef remove-spool-entry!
+  :args (s/cat :runtime map? :lib ::spool-family)
+  :ret ::spool-write-result)
 
 (s/fdef sync!
   :args (s/cat :runtime map?)
