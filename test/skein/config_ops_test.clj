@@ -53,14 +53,14 @@
             (is (empty? missing) (str "production ops missing :returns: " missing))
             (doseq [[operation context] required]
               (check! operation context
-                      (if (contains? #{"carder-report" "flow-await"} operation)
+                      (if (= "flow-await" operation)
                         {}
                         {:operation operation})))
             (let [{:keys [unchecked]} (owner-return-coverage runtime provenances @checked)]
               (is (= required @checked))
               (is (empty? unchecked)))
-            (testing "only the two flat unstamped config results omit operation"
-              (is (= #{"carder-report" "flow-await"}
+            (testing "only the flat unstamped flow-await result omits operation"
+              (is (= #{"flow-await"}
                      (into #{}
                            (keep (fn [{:keys [name returns]}]
                                    (when (and (= 'config (:provenance
