@@ -169,7 +169,5 @@ Honest source: the automatic workflow/devflow integration section of [`roster.md
 - [`roster.md`](./roster.md) — the contract: the `roster/*` vocabulary,
   staleness/await semantics, workflow/devflow integration, and the CLI op.
 - [`roster.api.md`](./roster.api.md) — generated signatures and docstrings.
-- [`loom.md`](./loom.md) — read-only branch/flow projections that read the same
-  active work from a different angle (rendering rather than awaiting).
 - [`workflow.cookbook.md`](./workflow.cookbook.md) — the workflow runs whose
   roots the roster auto-stamps.

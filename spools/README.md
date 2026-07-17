@@ -37,14 +37,9 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 |---|---|---|---|---|
 | `skein.spools.workflow` | `../spools/workflow` | [workflow.md](./workflow.md) | [workflow.api.md](./workflow.api.md) · [cookbook](./workflow.cookbook.md) | Workflow engine: plain-data definitions compiled to strand batches, with loops, gates, checkpoints, routing, and rebindable tool bindings. |
 | `skein.spools.executors.shell` | `../spools/workflow` (folded into the workflow root) | [executors/shell.md](./executors/shell.md) | [executors/shell.api.md](./executors/shell.api.md) · [cookbook](./executors/shell.cookbook.md) | Workflow `:shell` gate executor: runs a ready gate's `shell/argv` command directly on a spool-owned worker pool, closes it with `complete!` on a zero exit, and stamps a loud `shell/error` (with exit code and bounded output) on failure. Registers the `:shell` executor and the `stalled-shell-gates` query. |
-| `skein.spools.ephemeral` | `../spools/ephemeral` | [ephemeral.md](./ephemeral.md) | [ephemeral.api.md](./ephemeral.api.md) · [cookbook](./ephemeral.cookbook.md) | Small helper for temporary, parent-owned strands marked and burned via a userland attribute. |
 | `skein.spools.roster` | `../spools/roster` | [roster.md](./roster.md) | [roster.api.md](./roster.api.md) · [cookbook](./roster.cookbook.md) | Active-work registry: `roster/*` attribute vocabulary, explicit-runtime `track!`/`heartbeat!`/`finish!`/`roster`/`await-quiet!` helpers, a declared-subcommand `roster` op and named query, awaitable quiet/stale semantics, and automatic workflow/devflow root stamping. |
-| `skein.spools.loom` | `../spools/loom` | [loom.md](./loom.md) | [loom.api.md](./loom.api.md) · [cookbook](./loom.cookbook.md) | Read-only work-graph projections: active parent-of work DAGs with depends-on edges, per-branch progress views joined to a ready frontier, and workflow flow-status (history/frontier/gates/runs/stalls) with a Mermaid gate chain. Registers no ops. |
-| `skein.spools.carder` | `../spools/carder` | [carder.md](./carder.md) | [carder.api.md](./carder.api.md) · [cookbook](./carder.cookbook.md) | Read-only graph hygiene reports: stale active work, orphaned strands, and work blocked behind failed agent runs. |
 | `skein.spools.text-search` **(UNSAFE)** | `../spools/text-search` | [text-search.md](./text-search.md) | [text-search.api.md](./text-search.api.md) · [cookbook](./text-search.cookbook.md) | **UNSAFE reference spool** — requires `skein.core.db` and runs SQL against the physical tables to `LIKE`-search titles and attribute values, including archived rows the query language cannot see. Registers the `search` op. A maintained example of breaking the namespace-tier rules in the open, not a blessed path; read its [Unsafe declaration](./text-search.md#unsafe-declaration) before activating. |
-| `skein.spools.bobbin` | *(none approved in this repo)* | [bobbin.md](./bobbin.md) | [bobbin.api.md](./bobbin.api.md) · [cookbook](./bobbin.cookbook.md) | Context-pack assembler: one self-contained JSON bundle of a strand's blockers, dependents, provenance, notes, and workflow context, plus deterministic prompt-text rendering. |
 | `skein.spools.guild` | *(none approved in this repo)* | [guild.md](./guild.md) | [guild.api.md](./guild.api.md) · [cookbook](./guild.cookbook.md) | Versioned public weaver op API declarations, `guild.describe` introspection, and loud structured deprecation for local peer coordination. |
-| `skein.spools.selvage` | *(none approved in this repo)* | [selvage.md](./selvage.md) | [selvage.api.md](./selvage.api.md) · [cookbook](./selvage.cookbook.md) | Opt-in attribute vocabulary lint: data-first checks per attribute namespace, on-demand `check`/`check-all`, and post-hoc watch-mode violation recording. |
 | `skein.spools.agent-run` | `../spools/agent-run` | [agent-run/README.md](./agent-run/README.md) | [agent-run.api.md](./agent-run.api.md) · [cookbook](./agent-run.cookbook.md) | Agent-run **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, storage-enforced write-once run memory, and the preamble seam. Registers no ops. |
 | `skein.spools.delegation` | `../spools/delegation` | [delegation/README.md](./delegation/README.md) | [delegation.api.md](./delegation.api.md) · [cookbook](./delegation.cookbook.md) | Cross-harness subagent surface over agent-run: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
 | `skein.spools.executors.subagent` | `../spools/agent-run` (folded into the agent-run root) | [executors/subagent.md](./executors/subagent.md) | [executors/subagent.api.md](./executors/subagent.api.md) · [cookbook](./executors/subagent.cookbook.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning agent-run runs and delivering successful results through `workflow/complete!`. |
@@ -55,13 +50,15 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 | `ct.spools.devflow` | git, sha-pinned (see below) | [devflow.md](https://github.com/codethread/devflow.spool/blob/84c83f6a78812dd12ff74d330d58d6dc26b910ad/devflow.md) | — | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
 | `skein.spools.dresser` | *(none approved in this repo)* | [dresser.md](https://github.com/codethread/dresser.loom/blob/fea1d340be3591d008cf0ddeb72b0091d95a380d/dresser.md) | — | Brings a repo onto shared working conventions and surfaces convention upgrades later. Two flavours: scaffold a new shared-spool repo, or install a self-contained `.skein/` workspace into any host repo. Applied versions are recorded in the target at `.skein/conventions.edn`. |
 
-`bobbin`, `guild`, and `selvage` are never-activated reference roots: this repo carries their source and tests but adds no `.skein/spools.edn` coordinate for them — a downstream user opts in by adding one.
+`guild` is a never-activated reference root. This repo carries its source and tests because
+kanban.spool's peering layer depends on it, but adds no `.skein/spools.edn` coordinate. A downstream
+user opts in by adding one.
 
 `skein.spools.workflow` is deliberately a spool, and deliberately an in-repo one (decided
 2026-07-11). It is replaceable library code: use it, rebuild it, or find
 something better. Promotion to `skein.api.*` was rejected because that tier promises more stability
 than a deliberately swappable engine should; extraction to its own repo was rejected because
-workflow is a hub (devflow.spool, `executors.subagent` in the agent-run root, loom, and this repo's
+workflow is a hub (devflow.spool, `executors.subagent` in the agent-run root, and this repo's
 `.skein` config all require it), so an external pin would put bump ceremony on the hottest path of
 engine development. Consumers who want the engine pinned independently of a checkout address it
 with a sha-pinned nested-root git coordinate (`:git/url` + `:git/sha` + `:deps/root
@@ -105,8 +102,7 @@ with a gitignored `spools.local.edn` local root.
 - The test suites drive every documented behavior against a real weaver
   runtime and double as executable examples:
   [`test/skein/spools/workflow_test.clj`](../test/skein/spools/workflow_test.clj),
-  the standalone devflow.spool test suite, and the ephemeral cases in
-  [`test/skein/spools_test.clj`](../test/skein/spools_test.clj).
+  and the standalone devflow.spool test suite.
 
 ## Using and extending
 

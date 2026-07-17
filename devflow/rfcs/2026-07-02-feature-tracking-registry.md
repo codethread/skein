@@ -6,7 +6,13 @@
 
 "What is in flight in this repo right now?" has no single answer. The strand graph answers it only for work that happens to be strand-tracked — devflow molecules, `agent-plan` DAGs, delegate pipelines. Work driven by other implementations is invisible: file-based AFK task queues (`devflow/feat/*/tasks/index.yml`), ad hoc agent sessions, and humans editing directly.
 
-Concrete incident (2026-07-02): two agent sessions shared this checkout. One had to fall back to polling `git status` and file mtimes to detect that the other was mid-flight on the namespace-tier docs sweep, because that session had no strand presence — `strand ready --query work`, `workflow-runs`, and `flow-await` could say nothing about it. Meanwhile the weaver-guild AFK loop (file-based queue in a worktree) was equally invisible to everyone else until a marker strand was hand-authored after the fact. The coordination surface exists (RFC-011: `flow-await`, `flow-status`, `stalled-gates`) but only for runs that live in the graph.
+Concrete incident (2026-07-02): two agent sessions shared this checkout. One had to fall back to
+polling `git status` and file mtimes to detect that the other was mid-flight on the namespace-tier
+docs sweep, because that session had no strand presence — `strand ready --query work`,
+`workflow-runs`, and `flow-await` could say nothing about it. Meanwhile the weaver-guild AFK loop
+(file-based queue in a worktree) was equally invisible to everyone else until a marker strand was
+hand-authored after the fact. The workflow coordination surface existed, but only for runs that
+lived in the graph.
 
 The cost is real: sessions can't gate merges on each other, can't discover each other's worktrees/branches, and re-derive state from filesystem side effects.
 
@@ -106,4 +112,9 @@ Future implementation slices and unresolved design decisions are tracked on the 
 
 ## RFC-014.P8 Outcome
 
-Both recommendations shipped. The O1/REC1 interim convention shipped 2026-07-04: work roots are stamped with `branch`/`owner`/`worktree` (mandatory at `kanban claim`) and the repo-local `strand branches` op projects per-branch progress (see AGENTS.md "Branch work visibility"). The durable O3 answer shipped 2026-07-05 as the `skein.spools.roster` reference spool (`spools/src/skein/spools/roster.clj`, contract in `spools/roster.md`, archived at `devflow/archive/26-07-05__roster-spool/`): a canonical `roster/*` active-work vocabulary, register/heartbeat/finish/list/await helpers, a public `strand roster` surface, and loud stale-entry surfacing that never auto-burns entries.
+Both recommendations shipped. The O1/REC1 interim convention shipped 2026-07-04: work roots are
+stamped with `branch`/`owner`/`worktree` at `kanban claim`. The durable O3 answer shipped 2026-07-05
+as the `skein.spools.roster` reference spool (`spools/roster/src/skein/spools/roster.clj`, contract
+in `spools/roster.md`, archived at `devflow/archive/26-07-05__roster-spool/`): a canonical `roster/*`
+active-work vocabulary, register/heartbeat/finish/list/await helpers, a public `strand roster`
+surface, and loud stale-entry surfacing that never auto-burns entries.

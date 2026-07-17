@@ -184,8 +184,8 @@ For stronger isolation, create an agent-local namespace and call Skein helpers t
 
 When `init.clj` outgrows a handful of registrations, move the behavior into a local spool and leave activation
 behind. Skein treats runtime extensions as trusted Clojure code, and the
-[reference spools](../../spools/README.md) — a workflow engine and an ephemeral-strand helper, plus the
-external git-distributed devflow lifecycle — double as worked examples of spool design; all of them load the
+[reference spools](../../spools/README.md) — including the workflow engine and the external,
+git-distributed devflow lifecycle — double as worked examples of spool design. All of them load the
 same opt-in way yours will. A common layout:
 
 ```text

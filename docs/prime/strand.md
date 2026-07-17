@@ -36,7 +36,7 @@ are normally present — verify with `strand help` rather than assuming.
 Use `body` for useful issue-style context: problem, scope, acceptance criteria, constraints,
 relevant files, and validation expectations.
 
-- Titles alone are acceptable for personal/ephemeral to-do tracking.
+- Titles alone are acceptable for personal or short-lived to-do tracking.
 - Any strand another agent may pick up needs a clear descriptive `body`.
 - For multi-line bodies, attach the text as a payload and reference it:
   `strand --payload body=<path> add "<title>" --attr body=:payload/body` (from a

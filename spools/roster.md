@@ -9,7 +9,12 @@
 > Reach for the cookbook when you want a runnable pattern, the API doc when you
 > want an exact arity, and this doc for what the spool promises.
 
-The roster spool is the durable, graph-native answer to "what work is active in this weaver?" It records active work as ordinary strands under a shared `roster/*` attribute vocabulary, exposes explicit-runtime helpers and a `strand roster` op for tracking, and makes quiet/stale states awaitable — without replacing workflow runs, devflow stages, kanban lanes, agent-run run state, or `strand branches` (SPEC-RosterSpool-001.P1). It summarizes work roots for coordination and enforces no locks, ownership, merge gates, or exclusivity (SPEC-RosterSpool-001.NG1).
+The roster spool is the durable, graph-native answer to "what work is active in this weaver?" It
+records active work as ordinary strands under a shared `roster/*` attribute vocabulary, exposes
+explicit-runtime helpers and a `strand roster` op for tracking, and makes quiet/stale states
+awaitable — without replacing workflow runs, devflow stages, kanban lanes, agent-run run state, or
+branch-stamped work roots (SPEC-RosterSpool-001.P1). It summarizes work roots for coordination and
+enforces no locks, ownership, merge gates, or exclusivity (SPEC-RosterSpool-001.NG1).
 
 `skein.spools.roster` is an ordinary reference spool: a workspace approves the local-root coordinate `skein.spools/roster` in its `spools.edn` (see [`spools/README.md`](./README.md)) and activates it (see [Activation](#activation)). It does not ship on the weaver classpath.
 
