@@ -126,6 +126,10 @@ Helpers include:
 - `(runtime/approved runtime)` returns normalized approved config.
 - `(runtime/sync! runtime)` materializes approved git coordinates into the content-addressed cache, uses Clojure runtime dependency tooling to add each entry's effective root, and returns structured results for loaded, already-available, and failed approved spools, including fetch and runtime-add/dependency-policy failure data where applicable.
 - `(runtime/syncs runtime)` returns weaver-lifetime approved-spool sync state.
+- `(runtime/reload-spool! runtime root-lib)` resolves a root-lib from a family's effective `:roots`
+  map through its per-root successful sync state and reloads that root's source files in dependency
+  order. It reloads code only; activation and registry changes require a later targeted `use!` or
+  `reload!`.
 - `(runtime/reload! runtime)` clears weaver-lifetime approved-spool sync state, module-use state, named queries, views, patterns, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads selected workspace startup files in order (`init.clj`, then `init.local.clj`) inside the active weaver and returns loaded file metadata plus final return values. Missing startup files are skipped; present failing files throw with file context. Event dispatch resumes after the fully layered config loads. Reload does not unload already-loaded Clojure namespaces or vars.
 - `(runtime/use! runtime key opts)` records one weaver-lifetime module-use attempt under keyword `key`; duplicate keys replace prior state for reload workflows.
 - `(runtime/uses runtime)` and `(runtime/use runtime key)` expose weaver-lifetime module-use state.

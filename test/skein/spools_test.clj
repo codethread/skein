@@ -2058,21 +2058,25 @@
   (with-runtime
     (fn [rt _config-dir]
       (testing "a typo'd key fails loudly instead of degrading to unversioned reuse"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:versoin 2} (constantly {:v 1})))))
       (testing "opts must be a map or nil"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts must be a map"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo 2 (constantly {:v 1})))))
       (testing ":version must be a non-nil comparable tag"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":version must be"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:version nil} (constantly {:v 1}))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":version must be"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:version 1.5} (constantly {:v 1})))))
       (testing ":migrate-fn must be a function and requires a :version to compare"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":migrate-fn must be a function"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:version 1 :migrate-fn 5} (constantly {:v 1}))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":migrate-fn requires a :version"
-                              (runtime/spool-state rt ::demo {:migrate-fn identity} (constantly {:v 1}))))))))
+        (let [e (try
+                  (runtime/spool-state rt ::demo {:migrate-fn identity} (constantly {:v 1}))
+                  nil
+                  (catch clojure.lang.ExceptionInfo e e))]
+          (is (re-find #"invalid shape" (ex-message e)))
+          (is (contains? (ex-data e) :explain)))))))
 
 (deftest spool-state-serializes-concurrent-version-mismatch-reinit
   ;; Several threads observing the same version mismatch must not each build a

@@ -128,10 +128,10 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   not `=` `version`, the runtime deliberately reinits (or, with `:migrate-fn`,
   hands the old value to `f` to produce the new one) instead of reusing a
   shape-mismatched map. Silent reuse of shape-mismatched state is impossible
-  once a version is declared. A malformed opts map fails loudly at the call site
-  (see `validate-spool-state-opts!`) rather than degrading to the unversioned
-  path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L405-L458">Source</a></sub></p>
+  once a version is declared. Opts conform to
+  `:skein.api.runtime.alpha/spool-state-opts`; a malformed map fails loudly at
+  the call site rather than degrading to the unversioned path.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L387-L440">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/spools-file">`spools-file`</a>
 ``` clojure

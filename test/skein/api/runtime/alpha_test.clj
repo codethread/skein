@@ -86,6 +86,16 @@
       (finally
         (delete-tree! root)))))
 
+(deftest spool-state-opts-spec-owns-public-shape
+  (is (s/valid? ::runtime/spool-state-opts nil))
+  (is (s/valid? ::runtime/spool-state-opts {:version :v2 :migrate-fn identity}))
+  (doseq [opts [{:versoin 2}
+                {:version nil}
+                {:version 1.5}
+                {:version 1 :migrate-fn 5}
+                {:migrate-fn identity}]]
+    (is (not (s/valid? ::runtime/spool-state-opts opts)))))
+
 (deftest release-marker-resolution
   (let [source-root (git-source! "v3")]
     (try

@@ -325,38 +325,20 @@
 
 (def ^:private spool-state-opt-keys #{:version :migrate-fn})
 
-(defn- validate-spool-state-opts!
-  "Reject a malformed spool-state opts map before it can silently degrade.
+(s/def ::version (s/or :integer integer? :keyword keyword? :string string?))
+(s/def ::migrate-fn ifn?)
+(s/def ::spool-state-opts
+  (s/nilable
+   (s/and (s/keys :opt-un [::version ::migrate-fn])
+          #(every? spool-state-opt-keys (keys %))
+          #(or (not (contains? % :migrate-fn))
+               (contains? % :version)))))
 
-  A misspelled or unknown key (e.g. `{:versoin 2}`) would otherwise leave
-  `version` nil and the accessor would reuse a shape-mismatched preserved value —
-  exactly the silent state-reuse bug class the version guard exists to close,
-  just moved one level up to the opts map. So the map is closed to
-  `:version`/`:migrate-fn`, `:version` must be a non-nil comparable tag, and
-  `:migrate-fn` (which only fires on a version mismatch) requires a `:version`.
-  Mirrors the closed-key discipline `ct.spools.agent-run/register-harness!` already
-  applies to its own def map."
+(defn- validate-spool-state-opts!
+  "Validate spool-state opts against their owning public spec."
   [opts]
-  (when (some? opts)
-    (when-not (map? opts)
-      (throw (ex-info "spool-state opts must be a map or nil" {:opts opts})))
-    (let [unknown (remove spool-state-opt-keys (keys opts))]
-      (when (seq unknown)
-        (throw (ex-info "spool-state opts has unknown keys"
-                        {:unknown (vec unknown) :allowed spool-state-opt-keys :opts opts}))))
-    (when (contains? opts :version)
-      (let [v (:version opts)]
-        (when-not (or (integer? v) (keyword? v) (string? v))
-          (throw (ex-info "spool-state :version must be a non-nil integer, keyword, or string"
-                          {:version v :class (some-> v class)})))))
-    (when (contains? opts :migrate-fn)
-      (when-not (ifn? (:migrate-fn opts))
-        (throw (ex-info "spool-state :migrate-fn must be a function"
-                        {:migrate-fn (:migrate-fn opts)})))
-      (when-not (contains? opts :version)
-        (throw (ex-info "spool-state :migrate-fn requires a :version to compare against"
-                        {:opts opts})))))
-  opts)
+  (require-valid! ::spool-state-opts opts
+                  "spool-state opts have an invalid shape"))
 
 (defn- tag-spool-state-generation
   "Tag `value` with the runtime generation that created it, when metadata permits it."
@@ -418,9 +400,9 @@
   not `=` `version`, the runtime deliberately reinits (or, with `:migrate-fn`,
   hands the old value to `f` to produce the new one) instead of reusing a
   shape-mismatched map. Silent reuse of shape-mismatched state is impossible
-  once a version is declared. A malformed opts map fails loudly at the call site
-  (see `validate-spool-state-opts!`) rather than degrading to the unversioned
-  path."
+  once a version is declared. Opts conform to
+  `:skein.api.runtime.alpha/spool-state-opts`; a malformed map fails loudly at
+  the call site rather than degrading to the unversioned path."
   ([runtime key init-fn] (spool-state runtime key nil init-fn))
   ([runtime key opts init-fn]
    (validate-spool-state-opts! opts)
