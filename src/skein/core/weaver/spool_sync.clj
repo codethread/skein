@@ -132,7 +132,8 @@
          :requires {}
          :skein-min nil
          :claims nil
-         :provenance source})
+         :provenance :spools-edn
+         :source source})
       (do
         (when-not (non-blank-string? (:git/url entry))
           (throw (ex-info "Git spool entry requires non-blank string :git/url"
@@ -154,7 +155,8 @@
          :requires (normalize-requires source family entry)
          :skein-min (:skein/min entry)
          :claims nil
-         :provenance source}))))
+         :provenance :spools-edn
+         :source source}))))
 
 (defn- normalize-overlay [source family entry]
   (validate-entry-map! source family entry overlay-spool-keys)
@@ -172,7 +174,8 @@
   {:family family
    :coordinate {:kind :local :local/root (:local/root entry)}
    :claims (:claims entry)
-   :provenance source})
+   :provenance :local-overlay
+   :source source})
 
 (defn- reject-shared-git-urls! [families]
   (doseq [[git-url entries] (group-by #(get-in % [:coordinate :git/url])
@@ -191,12 +194,12 @@
          (throw (ex-info "Local spool override must shadow a shared git family"
                          {:error :override-without-base
                           :family family
-                          :source (:provenance overlay)})))
+                          :source (:source overlay)})))
        (when-not (= :git (get-in base [:coordinate :kind]))
          (throw (ex-info "Local spool override must shadow a shared git family"
                          {:error :override-of-local-family
                           :family family
-                          :source (:provenance overlay)})))
+                          :source (:source overlay)})))
        (assoc families family
               (merge (select-keys base [:roots-map :requires :skein-min]) overlay))))
    (into {} (map (juxt :family identity)) shared-families)
@@ -337,7 +340,7 @@
         overrides (merge (:mvn-overrides shared) (:mvn-overrides local))
         spools (into {}
                      (mapcat
-                      (fn [{:keys [coordinate roots-map claims provenance]}]
+                      (fn [{:keys [family coordinate roots-map claims provenance source]}]
                         (let [kind (:kind coordinate)
                               coordinate-root (if (= :git kind)
                                                 (io/file (cache-base) "skein" "spools" (:git/sha coordinate))
@@ -346,10 +349,14 @@
                                  (let [root (if (= "." root-path)
                                               coordinate-root
                                               (io/file coordinate-root root-path))]
-                                   [lib (cond-> (assoc coordinate
-                                                       :root (.getPath root)
-                                                       :source provenance)
-                                          claims (assoc :claims claims))]))
+                                   [lib (with-meta
+                                          (cond-> (assoc coordinate
+                                                         :root (.getPath root)
+                                                         :source source)
+                                            claims (assoc :claims claims))
+                                          {::family family
+                                           ::coordinate coordinate
+                                           ::provenance provenance})]))
                                roots-map)))
                       families))]
     (cond-> {:spools spools}
@@ -362,9 +369,13 @@
 
 (defn- sync-result-base [lib entry]
   (merge {:lib lib
+          :family (::family (meta entry))
+          :coordinate (::coordinate (meta entry))
           :kind (:kind entry)
           :root (:root entry)
-          :source (:source entry)}
+          :source (:source entry)
+          :provenance (::provenance (meta entry))}
+         (select-keys entry [:claims])
          (spool-source-fields entry)))
 
 (defn- sync-failed [lib entry reason data]
@@ -631,25 +642,37 @@
                            :add add
                            :procurer (select-keys basis [:mvn/repos :mvn/local-repo])}})))))))
 
-(defn- materialize-git-spool-outcome
-  "Materialize a git entry, returning {:fetch ...} or {:failed <sync-failed>}.
+(defn- materialize-git-family-outcome
+  "Materialize a git family, returning `{:fetch ...}` or failure data.
 
   Only the materialization call may translate throws into fetch/tag outcomes;
   anything thrown elsewhere in sync is a real error and must stay loud."
-  [lib entry]
+  [entry]
   (try
     {:fetch (materialize-git-spool! entry)}
     (catch clojure.lang.ExceptionInfo e
       (if (= :tag-mismatch (:reason (ex-data e)))
-        {:failed (sync-failed lib entry :tag-mismatch (select-keys (ex-data e) [:tag :expected :actual]))}
+        {:failure {:reason :tag-mismatch
+                   :data (select-keys (ex-data e) [:tag :expected :actual])}}
         (let [data (ex-data e)]
-          {:failed (sync-failed lib entry :fetch-failed
-                                (cond-> (fetch-failure data)
-                                  (:remote data) (assoc :remote (:remote data))
-                                  (:cache-path data) (assoc :cache-path (:cache-path data))))})))
+          {:failure {:reason :fetch-failed
+                     :data (cond-> (fetch-failure data)
+                             (:remote data) (assoc :remote (:remote data))
+                             (:cache-path data) (assoc :cache-path (:cache-path data)))}})))
     (catch Throwable t
-      {:failed (sync-failed lib entry :fetch-failed {:exit 1
-                                                     :stderr (stderr-tail (ex-message t))})})))
+      {:failure {:reason :fetch-failed
+                 :data {:exit 1
+                        :stderr (stderr-tail (ex-message t))}}})))
+
+(defn- materialize-families
+  "Materialize each approved git family once and index its outcome by family."
+  [spools]
+  (into {}
+        (map (fn [[family entries]]
+               (let [entry (val (first entries))]
+                 [family (when (= :git (:kind entry))
+                           (materialize-git-family-outcome entry))])))
+        (group-by (comp ::family meta val) spools)))
 
 (defn- materialize-and-validate-spool
   "Phase 1: materialize a git root, verify it on disk, and validate it per-root.
@@ -659,13 +682,12 @@
   `:runtime-add-failed` Maven-policy/source-path failure), or `{:survivor {...}}`
   carrying the lib, entry, validated Maven deps, vetted source-path `File`s, and
   any `:fetch` outcome for the shared resolution phase."
-  [lib entry]
-  (let [{:keys [fetch failed]} (when (= :git (:kind entry))
-                                 (materialize-git-spool-outcome lib entry))
+  [lib entry materialization]
+  (let [{:keys [fetch failure]} materialization
         root-file (io/file (:root entry))]
     (cond
-      failed
-      {:failed failed}
+      failure
+      {:failed (sync-failed lib entry (:reason failure) (:data failure))}
 
       (not (.exists root-file))
       {:failed (sync-failed lib entry :missing-root (cond-> {} fetch (assoc :fetch fetch)))}
@@ -881,7 +903,10 @@
         previous-maven @(:approved-spool-generation-maven runtime)]
     (reset! (approved-spool-sync-state runtime) {})
     (let [approved (approved-spools runtime)
-          phase1 (mapv (fn [[lib entry]] (materialize-and-validate-spool lib entry))
+          materializations (materialize-families (:spools approved))
+          phase1 (mapv (fn [[lib entry]]
+                         (materialize-and-validate-spool
+                          lib entry (get materializations (::family (meta entry)))))
                        (:spools approved))
           failed (into {} (keep :failed) phase1)
           survivors (into [] (keep :survivor) phase1)

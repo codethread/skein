@@ -356,7 +356,8 @@
             :requires {'other/root "v2"}
             :skein-min "v1"
             :claims nil
-            :provenance source}
+            :provenance :spools-edn
+            :source source}
            (#'spool-sync/normalize-shared-family
             source
             'demo/family
@@ -498,24 +499,33 @@
             root (write-local-lib! config-dir "demo" ns-sym)]
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/demo"}}}))
         (is (= {:spools {lib {:lib lib
+                              :family lib
+                              :coordinate {:kind :local :local/root "spools/demo"}
                               :kind :local
                               :local/root "spools/demo"
                               :root (.getCanonicalPath root)
                               :source (shared-source config-dir)
+                              :provenance :spools-edn
                               :status :loaded}}}
                (runtime/sync! rt)))
         (is (= {:spools {lib {:lib lib
+                              :family lib
+                              :coordinate {:kind :local :local/root "spools/demo"}
                               :kind :local
                               :local/root "spools/demo"
                               :root (.getCanonicalPath root)
                               :source (shared-source config-dir)
+                              :provenance :spools-edn
                               :status :loaded}}}
                (runtime/syncs rt)))
         (is (= {:spools {lib {:lib lib
+                              :family lib
+                              :coordinate {:kind :local :local/root "spools/demo"}
                               :kind :local
                               :local/root "spools/demo"
                               :root (.getCanonicalPath root)
                               :source (shared-source config-dir)
+                              :provenance :spools-edn
                               :status :already-available}}}
                (runtime/sync! rt)))))))
 
@@ -658,10 +668,13 @@
       (let [missing (io/file config-dir "spools" "missing")]
         (write-spools! config-dir (pr-str {:spools {'demo/missing {:local/root "spools/missing"}}}))
         (is (= {:spools {'demo/missing {:lib 'demo/missing
+                                        :family 'demo/missing
+                                        :coordinate {:kind :local :local/root "spools/missing"}
                                         :kind :local
                                         :local/root "spools/missing"
                                         :root (.getCanonicalPath missing)
                                         :source (shared-source config-dir)
+                                        :provenance :spools-edn
                                         :status :failed
                                         :reason :missing-root}}}
                (runtime/sync! rt)))
@@ -697,17 +710,23 @@
         (write-spools! config-dir (pr-str {:spools {'demo/missing {:local/root "spools/missing"}
                                                     'demo/not-dir {:local/root "spools/not-dir"}}}))
         (is (= {:spools {'demo/missing {:lib 'demo/missing
+                                        :family 'demo/missing
+                                        :coordinate {:kind :local :local/root "spools/missing"}
                                         :kind :local
                                         :local/root "spools/missing"
                                         :root (.getCanonicalPath (io/file config-dir "spools" "missing"))
                                         :source (shared-source config-dir)
+                                        :provenance :spools-edn
                                         :status :failed
                                         :reason :missing-root}
                          'demo/not-dir {:lib 'demo/not-dir
+                                        :family 'demo/not-dir
+                                        :coordinate {:kind :local :local/root "spools/not-dir"}
                                         :kind :local
                                         :local/root "spools/not-dir"
                                         :root (.getCanonicalPath not-dir)
                                         :source (shared-source config-dir)
+                                        :provenance :spools-edn
                                         :status :failed
                                         :reason :unreadable-root}}}
                (runtime/sync! rt)))))))
@@ -1398,6 +1417,70 @@
               (is (= :loaded (:status result)))
               (is (= :fetched (:fetch result)))
               (is (= (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool")) (:root result))))))))))
+
+(deftest sync-materializes-family-once-and-vets-each-root
+  (with-runtime
+    (fn [rt config-dir]
+      (let [repo (io/file config-dir "family-repo")
+            good-root (io/file repo "good")
+            bad-root (io/file repo "bad")
+            cache-dir (io/file config-dir "cache")
+            family 'demo/family
+            coordinate {:kind :git}
+            _ (.mkdirs repo)
+            _ (run-git! repo "init")
+            _ (run-git! repo "config" "user.email" "skein-test@example.invalid")
+            _ (run-git! repo "config" "user.name" "Skein Test")
+            _ (write-git-lib! good-root 'demo.family_good)
+            _ (write-git-lib! bad-root 'demo.family_bad)
+            _ (spit (io/file bad-root "deps.edn") "{:paths [\"missing\"]}\n")
+            _ (run-git! repo "add" ".")
+            _ (run-git! repo "commit" "-m" "family roots")
+            sha (str/trim (run-git! repo "rev-parse" "HEAD"))
+            url (file-url repo)]
+        (with-cache-base
+          cache-dir
+          (fn []
+            (write-spools! config-dir
+                           (pr-str {:spools {family {:git/url url
+                                                     :git/sha sha
+                                                     :roots {'demo/good "good"
+                                                             'demo/bad "bad"}}}}))
+            (let [results (:spools (runtime/sync! rt))
+                  expected-coordinate (assoc coordinate :git/url url :git/sha sha)]
+              (is (= :loaded (get-in results ['demo/good :status])))
+              (is (= :runtime-add-failed (get-in results ['demo/bad :reason])))
+              (is (= #{:fetched} (set (map :fetch (vals results)))))
+              (doseq [result (vals results)]
+                (is (= family (:family result)))
+                (is (= expected-coordinate (:coordinate result)))
+                (is (= :spools-edn (:provenance result)))))))))))
+
+(deftest sync-local-overlay-inherits-family-roots
+  (with-runtime
+    (fn [rt config-dir]
+      (let [family 'demo/overlay-family
+            local-root (io/file config-dir "overlay-family")
+            _ (write-git-lib! (io/file local-root "one") 'demo.overlay_one)
+            _ (write-git-lib! (io/file local-root "two") 'demo.overlay_two)
+            sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {family {:git/url "https://example.invalid/family.git"
+                                                 :git/sha sha
+                                                 :git/tag "v2"
+                                                 :roots {'demo/one "one" 'demo/two "two"}}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {family {:local/root "overlay-family"
+                                                       :claims "v2"}}}))
+        (let [results (:spools (runtime/sync! rt))]
+          (is (= #{'demo/one 'demo/two} (set (keys results))))
+          (doseq [result (vals results)]
+            (is (= :loaded (:status result)))
+            (is (= family (:family result)))
+            (is (= {:kind :local :local/root "overlay-family"} (:coordinate result)))
+            (is (= "v2" (:claims result)))
+            (is (= :local-overlay (:provenance result)))
+            (is (= (local-source config-dir) (:source result)))))))))
 
 (deftest sync-git-deps-root-missing-after-fetch-keeps-fetch-outcome
   (with-runtime
