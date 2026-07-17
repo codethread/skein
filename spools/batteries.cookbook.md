@@ -229,11 +229,13 @@ that attribute, then list and burn the matching ids when the parent finishes.
 
 ```clojure
 ;; Register once in trusted config or the live weaver REPL.
-(defquery! 'temporary-by-owner
-  {:params [:owner]
-   :where [:and
-           [:= :state "active"]
-           [:= [:attr "tmp/owner"] [:param :owner]]]})
+(require '[skein.api.current.alpha :as current]
+         '[skein.api.graph.alpha :as graph])
+(graph/register-query! (current/runtime) 'temporary-by-owner
+                       {:params [:owner]
+                        :where [:and
+                                [:= :state "active"]
+                                [:= [:attr "tmp/owner"] [:param :owner]]]})
 ```
 
 ```sh
