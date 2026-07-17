@@ -36,9 +36,16 @@ WIP is untagged and sha-pin only. Floors cannot target it. Human labels such as 
 mechanically inert, and `v0` is reserved. `v1` is the smallest promise: from here, breaks take new
 names. It has no SemVer 1.0 meaning.
 
-For a release, keep published names accretion-only, run current tests and `bin/compat-alarm` against
-the previous marker, create the next annotated `v<int>` tag, then publish its peeled sha. A floor
-raise is not a break; raise its floor and test pin in one commit.
+A [floor](../spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution) is the
+minimum `v<int>` marker accepted for a required root (`:requires`) or Skein (`:skein/min`). A
+[floor raise](../spools/writing-shared-spools.md#accretion-under-a-name) increases that minimum. The
+[previous marker](../spools/writing-shared-spools.md#compatibility-alarm) is the greatest published
+marker below the release being cut.
+
+For `v1`, keep published names accretion-only and run current tests; there is no previous marker.
+From `v2`, also run `bin/compat-alarm` against the previous marker. Create the next annotated
+`v<int>` tag, then publish its peeled sha. A floor raise is not a break; raise its floor and test pin
+in one commit.
 
 For a bump, change `:git/tag` and `:git/sha` together, add root mappings only when opting into them,
 then validate the whole consumer file. An unchanged sha-pinned consumer cannot be changed upstream.
@@ -49,7 +56,7 @@ rule is: rejecting input the published contract accepted is breaking even when i
 validation; rejecting what the contract declared invalid is a fix.
 
 The full contract, family-entry shape, test tiers, and worked examples are in
-`docs/spools/writing-shared-spools.md`.
+[Writing shared spools](../spools/writing-shared-spools.md).
 
 For personal config in a repository that does not commit Skein config, run `mill init --stealth`.
 It keeps a physical repo-local `.skein`, hides local files through Git's private exclude file,

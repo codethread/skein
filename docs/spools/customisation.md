@@ -199,19 +199,17 @@ workspace/
       src/my/workflow.clj
 ```
 
-Approve the local spool as a one-root family in `spools.edn`:
+Approve the local spool as an implicit one-root family in `spools.edn`:
 
 ```clojure
-{:spools {my/workflow-spool
-          {:local/root "spools/my-workflow"
-           :roots {my/workflow "."}}}}
+{:spools {my/workflow {:local/root "spools/my-workflow"}}}
 ```
 
-There is one entry per repository or release unit. Its `:roots` map assigns each library name to a
-path under that source. Relative `:local/root` values resolve against the selected workspace.
-Absolute paths are accepted as explicit user-approved paths, and `~` expands to your home
-directory. Create a minimal `deps.edn` in the root (if `:paths` is omitted, Skein's namespace
-loading defaults to `["src"]`):
+A shared local entry has one root at `.` under the entry's symbol. Git families can map
+several roots with `:roots`; local overlays inherit that map from their shared Git family. Relative
+`:local/root` values resolve against the selected workspace. Absolute paths are accepted as
+explicit user-approved paths, and `~` expands to your home directory. Create a minimal `deps.edn`
+in the root (if `:paths` is omitted, Skein's namespace loading defaults to `["src"]`):
 
 ```clojure
 {:paths ["src"]}
@@ -235,7 +233,7 @@ Activate it from `init.clj`, after the `sync!` and batteries activation already 
 ```clojure
 (runtime/use! runtime :my/workflow
   {:ns 'my.workflow
-   :spools #{'my/workflow-spool}
+   :spools #{'my/workflow}
    :call 'my.workflow/install!})
 ```
 

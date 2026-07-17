@@ -339,6 +339,28 @@ parser rejects them. `v0` is reserved and rejected.
 `v1` is the smallest promise: from here, breaks take new names. It carries none of SemVer 1.0's
 baggage. Later markers record release order, not degrees of compatibility.
 
+### Consumer-file validation
+
+Core validates the whole effective consumer file before materializing a family. Shape and marker
+errors fail first. `:claims "vN"` on a `spools.local.edn` family means the local checkout preserves
+that family's published contracts through marker `vN`. Choose the greatest published marker whose
+[compatibility alarm](#compatibility-alarm) passes against the checkout. Core requires the claim on
+every local family overlay and uses it as that family's pin for `:requires` floor validation.
+
+Requirement failures share the exception reason
+`:spool-requirements-unsatisfied` and appear in `:findings` as:
+
+- `:pin-below-minimum` when an approved family's `:git/tag` or local overlay `:claims` is below a
+  `:requires` floor;
+- `:required-root-not-approved` when no approved family supplies the required root;
+- `:required-root-unmarked` when the root comes from an unmarked shared local entry;
+- `:skein-below-minimum` when a running Skein marker is available and below `:skein/min`.
+
+Pin suggestions contain the greatest minimum found for each below-floor family. There is no
+suggestion for an unapproved or unmarked root. When the runtime has no running Skein marker,
+`:skein/min` checks remain visible under `:pending-validations` with reason
+`:running-marker-unavailable`; they are not reported as satisfied.
+
 ### Accretion under a name
 
 Keep every published name accretion-only. The classification rule is exact:
@@ -363,25 +385,20 @@ The rename cost depends on the surface:
 
 Escalate only as far as the break reaches:
 
-1. For one function contract, add a function name. [`notebook.spool` v3](https://github.com/codethread/notebook.spool/tree/v3)
-   leaves `capture!` alone and adds `capture-on!`. The
-   [`breaking-wrong` branch](https://github.com/codethread/notebook.spool/tree/breaking-wrong)
-   shows the rejected alternative.
-2. When a namespace model changes, add a sibling root in the same repository. The
-   [`notebook.spool` v4](https://github.com/codethread/notebook.spool/tree/v4) family adds
-   `notebook2`; adding the root is accretion at family level.
+1. For one function contract, add a function name. Keep `capture!` unchanged and add
+   `capture-on!`; changing `capture!` from two arguments to three would break its old callers.
+2. When a namespace model changes, add a sibling root in the same repository. A family may keep
+   `records` and add `records2`; adding the root is accretion at family level.
 3. When the whole concept changes, start a repository and family. This should be rare.
 
-A sibling root is a complete world for its task. Consumers may load old and new roots while
+A sibling root should provide a complete contract for its task. Consumers may load old and new roots while
 migrating, but should not mix their requires to assemble one job. Give every public var in the new
 root a fresh `defn` and its own docstring. Do not re-export vars with `(def f old/f)` or Potemkin:
 arglists, docs, and source navigation must describe the new contract. Bodies may delegate.
 
-Shared internal namespaces are a reasonable default while the compatibility alarm runs old tests
-against the whole working tree. Copy the implementation when the old root should receive no churn
-or the two roots will diverge. When the old contract can be expressed on the new implementation,
-the clean end state is the tools.deps inversion: the new root owns the implementation and fresh
-wrappers in the old root preserve the old contract.
+Share internal namespaces while the compatibility alarm runs old tests against the whole working
+tree. When the old contract can use the new implementation, put the implementation in the new root
+and keep fresh wrappers in the old root.
 
 Floor raises in `:requires` or `:skein/min` are not breaks. They constrain which release families
 may be assembled; they do not change a published name's input contract. Raise a floor only with
@@ -391,14 +408,17 @@ evidence from tests at that floor.
 
 Keep `bin/compat-alarm` in the spool repository. It takes a previous marker, extracts that release's
 tests, and runs them against the working tree. The
-[`notebook.spool` alarm](https://github.com/codethread/notebook.spool/blob/main/bin/compat-alarm)
-is the reference implementation.
+[agent-harness.spool alarm](https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/bin/compat-alarm)
+is a shipped example.
+
+`v1` has no previous marker, so its release gate is the current test suite only. Start running the
+previous-marker alarm when cutting `v2`.
 
 The alarm catches behavior covered by the old suite; it does not classify changes or prove
 compatibility. Authors still apply the contract rule above. Core validation has a different job: it
 refuses family pins below declared floors and roots the consumer has not approved. A helper may run
-the alarm before writing a bump, but the loader stays offline and never selects or fetches a newer
-release.
+the alarm before writing a bump, but the floor validator stays offline and never selects or fetches
+a newer release.
 
 ### Author tests
 
@@ -409,21 +429,22 @@ Test two different facts:
    bump belong in one commit. A small in-repo check may resolve markers with `git ls-remote` and
    verify that those pins match the declared floors; this is helper or repository policy, not core.
 2. Runtime integration tests prove the consumer path. Keep a literal consumer-workspace fixture
-   whose `spools.edn` loads the spool under test through `:local/root` plus `:claims "vN"`, pins its
-   requirements as ordinary families, and syncs them in an embedded runtime with `:publish? false`.
+   whose `spools.edn` pins the spool family and its requirements. A fixture `spools.local.edn`
+   overrides the family with `:local/root` plus `:claims "vN"`. Sync them in an embedded runtime
+   with `:publish? false`.
 
 For cross-repository work, a tools.deps `:sibling` alias should override the same dependency that a
 gitignored `spools.local.edn` family override replaces. The local family entry carries `:claims
 "vN"`; the alias uses `:override-deps`. This symmetry lets both test tiers exercise the same sibling
-checkout without weakening the committed floors. The
-[`standup.spool` test setup](https://github.com/codethread/standup.spool) demonstrates both tiers.
+checkout without weakening the committed floors. The runtime tier must execute its fixture through
+an embedded unpublished runtime; committing the files alone does not prove the consumer path.
 
 ### Open attribute vocabularies
 
 Composition across release skew works best through open, namespaced attributes. Declare the
 namespace owner and document each key's contract. A renderer must render unknown contributors in
 that vocabulary instead of rejecting a closed set of contributor names. A spool may then add
-`notebook.section/standup` without a release of the notebook spool.
+`journal.section/daily-update` without a release of the journal spool.
 
 The live precedent is workflow and agent-run composing through the `:subagent` relation: each spool
 owns its behavior while the shared graph vocabulary carries the connection. This is an extension
@@ -432,10 +453,10 @@ with its owner.
 
 ### Release and bump sequence
 
-There is no simultaneous three-repository landing ceremony in a sha-pinned world:
+Sha pins let producer and consumer repositories land independently:
 
-1. In the producer, make the change accretive or give the broken surface a new name. Run current
-   tests and `bin/compat-alarm` against the previous marker.
+1. In the producer, make the change accretive or give the broken surface a new name. For `v1`, run
+   current tests only. From `v2`, also run `bin/compat-alarm` against the previous marker.
 2. Update `spool.edn` floors and their test pins together when a floor changes. Commit, create the
    next annotated `v<int>` tag, push it, and obtain its peeled commit sha.
 3. In each consumer, change `:git/tag` and `:git/sha` atomically. Add a new root mapping only when
@@ -449,15 +470,16 @@ refuse a release that no longer contains an approved root.
 
 ### Nested-spool prerequisites
 
-A repository that contains several spool roots still gets one family entry. Point `:local/root` at
-the repository checkout, or use one sha-pinned Git coordinate, then map each approved library to its
-relative path with `:roots`. A requiring spool names the library root and floor in `:requires`; the
-consumer adds or bumps the family that owns that root. Do not create a separate `:deps/root`
-coordinate for each nested root.
+A repository that contains several spool roots gets one Git family entry. Use one sha-pinned Git
+coordinate, then map each approved library to its relative path with `:roots`. A local checkout
+overrides that Git family through `spools.local.edn` and inherits its root map. A requiring spool
+names the library root and floor in `:requires`; the consumer adds or bumps the family that owns
+that root. Do not create a separate `:deps/root` coordinate for each nested root.
 
-### Advisory `spool.edn`
+### Optional producer manifest (`spool.edn`)
 
-Authors may publish this manifest at the repository root:
+Authors may publish the singular advisory manifest `spool.edn` at the repository root. It is
+distinct from the consumer's plural `spools.edn`:
 
 ```clojure
 {:spool/format 1
@@ -467,15 +489,20 @@ Authors may publish this manifest at the repository root:
  :requires {skein.spools/workflow "v2"}}
 ```
 
+The pinned
+[agent-harness.spool manifest](https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/spool.edn)
+is a real multi-root example. The
+[kanban.spool manifest](https://github.com/codethread/kanban.spool/blob/dfd6948afb5db9c8ca30778cb1ba329a3afff877/spool.edn)
+shows the single-root form.
+
 This follows the package.el split. Authoring helpers may read it to prepare a consumer family entry;
 the core loader never reads it. The committed `spools.edn` remains the consumer's explicit consent
 record and the only input to load-boundary validation. A README should still show the full family
 entry and activation order, so a consumer can review what a helper would write. No prerequisite is
 fetched transitively.
 
-The layering is deliberate. Core refuses a bad consumer world. Authoring helpers, including planned
-batteries support, make good entries easier to write. Userland may replace those helpers, but it
-cannot replace the load-boundary checks.
+Core enforces load-boundary checks. Authoring helpers, including planned batteries support, help
+users write entries that pass those checks. Userland may replace the helpers, but not the checks.
 
 If a prerequisite is a blessed `skein.api.*.alpha` namespace or `skein.spools.batteries`, document
 the namespace and why it is required but do not invent a family coordinate for it. Both ship on the
@@ -486,7 +513,7 @@ selected Skein classpath. Every other source repository gets its own family entr
 Include an **Activation** section with the complete trusted `init.clj` snippet. The consumer owns
 the runtime, calls `sync!`, and activates modules explicitly with `use!`. Use `:spools` guards for
 every approved spool whose sync state is a prerequisite and `:after` when one activation depends on
-another.
+another. The spool in this example exposes a zero-argument `acme.priority.alpha/install!` function.
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -497,7 +524,8 @@ another.
 
 (runtime/use! rt :acme/priority
   {:ns 'acme.priority.alpha
-   :spools '[acme/priority-spool]
+   :spools '[acme/priority]
+   :call 'acme.priority.alpha/install!
    :required? true})
 ```
 
@@ -543,10 +571,8 @@ names the lib, roots, and coordinates. Pin that lib with a top-level
 `:mvn-overrides` map in `spools.edn` or `spools.local.edn`:
 
 ```clojure
-{:spools {acme/a-spool {:local/root "spools/a"
-                        :roots {acme/a "."}}
-          acme/b-spool {:local/root "spools/b"
-                        :roots {acme/b "."}}}
+{:spools {acme/a {:local/root "spools/a"}
+          acme/b {:local/root "spools/b"}}
  :mvn-overrides {camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}}}
 ```
 
