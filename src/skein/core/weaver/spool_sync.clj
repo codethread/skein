@@ -26,54 +26,181 @@
            [java.nio.file.attribute FileAttribute]))
 
 (def ^:private local-spool-keys #{:local/root})
-(def ^:private git-spool-keys #{:git/url :git/sha :git/tag :deps/root})
-(def ^:private approved-spool-keys (into local-spool-keys git-spool-keys))
+(def ^:private overlay-spool-keys #{:local/root :claims})
+(def ^:private git-spool-keys #{:git/url :git/sha :git/tag :roots :requires :skein/min})
 (def ^:private git-sha-pattern #"[0-9a-f]{40}")
+(def ^:private release-marker-pattern #"v([1-9][0-9]*)")
+
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
 
-(defn- deps-root-segments [deps-root]
-  (str/split deps-root #"/"))
+(defn marker-ordinal
+  "Return a release marker's positive integer ordinal.
 
-(defn- relative-deps-root? [deps-root]
-  (and (non-blank-string? deps-root)
-       (not (.isAbsolute (io/file deps-root)))
-       (not (str/starts-with? deps-root "~"))
-       (not-any? #{".."} (deps-root-segments deps-root))))
+  Markers are exactly `vN`, where N is a positive base-10 integer. `v0` has a
+  dedicated policy failure because untagged repositories represent WIP."
+  [marker]
+  (when (= "v0" marker)
+    (throw (ex-info (format/reflow
+                     "|v0 is reserved; WIP repos stay untagged — v1 is the smallest
+                       |promise")
+                    {:marker marker})))
+  (if-let [[_ ordinal] (and (string? marker)
+                            (re-matches release-marker-pattern marker))]
+    (BigInteger. ^String ordinal)
+    (throw (ex-info "Release marker must match vN where N is a positive integer"
+                    {:marker marker}))))
 
-(defn- validate-approved-spool-entry! [source lib entry]
-  (when-not (symbol? lib)
-    (throw (ex-info "Spool coordinate must be a symbol" (assoc source :lib lib))))
+(defn- validate-marker! [marker context]
+  (try
+    (marker-ordinal marker)
+    marker
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info (ex-message e) (merge context (ex-data e)) e)))))
+
+(defn- root-path-segments [root-path]
+  (str/split root-path #"/"))
+
+(defn- relative-root-path? [root-path]
+  (and (non-blank-string? root-path)
+       (not (.isAbsolute (io/file root-path)))
+       (not (str/starts-with? root-path "~"))
+       (not-any? #{".."} (root-path-segments root-path))))
+
+(defn- validate-family-name! [source family]
+  (when-not (symbol? family)
+    (throw (ex-info "Spool family must be a symbol" (assoc source :family family)))))
+
+(defn- reject-legacy-root-shape! [source family entry]
+  (when (contains? entry :deps/root)
+    (throw (ex-info
+            (format/reflow
+             "|Legacy spool entry :deps/root is no longer supported; keep one entry
+               |per family and replace :deps/root with :roots {root-lib \"relative-path\"}")
+            (assoc source :family family :deps/root (:deps/root entry))))))
+
+(defn- validate-entry-map! [source family entry allowed-keys]
+  (validate-family-name! source family)
   (when-not (map? entry)
-    (throw (ex-info "Spool entry must be a map" (assoc source :lib lib :entry entry))))
-  (when-let [unknown (seq (remove approved-spool-keys (keys entry)))]
-    (throw (ex-info "Spool entry contains unknown keys" (assoc source :lib lib :keys (vec unknown)))))
+    (throw (ex-info "Spool entry must be a map" (assoc source :family family :entry entry))))
+  (reject-legacy-root-shape! source family entry)
+  (when-let [unknown (seq (remove allowed-keys (keys entry)))]
+    (throw (ex-info "Spool entry contains unknown keys"
+                    (assoc source :family family :keys (vec unknown))))))
+
+(defn- normalize-roots-map [source family entry]
+  (let [roots (if (contains? entry :roots) (:roots entry) {family "."})]
+    (when-not (and (map? roots) (seq roots))
+      (throw (ex-info "Git spool entry :roots must be a non-empty map"
+                      (assoc source :family family :roots roots))))
+    (doseq [[root-lib root-path] roots]
+      (when-not (symbol? root-lib)
+        (throw (ex-info "Spool root lib must be a symbol"
+                        (assoc source :family family :root-lib root-lib))))
+      (when-not (relative-root-path? root-path)
+        (throw (ex-info "Spool root path must be relative with no ~ or .. segments"
+                        (assoc source :family family :root-lib root-lib :root-path root-path)))))
+    roots))
+
+(defn- normalize-requires [source family entry]
+  (let [requires (if (contains? entry :requires) (:requires entry) {})]
+    (when-not (map? requires)
+      (throw (ex-info "Git spool entry :requires must be a map"
+                      (assoc source :family family :requires requires))))
+    (doseq [[root-lib marker] requires]
+      (when-not (symbol? root-lib)
+        (throw (ex-info "Required spool root must be a symbol"
+                        (assoc source :family family :requires root-lib))))
+      (validate-marker! marker (assoc source :family family :field :requires :requires root-lib)))
+    requires))
+
+(defn- normalize-shared-family [source family entry]
+  (validate-entry-map! source family entry (into local-spool-keys git-spool-keys))
   (let [local? (contains? entry :local/root)
         git? (some #(contains? entry %) git-spool-keys)]
-    (when (and (not local?) (not git?))
-      (throw (ex-info "Spool entry requires non-blank string :local/root"
-                      (assoc source :lib lib :local/root (:local/root entry) :entry entry))))
-    (when (and local? git?)
+    (when (= local? (boolean git?))
       (throw (ex-info "Spool entry requires exactly one coordinate kind"
-                      (assoc source :lib lib :entry entry))))
+                      (assoc source :family family :entry entry))))
     (if local?
-      (when-not (and (= local-spool-keys (set (keys entry)))
-                     (non-blank-string? (:local/root entry)))
-        (throw (ex-info "Spool entry requires non-blank string :local/root"
-                        (assoc source :lib lib :local/root (:local/root entry) :entry entry))))
+      (do
+        (when-not (non-blank-string? (:local/root entry))
+          (throw (ex-info "Spool entry requires non-blank string :local/root"
+                          (assoc source :family family :local/root (:local/root entry) :entry entry))))
+        {:family family
+         :coordinate {:kind :local :local/root (:local/root entry)}
+         :roots-map {family "."}
+         :requires {}
+         :skein-min nil
+         :claims nil
+         :provenance source})
       (do
         (when-not (non-blank-string? (:git/url entry))
           (throw (ex-info "Git spool entry requires non-blank string :git/url"
-                          (assoc source :lib lib :git/url (:git/url entry)))))
-        (when-not (and (string? (:git/sha entry)) (re-matches git-sha-pattern (:git/sha entry)))
+                          (assoc source :family family :git/url (:git/url entry)))))
+        (when-not (and (string? (:git/sha entry))
+                       (re-matches git-sha-pattern (:git/sha entry)))
           (throw (ex-info "Git spool entry requires 40 lowercase hex characters :git/sha"
-                          (assoc source :lib lib :git/sha (:git/sha entry)))))
-        (when (and (contains? entry :git/tag) (not (non-blank-string? (:git/tag entry))))
-          (throw (ex-info "Git spool entry :git/tag must be a non-blank string"
-                          (assoc source :lib lib :git/tag (:git/tag entry)))))
-        (when (and (contains? entry :deps/root) (not (relative-deps-root? (:deps/root entry))))
-          (throw (ex-info "Git spool entry :deps/root must be a relative path with no ~ or .. segments"
-                          (assoc source :lib lib :deps/root (:deps/root entry)))))))))
+                          (assoc source :family family :git/sha (:git/sha entry)))))
+        (when (contains? entry :git/tag)
+          (validate-marker! (:git/tag entry) (assoc source :family family :field :git/tag)))
+        (when (contains? entry :skein/min)
+          (validate-marker! (:skein/min entry) (assoc source :family family :field :skein/min)))
+        {:family family
+         :coordinate (cond-> {:kind :git
+                              :git/url (:git/url entry)
+                              :git/sha (:git/sha entry)}
+                       (contains? entry :git/tag) (assoc :git/tag (:git/tag entry)))
+         :roots-map (normalize-roots-map source family entry)
+         :requires (normalize-requires source family entry)
+         :skein-min (:skein/min entry)
+         :claims nil
+         :provenance source}))))
+
+(defn- normalize-overlay [source family entry]
+  (validate-entry-map! source family entry overlay-spool-keys)
+  (when-not (non-blank-string? (:local/root entry))
+    (throw (ex-info "Spool overlay requires non-blank string :local/root"
+                    (assoc source :family family :local/root (:local/root entry) :entry entry))))
+  (when-not (contains? entry :claims)
+    (throw (ex-info "Local spool override requires an explicit release claim"
+                    (assoc source
+                           :error :override-without-claim
+                           :family family
+                           :local/root (:local/root entry)
+                           :fix "add :claims \"vN\" — the release whose contract this tree honors"))))
+  (validate-marker! (:claims entry) (assoc source :family family :field :claims))
+  {:family family
+   :coordinate {:kind :local :local/root (:local/root entry)}
+   :claims (:claims entry)
+   :provenance source})
+
+(defn- reject-shared-git-urls! [families]
+  (doseq [[git-url entries] (group-by #(get-in % [:coordinate :git/url])
+                                      (filter #(= :git (get-in % [:coordinate :kind])) families))
+          :when (> (count entries) 1)]
+    (throw (ex-info "Two spool families must not share :git/url"
+                    {:git/url git-url
+                     :families (mapv :family entries)}))))
+
+(defn- apply-overlays [shared-families overlays]
+  (reduce
+   (fn [families overlay]
+     (let [family (:family overlay)
+           base (get families family)]
+       (when-not base
+         (throw (ex-info "Local spool override must shadow a shared git family"
+                         {:error :override-without-base
+                          :family family
+                          :source (:provenance overlay)})))
+       (when-not (= :git (get-in base [:coordinate :kind]))
+         (throw (ex-info "Local spool override must shadow a shared git family"
+                         {:error :override-of-local-family
+                          :family family
+                          :source (:provenance overlay)})))
+       (assoc families family
+              (merge (select-keys base [:roots-map :requires :skein-min]) overlay))))
+   (into {} (map (juxt :family identity)) shared-families)
+   overlays))
 
 (def ^:private allowed-spool-maven-coordinate-keys
   #{:mvn/version :exclusions :classifier :extension})
@@ -144,8 +271,8 @@
         overrides))))
 
 (defn- normalize-approved-spools-file
-  "Validate one approved-spool config file and resolve roots for this runtime."
-  [runtime name source config]
+  "Validate one approved-spool config file into stage-1 family records."
+  [name source config normalize-entry]
   (when-not (map? config)
     (throw (ex-info (str name " must contain a map") (assoc source :config config))))
   (when-let [unknown (seq (remove allowed-spools-file-keys (keys config)))]
@@ -153,27 +280,11 @@
   (when-not (map? (:spools config))
     (throw (ex-info (str name " requires :spools map") (assoc source :spools (:spools config)))))
   {:mvn-overrides (normalize-mvn-overrides name source config)
-   :spools (into {}
-                 (map (fn [[lib entry]]
-                        (validate-approved-spool-entry! source lib entry)
-                        (if (contains? entry :local/root)
-                          [lib {:kind :local
-                                :local/root (:local/root entry)
-                                :root (canonical-root runtime (:local/root entry))
-                                :source source}]
-                          (let [cache-root (io/file (cache-base) "skein" "spools" (:git/sha entry))
-                                root (cond-> cache-root
-                                       (:deps/root entry) (io/file (:deps/root entry)))]
-                            [lib (cond-> {:kind :git
-                                          :git/url (:git/url entry)
-                                          :git/sha (:git/sha entry)
-                                          :root (.getPath root)
-                                          :source source}
-                                   (contains? entry :git/tag) (assoc :git/tag (:git/tag entry))
-                                   (contains? entry :deps/root) (assoc :deps/root (:deps/root entry)))]))))
-                 (:spools config))})
+   :families (mapv (fn [[family entry]]
+                     (normalize-entry source family entry))
+                   (:spools config))})
 
-(defn- approved-spools-file [runtime name kind]
+(defn- approved-spools-file [runtime name kind normalize-entry]
   (let [file (spools-file runtime name)
         source {:kind kind
                 :file (.getPath file)}]
@@ -187,13 +298,13 @@
 
       :else
       (normalize-approved-spools-file
-       runtime
        name
        source
        (try
          (query/read-edn-file file)
          (catch Throwable t
-           (throw (ex-info (str name " is malformed or unreadable") source t))))))))
+           (throw (ex-info (str name " is malformed or unreadable") source t))))
+       normalize-entry))))
 
 (defn- legacy-config-present? [^java.io.File file]
   (or (.exists file)
@@ -212,23 +323,42 @@
 (defn approved-spools
   "Read and validate the effective runtime spool allowlist.
 
-  The effective allowlist is `spools.edn` overlaid by `spools.local.edn`; local
-  entries replace shared entries with the same coordinate. Missing files
-  contribute no spools, while malformed present files fail loudly. The optional
-  top-level `:mvn-overrides` map is overlaid the same shared-then-local way and is
-  returned only when non-empty."
+  Stage 1 normalizes each `spools.edn` entry as one family, then applies claimed
+  `spools.local.edn` coordinate overlays while inheriting family roots and floors.
+  The returned `:spools` map remains keyed by root lib. Missing files contribute
+  no spools, while malformed present files fail loudly. The optional top-level
+  `:mvn-overrides` map is overlaid shared-then-local and returned only when non-empty."
   [runtime]
   (reject-legacy-spool-config! runtime)
-  (let [shared (approved-spools-file runtime "spools.edn" :shared)
-        local (approved-spools-file runtime "spools.local.edn" :local)
-        overrides (merge (:mvn-overrides shared) (:mvn-overrides local))]
-    (cond-> {:spools (merge (:spools shared) (:spools local))}
+  (let [shared (approved-spools-file runtime "spools.edn" :shared normalize-shared-family)
+        local (approved-spools-file runtime "spools.local.edn" :local normalize-overlay)
+        _ (reject-shared-git-urls! (:families shared))
+        families (vals (apply-overlays (:families shared) (:families local)))
+        overrides (merge (:mvn-overrides shared) (:mvn-overrides local))
+        spools (into {}
+                     (mapcat
+                      (fn [{:keys [coordinate roots-map claims provenance]}]
+                        (let [kind (:kind coordinate)
+                              coordinate-root (if (= :git kind)
+                                                (io/file (cache-base) "skein" "spools" (:git/sha coordinate))
+                                                (io/file (canonical-root runtime (:local/root coordinate))))]
+                          (map (fn [[lib root-path]]
+                                 (let [root (if (= "." root-path)
+                                              coordinate-root
+                                              (io/file coordinate-root root-path))]
+                                   [lib (cond-> (assoc coordinate
+                                                       :root (.getPath root)
+                                                       :source provenance)
+                                          claims (assoc :claims claims))]))
+                               roots-map)))
+                      families))]
+    (cond-> {:spools spools}
       (seq overrides) (assoc :mvn-overrides overrides))))
 
 (defn- spool-source-fields [entry]
   (case (:kind entry)
     :local (select-keys entry [:local/root])
-    :git (select-keys entry [:git/url :git/sha :git/tag :deps/root])))
+    :git (select-keys entry [:git/url :git/sha :git/tag])))
 
 (defn- sync-result-base [lib entry]
   (merge {:lib lib

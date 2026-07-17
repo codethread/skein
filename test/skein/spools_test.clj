@@ -156,13 +156,13 @@
                             #"rename libs.edn/libs.local.edn to spools.edn/spools.local.edn"
                             (runtime/approved rt))))))
 
-(deftest approved-includes-shared-only-and-local-only-spools
+(deftest approved-includes-primary-local-spools
   (with-runtime
     (fn [rt config-dir]
       (let [shared-root (io/file config-dir "spools" "shared")
             local-root (io/file config-dir "spools" "local")]
-        (write-spools! config-dir (pr-str {:spools {'demo/shared {:local/root "spools/shared"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {'demo/local {:local/root "spools/local"}}}))
+        (write-spools! config-dir (pr-str {:spools {'demo/shared {:local/root "spools/shared"}
+                                                    'demo/local {:local/root "spools/local"}}}))
         (is (= {:spools {'demo/shared {:kind :local
                                        :local/root "spools/shared"
                                        :root (.getCanonicalPath shared-root)
@@ -170,23 +170,30 @@
                          'demo/local {:kind :local
                                       :local/root "spools/local"
                                       :root (.getCanonicalPath local-root)
-                                      :source (local-source config-dir)}}}
+                                      :source (shared-source config-dir)}}}
                (runtime/approved rt)))))))
 
 (deftest approved-local-spools-override-shared-by-coordinate
   (with-runtime
     (fn [rt config-dir]
-      (let [shared-root (io/file config-dir "spools" "shared")
-            local-root (io/file config-dir "spools" "local")]
-        (write-spools! config-dir (pr-str {:spools {'demo/override {:local/root "spools/shared"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {'demo/override {:local/root "spools/local"}}}))
+      (let [local-root (io/file config-dir "spools" "local")
+            sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/family {:git/url "https://example.invalid/demo.git"
+                                                       :git/sha sha
+                                                       :git/tag "v2"
+                                                       :roots {'demo/override "nested"}
+                                                       :requires {'other/root "v1"}
+                                                       :skein/min "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'demo/family {:local/root "spools/local"
+                                                             :claims "v2"}}}))
         (is (= {:kind :local
                 :local/root "spools/local"
-                :root (.getCanonicalPath local-root)
+                :claims "v2"
+                :root (.getPath (io/file (.getCanonicalPath local-root) "nested"))
                 :source (local-source config-dir)}
-               (get-in (runtime/approved rt) [:spools 'demo/override])))
-        (is (not= (.getCanonicalPath shared-root)
-                  (get-in (runtime/approved rt) [:spools 'demo/override :root])))))))
+               (get-in (runtime/approved rt) [:spools 'demo/override])))))))
 
 (deftest approved-fails-when-spools-edn-is-not-a-file
   (with-runtime
@@ -254,7 +261,7 @@
                                         :source (shared-source config-dir)}}}
                (runtime/approved rt)))))))
 
-(deftest approved-normalizes-git-spools-with-cache-base-and-deps-root
+(deftest approved-normalizes-git-family-roots
   (with-runtime
     (fn [rt config-dir]
       (let [cache-dir (io/file config-dir "cache")
@@ -265,23 +272,28 @@
             (write-spools! config-dir (pr-str {:spools {'demo/git {:git/url "file:///tmp/repo"
                                                                    :git/sha sha
                                                                    :git/tag "v1"
-                                                                   :deps/root "nested/spool"}}}))
-            (is (= {:spools {'demo/git {:kind :git
-                                        :git/url "file:///tmp/repo"
-                                        :git/sha sha
-                                        :git/tag "v1"
-                                        :deps/root "nested/spool"
-                                        :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
-                                        :source (shared-source config-dir)}}}
+                                                                   :roots {'demo/root "nested/spool"}}}}))
+            (is (= {:spools {'demo/root {:kind :git
+                                         :git/url "file:///tmp/repo"
+                                         :git/sha sha
+                                         :git/tag "v1"
+                                         :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
+                                         :source (shared-source config-dir)}}}
                    (runtime/approved rt)))))))))
 
 (deftest approved-rejects-malformed-git-spools
   (with-runtime
     (fn [rt config-dir]
       (doseq [[label entry pattern data-keys]
-              [["absolute deps root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :deps/root "/abs"} #":deps/root" [:deps/root]]
-               ["parent deps root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :deps/root "a/../b"} #":deps/root" [:deps/root]]
-               ["deps root on local" {:local/root "spools/demo" :deps/root "src"} #"exactly one coordinate kind" [:entry]]
+              [["absolute root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {'demo/lib "/abs"}} #"root path" [:root-path]]
+               ["parent root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {'demo/lib "a/../b"}} #"root path" [:root-path]]
+               ["empty roots" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {}} #":roots must be a non-empty map" [:roots]]
+               ["non-map roots" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots []} #":roots must be a non-empty map" [:roots]]
+               ["non-symbol root lib" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {"demo/lib" "."}} #"root lib must be a symbol" [:root-lib]]
+               ["nil requires" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :requires nil} #":requires must be a map" [:requires]]
+               ["non-map requires" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :requires []} #":requires must be a map" [:requires]]
+               ["non-symbol required root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :requires {"demo/root" "v1"}} #"Required spool root must be a symbol" [:requires]]
+               ["legacy deps root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :deps/root "src"} #"replace :deps/root with :roots" [:deps/root]]
                ["short sha" {:git/url "u" :git/sha "012345"} #":git/sha" [:git/sha]]
                ["uppercase sha" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef0123456A"} #":git/sha" [:git/sha]]
                ["non-hex sha" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef0123456g"} #":git/sha" [:git/sha]]
@@ -297,6 +309,109 @@
               (is (re-find pattern (ex-message e)))
               (doseq [k data-keys]
                 (is (contains? (ex-data e) k))))))))))
+
+(deftest release-marker-parser-is-strict-and-reserves-v0
+  (is (= "1" (str (spool-sync/marker-ordinal "v1"))))
+  (is (= "123456789012345678901234567890"
+         (str (spool-sync/marker-ordinal "v123456789012345678901234567890"))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"v0 is reserved; WIP repos stay untagged — v1 is the smallest promise"
+                        (spool-sync/marker-ordinal "v0")))
+  (doseq [marker [nil :v1 1 "" "1" "v" "v01" "v-1" "v1.0" "V1"]]
+    (testing (pr-str marker)
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"must match vN"
+                            (spool-sync/marker-ordinal marker))))))
+
+(deftest approved-validates-every-declared-marker-through-the-strict-parser
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (doseq [[field entry]
+                [[:git/tag {:git/url "u" :git/sha sha :git/tag "v0"}]
+                 [:requires {:git/url "u" :git/sha sha :requires {'other/root "v0"}}]
+                 [:skein/min {:git/url "u" :git/sha sha :skein/min "v0"}]]]
+          (testing (name field)
+            (write-spools! config-dir (pr-str {:spools {'demo/family entry}}))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+              (is (re-find #"v0 is reserved" (ex-message ex)))
+              (is (= field (:field (ex-data ex)))))))
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/family {:git/url "u"
+                                                       :git/sha sha
+                                                       :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'demo/family {:local/root "spools/demo"
+                                                             :claims "v0"}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (re-find #"v0 is reserved" (ex-message ex)))
+          (is (= :claims (:field (ex-data ex)))))))))
+
+(deftest approved-normalizes-one-stage-one-record-per-family
+  (let [source {:kind :shared :file "/tmp/spools.edn"}
+        sha "0123456789abcdef0123456789abcdef01234567"]
+    (is (= {:family 'demo/family
+            :coordinate {:kind :git :git/url "u" :git/sha sha :git/tag "v3"}
+            :roots-map {'demo/a "." 'demo/b "nested"}
+            :requires {'other/root "v2"}
+            :skein-min "v1"
+            :claims nil
+            :provenance source}
+           (#'spool-sync/normalize-shared-family
+            source
+            'demo/family
+            {:git/url "u"
+             :git/sha sha
+             :git/tag "v3"
+             :roots {'demo/a "." 'demo/b "nested"}
+             :requires {'other/root "v2"}
+             :skein/min "v1"})))
+    (is (= {'demo/local "."}
+           (:roots-map (#'spool-sync/normalize-shared-family
+                        source 'demo/local {:local/root "spools/local"}))))))
+
+(deftest approved-rejects-duplicate-git-family-urls
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/a {:git/url "https://example.invalid/same.git"
+                                                  :git/sha sha}
+                                         'demo/b {:git/url "https://example.invalid/same.git"
+                                                  :git/sha sha}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (re-find #"must not share :git/url" (ex-message ex)))
+          (is (= #{'demo/a 'demo/b} (set (:families (ex-data ex))))))))))
+
+(deftest approved-rejects-overlays-without-a-valid-claim-or-git-base
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/family {:git/url "u" :git/sha sha :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'demo/family {:local/root "spools/demo"}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (= :override-without-claim (:error (ex-data ex))))
+          (is (re-find #"add :claims \"vN\"" (:fix (ex-data ex)))))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'other/family {:local/root "spools/other"
+                                                              :claims "v1"}}}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"must shadow a shared git family"
+                              (runtime/approved rt)))))))
+
+(deftest malformed-family-shape-gates-marker-validation
+  (with-runtime
+    (fn [rt config-dir]
+      (write-spools! config-dir
+                     (pr-str {:spools {'demo/family {:git/url "u"
+                                                     :git/sha "short"
+                                                     :git/tag "v0"
+                                                     :unknown true}}}))
+      (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+        (is (re-find #"unknown keys" (ex-message ex)))
+        (is (not (re-find #"v0 is reserved" (ex-message ex))))))))
 
 (deftest event-helpers-register-list-replace-unregister-directly
   (with-runtime
@@ -342,10 +457,10 @@
                ["unknown top-level key" (pr-str {:spools {} :extra true}) #"unknown top-level keys"]
                ["missing :spools" (pr-str {}) #"requires :spools map"]
                ["non-map :spools" (pr-str {:spools []}) #"requires :spools map"]
-               ["non-symbol coordinate" (pr-str {:spools {"demo/lib" {:local/root "spools/demo"}}}) #"coordinate must be a symbol"]
+               ["non-symbol family" (pr-str {:spools {"demo/lib" {:local/root "spools/demo"}}}) #"family must be a symbol"]
                ["non-map entry" (pr-str {:spools {'demo/lib "spools/demo"}}) #"entry must be a map"]
                ["unknown per-lib key" (pr-str {:spools {'demo/lib {:local/root "spools/demo" :extra true}}}) #"unknown keys"]
-               ["missing root" (pr-str {:spools {'demo/lib {}}}) #"requires non-blank string"]
+               ["missing root" (pr-str {:spools {'demo/lib {}}}) #"exactly one coordinate kind"]
                ["non-string root" (pr-str {:spools {'demo/lib {:local/root 1}}}) #"requires non-blank string"]
                ["blank root" (pr-str {:spools {'demo/lib {:local/root "  "}}}) #"requires non-blank string"]]]
         (testing label
@@ -608,19 +723,18 @@
             (write-spools! config-dir (pr-str {:spools {'demo/git {:git/url "file:///tmp/repo"
                                                                    :git/sha sha
                                                                    :git/tag "v1"
-                                                                   :deps/root "spool"}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools 'demo/git])]
-              (is (= {:lib 'demo/git
+                                                                   :roots {'demo/root "spool"}}}}))
+            (let [result (get-in (runtime/sync! rt) [:spools 'demo/root])]
+              (is (= {:lib 'demo/root
                       :kind :git
                       :git/url "file:///tmp/repo"
                       :git/sha sha
                       :git/tag "v1"
-                      :deps/root "spool"
                       :root (.getPath (io/file cache-dir "skein" "spools" sha "spool"))
                       :source (shared-source config-dir)
                       :status :failed
                       :reason :fetch-failed}
-                     (select-keys result [:lib :kind :git/url :git/sha :git/tag :deps/root :root :source :status :reason])))
+                     (select-keys result [:lib :kind :git/url :git/sha :git/tag :root :source :status :reason])))
               (is (integer? (:exit result)))
               (is (string? (:stderr result)))
               (is (not (contains? result :local/root))))))))))
@@ -1079,7 +1193,13 @@
         (spit (io/file root "deps.edn")
               (pr-str {:paths ["src"]
                        :deps {'demo/source {:local/root "../other"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/local-deps-" suffix)}}}))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "https://example.invalid/local-deps.git"
+                                              :git/sha "0123456789abcdef0123456789abcdef01234567"
+                                              :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {lib {:local/root (str "spools/local-deps-" suffix)
+                                                    :claims "v1"}}}))
         (let [result (get-in (runtime/sync! rt) [:spools lib])]
           (is (= :failed (:status result)))
           (is (= :runtime-add-failed (:reason result)))
@@ -1273,7 +1393,7 @@
           (fn []
             (write-spools! config-dir (pr-str {:spools {'demo/mono {:git/url (file-url repo)
                                                                     :git/sha sha
-                                                                    :deps/root "nested/spool"}}}))
+                                                                    :roots {'demo/mono "nested/spool"}}}}))
             (let [result (get-in (runtime/sync! rt) [:spools 'demo/mono])]
               (is (= :loaded (:status result)))
               (is (= :fetched (:fetch result)))
@@ -1292,7 +1412,7 @@
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url (file-url repo)
                                                              :git/sha sha
-                                                             :deps/root "missing/spool"}}}))
+                                                             :roots {lib "missing/spool"}}}}))
             (let [result (get-in (runtime/sync! rt) [:spools lib])]
               (is (= :failed (:status result)))
               (is (= :missing-root (:reason result)))
@@ -1449,8 +1569,13 @@
             ns-sym (symbol (str "demo.override_gated_" suffix))
             lib (symbol (str "demo/override-gated-" suffix))
             root (write-local-lib! config-dir "override-gated-local" ns-sym)]
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/missing-shared"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {lib {:local/root "spools/override-gated-local"}}}))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "https://example.invalid/override-gated.git"
+                                              :git/sha "0123456789abcdef0123456789abcdef01234567"
+                                              :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {lib {:local/root "spools/override-gated-local"
+                                                    :claims "v1"}}}))
         (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
         (is (= (local-source config-dir) (get-in (runtime/syncs rt) [:spools lib :source])))
         (let [result (runtime/use! rt :override/gated {:ns ns-sym :spools [lib]})]
