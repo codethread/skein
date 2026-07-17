@@ -26,11 +26,8 @@
    "spools/roster/src"
    "spools/text-search/src"
    "spools/guild/src"
-   "spools/agent-run/src"
-   "spools/delegation/src"
    "spools/chime/src"
    "spools/cron/src"
-   "spools/bench/src"
    ".skein"
    "test"])
 
