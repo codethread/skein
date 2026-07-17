@@ -1,7 +1,7 @@
 (ns skein.spools-test
   "Tests for runtime spool workspace surfaces: approved spools.edn and
   spools.local.edn reading, sync!, layered use!, reload!, event helper routing,
-  daemon init, and the ephemeral helper spool."
+  and daemon init."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -10,7 +10,6 @@
             [skein.core.weaver.spool-sync :as spool-sync]
             [skein.api.events.alpha :as events]
             [skein.api.graph.alpha :as graph]
-            [skein.spools.ephemeral :as ephemeral]
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
             [skein.repl :as repl]
             [skein.api.runtime.alpha :as runtime]
@@ -310,23 +309,6 @@
               (is (re-find pattern (ex-message e)))
               (doseq [k data-keys]
                 (is (contains? (ex-data e) k))))))))))
-
-(deftest ephemeral-spool-composes-public-helper-surfaces
-  (is (= '#{skein.api.current.alpha skein.api.graph.alpha skein.api.vocab.alpha
-            skein.api.weaver.alpha}
-         (ns-requires "skein/spools/ephemeral.clj")))
-  (with-runtime
-    (fn [rt _]
-      (let [parent (repl/strand! "Parent")
-            child (ephemeral/add (:id parent) "Scratch" {:owner "agent"})]
-        (is (= "true" (get-in child [:attributes :ephemeral/entry])))
-        (is (= [[(:id parent) (:id child) "parent-of"]]
-               (mapv (juxt :from_strand_id :to_strand_id :edge_type)
-                     (:edges (graph/subgraph rt [(:id parent)])))))
-        (is (= [(:id child)] (ephemeral/ids)))
-        (is (= {:burned [(:id child)] :count 1}
-               (select-keys (ephemeral/burn-all!) [:burned :count])))
-        (is (= [] (ephemeral/ids)))))))
 
 (deftest event-helpers-register-list-replace-unregister-directly
   (with-runtime
