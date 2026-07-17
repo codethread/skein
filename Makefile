@@ -136,7 +136,7 @@ test-warm:
 spool-suite-gate:
 	@set -e; \
 	src="$(CURDIR)"; \
-	coords="$$(clojure -M -e '(let [spools (:spools (clojure.edn/read-string (slurp ".skein/spools.edn"))) g (fn [family] (let [m (get spools family) sha (:git/sha m) url (:git/url m)] (when-not (and (string? sha) (string? url)) (binding [*out* *err*] (println (str "spool-suite-gate: .skein/spools.edn is missing :git/url or :git/sha for family " family "; refusing to run against HEAD/an empty sha"))) (System/exit 1)) [url sha]))] (let [[du ds] (g (quote codethread/devflow)) [ku ks] (g (quote codethread/kanban)) [au as] (g (quote ct.spools/agent-run))] (println du ds ku ks au as) (flush) (System/exit 0)))')" || coords=""; \
+	coords="$$(clojure -M -e '(let [spools (:spools (clojure.edn/read-string (slurp ".skein/spools.edn"))) g (fn [family] (let [m (get spools family) sha (:git/sha m) url (:git/url m)] (when-not (and (string? sha) (string? url)) (binding [*out* *err*] (println (str "spool-suite-gate: .skein/spools.edn is missing :git/url or :git/sha for family " family "; refusing to run against HEAD/an empty sha"))) (System/exit 1)) [url sha]))] (let [[du ds] (g (quote codethread/devflow)) [ku ks] (g (quote codethread/kanban)) [au as] (g (quote ct.spools/agent-run))] (println du ds ku ks au as) (flush) (System/exit 0)))')"; \
 	if [ -z "$$coords" ]; then \
 		echo "spool-suite-gate: could not extract family coordinates from .skein/spools.edn; refusing to run against HEAD/an empty sha" >&2; \
 		exit 1; \
