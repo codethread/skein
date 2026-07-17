@@ -13,6 +13,7 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.events.alpha :as events]
+            [skein.api.format.alpha :as fmt]
             [skein.api.current.alpha :as current]
             [skein.api.return-shape.alpha :as return-shape]
             [skein.api.runtime.alpha :as runtime]
@@ -24,12 +25,32 @@
 (def ^:private stalled-run-phases
   "Terminal agent-run phases that leave a gate's current serving run dead: a
   `failed` or `exhausted` worker. A gate whose current delegated run is in one of
-  these is stalled — both `gate-stalled?` and the `stalled-gates` query key off
-  this list. `superseded` is deliberately absent: a run `agent retry` retired is
+  these is stalled — both `gate-stalled?` and the `stalled-subagent-gates` query
+  key off this list. `superseded` is deliberately absent: a run `agent retry` retired is
   not the gate's current server (its successor inherits the `serves` edge), so it
   never resolves as the current run in the first place, and the two membership
   rules agree by construction on \"the current serving run is dead.\""
   ["failed" "exhausted"])
+
+(def stalled-gates-query
+  "Query definition behind the registered `stalled-subagent-gates` query: an
+  active subagent gate whose spawn errored (non-blank `gate/error`), or whose
+  current serving run is dead in a terminal phase. The gate's incoming `serves`
+  edges reach each delegated run's `agent-run/phase`; a superseded run carries
+  `agent-run/phase \"superseded\"` (never `failed`/`exhausted`), so matching a
+  dead phase over `serves` selects exactly the gates whose current serving run
+  is dead — by construction in lockstep with the `gate-stalled?` predicate, no
+  `gate/superseded-by` bridge. `install!` registers it under the query name;
+  readers composing on the rule (loom's `flow-status`) list with this definition
+  directly, so membership cannot drift even on a runtime where the executor is
+  not installed."
+  [:and [:= :state "active"]
+   [:= [:attr "workflow/gate"] "subagent"]
+   [:or
+    [:and [:exists [:attr "gate/error"]]
+     [:not [:= [:attr "gate/error"] ""]]]
+    [:edge/in "serves"
+     [:in [:attr "agent-run/phase"] stalled-run-phases]]]])
 
 (def ^:dynamic *runtime*
   "Runtime captured for asynchronous subagent-executor scans."
@@ -71,8 +92,8 @@
   `serves` edge to the gate (`agent-run/runs-serving`, the C5 resolution rule).
   `agent retry` supersedes the dead run and its fresh successor inherits the
   `serves` edge, so this tracks the live successor with no separate re-link, and
-  `gate-stalled?`, the `stalled-gates` query, and the spawn guard all read the
-  same run."
+  `gate-stalled?`, the `stalled-subagent-gates` query, and the spawn guard all
+  read the same run."
   [gate-id]
   (first (agent-run/runs-serving gate-id)))
 
@@ -87,7 +108,7 @@
   (current-serving-run gate-id))
 
 (defn- ready-gate? [run-id gate-id]
-  (some #(= gate-id (:id %)) (workflow/next-steps run-id)))
+  (some #(= gate-id (:id %)) (workflow/ready run-id)))
 
 (defn- run-served-gate
   "The gate a run delegates: the target of its one outgoing `serves` edge, or nil."
@@ -97,7 +118,7 @@
 (defn- deliver-run! [run]
   (let [run-id (:id run)
         gate-id (run-served-gate run-id)
-        workflow-run-id (attr run :gate/run-id)]
+        workflow-run-id (attr run :workflow/run-id)]
     (try
       (let [gate (weaver/show (rt) gate-id)]
         (cond
@@ -183,7 +204,7 @@
                                  :prompt (subagent-preamble {:gate gate :run-id run-id :prompt prompt})
                                  :title (str "Delegated: " (:title gate))
                                  :serves (:id gate)
-                                 :attrs {"gate/run-id" run-id}}))
+                                 :attrs {"workflow/run-id" run-id}}))
         (catch Throwable t
           (stamp! (:id gate) {"gate/error" (str (ex-message t)
                                                    (some->> (ex-data t) (str " ")))}))))))
@@ -191,7 +212,7 @@
 (defn- spawn-ready-gates! []
   (doseq [root (workflow/active-runs)
           :let [run-id (attr root :workflow/run-id)]
-          step (workflow/next-steps run-id)
+          step (workflow/ready run-id)
           :when (= "subagent" (:gate step))]
     (try
       (spawn-for-gate! run-id step)
@@ -245,37 +266,29 @@
         handlers (set (map :key (events/handlers runtime)))]
     (when-not (contains? handlers :agent-run/engine)
       (fail! "Subagent executor requires the agent-run engine to be installed first" {:handlers handlers}))
-    ;; Own the `gate/*` attribute namespace — the treadle-era survivor this
-    ;; executor still stamps (all other historical `treadle/*` keys were folded
-    ;; into `gate/*`). The activation module owns it, not the file location: the
+    ;; The activation module owns the namespace, not the file location: the
     ;; source sits in the agent-run package but `:skein/spools-treadle` is the
     ;; use-key. `:keys` is advisory (the keys `deliver-run!`/`spawn-for-gate!`
-    ;; stamp), not enforced.
+    ;; stamp), not enforced. `gate/error` is the one key both gate executors
+    ;; write, so the namespace spans them rather than belonging to this one.
     (vocab/declare! runtime
                     {:kind :attr-namespace
                      :name "gate"
                      :owner :skein/spools-treadle
-                     :keys ["gate/delivered" "gate/delivery-blocked" "gate/error" "gate/run-id"]
-                     :doc "Subagent-gate delivery and spawn control attributes stamped by the treadle executor."})
-    (events/register! runtime :gate/engine event-types
+                     :keys ["gate/delivered" "gate/delivery-blocked" "gate/error"]
+                     :doc (fmt/reflow "
+                           |Workflow-gate delivery and spawn control attributes. gate/delivered and
+                           |gate/delivery-blocked are the subagent executor's record of handing a
+                           |delegated run's result to its gate. gate/error is wider: any gate
+                           |executor's durable failure stamp, written by both the subagent and shell
+                           |executors.")})
+    (events/register! runtime :subagent/engine event-types
                       'skein.spools.executors.subagent/on-event
                       {:spool "subagent"})
     (workflow/register-executor! :subagent gate-stalled?)
-    ;; The human attention surface for stuck gates: an active subagent gate whose
-    ;; spawn errored, or whose current delegated run is dead in a terminal phase.
-    ;; The gate's incoming `serves` edges reach each delegated run's
-    ;; `agent-run/phase`; a superseded run carries `agent-run/phase "superseded"`
-    ;; (never `failed`/`exhausted`), so matching a dead phase over `serves` selects
-    ;; exactly the gates whose current serving run is dead — by construction in
-    ;; lockstep with the `gate-stalled?` predicate, no `gate/superseded-by` bridge.
-    (graph/register-query! runtime 'stalled-gates
-                         [:and [:= :state "active"]
-                          [:= [:attr "workflow/gate"] "subagent"]
-                          [:or
-                           [:and [:exists [:attr "gate/error"]]
-                            [:not [:= [:attr "gate/error"] ""]]]
-                           [:edge/in "serves"
-                            [:in [:attr "agent-run/phase"] stalled-run-phases]]]])
+    ;; The human attention surface for stuck gates; the rule lives on
+    ;; `stalled-gates-query` so composing readers share it without the registry.
+    (graph/register-query! runtime 'stalled-subagent-gates stalled-gates-query)
     (graph/register-query! runtime 'blocked-deliveries
                          [:and [:= :state "closed"]
                           [:exists [:attr "gate/delivery-blocked"]]

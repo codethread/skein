@@ -77,7 +77,7 @@ Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block a
 
 **Situation.** A strand crosses into a state you want to hear about — a delegated run flips to `failed`, a workflow checkpoint becomes a human's to decide — and you want one notification the moment it happens.
 
-**Composition.** A named rule: a fully-qualified fn that receives the rule context and returns `nil` for "no notification" or `{:title .. :body ..}` to send one. Register it with `defrule!` from shared config. The rule reads the candidate strand's attributes and matches only the transition you care about.
+**Composition.** A named rule: a fully-qualified fn that receives the rule context and returns `nil` for "no notification" or `{:title .. :body ..}` to send one. Register it with `register!` from shared config. The rule reads the candidate strand's attributes and matches only the transition you care about.
 
 ```clojure
 (ns my.rules
@@ -95,7 +95,7 @@ Honest source: this repo's [`.skein/init.clj`](../.skein/init.clj) chime block a
                      (str "\n\n" err)))})))
 
 ;; register once from shared startup config
-(chime/defrule! :agent-failure 'my.rules/agent-failed)
+(chime/register! :agent-failure 'my.rules/agent-failed)
 (chime/rules)
 ```
 
@@ -152,7 +152,7 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
                        "\nAttach: no backend attach hint is configured for this run."
                        (str "\nAttach: " attach)))}))))
 
-(chime/defrule! :interactive-session-running 'my.rules/interactive-session-running)
+(chime/register! :interactive-session-running 'my.rules/interactive-session-running)
 ```
 
 **Why this shape.**
@@ -187,12 +187,12 @@ Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/age
   [{:keys [strand ready-ids]}]
   (when (and (= "active" (:state strand))
              (= "checkpoint" (get-in strand [:attributes "workflow/role"]))
-             (= "true" (str (get-in strand [:attributes "workflow/hitl"])))
+             (= "human" (get-in strand [:attributes "workflow/checkpoint-kind"]))
              (contains? ready-ids (:id strand)))       ; ready *now*, not merely active
     {:title (str "HITL checkpoint ready: " (:title strand))
      :body  (str "Checkpoint " (:id strand) " is ready for human attention.")}))
 
-(chime/defrule! :hitl-checkpoint-ready 'my.rules/checkpoint-ready)
+(chime/register! :hitl-checkpoint-ready 'my.rules/checkpoint-ready)
 ```
 
 **Why this shape.**
@@ -219,11 +219,11 @@ Honest source: this repo's `hitl-checkpoint-ready-rule` and `parked-run-rule` in
 
 **Situation.** You expected a chime and heard nothing. Before suspecting the rule logic, you need to know whether the notifier ever ran, threw, or was simply never bound.
 
-**Composition.** Read `(chime/failures)`. Chime records notifier, process, and rule failures for the weaver lifetime instead of swallowing them — a fired rule with no notifier bound is a loud `:notifier-missing` failure, not a dropped event. A rule that throws is recorded and skipped rather than crashing the scan.
+**Composition.** Read `(chime/recent-failures)`. Chime records notifier, process, and rule failures for the weaver lifetime instead of swallowing them — a fired rule with no notifier bound is a loud `:notifier-missing` failure, not a dropped event. A rule that throws is recorded and skipped rather than crashing the scan.
 
 ```clojure
 ;; What has failed this weaver lifetime?
-(chime/failures)
+(chime/recent-failures)
 ;; e.g. {:kind :notifier-missing :title "Agent run failed: run a" ...}
 ;;      {:kind :rule :rule :my-rule :message "..."}
 
@@ -238,13 +238,13 @@ Honest source: this repo's `hitl-checkpoint-ready-rule` and `parked-run-rule` in
 
 - **A missing notifier fails loudly, on purpose.** Chime marks a strand seen only
   *after* the notifier process starts, so a missing or failing notifier never
-  swallows the alert — the event stays un-acknowledged and lands in `failures`.
-  When things go quiet, `failures` tells you whether the gap is "no notifier
-  bound" or "rule never matched."
+  swallows the alert — the event stays un-acknowledged and lands in
+  `recent-failures`. When things go quiet, `recent-failures` tells you whether
+  the gap is "no notifier bound" or "rule never matched."
 - **Keep rules cheap and loud.** A rule runs on every scan, so heavy work inside
   one taxes every mutation; and a rule that throws is recorded and skipped, so a
   buggy rule silently stops notifying while the rest keep working. Check
-  `failures` for `:rule` entries when one rule alone goes dark, and keep rule
+  `recent-failures` for `:rule` entries when one rule alone goes dark, and keep rule
   bodies to attribute reads and set lookups (the `:ready-ids` pattern above)
   rather than fresh graph queries.
 - **`reset-seen!` clears dedup, not rules.** If a rule is matching but not

@@ -44,15 +44,18 @@
     (fn [_rt _]
       (let [blocked (repl/strand! "Blocked work")
             ok-blocked (repl/strand! "Blocked by nonfailed")
-            failed (repl/strand! "Failed run" {"agent-run/phase" "failed" "agent-run/error" "boom"})
-            exhausted (repl/strand! "Exhausted run" {"agent-run/phase" "exhausted"})
-            running (repl/strand! "Running run" {"agent-run/phase" "running"})]
+            failed (repl/strand! "Failed run" {"agent-run/run" "true" "agent-run/phase" "failed" "agent-run/error" "boom"})
+            exhausted (repl/strand! "Exhausted run" {"agent-run/run" "true" "agent-run/phase" "exhausted"})
+            running (repl/strand! "Running run" {"agent-run/run" "true" "agent-run/phase" "running"})
+            phase-only (repl/strand! "Not a run record" {"agent-run/phase" "failed"})]
         (repl/update! (:id blocked) {:edges [{:type "depends-on" :to (:id failed)}
                                              {:type "depends-on" :to (:id exhausted)}]})
-        (repl/update! (:id ok-blocked) {:edges [{:type "depends-on" :to (:id running)}]})
+        (repl/update! (:id ok-blocked) {:edges [{:type "depends-on" :to (:id running)}
+                                                {:type "depends-on" :to (:id phase-only)}]})
         (let [rows (carder/blocked-by-failure)
               row (first (filter #(= (:id blocked) (:id %)) rows))]
-          (is (= [(:id blocked)] (mapv :id rows)))
+          (testing "a blocker counts only when it is an agent-run record"
+            (is (= [(:id blocked)] (mapv :id rows))))
           (is (= #{(:id failed) (:id exhausted)} (set (map :id (:blockers row)))))
           (is (= "boom" (some #(when (= (:id failed) (:id %)) (:agent-run/error %)) (:blockers row)))))))))
 
@@ -60,7 +63,7 @@
   (with-runtime
     (fn [rt _]
       (let [stale-work (repl/strand! "Stale work")
-            workflow-root (repl/strand! "Workflow root" {"workflow/role" "molecule"})
+            workflow-root (repl/strand! "Workflow root" {"workflow/role" "root"})
             shuttle-run (repl/strand! "Run record" {"agent-run/run" "true"})]
         (set-updated-at! rt (:id stale-work) "2026-01-01 00:00:00")
         (set-updated-at! rt (:id workflow-root) "2026-01-01 00:00:00")
@@ -103,5 +106,5 @@
 (deftest report-rejects-unknown-options
   (with-runtime
     (fn [_rt _]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown carder option keys"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":report received unknown keys"
                             (carder/report {:days 1 :surprise true}))))))

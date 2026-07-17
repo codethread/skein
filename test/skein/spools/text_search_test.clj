@@ -1,7 +1,7 @@
 (ns skein.spools.text-search-test
   "Tests for the UNSAFE substring-search spool: title and attribute-value hits,
   archived-row visibility, literal metacharacter matching, and the loud
-  blank-pattern and overflow failures."
+  blank-substring and overflow failures."
   (:require [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -31,25 +31,25 @@
       (let [design (repl/strand! "Design the payments flow" {"topic" "billing"})]
         (repl/strand! "Unrelated work" {"topic" "shipping"})
         (testing "a title substring hit carries no attribute key"
-          (let [rows (text-search/search rt {:text "payments"})]
-            (is (= [{:id (:id design) :key nil}]
-                   (mapv #(select-keys % [:id :key]) rows)))))
+          (let [rows (text-search/search rt {:substring "payments"})]
+            (is (= [{:id (:id design) :attr-key nil}]
+                   (mapv #(select-keys % [:id :attr-key]) rows)))))
         (testing "an attribute-value hit carries the matching key"
-          (let [rows (text-search/search rt {:text "billing"})]
+          (let [rows (text-search/search rt {:substring "billing"})]
             (is (= 1 (count rows)))
             (is (= (:id design) (:id (first rows))))
-            (is (= "topic" (:key (first rows))))
+            (is (= "topic" (:attr-key (first rows))))
             (is (str/includes? (:snippet (first rows)) "billing"))))))))
 
-(deftest key-scope-searches-only-that-attribute-and-skips-titles
+(deftest attr-key-scope-searches-only-that-attribute-and-skips-titles
   (with-runtime
     (fn [rt _]
       (let [a (repl/strand! "shared token here" {"owner" "shared token"})]
         (repl/strand! "other" {"note" "shared token"})
-        (testing "--key restricts to one attribute key and drops the title branch"
-          (let [rows (text-search/search rt {:text "shared token" :key "owner"})]
-            (is (= [{:id (:id a) :key "owner"}]
-                   (mapv #(select-keys % [:id :key]) rows)))))))))
+        (testing "--attr-key restricts to one attribute key and drops the title branch"
+          (let [rows (text-search/search rt {:substring "shared token" :attr-key "owner"})]
+            (is (= [{:id (:id a) :attr-key "owner"}]
+                   (mapv #(select-keys % [:id :attr-key]) rows)))))))))
 
 (deftest archived-rows-are-invisible-by-default-and-visible-with-archived
   (with-runtime
@@ -57,40 +57,40 @@
       (let [strand (repl/strand! "Old session" {"transcript" "secretword"})]
         (weaver/archive! rt (:id strand) ["transcript"])
         (testing "an archived attribute value is invisible to the query language and to a default search"
-          (is (empty? (text-search/search rt {:text "secretword"}))))
+          (is (empty? (text-search/search rt {:substring "secretword"}))))
         (testing "--archived opts the cold row back in"
-          (let [rows (text-search/search rt {:text "secretword" :archived? true})]
-            (is (= [{:id (:id strand) :key "transcript"}]
-                   (mapv #(select-keys % [:id :key]) rows)))))))))
+          (let [rows (text-search/search rt {:substring "secretword" :archived? true})]
+            (is (= [{:id (:id strand) :attr-key "transcript"}]
+                   (mapv #(select-keys % [:id :attr-key]) rows)))))))))
 
-(deftest patterns-match-literally
+(deftest substrings-match-literally
   (with-runtime
     (fn [rt _]
       (let [pct (repl/strand! "Rollout 50% done")]
         (repl/strand! "Rollout 50X done")
-        (testing "a LIKE metacharacter in the pattern matches literally, not as a wildcard"
+        (testing "a LIKE metacharacter in the substring matches literally, not as a wildcard"
           (is (= [(:id pct)]
-                 (mapv :id (text-search/search rt {:text "50%"})))))))))
+                 (mapv :id (text-search/search rt {:substring "50%"})))))))))
 
-(deftest blank-pattern-fails-loudly
+(deftest blank-substring-fails-loudly
   (with-runtime
     (fn [rt _]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
-                            (text-search/search rt {:text "   "})))
+                            (text-search/search rt {:substring "   "})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
-                            (text-search/search rt {:text nil}))))))
+                            (text-search/search rt {:substring nil}))))))
 
 (deftest malformed-options-fail-loudly-before-changing-search-mode
   (with-runtime
     (fn [rt _]
       (testing ":archived? must be a boolean, not a truthy string"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
-                              (text-search/search rt {:text "needle" :archived? "false"}))))
-      (testing ":key must be a non-blank string"
+                              (text-search/search rt {:substring "needle" :archived? "false"}))))
+      (testing ":attr-key must be a non-blank string"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
-                              (text-search/search rt {:text "needle" :key ""})))
+                              (text-search/search rt {:substring "needle" :attr-key ""})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
-                              (text-search/search rt {:text "needle" :key :owner})))))))
+                              (text-search/search rt {:substring "needle" :attr-key :owner})))))))
 
 (deftest overflow-fails-loudly-and-caps-rather-than-truncates
   (with-runtime
@@ -98,13 +98,13 @@
       (dotimes [n 3]
         (repl/strand! (str "widget number " n)))
       (testing "matches within the limit return"
-        (is (= 3 (count (text-search/search rt {:text "widget" :limit 3})))))
+        (is (= 3 (count (text-search/search rt {:substring "widget" :limit 3})))))
       (testing "more matches than the limit fail loudly naming --limit"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"more than the --limit"
-                              (text-search/search rt {:text "widget" :limit 2}))))
+                              (text-search/search rt {:substring "widget" :limit 2}))))
       (testing "a non-positive limit fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts are invalid"
-                              (text-search/search rt {:text "widget" :limit 0})))))))
+                              (text-search/search rt {:substring "widget" :limit 0})))))))
 
 (deftest op-handler-threads-args-and-coerces-the-archived-flag
   (with-runtime
@@ -112,7 +112,7 @@
       (let [strand (repl/strand! "Session log" {"transcript" "coldvalue"})]
         (weaver/archive! rt (:id strand) ["transcript"])
         (testing "absent --archived reads as false"
-          (is (empty? (text-search/search-op {:op/runtime rt :op/args {:text "coldvalue"}}))))
+          (is (empty? (text-search/search-op {:op/runtime rt :op/args {:substring "coldvalue"}}))))
         (testing "present --archived reads as true"
           (is (= [(:id strand)]
-                 (mapv :id (text-search/search-op {:op/runtime rt :op/args {:text "coldvalue" :archived true}})))))))))
+                 (mapv :id (text-search/search-op {:op/runtime rt :op/args {:substring "coldvalue" :archived true}})))))))))

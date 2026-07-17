@@ -22,7 +22,7 @@
 (require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
               {:ns 'skein.spools.batteries
-               :call 'skein.spools.batteries/activate!})
+               :call 'skein.spools.batteries/install!})
 (runtime/use! runtime :skein/spools-ephemeral
               {:ns 'skein.spools.ephemeral
                :spools ['skein.spools/ephemeral]
@@ -45,7 +45,7 @@
 ;; gates by running the gate command directly. Its install! runs an initial
 ;; scan, so it is ordered after workflow (which owns the executor registry it
 ;; registers into).
-(runtime/use! runtime :skein/spools-reed
+(runtime/use! runtime :skein/spools-shell
               {:ns 'skein.spools.executors.shell
                :spools ['skein.spools/workflow]
                :after [:skein/spools-workflow]
@@ -82,7 +82,7 @@
                :spools ['skein.spools/agent-run]
                :call 'skein.spools.agent-run/install!
                :required? true})
-(runtime/use! runtime :skein/spools-agents
+(runtime/use! runtime :skein/spools-delegation
               {:ns 'skein.spools.delegation
                :spools ['skein.spools/delegation]
                :after [:skein/spools-shuttle]
@@ -103,7 +103,7 @@
 (runtime/use! runtime :harnesses
               {:file "harnesses.clj"
                :spools ['skein.spools/delegation 'skein.spools/agent-run]
-               :after [:skein/spools-agents]
+               :after [:skein/spools-delegation]
                :call 'harnesses/install!
                :required? true})
 ;; The declarative reviewer roster lives in its own file so the "who reviews
@@ -113,7 +113,7 @@
 (runtime/use! runtime :reviewers
               {:file "reviewers.clj"
                :spools ['skein.spools/delegation]
-               :after [:skein/spools-agents]
+               :after [:skein/spools-delegation]
                :call 'reviewers/install!
                :required? true})
 ;; Chime is a vocabulary-agnostic notification engine: it installs bare here,
@@ -177,7 +177,7 @@
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
                :spools ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
-               :after [:skein/spools-workflow :skein/spools-agents :config]
+               :after [:skein/spools-workflow :skein/spools-delegation :config]
                :call 'workflows/install!
                :required? true})
 ;; The NVD scan job is its own module (not part of config.clj) so config_test's

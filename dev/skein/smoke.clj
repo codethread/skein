@@ -340,7 +340,7 @@
       (assert (.isFile config-file) "clean bootstrap preserves/creates config.json")
       (assert-file-contents (java.io.File. workspace "spools.edn") "{:spools {}}\n" "clean bootstrap creates empty spools.edn")
       (let [init-contents (slurp init-file)]
-        (doseq [needle ["(runtime/sync! runtime)" "(require 'skein.spools.batteries)" ":skein/spools-batteries" "skein.spools.batteries/activate!"]]
+        (doseq [needle ["(runtime/sync! runtime)" "(require 'skein.spools.batteries)" ":skein/spools-batteries" "skein.spools.batteries/install!"]]
           (assert-contains init-contents needle "clean bootstrap creates runtime sync + batteries init.clj template")))
       (assert (.isDirectory (java.io.File. workspace "spools")) "clean bootstrap creates spools directory")
       (assert (not (.exists (java.io.File. workspace ".git"))) "clean bootstrap does not run git init")
@@ -366,7 +366,7 @@
 (require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
+   :call 'skein.spools.batteries/install!})
 (graph/register-query! runtime 'dirty [:= [:attr :owner] \"dirty\"])
 "]
     (delete-tree! (smoke-workspace (str db-file ".bootstrap-dirty")))
@@ -416,7 +416,7 @@
                "(require 'skein.spools.batteries)\n"
                "(runtime/use! runtime :skein/spools-batteries\n"
                "  {:ns 'skein.spools.batteries\n"
-               "   :call 'skein.spools.batteries/activate!})\n"
+               "   :call 'skein.spools.batteries/install!})\n"
                "(graph/register-query! runtime 'smoke-owned [:= [:attr :owner] \"smoke\"])\n"
                "(graph/register-query! runtime 'smoke-owner {:params [:owner] :where [:= [:attr :owner] [:param :owner]]})\n"
                "(s/def ::title string?)\n"

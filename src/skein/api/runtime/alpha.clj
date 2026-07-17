@@ -282,7 +282,7 @@
   just moved one level up to the opts map. So the map is closed to
   `:version`/`:migrate-fn`, `:version` must be a non-nil comparable tag, and
   `:migrate-fn` (which only fires on a version mismatch) requires a `:version`.
-  Mirrors the closed-key discipline `skein.spools.agent-run/defharness!` already
+  Mirrors the closed-key discipline `skein.spools.agent-run/register-harness!` already
   applies to its own def map."
   [opts]
   (when (some? opts)

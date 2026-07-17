@@ -30,17 +30,17 @@ deliberate differences are explicit; §5 is the clause-by-clause map. Stable ids
 prefix.
 
 Because batteries ships on the weaver classpath (under `spools/src`), it needs no `spools.edn`
-approval — `require` it and call `activate!`:
+approval — `require` it and call `install!`:
 
 ```clojure
 (require '[skein.spools.batteries :as batteries])
-(batteries/activate!)          ; into the active runtime (use!-style)
-(batteries/activate! runtime)  ; explicit runtime, for tests/trusted callers
+(batteries/install!)          ; into the active runtime (use!-style)
+(batteries/install! runtime)  ; explicit runtime, for tests/trusted callers
 ```
 
-`activate!` registers every op below and returns `{:installed true :namespace
+`install!` registers every op below and returns `{:installed true :namespace
 'skein.spools.batteries :ops [<register-op! result> ...]}`. Each op carries `{:doc … :arg-spec …
-:returns … :hook-class …}` metadata; re-running `activate!` against a live
+:returns … :hook-class …}` metadata; re-running `install!` against a live
 runtime collides loudly under the accretion registry (use `reload!`, which
 clears registries first).
 

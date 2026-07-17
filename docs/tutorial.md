@@ -37,7 +37,9 @@ optional.
 A **strand** is a small record with three parts: a title, a **lifecycle `state`** (whether it is
 `active`, `closed`, or `replaced`), and an **open map of `attributes`**. "Open map" means the
 attribute names are yours to invent (`owner`, `priority`, `kind`, `kanban`, whatever your workflow
-needs) instead of waiting for a schema to grow.
+needs) instead of waiting for a schema to grow. Invention has one boundary: names belong to the
+concepts they describe, so when you build on a spool that already publishes attribute names, you
+reuse those names rather than coin your own for the same thing.
 
 Strands connect with **edges**: links from one strand to another. Edges are **typed**, meaning each
 carries a relation name like `depends-on`, and they can carry attributes of their own.

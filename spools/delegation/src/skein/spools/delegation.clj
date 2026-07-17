@@ -47,16 +47,16 @@
     (catch NumberFormatException _
       (fail! "Flag requires an integer value" {:flag flag :value value}))))
 
-(defn- max-concurrent!
-  "Parse a `--max-concurrent K` fan-out flag into a positive-int cap, or nil when
+(defn- fanout-cap!
+  "Parse a `--fanout-cap K` fan-out flag into a positive-int cap, or nil when
   absent. Delegation only expresses intent: it stamps K as `agent-run/fanout-cap`
   so the agent-run window tightens the fan-out group to `min(W, K)` — delegation
   never polices concurrency itself, enforcement is the engine window's."
   [flags]
-  (when-let [v (get flags "--max-concurrent")]
-    (let [k (parse-int! "--max-concurrent" v)]
+  (when-let [v (get flags "--fanout-cap")]
+    (let [k (parse-int! "--fanout-cap" v)]
       (when-not (pos? k)
-        (fail! "--max-concurrent must be a positive integer" {:value v}))
+        (fail! "--fanout-cap must be a positive integer" {:value v}))
       k)))
 
 (defn- fanout-attrs
@@ -290,7 +290,7 @@
            :backends {:group "engine"
                       :help-topic "strand help agent"
                       :verb "backends"
-                      :semantics ["List configured interactive session backends (terminal multiplexers registered with defbackend! in trusted config)."]
+                      :semantics ["List configured interactive session backends (terminal multiplexers registered with register-backend! in trusted config)."]
                       :returns [{"name" "string" "ops" ["start alive stop capture attach subset"] "doc" "optional string"}]}
            :delegate {:group "delegation"
                       :help-topic "strand help agent"
@@ -303,10 +303,10 @@
                                    |Injects the worker contract and spawns a run attached --for the
                                    |task.
                                    |
-                                   |Harness resolution is --harness flag > task harness attribute >
+                                   |Harness resolution is --harness flag > task agent-run/harness attr >
                                    |loud failure; there is no default.
                                    |
-                                   |cwd resolution is --cwd flag > task cwd attribute > workspace
+                                   |cwd resolution is --cwd flag > task agent-run/cwd attr > workspace
                                    |root.
                                    |
                                    |A task with any non-superseded SERVING run is not delegable:
@@ -344,7 +344,7 @@
                                          |state, so a task delegated this pass is never also
                                          |reported in skipped.
                                          |
-                                         |Harness comes from each task's harness attribute;
+                                         |Harness comes from each task's agent-run/harness attr;
                                          |mixed-harness fan-out is expected.
                                          |
                                          |Fails loudly up front, delegating nothing, if any selected
@@ -353,7 +353,7 @@
                                          |Idempotent: re-invoke after verifying and closing finished
                                          |tasks to pick up newly unblocked work.
                                          |
-                                         |--max-concurrent K stamps one shared fan-out group on every
+                                         |--fanout-cap K stamps one shared fan-out group on every
                                          |run of this pass so the agent-run window bounds them to
                                          |min(W, K); without it the fan-out is governed by the
                                          |workspace ceiling W alone.")
@@ -450,19 +450,19 @@
                                  |run per entry with its own precise contract and scope, always
                                  |synthesized. The roster is the one authoritative source of
                                  |reviewer count, harnesses, and contracts, so
-                                 |--members/--harness/--contract are rejected with it.
+                                 |--seats/--harness/--contract are rejected with it.
                                  |
                                  |--commit-range names the diff surface (e.g. main..HEAD): its
                                  |changed files are expanded via git at --cwd and injected into
                                  |every reviewer prompt so reviewers stop re-deriving the diff.
                                  |--changed-files overrides the file list explicitly (csv).
                                  |
-                                 |--max-concurrent K stamps one shared fan-out group on every
+                                 |--fanout-cap K stamps one shared fan-out group on every
                                  |reviewer and the synthesizer so the agent-run window bounds them
                                  |to min(W, K).")
                     :fails ["target not found" "target is a kanban card" "no reviewers"
                             "reviewer missing harness" "unknown roster"
-                            "--roster with --members/--harness/--contract"
+                            "--roster with --seats/--harness/--contract"
                             "commit range not expandable at --cwd"]
                     :returns {"target" "target id" "reviewers" ["run ids"] "synthesizer" "optional run id"}}
            :rosters {:group "memory-review"
@@ -472,16 +472,17 @@
                                   |List named reviewer rosters registered by trusted config
                                   |(defroster!).
                                   |
-                                  |Each roster entry declares name, harness, a precise
-                                  |single-concern contract, and optional scope; review --roster
-                                  |<name> fans it out over a target.
+                                  |Each roster seat declares name, harness, a precise
+                                  |single-concern brief, and optional scope; review --roster
+                                  |<name> fans it out over a target. A roster is the panel
+                                  |primitive's seat vector, so it speaks panel's seat vocabulary.
                                   |
                                   |Workflow composition: skein.spools.delegation/roster-review-specs
                                   |(trusted Clojure) returns the same fan-out as gate-ready specs,
                                   |sharing one prompt source with the verb.")
                      :returns [{"name" "roster name"
-                                "reviewers" [{"name" "string" "harness" "string" "contract" "string" "scope" "optional string"}]
-                                "synthesizer" "optional harness override map"}]}
+                                "seats" [{"name" "string" "harness" "string" "brief" "string" "scope" "optional string"}]
+                                "synthesis" "optional harness override map"}]}
            :council {:group "memory-review"
                      :help-topic "strand help agent"
                      :verb "council"
@@ -490,7 +491,7 @@
                                   |shared council strand across --rounds turn-as-run barrier rows,
                                   |then a synthesizer weighs the whole deliberation.
                                   |
-                                  |--members spawns N identical seats on --harness. Harness has no
+                                  |--seats N spawns N identical seats on --harness. Harness has no
                                   |default: a council with no resolvable harness fails loudly,
                                   |mirroring delegate.
                                   |
@@ -501,11 +502,11 @@
                                   |(skein.spools.delegation/council! or panel!), keeping rich
                                   |structured data out of shell argv.
                                   |
-                                  |--max-concurrent K stamps one shared fan-out group on every
+                                  |--fanout-cap K stamps one shared fan-out group on every
                                   |seat and the synthesizer so the agent-run window bounds them to
                                   |min(W, K).")
-                     :fails ["blank topic" "non-positive members or rounds" "no resolvable harness" ":members combined with :seats"]
-                     :returns {"council" "shared council strand id" "turns" [["run ids per round"]] "synthesizer" "run id"}}}
+                     :fails ["blank topic" "non-positive seat count or rounds" "no resolvable harness" ":seat-count combined with :seats"]
+                     :returns {"blackboard" "shared council strand id" "turns" [["run ids per round"]] "synthesizer" "run id"}}}
    :plan-creation {:help-topic "strand pattern explain agent-plan"
                    :semantics ["Create a feature/plan strand plus task/review children."
                                "Task bodies are full worker contracts: scope, owned files, validation commands, and commit policy."
@@ -636,7 +637,8 @@
 
 (defn- hitl? [task] (let [v (attr task :hitl)] (or (= true v) (= "true" v))))
 (defn- harness-for [task flags]
-  (or (get flags "--harness") (attr task :harness) (fail! "delegate requires --harness or task harness attribute" {:task (:id task)})))
+  (or (get flags "--harness") (attr task :agent-run/harness)
+      (fail! "delegate requires --harness or task agent-run/harness attribute" {:task (:id task)})))
 
 (defn- delegate-task [task flags fanout]
   (let [interactive? (boolean (get flags "--interactive"))]
@@ -660,15 +662,15 @@
                                            :parent (:id task)
                                            :serves (:id task)
                                            :cwd (or (get flags "--cwd")
-                                                    (attr task :cwd)
+                                                    (attr task :agent-run/cwd)
                                                     (workspace-root-dir))}
                                     interactive? (assoc :mode :interactive
                                                         :backend (or (get flags "--backend")
-                                                                     (attr task :backend)
-                                                                     (fail! "delegate --interactive requires --backend or task backend attribute" {:task (:id task)}))
+                                                                     (attr task :agent-run/backend)
+                                                                     (fail! "delegate --interactive requires --backend or task agent-run/backend attribute" {:task (:id task)}))
                                                         :reap (get flags "--reap"))
                                     (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
-                                    (attr task :max-attempts) (assoc :max-attempts (attr task :max-attempts))
+                                    (attr task :agent-run/max-attempts) (assoc :max-attempts (attr task :agent-run/max-attempts))
                                     fanout (assoc :attrs fanout)))]
       {:task (:id task) :run (select-keys (agent-run/run-summary run) [:id :phase :harness :attach])})))
 
@@ -687,7 +689,7 @@
 
 (defn- op-delegate [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--ready" :single "--harness" :single "--cwd" :single "--prompt" :single "--spawned-by" :single
-                                                     "--interactive" :bool "--backend" :single "--reap" :single "--max-concurrent" :single})]
+                                                     "--interactive" :bool "--backend" :single "--reap" :single "--fanout-cap" :single})]
     (if-let [plan (get flags "--ready")]
       (do (when (seq positional) (fail! "delegate --ready takes no task positional" {:got positional}))
           (when (or (get flags "--interactive") (get flags "--backend") (get flags "--reap"))
@@ -699,11 +701,11 @@
           (let [tasks (filter #(and (= "active" (:state %)) (not (run? %)) (ready? (:id %))) (parent-descendants plan))
                 classified (mapv (juxt identity skip-reason) tasks)
                 to-delegate (mapv first (remove second classified))
-                missing (remove #(non-blank? (attr % :harness)) to-delegate)]
-            (when (seq missing) (fail! "ready tasks missing harness" {:tasks (mapv :id missing)}))
-            ;; one fresh group for the whole classified batch, so --max-concurrent
+                missing (remove #(non-blank? (attr % :agent-run/harness)) to-delegate)]
+            (when (seq missing) (fail! "ready tasks missing agent-run/harness" {:tasks (mapv :id missing)}))
+            ;; one fresh group for the whole classified batch, so --fanout-cap
             ;; bounds this fan-out to min(W, K) across every task it delegates
-            (let [fanout (fanout-attrs (max-concurrent! flags))]
+            (let [fanout (fanout-attrs (fanout-cap! flags))]
               {:plan plan
                :delegated (mapv #(delegate-task % flags fanout) to-delegate)
                :skipped (mapv (fn [[t reason]] {:task (:id t) :reason reason})
@@ -807,7 +809,7 @@
          #(pos-int? (get % "agent-run/fanout-cap"))))
 (s/def :skein.spools.delegation.council-input/harness harness-ref?)
 (s/def :skein.spools.delegation.council-input/synthesizer harness-ref?)
-(s/def :skein.spools.delegation.council-input/members pos-int?)
+(s/def :skein.spools.delegation.council-input/seat-count pos-int?)
 (s/def :skein.spools.delegation.council-input/rounds pos-int?)
 (s/def :skein.spools.delegation.council-input/spawned-by non-blank?)
 (s/def :skein.spools.delegation.council-input/cwd non-blank?)
@@ -825,7 +827,7 @@
   (s/coll-of :skein.spools.delegation.council/seat :kind vector? :min-count 1))
 (s/def :skein.spools.delegation/council-input
   (s/keys :opt-un [:skein.spools.delegation.council-input/harness
-                   :skein.spools.delegation.council-input/members
+                   :skein.spools.delegation.council-input/seat-count
                    :skein.spools.delegation.council-input/rounds
                    :skein.spools.delegation.council-input/seats
                    :skein.spools.delegation.council-input/synthesizer
@@ -848,20 +850,20 @@
 ;; cross-entry name uniqueness.
 (s/def :skein.spools.delegation.roster/name non-blank?)
 (s/def :skein.spools.delegation.roster/harness harness-ref?)
-(s/def :skein.spools.delegation.roster/contract non-blank?)
+(s/def :skein.spools.delegation.roster/brief non-blank?)
 (s/def :skein.spools.delegation.roster/scope non-blank?)
-(s/def :skein.spools.delegation.roster/reviewer
+(s/def :skein.spools.delegation.roster/seat
   (s/keys :req-un [:skein.spools.delegation.roster/name
                    :skein.spools.delegation.roster/harness
-                   :skein.spools.delegation.roster/contract]
+                   :skein.spools.delegation.roster/brief]
           :opt-un [:skein.spools.delegation.roster/scope]))
-(s/def :skein.spools.delegation.roster/reviewers
-  (s/coll-of :skein.spools.delegation.roster/reviewer :kind vector? :min-count 1))
-(s/def :skein.spools.delegation.roster/synthesizer
+(s/def :skein.spools.delegation.roster/seats
+  (s/coll-of :skein.spools.delegation.roster/seat :kind vector? :min-count 1))
+(s/def :skein.spools.delegation.roster/synthesis
   (s/keys :req-un [:skein.spools.delegation.roster/harness]))
 (s/def :skein.spools.delegation/roster
-  (s/keys :req-un [:skein.spools.delegation.roster/reviewers]
-          :opt-un [:skein.spools.delegation.roster/synthesizer]))
+  (s/keys :req-un [:skein.spools.delegation.roster/seats]
+          :opt-un [:skein.spools.delegation.roster/synthesis]))
 
 ;; Change context: the caller-supplied diff surface (commit range + changed
 ;; files, plus cheap code windows) injected into every reviewer prompt so
@@ -896,23 +898,23 @@
 (s/def :skein.spools.delegation.review-specs/synthesizer :skein.spools.delegation.review-specs/reviewer)
 (s/def :skein.spools.delegation.review-specs/roster keyword?)
 (s/def :skein.spools.delegation.review-specs/target non-blank?)
-(s/def :skein.spools.delegation.review-specs/review-pass non-blank?)
+(s/def :skein.spools.delegation.review-specs/pass non-blank?)
 (s/def :skein.spools.delegation/review-specs
   (s/keys :req-un [:skein.spools.delegation.review-specs/roster
                    :skein.spools.delegation.review-specs/target
-                   :skein.spools.delegation.review-specs/review-pass
+                   :skein.spools.delegation.review-specs/pass
                    :skein.spools.delegation.review-specs/reviewers
                    :skein.spools.delegation.review-specs/synthesizer]))
 
-(def ^:private reviewer-entry-keys #{:name :harness :contract :scope})
-(def ^:private roster-keys #{:reviewers :synthesizer})
-(def ^:private synthesizer-keys #{:harness})
+(def ^:private roster-seat-keys #{:name :harness :brief :scope})
+(def ^:private roster-keys #{:seats :synthesis})
+(def ^:private roster-synthesis-keys #{:harness})
 
 (defn- validate-roster!
   "Validate roster data: closed key sets first — a typo'd key diagnoses far
-  better as \"unknown keys [:contarct]\" than as the missing-`:contract` spec
+  better as \"unknown keys [:breif]\" than as the missing-`:brief` spec
   explain it also causes — then the :skein.spools.delegation/roster spec for
-  structure, then reviewer-name uniqueness. Key checks are guarded on map
+  structure, then seat-name uniqueness. Key checks are guarded on map
   shape so non-map garbage still falls through to the spec failure. Returns
   the roster."
   [roster-id roster]
@@ -920,25 +922,25 @@
     (when-let [unknown (seq (remove roster-keys (keys roster)))]
       (fail! "Roster has unknown keys"
              {:roster roster-id :unknown (vec unknown) :allowed (sort roster-keys)}))
-    (when (sequential? (:reviewers roster))
-      (doseq [entry (:reviewers roster)
-              :when (map? entry)]
-        (when-let [unknown (seq (remove reviewer-entry-keys (keys entry)))]
-          (fail! "Roster reviewer entry has unknown keys"
-                 {:roster roster-id :entry entry :unknown (vec unknown) :allowed (sort reviewer-entry-keys)}))))
-    (let [synthesizer (:synthesizer roster)]
-      (when (map? synthesizer)
-        (when-let [unknown (seq (remove synthesizer-keys (keys synthesizer)))]
-          (fail! "Roster :synthesizer has unknown keys"
-                 {:roster roster-id :unknown (vec unknown) :allowed (sort synthesizer-keys)})))))
+    (when (sequential? (:seats roster))
+      (doseq [seat (:seats roster)
+              :when (map? seat)]
+        (when-let [unknown (seq (remove roster-seat-keys (keys seat)))]
+          (fail! "Roster seat has unknown keys"
+                 {:roster roster-id :seat seat :unknown (vec unknown) :allowed (sort roster-seat-keys)}))))
+    (let [synthesis (:synthesis roster)]
+      (when (map? synthesis)
+        (when-let [unknown (seq (remove roster-synthesis-keys (keys synthesis)))]
+          (fail! "Roster :synthesis has unknown keys"
+                 {:roster roster-id :unknown (vec unknown) :allowed (sort roster-synthesis-keys)})))))
   (when-not (s/valid? :skein.spools.delegation/roster roster)
     (fail! "Roster does not conform to spec"
            {:roster roster-id
             :spec :skein.spools.delegation/roster
             :explain (s/explain-str :skein.spools.delegation/roster roster)}))
-  (let [names (mapv :name (:reviewers roster))]
+  (let [names (mapv :name (:seats roster))]
     (when-not (apply distinct? names)
-      (fail! "Roster reviewer :name values must be unique" {:roster roster-id :names names})))
+      (fail! "Roster seat :name values must be unique" {:roster roster-id :names names})))
   roster)
 
 (defn- roster-key [roster-name]
@@ -952,16 +954,18 @@
   trusted startup config re-registers it like harness aliases and queries).
 
   Roster data is plain and spec-defined — see `:skein.spools.delegation/roster`:
-  `{:reviewers [{:name :harness :contract :scope?} ...] :synthesizer
-  {:harness ...}?}`. Each reviewer is one independent read-only review run
-  with its own precise contract; `:scope` is prompt-level confinement text.
-  `:synthesizer` overrides the harness of the synthesis run (default: first
-  reviewer's harness). Malformed data fails loudly with spec explain data."
+  `{:seats [{:name :harness :brief :scope?} ...] :synthesis {:harness ...}?}`,
+  the panel primitive's seat vocabulary (a roster is a single-round,
+  target-blackboard panel; see `roster->panel`). Each seat is one independent
+  read-only review run with its own precise brief; `:scope` is prompt-level
+  confinement text. `:synthesis` overrides the harness of the synthesis run
+  (default: first seat's harness). Malformed data fails loudly with spec
+  explain data."
   [roster-name roster]
   (let [roster-id (roster-key roster-name)]
     (validate-roster! roster-id roster)
     (swap! (rosters-atom) assoc roster-id roster)
-    {:roster roster-id :reviewers (count (:reviewers roster))}))
+    {:roster roster-id :seats (count (:seats roster))}))
 
 (defn rosters
   "List registered reviewer rosters as full plain data."
@@ -1019,22 +1023,26 @@
 (defn- post-with-tag-fragment
   "Instruction for appending a contribution to the board strand, whose write
   command renders through the single `writer-ref->prompt` renderer
-  (skein.api.notes.alpha). A non-nil `tag` threads a `review/pass` decoration
-  attr so one pass/round stays separable on a strand that accumulates notes
-  across rounds; a nil tag omits it. A non-nil `kind` threads the open
-  `note/kind` view hint the same way (reviews stamp `review-dump` so board
-  views can fold bulk findings). `:lead`/`:label` frame the post for the
-  caller (reviewers post `When finished, append findings with`; deliberating
-  seats post their turn's position). The posting command is the same whether the
-  process is fresh or resumed, so this fragment ignores `:form`."
-  [{:keys [board-id tag kind lead label]
+  (skein.api.notes.alpha). A non-nil `tag` threads a `panel/pass` decoration
+  attr so one pass stays separable on a strand that accumulates notes across
+  passes; a nil tag omits it. A non-nil `kind` threads the open `note/kind`
+  view hint the same way (reviews stamp `review-dump` so board views can fold
+  bulk findings). A non-nil `round` threads `--round`, so the post lands with
+  the `note/round` that `agent notes <board> --round n` filters on — the
+  renderer's ref shape carries decorations only, so the round rides as its own
+  flag. `:lead`/`:label` frame the post for the caller (reviewers post `When
+  finished, append findings with`; deliberating seats post their turn's
+  position). The posting command is the same whether the process is fresh or
+  resumed, so this fragment ignores `:form`."
+  [{:keys [board-id tag kind round lead label]
     :or {lead "When finished" label "append findings with"}}]
   (let [cmd (agent-run/pinned-strand-command)
         decoration (cond-> {}
-                     tag (assoc "review/pass" tag)
+                     tag (assoc "panel/pass" tag)
                      kind (assoc "note/kind" kind))]
     (str lead ", " label ": " cmd " "
          (notes/writer-ref->prompt {:target board-id :by "<your run-id>" :decoration decoration})
+         (when round (str " --round " round))
          "\n")))
 
 (defn- independence-fragment
@@ -1064,7 +1072,7 @@
 ;; byte-for-byte (the frozen roster tests are the compatibility proof); the
 ;; post-with-tag write instruction now flows through the single
 ;; `writer-ref->prompt` renderer (skein.api.notes.alpha), so its wording and the
-;; `review/pass` decoration attr have exactly one source of truth. The
+;; `panel/pass` decoration attr have exactly one source of truth. The
 ;; review-specific framing (target subtree, focus, scope, notes-only discipline)
 ;; stays inline because it is not part of the shared blackboard vocabulary.
 (defn- change-context-block
@@ -1143,7 +1151,7 @@
          ;; synthesis can isolate its own round too
          (when note-tag
            (str "This review pass is tagged " note-tag ": reviewers decorated their notes with"
-                " `--attr review/pass=" note-tag "`; synthesize those notes and ignore other rounds.\n"))
+                " `--attr panel/pass=" note-tag "`; synthesize those notes and ignore other rounds.\n"))
          (when (seq review-runs)
            (str "Review run ids: " (str/join ", " review-runs) "\n"))
          "De-duplicate by root cause: when several reviewers flag the same underlying defect from "
@@ -1178,7 +1186,7 @@
   one and hand it straight to this seam (specs/attrs label it `:inline`;
   register under a name when attribution matters).
 
-  Every call mints a `:review-pass` tag (override with a non-blank
+  Every call mints a `:pass` tag (override with a non-blank
   `:review-id`): reviewers prefix their notes with it and the synthesizer
   filters on it, so one pass's findings stay separable on a target that
   accumulates notes across rounds — run ids cannot serve here because
@@ -1203,30 +1211,30 @@
         base (agent-run/default-review-contract-text)
         pass-id (or review-id
                     (str (name roster-id) "-" (subs (str (java.util.UUID/randomUUID)) 0 8)))
-        shared-attrs {"review/target" target
+        shared-attrs {"panel/blackboard" target
                       "review/roster" (name roster-id)
-                      "review/pass" pass-id}]
+                      "panel/pass" pass-id}]
     {:roster roster-id
      :target target
-     :review-pass pass-id
-     :reviewers (mapv (fn [{entry-name :name :keys [harness contract scope]}]
-                        {:name entry-name
+     :pass pass-id
+     :reviewers (mapv (fn [{seat-name :name :keys [harness brief scope]}]
+                        {:name seat-name
                          :harness harness
                          :prompt (review-prompt {:target-id target
-                                                 :focus entry-name
-                                                 :contract (str base "\n\n[reviewer: " entry-name "]\n" contract)
+                                                 :focus seat-name
+                                                 :contract (str base "\n\n[reviewer: " seat-name "]\n" brief)
                                                  :scope scope
                                                  :note-tag pass-id
                                                  :change-context change-context})
-                         :attrs (assoc shared-attrs "review/focus" entry-name)})
-                      (:reviewers roster-def))
+                         :attrs (assoc shared-attrs "review/focus" seat-name)})
+                      (:seats roster-def))
      ;; the synthesizer weighs findings roster-independently, so it receives
      ;; the base contract, never a per-reviewer one
      :synthesizer {:name "synthesis"
-                   :harness (or (get-in roster-def [:synthesizer :harness])
-                                (:harness (first (:reviewers roster-def))))
+                   :harness (or (get-in roster-def [:synthesis :harness])
+                                (:harness (first (:seats roster-def))))
                    :prompt (review-synthesis-prompt {:target-id target :contract base :note-tag pass-id})
-                   :attrs (assoc shared-attrs "review/synthesis" "true")}}))
+                   :attrs (assoc shared-attrs "panel/synthesis" "true")}}))
 
 ;; ---------------------------------------------------------------------------
 ;; Panel primitive (PLAN-Pnl-001.A4/A5)
@@ -1309,11 +1317,11 @@
         :fresh (s/and #(= :fresh (:kind %))
                       #(not (contains? % :id))
                       (s/keys :req-un [:skein.spools.delegation.panel-specs.blackboard/kind]))))
-(s/def :skein.spools.delegation.panel-specs/review-pass non-blank?)
+(s/def :skein.spools.delegation.panel-specs/pass non-blank?)
 (s/def :skein.spools.delegation.panel-specs/synthesizer :skein.spools.delegation.panel-specs/run)
 (s/def :skein.spools.delegation/panel-specs
   (s/keys :req-un [:skein.spools.delegation.panel-specs/blackboard
-                   :skein.spools.delegation.panel-specs/review-pass
+                   :skein.spools.delegation.panel-specs/pass
                    :skein.spools.delegation.panel-specs/turns]
           :opt-un [:skein.spools.delegation.panel-specs/synthesizer]))
 
@@ -1365,7 +1373,7 @@
 (defn- panel-seat-prompt
   [{:keys [form seat seats turn turns brief scope board-id view directive note-tag]
     :or {form :full}}]
-  (let [post (post-with-tag-fragment {:board-id board-id :tag note-tag
+  (let [post (post-with-tag-fragment {:board-id board-id :tag note-tag :round turn
                                       :lead "When you have a position for this turn"
                                       :label "post it with"})
         read-board? (or (= view :strand) (= directive :deliberate))]
@@ -1391,7 +1399,7 @@
          "Synthesize the panel deliberation on strand " board-id ".\n"
          (when note-tag
            (str "This panel pass is tagged " note-tag ": seats decorated their posts with"
-                " `--attr review/pass=" note-tag "`; synthesize those posts and ignore other passes.\n"))
+                " `--attr panel/pass=" note-tag "`; synthesize those posts and ignore other passes.\n"))
          "Read the board with `" cmd " agent notes " board-id "`, append one synthesis note with `"
          cmd " " (notes/writer-ref->prompt {:target board-id :by "<your run-id>" :decoration {}})
          "`, then finish with the synthesis.")))
@@ -1409,14 +1417,14 @@
   Options: `:target` is the blackboard strand id for a `:target` panel (a
   blank target fails loudly); a `:fresh` panel ignores it and embeds a board
   placeholder the spawner resolves after minting. `:review-id` overrides the
-  minted `:review-pass` tag (a blank override fails loudly).
+  minted `:pass` tag (a blank override fails loudly).
 
   Output `:turns` is a vector of turn rows (turn 1 first); each run spec is
   `{:name :harness :prompt :resume-prompt? :attrs :resume-ref?}` where
   `:resume-ref` is the seat index in the previous row this turn continues (only
   present for a `:continuity :resume` turn r>1). Every run spec stamps
-  `panel/seat`, `panel/turn`, `review/target`, and
-  `review/pass`. `:synthesizer` is present unless `:synthesis` is
+  `panel/seat`, `panel/turn`, `panel/blackboard`, and
+  `panel/pass`. `:synthesizer` is present unless `:synthesis` is
   absent or `:none`."
   [panel {:keys [target review-id]}]
   (when (and (some? review-id) (not (non-blank? review-id)))
@@ -1453,8 +1461,8 @@
                             (let [directive (cond (= 1 rounds) :independent
                                                   (= 1 turn) :open
                                                   :else :deliberate)
-                                  attrs {"review/target" board-ref
-                                         "review/pass" pass-id
+                                  attrs {"panel/blackboard" board-ref
+                                         "panel/pass" pass-id
                                          "panel/seat" seat-name
                                          "panel/turn" (str turn)}]
                               (cond-> {:name seat-name
@@ -1477,16 +1485,16 @@
     (cond-> {:blackboard (case blackboard
                            :target {:kind :target :id target}
                            :fresh {:kind :fresh})
-             :review-pass pass-id
+             :pass pass-id
              :turns turns}
       (and synthesis (not= :none synthesis))
       (assoc :synthesizer
              {:name "synthesis"
               :harness (:harness synthesis)
               :prompt (panel-synthesis-prompt {:board-id board-ref :brief (:brief synthesis) :note-tag pass-id})
-              :attrs {"review/target" board-ref
-                      "review/pass" pass-id
-                      "review/synthesis" "true"}}))))
+              :attrs {"panel/blackboard" board-ref
+                      "panel/pass" pass-id
+                      "panel/synthesis" "true"}}))))
 
 (defn panel!
   "Spawn a panel from an inline panel value.
@@ -1508,7 +1516,7 @@
   required for a `:target` blackboard, `:review-id` tags notes and resumes,
   `:spawned-by` and `:cwd` ride onto every run.
 
-  Returns `{:panel :blackboard :turns [[run-ids...]...] :synthesizer? :review-pass}`."
+  Returns `{:panel :blackboard :turns [[run-ids...]...] :synthesizer? :pass}`."
   [panel opts]
   (let [opts (require-valid! :skein.spools.delegation/panel-input
                               (reject-unknown-keys! "panel! options" #{:target :review-id :spawned-by :cwd :fanout-attrs} opts)
@@ -1523,14 +1531,13 @@
                                                   (weaver/show (rt) id))
                              id)
                    :fresh (:id (weaver/add (rt) {:title (truncate (str "Panel: " (:name (first (first (:turns specs))))) 72)
-                                              :attributes (cond-> {"panel/role" "panel"
-                                                                   "review/pass" (:review-pass specs)}
+                                              :attributes (cond-> {"panel/pass" (:pass specs)}
                                                             spawned-by (assoc "agent-run/spawned-by" spawned-by))})))
         resolve-board (fn [s] (str/replace (str s) board-placeholder board-id))
         spawn-run (fn [spec resume-run extra]
                     (let [;; a resuming turn launches on the short continuation
                           ;; prompt; stamp its full-brief form as
-                          ;; panel/fresh-prompt so `retry --fresh` has a
+                          ;; agent-run/fresh-prompt so `retry --fresh` has a
                           ;; durable cold-start prompt (a fresh process must
                           ;; never be handed the continuation, PLAN-Pnl-001.A6)
                           ;; panel seats and synthesis are read-only deliberators
@@ -1544,7 +1551,7 @@
                                                (into {}
                                                      (map (fn [[k v]] [k (resolve-board v)]))
                                                      (:attrs spec)))
-                                  resume-run (assoc "panel/fresh-prompt" (resolve-board (:prompt spec))))]
+                                  resume-run (assoc "agent-run/fresh-prompt" (resolve-board (:prompt spec))))]
                       (agent-run/spawn-run!
                        (cond-> (merge {:harness (:harness spec)
                                        :prompt (resolve-board (if resume-run (:resume-prompt spec) (:prompt spec)))
@@ -1576,27 +1583,24 @@
     (cond-> {:panel panel
              :blackboard board-id
              :turns (mapv (fn [runs] (mapv :id runs)) turn-runs)
-             :review-pass (:review-pass specs)}
+             :pass (:pass specs)}
       synth (assoc :synthesizer (:id synth)))))
 
 (defn roster->panel
   "Convert a roster value into an equivalent single-round, target-blackboard
-  panel: each reviewer becomes an independent seat whose contract is the seat
-  brief, and the roster synthesizer (or the first reviewer's harness) becomes
-  the panel synthesis. Pure — the roster is validated identically to
+  panel: a roster IS a panel's seat vector, so this only supplies the turn
+  grid, the blackboard kind, per-seat `:continuity`, and the synthesis harness
+  default (the first seat's). Pure — the roster is validated identically to
   `defroster!` input. A rounds=1 panel compiles to the independent review
   shape, so this is how `review!` is expressible over the panel primitive."
   [roster]
   (validate-roster! :inline roster)
-  (let [reviewers (:reviewers roster)]
-    {:seats (mapv (fn [{seat-name :name :keys [harness contract scope]}]
-                    (cond-> {:name seat-name :harness harness :brief contract :continuity :fresh}
-                      (non-blank? scope) (assoc :scope scope)))
-                  reviewers)
+  (let [seats (:seats roster)]
+    {:seats (mapv #(assoc % :continuity :fresh) seats)
      :turns {:rounds 1}
      :blackboard :target
-     :synthesis {:harness (or (get-in roster [:synthesizer :harness])
-                              (:harness (first reviewers)))}}))
+     :synthesis {:harness (or (get-in roster [:synthesis :harness])
+                              (:harness (first seats)))}}))
 
 (defn review!
   "Spawn independent read-only reviewers for a target strand.
@@ -1604,7 +1608,7 @@
   `:roster` names a `defroster!` roster (or is an inline
   `:skein.spools.delegation/roster` value) and is the one authoritative source of
   reviewer count, harnesses, and contracts for that review: combining it with
-  `:reviewers`, `:members`, `:harnesses`, or `:contract` fails loudly. A
+  `:reviewers`, `:seat-count`, `:harnesses`, or `:contract` fails loudly. A
   roster review always synthesizes, from the same `roster-review-specs` data
   a workflow composition would consume.
 
@@ -1618,22 +1622,22 @@
   target, and card notes stay lean for handover, so a card-targeted review
   fails loudly toward the card's task tier. The check reads only the
   `kanban/card` marker attribute — no kanban spool code is involved."
-  [target-id {:keys [reviewers members harnesses contract synthesize? spawned-by cwd roster change-context fanout-attrs]
-              :or {members 2}
+  [target-id {:keys [reviewers seat-count harnesses contract synthesize? spawned-by cwd roster change-context fanout-attrs]
+              :or {seat-count 2}
               :as opts}]
   (let [target (or (weaver/show (rt) target-id)
                    (fail! "Review target strand not found" {:id target-id}))]
     (reject-card-target! "Review" target-id target))
   ;; validate the diff surface on every path — the roster path re-checks it in
-  ;; roster-review-specs, but a direct :members/:harnesses caller with no
+  ;; roster-review-specs, but a direct :seat-count/:harnesses caller with no
   ;; :roster would otherwise thread a malformed :change-context straight into
   ;; review-prompt.
   (validate-change-context! "review!" change-context)
   (when roster
-    (when-let [conflicts (seq (filter #(contains? opts %) [:reviewers :members :harnesses :contract]))]
+    (when-let [conflicts (seq (filter #(contains? opts %) [:reviewers :seat-count :harnesses :contract]))]
       (fail! "Roster review takes reviewer count, harnesses, and contracts from the roster"
              {:roster roster :conflicts (vec conflicts)
-              :cli-flags (vec (keep {:members "--members" :harnesses "--harness" :contract "--contract"}
+              :cli-flags (vec (keep {:seat-count "--seats" :harnesses "--harness" :contract "--contract"}
                                     conflicts))})))
   (let [roster-specs (when roster (roster-review-specs roster {:target target-id
                                                                :change-context change-context}))
@@ -1645,7 +1649,7 @@
                                   (mapv (fn [idx]
                                           {:harness (nth hs (mod idx (count hs)))
                                            :focus (str "review pass " (inc idx))})
-                                        (range members))))]
+                                        (range seat-count))))]
               (when-not (and (vector? reviewers) (seq reviewers))
                 (fail! "Review requires at least one reviewer" {:reviewers reviewers}))
               (mapv (fn [{:keys [harness focus] :as reviewer}]
@@ -1655,7 +1659,7 @@
                                                :contract (or (:contract reviewer) contract)
                                                :scope (:scope reviewer)
                                                :change-context change-context})
-                       :attrs {"review/target" target-id
+                       :attrs {"panel/blackboard" target-id
                                "review/focus" (or focus "")}})
                     reviewers)))
         synthesize? (or synthesize? (some? roster-specs))
@@ -1663,7 +1667,7 @@
         ;; they carry parent-of placement alone with no serves edge, so they
         ;; never gate a later delegation of the target task
         ;; the fan-out group rides onto every reviewer and the synthesizer, so
-        ;; --max-concurrent bounds the whole review to min(W, K)
+        ;; --fanout-cap bounds the whole review to min(W, K)
         spawn-spec! (fn [spec extra]
                       (agent-run/spawn-run!
                        (merge {:harness (:harness spec)
@@ -1684,12 +1688,12 @@
                                       :prompt (review-synthesis-prompt {:target-id target-id
                                                                         :review-runs (mapv :id review-runs)
                                                                         :contract contract})
-                                      :attrs {"review/target" target-id
-                                              "review/synthesis" "true"}})
+                                      :attrs {"panel/blackboard" target-id
+                                              "panel/synthesis" "true"}})
                                  {:title (truncate (str "Review synthesis: " target-id) 72)
                                   :depends-on (mapv :id review-runs)}))]
     (cond-> {:target target-id :reviewers (mapv :id review-runs)}
-      roster-specs (assoc :review-pass (:review-pass roster-specs))
+      roster-specs (assoc :pass (:pass roster-specs))
       synthesis (assoc :synthesizer (:id synthesis)))))
 
 (defn- council-seat-brief
@@ -1711,29 +1715,29 @@
 
   Option input is validated by `:skein.spools.delegation/council-input`.
 
-  Scalar convenience: `:members n` mints N identical seats, each running the
+  Scalar convenience: `:seat-count n` mints N identical seats, each running the
   council-wide `:harness`. Rich control: `:seats [{:name :harness? :brief?}]`
-  gives per-seat harness and perspective; `:members` and `:seats` are mutually
+  gives per-seat harness and perspective; `:seat-count` and `:seats` are mutually
   exclusive. Harness has no default (mirroring `delegate`) — a seat with neither
   its own `:harness` nor a council-wide `:harness` fails loudly. The synthesizer
   runs `:synthesizer` (a harness) or the first seat's harness. `:rounds` (default
   2) is the turn count; `:spawned-by` and `:cwd` ride onto every run.
 
-  Returns `{:council <shared strand id> :turns [[run-ids]...] :synthesizer
+  Returns `{:blackboard <shared strand id> :turns [[run-ids]...] :synthesizer
   <run id>}`."
   [topic opts]
   (let [opts (require-valid! :skein.spools.delegation/council-input
-                              (cond-> (reject-unknown-keys! "council! options" #{:harness :members :rounds :seats :synthesizer :spawned-by :cwd :fanout-attrs} opts)
+                              (cond-> (reject-unknown-keys! "council! options" #{:harness :seat-count :rounds :seats :synthesizer :spawned-by :cwd :fanout-attrs} opts)
                                 (contains? opts :seats)
                                 (update :seats #(mapv (partial reject-unknown-keys! "council! seat" council-seat-input-keys) %)))
                               "council! options do not conform to spec")
-        {:keys [harness members rounds seats synthesizer spawned-by cwd fanout-attrs]
-         :or {members 2 rounds 2}} opts]
+        {:keys [harness seat-count rounds seats synthesizer spawned-by cwd fanout-attrs]
+         :or {seat-count 2 rounds 2}} opts]
     (when (str/blank? topic)
     (fail! "Council topic must be non-blank" {}))
-  (when (and (contains? opts :seats) (contains? opts :members))
-    (fail! "Council takes :members (scalar) or :seats (per-seat), not both"
-           {:members members :seats seats}))
+  (when (and (contains? opts :seats) (contains? opts :seat-count))
+    (fail! "Council takes :seat-count (scalar) or :seats (per-seat), not both"
+           {:seat-count seat-count :seats seats}))
   (when-not (pos-int? rounds)
     (fail! "Council :rounds must be a positive integer" {:rounds rounds}))
   (let [resolve-harness (fn [seat-harness]
@@ -1751,13 +1755,13 @@
                        :harness (resolve-harness seat-harness)
                        :brief (council-seat-brief topic brief)})
                     seats))
-          (do (when-not (pos-int? members)
-                (fail! "Council :members must be a positive integer" {:members members}))
+          (do (when-not (pos-int? seat-count)
+                (fail! "Council :seat-count must be a positive integer" {:seat-count seat-count}))
               (mapv (fn [n]
-                      {:name (str "member-" n)
+                      {:name (str "seat-" n)
                        :harness (resolve-harness nil)
                        :brief (council-seat-brief topic nil)})
-                    (range 1 (inc members)))))
+                    (range 1 (inc seat-count)))))
         panel {:seats panel-seats
                :turns {:rounds rounds}
                :blackboard :fresh
@@ -1767,7 +1771,7 @@
                                spawned-by (assoc :spawned-by spawned-by)
                                cwd (assoc :cwd cwd)
                                fanout-attrs (assoc :fanout-attrs fanout-attrs)))]
-    (cond-> {:council (:blackboard result)
+    (cond-> {:blackboard (:blackboard result)
              :turns (:turns result)}
       (:synthesizer result) (assoc :synthesizer (:synthesizer result))))))
 
@@ -1847,18 +1851,18 @@
 
 (defn- op-review [argv]
   (let [{:keys [positional flags]}
-        (parse-argv argv {"--members" :single "--harness" :single "--synthesize" :bool
+        (parse-argv argv {"--seats" :single "--harness" :single "--synthesize" :bool
                           "--contract" :single "--spawned-by" :single "--cwd" :single
                           "--roster" :single "--commit-range" :single "--changed-files" :single
-                          "--max-concurrent" :single})]
+                          "--fanout-cap" :single})]
     (when-not (= 1 (count positional))
       (fail! "review requires <target-id>" {:got positional}))
     (let [change-context (change-context-from-flags flags)
-          fanout (fanout-attrs (max-concurrent! flags))]
+          fanout (fanout-attrs (fanout-cap! flags))]
       (review! (first positional)
                (cond-> {}
                  (get flags "--roster") (assoc :roster (get flags "--roster"))
-                 (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
+                 (get flags "--seats") (assoc :seat-count (parse-int! "--seats" (get flags "--seats")))
                  (get flags "--harness") (assoc :harnesses (split-csv (get flags "--harness")))
                  (get flags "--contract") (assoc :contract (get flags "--contract"))
                  (get flags "--spawned-by") (assoc :spawned-by (get flags "--spawned-by"))
@@ -1876,15 +1880,15 @@
 ;; vector) belongs in trusted Clojure / inline panels, not shell argv.
 (defn- op-council [argv]
   (let [{:keys [positional flags]}
-        (parse-argv argv {"--topic" :single "--members" :single "--rounds" :single
+        (parse-argv argv {"--topic" :single "--seats" :single "--rounds" :single
                           "--harness" :single "--synthesizer" :single
-                          "--spawned-by" :single "--cwd" :single "--max-concurrent" :single})]
+                          "--spawned-by" :single "--cwd" :single "--fanout-cap" :single})]
     (when (seq positional)
       (fail! "council takes only flags" {:unexpected positional}))
-    (let [fanout (fanout-attrs (max-concurrent! flags))]
+    (let [fanout (fanout-attrs (fanout-cap! flags))]
       (council! (or (get flags "--topic") (fail! "council requires --topic" {}))
                 (cond-> {}
-                  (get flags "--members") (assoc :members (parse-int! "--members" (get flags "--members")))
+                  (get flags "--seats") (assoc :seat-count (parse-int! "--seats" (get flags "--seats")))
                   (get flags "--rounds") (assoc :rounds (parse-int! "--rounds" (get flags "--rounds")))
                   (get flags "--harness") (assoc :harness (get flags "--harness"))
                   (get flags "--synthesizer") (assoc :synthesizer (get flags "--synthesizer"))
@@ -1899,8 +1903,8 @@
 ;; session-id, log, result, error, …) are re-derived or re-stamped by
 ;; spawn-run!, so only these spool-owned structural attrs are carried.
 (def ^:private preserved-run-attr-keys
-  ["review/target" "review/pass" "review/roster" "review/focus"
-   "review/synthesis" "panel/seat" "panel/turn"])
+  ["panel/blackboard" "panel/pass" "review/roster" "review/focus"
+   "panel/synthesis" "panel/seat" "panel/turn"])
 
 (defn- op-retry [argv]
   (let [{:keys [positional flags]} (parse-argv argv {"--harness" :single "--cwd" :single "--prompt" :single "--fresh" :bool})
@@ -1932,14 +1936,14 @@
                 (fail! "run failed resuming its session; retry --fresh to respawn cold on the full-brief prompt"
                        {:run (:id run) :resumes resumes}))
             preserve-resume? (and resumes (not fresh?))
-            fresh-prompt (attr-get run :panel/fresh-prompt)
+            fresh-prompt (attr-get run :agent-run/fresh-prompt)
             ;; carry the spool-owned structural attrs plus, when the retry keeps
             ;; resuming, the full-brief form so a later --fresh of the re-resumed
             ;; run can still cold-start correctly
             carried-attrs (cond-> (into {}
                                         (keep (fn [k] (when-let [v (attr-get run k)] [k v])))
                                         preserved-run-attr-keys)
-                            (and preserve-resume? fresh-prompt) (assoc "panel/fresh-prompt" fresh-prompt))
+                            (and preserve-resume? fresh-prompt) (assoc "agent-run/fresh-prompt" fresh-prompt))
             extra (get flags "--prompt")
             append-extra (fn [p] (str p (when extra (str "\n\n" extra))))
             task (when task-id (weaver/show (rt) task-id))
@@ -2058,7 +2062,7 @@
                         :interactive {:type :boolean :doc "Delegate as an interactive session."}
                         :backend {:doc "Interactive backend override."}
                         :reap {:doc "Interactive session reap policy: auto or manual."}
-                        :max-concurrent {:type :int :doc "With --ready, cap this fan-out to K concurrent runs (min(W, K)); ignored on single delegation."}}
+                        :fanout-cap {:type :int :doc "With --ready, cap this fan-out to K concurrent runs (min(W, K)); ignored on single delegation."}}
                 :positionals [{:name :task-id :doc "Task id for single-task delegation."}]}
     "retry" {:doc "Supersede and retry a failed/exhausted task or run."
              :flags {:fresh {:type :boolean :doc "Start cold instead of resuming a previous session."}
@@ -2078,7 +2082,7 @@
              :flags {:round {:type :int :doc "Council round filter."}}
              :positionals [{:name :strand-id :required? true :doc "Target strand id."}]}
     "review" {:doc "Spawn independent reviewers for a target strand."
-              :flags {:members {:type :int :doc "Number of ad hoc reviewers."}
+              :flags {:seats {:type :int :doc "Number of ad hoc reviewer seats."}
                       :harness {:doc "Comma-separated harness list."}
                       :synthesize {:type :boolean :doc "Also spawn synthesis run."}
                       :contract {:doc "Ad hoc reviewer contract."}
@@ -2087,18 +2091,18 @@
                       :roster {:doc "Named declarative reviewer roster."}
                       :commit-range {:doc "Git commit range under review."}
                       :changed-files {:doc "Comma-separated changed files under review."}
-                      :max-concurrent {:type :int :doc "Cap this review fan-out to K concurrent runs (min(W, K))."}}
+                      :fanout-cap {:type :int :doc "Cap this review fan-out to K concurrent runs (min(W, K))."}}
               :positionals [{:name :target-id :required? true :doc "Target strand id."}]}
     "rosters" {:doc "List configured reviewer rosters."}
     "council" {:doc "Convene a fresh-blackboard deliberation panel."
                :flags {:topic {:required? true :doc "Council topic."}
-                       :members {:type :int :doc "Number of seats."}
+                       :seats {:type :int :doc "Number of seats."}
                        :rounds {:type :int :doc "Number of rounds."}
                        :harness {:doc "Seat harness."}
                        :synthesizer {:doc "Synthesizer harness."}
                        :cwd {:doc "Working directory."}
                        :spawned-by {:doc "Caller run id for provenance."}
-                       :max-concurrent {:type :int :doc "Cap this council fan-out to K concurrent runs (min(W, K))."}}}}})
+                       :fanout-cap {:type :int :doc "Cap this council fan-out to K concurrent runs (min(W, K))."}}}}})
 
 (def ^:private run-summary-return
   {:type :map
@@ -2174,11 +2178,11 @@
     "review" {:type :map
               :required {:operation :string :target :string
                          :reviewers {:type :collection :items :string}}
-              :optional {:review-pass :string :synthesizer :string}}
+              :optional {:pass :string :synthesizer :string}}
     "rosters" {:type :collection
                :items {:type :map :required {:name :string} :extra :json}}
     "council" {:type :map
-               :required {:operation :string :council :string
+               :required {:operation :string :blackboard :string
                           :turns {:type :collection
                                   :items {:type :collection :items :string}}}
                :optional {:synthesizer :string}}}})
@@ -2260,14 +2264,18 @@
   [k]
   (symbol k))
 (defn agent-plan
-  "Create a feature strand plus task/review children for agent work."
+  "Create a feature strand plus task/review children for agent work.
+
+  The plan root is marked `kind \"agent-plan\"`; each child carries `kind`
+  `\"task\"` or `\"review\"`. The terse task input fields `harness`, `cwd`, and
+  `max-attempts` weave to the `agent-run/harness`, `agent-run/cwd`, and
+  `agent-run/max-attempts` attributes `delegate` and `retry` read."
   [{:keys [input]}]
   (let [{:keys [feature title body tasks]} input]
     (into [{:ref 'plan
             :title title
             :attributes (cond-> {:feature feature
-                                 :kind "plan"
-                                 :workflow "agent-plan"}
+                                 :kind "agent-plan"}
                           body (assoc :body body))
             :edges (mapv (fn [{:keys [key]}]
                            {:type "parent-of" :to (ref-symbol key)})
@@ -2278,14 +2286,13 @@
                           :title title
                           :attributes (cond-> {:feature feature
                                                :kind (or kind "task")
-                                               :workflow "agent-plan"
                                                :task_key key}
                                         body (assoc :body body)
                                         hitl (assoc :hitl true)
                                         validation (assoc :validation validation)
-                                        harness (assoc :harness harness)
-                                        cwd (assoc :cwd cwd)
-                                        max-attempts (assoc :max-attempts max-attempts))}
+                                        harness (assoc :agent-run/harness harness)
+                                        cwd (assoc :agent-run/cwd cwd)
+                                        max-attempts (assoc :agent-run/max-attempts max-attempts))}
                    (seq depends_on)
                    (assoc :edges (mapv (fn [d]
                                          {:type "depends-on" :to (ref-symbol d)})
@@ -2293,22 +2300,22 @@
           tasks)))
 
 (defn install!
-  "Install the agents op surface, pattern, query, and worker preamble hook."
+  "Install the delegation op surface, pattern, query, and worker preamble hook."
   []
   (let [runtime (rt)]
     (agent-run/set-preamble-extension! worker-contract)
     (vocab/declare! runtime
                     {:kind :attr-namespace
                      :name "review"
-                     :owner :skein/spools-agents
-                     :keys ["review/target" "review/roster" "review/pass" "review/focus" "review/synthesis"]
-                     :doc "Reviewer-shape run attrs stamped by roster-review-specs (advisory key list)."})
+                     :owner :skein/spools-delegation
+                     :keys ["review/roster" "review/focus"]
+                     :doc "Reviewer-perspective run attrs stamped by the review preset (advisory key list)."})
     (vocab/declare! runtime
                     {:kind :attr-namespace
                      :name "panel"
-                     :owner :skein/spools-agents
-                     :keys ["panel/seat" "panel/turn"]
-                     :doc "Panel/council seat-shape run attrs stamped by panel-specs (advisory key list)."})
+                     :owner :skein/spools-delegation
+                     :keys ["panel/blackboard" "panel/pass" "panel/seat" "panel/turn" "panel/synthesis"]
+                     :doc "Panel deliberation run attrs stamped by panel-specs; the review and council presets stamp them too (advisory key list)."})
     {:installed true
      :namespace 'skein.spools.delegation
      :op (weaver/register-op! runtime 'agent

@@ -30,8 +30,9 @@
   this pattern earns no such guarantee and owns its own breakage.
 
   See `spools/text-search.md` for the full unsafe declaration and design
-  rationale. Every query pattern is parameter-bound — user text is never spliced
-  into SQL — and the op is read-only: it mutates no strands, edges, or state."
+  rationale. Every search substring is parameter-bound — user input is never
+  spliced into SQL — and the op is read-only: it mutates no strands, edges, or
+  state."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.current.alpha :as current]
@@ -42,28 +43,34 @@
             [skein.core.db :as db]
             [skein.api.spool.alpha :refer [fail!]]))
 
-(def default-limit
+(def default-search-limit
   "Default row cap for `search`. Overflow fails loudly rather than truncating,
   so a caller always sees a complete result set or a clear instruction to narrow
-  it."
+  it.
+
+  Search deliberately does not consult batteries' runtime-owned read cap
+  (`skein.spools.batteries/read-limit`, set via `set-read-limit!`): that cap
+  governs the silently-truncating `list`/`ready` reads, and this op's cap is a
+  different contract — it fails on overflow instead of truncating. A workspace
+  that raises its read limit does not thereby widen `search`; pass `:limit`."
   50)
 
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
 
-(s/def ::text non-blank-string?)
+(s/def ::substring non-blank-string?)
 (s/def ::archived? boolean?)
-(s/def :skein.spools.text-search.search/key non-blank-string?)
+(s/def :skein.spools.text-search.search/attr-key non-blank-string?)
 (s/def ::limit pos-int?)
 (s/def ::search-opts
-  (s/keys :req-un [::text]
-          :opt-un [::archived? :skein.spools.text-search.search/key ::limit]))
+  (s/keys :req-un [::substring]
+          :opt-un [::archived? :skein.spools.text-search.search/attr-key ::limit]))
 (s/def ::id string?)
 (s/def ::title string?)
-(s/def :skein.spools.text-search.result/key (s/nilable string?))
+(s/def :skein.spools.text-search.result/attr-key (s/nilable string?))
 (s/def ::snippet string?)
 (s/def ::result-row
-  (s/keys :req-un [::id ::title :skein.spools.text-search.result/key ::snippet]))
+  (s/keys :req-un [::id ::title :skein.spools.text-search.result/attr-key ::snippet]))
 
 (defn- require-search-opts! [opts]
   (when-not (s/valid? ::search-opts opts)
@@ -91,70 +98,76 @@
              {:runtime-keys (vec (keys runtime))})))
 
 (defn- like-escape
-  "Escape LIKE metacharacters in `text` so it matches as a literal substring
-  under `ESCAPE '\\'`.
+  "Escape LIKE metacharacters in `substring` so it matches literally under
+  `ESCAPE '\\'`.
 
   Backslash is escaped first so the escapes added for `%` and `_` are not
   themselves re-escaped."
-  [text]
-  (-> text
+  [substring]
+  (-> substring
       (str/replace "\\" "\\\\")
       (str/replace "%" "\\%")
       (str/replace "_" "\\_")))
 
 (def ^:private title-select
-  "Title-branch select: a title hit carries no attribute key, so `key` is NULL
-  and the whole title is the snippet."
-  "SELECT id, title, NULL AS key, title AS snippet FROM strands WHERE title LIKE ? ESCAPE '\\'")
+  "Title-branch select: a title hit carries no attribute key, so `attr_key` is
+  NULL and the whole title is the snippet."
+  "SELECT id, title, NULL AS attr_key, title AS snippet FROM strands WHERE title LIKE ? ESCAPE '\\'")
 
 (defn- attr-select
   "Attribute-branch select. Excludes archived rows unless `archived?`, and scopes
-  to one attribute `key?` when supplied. Only the fixed clauses vary; the
-  patterns stay bound parameters."
-  [archived? key?]
-  (str "SELECT s.id AS id, s.title AS title, a.key AS key, a.value AS snippet "
+  to one attribute `attr-key?` when supplied. Only the fixed clauses vary; the
+  substrings stay bound parameters."
+  [archived? attr-key?]
+  (str "SELECT s.id AS id, s.title AS title, a.key AS attr_key, a.value AS snippet "
        "FROM attributes a JOIN strands s ON s.id = a.strand_id "
        "WHERE a.value LIKE ? ESCAPE '\\'"
        (when-not archived? " AND a.archived = 0")
-       (when key? " AND a.key = ?")))
+       (when attr-key? " AND a.key = ?")))
 
 (defn search
-  "Return strand rows whose title or an attribute value contains `text`.
+  "Return strand rows whose title or an attribute value contains `substring`.
 
-  `opts` is a map: `:text` (required, non-blank substring matched literally),
+  `opts` is a map: `:substring` (required, non-blank, matched literally),
   `:archived?` (include archived/cold attribute rows the query language cannot
-  see; default false — hot rows only), `:key` (scope the attribute-value search
-  to one attribute key, which also skips the title branch), and `:limit`
-  (default `default-limit`).
+  see; default false — hot rows only), `:attr-key` (scope the attribute-value
+  search to one attribute key, which also skips the title branch), and `:limit`
+  (default `default-search-limit`).
 
-  Each row is `{:id :title :key :snippet}`: `:key` is nil for a title hit or the
-  matching attribute key otherwise, and `:snippet` is the matched text (the
-  title, or the attribute value as stored JSON). Rows are ordered by strand id
-  then key.
+  Each row is `{:id :title :attr-key :snippet}`: `:attr-key` is nil for a title
+  hit or the matching attribute key otherwise, and `:snippet` is the matched
+  text (the title, or the attribute value as stored JSON). Rows are ordered by
+  strand id then attribute key.
 
   Read-only. Fails loudly (TEN-003) on malformed opts or overflow: `search`
   fetches one row past `:limit` and, if the result exceeds it, throws naming
   `--limit` and query-narrowing rather than silently truncating."
   [runtime opts]
-  (let [{:keys [text archived? key limit] :or {archived? false limit default-limit}}
+  (let [{:keys [substring archived? attr-key limit]
+         :or {archived? false limit default-search-limit}}
         (require-search-opts! opts)
         ds (runtime-datasource runtime)
-        like (str "%" (like-escape text) "%")
-        attr-sql (attr-select archived? key)
-        ;; A --key search is an attribute-value search only; titles are not
-        ;; attributes, so the title branch is dropped when key scopes the query.
-        [inner params] (if key
-                         [attr-sql [like key]]
+        like (str "%" (like-escape substring) "%")
+        attr-sql (attr-select archived? attr-key)
+        ;; An --attr-key search is an attribute-value search only; titles are not
+        ;; attributes, so the title branch is dropped when a key scopes the query.
+        [inner params] (if attr-key
+                         [attr-sql [like attr-key]]
                          [(str title-select " UNION ALL " attr-sql) [like like]])
         capped (inc limit)
-        sql (str "SELECT id, title, key, snippet FROM (" inner ") ORDER BY id, key LIMIT ?")
+        sql (str "SELECT id, title, attr_key, snippet FROM (" inner ") ORDER BY id, attr_key LIMIT ?")
         rows (db/execute! ds (into [sql] (conj params capped)))]
     (when (> (count rows) limit)
       (fail! (str "text-search matched more than the --limit of " limit
-                  " rows; narrow the query (scope with --key or a more specific pattern) "
+                  " rows; narrow the query (scope with --attr-key or a more specific substring) "
                   "or raise --limit — results are capped, never truncated")
              {:reason :overflow :limit limit}))
-    (require-result-rows! (mapv #(select-keys % [:id :title :key :snippet]) rows))))
+    (require-result-rows! (mapv (fn [row]
+                                  {:id (:id row)
+                                   :title (:title row)
+                                   :attr-key (:attr_key row)
+                                   :snippet (:snippet row)})
+                                rows))))
 
 (defn search-op
   "Handle `strand search ...`, threading parsed args into `search`.
@@ -162,10 +175,10 @@
   The registered op handler; resolved by symbol at dispatch time, so it is public
   like the other spools' op handlers."
   [ctx]
-  (let [{:keys [text archived key limit]} (:op/args ctx)]
+  (let [{:keys [substring archived attr-key limit]} (:op/args ctx)]
     (search (:op/runtime ctx)
-            (cond-> {:text text :archived? (boolean archived)}
-              key (assoc :key key)
+            (cond-> {:substring substring :archived? (boolean archived)}
+              attr-key (assoc :attr-key attr-key)
               limit (assoc :limit limit)))))
 
 (def ^:private search-doc
@@ -177,11 +190,13 @@
    :doc search-doc
    :flags {:archived {:type :boolean
                       :doc "Include archived (cold) attribute rows, which the query language cannot see."}
-           :key {:type :string
-                 :doc "Scope the attribute-value search to one attribute key (skips the title branch)."}
+           :attr-key {:type :string
+                      :doc "Scope the attribute-value search to one attribute key (skips the title branch)."}
            :limit {:type :int
-                   :doc (str "Row cap (default " default-limit "); overflow fails loudly rather than truncating.")}}
-   :positionals [{:name :text :type :string :required? true
+                   :doc (str "Row cap (default " default-search-limit "); overflow fails loudly rather than "
+                             "truncating. Search does not consult batteries' set-read-limit! — that "
+                             "runtime-owned cap governs list/ready, not this op.")}}
+   :positionals [{:name :substring :type :string :required? true
                   :doc "Substring to search for, matched literally."}]})
 
 (def ^:private search-return
@@ -189,7 +204,7 @@
    :items {:type :map
            :required {:id :string
                       :title :string
-                      :key [:nullable :string]
+                      :attr-key [:nullable :string]
                       :snippet :string}}})
 
 (defn install!

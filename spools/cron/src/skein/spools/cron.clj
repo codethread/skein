@@ -5,9 +5,9 @@
   It owns no timing of its own: each registered job is a durable `cron/<id>`
   scheduler wake (`skein.api.scheduler.alpha`), so the cadence survives weaver
   restart and reload, and scheduler introspection is the single timing view. A
-  caller registers a job by fully-qualified `:run!` symbol resolving to a
+  caller registers a job by fully-qualified `:handler` symbol resolving to a
   `(fn [runtime] ..)`; the engine owns only the wake wiring, the job's
-  last-outcome status, and a loud inspectable failure log. It is deliberately
+  last-result status, and a loud inspectable failure log. It is deliberately
   just recurrence — workflow/gate integration is intentionally out of scope.
 
   Delivery model. The scheduler dispatches a due `cron/<id>` wake to
@@ -16,7 +16,7 @@
   hands the job body off to a cron-owned execution executor, then returns so the
   scheduler completes the delivered wake. The job's own success/failure is
   recorded cron-side and never interrupts cadence. Delivery is at-least-once, so
-  `:run!` bodies must tolerate duplicate fires (TEN-003, `SPEC-004.C101`).
+  `:handler` bodies must tolerate duplicate fires (TEN-003, `SPEC-004.C101`).
 
   State is runtime-owned via `skein.api.runtime.alpha/spool-state`, so two
   runtimes in one JVM keep independent executors, job tables, and failure logs.
@@ -56,14 +56,14 @@
   (let [^ExecutorService executor (Executors/newSingleThreadExecutor
                                    (daemon-thread-factory "cron"))]
     {:executor executor
-     ;; id -> {:id :interval-ms :jitter-ms :run! sym
-     ;;        :last-outcome :last-fired-at :last-error}
+     ;; id -> {:id :interval-ms :jitter-ms :handler sym
+     ;;        :last-result :last-fired-at :last-error}
      :jobs (atom {})
      :failure-log (atom [])
      :rng (Random.)
      ;; In-flight offloaded-job latch: a count incremented on the event lane in
      ;; `fire-wake` before submit and decremented in the executor task's finally.
-     ;; `await-idle!` polls this atom to zero.
+     ;; `await-quiescent!` polls this atom to zero.
      :in-flight-count (atom 0)
      :close-fn (fn []
                  (.shutdownNow executor)
@@ -83,10 +83,12 @@
     (swap! (failure-log runtime) #(->> (conj (vec %) full) (take-last 100) vec))
     full))
 
-(defn failures
+(defn recent-failures
   "Return recorded cron failures for this runtime's weaver lifetime, oldest
-  first. Each entry carries `:kind` (`:run` for a `:run!` throw, `:offload` for
-  an execution-executor rejection), `:job`, a `:message`, and `:at`."
+  first — the same bounded-ring ordering as
+  `skein.api.events.alpha/recent-failures`. Each entry carries `:kind` (`:run`
+  for a `:handler` throw, `:offload` for an execution-executor rejection),
+  `:job`, a `:message`, and `:at`."
   [runtime]
   @(failure-log runtime))
 
@@ -133,16 +135,20 @@
                                   :payload {:job (name id)}})))
 
 (defn- config-tuple [job]
-  [(:interval-ms job) (:jitter-ms job) (:run! job)])
+  [(:interval-ms job) (:jitter-ms job) (:handler job)])
 
-(defn deregister!
+(defn unregister!
   "Cancel a cron job's pending wake and remove it from `runtime`.
 
-  Returns `{:deregistered id}` when the job existed (in-memory config or a
-  pending `cron/<id>` wake), else `{:deregistered nil}`. The scheduler `cancel!`
-  fails loudly on an unknown key, so the cancel is guarded behind a `pending`
-  check for `cron/<id>` — a missing wake is tolerated while genuine scheduler
-  errors still surface (`PLAN-cron-on-scheduler-001.R1`)."
+  Returns `{:unregistered id}` when the job existed (in-memory config or a
+  pending `cron/<id>` wake), else `{:unregistered nil}` — the delta from
+  `skein.api.events.alpha/unregister!`, which echoes the key back whether or not
+  a handler was registered. Cron reports absence because a job's existence spans
+  two stores (the in-memory table and the durable wake), so a caller cannot infer
+  it. The scheduler `cancel!` fails loudly on an unknown key, so the cancel is
+  guarded behind a `pending` check for `cron/<id>` — a missing wake is tolerated
+  while genuine scheduler errors still surface
+  (`PLAN-cron-on-scheduler-001.R1`)."
   [runtime id]
   (let [id (job-id id)
         key (wake-key id)
@@ -150,7 +156,7 @@
         pending? (some #(= key (:key %)) (scheduler/pending runtime))]
     (when pending?
       (scheduler/cancel! runtime key))
-    {:deregistered (when (or pending? (contains? old id)) id)}))
+    {:unregistered (when (or pending? (contains? old id)) id)}))
 
 (defn- in-flight-count [runtime] (:in-flight-count (state runtime)))
 
@@ -161,18 +167,18 @@
   (swap! (in-flight-count runtime) dec))
 
 (defn- execute-job!
-  "Run job `id`'s resolved `:run!` on the execution executor, recording the
-  outcome cron-side and always releasing the in-flight latch. Never reschedules —
+  "Run job `id`'s resolved `:handler` on the execution executor, recording the
+  result cron-side and always releasing the in-flight latch. Never reschedules —
   cadence was already persisted on the event lane in `fire-wake`."
   [runtime id]
   (try
     (when-let [job (get @(jobs-atom runtime) id)]
       (let [fired-at (str (Instant/now))]
         (try
-          (let [run-fn (resolve-symbol :run! (:run! job))
-                result (run-fn runtime)]
+          (let [handler-fn (resolve-symbol :handler (:handler job))
+                result (handler-fn runtime)]
             (swap! (jobs-atom runtime) update id
-                   (fn [j] (when j (assoc j :last-outcome result
+                   (fn [j] (when j (assoc j :last-result result
                                          :last-fired-at fired-at
                                          :last-error nil)))))
           (catch Throwable t
@@ -190,9 +196,9 @@
   Invoked by `skein.core.weaver.scheduler/run-fire!` with its context map. Stays
   tiny so it never holds the lane on job work (`PLAN-cron-on-scheduler-001.A2`):
   (1) decode `{:job id}`; (2) look up the in-memory job — absent means the job
-  was deregistered, so return without rescheduling; (3) reschedule the next
+  was unregistered, so return without rescheduling; (3) reschedule the next
   `cron/<id>` wake **before** offload, so the cadence is persisted even if the
-  offload fails; (4) count the job in-flight and submit its `:run!` to the
+  offload fails; (4) count the job in-flight and submit its `:handler` to the
   cron-owned execution executor, recording an executor rejection loudly cron-side
   without throwing; (5) return so the scheduler completes the delivered wake. The
   job body never runs on the lane."
@@ -214,7 +220,7 @@
           (record-failure! runtime {:kind :offload :job id :message (ex-message t)})))))
   nil)
 
-(defn await-idle!
+(defn await-quiescent!
   "Block until every offloaded cron job on `runtime` has finished, then return
   `runtime`.
 
@@ -227,20 +233,20 @@
   `skein.api.events.alpha/await-quiescent!`. `opts` accepts `:timeout-ms` (a
   positive integer); unknown keys are rejected loudly. The default budget comes
   from `skein.spools.test-support/await-budget-ms`."
-  ([runtime] (await-idle! runtime {}))
+  ([runtime] (await-quiescent! runtime {}))
   ([runtime {:keys [timeout-ms] :as opts}]
-   (reject-unknown-keys! "await-idle!" #{:timeout-ms} opts)
+   (reject-unknown-keys! "await-quiescent!" #{:timeout-ms} opts)
    (let [counter (in-flight-count runtime)
          timeout-ms (or timeout-ms
                         ((requiring-resolve 'skein.spools.test-support/await-budget-ms)))]
      (require-valid! ::timeout-ms timeout-ms
-                     "await-idle! :timeout-ms must be a positive integer")
+                     "await-quiescent! :timeout-ms must be a positive integer")
      (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
        (loop []
          (cond
            (zero? @counter) runtime
            (> (System/currentTimeMillis) deadline)
-           (fail! "Timed out awaiting cron idle"
+           (fail! "Timed out awaiting cron quiescence"
                   {:timeout-ms timeout-ms :in-flight @counter})
            :else (do (Thread/sleep 5) (recur))))))))
 
@@ -252,42 +258,47 @@
 ;; through `require-valid!` so the specs own the shape while the contextual
 ;; loud messages survive (failing value + allowed shape, TEN-003), and closes
 ;; the key set with `reject-unknown-keys!` since `s/keys` stays open. `:id`
-;; accepts a keyword or non-blank string (coerced by `job-id`); `:run!` only
+;; accepts a keyword or non-blank string (coerced by `job-id`); `:handler` only
 ;; asserts a fully-qualified symbol here — `resolve-symbol` layers the
 ;; requiring-resolve check spec cannot express.
 (s/def ::id (s/or :keyword keyword?
                   :string (s/and string? (complement str/blank?))))
 (s/def ::interval-ms pos-int?)
 (s/def ::jitter-ms nat-int?)
-(s/def ::run! qualified-symbol?)
-(s/def ::job (s/keys :req-un [::id ::interval-ms ::run!] :opt-un [::jitter-ms]))
+(s/def ::handler qualified-symbol?)
+(s/def ::job (s/keys :req-un [::id ::interval-ms ::handler] :opt-un [::jitter-ms]))
 
-;; `await-idle!`'s single opt: the poll budget in milliseconds.
+;; `await-quiescent!`'s single opt: the poll budget in milliseconds.
 (s/def ::timeout-ms pos-int?)
 
 (def ^:private job-keys
   "The closed key set of a `register!` job map (see `::job`)."
-  #{:id :interval-ms :jitter-ms :run!})
+  #{:id :interval-ms :jitter-ms :handler})
 
 (defn register!
   "Register (or replace) a named cron job on `runtime` as a durable wake.
 
   The `job` map is validated against the `::job` spec (a keyword/non-blank
   `:id`, positive `:interval-ms`, optional non-negative `:jitter-ms`, and a
-  fully-qualified `:run!` symbol); unknown keys are rejected loudly.
+  fully-qualified `:handler` symbol); unknown keys are rejected loudly.
 
   `job` keys:
   - `:id` — keyword or non-blank string identifying the job.
   - `:interval-ms` — positive integer base period between fires.
   - `:jitter-ms` — non-negative integer; each fire is offset by a uniform value
     in [-jitter, +jitter]. Optional, default 0.
-  - `:run!` — fully-qualified symbol resolving to `(fn [runtime] ..)`, invoked on
-    every fire. Its return value is recorded as `:last-outcome`; a thrown
-    exception is recorded in `failures` and does not stop the cadence.
+  - `:handler` — fully-qualified symbol resolving to `(fn [runtime] ..)`, invoked
+    on every fire. Its return value is recorded as `:last-result`; a thrown
+    exception is recorded in `recent-failures` and does not stop the cadence.
+    **Delta from `skein.api.scheduler.alpha/schedule!`'s `:handler`**, one layer
+    down: that handler is the wake-delivery callback and takes the wake context
+    map, while this one is the job body and takes the runtime. Cron writes the
+    scheduler's own `:handler` (always `skein.spools.cron/fire-wake`) on the
+    `cron/<id>` wake it arms; a caller never writes that key here.
 
   Re-registration preserves a pending `cron/<id>` wake when the cadence-defining
-  `[interval-ms jitter-ms run!]` tuple is unchanged, or when the runtime has no
-  in-memory config yet (fresh JVM adopting a durable wake). A changed tuple arms
+  `[interval-ms jitter-ms handler]` tuple is unchanged, or when the runtime has
+  no in-memory config yet (fresh JVM adopting a durable wake). A changed tuple arms
   a fresh wake at `now + interval + jitter`; a missing pending wake also arms a
   fresh wake. Returns the job's status map."
   [runtime job]
@@ -300,16 +311,16 @@
                   "Cron job :interval-ms must be a positive integer")
   (require-valid! ::jitter-ms (or (:jitter-ms job) 0)
                   "Cron job :jitter-ms must be a non-negative integer")
-  (require-valid! ::run! (:run! job)
-                  "Cron job :run! must be a fully-qualified symbol")
+  (require-valid! ::handler (:handler job)
+                  "Cron job :handler must be a fully-qualified symbol")
   (let [id (job-id (:id job))
         interval (:interval-ms job)
         jitter (or (:jitter-ms job) 0)]
-    (resolve-symbol :run! (:run! job))
+    (resolve-symbol :handler (:handler job))
     (let [key (wake-key id)
           old-entry (get @(jobs-atom runtime) id)
           pending? (some #(= key (:key %)) (scheduler/pending runtime))
-          entry {:id id :interval-ms interval :jitter-ms jitter :run! (:run! job)}
+          entry {:id id :interval-ms interval :jitter-ms jitter :handler (:handler job)}
           replace? (or (not pending?)
                        (and old-entry (not= (config-tuple old-entry) (config-tuple entry))))]
       (swap! (jobs-atom runtime) assoc id entry)
@@ -320,8 +331,8 @@
 (defn jobs
   "Return the cron jobs registered on `runtime` as status maps, sorted by id.
 
-  Each map carries `:id`, `:interval-ms`, `:jitter-ms`, the `:run!` symbol, and
-  (once fired) `:last-outcome`/`:last-fired-at`/`:last-error`. When a job next
+  Each map carries `:id`, `:interval-ms`, `:jitter-ms`, the `:handler` symbol,
+  and (once fired) `:last-result`/`:last-fired-at`/`:last-error`. When a job next
   fires lives in its durable `cron/<id>` wake — read scheduler introspection
   (`skein.api.scheduler.alpha/pending`), the single timing view."
   [runtime]

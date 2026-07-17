@@ -149,7 +149,7 @@ Honest source: the gate request table in [`subagent.md`](./subagent.md#gate-requ
 **Situation.** A delegated run died — it crashed, or it exited cleanly but wrote nothing back. The
 gate is stuck. You want to find it and get a fresh agent onto it.
 
-**Composition.** Discovery is the `stalled-gates` named query (or the `gate-stalled?` predicate on a
+**Composition.** Discovery is the `stalled-subagent-gates` named query (or the `gate-stalled?` predicate on a
 gate view). Recovery for a dead serving run is `agent retry <run-id>`. Retry supersedes the dead run
 and spawns a successor that inherits the `serves` edge to the gate. For spawn-side errors, fix the
 bad request and clear `gate/error`; from the CLI, use `strand update <gate-id> --attr gate/error=`.
@@ -163,13 +163,13 @@ An empty string is treated as cleared.
 (def rt (current/runtime))              ; the active weaver runtime
 
 ;; find stalled subagent gates (spawn-side error, or a dead delegated run)
-(weaver/list-query rt 'stalled-gates {})
+(weaver/list-query rt 'stalled-subagent-gates {})
 
 ;; recover a dead serving run: retry it. The successor inherits the serves edge
 ;; to the gate, and the subagent executor delivers that successor on success.
 (agent-run/supersede-and-respawn! failed-run-id
                                   {:prompt "echo recovered"
-                                   :carry-attrs {"gate/run-id" workflow-run-id}})
+                                   :carry-attrs {"workflow/run-id" workflow-run-id}})
 
 ;; recover a spawn-side request error after fixing the bad request.
 (weaver/update rt gate-id {:attributes {"gate/error" nil
@@ -187,16 +187,16 @@ An empty string is treated as cleared.
   phase `done`, which agent-run records solely for a non-blank result. A run that exits 0 with empty
   stdout is a silently dead worker; agent-run records it `failed`, so it never satisfies the gate.
   The gate stays ready with an incoming `serves` edge from that run, discoverable through
-  `stalled-gates` and through `agent-failures` as a delegated run.
+  `stalled-subagent-gates` and through `agent-failures` as a delegated run.
 - **The two discovery paths stay in lockstep.** `gate-stalled?` resolves the gate's current serving
-  run through `serves` and lineage. The `stalled-gates` query reaches run phase through incoming
+  run through `serves` and lineage. The `stalled-subagent-gates` query reaches run phase through incoming
   `serves` edges and selects `failed` or `exhausted` runs. Superseded runs are outside that
   dead-phase set, and their successors inherit the `serves` edge, so the gate stops surfacing the
   instant a healthy replacement is in flight.
 
 Honest source: `failed-run-stays-ready-and-agent-retry-recovers-the-gate`,
-`recovery-respawn-keeps-stalled-gates-in-lockstep-with-predicate`, and
-`stalled-gates-query-reports-spawn-errors-and-dead-runs` in
+`recovery-respawn-keeps-stalled-subagent-gates-in-lockstep-with-predicate`, and
+`stalled-subagent-gates-query-reports-spawn-errors-and-dead-runs` in
 ``test/skein/executors/subagent_test.clj``.
 
 ---

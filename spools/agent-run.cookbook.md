@@ -33,26 +33,26 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
 
 **Situation.** You want to run a specific coding agent (Claude, Codex, an in-house CLI) from strands, and you want a few named tiers over it — a cheap model for search, a mid model for grunt work, a top model for building — without teaching every caller the underlying flags.
 
-**Composition.** One `defharness!` describes the concrete launcher as plain data: the `:argv`, how output is parsed (`:parse`), and how the prompt reaches the process (`:prompt-via`). Then `defalias!` registers seats in a separate alias registry — `:alias-of` plus `:extra-args` that splice into the argv before the prompt. Resolution checks aliases first, then harnesses, so a seat may intentionally share a tool's name without overwriting the tool. Aliases flatten (an alias may point at another alias), so the tier names are the only vocabulary a caller needs.
+**Composition.** One `register-harness!` describes the concrete launcher as plain data: the `:argv`, how output is parsed (`:parse`), and how the prompt reaches the process (`:prompt-via`). Then `register-alias!` registers seats in a separate alias registry — `:alias-of` plus `:extra-args` that splice into the argv before the prompt. Resolution checks aliases first, then harnesses, so a seat may intentionally share a tool's name without overwriting the tool. Aliases flatten (an alias may point at another alias), so the tier names are the only vocabulary a caller needs.
 
 ```clojure
 (require '[skein.spools.agent-run :as agent-run])
 
 ;; A concrete harness. This agent prints only its final message on stdout, so
 ;; :raw parses cleanly; the prompt is appended to argv (:arg is the default).
-(agent-run/defharness! :my-agent
+(agent-run/register-harness! :my-agent
   {:argv ["my-agent" "run" "--headless"]     ; your launcher plus its flags
    :parse :raw
    :doc "In-house agent CLI; final message on stdout."})
 
 ;; Named tiers over the base harness — one line each.
-(agent-run/defalias! :cheap
+(agent-run/register-alias! :cheap
   {:alias-of :my-agent :extra-args ["--tier" "small"]
    :doc "Fast read-only exploration and fan-out search."})
-(agent-run/defalias! :standard
+(agent-run/register-alias! :standard
   {:alias-of :my-agent :extra-args ["--tier" "mid"]
    :doc "Tests, mechanical edits, grunt work."})
-(agent-run/defalias! :deep
+(agent-run/register-alias! :deep
   {:alias-of :my-agent :extra-args ["--tier" "large"]
    :doc "Feature building, reviews, council seats."})
 
@@ -62,7 +62,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
 **Why this shape.**
 
 - **A harness is data, and seats are a separate naming layer.** Nothing about a
-  run is compiled in — `defharness!` registers concrete tools and `defalias!`
+  run is compiled in — `register-harness!` registers concrete tools and `register-alias!`
   registers seats the engine reads at launch. Re-point `:build` at a different
   base and every `:build` run in the workspace follows, no caller change. This
   is the exact seam the [delegation spool](./delegation/README.md) builds its
@@ -74,7 +74,7 @@ The recipes lean on the shipped `sh` harness, whose "argv" is a plain shell and 
   and clear of any `pkill -f` pattern kill that would otherwise match quoted
   prompt text. Keep it declarative per harness: `sh -c` *must* stay `:arg`
   because its script is a required positional, so the engine cannot move it to
-  stdin. A typo'd `:prompt-via` fails loudly at `defharness!` rather than
+  stdin. A typo'd `:prompt-via` fails loudly at `register-harness!` rather than
   silently falling back to the less-safe argv delivery (contract
   [§3, "Harness and alias registries"](./agent-run/README.md#3-harness-and-alias-registries)).
 - **Aliases flatten; layering is cheap.** `:extra-args` splice in before the
@@ -97,7 +97,7 @@ Honest source: the registry tests `harness-registry-validates-and-resolves-alias
 
 ;; A harness that captures a session id (via :claude-json) and knows how to
 ;; continue one (via the :resume splice).
-(agent-run/defharness! :agent
+(agent-run/register-harness! :agent
   {:argv ["agent" "-p"]
    :parse :claude-json                 ; captures agent-run/session-id from output
    :resume ["--resume" :agent-run/session-id]})
@@ -130,7 +130,7 @@ Honest source: the registry tests `harness-registry-validates-and-resolves-alias
   even declares a splice that stays inert until a session-capturing parse lands
   — declared but harmless.
 
-Honest source: `defharness-validates-resume-splice` and `resume-continues-a-captured-session` (with the `session-echo` fake harness) in ``test/skein/agent_run_test.clj``, and the `:codex` resume note in [`.skein/harnesses.clj`](../.skein/harnesses.clj).
+Honest source: `register-harness-validates-resume-splice` and `resume-continues-a-captured-session` (with the `session-echo` fake harness) in ``test/skein/agent_run_test.clj``, and the `:codex` resume note in [`.skein/harnesses.clj`](../.skein/harnesses.clj).
 
 ---
 
@@ -168,7 +168,7 @@ replacement prompt and harness.
 
 - **Serving is explicit.** A serving run is a run with a `serves` edge to the target. `parent-of` is
   only placement, so a recon run, reviewer, or panel seat can hang under the same task without
-  becoming the task's delegation. Interactive sessions still use `agent-run/for` as their completion
+  becoming the task's delegation. Interactive sessions still use `agent-run/completes-on` as their completion
   target; closing that strand is what reaps the session.
 - **The successor preserves the engine-owned shape.** `supersede-and-respawn!` carries forward the old
   run's `serves` target, outgoing `depends-on` edges, `spawned-by` provenance, `parent-of`
@@ -293,7 +293,7 @@ Honest source: `skein.spools.delegation/install!` calling `set-preamble-extensio
 ;; then marked `exhausted` (loud, still active) so dependents stay blocked.
 (agent-run/spawn-run! {:harness :sh :prompt "echo work" :max-attempts 2})
 
-;; interactive claim: agent-run/for is the completion target. If this run also
+;; interactive claim: agent-run/completes-on is the completion target. If this run also
 ;; owns the target's work, pass :serves too. A surviving session is adopted after
 ;; a crash, never respawned.
 (agent-run/spawn-run! {:harness :sh :prompt "drive the session"
@@ -329,13 +329,13 @@ Honest source: `reconcile-respawns-orphans-and-exhausts-bounded-attempts` and `i
 
 **Situation.** Interactive runs launch an agent into a terminal multiplexer for a live human session. You run tmux (the shipped default), or zellij, or wezterm, or a wrapper script — and you want agent-run to drive whichever one, through the graph.
 
-**Composition.** `defbackend!` registers the multiplexer as three argv vectors — `:start`, `:alive`, `:stop` — plus optional `:capture` and a display-only `:attach` hint. Argv tokens are keyword **splice points**, not string templates: engine inputs like `:session`/`:cwd`/`:command`, and `:handle/<key>` lookups into whatever `:start` returned. `:start` must print one flat JSON object as its last stdout line — the run's durable *handle*.
+**Composition.** `register-backend!` registers the multiplexer as three argv vectors — `:start`, `:alive`, `:stop` — plus optional `:capture` and a display-only `:attach` hint. Argv tokens are keyword **splice points**, not string templates: engine inputs like `:session`/`:cwd`/`:command`, and `:handle/<key>` lookups into whatever `:start` returned. `:start` must print one flat JSON object as its last stdout line — the run's durable *handle*.
 
 ```clojure
 (require '[skein.spools.agent-run :as agent-run])
 
 ;; The shipped tmux backend, verbatim — the reference shape.
-(agent-run/defbackend! :tmux
+(agent-run/register-backend! :tmux
   {:start  ["tmux" "new-session" "-d" "-s" :session "-c" :cwd
             "-P" "-F" "{\"session\":\"#{session_name}\",\"pane\":\"#{pane_id}\"}"
             :command]                                   ; :command = launcher script path
@@ -352,7 +352,7 @@ Honest source: `reconcile-respawns-orphans-and-exhausts-bounded-attempts` and `i
 **Why this shape.**
 
 - **Splice points, not templates, so there's nothing to parse.** Keyword tokens
-  are validated statically at `defbackend!` time — a `:handle/*` key referenced
+  are validated statically at `register-backend!` time — a `:handle/*` key referenced
   in `:start` (before any handle exists) or an input outside the allowed set
   fails loudly at registration. And bare-keyword splicing never clashes with
   tmux's own `#{...}` format syntax.
@@ -399,7 +399,7 @@ rate card:
 
 ```clojure
 ;; USD per 1M tokens; the seat that picks the model carries the card
-(defalias! :mini-gpt-codex
+(register-alias! :mini-gpt-codex
   {:alias-of :codex
    :extra-args ["-m" "gpt-5.4-mini"]
    :cost-rates {:input 0.25 :cache-read 0.025 :output 2.0}})

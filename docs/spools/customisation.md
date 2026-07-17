@@ -68,7 +68,7 @@ failing files fail loudly with file context. The generated `init.clj` is intenti
 (require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
+   :call 'skein.spools.batteries/install!})
 ```
 
 `skein.api.runtime.alpha` is a privileged built-in runtime loader/config helper namespace shipped with Skein —
@@ -136,7 +136,7 @@ spool's `spools.edn` coordinate symbol and reloads the coordinate's namespaces i
 ```
 
 The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs
-the startup files so `install!`/`activate!` re-registers ops, queries, and handlers. So the code-bump sequence
+the startup files so `install!` re-registers ops, queries, and handlers. So the code-bump sequence
 is `reload-spool! coord` to make the code live, then a targeted re-`use!` of the spool's activation to
 re-register — or a full `reload!` when the bump changes registrations across the config.
 
@@ -275,6 +275,13 @@ weaver-lifetime state — keep them in startup-loaded code, and reload with the 
 iterating. The shipped [kanban board spool](../../spools/kanban.md) is a complete example of this
 pattern: a whole board surface built from ops, queries, and attributes, worth reading once your own
 command grows past a helper.
+
+Name an op by what it exposes. When your command fronts another spool's surface, keep that spool's
+verbs, nouns, and attribute keys — the op is your entry point to the primitive, not a new language
+over it ([the vocabulary
+rule](./writing-shared-spools.md#the-rules-for-shared-spools)). Kanban earns its own vocabulary
+(cards, lanes, claim) because a board is a concept the engine has no word for; a command that
+starts, advances, or lists an existing primitive speaks that primitive's terms.
 
 ## Terse daily driving
 

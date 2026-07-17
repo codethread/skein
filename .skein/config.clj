@@ -83,18 +83,18 @@
            [:= [:attr "workflow/run-id"] [:param :feature]]]})
 
 (defquery workflow-runs-query
-  "Query for active workflow molecule roots (any family)."
+  "Query for active workflow roots (any family)."
   {:usage "strand list --query workflow-runs"}
   [:and
    [:= :state "active"]
-   [:= [:attr "workflow/role"] "molecule"]])
+   [:= [:attr "workflow/role"] "root"]])
 
 (defquery devflow-runs-query
   "Query for active devflow lifecycle roots."
   {:usage "strand list --query devflow-runs"}
   [:and
    [:= :state "active"]
-   [:= [:attr "workflow/role"] "molecule"]
+   [:= [:attr "workflow/role"] "root"]
    [:= [:attr "workflow/family"] "devflow"]])
 
 (defquery work-query
@@ -108,7 +108,7 @@
     [:not [:= [:attr "kanban/status"] "refinement"]]]
    [:or
     [:missing [:attr "workflow/role"]]
-    [:not [:in [:attr "workflow/role"] ["molecule" "digest" "procedure"]]]]])
+    [:not [:in [:attr "workflow/role"] ["root" "digest" "procedure"]]]]])
 
 ;; ---------------------------------------------------------------------------
 ;; current-dags: active work-DAG projection (loom)
@@ -513,14 +513,14 @@
   (let [{:keys [feature]} (:op/args ctx)]
     {:operation "devflow-status"
      :feature feature
-     :roots (mapv loom/summarize (devflow/feature-roots feature))
+     :roots (mapv entity-projection (devflow/feature-roots feature))
      :done (workflow/done? feature)
      :ready (devflow/next-steps feature)}))
 
 (defop workflow-runs
-  "Return active workflow molecule roots, optionally filtered by family."
+  "Return active workflow roots, optionally filtered by family."
   {:returns stamped-op-return :arg-spec {:op "workflow-runs"
-                                         :doc "Show active workflow molecule roots, optionally filtered by family."
+                                         :doc "Show active workflow roots, optionally filtered by family."
                                          :positionals [{:name :family
                                                         :type :string
                                                         :doc "Optional workflow family, e.g. devflow."}]}}
@@ -528,7 +528,7 @@
   (let [{:keys [family]} (:op/args ctx)]
     {:operation "workflow-runs"
      :family family
-     :runs (mapv loom/summarize
+     :runs (mapv entity-projection
                  (if family (workflow/active-runs family) (workflow/active-runs)))}))
 
 (defop devflow-conventions

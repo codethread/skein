@@ -5,7 +5,7 @@
   `:shell`, runs the gate's `shell/argv` directly (no implicit shell) on a
   spool-owned worker pool, and closes the gate through
   `skein.spools.workflow/complete!` on a zero exit. A non-zero exit, timeout,
-  spawn error, or invalid argv stamps a loud, distinct `shell/error` and leaves
+  spawn error, or invalid argv stamps a loud, distinct `gate/error` and leaves
   the gate ready and stamped rather than masquerading as a completed run. It is
   a subagent-executor sibling minus everything agent-run-specific: the failure
   detail lives on the gate itself, so there is no separate run strand, no
@@ -20,7 +20,8 @@
             [skein.api.graph.alpha :as graph]
             [skein.api.events.alpha :as events]
             [skein.api.current.alpha :as current]
-            [skein.api.runtime.alpha :as runtime])
+            [skein.api.runtime.alpha :as runtime]
+            [skein.api.vocab.alpha :as vocab])
   (:import [java.lang ProcessHandle]
            [java.nio.charset StandardCharsets]
            [java.time Instant]
@@ -67,7 +68,7 @@
           (.setDaemon true))))))
 
 (defn- new-state []
-  (let [^ExecutorService workers (Executors/newCachedThreadPool (daemon-thread-factory "reed-worker"))]
+  (let [^ExecutorService workers (Executors/newCachedThreadPool (daemon-thread-factory "shell-worker"))]
     {:scan-monitor (Object.)
      :worker-executor workers
      :close-fn (fn []
@@ -90,9 +91,9 @@
 (defn- non-blank
   "Return s when it is a non-blank string, else nil.
 
-  A blank `shell/error` / `shell/running` stamp counts as cleared, so the
-  CLI clearing idiom (`strand update <gate-id> --attr shell/error=`) re-arms
-  a gate exactly as the subagent executor's `gate/error` idiom does."
+  A blank `gate/error` / `shell/running` stamp counts as cleared, so the
+  CLI clearing idiom (`strand update <gate-id> --attr gate/error=`) re-arms
+  a gate exactly as it does for the subagent executor's gates."
   [s]
   (when (and (string? s) (not (str/blank? s))) s))
 
@@ -107,7 +108,7 @@
 (defn- parse-argv
   "Return the gate's `shell/argv` as a validated `List<String>`, or fail loudly
   (TEN-003) so no process spawns. Missing, non-array, empty, or non-string-element
-  argv is a hard error stamped onto `shell/error`."
+  argv is a hard error stamped onto `gate/error`."
   [gate]
   (let [argv (attr gate :shell/argv)]
     (when-not (sequential? argv)
@@ -225,12 +226,12 @@
                                      (some? output) (assoc "shell/output" output))}))
 
 (defn- fail-gate!
-  "Stamp a loud, distinct `shell/error` (with `shell/exit-code`/`shell/output`
+  "Stamp a loud, distinct `gate/error` (with `shell/exit-code`/`shell/output`
   where a process ran) and clear the claim in one atomic update, leaving the gate
-  ready and stamped. The `shell/error` presence makes the shell executor skip the
+  ready and stamped. The `gate/error` presence makes the shell executor skip the
   gate until a coordinator clears it."
   [gate-id detail exit output]
-  (stamp! gate-id (cond-> {"shell/running" nil "shell/error" detail}
+  (stamp! gate-id (cond-> {"shell/running" nil "gate/error" detail}
                     (some? exit) (assoc "shell/exit-code" exit)
                     (some? output) (assoc "shell/output" output))))
 
@@ -263,13 +264,13 @@
   The gate is re-read fresh (not trusted from the ready snapshot, which a
   concurrent close can outrace) and must still be `active`: `pass!` clears the
   claim and closes the gate in one atomic batch, and `fail-gate!` clears the
-  claim while stamping `shell/error` — so every claim-clearing transition also
+  claim while stamping `gate/error` — so every claim-clearing transition also
   either closes the gate or stamps an error, and this guard blocks re-dispatch
   in all three cases."
   [runtime run-id gate-view]
   (let [gate (weaver/show (rt) (:id gate-view))]
     (when (and (= "active" (:state gate))
-               (not (non-blank (attr gate :shell/error)))
+               (not (non-blank (attr gate :gate/error)))
                (not (non-blank (attr gate :shell/running))))
       (stamp! (:id gate) {"shell/running" (now)})
       (.execute (worker-executor)
@@ -292,7 +293,7 @@
       (locking (scan-monitor)
         (doseq [root (workflow/active-runs)
                 :let [run-id (attr root :workflow/run-id)]
-                step (workflow/next-steps run-id)
+                step (workflow/ready run-id)
                 :when (= "shell" (:gate step))]
           (claim-and-dispatch! runtime run-id step))
         {:scanned true}))))
@@ -305,33 +306,44 @@
 (defn gate-stalled?
   "Return durable stall detail for a ready `:shell` gate view, or nil.
 
-  The failure detail lives on the gate itself (`shell/error`), so — unlike
+  The failure detail lives on the gate itself (`gate/error`), so — unlike
   the subagent executor — there is no `delegates`-edge join back to a separate
   run row."
   [gate-view]
   (let [gate (weaver/show (rt) (:id gate-view))]
-    (when-let [error (non-blank (attr gate :shell/error))]
+    (when-let [error (non-blank (attr gate :gate/error))]
       {:gate (:id gate) :error error})))
 
 (defn install!
   "Install the shell executor: register its event handler, the `:shell`
   workflow executor, and the `stalled-shell-gates` coordinator query, then
-  perform an initial scan."
+  perform an initial scan.
+
+  Declares only the `shell` attribute namespace: failure detail is written as
+  the subagent executor's inherited `gate/error`, whose namespace that spool
+  owns."
   []
   (let [runtime (rt)]
+    (vocab/declare! runtime
+                    {:kind :attr-namespace
+                     :name "shell"
+                     :owner :skein/spools-shell
+                     :keys ["shell/argv" "shell/cwd" "shell/timeout-secs"
+                            "shell/running" "shell/exit-code" "shell/output"]
+                     :doc "Shell-gate command inputs and process outcome attributes stamped by the shell executor."})
     (events/register! runtime :shell/engine event-types
                       'skein.spools.executors.shell/on-event
                       {:spool "shell"})
     (workflow/register-executor! :shell gate-stalled?)
     ;; The coordinator attention surface for stuck shell gates: an active `:shell`
-    ;; gate carrying a non-blank `shell/error` (a blank stamp is the CLI clearing
+    ;; gate carrying a non-blank `gate/error` (a blank stamp is the CLI clearing
     ;; idiom). No delegates-edge join is needed because the failure detail lives
     ;; on the gate itself.
     (graph/register-query! runtime 'stalled-shell-gates
                            [:and [:= :state "active"]
                             [:= [:attr "workflow/gate"] "shell"]
-                            [:exists [:attr "shell/error"]]
-                            [:!= [:attr "shell/error"] ""]])
+                            [:exists [:attr "gate/error"]]
+                            [:!= [:attr "gate/error"] ""]])
     (scan!)
     {:installed true
      :namespace 'skein.spools.executors.shell}))

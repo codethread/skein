@@ -16,9 +16,9 @@ This is userland spool code, not a separate scheduler or persistence system. Wor
 
 Core primitives: `workflow`, `step`, `gate`, `checkpoint`, `call`, `param`, `compile`, `pour!`, `wisp!`, and `explain`.
 
-The generic runtime API is `start!`, `next-steps`, `next-step`, `next-gates`, `next-checkpoint`, `complete!`, `choose!`, `advance!`, `choice-detail`, `choice-details`, and `done?`, keyed by `workflow/run-id`. Routing targets can be registered under stable names with `register-workflow!`/`workflow-definition`/`registered-workflows` (see §5). Higher-level spools such as `ct.spools.devflow` should define opinionated workflow definitions and thin convenience wrappers around this namespace.
+The generic runtime API is `start!`, `ready`, `ready-step`, `ready-gates`, `ready-checkpoint`, `complete!`, `choose!`, `advance!`, `choice-detail`, `choice-details`, and `done?`, keyed by `workflow/run-id`. Routing targets can be registered under stable names with `register-workflow!`/`workflow-definition`/`workflows` (see §5). Higher-level spools such as `ct.spools.devflow` should define opinionated workflow definitions and thin convenience wrappers around this namespace.
 
-Every run-mutating op (`start!`, `complete!`, `choose!`, `advance!`) returns one `{:ready [step-view ...] :done boolean}` map: `:ready` is the run's ready step views (as `next-steps` would return them) and `:done` is its done-ness, so an empty `:ready` never leaves a caller guessing whether the run finished or merely stalled. The pure queries `next-steps`/`next-step` still return step views directly.
+Every run-mutating op (`start!`, `complete!`, `choose!`, `advance!`) returns one `{:ready [step-view ...] :done boolean}` map: `:ready` is the run's ready step views (as `ready` would return them) and `:done` is its done-ness, so an empty `:ready` never leaves a caller guessing whether the run finished or merely stalled. The pure queries `ready`/`ready-step` still return step views directly.
 
 ## 2. Credit
 
@@ -99,7 +99,7 @@ Every step declares who owns getting it done, and the runtime tolerates exactly 
 
 ### Gates — external wait points
 
-The runtime is pull-based and *every* strand is already a durable wait point: an external actor (CI, cron, a sub-agent, another session) can close a strand through the ordinary surface and the run resumes on the next `next-steps` poll. A **gate** just marks a step "not yours to complete — wait for `<waiter>`", so a driving agent can tell work-steps from wait-steps.
+The runtime is pull-based and *every* strand is already a durable wait point: an external actor (CI, cron, a sub-agent, another session) can close a strand through the ordinary surface and the run resumes on the next `ready` poll. A **gate** just marks a step "not yours to complete — wait for `<waiter>`", so a driving agent can tell work-steps from wait-steps.
 
 ```clojure
 (workflow/gate :ci-green "Wait for CI to go green" :ci :depends-on [:push])
@@ -130,7 +130,7 @@ The runtime is pull-based and *every* strand is already a durable wait point: an
 - A shipped classpath executor, `skein.spools.executors.shell`, fulfills ready `:shell`
   gates by running the gate's `shell/argv` command directly, registers the
   `:shell` executor, and closes each gate with `complete!` on a zero exit
-  (stamping a loud `shell/error` otherwise). See `executors/shell.md`.
+  (stamping a loud `gate/error` otherwise). See `executors/shell.md`.
 
 **Dynamic fan-out needs no primitive.** The run subgraph is recomputed live from the graph on every poll, so userland may add strands to a running molecule mid-flight — ordinary `strand!` plus `parent-of`/`depends-on` edges to the run's root — to spawn e.g. sub-agent steps discovered at runtime. Set `workflow/role "step"` on them so they count as workflow work and gate the run's done-check exactly like poured steps.
 
@@ -161,7 +161,7 @@ The pull-request model in `test/skein/spools/workflow_test.clj` (`workflow-pr-fl
 ## 4. Run lifecycle
 
 ```
-start! ──▶ next-steps / next-step ──▶ complete! / choose! ──▶ (repeat) ──▶ auto-close
+start! ──▶ ready / ready-step ──▶ complete! / choose! ──▶ (repeat) ──▶ auto-close
 ```
 
 - `(start! run-id workflow params opts)` — fails if `run-id` already has an
@@ -171,17 +171,17 @@ start! ──▶ next-steps / next-step ──▶ complete! / choose! ──▶ 
   starts derive `:definition`; when `:context` is absent they default it from
   `params`, stringifying keyword values and failing loudly on non-JSON-safe
   values (pass `:context` explicitly for those cases).
-- `(next-steps run-id)` / `(next-steps run-id selector)` — all currently ready,
+- `(ready run-id)` / `(ready run-id selector)` — all currently ready,
   agent-facing step views for the run (vector, possibly empty). Each view carries
   `:run-id` so a stage cutover is visible in-band; procedure join steps never
-  appear (see below). The optional selector filters by view keys such as `:kind`,
+  appear (see below). The optional selector filters by view keys such as `:role`,
   `:gate`, `:checkpoint`, or `:checkpoint-kind`.
-- `(next-step run-id)` — convenience wrapper that throws if more than one
-  step is ready; use `next-steps`, `next-gates`, or `next-checkpoint` for workflows with parallel entry points
+- `(ready-step run-id)` — convenience wrapper that throws if more than one
+  step is ready; use `ready`, `ready-gates`, or `ready-checkpoint` for workflows with parallel entry points
   or fan-out.
-- `(next-gates run-id)` / `(next-gates run-id waiter)` — ready gate views,
+- `(ready-gates run-id)` / `(ready-gates run-id waiter)` — ready gate views,
   optionally restricted to one waiter string/keyword such as `:subagent`.
-- `(next-checkpoint run-id)` — the single ready checkpoint view, nil if none,
+- `(ready-checkpoint run-id)` — the single ready checkpoint view, nil if none,
   or a loud ambiguity failure if more than one checkpoint is ready.
 - `(complete! run-id)` / `(complete! run-id opts)` — closes a non-checkpoint
   ready step and returns the `{:ready [...] :done boolean}` result.
@@ -229,7 +229,7 @@ Executor registration is keyed by gate `waiter` name via `register-executor!` (a
 
 ```clojure
 (workflow/register-executor! :subagent gate-stalled?)   ; pred: ready gate view -> truthy detail | nil
-(workflow/registered-executors)                          ; => {:subagent gate-stalled? ...}
+(workflow/executors)                          ; => {:subagent gate-stalled? ...}
 ```
 
 This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered executor always surfaces as `:gate` immediately, and adapters such as the subagent executor register their own predicate for their own waiter name at install time (see `executors/subagent.md`). There is no more named "stall predicate" independent of a waiter, and no shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option are gone.
@@ -291,7 +291,7 @@ A checkpoint is a step with `workflow/role "checkpoint"`. Use `choose!`, never `
 ```clojure
 (workflow/register-workflow! :spec-plan 'my.ns/spec-plan-workflow)
 (workflow/workflow-definition :spec-plan)   ; => 'my.ns/spec-plan-workflow (fails loudly if unknown)
-(workflow/registered-workflows)             ; => {:spec-plan 'my.ns/spec-plan-workflow ...}
+(workflow/workflows)             ; => {:spec-plan 'my.ns/spec-plan-workflow ...}
 ```
 
 The registry is **weaver-lifetime in-memory state**, re-registered from startup config exactly like named queries and patterns (there is no durable registry storage). A duplicate name **replaces** the prior entry, so reloading a workflow re-points every in-flight run's not-yet-chosen named routes at the new constructor. A `:next` keyword is resolved through the registry at `choose!` time and **fails loudly on an unregistered name**, before any mutation. A routed continuation records the resolved constructor symbol as its own `workflow/definition`, so a later `:revise` at that stage can re-pour it.
@@ -316,7 +316,7 @@ The `:next` fn is called with `call-params = (merge workflow/context choice-inpu
 Choosing a `:next` choice applies **one** transactional `batch/apply!` that, atomically:
 
 - closes the checkpoint, recording the outcome (see attribute table);
-- force-closes every remaining active `step`/`checkpoint`/`procedure`/`molecule`
+- force-closes every remaining active `step`/`checkpoint`/`procedure`/`root`
   strand in the current run's subgraph (existing strands are bound by their
   durable id and updated in place); and
 - pours the compiled continuation's new strands and edges under the same
@@ -363,13 +363,13 @@ A routed `:revise` is an ordinary transactional continuation, so the same "close
 | Fn | Effect |
 |---|---|
 | `(pour! workflow params opts)` | Materializes a persistent molecule strand graph. |
-| `(wisp! workflow params opts)` | Materializes an ephemeral wisp strand graph (`workflow/wisp "true"` on the root); userland burns or squashes it explicitly. |
+| `(wisp! workflow params opts)` | Materializes an ephemeral wisp strand graph (`workflow/form "wisp"` on the root); userland burns or squashes it explicitly. |
 | `(bond! left-id right-id)` | Connects two materialized molecules: `right-id` depends on `left-id`. |
 | `(burn! root-id)` | Deletes the molecule/wisp subgraph rooted at `root-id`. |
 | `(squash! root-id title attributes)` | Replaces a materialized subgraph with one closed digest strand (`workflow/role "digest"`), then burns the original graph. |
 | `(molecule-id result)` | Returns the materialized root id from a `pour!`/`wisp!` result. |
 
-A bond adds a `depends-on` edge (`right-id` depends on `left-id`), stamped `workflow/bond "sequential"` to distinguish it from the intra-molecule dependency edges `compile` emits. A dep-blocked root **parent-blocks its run**: `next-steps` returns `[]` for the bonded run — its steps stay hidden even though their own deps are satisfied — until the blocking root closes (which the left run's own completion does automatically). Unlike beads, there are no `parallel`/`conditional` bond types: parallelism already falls out of edge *absence* (the ready frontier is the parallel set), and failure-routing belongs in checkpoint choices with `:next` until the runtime grows a failure concept for edges to key off.
+A bond adds a `depends-on` edge (`right-id` depends on `left-id`), stamped `workflow/bond "sequential"` to distinguish it from the intra-molecule dependency edges `compile` emits. A dep-blocked root **parent-blocks its run**: `ready` returns `[]` for the bonded run — its steps stay hidden even though their own deps are satisfied — until the blocking root closes (which the left run's own completion does automatically). Unlike beads, there are no `parallel`/`conditional` bond types: parallelism already falls out of edge *absence* (the ready frontier is the parallel set), and failure-routing belongs in checkpoint choices with `:next` until the runtime grows a failure concept for edges to key off.
 
 ## 6a. Describing and archiving
 
@@ -379,7 +379,7 @@ Three read/lifecycle projections let a user (or an agent) inspect a workflow's s
 |---|---|
 | `(describe workflow)` / `(describe workflow params)` | Compile-time projection of a workflow definition — **materializes nothing**. |
 | `(run-history run-id)` | Read-only, creation-ordered projection of every molecule ever poured for a run. |
-| `(archive-run! run-id)` / `(archive-run! run-id {:title .. :attributes ..})` | Squash a finished run's molecules into one closed digest strand. |
+| `(squash-run! run-id)` / `(squash-run! run-id {:title .. :attributes ..})` | Squash a finished run's molecules into one closed digest strand. |
 
 ### `describe`
 
@@ -387,22 +387,22 @@ Three read/lifecycle projections let a user (or an agent) inspect a workflow's s
 
 ```clojure
 {:name "…"
- :steps [{:id :draft :title "Draft widgets" :kind "step" :depends-on []
+ :steps [{:id :draft :title "Draft widgets" :role "step" :depends-on []
           :condition [:!= :revision true]}
-         {:id :signoff :title "Sign off" :kind "checkpoint" :depends-on [:refine]
+         {:id :signoff :title "Sign off" :role "checkpoint" :depends-on [:refine]
           :choices [{:key "approve" :label "Approve" :next "my.ns/stage-b"}
                     {:key "revise" :label "Revise" :revise {:revision true}
                      :input [{"key" "reason" "required" true "description" "…"}]}]}]}
 ```
 
-Each step carries `:id`, `:title`, `:kind` (`"step"`/`"checkpoint"`/`"procedure"`, so a `call`'s procedure join shows as `:procedure`), and `:depends-on`; a conditioned step adds `:condition`, a gate adds `:gate`, and a checkpoint adds `:choices`. Each choice carries its `:key` plus any declared `:label`, `:description`, `:input` (the D1.2 declaration), and its routing target (`:next` string or `:revise` override-param map). A `:condition`-excluded step is **absent** (its dependents splice through it, §3), so the ready frontier reads straight off the description. `(describe workflow)` resolves param defaults and **fails loudly** listing any required params without a default; pass `params` otherwise.
+Each step carries `:id`, `:title`, `:role` (`"step"`/`"checkpoint"`/`"procedure"`, so a `call`'s procedure join shows as `:procedure`), and `:depends-on`; a conditioned step adds `:condition`, a gate adds `:gate`, and a checkpoint adds `:choices`. Each choice carries its `:key` plus any declared `:label`, `:description`, `:input` (the D1.2 declaration), and its routing target (`:next` string or `:revise` override-param map). A `:condition`-excluded step is **absent** (its dependents splice through it, §3), so the ready frontier reads straight off the description. `(describe workflow)` resolves param defaults and **fails loudly** listing any required params without a default; pass `params` otherwise.
 
 ### `run-history`
 
 `run-history` returns a vector — one entry per molecule ever poured for the run (any state: the active round plus every closed prior round/stage), ordered by molecule `created_at`:
 
 ```clojure
-[{:root {:id "9i9la" :title "Stage A" :state "closed" :created_at "…"}   ; :stage added when the root carries devflow/stage
+[{:root {:id "9i9la" :title "Stage A" :state "closed" :created_at "…"}
   :events [{:type :choice :id "bl4pw" :title "Sign off" :at "…"
             :outcome "revise" :input {:reason "needs work"}}
            {:type :step-closed :id "i1b44" :title "Refine draft" :at "…" :notes "…"}]}
@@ -411,9 +411,9 @@ Each step carries `:id`, `:title`, `:kind` (`"step"`/`"checkpoint"`/`"procedure"
 
 Each event is a **closed** `step` or `checkpoint` strand (procedure joins, being engine bookkeeping, are omitted): a checkpoint is `:choice`, a closed gate is `:gate-closed`, any other step is `:step-closed`. An event carries `:type`, `:id`, `:title`, `:at`, and — when present — `:outcome`, `:by`, `:input`, and `:notes`. Events are ordered by their strand's `updated_at` (`:at`); because that timestamp is second-resolution, events closed in the same transaction (e.g. a routed checkpoint and the steps it force-closes) tie and fall back to strand-id order, so treat within-second event order as unordered. `run-history` writes nothing and **fails loudly** for a run that never had a root strand.
 
-### `archive-run!`
+### `squash-run!`
 
-`archive-run!` **fails loudly** for an unknown run or one that still has an active root, then replaces every molecule subgraph of the run with **one** closed digest strand (`repl/strand!`, then `burn!` on each molecule) and returns it. The digest is stamped `workflow/role "digest"`, `workflow/run-id`, `workflow/squashed-count` (total strands folded), and a compact JSON-safe `workflow/summary` — one entry per molecule (creation order) with its stage title, its `devflow/stage` (when present), and the ordered checkpoint `outcomes`. `opts` may override the digest `:title` and merge extra `:attributes`. Like `squash!` (§6), the original graph is burned, so a later `run-history` for the archived run fails loudly.
+`squash-run!` is the run-level counterpart of `squash!` (§6). It **fails loudly** for an unknown run or one that still has an active root, then replaces every molecule subgraph of the run with **one** closed digest strand (`weaver/add`, then `burn!` on each molecule) and returns it. The digest is stamped `workflow/role "digest"`, `workflow/run-id`, `workflow/squashed-count` (total strands folded), and a compact JSON-safe `workflow/summary` — one entry per molecule (creation order) with its title and the ordered checkpoint `outcomes`. `opts` may override the digest `:title` and merge extra `:attributes`. As with `squash!`, the original graph is burned, so a later `run-history` for the squashed run fails loudly.
 
 ## 7. Attribute vocabulary
 
@@ -421,10 +421,9 @@ This table is the extension API: spools built on top of `skein.spools.workflow` 
 
 | Attribute | Meaning | Set by |
 |---|---|---|
-| `workflow/role` | `"molecule"`, `"step"`, `"checkpoint"`, `"procedure"`, or `"digest"`. Drives which strands count as workflow work. | `compile` (root/step strands), `expand-call-step` (procedure join step), `squash!` (digest). |
-| `workflow/phase` | `"molecule"` or `"wisp"`. | `compile`, from `opts :phase` (defaults molecule) or `pour!`/`wisp!`. |
-| `workflow/wisp` | `"true"` when phase is wisp. | `compile`, root strand only, when phase is `:wisp`. |
-| `workflow/run-id` | Stable run handle used by `start!`/`next-steps`/`complete!`/`choose!`/`current-root`. | `compile`, from `opts :run-id` (root strand only). |
+| `workflow/role` | `"root"`, `"step"`, `"checkpoint"`, `"procedure"`, or `"digest"`. Drives which strands count as workflow work. | `compile` (root/step strands), `expand-call-step` (procedure join step), `squash!` (digest). |
+| `workflow/form` | `"molecule"` or `"wisp"`. | `compile`, from `opts :form` (defaults molecule) or `pour!`/`wisp!`. |
+| `workflow/run-id` | Stable run handle used by `start!`/`ready`/`complete!`/`choose!`/`current-root`. | `compile`, from `opts :run-id` (root strand only). |
 | `workflow/family` | Grouping label across related runs (e.g. `"devflow"`). Carried forward into `:next` continuations. | `compile`, from `opts :family` (root strand only). |
 | `workflow/definition` | Stringified symbol naming the workflow definition fn/var; the constructor `:revise` re-pours and that routed continuations record for their stage. | `compile`, from `opts :definition` (root strand only; set by start, `:revise`, and named/symbol `:next` routing). |
 | `workflow/context` | Map merged with checkpoint choice input to build `:next`/`:revise` continuation params (also carries revision-loop state forward). | `compile`, from `opts :context` (root strand only); read back by `route-plan`. |
@@ -435,10 +434,9 @@ This table is the extension API: spools built on top of `skein.spools.workflow` 
 | `workflow/choices` | Vector of allowed choice-name strings. | `checkpoint` builder, from `:choices`. |
 | `workflow/choice-details` | Map of choice name → `{"label" .. "description" .. "next" .. "input" [{"key" .. "required" .. "description" ..} ..]}`. `"input"` holds a choice's declared input requirement. | `checkpoint` builder, from map-form `:choices` entries. |
 | `workflow/decision-point` | Freeform label naming what the checkpoint decides (devflow convention). | Caller-supplied `:attributes`, e.g. devflow. |
-| `workflow/hitl` | `"true"` marking a human-in-the-loop checkpoint. `:kind :human` is the canonical signal. | `checkpoint` builder, auto-stamped for every `:kind :human` checkpoint. |
 | `workflow/action-ref` | Semantic name of the action an agent should perform for this step (`"devflow.worktree.ensure"`, `"pr.ci.wait"`); the tool-binding key for forge-agnostic definitions (see "Tool bindings"). | Caller-supplied `:attributes`. |
 | `workflow/instruction` | Freeform instruction text surfaced in `step-view`. | Caller-supplied `:attributes`. |
-| `workflow/artifact` | Pointer to the artifact a step produces, surfaced in `step-view` (falls back to `devflow/artifact` if unset). | Caller-supplied `:attributes`. |
+| `workflow/artifact` | Pointer to the artifact a step produces, surfaced in `step-view`. | Caller-supplied `:attributes`. |
 | `workflow/outcome` | The choice name recorded when a checkpoint closes via a `:next`-routed or plain choice. | `choose!`, on the checkpoint step, at close. |
 | `workflow/outcome-input` | The `input` map passed to `choose!`. | `choose!`, on the checkpoint step, at close. |
 | `workflow/outcome-by` | Actor identity that closed the strand; `"engine"` on an auto-closed procedure join. | `choose!` (checkpoint close, when opts supply `:by`); `complete!` (gate close, where `:by` is mandatory); join auto-close (`"engine"`). |
@@ -446,11 +444,11 @@ This table is the extension API: spools built on top of `skein.spools.workflow` 
 | `workflow/procedure` | Name of the `call` id whose expansion this join step represents. | `expand-call-step`, on the procedure join step. |
 | `workflow/bond` | `"sequential"` — recorded on the bond edge itself, marking a cross-molecule bond. | `bond!`. |
 | `workflow/squashed-root` | Root id of the subgraph a digest strand replaced. | `squash!`. |
-| `workflow/squashed-count` | Number of strands folded into a digest. | `squash!` (one subgraph); `archive-run!` (all a run's molecules). |
-| `workflow/summary` | Compact JSON-safe run summary on an `archive-run!` digest: a vector of `{"title" .. "stage" .. "outcomes" [..]}` maps, one per archived molecule in creation order. | `archive-run!`. |
+| `workflow/squashed-count` | Number of strands folded into a digest. | `squash!` (one subgraph); `squash-run!` (all a run's molecules). |
+| `workflow/summary` | Compact JSON-safe run summary on an `squash-run!` digest: a vector of `{"title" .. "outcomes" [..]}` maps, one per squashed molecule in creation order. | `squash-run!`. |
 | `skills` | Freeform skill/tool hint for a step (not `workflow/`-namespaced; devflow convention, surfaced by `step-view`). | Caller-supplied `:attributes`. |
 
-Other plain (non-`workflow/`-namespaced) attributes pass through from a step's `:attributes` as-is; `step-strand` itself adds only the `workflow/role`/`workflow/phase` pair and lifts a step's `:description` field into a plain `"description"` attribute.
+Other plain (non-`workflow/`-namespaced) attributes pass through from a step's `:attributes` as-is; `step-strand` itself adds only the `workflow/role`/`workflow/form` pair and lifts a step's `:description` field into a plain `"description"` attribute.
 
 ## 8. Worked examples
 
@@ -470,7 +468,7 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
 
 - `ct.spools.devflow` — the reference higher-level spool built on this
   namespace: opinionated devflow-stage workflow definitions and thin
-  `start!`/`next-step`/`complete!`/`choose!` wrappers keyed by feature name
+  `start!`/`ready-step`/`complete!`/`choose!` wrappers keyed by feature name
   instead of a raw run-id. It registers its stages under stable names and uses
   `:revise` choices for its revision loops (§5) rather than dead-ending the run
   or hand-writing revision wrappers. See `devflow.md`.
@@ -486,4 +484,3 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
   local-root adapter that binds workflow `:subagent` gates to agent-run runs.
 - [`skein.spools.executors.shell`](./executors/shell.md) — shipped classpath executor that fulfills
   workflow `:shell` gates by running their command.
-

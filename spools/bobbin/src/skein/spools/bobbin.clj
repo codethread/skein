@@ -1,15 +1,22 @@
 (ns skein.spools.bobbin
   "Assemble compact, self-contained context packs for delegated strand work.
 
-  Bobbin is a reference spool that composes explicit-runtime public graph and
-  weaver helper surfaces. It projects the strand graph around one target strand
-  into a JSON-compatible bundle and renders that bundle as deterministic prompt
-  text."
+  Bobbin is a reference spool that composes public graph and weaver helper
+  surfaces. It projects the strand graph around one target strand into a
+  JSON-compatible bundle and renders that bundle as deterministic prompt text.
+
+  Sections it did not invent are read through the primitive that owns them:
+  `skein.api.notes.alpha` orders the notes section, `skein.api.spool.alpha`
+  projects every strand row, and `skein.spools.workflow` resolves the active
+  workflow root. The bundle's own vocabulary — the section shapes, `pack`, and
+  `render` — is bobbin's."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
+            [skein.api.notes.alpha :as notes]
             [skein.api.weaver.alpha :as weaver]
-            [skein.api.spool.alpha :refer [fail! attr-get attr-key->str]]))
+            [skein.spools.workflow :as workflow]
+            [skein.api.spool.alpha :refer [fail! attr-get attr-key->str entity-projection]]))
 
 (def ^:private section-order [:strand :blockers :dependents :parents :children :notes :workflow])
 (def ^:private selectable-sections (set section-order))
@@ -17,8 +24,17 @@
 (defn- attr [strand k]
   (attr-get strand k))
 
-(defn- summarize [strand]
-  (select-keys strand [:id :title :state :attributes :created_at :updated_at]))
+(defn- summarize
+  "Return the canonical entity projection of `strand`, extended with timestamps.
+
+  A pack row is the canonical projection plus the timestamps a prompt reader
+  needs to date the context (SPEC-005.C3 permits explicit extension). Routing
+  through `entity-projection` means a strand missing a canonical field fails
+  loudly here rather than shipping a partial row into a delegated prompt."
+  [strand]
+  (assoc (entity-projection strand)
+         :created_at (:created_at strand)
+         :updated_at (:updated_at strand)))
 
 (defn- strand-by-id! [rt strand-id]
   (try
@@ -87,23 +103,58 @@
                (into parents found)))
       (graph-section parents []))))
 
-(defn- notes-section [rt target-id]
-  (let [notes (->> (weaver/list rt [:edge/in "notes" [:= :id target-id]] {})
-                   (sort-by (juxt #(or (attr % :note/at) "") :created_at :id)))]
-    (graph-section notes [])))
+(defn- notes-section
+  "Return the target's notes as a bobbin graph section, in the primitive's order.
+
+  The `{:strands :edges}` section shape is bobbin's — `render` reads
+  `(:strands section)` — but the note concept and its ordering belong to
+  `skein.api.notes.alpha`: `notes` walks the incoming `notes` edges and parses
+  `note/at` into an instant, because `Instant/toString` varies in fractional
+  precision and a lexicographic sort misorders a note burst. Order is therefore
+  read from the primitive and joined back to the summarized strand rows —
+  `strands-by-ids` preserves input order — rather than re-sorted here."
+  [rt target-id]
+  (let [ordered-ids (mapv :id (notes/notes rt target-id {}))]
+    {:strands (mapv summarize (graph/strands-by-ids rt ordered-ids))
+     :edges []}))
 
 (defn- workflow-attrs [strand]
   (into {}
         (filter (fn [[k _]] (str/starts-with? (attr-key->str k) "workflow/")))
         (:attributes strand)))
 
+(defn- closed-root
+  "Return the single closed workflow root for `run-id`, nil when absent.
+
+  Only reached once `workflow/current-root` has ruled out an active root, so
+  every root this query can find is closed. Bobbin deliberately resolves closed
+  roots the workflow primitive cannot see: a pack is assemblable for a finished
+  target — briefing a reviewer on completed work is a first-class use — and that
+  target's run is closed along with its root. Ambiguity fails loudly rather than
+  taking an arbitrary first, matching the primitive's contract for the active
+  case."
+  [rt run-id]
+  (let [roots (weaver/list rt [:and
+                               [:= [:attr "workflow/run-id"] run-id]
+                               [:= [:attr "workflow/role"] "root"]] {})]
+    (case (count roots)
+      0 nil
+      1 (first roots)
+      (fail! "Multiple closed workflow roots found" {:run-id run-id :roots roots}))))
+
+(defn- workflow-root
+  "Return the workflow root strand for `run-id`, active if there is one.
+
+  `workflow/current-root` owns the active case — including failing loudly on
+  ambiguity — and `closed-root` covers the historical roots it filters out."
+  [rt run-id]
+  (or (workflow/current-root run-id)
+      (closed-root rt run-id)))
+
 (defn- workflow-section [rt strand]
   (when (seq (workflow-attrs strand))
     (let [run-id (attr strand :workflow/run-id)
-          root (when run-id
-                 (first (weaver/list rt [:and
-                                         [:= [:attr "workflow/run-id"] run-id]
-                                         [:= [:attr "workflow/role"] "molecule"]] {})))]
+          root (when run-id (workflow-root rt run-id))]
       (cond-> {:run-id run-id
                :role (attr strand :workflow/role)
                :attributes (workflow-attrs strand)}

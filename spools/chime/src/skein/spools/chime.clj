@@ -63,12 +63,24 @@
   (and (string? value) (not (str/blank? value))))
 
 (defn- record-failure! [entry]
-  (let [full (assoc entry :at (now))]
+  (let [full (assoc entry :failed/at (now))]
     (swap! (failure-log) #(->> (conj (vec %) full) (take-last 100) vec))
     full))
 
-(defn failures
-  "Return recorded notifier, process, and rule failures for this weaver lifetime."
+(defn recent-failures
+  "Return the last 100 notifier, process, and rule failures for this weaver lifetime.
+
+  Entries diverge from the blessed event-failure entry
+  (`skein.api.events.alpha/recent-failures`) on two keys, because chime's
+  failures carry no event context to describe them with:
+
+  - `:kind` — `:notifier-missing`, `:process`, or `:rule`. The blessed entry has
+    no counterpart; it discriminates on `:event/type`, which chime's failures do
+    not have. Two of chime's three kinds are not throws at all, so the kind is
+    the only thing that says what went wrong.
+  - `:message` — present only when something threw, not `:exception/message`:
+    a missing notifier and a non-zero notifier exit are failures without an
+    exception to take a message from."
   []
   @(failure-log))
 
@@ -174,7 +186,7 @@
     (catch java.io.FileNotFoundException e
       (fail! "Rule fn cannot be resolved" {:fn fn-symbol :message (ex-message e)}))))
 
-(defn defrule!
+(defn register!
   "Register or replace a notification rule.
 
   `fn-symbol` names a function receiving `{:event .. :strand ..}` and returning
@@ -183,8 +195,8 @@
   even when they have never notified before. Mutations serialized after
   registration notify normally."
   [name fn-symbol]
-  (let [key (rule-name name)
-        rule {:name key :fn fn-symbol}
+  (let [rule-key (rule-name name)
+        rule {:key rule-key :fn fn-symbol}
         registry (rule-registry)]
     (resolve-rule-fn fn-symbol)
     ;; Registration, event scans, and the pre-commit mutation barrier share this
@@ -192,26 +204,26 @@
     ;; event until the baseline and rule become visible together.
     (locking registry
       (baseline-rule! rule)
-      (swap! registry assoc key rule))
-    {:rule key :fn fn-symbol}))
+      (swap! registry assoc rule-key rule))
+    {:key rule-key :fn fn-symbol}))
 
 (defn rules
-  "Return registered notification rules ordered by name."
+  "Return registered notification rules ordered by key."
   []
   (mapv second (sort-by key @(rule-registry))))
 
-(defn remove-rule!
-  "Remove a registered notification rule by name."
+(defn unregister!
+  "Unregister a notification rule by key."
   [name]
-  (let [key (rule-name name)
+  (let [rule-key (rule-name name)
         registry (rule-registry)]
     (locking registry
-      (when-not (contains? @registry key)
-        (fail! "Rule not found" {:rule key :available (sort (keys @registry))}))
-      (swap! registry dissoc key)
+      (when-not (contains? @registry rule-key)
+        (fail! "Rule not found" {:rule rule-key :available (sort (keys @registry))}))
+      (swap! registry dissoc rule-key)
       (swap! (seen-notifications)
-             #(into #{} (remove (fn [[rule-name _]] (= key rule-name))) %)))
-    {:removed key}))
+             #(into #{} (remove (fn [[seen-rule-key _]] (= rule-key seen-rule-key))) %)))
+    {:unregistered rule-key}))
 
 (defn- affected-strands [_event]
   (weaver/list (rt)))
@@ -233,21 +245,22 @@
                                   (vec (take-last scanned-batch-memory (conj ids batch-id))))))]
       (boolean (some #(= batch-id %) old)))))
 
-;; :fn is renamed on destructure: a local named `fn` shadows the fn macro.
-(defn- evaluate-rule [context strand {:keys [name] fn-sym :fn}]
+;; :fn and :key are renamed on destructure: locals named `fn`/`key` shadow the
+;; fn macro and clojure.core/key.
+(defn- evaluate-rule [context strand {rule-key :key fn-sym :fn}]
   (let [rule-fn @(resolve-rule-fn fn-sym)]
     (try
       (when-let [notification (rule-fn (assoc context :strand strand))]
         (validate-notification! notification))
       (catch Throwable t
         (record-failure! {:kind :rule
-                          :rule name
+                          :rule rule-key
                           :strand (:id strand)
                           :message (ex-message t)
                           :data (ex-data t)})
         nil))))
 
-(defn- baseline-rule! [{:keys [name] :as rule}]
+(defn- baseline-rule! [{rule-key :key :as rule}]
   (let [runtime (rt)]
     (binding [*runtime* runtime]
       (let [context {:event {:event/type :chime/rule-registered}
@@ -255,16 +268,16 @@
             matching-keys (into #{}
                                 (keep (fn [strand]
                                         (when (evaluate-rule context strand rule)
-                                          [name (:id strand)])))
+                                          [rule-key (:id strand)])))
                                 (affected-strands (:event context)))]
         (swap! (seen-notifications)
                (fn [seen]
                  (into matching-keys
-                       (remove (fn [[rule-name _]] (= name rule-name)))
+                       (remove (fn [[seen-rule-key _]] (= rule-key seen-rule-key)))
                        seen)))))))
 
-(defn- dispatch-rule! [context strand {:keys [name] :as rule}]
-  (let [seen-key [name (:id strand)]
+(defn- dispatch-rule! [context strand {rule-key :key :as rule}]
+  (let [seen-key [rule-key (:id strand)]
         notification (evaluate-rule context strand rule)]
     (if notification
       ;; scan! serializes dispatch under the registry monitor. Keep the atomic
@@ -291,7 +304,7 @@
    (let [registry (rule-registry)]
      (locking registry
        (if (already-scanned-batch? event)
-         {:scanned 0 :rules (count @registry) :skipped :batch/already-scanned}
+         {:scanned 0 :rules (count @registry) :skipped :chime/already-scanned}
          (let [runtime (rt)]
            (binding [*runtime* runtime]
              (let [strands (affected-strands event)
@@ -300,7 +313,7 @@
                        rule (vals @registry)]
                  (dispatch-rule! context strand rule))
                {:scanned (count strands) :rules (count @registry)})))))))
-  ([] (scan! {:event/type :manual/scan})))
+  ([] (scan! {:event/type :chime/scan})))
 
 (defn on-event
   "Weaver event handler: scan graph changes for attention notifications."
@@ -319,7 +332,7 @@
   "Install chime's mutation barrier and event handler into the active weaver.
 
   Chime ships no rules and no notifier: trusted config supplies rules with
-  `defrule!` and a notifier with `set-notifier!`."
+  `register!` and a notifier with `set-notifier!`."
   []
   (let [runtime (rt)]
     (hooks/register! runtime :chime/registration-barrier mutation-hook-types
@@ -331,5 +344,5 @@
     {:installed true
      :namespace 'skein.spools.chime
      :handler :chime/engine
-     :rules (mapv :name (rules))
+     :rules (mapv :key (rules))
      :notifier-bound? (boolean @(notifier-binding))}))

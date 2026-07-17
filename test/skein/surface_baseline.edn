@@ -62,11 +62,11 @@
    :deadline-class "standard",
    :hook-class "mutating",
    :doc
-   "Show active workflow molecule roots, optionally filtered by family.",
+   "Show active workflow roots, optionally filtered by family.",
    :arg-spec
    {:op "workflow-runs",
     :doc
-    "Show active workflow molecule roots, optionally filtered by family.",
+    "Show active workflow roots, optionally filtered by family.",
     :flags [],
     :positionals
     [{:name "family",
@@ -541,11 +541,11 @@
     [:= :state "active"]
     [:= [:attr "workflow/run-id"] [:param :feature]]]},
   "workflow-runs"
-  [:and [:= :state "active"] [:= [:attr "workflow/role"] "molecule"]],
+  [:and [:= :state "active"] [:= [:attr "workflow/role"] "root"]],
   "devflow-runs"
   [:and
    [:= :state "active"]
-   [:= [:attr "workflow/role"] "molecule"]
+   [:= [:attr "workflow/role"] "root"]
    [:= [:attr "workflow/family"] "devflow"]],
   "work"
   [:and
@@ -561,4 +561,4 @@
     [:not
      [:in
       [:attr "workflow/role"]
-      ["molecule" "digest" "procedure"]]]]]}}
+      ["root" "digest" "procedure"]]]]]}}

@@ -209,11 +209,11 @@
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run]
-         (mapv :name ((requiring-resolve 'skein.spools.chime/rules)))))
+         (mapv :key ((requiring-resolve 'skein.spools.chime/rules)))))
   ;; the declarative reviewer rosters register from .skein/reviewers.clj
   (let [rosters ((requiring-resolve 'skein.spools.delegation/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
-    (is (some #(= "test-sleeps" (:name %)) (:reviewers (first rosters))))))
+    (is (some #(= "test-sleeps" (:name %)) (:seats (first rosters))))))
 
 (def ^:private external-spool-coordinate-pairs
   "Pairs of weaver-side spools.edn keys and test-JVM deps.edn coordinates."
@@ -369,8 +369,8 @@
                              ["A3" {:feature "alpha" :kind "note"}]
                              ["B1" {:feature "beta" :kind "task" :owner "amy"}]
                              ["R1" {:workflow/run-id "alpha"}]
-                             ["M1" {:workflow/role "molecule"}]
-                             ["D1" {:workflow/role "molecule" :workflow/family "devflow"}]
+                             ["M1" {:workflow/role "root"}]
+                             ["D1" {:workflow/role "root" :workflow/family "devflow"}]
                              ["S1" {:agent-run/run "true"}]
                              ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
         (weaver/add rt {:title title :state "active" :attributes attrs}))
@@ -465,13 +465,13 @@
   (with-startup-config-runtime
     (fn [_rt]
       (let [rules ((requiring-resolve 'skein.spools.chime/rules))
-            by-key (into {} (map (juxt :name identity)) rules)
+            by-key (into {} (map (juxt :key identity)) rules)
             fire (fn [rule-key strand]
                    (@(requiring-resolve (:fn (get by-key rule-key)))
                     {:strand strand :ready-ids #{}}))]
         (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked
                 :kanban-completed :kanban-started :parked-run]
-               (mapv :name rules)))
+               (mapv :key rules)))
         ;; gate-error fires on any strand stamped with a gate error
         (let [note (fire :gate-error {:id "g1" :state "active" :title "Gate A"
                                       :attributes {:gate/error "spawn failed"}})]
@@ -491,15 +491,16 @@
     (fn [rt]
       (let [plan (weaver/add rt {:title "Feature: plan feature"
                                  :state "active"
-                                 :attributes {:feature "plan-feature" :kind "plan" :workflow "agent-plan"}})
+                                 :attributes {:feature "plan-feature" :kind "agent-plan"}})
             impl (weaver/add rt {:title "Implement it"
                                  :state "active"
-                                 :attributes {:feature "plan-feature" :kind "task" :workflow "agent-plan"
-                                              :task_key "impl" :owner "agent-a" :harness "build"
-                                              :cwd "/tmp/work" :validation ["clojure -M:test"]}})
+                                 :attributes {:feature "plan-feature" :kind "task"
+                                              :task_key "impl" :owner "agent-a"
+                                              :agent-run/harness "build"
+                                              :agent-run/cwd "/tmp/work" :validation ["clojure -M:test"]}})
             review (weaver/add rt {:title "Review it"
                                    :state "active"
-                                   :attributes {:feature "plan-feature" :kind "review" :workflow "agent-plan"
+                                   :attributes {:feature "plan-feature" :kind "review"
                                                 :task_key "review" :hitl true}})]
         (weaver/update rt (:id plan) {:edges [{:type "parent-of" :to (:id impl)}
                                               {:type "parent-of" :to (:id review)}]})
@@ -698,7 +699,7 @@
 (deftest work-query-excludes-workflow-plumbing-but-keeps-steps
   (with-config-runtime
     (fn [rt]
-      (doseq [[title role] [["Root" "molecule"]
+      (doseq [[title role] [["Root" "root"]
                             ["Procedure" "procedure"]
                             ["Digest" "digest"]
                             ["Step" "step"]
@@ -732,17 +733,17 @@
             complex-roster (first (filter #(= :complex-patch-review (:name %)) rosters))
             docs-roster (first (filter #(= :docs-review (:name %)) rosters))]
         (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
-        (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:reviewers roster)))]
-          (is (some? sleeps) "owner-required test-sleeps reviewer is declared")
-          (is (str/includes? (:contract sleeps) "time itself is a genuine component")))
-        (is (= :sol-med (get-in roster [:synthesizer :harness]))
+        (let [sleeps (first (filter #(= "test-sleeps" (:name %)) (:seats roster)))]
+          (is (some? sleeps) "owner-required test-sleeps seat is declared")
+          (is (str/includes? (:brief sleeps) "time itself is a genuine component")))
+        (is (= :sol-med (get-in roster [:synthesis :harness]))
             "sign-off synthesis stays on the cross-vendor GPT seat")
-        (is (= :terra-med (get-in complex-roster [:synthesizer :harness]))
+        (is (= :terra-med (get-in complex-roster [:synthesis :harness]))
             "complex patch review is synthesized outside its reviewer seats")
-        (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:reviewers docs-roster)))]
+        (let [fact-check (first (filter #(= "docs-fact-check" (:name %)) (:seats docs-roster)))]
           (is (some? fact-check) "docs roster leads with the accuracy seat")
-          (is (str/includes? (:contract fact-check) "NEVER the canonical .skein")))
-        (is (= :sol-med (get-in docs-roster [:synthesizer :harness]))
+          (is (str/includes? (:brief fact-check) "NEVER the canonical .skein")))
+        (is (= :sol-med (get-in docs-roster [:synthesis :harness]))
             "docs sign-off synthesis stays on the cross-vendor GPT seat")))))
 
 (deftest codex-harness-persists-sessions-and-declares-resume
@@ -839,7 +840,7 @@
       (is (= "land.signoff.review"
              (:action-ref (first (:ready (op! "land" ["next" "land-x"]))))))
       (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])]
-        (is (= "checkpoint" (:kind (first (:ready at-checkpoint)))))
+        (is (= "checkpoint" (:role (first (:ready at-checkpoint)))))
         (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
       ;; the sign-off checkpoint offers approved + abort; abort requires a reason
       (let [choices (workflow/choice-details "land-x")
@@ -1025,22 +1026,22 @@
                         (workflow/checkpoint :accept "Accept" :depends-on [:b]
                                              :choices [:accepted]))]
         (workflow/start! "flow-status-test" definition {})
-        (let [gate-a (:id (first (workflow/next-steps "flow-status-test")))
+        (let [gate-a (:id (first (workflow/ready "flow-status-test")))
               run-a (weaver/add rt {:title "Run A"
                                     :state "closed"
                                     :attributes {:agent-run/run "true"
                                                  :agent-run/phase "done"
                                                  :agent-run/result "A complete"
-                                                 :gate/run-id "flow-status-test"}
+                                                 :workflow/run-id "flow-status-test"}
                                     :edges [{:type "serves" :to gate-a}]})]
           (workflow/complete! "flow-status-test" {:step gate-a :by (:id run-a)})
-          (let [gate-b (:id (first (workflow/next-steps "flow-status-test")))
+          (let [gate-b (:id (first (workflow/ready "flow-status-test")))
                 run-b (weaver/add rt {:title "Run B"
                                       :state "active"
                                       :attributes {:agent-run/run "true"
                                                    :agent-run/phase "failed"
                                                    :agent-run/error "boom"
-                                                   :gate/run-id "flow-status-test"}
+                                                   :workflow/run-id "flow-status-test"}
                                       :edges [{:type "serves" :to gate-b}]})]
             ;; failure summaries are scoped to the requested run: an unrelated
             ;; failed run and an unrelated error-stamped gate must not leak in
@@ -1057,11 +1058,13 @@
               (is (false? (:done status)))
               (is (= ["Delegate B"] (mapv :title (:frontier status))))
               (is (= [:gate-closed] (mapv :type (get-in status [:history 0 :events]))))
-              (is (= "done" (get-in by-title ["Delegate A" :run :agent-run/phase])))
-              (is (= "failed" (get-in by-title ["Delegate B" :run :agent-run/phase])))
+              (is (= "done" (get-in by-title ["Delegate A" :run-view :agent-run/phase])))
+              (is (= "failed" (get-in by-title ["Delegate B" :run-view :agent-run/phase])))
               (is (true? (get-in by-title ["Delegate B" :stalled?])))
+              (is (= "failed" (get-in by-title ["Delegate B" :phase])))
               (is (= #{(:id run-b)} (set (map :id (:agent-failures status)))))
-              (is (empty? (:stalled-gates status)))
+              ;; membership is the executor's query rule: gate B's serving run is dead
+              (is (= #{gate-b} (set (map :id (:stalled-gates status)))))
               (is (str/includes? (:dev/mermaid status) "Delegate B (stalled)")))))))))
 
 (defn- assert-treadle-installed-after-config
@@ -1077,7 +1080,7 @@
   "Assert repo startup guards every module that now relies on the workflow coordinate."
   [rt]
   (let [uses (runtime/uses rt)]
-    (doseq [use-id [:skein/spools-workflow :skein/spools-reed]]
+    (doseq [use-id [:skein/spools-workflow :skein/spools-shell]]
       (is (= ['skein.spools/workflow] (get-in uses [use-id :opts :spools]))
           (str use-id " must opt into skein.spools/workflow")))
     (is (= ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow

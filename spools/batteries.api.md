@@ -24,19 +24,6 @@ Shipped core strand command surface as parser-backed weaver ops.
 
 
 
-## <a name="skein.spools.batteries/activate!">`activate!`</a>
-``` clojure
-(activate!)
-(activate! rt)
-```
-Function.
-
-Register the batteries core strand ops into a weaver runtime.
-
-  The no-arg arity registers into the active runtime for `use!`-style
-  installation; the explicit-runtime arity is for tests and trusted callers.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L607-L623">Source</a></sub></p>
-
 ## <a name="skein.spools.batteries/add-op">`add-op`</a>
 ``` clojure
 (add-op ctx)
@@ -54,6 +41,19 @@ Function.
 
 Physically delete one strand by id and return the burn summary.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L255-L258">Source</a></sub></p>
+
+## <a name="skein.spools.batteries/install!">`install!`</a>
+``` clojure
+(install!)
+(install! rt)
+```
+Function.
+
+Register the batteries core strand ops into a weaver runtime.
+
+  The no-arg arity registers into the active runtime for `use!`-style
+  installation; the explicit-runtime arity is for tests and trusted callers.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/spools/batteries/src/skein/spools/batteries.clj#L607-L623">Source</a></sub></p>
 
 ## <a name="skein.spools.batteries/list-op">`list-op`</a>
 ``` clojure

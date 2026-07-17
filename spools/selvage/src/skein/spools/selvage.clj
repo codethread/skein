@@ -3,7 +3,7 @@
 
   Selvage keeps opt-in attribute invariants in trusted spool state. It never
   changes the core open-attribute contract: callers register data-first
-  vocabularies, run checks on demand, or watch asynchronous mutation events for
+  checksets, run checks on demand, or watch asynchronous mutation events for
   post-hoc detection."
   (:require [clojure.string :as str]
             [skein.api.current.alpha :as current]
@@ -23,7 +23,7 @@
   1)
 
 (defn- new-state []
-  {:vocab-registry (atom {})
+  {:checkset-registry (atom {})
    :violation-log (atom [])})
 
 (defn- state []
@@ -31,17 +31,17 @@
 
 ;; Event handlers run under `with-runtime-binding`, so `(current/runtime)`
 ;; resolves on the event worker thread as well as on caller threads.
-(defn- vocab-registry [] (:vocab-registry (state)))
+(defn- checkset-registry [] (:checkset-registry (state)))
 (defn- violation-log [] (:violation-log (state)))
 
 (def ^:private allowed-spec-keys #{:checks :doc})
-(def ^:private allowed-check-keys #{:attr :enum :kind :required-with :doc})
-(def ^:private allowed-kinds #{:string :number :boolean :map :int-string})
+(def ^:private allowed-check-keys #{:attr :enum :type :required-with :doc})
+(def ^:private allowed-types #{:string :number :boolean :map :int-string})
 (def ^:private event-key :skein.spools.selvage/watch)
 
 (defn- check-name! [name]
   (when-not (or (keyword? name) (symbol? name) (string? name))
-    (fail! "Vocabulary name must be a keyword, symbol, or string"
+    (fail! "Checkset name must be a keyword, symbol, or string"
            {:name name :allowed #{:keyword :symbol :string}}))
   name)
 
@@ -51,79 +51,82 @@
 (defn- non-blank-string? [x]
   (and (string? x) (not (str/blank? x))))
 
-(defn- check-type [check]
+;; A check's FORM is which constraint it states (:enum/:type/:required-with); the
+;; :type form's value is a value TYPE (:string/:number/...).
+(defn- check-form [check]
   (cond
     (contains? check :enum) :enum
-    (contains? check :kind) :kind
+    (contains? check :type) :type
     (contains? check :required-with) :required-with
     :else nil))
 
 (defn- validate-check! [check]
   (when-not (map? check)
-    (fail! "Vocabulary check must be a map" {:check check}))
+    (fail! "Check must be a map" {:check check}))
   (when-let [keys (unknown-keys check allowed-check-keys)]
-    (fail! "Vocabulary check contains unknown keys"
+    (fail! "Check contains unknown keys"
            {:unknown-keys (vec keys) :allowed-keys (vec (sort-by pr-str allowed-check-keys)) :check check}))
   (when-not (non-blank-string? (:attr check))
-    (fail! "Vocabulary check requires non-blank string :attr" {:check check}))
-  (let [type (check-type check)]
-    (when-not type
-      (fail! "Vocabulary check requires one check kind"
-             {:check check :allowed-checks [:enum :kind :required-with]}))
-    (when (not= 1 (count (filter #(contains? check %) [:enum :kind :required-with])))
-      (fail! "Vocabulary check must use exactly one check kind"
-             {:check check :allowed-checks [:enum :kind :required-with]}))
-    (case type
+    (fail! "Check requires non-blank string :attr" {:check check}))
+  (let [form (check-form check)]
+    (when-not form
+      (fail! "Check requires one check form"
+             {:check check :allowed-checks [:enum :type :required-with]}))
+    (when (not= 1 (count (filter #(contains? check %) [:enum :type :required-with])))
+      (fail! "Check must use exactly one check form"
+             {:check check :allowed-checks [:enum :type :required-with]}))
+    (case form
       :enum (when-not (and (vector? (:enum check)) (seq (:enum check)))
-              (fail! "Vocabulary :enum check requires a non-empty vector" {:check check}))
-      :kind (when-not (allowed-kinds (:kind check))
-              (fail! "Vocabulary :kind check is unknown"
-                     {:kind (:kind check) :allowed-kinds (vec (sort-by name allowed-kinds)) :check check}))
+              (fail! "Check :enum form requires a non-empty vector" {:check check}))
+      :type (when-not (allowed-types (:type check))
+              (fail! "Check :type form is unknown"
+                     {:type (:type check) :allowed-types (vec (sort-by name allowed-types)) :check check}))
       :required-with (when-not (non-blank-string? (:required-with check))
-                       (fail! "Vocabulary :required-with check requires non-blank string attribute name"
+                       (fail! "Check :required-with form requires non-blank string attribute name"
                               {:check check}))))
   check)
 
 (defn- validate-spec! [name spec]
   (check-name! name)
   (when-not (map? spec)
-    (fail! "Vocabulary spec must be a map" {:vocab name :spec spec}))
+    (fail! "Checkset spec must be a map" {:checkset name :spec spec}))
   (when-let [keys (unknown-keys spec allowed-spec-keys)]
-    (fail! "Vocabulary spec contains unknown keys"
-           {:vocab name :unknown-keys (vec keys) :allowed-keys (vec (sort-by pr-str allowed-spec-keys))}))
+    (fail! "Checkset spec contains unknown keys"
+           {:checkset name :unknown-keys (vec keys) :allowed-keys (vec (sort-by pr-str allowed-spec-keys))}))
   (when-not (vector? (:checks spec))
-    (fail! "Vocabulary spec requires vector :checks" {:vocab name :spec spec}))
+    (fail! "Checkset spec requires vector :checks" {:checkset name :spec spec}))
   (assoc spec :checks (mapv validate-check! (:checks spec))))
 
-(defn defvocab!
-  "Register or replace an attribute vocabulary for this weaver lifetime.
+(defn register-checkset!
+  "Register or replace a named checkset for this weaver lifetime.
 
   `spec` is data with `:checks`, a vector of maps. Supported checks are
-  `{:attr s :enum [...]}`, `{:attr s :kind k}`, and
-  `{:attr s :required-with other-attr}`. Unknown keys and unknown kinds throw
+  `{:attr s :enum [...]}`, `{:attr s :type t}`, and
+  `{:attr s :required-with other-attr}`. Unknown keys and unknown types throw
   `ex-info` with allowed values. Returns the registered metadata."
   [name spec]
   (let [spec (validate-spec! name spec)
         entry {:name (check-name! name)
                :spec spec}]
-    (swap! (vocab-registry) assoc name entry)
+    (swap! (checkset-registry) assoc name entry)
     entry))
 
-(defn vocabs
-  "Return registered vocabulary metadata in deterministic order."
+(defn checksets
+  "Return registered checkset metadata in deterministic order."
   []
-  (->> @(vocab-registry) vals (sort-by (comp pr-str :name)) vec))
+  (->> @(checkset-registry) vals (sort-by (comp pr-str :name)) vec))
 
-(defn remove-vocab!
-  "Remove a registered vocabulary by name.
+(defn unregister-checkset!
+  "Unregister a checkset by name.
 
-  Missing vocabularies fail loudly. Returns `{:removed name}`."
+  Missing checksets fail loudly. Returns `{:unregistered name}`."
   [name]
   (check-name! name)
-  (when-not (contains? @(vocab-registry) name)
-    (fail! "Vocabulary is not registered" {:vocab name :available (vec (sort-by pr-str (keys @(vocab-registry))))}))
-  (swap! (vocab-registry) dissoc name)
-  {:removed name})
+  (when-not (contains? @(checkset-registry) name)
+    (fail! "Checkset is not registered"
+           {:checkset name :available (vec (sort-by pr-str (keys @(checkset-registry))))}))
+  (swap! (checkset-registry) dissoc name)
+  {:unregistered name})
 
 (defn- attr-key [attr]
   (keyword attr))
@@ -134,43 +137,43 @@
 (defn- attr-value [attributes attr]
   (get attributes (attr-key attr)))
 
-(defn- kind-match? [kind value]
-  (case kind
+(defn- type-match? [type value]
+  (case type
     :string (string? value)
     :number (number? value)
     :boolean (or (true? value) (false? value))
     :map (map? value)
     :int-string (and (string? value) (boolean (re-matches #"-?\d+" value)))))
 
-(defn- violation [strand-id vocab-name check value message]
+(defn- violation [strand-id checkset-name check value message]
   {:strand-id strand-id
-   :vocab vocab-name
+   :checkset checkset-name
    :attr (:attr check)
-   :check (check-type check)
+   :check (check-form check)
    :value value
    :message message})
 
-(defn- check-one [strand vocab-name check]
+(defn- check-one [strand checkset-name check]
   (let [attributes (:attributes strand)
         value (attr-value attributes (:attr check))]
-    (case (check-type check)
+    (case (check-form check)
       :enum (when (and (present? attributes (:attr check))
                        (not-any? #(= value %) (:enum check)))
-              (violation (:id strand) vocab-name check value
+              (violation (:id strand) checkset-name check value
                          (str "Attribute " (:attr check) " must be one of " (pr-str (:enum check)))))
-      :kind (when (and (present? attributes (:attr check))
-                       (not (kind-match? (:kind check) value)))
-              (violation (:id strand) vocab-name check value
-                         (str "Attribute " (:attr check) " must have kind " (:kind check))))
+      :type (when (and (present? attributes (:attr check))
+                       (not (type-match? (:type check) value)))
+              (violation (:id strand) checkset-name check value
+                         (str "Attribute " (:attr check) " must have type " (:type check))))
       :required-with (when (and (present? attributes (:required-with check))
                                 (not (present? attributes (:attr check))))
-                       (violation (:id strand) vocab-name check nil
+                       (violation (:id strand) checkset-name check nil
                                   (str "Attribute " (:attr check) " is required when " (:required-with check) " is present"))))))
 
 (defn- check-strand [strand]
-  (->> (for [{vocab-name :name {:keys [checks]} :spec} (vocabs)
+  (->> (for [{checkset-name :name {:keys [checks]} :spec} (checksets)
              check checks
-             :let [v (check-one strand vocab-name check)]
+             :let [v (check-one strand checkset-name check)]
              :when v]
          v)
        vec))
@@ -179,7 +182,7 @@
   (and (map? x) (:id x) (contains? x :attributes)))
 
 (defn check
-  "Return vocabulary violations for one strand map or strand id.
+  "Return checkset violations for one strand map or strand id.
 
   Missing strand ids fail loudly through the public graph surfaces. A clean
   strand returns an empty vector."
@@ -194,7 +197,7 @@
     (check-strand strand)))
 
 (defn check-all
-  "Return vocabulary violations across active strands.
+  "Return checkset violations across active strands.
 
   With no arguments checks all active strands. With `query-form`, checks only
   strands selected by that predicate DSL query."
@@ -218,23 +221,24 @@
   "Return registered selvage checks whose `:attr` namespace no vocabulary
   declaration owns.
 
-  Opt-in cross-check between selvage's linting vocabularies and the ownership
-  registry (`skein.api.vocab.alpha`): reads the declared `:attr-namespace` names
-  for the active runtime and returns one entry per registered check whose
-  attribute namespace segment is undeclared, as
-  `{:vocab name :attr s :namespace s :check check}` sorted like `vocabs`.
+  Opt-in cross-check between selvage's checksets and the ownership registry
+  (`skein.api.vocab.alpha`): reads the declared `:attr-namespace` names for the
+  active runtime and returns one entry per registered check whose attribute
+  namespace segment is undeclared, as
+  `{:checkset name :attr s :namespace s :check check}` sorted like `checksets`.
 
-  Read-only composition sugar over `vocabs` — it references the registry, never
-  enforces it. Registered nowhere by default: no watch, no new enforcement path,
-  and no change to selvage's `:enum`/`:kind`/`:required-with` linting model."
+  Read-only composition sugar over `checksets` — it references the registry,
+  never enforces it. Registered nowhere by default: no watch, no new enforcement
+  path, and no change to selvage's `:enum`/`:type`/`:required-with` linting
+  model."
   []
   (let [declared (into #{} (map :name)
                        (vocab/declarations (current/runtime) {:kind :attr-namespace}))]
-    (vec (for [{vocab-name :name {:keys [checks]} :spec} (vocabs)
+    (vec (for [{checkset-name :name {:keys [checks]} :spec} (checksets)
                check checks
                :let [attr-ns (attr-namespace (:attr check))]
                :when (not (contains? declared attr-ns))]
-           {:vocab vocab-name
+           {:checkset checkset-name
             :attr (:attr check)
             :namespace attr-ns
             :check check}))))
@@ -279,5 +283,5 @@
   {:installed true
    :namespace 'skein.spools.selvage
    :watcher event-key
-   :vocabularies 'skein.spools.selvage/vocabs
+   :checksets 'skein.spools.selvage/checksets
    :checker 'skein.spools.selvage/check-all})

@@ -13,12 +13,12 @@
   than by the wall-clock startup timer; the seed instant is therefore placed in
   the wall future so the startup timer stays dormant until `advance!` drives it.
 
-  `.V2` lane hygiene: a blocking `:run!` never holds the shared event lane —
+  `.V2` lane hygiene: a blocking `:handler` never holds the shared event lane —
   `fire-wake` offloads the body to the cron executor, so `await-quiescent!`
   returns while the job is still blocked and a subsequent event still dispatches.
 
   Fires drive off a manual runtime clock and `skein.test.alpha/advance!`; job
-  outcomes join via `cron/await-idle!` — no `Thread/sleep` or wall waits
+  results join via `cron/await-quiescent!` — no `Thread/sleep` or wall waits
   (`.V3`). Handlers are resolved by fully qualified symbol, so their fire and
   latch signals live in namespace state the tests reset between runs."
   (:require [clojure.java.io :as io]
@@ -41,8 +41,8 @@
 (def ^:private marker-fired (atom (promise)))
 
 (defn record-run
-  "Restart-durability job body: return a sentinel outcome the test reads back off
-  the fired job's `:last-outcome`."
+  "Restart-durability job body: return a sentinel result the test reads back off
+  the fired job's `:last-result`."
   [_runtime]
   :fired)
 
@@ -75,7 +75,7 @@
         world (wt/temp-world)
         interval-ms (* 60 60 1000)
         job {:id :survivor :interval-ms interval-ms :jitter-ms 0
-             :run! 'skein.cron-e2e-test/record-run}
+             :handler 'skein.cron-e2e-test/record-run}
         ;; A wall-future seed instant keeps the fresh weaver's startup timer
         ;; dormant, so the adopted wake fires only when the manual clock is
         ;; advanced past it (below), never on the wall clock mid-`register!`.
@@ -111,9 +111,9 @@
           ;; Release the overdue fire deterministically off the manual clock.
           (let [fired-at-ms (.toEpochMilli (test-alpha/advance! rt2 (Duration/ofSeconds 2)))]
             (events/await-quiescent! rt2)
-            (cron/await-idle! rt2)
-            (is (= :fired (:last-outcome (first (cron/jobs rt2))))
-                "the adopted wake fired and recorded its outcome after restart")
+            (cron/await-quiescent! rt2)
+            (is (= :fired (:last-result (first (cron/jobs rt2))))
+                "the adopted wake fired and recorded its result after restart")
             (is (= (+ fired-at-ms interval-ms) (:wake_at (cron-wake rt2 "cron/survivor")))
                 "the next cron wake is re-armed at the fire instant + interval"))
           (finally
@@ -132,7 +132,7 @@
       (events/register! rt :marker #{:test/marker}
                         'skein.cron-e2e-test/marker-handler {})
       (cron/register! rt {:id :blocker :interval-ms 1000 :jitter-ms 0
-                          :run! 'skein.cron-e2e-test/blocking-run})
+                          :handler 'skein.cron-e2e-test/blocking-run})
       ;; The fire runs fire-wake on the lane; it arms the next wake and offloads
       ;; blocking-run to the cron executor, then returns, so the lane settles
       ;; while the job body is still blocked.
@@ -150,4 +150,4 @@
           "a new event dispatches on the lane while the cron job is blocked")
       ;; Release and join before teardown so the executor thread is idle.
       (deliver @run-release true)
-      (cron/await-idle! rt))))
+      (cron/await-quiescent! rt))))

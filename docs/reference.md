@@ -313,7 +313,10 @@ A strand has:
 
 `state` is the only built-in lifecycle field. Concepts like `status`, `kind`, `type`, `category`,
 `outcome`, `owner`, `priority`, `project`, `estimate`, or `retention` are your attributes, not core
-fields.
+fields. "Yours" means yours to define for your own concepts: a consumer of a spool that already
+publishes an attribute vocabulary (such as `workflow/*` or `agent-run/*`) reuses those keys
+verbatim ([the vocabulary
+rule](./spools/writing-shared-spools.md#the-rules-for-shared-spools)).
 
 | Concept | Where it belongs |
 | --- | --- |
@@ -441,7 +444,7 @@ For a simple persistent query, put it directly in `init.clj`:
 (require 'skein.spools.batteries)
 (runtime/use! runtime :skein/spools-batteries
   {:ns 'skein.spools.batteries
-   :call 'skein.spools.batteries/activate!})
+   :call 'skein.spools.batteries/install!})
 (graph/register-query! runtime 'mine [:= [:attr :owner] "ct"])
 ```
 

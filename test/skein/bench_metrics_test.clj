@@ -268,7 +268,7 @@
     (fn [rt _]
       (let [sentinel (fn [_ctx] {:cost-usd 9.99})]
         ;; a trusted config that registered its own :claude before install! wins.
-        (bench/defextractor! rt :claude sentinel)
+        (bench/register-extractor! rt :claude sentinel)
         (bench/install!)
         (is (= #{:claude :codex :generic :pi} (set (bench/extractors rt)))
             "all shipped extractor keys are present")

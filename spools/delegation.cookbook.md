@@ -134,7 +134,7 @@ Honest source: the retry semantics in [`delegation/README.md` §3](./delegation/
 
 **Situation.** A change needs reviewing. Two generalist reviewers reading the whole diff miss things and repeat each other; you want many small reviewers, each hunting one class of defect, fanned in to a single verdict.
 
-**Composition.** For the review policy your workspace runs on every change, use a declared **roster** — one authoritative document naming the reviewers, their harnesses, and their single-concern contracts. For a one-off concern the roster doesn't cover, use an ad hoc `--members`/`--harness` pass instead. The target is a task or plan strand, never a kanban card — findings append as notes on the target, and card notes stay lean for handover, so card-backed work points the review at the card's task tier (`strand kanban task list <card>`, adding a task if none fits); a card target fails loudly.
+**Composition.** For the review policy your workspace runs on every change, use a declared **roster** — one authoritative document naming the reviewers, their harnesses, and their single-concern contracts. For a one-off concern the roster doesn't cover, use an ad hoc `--seats`/`--harness` pass instead. The target is a task or plan strand, never a kanban card — findings append as notes on the target, and card notes stay lean for handover, so card-backed work points the review at the card's task tier (`strand kanban task list <card>`, adding a task if none fits); a card target fails loudly.
 
 ```sh
 # The workspace roster: one run per declared reviewer, always synthesized.
@@ -145,7 +145,7 @@ strand agent review <target> --roster change-review \
 # => {"target":"<target>","reviewers":["<r1>","<r2>",...],"synthesizer":"<syn>"}
 
 # A one-off pass the roster doesn't cover — two ad hoc reviewers, one synthesis.
-strand agent review <target> --members 2 --harness claude,review-gpt --synthesize \
+strand agent review <target> --seats 2 --harness claude,review-gpt --synthesize \
   --cwd /path/to/worktree --commit-range main..HEAD
 ```
 
@@ -153,7 +153,7 @@ strand agent review <target> --members 2 --harness claude,review-gpt --synthesiz
 
 - **The roster is the single source of truth, so it fails loudly on drift.**
   `--roster` owns the reviewer count, harnesses, and contracts, so combining it
-  with `--members`, `--harness`, or `--contract` is rejected — you can't half-
+  with `--seats`, `--harness`, or `--contract` is rejected — you can't half-
   override a policy. That's what makes the roster file a *reviewable* artifact:
   changing who reviews a change is a diff to one document
   ([`.skein/reviewers.clj`](../.skein/reviewers.clj)), not scattered flags.
@@ -195,14 +195,14 @@ Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `ch
                   :rounds 2
                   :synthesizer :review-gpt
                   :cwd "/path/to/worktree"})
-;; => {:council "<board>" :turns [["<r1s1>" ...] ["<r2s1>" ...]] :synthesizer "<syn>"}
+;; => {:blackboard "<board>" :turns [["<r1s1>" ...] ["<r2s1>" ...]] :synthesizer "<syn>"}
 ;; await the synthesizer run for the verdict; raw turns are notes on the board.
 ```
 
 **Why this shape.**
 
 - **The CLI is scalar-only by contract, so per-seat harnesses live in Clojure.**
-  `strand agent council --members n --harness one` seats N *identical* agents;
+  `strand agent council --seats n --harness one` seats N *identical* agents;
   the moment seats need different harnesses it's structured data, and structured
   data does not ride argv (TEN-006). `:seats` is that seam.
 - **Cross-vendor seating is deliberate.** In this repo the extra seat and the
@@ -212,7 +212,7 @@ Honest source: this repo's [`.skein/reviewers.clj`](../.skein/reviewers.clj) `ch
 - **Rounds are barriers, not a poll loop.** Each turn row `depends-on` every
   seat's previous-turn run, so a round completes before the next opens and the
   deliberation structure is queryable straight from run attributes
-  (`agent-run/panel-seat`, `agent-run/panel-turn`). You compose the deliberation; the
+  (`panel/seat`, `panel/turn`). You compose the deliberation; the
   panel compiler owns the choreography.
 - **The top-level input map is conventional, not spec-backed.** The `:seats`
   vector inside it is validated (the panel spec checks seat shape and name

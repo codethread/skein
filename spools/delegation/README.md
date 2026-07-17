@@ -14,10 +14,10 @@ This is the human-facing part. If you are a delegated agent, read [§5 Worker co
 
 One consistent way to run and coordinate coding-agent subagents, across every harness, over your strand graph:
 
-- **Cross-harness.** A subagent can be Claude, pi, or any tool you registered as a harness. Switching a whole workspace to a new provider is one `defharness!`/`defalias!` line in trusted config — no prompts, scripts, or workflows change.
+- **Cross-harness.** A subagent can be Claude, pi, or any tool you registered as a harness. Switching a whole workspace to a new provider is one `register-harness!`/`register-alias!` line in trusted config — no prompts, scripts, or workflows change.
 - **Everything is durable, observable, and awaitable.** Each subagent is a strand. You (or another agent) can list it, read its result, await it, read its notes, and see how it hangs off the plan — long after the session that spawned it ended. Nothing lives only in one harness's private memory.
 - **The graph is the scheduler.** You describe work and its dependencies once as a plan; readiness starts each piece the moment its blockers close. There is no separate queue to babysit.
-- **Human-in-the-loop tasks are plan nodes too.** `delegate --interactive` opens the agent in a live terminal-multiplexer session (tmux by default; your multiplexer is one `defbackend!` in trusted config) serving the task. You attach with the command `ps` hands you, pair with the agent, and when you agree the work is done the agent closes the task — the session is torn down and dependents unblock, exactly like any other task. This is how `hitl=true` tasks get delegated instead of stalling the plan.
+- **Human-in-the-loop tasks are plan nodes too.** `delegate --interactive` opens the agent in a live terminal-multiplexer session (tmux by default; your multiplexer is one `register-backend!` in trusted config) serving the task. You attach with the command `ps` hands you, pair with the agent, and when you agree the work is done the agent closes the task — the session is torn down and dependents unblock, exactly like any other task. This is how `hitl=true` tasks get delegated instead of stalling the plan.
 
 ### The vocabulary your agents already know
 
@@ -154,7 +154,7 @@ agent harnesses
 ```
 agent backends
 ```
-List configured interactive session backends (terminal multiplexers registered with `defbackend!` in trusted config; see the [agent-run backend registry](../agent-run/README.md#4-backend-registry-interactive-sessions)). → `[{"name","ops":["start","alive","stop",...],"doc"?}]`
+List configured interactive session backends (terminal multiplexers registered with `register-backend!` in trusted config; see the [agent-run backend registry](../agent-run/README.md#4-backend-registry-interactive-sessions)). → `[{"name","ops":["start","alive","stop",...],"doc"?}]`
 
 ### Delegation verbs (the task-contract layer)
 
@@ -170,12 +170,12 @@ Delegate one **active** task strand: builds the worker prompt from the task's cu
 → `{"task":"<task-id>","run":{"id","phase","harness","attach"?}}`
 
 ```
-agent delegate --ready <plan-id> [--cwd dir] [--max-concurrent K]
+agent delegate --ready <plan-id> [--cwd dir] [--fanout-cap K]
 ```
 Fan-out: delegate every **ready** task under the plan (all blockers closed) that has no active or successful **serving** run and is not `hitl`.
 Helper runs with no `serves` edge (recon/review) are ignored, so a reconned or reviewed task is still delegated.
 Every task is classified exactly once against pre-spawn state, so a task delegated this pass is never also reported in `skipped`.
-`--max-concurrent K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) on every run delegated this pass, so the agent-run window admits at most `min(W, K)` of them at once (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)). Delegation only expresses the intent — the engine enforces the cap. Absent, tasks run under the workspace ceiling alone; ignored on single delegation.
+`--fanout-cap K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) on every run delegated this pass, so the agent-run window admits at most `min(W, K)` of them at once (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)). Delegation only expresses the intent — the engine enforces the cap. Absent, tasks run under the workspace ceiling alone; ignored on single delegation.
 Harness comes from **each task's** `harness` attribute (this is how mixed-harness fan-out works); fails loudly up front, delegating nothing, if any ready task lacks one.
 Idempotent: re-invoke after verifying + closing finished tasks to pick up newly-unblocked work.
 `--interactive` is deliberately rejected here — live sessions are delegated one task at a time so the human is never swamped.
@@ -193,7 +193,7 @@ The old run stops blocking delegate-eligibility, but its logs and notes remain.
 For serving runs, the `serves` edge moves to the successor, so later serving-run selection sees the new attempt.
 If a task somehow has more than one failed serving run, retry fails loudly listing the candidate run ids rather than picking one.
 When the contract was the problem, fix the body **first** (`strand update <task-id> --attr body=:payload/<name> --payload <name>=<path>`).
-Given a **raw run id**: same supersede-and-respawn, preserving the served target, spawned-by provenance, `depends-on` edges, cwd, max-attempts, and the panel/review structural attrs (`agent-run/panel-seat`, `agent-run/panel-turn`, `agent-run/review-*`).
+Given a **raw run id**: same supersede-and-respawn, preserving the served target, spawned-by provenance, `depends-on` edges, cwd, max-attempts, and the panel/review structural attrs (`panel/seat`, `panel/turn`, `panel/blackboard`, `panel/pass`, `panel/synthesis`, `review/roster`, `review/focus`).
 A recovered seat stays queryable from run attrs, and a retried helper still carries no `serves` edge. A failed interactive run retries as a fresh session on the same backend.
 Fails loudly if the target has no failed/exhausted run to supersede.
 - **`--fresh` and session continuity.** A **resumed** run (one continuing a predecessor's session, see [§6](#6-panels-presets-and-the-composition-layer)) re-resumes that same session by default. `--fresh` severs the linkage and respawns cold on the run's full-brief prompt — a fresh process can never take the short continuation form. A plain retry of a run whose failure is **resume-classed** (`agent-run/error-class "resume"`, i.e. the session was lost) fails loudly instructing `--fresh`, so recovery never loops against a dead session.
@@ -228,23 +228,23 @@ agent notes <strand-id> [--round n]
 → `[{"id","note","at","by"?,"round"?}]`
 
 ```
-agent review <target-id> [--roster name | --members n --harness a,b --contract text]
+agent review <target-id> [--roster name | --seats n --harness a,b --contract text]
                          [--cwd dir] [--commit-range range] [--changed-files a,b]
-                         [--synthesize] [--spawned-by <run-id>] [--max-concurrent K]
+                         [--synthesize] [--spawned-by <run-id>] [--fanout-cap K]
 ```
 Spawn independent read-only reviewers of the target strand **and its subtree** — reviewing a plan root reviews the whole feature.
 A kanban card is never a valid target and fails loudly: findings append as notes on the target, and card notes stay lean for handover, so point the review at the card's task tracking the work (`strand kanban task list <card>`, `strand kanban task add <card> <title>`).
 Reviewer and synthesizer runs carry no `serves` edge: they hang under the target but never gate a later `delegate` of it, so a target can be reviewed before or after it is delegated.
 Each reviewer reads the strand contract(s) plus repository state at `--cwd` (default: workspace root; pass the worktree where the diff lives) and appends findings as notes on the target.
-`--members` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract.
+`--seats` defaults to 2; `--harness` is a comma-separated list cycled across reviewers (default `claude`); `--contract` overrides the workspace default review contract.
 `--synthesize` adds a synthesizer run that depends on all reviewers; its `result` is the verdict (await it), with raw findings in the target's notes.
-`--max-concurrent K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) across the reviewers and synthesizer, so the agent-run window admits at most `min(W, K)` of the review's runs at once (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)).
+`--fanout-cap K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) across the reviewers and synthesizer, so the agent-run window admits at most `min(W, K)` of the review's runs at once (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)).
 `--commit-range <range>` (e.g. `main..HEAD`) names the **diff surface**: its changed files are expanded via `git -C <cwd> diff --name-only <range>` and injected into every reviewer prompt as the authoritative diff surface, so reviewers stop re-deriving the diff.
 `--changed-files a,b` overrides the file list explicitly (csv).
 A `--commit-range` with no `--cwd` to expand it, or one git cannot expand at `--cwd`, fails loudly — a range is never injected without its resolved file list.
 The synthesizer never receives the change context — it weighs notes, not the diff.
-`--roster <name>` fans out a **named declarative roster** instead (see [Reviewer rosters](#reviewer-rosters) below): one run per declared entry with its own precise contract and scope, always synthesized.
-The roster is the one authoritative source of reviewer count, harnesses, and contracts, so combining `--roster` with `--members`, `--harness`, or `--contract` fails loudly; unknown roster names fail loudly with the available names.
+`--roster <name>` fans out a **named declarative roster** instead (see [Reviewer rosters](#reviewer-rosters) below): one run per declared seat with its own precise brief and scope, always synthesized.
+The roster is the one authoritative source of reviewer count, harnesses, and contracts, so combining `--roster` with `--seats`, `--harness`, or `--contract` fails loudly; unknown roster names fail loudly with the available names.
 → `{"target","reviewers":["<run-id>"...],"synthesizer":"<run-id>"?}`
 
 ```
@@ -260,40 +260,40 @@ A roster turns "who reviews a change in this workspace" into declarative, git-re
 (require '[skein.spools.delegation :as agents])
 
 (agents/defroster! :change-review
-  {:reviewers [{:name "test-sleeps" :harness :explore
-                :contract "Hunt for sleeps and arbitrary timeouts in tests..."
-                :scope "test files and test helpers in the change"}
-               {:name "docs-drift" :harness :grunt
-                :contract "Check documentation and metadata coherence only..."}]
-   :synthesizer {:harness :review-gpt}})
+  {:seats [{:name "test-sleeps" :harness :explore
+            :brief "Hunt for sleeps and arbitrary timeouts in tests..."
+            :scope "test files and test helpers in the change"}
+           {:name "docs-drift" :harness :grunt
+            :brief "Check documentation and metadata coherence only..."}]
+   :synthesis {:harness :review-gpt}})
 ```
 
 Route reviewers by **waste-type, not call count**: `grunt` (sonnet) is the default for read-through seats — it does targeted git-diff and ranged reads rather than thrashing a whole namespace for a small window — while `explore` (haiku) is reserved for trivially greppable single-file concerns whose contract tells it to do one global diff sweep (haiku is ~0.25–0.3× sonnet's per-call cost, so a few extra greps there stay net-cheaper). Give each contract a per-concern **call budget** and, on lenses that overlap (fail-loudly / spec-shapes / correctness on the same defect), tell each to state its angle concisely; the synthesizer de-duplicates overlapping findings by root cause.
 
-Data shape, validated loudly at registration against the **`:skein.spools.delegation/roster`** clojure.spec (inspect it with `s/form`; the seam output below is likewise specced as `:skein.spools.delegation/review-specs`): each entry requires a unique `:name` (doubles as the run's review focus), a `:harness` (resolved against the agent-run registry at **review time**, not registration time, so roster files may load before config registers aliases), and a `:contract` — the reviewer's precise single-concern mandate, layered onto the workspace base review contract in the prompt. `:scope` is optional prompt-level confinement text. `:synthesizer` optionally overrides the synthesis run's harness (default: first reviewer's). Unknown keys fail loudly to catch typos (closed key sets and name uniqueness are checked beyond the spec, which is structurally open).
+Data shape, validated loudly at registration against the **`:skein.spools.delegation/roster`** clojure.spec (inspect it with `s/form`; the seam output below is likewise specced as `:skein.spools.delegation/review-specs`): a roster is the panel primitive's seat vector, so it speaks panel's seat vocabulary: each seat requires a unique `:name` (doubles as the run's review focus), a `:harness` (resolved against the agent-run registry at **review time**, not registration time, so roster files may load before config registers aliases), and a `:brief` — the reviewer's precise single-concern mandate, layered onto the workspace base review contract in the prompt. `:scope` is optional prompt-level confinement text. `:synthesis` optionally overrides the synthesis run's harness (default: first seat's). Unknown keys fail loudly to catch typos (closed key sets and name uniqueness are checked beyond the spec, which is structurally open).
 
-`agent review --roster <name>` spawns one read-only run per entry (stamped `agent-run/review-roster` for attribution) plus the synthesizer, which receives the base review contract — synthesis weighs findings roster-independently. In this repository the roster lives in `.skein/reviewers.clj`; keep yours near the root of your workspace config so the review policy is one obvious document.
+`agent review --roster <name>` spawns one read-only run per seat (stamped `review/roster` for attribution) plus the synthesizer, which receives the base review contract — synthesis weighs findings roster-independently. In this repository the roster lives in `.skein/reviewers.clj`; keep yours near the root of your workspace config so the review policy is one obvious document.
 
 **Composing rosters into workflows.** The verb is agent-run-native, but the prompt building is not verb-private: `skein.spools.delegation/roster-review-specs` returns the whole fan-out as plain, fully-built run specs, and `review!` itself spawns from them. A workflow author decorating a [workflow](../workflow.md) with roster review maps each spec onto a `:subagent` gate — `:harness`/`:prompt` onto the gate's `agent-run/harness`/`agent-run/prompt`, `:attrs` merged into the gate's attributes, and a synthesizer gate depending on every reviewer gate (the synthesis prompt is deliberately buildable before any run exists). Both paths share one prompt source, so roster contracts cannot drift between the verb and a composed workflow:
 
 ```clojure
 (agents/roster-review-specs :change-review {:target plan-id})
-;; => {:roster :change-review :target "..." :review-pass "change-review-1a2b3c4d"
+;; => {:roster :change-review :target "..." :pass "change-review-1a2b3c4d"
 ;;     :reviewers [{:name "test-sleeps" :harness :explore :prompt "..." :attrs {...}} ...]
 ;;     :synthesizer {:name "synthesis" :harness :review-gpt :prompt "..." :attrs {...}}}
 ```
 
 **Change context.** `roster-review-specs` (and `review!`'s `:change-context`) take an optional `:skein.spools.delegation/change-context` value — `{:commit-range "main..HEAD" :files ["a.clj" "b.clj"] :windows [{:path "a.clj" :lines "40-90"}]}` — that is injected into every reviewer prompt as the authoritative diff surface so reviewers read the changed files instead of re-deriving the diff. It is validated against its spec and fails loudly when malformed; the synthesizer never carries it. The `agent review` CLI builds this from `--commit-range`/`--changed-files`; trusted Clojure can also pass cheap code windows.
 
-Each specs call mints a `:review-pass` tag (override with `:review-id`): reviewers prefix their notes with it, the synthesizer filters on it, and every run/gate carries it as `agent-run/review-pass` — so repeated rounds on one target stay separable without run ids, which don't exist at workflow-definition time. The single-prompt-source property is test-enforced; the gate→subagent-executor mapping itself is deliberately untested here in phase 1 (the subagent executor owns gate consumption and fails loudly on a missing `agent-run/harness`/`agent-run/prompt`).
+Each specs call mints a `:pass` tag (override with `:review-id`): reviewers prefix their notes with it, the synthesizer filters on it, and every run/gate carries it as `panel/pass` — so repeated rounds on one target stay separable without run ids, which don't exist at workflow-definition time. The single-prompt-source property is test-enforced; the gate→subagent-executor mapping itself is deliberately untested here in phase 1 (the subagent executor owns gate consumption and fails loudly on a missing `agent-run/harness`/`agent-run/prompt`).
 
 **Parameterised and one-off rosters.** `roster-review-specs` (and `review!`'s `:roster`) accept an **inline roster value** — any map conforming to `:skein.spools.delegation/roster`, validated identically to `defroster!` input — labelled `:inline` in specs and run attributes. Because rosters are plain data, pour-time code can filter, augment, or construct one (e.g. guarantee at least one cross-vendor reviewer given the authoring harness) and hand it straight to the seam; register a computed variant under a name with `defroster!` when durable attribution matters. The CLI stays name-only (TEN-006: rich data does not ride the control surface).
 
 ```
-agent council --topic "..." [--members n] [--rounds n] [--harness name] [--synthesizer name]
-                            [--cwd dir] [--spawned-by <run-id>] [--max-concurrent K]
+agent council --topic "..." [--seats n] [--rounds n] [--harness name] [--synthesizer name]
+                            [--cwd dir] [--spawned-by <run-id>] [--fanout-cap K]
 ```
-Convene a fresh-blackboard **panel** (see [§6](#6-panels-presets-and-the-composition-layer)): `--members n` seats N identical agents on `--harness`, they deliberate over one shared council strand across `--rounds` turn-as-run barrier rows (default 2), then a synthesizer weighs the whole deliberation — await it for the verdict. Harness has **no default**: a council with no resolvable harness fails loudly, mirroring `delegate`. The synthesizer runs `--synthesizer` or the first seat's harness. The CLI is scalar-only; per-seat harness/brief (the `:seats` vector — e.g. a cross-vendor panel) is trusted-Clojure `council!`/`panel!` territory (TEN-006: rich data does not ride the control surface). `--max-concurrent K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) across the council's seats, so the agent-run window admits at most `min(W, K)` of them per turn (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)). → `{"council":"<strand-id>","turns":[["<run-id>"...]...],"synthesizer":"<run-id>"}`
+Convene a fresh-blackboard **panel** (see [§6](#6-panels-presets-and-the-composition-layer)): `--seats n` seats N identical agents on `--harness`, they deliberate over one shared council strand across `--rounds` turn-as-run barrier rows (default 2), then a synthesizer weighs the whole deliberation — await it for the verdict. Harness has **no default**: a council with no resolvable harness fails loudly, mirroring `delegate`. The synthesizer runs `--synthesizer` or the first seat's harness. The CLI is scalar-only; per-seat harness/brief (the `:seats` vector — e.g. a cross-vendor panel) is trusted-Clojure `council!`/`panel!` territory (TEN-006: rich data does not ride the control surface). `--fanout-cap K` stamps one shared fan-out group (`agent-run/fanout-group` plus `agent-run/fanout-cap` K) across the council's seats, so the agent-run window admits at most `min(W, K)` of them per turn (`W` is the workspace ceiling; see the [scheduling window](../agent-run/README.md#5-run-lifecycle)). → `{"blackboard":"<strand-id>","turns":[["<run-id>"...]...],"synthesizer":"<run-id>"}`
 
 ### Plan creation (weave pattern, not an agent verb)
 
@@ -372,18 +372,18 @@ A panel is plain data, validated loudly against the **`:skein.spools.delegation/
 
 `panel-specs` compiles a panel into fully-built run specs (output specced as **`:skein.spools.delegation/panel-specs`**); `panel!` spawns from them. Both apply the defaults above. `panel!` validates its option map against **`:skein.spools.delegation/panel-input`**.
 
-- **Turn-as-run.** Seat *s* on turn *r* is one run, stamped `agent-run/panel-seat`, `agent-run/panel-turn`, `agent-run/review-target`, and `agent-run/review-pass`, so the deliberation structure is queryable from *run* attributes (notes keep the existing `{:by :round}` + tag-in-text convention — no new note facets).
+- **Turn-as-run.** Seat *s* on turn *r* is one run, stamped `panel/seat`, `panel/turn`, `panel/blackboard`, and `panel/pass`, so the deliberation structure is queryable from *run* attributes. Seats post with their turn as the note's `--round`, so `agent notes <board> --round r` reads one round of the deliberation.
 - **Barriers.** Turn row *r* `depends-on` every seat's turn *r−1* run, so a round completes before the next opens.
 - **Blackboards.** `:target` (default) reads the supplied target strand via `show` — the review shape, single-round only (a target board hosts no peer
-  posts, so `:rounds > 1` on `:target` fails loudly; use `:fresh`). `:fresh` mints a new shared board strand (role `panel`) that seats post to
+  posts, so `:rounds > 1` on `:target` fails loudly; use `:fresh`). `:fresh` mints a new shared board strand, carrying the pass tag, that seats post to
   and read via `agent notes`; those posts are linked to the board by the `notes` relation.
 - **Continuity and both prompt forms.** Every turn *r>1* spec carries **both** a full-brief prompt (the whole brief, for a fresh process) and a short continuation `resume-prompt` (only the coordinates a resumed session can't infer). A seat defaults to `:continuity :fresh` — each turn is a fresh process on the full brief. `:continuity :resume` threads turn *r>1* onto the seat's previous-turn run via agent-run `:resume` (requiring a resume-declaring harness); because a session can't be resumed before it exists, `panel!` awaits the previous row to completion before spawning a resuming row, while `:fresh`-continuity rounds spawn upfront behind their barriers. A resuming run stamps its full-brief form as `agent-run/fresh-prompt`, which is exactly what `agent retry --fresh` cold-starts from.
-- **Pass tags.** Each compile mints a `:review-pass` tag (override with `:review-id`), stamped `agent-run/review-pass` on every run, so repeated passes on one board stay separable without run ids — which don't exist at compile/pour time.
+- **Pass tags.** Each compile mints a `:pass` tag (override with `:review-id`), stamped `panel/pass` on every run, so repeated passes on one board stay separable without run ids — which don't exist at compile/pour time.
 
 ### The presets over the panel
 
-- **`review!` / rosters.** A single-round `:target` panel *is* the independent review shape; `roster->panel` converts a roster into exactly that panel. `review!` keeps its own spawn path (`roster-review-specs`, §3) so its established prompts and run attributes stay contractually frozen (the compatibility floor), while sharing the same internal blackboard-protocol fragments as the panel compiler — so the two cannot drift.
-- **`council!`.** Re-shipped as a `:fresh`-blackboard panel preset. `:members n` expands to N identical seats on a council-wide `:harness`; `:seats [{:name :harness? :brief?}]` gives per-seat harness/perspective (a cross-vendor council) and is mutually exclusive with `:members`. Harness has **no silent default** — a seat with neither its own nor a council-wide harness fails loudly, mirroring `delegate`. `:rounds` become turn-as-run barrier rows; the old poll-loop prompt choreography is gone (the panel compiler owns it). The option map is validated against **`:skein.spools.delegation/council-input`**.
+- **`review!` / rosters.** A single-round `:target` panel *is* the independent review shape; `roster->panel` converts a roster into exactly that panel — near-identity, since a roster is a panel's seat vector. `review!` keeps its own spawn path (`roster-review-specs`, §3) while sharing the same internal blackboard-protocol fragments as the panel compiler — so the two cannot drift.
+- **`council!`.** Re-shipped as a `:fresh`-blackboard panel preset. `:seat-count n` expands to N identical seats on a council-wide `:harness`; `:seats [{:name :harness? :brief?}]` gives per-seat harness/perspective (a cross-vendor council) and is mutually exclusive with `:seat-count` (the scalar takes the derived name because the `:seats` vector holds panel's noun). Harness has **no silent default** — a seat with neither its own nor a council-wide harness fails loudly, mirroring `delegate`. `:rounds` become turn-as-run barrier rows; the old poll-loop prompt choreography is gone (the panel compiler owns it). The option map is validated against **`:skein.spools.delegation/council-input`**.
 
 ### Subagent / workflow boundary
 

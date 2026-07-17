@@ -128,7 +128,7 @@ Honest source: the `:include` subset and its loud-failure behaviour verified aga
 **Why this shape.**
 
 - **Notes are the provenance channel.** Bobbin's notes section pulls strands
-  attached by the `notes` edge, ordered by `agent-run/at` then creation time, so a
+  attached by the `notes` edge, ordered by `note/at` then creation time, so a
   reviewer reads predecessors' handovers in the order they happened — the same
   notes an agent leaves with `agent note` (contract
   [§3, section meanings](./bobbin.md#3-surface)).

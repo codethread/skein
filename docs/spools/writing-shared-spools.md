@@ -103,6 +103,83 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    deletion instruction, not a stored `null` — `json_patch` drops that key from
    the map entirely. Omit a key you don't want to touch; only set it to `nil`
    when you deliberately mean "remove this attribute".
+8. **New names for new concepts; inherited names for inherited concepts.** A
+   spool builds on a primitive when it invokes it *or* reproduces its concept —
+   reimplementing a registry or lifecycle does not exempt its names. The
+   primitive may be another spool, a blessed `skein.api.*.alpha` namespace, or
+   a lower layer of your own spool that a preset wraps; in every case the
+   surface speaks the primitive's vocabulary exactly as published. That means
+   every name a consumer meets — function verbs, op subcommands, flag names,
+   return keys, option-map and spec keys, pattern input fields, attribute
+   keys, phase values, edge relation names — plus their defaults, types, and
+   arities (diverge from any of these under an inherited name only with loud
+   documentation at the key). The test for a genuinely new concept: describe
+   your thing in the primitive's documented vocabulary; if no new noun or
+   verb is needed, the name is inherited, and a synonym is a rebrand.
+   Layering is decided by who invokes or reproduces whom — never by doc
+   assertions or by which layer was written first. When the primitive itself
+   publishes synonyms for one concept, converge on the deepest layer's word:
+   a blessed `skein.api.*.alpha` name outranks a spool's, and a spool
+   primitive's outranks its preset's. When the canonical name is already
+   taken at your layer by a different shape, the concept keeps the canonical
+   name and the colliding shape takes a derived one. Wrapping a primitive
+   behind synonyms makes your spool a universe unto itself: nothing a reader
+   learned elsewhere transfers in, and nothing they learn from you transfers
+   out. An `acme/gate-sweeper` spool that drives workflow runs speaks
+   `start`/`next`/`advance`, reads and writes `workflow/*` keys, and coins a
+   name only for the sweeping policy the engine has no word for. Declare the
+   namespaces you own with `vocab/declare!` (see Namespace claims); write
+   inherited keys in the owner's namespace without declaring them. Bare
+   (un-namespaced) keys such as `body` are pre-existing cross-spool
+   convention, not a namespace to converge into: use them as found, and mint
+   no new ones. A concept unrelated to another spool's that happens to share
+   its noun is not inheritance — it is a reader trap; pick a different word.
+   When a surface converges on this rule the rename is a clean break
+   (TEN-000): durable attributes on closed strands stay as written — they are
+   memory, not authority — and a rename ships a cutover for active rows when
+   continuity needs it.
+
+### Applying the vocabulary rule
+
+- **Peers.** Spools with no invocation or reproduction relation between them
+  are peers: neither's word binds the other, and a peer synonym is evidence
+  of a shared miss, not precedent. A concept two peers share converges on the
+  word of the spool whose core purpose it is (lifecycle state is agent-run's;
+  board lanes are kanban's); when ownership is a wash, the surface every
+  world loads outranks opt-in peers. Dependency direction is depth: the
+  required spool's word wins over its requirer's. Two peers filling the same
+  extension point name their surfaces in parallel — `stalled-shell-gates`
+  beside `stalled-subagent-gates`, never one bare and one qualified.
+- **One concept, one name — including within your own spool.** The rule binds
+  a spool to itself: one concept carries one name across the whole surface
+  (attribute key, return key, function verb, prose), and a projection's
+  return key matches the attribute it projects. A second name for your own
+  concept is a rebrand even though nothing external is shadowed.
+- **The enumeration is illustrative, not exhaustive.** Ex-data keys,
+  error-code namespaces, event-type keywords, registry key spaces, and
+  public vars are all names a consumer meets. Private helpers are exempt
+  until one shadows a published name with different semantics or argument
+  order — the transfer argument protects the next author, not only the API
+  consumer.
+- **Inherit the bare verb.** Your Clojure namespace already carries the noun:
+  `events/register!`, never `register-handler!`; and a member name never
+  repeats its own namespace's noun. Mint keywords only into namespaces you
+  own — a spool that writes no attributes still squats when it coins an
+  event type or return value in someone else's namespace.
+- **Loud documentation, defined.** A sanctioned divergence under an inherited
+  name is loud when the docstring (or flag doc) names the primitive and
+  states the delta — that reaches the generated API doc and the source
+  reader at once.
+- **Run the test token by token.** A surface can be a rebrand in its verb and
+  novel in its payload nouns. A composition of inherited operations earns a
+  coined verb when the composition is itself a concept consumers name
+  (`pour!`); a pass-through with defaults does not. And generic nouns
+  (`text`, `key`, `id`) shared across unrelated ops are traps only when the
+  two readings are plausibly confusable in one context.
+- **The free detection heuristic.** If your return keys, docstring, or
+  contract doc must use the primitive's word to explain your name — an
+  `activate!` that returns `{:installed true}` — the name is the thing
+  that's wrong.
 
 ## Namespace claims
 
@@ -204,25 +281,28 @@ means:
 ## CLI style
 
 The authoritative [discovery-tier contract](../reference.md#discovery-tiers-help-about-prime)
-applies to shared-spool CLIs. The naming guidance below is advisory. Apply it
-fix-on-touch when a surface changes for another reason. Do not rename a working
-surface only for consistency or add compatibility aliases for the old name.
+applies to shared-spool CLIs.
 
-- Choose verbs by role. For entity lifecycles, prefer `start`, `finish
-  --outcome`, `abort` only for real teardown, `status <id>`, and `list`. For
-  workflow steps, prefer `start`, `next`, `complete`, `choose`, and `status`.
-  For processes, prefer `spawn`, `kill`, `retry`, `await`, `logs`, and `ps`.
+- Verbs follow role, and a role a primitive already names is never renamed. For
+  entity lifecycles: `start`, `finish --outcome`, `abort` only for real
+  teardown, `status <id>`, and `list`. For workflow steps: `start`, `next`,
+  `complete`, `choose`, and `status`. For processes: `spawn`, `kill`, `retry`,
+  `await`, `logs`, and `ps`. An op that fronts one of these behaviors takes the
+  role's verb — a subcommand that reaches `workflow/advance!` is `next`, not a
+  domain synonym.
 - Use `--by` for attribution. Name attribute-stamping flags after the attribute:
   `--owner`, `--branch`, `--worktree`, and `--feature`. Prefer seconds-first,
   unit-suffixed durations such as `--timeout-secs`, and use `--outcome` for
   closing state.
-- Prefer `list` for live, filterable work. Use a plural noun such as `harnesses`,
-  `suites`, or `backends` for a fixed catalog.
+- Prefer `list` for live, filterable entities; `ps` already owns the live
+  process listing. Use a plural noun such as `harnesses`, `suites`, or
+  `backends` for a fixed catalog.
 - Prefer one op with declared subcommands for a cohesive multi-verb domain. Keep
   single-purpose projections and config-registered ops flat.
+- Renames are clean breaks (TEN-000): when a surface converges on this
+  vocabulary, the old name goes — no compatibility aliases.
 
-One rule is mandatory, and it is the sole MUST in this section: every
-text-bearing flag or positional MUST use the declared arg-spec parser so
+Every text-bearing flag or positional MUST use the declared arg-spec parser so
 whole-value `:stdin` and `:payload/<name>` references resolve.
 
 ## Publishing a shared spool with git distribution

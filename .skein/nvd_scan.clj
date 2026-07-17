@@ -170,7 +170,7 @@
           (close-issue! run-cmd number))))))
 
 (defn nvd-scan-tick
-  "cron `:run!`: run one NVD deep scan with the real gh, login-shell, and kanban
+  "cron `:handler`: run one NVD deep scan with the real gh, login-shell, and kanban
   seams. `runtime` scopes the kanban card write so it lands in the right world."
   [runtime]
   (run-nvd-scan! {:run-cmd run-command
@@ -190,7 +190,7 @@
                              {:id :nvd-scan
                               :interval-ms nvd-scan-interval-ms
                               :jitter-ms nvd-scan-jitter-ms
-                              :run! 'nvd-scan/nvd-scan-tick})})
+                              :handler 'nvd-scan/nvd-scan-tick})})
 
 (defn install!
   "Register the scheduled NVD deep-scan cron job."

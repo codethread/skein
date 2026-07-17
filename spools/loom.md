@@ -48,7 +48,6 @@ Every function is **read-only** and composes the public `skein.api.graph.alpha` 
 
 | Fn | Behavior |
 |---|---|
-| `(summarize strand)` | Compact strand shape `{:id :title :state :attributes}`. |
 | `(work-dags rt)` | `{:roots :dags}` — every active parent-of root with its hierarchy edges, internal depends-on edges, and compact strand rows. |
 | `(branch-views rt opts)` | Vector of `{:branch :roots}` grouped by branch attribute, sorted by branch name. |
 | `(flow-status rt run-id)` | Read-only workflow flow-status join (see below). |
@@ -73,12 +72,21 @@ Every function is **read-only** and composes the public `skein.api.graph.alpha` 
 `flow-status` returns a JSON-compatible map with:
 
 - `:run-id`, `:history`, `:frontier`, `:done` — from the workflow run.
-- `:gates` — compact subagent-gate projections joined to their delegated agent-run runs, each
-  with `:stalled?` and (when stalled) a `:stall/reason` of `"spawn-error"` or
-  `"agent-failure"`.
+- `:gates` — compact subagent-gate projections, each with `:run` (the id of the
+  gate's current serving run, resolved by `skein.spools.agent-run/runs-serving`),
+  `:run-view` (that run's compact projection), and `:stalled?`. A stalled gate
+  carries the subagent executor's own `gate-stalled?` detail keys: `:error` when
+  spawn failed onto a non-blank `gate/error`, `:phase` when the serving run is
+  dead. Both are present when a gate that errored on spawn also has a dead run.
 - `:stalled-gates`, `:agent-failures` — compact summaries scoped to **this run's
   own** gates and delegated runs, so records from other workflows never leak into
-  an unrelated run's payload.
+  an unrelated run's payload. `:stalled-gates` membership is not loom's own rule:
+  it lists with the subagent executor's `stalled-gates-query` definition — the
+  same definition `install!` registers as the `stalled-subagent-gates` query — so
+  a gate is a member when it is active, gated `subagent`, and either its
+  `gate/error` is non-blank or its current serving run is dead
+  (`failed`/`exhausted`). Sharing the definition rather than the registered name
+  keeps flow-status readable on runtimes where the executor is not installed.
 - `:dev/mermaid` — the gate chain rendered by `gate-chain-mermaid`.
 
 ## 4. See also

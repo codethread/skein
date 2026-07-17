@@ -50,8 +50,8 @@ Harnesses are data-first launcher definitions registered in trusted Clojure; ali
 
 | Fn | Behavior |
 |---|---|
-| `(defharness! name def)` | Register a concrete harness. `def` requires `:argv` and may include `:parse`, `:prompt-via`, `:preamble?`, `:env`, `:cwd`, `:doc`, `:cost-rates` (rate card — see [§3.2](#32-cost-rate-cards-cost-rates)), `:resume` (session continuation splice — see [§3.1](#31-session-continuation-resume)), and `:capture` (interactive transcript capture — see [§4.1](#41-transcript-capture)). |
-| `(defalias! name def)` | Register an alias over a harness or another alias. Alias defs require `:alias-of` and may add `:extra-args`, `:prompt-prefix`, `:doc`, and `:cost-rates` (a seat-level rate card that overrides the tool's). |
+| `(register-harness! name def)` | Register a concrete harness. `def` requires `:argv` and may include `:parse`, `:prompt-via`, `:preamble?`, `:env`, `:cwd`, `:doc`, `:cost-rates` (rate card — see [§3.2](#32-cost-rate-cards-cost-rates)), `:resume` (session continuation splice — see [§3.1](#31-session-continuation-resume)), and `:capture` (interactive transcript capture — see [§4.1](#41-transcript-capture)). |
+| `(register-alias! name def)` | Register an alias over a harness or another alias. Alias defs require `:alias-of` and may add `:extra-args`, `:prompt-prefix`, `:doc`, and `:cost-rates` (a seat-level rate card that overrides the tool's). |
 | `(resolve-harness name)` | Return the effective harness after flattening aliases; alias cycles fail loudly. |
 | `(harnesses)` | Return registered harness and alias metadata ordered by name. |
 | `(register-default-harnesses!)` | Register shipped `claude`, `pi`, and `sh` harnesses without replacing existing entries. |
@@ -72,13 +72,13 @@ migrates entries by shape: definitions with `:alias-of` become aliases,
 definitions with `:argv` become harnesses, and malformed entries fail the
 migration rather than guessing.
 
-`:prompt-via` controls how a headless run's worker prompt reaches the process — `:stdin` (piped to the process's standard input) or `:arg` (appended as the final argv token, the default). **The shipped `:claude` and `:pi` harnesses default to `:stdin`** because `-p` mode on both reads the prompt from stdin: an argv-delivered prompt is exposed in `ps` and, worse, lands in the blast radius of any `pkill -f` pattern kill that happens to match quoted prompt text (a pattern kill matching prompt text once strafed sibling agent processes). Keep the argv shape declarative per harness — a harness whose CLI cannot read the prompt from stdin (e.g. `sh -c`, whose script is a required positional argument) stays `:arg`. Interactive runs always use `:arg`: stdin belongs to the live session, so a `:stdin` harness is rejected on the interactive path. `defharness!` rejects any `:prompt-via` other than `:arg` or `:stdin` at registration — a typo fails loudly rather than silently falling back to the less-safe argv delivery.
+`:prompt-via` controls how a headless run's worker prompt reaches the process — `:stdin` (piped to the process's standard input) or `:arg` (appended as the final argv token, the default). **The shipped `:claude` and `:pi` harnesses default to `:stdin`** because `-p` mode on both reads the prompt from stdin: an argv-delivered prompt is exposed in `ps` and, worse, lands in the blast radius of any `pkill -f` pattern kill that happens to match quoted prompt text (a pattern kill matching prompt text once strafed sibling agent processes). Keep the argv shape declarative per harness — a harness whose CLI cannot read the prompt from stdin (e.g. `sh -c`, whose script is a required positional argument) stays `:arg`. Interactive runs always use `:arg`: stdin belongs to the live session, so a `:stdin` harness is rejected on the interactive path. `register-harness!` rejects any `:prompt-via` other than `:arg` or `:stdin` at registration — a typo fails loudly rather than silently falling back to the less-safe argv delivery.
 
-Because a harness is plain data, swapping the underlying provider for a whole workspace is a single `defharness!`/`defalias!` line — this is the seam the delegation spool builds its cross-harness subagent surface on.
+Because a harness is plain data, swapping the underlying provider for a whole workspace is a single `register-harness!`/`register-alias!` line — this is the seam the delegation spool builds its cross-harness subagent surface on.
 
 ### 3.1 Session continuation (`:resume`)
 
-A harness may declare a `:resume` splice: a non-empty vector of literal argv strings interleaved with placeholder keywords drawn from a closed input set (currently `:agent-run/session-id`). A typo'd placeholder fails loudly at `defharness!` time rather than resolving to `nil`. Spawning a run with `:resume <predecessor-run-id>` continues that predecessor's harness session — the engine stamps `agent-run/resumes <predecessor-id>` on the new run plus a `resumes` annotation edge, and at launch resolves each placeholder from the predecessor's captured attributes and splices the result into the argv **before** the prompt (so the session flag precedes the turn text). The shipped `:claude` and `:pi` defs declare a resume splice and capture `agent-run/session-id` by default (via `:claude-json` / `:pi-json`); a harness with no `:resume` splice stays first-class and simply cannot be resumed.
+A harness may declare a `:resume` splice: a non-empty vector of literal argv strings interleaved with placeholder keywords drawn from a closed input set (currently `:agent-run/session-id`). A typo'd placeholder fails loudly at `register-harness!` time rather than resolving to `nil`. Spawning a run with `:resume <predecessor-run-id>` continues that predecessor's harness session — the engine stamps `agent-run/resumes <predecessor-id>` on the new run plus a `resumes` annotation edge, and at launch resolves each placeholder from the predecessor's captured attributes and splices the result into the argv **before** the prompt (so the session flag precedes the turn text). The shipped `:claude` and `:pi` defs declare a resume splice and capture `agent-run/session-id` by default (via `:claude-json` / `:pi-json`); a harness with no `:resume` splice stays first-class and simply cannot be resumed.
 
 Resume fails loudly (TEN-003), never silently, and every resume-classed failure stamps `agent-run/error-class "resume"` so recovery can branch deliberately:
 
@@ -94,7 +94,7 @@ These invariants are enforced both at `spawn-run!` time and again at the launch 
 
 ### 3.2 Cost rate cards (`:cost-rates`)
 
-Some harnesses report token usage but no dollar cost — `:codex-json` is the case in point (codex runs on subscription auth and never emits a price). For these, a harness or alias may declare a **rate card** `:cost-rates {:input <usd-per-1M-uncached> :cache-read <usd-per-1M-cached> :output <usd-per-1M-output>}`. At completion, when a parser yields usage without cost and the seat declares a card, the engine derives `agent-run/cost-usd` from the token split (USD per 1M tokens over the run's `:input`/`:cache-read`/`:output` dimensions). The key set is closed, so a typo'd rate fails at `defharness!`/`defalias!` time rather than pricing that dimension at zero.
+Some harnesses report token usage but no dollar cost — `:codex-json` is the case in point (codex runs on subscription auth and never emits a price). For these, a harness or alias may declare a **rate card** `:cost-rates {:input <usd-per-1M-uncached> :cache-read <usd-per-1M-cached> :output <usd-per-1M-output>}`. At completion, when a parser yields usage without cost and the seat declares a card, the engine derives `agent-run/cost-usd` from the token split (USD per 1M tokens over the run's `:input`/`:cache-read`/`:output` dimensions). The key set is closed, so a typo'd rate fails at `register-harness!`/`register-alias!` time rather than pricing that dimension at zero.
 
 The card is optional on purpose: **absence is contract.** When no rates are declared, cost stays absent — recorded tokens without cost beat a guessed number, and the sums in `strand agent spend` skip the absent figure rather than reading a fake zero. A parser that reports its own dollar cost (`:claude-json`, `:pi-json`) is never overridden by a card. The `usage-source` is left as the parser set it (`"codex-json"`), so a card-derived cost stays distinguishable from a provider-reported one. Because the *seat* is where a model is chosen (`-m` / `--model` in `:extra-args`), an alias-level card overrides the tool's own card — per-model pricing lives on the alias.
 
@@ -104,15 +104,15 @@ Backends are the pluggable multiplexer seam for interactive runs, registered in 
 
 | Fn | Behavior |
 |---|---|
-| `(defbackend! name def)` | Register a backend. `def` requires `:start`, `:alive`, and `:stop` argv vectors; optional `:capture` (scrollback forensics before teardown), `:attach` (display-only human hint, never executed), and `:doc`. |
+| `(register-backend! name def)` | Register a backend. `def` requires `:start`, `:alive`, and `:stop` argv vectors; optional `:capture` (scrollback forensics before teardown), `:attach` (display-only human hint, never executed), and `:doc`. |
 | `(resolve-backend name)` | Return the registered backend def; missing backends fail loudly. |
 | `(backends)` | Return registered backend metadata ordered by name. |
 | `(register-default-backends!)` | Register the shipped `tmux` backend without replacing existing entries. |
 
-Argv tokens are keyword **splice points**, not string templates — zero parsing, no clash with tmux's own `#{...}` format syntax, and validated statically at `defbackend!` time. Bare keywords are engine inputs (`:session` the suggested session name, `:cwd`, `:command` the launcher script path, `:run-id`; `:start` only, except `:run-id`); `:handle/<key>` keywords look up the run's stored handle. The shipped default:
+Argv tokens are keyword **splice points**, not string templates — zero parsing, no clash with tmux's own `#{...}` format syntax, and validated statically at `register-backend!` time. Bare keywords are engine inputs (`:session` the suggested session name, `:cwd`, `:command` the launcher script path, `:run-id`; `:start` only, except `:run-id`); `:handle/<key>` keywords look up the run's stored handle. The shipped default:
 
 ```clojure
-(defbackend! :tmux
+(register-backend! :tmux
   {:start  ["tmux" "new-session" "-d" "-s" :session "-c" :cwd
             "-P" "-F" "{\"session\":\"#{session_name}\",\"pane\":\"#{pane_id}\"}"
             :command]
@@ -135,7 +135,7 @@ Capture is a resolvable seam, not a fixed behavior: **a harness `:capture` op wi
 Harness capture is how harness-aware transcript sources plug in. Correlation is the engine's job and already done: every session's launcher exports `SKEIN_RUN_ID`, so session-start hooks can key their logs by run id. Example for a hook-written dialogue log:
 
 ```clojure
-(defharness! :claude-hitl
+(register-harness! :claude-hitl
   {:argv ["claude" "--dangerously-skip-permissions"]
    ;; a SessionStart hook symlinks its dialogue log to <state>/claude-dialogue/by-run/$SKEIN_RUN_ID.jsonl
    :capture ["sh" "-c" "cat \"${XDG_STATE_HOME:-$HOME/.local/state}/claude-dialogue/by-run/$1.jsonl\"" "capture" :run-id]})
@@ -170,7 +170,7 @@ A concurrency window layers back-pressure over readiness at run start without be
 
 An interactive run's completion signal is graph state, not process exit:
 
-- **claim** (`:parent` given, recorded as `agent-run/for`): the run serves that strand. The injected preamble instructs the agent to note, say goodbye, then close the served strand as its literal last action; the engine reaps the session when that strand closes. Completion wins races — supervision checks graph completion before and after the liveness probe, so an agent that closes its target and exits in the same instant is `done`, not `failed`.
+- **claim** (`:parent` given, recorded as `agent-run/completes-on`): the run serves that strand. The injected preamble instructs the agent to note, say goodbye, then close the served strand as its literal last action; the engine reaps the session when that strand closes. Completion wins races — supervision checks graph completion before and after the liveness probe, so an agent that closes its target and exits in the same instant is `done`, not `failed`.
 - **manual-close** (no `:parent`): the session ends when its own run strand is closed.
 - **reap policy**: `auto` (default) captures the transcript (see [§4.1](#41-transcript-capture); path recorded in `agent-run/log`) and stops the session on completion; `manual` marks the run done but leaves the session to the human. Teardown failure is recorded loudly in `agent-run/teardown-error` but never blocks completion.
 - **dead sessions**: a session that dies before its work completes (user closes the pane, agent crashes) marks the run `failed` loudly. There is no auto-respawn — restarting an interactive session would silently discard a human conversation; recovery is a deliberate retry.
@@ -189,8 +189,8 @@ keeps a recon run, reviewer, or panel seat under a task without making it the ta
 delegation.
 
 Interactive completion is separate. A claim-completion interactive run still records its completion
-target in `agent-run/for` and completes when that strand closes. A run may also carry a `serves`
-edge when the caller wants it to be the current serving run for that target, but `agent-run/for`
+target in `agent-run/completes-on` and completes when that strand closes. A run may also carry a `serves`
+edge when the caller wants it to be the current serving run for that target, but `agent-run/completes-on`
 remains the session-reap signal.
 
 `supersede-and-respawn!` is the engine's succession primitive. It creates a fresh successor and
@@ -271,8 +271,8 @@ Interactive runs get their own preamble variant carrying the completion contract
 | `agent-run/fanout-cap` | Optional per-group concurrency request K stamped alongside `fanout-group`; the window admits the group up to `min(W, K)`, never past the workspace ceiling `W`. |
 | `agent-run/mode` | `interactive` marks a session run; absent means headless. |
 | `agent-run/backend` | Backend name for an interactive run. |
-| `agent-run/completion` | `claim` (completes when `agent-run/for` closes) or `manual-close` (completes when the run strand is closed). |
-| `agent-run/for` | The strand a claim-completion interactive run serves. |
+| `agent-run/completion` | `claim` (completes when `agent-run/completes-on` closes) or `manual-close` (completes when the run strand is closed). |
+| `agent-run/completes-on` | The strand a claim-completion interactive run serves. |
 | `agent-run/reap` | `auto` (default) or `manual` session teardown policy on completion. |
 | `agent-run/session` | Workspace-namespaced suggested session name; the probe/cleanup anchor when a crash predates the handle write. |
 | `agent-run/handle.<key>` | Durable backend handle entries returned by `:start` (e.g. `handle.session`, `handle.pane`). |

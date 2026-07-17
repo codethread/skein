@@ -64,19 +64,19 @@
       (shuttle/register-default-harnesses!)
       (testing "definition validation fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"argv"
-                              (shuttle/defharness! :bad {:argv []})))
+                              (shuttle/register-harness! :bad {:argv []})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (shuttle/defharness! :bad {:argv ["x"] :nope 1})))
+                              (shuttle/register-harness! :bad {:argv ["x"] :nope 1})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"parse"
-                              (shuttle/defharness! :bad {:argv ["x"] :parse :yaml})))
+                              (shuttle/register-harness! :bad {:argv ["x"] :parse :yaml})))
         ;; an invalid :prompt-via must fail at registration, not silently fall
         ;; back to argv delivery and re-expose the prompt on the command line
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"prompt-via"
-                              (shuttle/defharness! :bad {:argv ["x"] :prompt-via :std-in}))))
+                              (shuttle/register-harness! :bad {:argv ["x"] :prompt-via :std-in}))))
       (testing "alias layering flattens onto the base harness"
-        (shuttle/defharness! :base {:argv ["tool" "-p"] :parse :raw :doc "Base tool surface."})
-        (shuttle/defalias! :fast {:alias-of :base :extra-args ["--model" "fast"] :doc "Fast seat."})
-        (shuttle/defalias! :fast-reviewer {:alias-of :fast :prompt-prefix "Review: "})
+        (shuttle/register-harness! :base {:argv ["tool" "-p"] :parse :raw :doc "Base tool surface."})
+        (shuttle/register-alias! :fast {:alias-of :base :extra-args ["--model" "fast"] :doc "Fast seat."})
+        (shuttle/register-alias! :fast-reviewer {:alias-of :fast :prompt-prefix "Review: "})
         (let [effective (shuttle/resolve-harness :fast-reviewer)]
           (is (= ["tool" "-p"] (:argv effective)))
           (is (= ["--model" "fast"] (:extra-args effective)))
@@ -84,17 +84,17 @@
       (testing "a seat-level rate card overrides the tool's default card"
         ;; a codex seat picks the model, so per-model pricing lives on the seat
         ;; and must win over the tool's base card; a seat with none inherits it.
-        (shuttle/defharness! :priced {:argv ["tool"] :parse :codex-json
-                                      :cost-rates {:input 1.25 :output 10.0}})
-        (shuttle/defalias! :priced-cheap {:alias-of :priced
-                                          :cost-rates {:input 0.25 :output 2.0}})
-        (shuttle/defalias! :priced-default {:alias-of :priced})
+        (shuttle/register-harness! :priced {:argv ["tool"] :parse :codex-json
+                                            :cost-rates {:input 1.25 :output 10.0}})
+        (shuttle/register-alias! :priced-cheap {:alias-of :priced
+                                                :cost-rates {:input 0.25 :output 2.0}})
+        (shuttle/register-alias! :priced-default {:alias-of :priced})
         (is (= {:input 0.25 :output 2.0} (:cost-rates (shuttle/resolve-harness :priced-cheap)))
             "the seat's card wins over the tool's")
         (is (= {:input 1.25 :output 10.0} (:cost-rates (shuttle/resolve-harness :priced-default)))
             "a seat with no card inherits the tool's")
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cost-rates"
-                              (shuttle/defharness! :bad {:argv ["x"] :cost-rates {:inputs 1.0}}))
+                              (shuttle/register-harness! :bad {:argv ["x"] :cost-rates {:inputs 1.0}}))
             "a typo'd rate key fails at registration rather than going unpriced"))
       (testing "the listing shows alias and root-harness docs together"
         (let [by-name (into {} (map (juxt :name identity)) (shuttle/harnesses))
@@ -110,7 +110,7 @@
       (testing "a same-named seat shadows the tool alias-first and terminates at it"
         ;; register a seat carrying the tool's own name: resolution must walk the
         ;; alias hop first, then fall to the harness registry that shares the name
-        (shuttle/defalias! :pi {:alias-of :pi :extra-args ["--agent" "main"] :doc "pi worker seat."})
+        (shuttle/register-alias! :pi {:alias-of :pi :extra-args ["--agent" "main"] :doc "pi worker seat."})
         (let [effective (shuttle/resolve-harness :pi)]
           (is (= ["pi" "-p" "--mode" "json"] (:argv effective)) "terminates at the pi tool's argv")
           (is (= ["--agent" "main"] (:extra-args effective)) "the seat's extra args are applied")))
@@ -129,8 +129,8 @@
           (is (= "pi worker seat." (:doc (get by-kind "alias"))))
           (is (string? (:harness-doc (get by-kind "alias"))))))
       (testing "alias cycles fail loudly with a distinct, non-not-found error"
-        (shuttle/defalias! :a {:alias-of :b})
-        (shuttle/defalias! :b {:alias-of :a})
+        (shuttle/register-alias! :a {:alias-of :b})
+        (shuttle/register-alias! :b {:alias-of :a})
         (try
           (shuttle/resolve-harness :a)
           (is false "an alias cycle should throw")
@@ -182,7 +182,7 @@
       (testing "a :prompt-via :stdin run pipes the prompt to the process and completes"
         ;; `sh` with no args reads its script from stdin, so the prompt is
         ;; delivered entirely off-argv while still driving the process.
-        (shuttle/defharness! :sh-stdin {:argv ["sh"] :prompt-via :stdin :preamble? false})
+        (shuttle/register-harness! :sh-stdin {:argv ["sh"] :prompt-via :stdin :preamble? false})
         (let [run (shuttle/spawn-run! {:harness :sh-stdin :prompt "echo hello-stdin"})
               done (await-phase rt (:id run) #{"done"})]
           (is (= "closed" (:state done)))
@@ -420,7 +420,7 @@
           (is (= "pending" (get-in deferred [:attributes :agent-run/phase])))
           (is (some? (get-in deferred [:attributes :agent-run/recovered-at])))
           (is (= 1 (get-in deferred [:attributes :agent-run/attempt]))))
-        (shuttle/defalias! :late-sh {:alias-of :sh})
+        (shuttle/register-alias! :late-sh {:alias-of :sh})
         (shuttle/scan!)
         (let [done (await-phase rt (:id orphan) #{"done"})]
           (is (= "closed" (:state done)))
@@ -502,7 +502,7 @@
   "Spawn a long-lived fake-mux run and wait for its session handle; returns
   {:run <strand> :pid <handle pid>}."
   [rt & [opts]]
-  (shuttle/defbackend! :fake-mux fake-mux)
+  (shuttle/register-backend! :fake-mux fake-mux)
   (let [run (shuttle/spawn-run! (merge {:harness :sh :prompt "sleep 300"
                                         :mode :interactive :backend :fake-mux}
                                        opts))
@@ -516,16 +516,16 @@
     (fn [_rt]
       (testing "required ops and unknown keys fail loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing required op"
-                              (shuttle/defbackend! :bad {:start ["x"]})))
+                              (shuttle/register-backend! :bad {:start ["x"]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
-                              (shuttle/defbackend! :bad (assoc fake-mux :nope ["x"])))))
+                              (shuttle/register-backend! :bad (assoc fake-mux :nope ["x"])))))
       (testing "argv token namespaces are validated statically"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cannot reference handle"
-                              (shuttle/defbackend! :bad (assoc fake-mux :start ["x" :handle/session]))))
+                              (shuttle/register-backend! :bad (assoc fake-mux :start ["x" :handle/session]))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not an available input"
-                              (shuttle/defbackend! :bad (assoc fake-mux :alive ["x" :cwd]))))
+                              (shuttle/register-backend! :bad (assoc fake-mux :alive ["x" :cwd]))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown namespace"
-                              (shuttle/defbackend! :bad (assoc fake-mux :stop ["x" :nope/what])))))
+                              (shuttle/register-backend! :bad (assoc fake-mux :stop ["x" :nope/what])))))
       (testing "missing backends fail loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Backend not found"
                               (shuttle/resolve-backend :absent-backend)))))))
@@ -533,7 +533,7 @@
 (deftest spawn-validates-interactive-options
   (with-shuttle
     (fn [_rt]
-      (shuttle/defbackend! :fake-mux fake-mux)
+      (shuttle/register-backend! :fake-mux fake-mux)
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require :backend"
                             (shuttle/spawn-run! {:harness :sh :prompt "x" :mode :interactive})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"apply only to interactive"
@@ -551,7 +551,7 @@
       (let [target (weaver/add rt {:title "hitl task"})
             {:keys [run pid]} (spawn-interactive! rt {:parent (:id target)})]
         (is (= "claim" (get-in run [:attributes :agent-run/completion])))
-        (is (= (:id target) (get-in run [:attributes :agent-run/for])))
+        (is (= (:id target) (get-in run [:attributes :agent-run/completes-on])))
         (is (str/starts-with? (get-in run [:attributes :agent-run/session]) "skein-"))
         (testing "summary carries interactive fields"
           (let [summary (shuttle/run-summary (weaver/show rt (:id run)))]
@@ -617,14 +617,14 @@
 (deftest harness-capture-overrides-backend-scrollback
   (with-shuttle
     (fn [rt]
-      (shuttle/defbackend! :fake-mux fake-mux)
+      (shuttle/register-backend! :fake-mux fake-mux)
       ;; a harness-aware capture source (stands in for hook-written dialogue
       ;; logs) keyed by the run id the engine exports as SKEIN_RUN_ID
       ;; the harness sets a default cwd: capture must receive that effective
       ;; launch cwd, not the workspace root
-      (shuttle/defharness! :sh-hooked
-        {:argv ["sh" "-c"] :preamble? false :cwd "/tmp"
-         :capture ["sh" "-c" "printf 'dialogue log for %s in %s' \"$1\" \"$2\"" "hook-capture" :run-id :cwd]})
+      (shuttle/register-harness! :sh-hooked
+                                 {:argv ["sh" "-c"] :preamble? false :cwd "/tmp"
+                                  :capture ["sh" "-c" "printf 'dialogue log for %s in %s' \"$1\" \"$2\"" "hook-capture" :run-id :cwd]})
       (let [target (weaver/add rt {:title "captured task"})
             run (shuttle/spawn-run! {:harness :sh-hooked :prompt "sleep 300"
                                      :mode :interactive :backend :fake-mux
@@ -642,7 +642,7 @@
                 log (get-in done [:attributes :agent-run/log])]
             (is (str/starts-with? (slurp log) "dialogue log for"))))
         (testing "capture! fails loudly when nothing provides a capture op"
-          (shuttle/defbackend! :bare-mux (dissoc fake-mux :capture :attach))
+          (shuttle/register-backend! :bare-mux (dissoc fake-mux :capture :attach))
           (let [bare (shuttle/spawn-run! {:harness :sh :prompt "sleep 300"
                                           :mode :interactive :backend :bare-mux})]
             (await-attr rt (:id bare) (keyword "agent-run" "handle.pid"))
@@ -654,8 +654,8 @@
   (with-shuttle
     (fn [_rt]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not an available input"
-                            (shuttle/defharness! :bad-capture
-                              {:argv ["x"] :capture ["cat" :command]}))))))
+                            (shuttle/register-harness! :bad-capture
+                                                       {:argv ["x"] :capture ["cat" :command]}))))))
 
 (deftest kill-terminates-an-interactive-session
   (with-shuttle
@@ -697,15 +697,15 @@
       ;; :start launches a real detached process keyed by the suggested session
       ;; name but reports a garbage handle. The engine must stop what it
       ;; started (via the suggested-session fallback) before failing the run.
-      (shuttle/defbackend! :broken-mux
-        {:start ["sh" "-c" "nohup \"$1\" >/dev/null 2>&1 & echo \"$!\" > \"/tmp/$2.pid\"; printf 'not-a-json-handle'"
-                 "broken-mux" :command :session]
+      (shuttle/register-backend! :broken-mux
+                                 {:start ["sh" "-c" "nohup \"$1\" >/dev/null 2>&1 & echo \"$!\" > \"/tmp/$2.pid\"; printf 'not-a-json-handle'"
+                                          "broken-mux" :command :session]
          ;; not-yet-written pid file counts as alive: supervise! runs on the graph
          ;; event from the running-phase write, which lands before :start, and a
          ;; false dead-session there steals the teardown claim from the
          ;; malformed-handle failure this test is about
-         :alive ["sh" "-c" "[ ! -f \"/tmp/$1.pid\" ] || kill -0 \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]
-         :stop ["sh" "-c" "kill \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]})
+                                  :alive ["sh" "-c" "[ ! -f \"/tmp/$1.pid\" ] || kill -0 \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]
+                                  :stop ["sh" "-c" "kill \"$(cat \"/tmp/$1.pid\")\"" "broken-mux" :handle/session]})
       (let [run (shuttle/spawn-run! {:harness :sh :prompt "sleep 300"
                                      :mode :interactive :backend :broken-mux})
             failed (await-phase rt (:id run) #{"failed"})
@@ -765,23 +765,23 @@
     (is (= "sess-abc" (get-in done [:attributes :agent-run/session-id])))
     done))
 
-(deftest defharness-validates-resume-splice
+(deftest register-harness-validates-resume-splice
   (with-shuttle
     (fn [_rt]
       (testing "a well-formed splice registers"
-        (is (some? (shuttle/defharness! :session-echo session-echo))))
+        (is (some? (shuttle/register-harness! :session-echo session-echo))))
       (testing "unknown placeholder keywords fail loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not an available input"
-                              (shuttle/defharness! :bad-resume
-                                {:argv ["x"] :resume ["--resume" :shuttle/nope]}))))
+                              (shuttle/register-harness! :bad-resume
+                                                         {:argv ["x"] :resume ["--resume" :shuttle/nope]}))))
       (testing "an empty or non-vector splice fails loudly"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #":resume must be a non-empty vector"
-                              (shuttle/defharness! :bad-resume {:argv ["x"] :resume []})))))))
+                              (shuttle/register-harness! :bad-resume {:argv ["x"] :resume []})))))))
 
 (deftest resume-continues-a-captured-session
   (with-shuttle
     (fn [rt]
-      (shuttle/defharness! :session-echo session-echo)
+      (shuttle/register-harness! :session-echo session-echo)
       (let [pred (captured-predecessor rt)
             resumer (shuttle/spawn-run! {:harness :session-echo :prompt "continue"
                                          :resume (:id pred)})]
@@ -796,7 +796,7 @@
 (deftest resume-with-no-opt-is-behavior-identical
   (with-shuttle
     (fn [rt]
-      (shuttle/defharness! :session-echo session-echo)
+      (shuttle/register-harness! :session-echo session-echo)
       (let [plain (await-phase rt (:id (shuttle/spawn-run! {:harness :session-echo :prompt "solo"}))
                                #{"done"})]
         (is (nil? (get-in plain [:attributes :agent-run/resumes])))
@@ -806,8 +806,8 @@
 (deftest resume-failure-matrix
   (with-shuttle
     (fn [rt]
-      (shuttle/defharness! :session-echo session-echo)
-      (shuttle/defbackend! :fake-mux fake-mux)
+      (shuttle/register-harness! :session-echo session-echo)
+      (shuttle/register-backend! :fake-mux fake-mux)
       (testing "a harness without a :resume splice is rejected"
         (let [pred (weaver/add rt {:title "sh-pred" :state "closed"
                                    :attributes {"agent-run/run" "true" "agent-run/harness" "sh"
@@ -848,7 +848,7 @@
 (deftest resume-launch-failure-is-classed-for-recovery
   (with-shuttle
     (fn [rt]
-      (shuttle/defharness! :session-echo session-echo)
+      (shuttle/register-harness! :session-echo session-echo)
       ;; a predecessor that lost its session between spawn and launch: handmade
       ;; so the resumer reaches launch, where resume resolution fails loud and
       ;; classed so recovery can branch to --fresh instead of retrying cold.
@@ -885,8 +885,8 @@
   ;; launch and must fail loudly, resume-classed for --fresh recovery.
   (with-shuttle
     (fn [rt]
-      (shuttle/defharness! :session-echo session-echo)
-      (shuttle/defbackend! :fake-mux fake-mux)
+      (shuttle/register-harness! :session-echo session-echo)
+      (shuttle/register-backend! :fake-mux fake-mux)
       (testing "a handmade interactive run carrying agent-run/resumes is rejected"
         (let [pred (captured-predecessor rt)
               run (weaver/add rt {:title "handmade-interactive-resume"
@@ -977,7 +977,7 @@
   (with-shuttle
     (fn [_rt]
       (let [preamble (#'shuttle/interactive-preamble
-                      {:id "run-1" :attributes {:agent-run/for "tgt-1"}})
+                      {:id "run-1" :attributes {:agent-run/completes-on "tgt-1"}})
             fragment (notes/writer-ref->prompt {:target "tgt-1" :by "run-1"})]
         (is (str/includes? preamble fragment)
             "the completion-contract note line renders through writer-ref->prompt")
@@ -1329,7 +1329,7 @@
       (testing "a :pi-json harness whose turn errors is failed, not closed done"
         ;; sh stands in for pi: exit 0 while the event stream reports the
         ;; provider failure — exactly the live usage-limit incident shape.
-        (shuttle/defharness! :sh-pi-err {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+        (shuttle/register-harness! :sh-pi-err {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
         (let [stream (str "printf '%s\\n' "
                           "'{\"type\":\"session\",\"id\":\"sess-err\"}' "
                           "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],"
@@ -1355,7 +1355,7 @@
     (fn [rt]
       ;; sh stands in for pi: exit 0 with a clean event stream carrying a
       ;; message_end usage delta and its nested cost.total.
-      (shuttle/defharness! :sh-pi-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (shuttle/register-harness! :sh-pi-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
       (let [stream (str "printf '%s\\n' "
                         "'{\"type\":\"session\",\"id\":\"sess-u\"}' "
                         "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\","
@@ -1377,7 +1377,7 @@
 (deftest claude-json-completing-run-records-usage-from-result-object
   (with-shuttle
     (fn [rt]
-      (shuttle/defharness! :sh-claude-usage {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
+      (shuttle/register-harness! :sh-claude-usage {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
       (let [obj (str "{\"result\":\"all done\",\"session_id\":\"sc\","
                      "\"total_cost_usd\":0.5,"
                      "\"usage\":{\"input_tokens\":100,\"output_tokens\":40,"
@@ -1399,7 +1399,7 @@
       ;; the highest-value runs to capture are exactly the usage-limit failures:
       ;; the turn errors (stopReason error) yet still reports the spend it made,
       ;; so mark-failed!'s extra map carries the usage onto the failed record.
-      (shuttle/defharness! :sh-pi-err-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (shuttle/register-harness! :sh-pi-err-usage {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
       (let [stream (str "printf '%s\\n' "
                         "'{\"type\":\"session\",\"id\":\"se\"}' "
                         "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[],"
@@ -1421,7 +1421,7 @@
       ;; result text, so the run is failed as a hollow done. The tokens it spent
       ;; must still land, exactly like the done and terminal-error branches — a
       ;; textless run that burned budget can't be invisible to `agent spend`.
-      (shuttle/defharness! :sh-pi-toolonly {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
+      (shuttle/register-harness! :sh-pi-toolonly {:argv ["sh" "-c"] :parse :pi-json :preamble? false})
       (let [stream (str "printf '%s\\n' "
                         "'{\"type\":\"session\",\"id\":\"st\"}' "
                         "'{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\","
@@ -1457,7 +1457,7 @@
     (fn [rt]
       ;; a claude result object that reports tokens but no total_cost_usd: the
       ;; cost dimension is absent, so the key is omitted — never a stored 0.
-      (shuttle/defharness! :sh-claude-nocost {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
+      (shuttle/register-harness! :sh-claude-nocost {:argv ["sh" "-c"] :parse :claude-json :preamble? false})
       (let [obj (str "{\"result\":\"done\",\"session_id\":\"sn\","
                      "\"usage\":{\"input_tokens\":100,\"output_tokens\":40}}")
             run (shuttle/spawn-run! {:harness :sh-claude-nocost :prompt (str "printf '%s' '" obj "'")})
@@ -1482,9 +1482,9 @@
     (fn [rt]
       ;; codex reports tokens but no dollar cost, so cost-usd is derived from the
       ;; seat's :cost-rates card over the token split.
-      (shuttle/defharness! :sh-codex-rated
-        {:argv ["sh" "-c"] :parse :codex-json :preamble? false
-         :cost-rates {:input 1.25 :cache-read 0.125 :output 10.0}})
+      (shuttle/register-harness! :sh-codex-rated
+                                 {:argv ["sh" "-c"] :parse :codex-json :preamble? false
+                                  :cost-rates {:input 1.25 :cache-read 0.125 :output 10.0}})
       (let [run (shuttle/spawn-run! {:harness :sh-codex-rated :prompt codex-stream})
             done (await-phase rt (:id run) #{"done"})
             attrs (:attributes done)]
@@ -1506,7 +1506,7 @@
     (fn [rt]
       ;; a token-only parse with no declared rate card leaves cost-usd absent —
       ;; recorded tokens without cost beat a guessed number.
-      (shuttle/defharness! :sh-codex-norate {:argv ["sh" "-c"] :parse :codex-json :preamble? false})
+      (shuttle/register-harness! :sh-codex-norate {:argv ["sh" "-c"] :parse :codex-json :preamble? false})
       (let [run (shuttle/spawn-run! {:harness :sh-codex-norate :prompt codex-stream})
             done (await-phase rt (:id run) #{"done"})
             attrs (:attributes done)]
@@ -1521,9 +1521,9 @@
     (fn [rt]
       ;; a codex stream that spends tokens but emits no agent_message is a hollow
       ;; done: the run is failed (loud, retryable) while its usage is preserved.
-      (shuttle/defharness! :sh-codex-noresult
-        {:argv ["sh" "-c"] :parse :codex-json :preamble? false
-         :cost-rates {:input 1.25 :output 10.0}})
+      (shuttle/register-harness! :sh-codex-noresult
+                                 {:argv ["sh" "-c"] :parse :codex-json :preamble? false
+                                  :cost-rates {:input 1.25 :output 10.0}})
       (let [stream (str "printf '%s\\n' "
                         "'{\"type\":\"thread.started\",\"thread_id\":\"codex-none\"}' "
                         "'{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":300,"

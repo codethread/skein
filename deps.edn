@@ -9,14 +9,17 @@
         org.slf4j/slf4j-nop {:mvn/version "1.7.36"}
         com.bhauman/rebel-readline {:mvn/version "0.1.11"}}
  :aliases
- {:test {:extra-paths ["test" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"
+ ;; "scripts" is on the test path so the one-shot cutover scripts under
+ ;; scripts/cutover can be exercised by a registered test namespace rather than
+ ;; only standalone; the runner's registry, not the classpath, decides what runs.
+ {:test {:extra-paths ["test" "scripts" "spools/workflow/src" "spools/ephemeral/src" "spools/roster/src" "spools/loom/src" "spools/carder/src" "spools/text-search/src" "spools/bobbin/src" "spools/guild/src" "spools/selvage/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"
                        ".skein/spools/macros/src"]
          ;; devflow is a git-distributed spool. Keep this sha exactly synchronized
          ;; with .skein/spools.edn: config_test loads .skein/config.clj in-process,
          ;; while the weaver consumes the spools.edn coordinate.
          :extra-deps {io.github.codethread/devflow.spool
                       {:git/url "https://github.com/codethread/devflow.spool.git"
-                       :git/sha "108b820ac8382ad2d9caf592e75269c5ba24036b"}
+                       :git/sha "6fbfb1eaa606dcfda4f7e59f472d37cdb344eadc"}
                       ;; kanban is a git-distributed spool. Keep this sha exactly
                       ;; synchronized with .skein/spools.edn (config_test enforces
                       ;; the pairing): config_test loads .skein/config.clj

@@ -604,12 +604,12 @@
    ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]
    ['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]])
 
-(defn activate!
+(defn install!
   "Register the batteries core strand ops into a weaver runtime.
 
   The no-arg arity registers into the active runtime for `use!`-style
   installation; the explicit-runtime arity is for tests and trusted callers."
-  ([] (activate! (current/runtime)))
+  ([] (install! (current/runtime)))
   ([rt]
    {:installed true
     :namespace 'skein.spools.batteries

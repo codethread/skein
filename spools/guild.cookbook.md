@@ -5,7 +5,7 @@ Composition recipes for `skein.spools.guild`: how to publish a stable operation 
 This is the **how/why** half of the guild docs. The other two are:
 
 - [`guild.md`](./guild.md) — the **contract**: the declaration surface
-  (`defop!`, `deprecate!`, `install!`, `guild.describe`), the naming and
+  (`register-op!`, `deprecate!`, `install!`, `guild list`), the naming and
   versioning conventions, and the worked two-repo example. Read it for what the
   spool promises.
 - [`guild.api.md`](./guild.api.md) — the **generated reference**: every public
@@ -13,7 +13,7 @@ This is the **how/why** half of the guild docs. The other two are:
 
 Division of truth: signatures and the argument tables live in the contract and generated API doc; narrative and composition live here. This cookbook never restates a signature — it links to them.
 
-Guild adds no new protocol, server, or permission system: guild ops are ordinary weaver registry entries with a naming convention and a `guild.describe` introspection op. The agreement surface is userland — a repo publishes its API by registering ops from its checked-in `.skein/init.clj`, which is effectively a public API file. Recipes assume `(require '[skein.spools.guild :as guild])` in trusted config or a live weaver REPL.
+Guild adds no new protocol, server, or permission system: guild ops are ordinary weaver registry entries with a naming convention and a `guild list` introspection op. The agreement surface is userland — a repo publishes its API by registering ops from its checked-in `.skein/init.clj`, which is effectively a public API file. Recipes assume `(require '[skein.spools.guild :as guild])` in trusted config or a live weaver REPL, and a `runtime` in scope — every Guild fn takes it first.
 
 ## How to read a recipe
 
@@ -32,7 +32,7 @@ Each recipe cites the honest source it was distilled from — the spool's own co
 
 **Situation.** Another local weaver needs to ask yours a stable question — "is this gate satisfied?", "accept this release" — and you want it calling a named, intentional entry point, not reaching into your repo-private REPL helpers. You also want bad input rejected before your handler ever runs.
 
-**Composition.** `install!` once to seat `guild.describe` and reset declaration state, then `defop!` each public op under a dotted, version-suffixed handle. A `:spec` validates the parsed JSON input, and the handler receives the ordinary op context plus that input at `:guild/input` — so the public contract lives at the fn boundary while the implementation stays private.
+**Composition.** `install!` once to seat the `guild` op and reset declaration state, then `register-op!` each public op under a dotted, version-suffixed handle. An `:input-spec` validates the parsed JSON input, and the handler receives the ordinary op context plus that input at `:guild/input` — so the public contract lives at the fn boundary while the implementation stays private.
 
 ```clojure
 (ns user
@@ -46,10 +46,10 @@ Each recipe cites the honest source it was distilled from — the spool's own co
   ;; repo-private implementation; the public contract is this fn's shape
   {:gate (:gate-name input) :satisfied false})
 
-(guild/install!)                        ; seat guild.describe, clear prior decls
-(guild/defop! 'gate.status.v1
+(guild/install! runtime)                ; seat the guild op, clear prior decls
+(guild/register-op! runtime 'gate.status.v1
   {:doc "Return whether a backend gate is satisfied."
-   :spec ::gate-status-input}
+   :input-spec ::gate-status-input}
   'user/gate-status)
 ```
 
@@ -60,7 +60,7 @@ A caller invokes it over the ordinary op socket, passing one JSON argument; inpu
 (weaver/op! rt 'gate.status.v1 [(json/write-str {:gate-name "api-ready"})])
 ;; => {:gate "api-ready" :satisfied false}
 
-;; invalid → ex-info {:code :op/input-invalid :op "gate.status.v1" :spec …}, no handler call
+;; invalid → ex-info {:code :operation/input-invalid :operation "gate.status.v1" :input-spec …}, no handler call
 ```
 
 **Why this shape.**
@@ -68,18 +68,18 @@ A caller invokes it over the ordinary op socket, passing one JSON argument; inpu
 - **A named version is a promise; a REPL helper is not.** `gate.status.v1` is a
   handle a peer can depend on across your refactors. The handler symbol behind it
   can move freely — callers bind to the registry name, not your fn.
-- **The spec is the input gate, and it fails loudly.** Declaring `:spec` means
-  malformed input throws `{:code :op/input-invalid …}` *before* the handler, so
-  a coordination op never runs on half-parsed data. No spec means the op simply
-  accepts zero or one JSON argument.
+- **The spec is the input gate, and it fails loudly.** Declaring `:input-spec`
+  means malformed input throws `{:code :operation/input-invalid …}` *before* the
+  handler, so a coordination op never runs on half-parsed data. No spec means the
+  op simply accepts zero or one JSON argument.
 - **`init.clj` is the published API file.** Because the declarations live in
   checked-in trusted config, a peering repo can read exactly what you expose.
   Treat guild declarations like public contract code, not incidental setup.
-- **`install!` is reload-safe.** Re-running it clears prior declarations in this
-  weaver JVM and re-seats `guild.describe`, so a trusted-config reload
-  re-declares your API cleanly rather than stacking stale ops.
+- **`install!` is reload-safe.** Re-running it clears prior declarations in that
+  runtime and re-seats the `guild` op, so a trusted-config reload re-declares
+  your API cleanly rather than stacking stale ops.
 
-Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `defop-registers-and-invokes-through-op-registry` / `spec-invalid-input-fails-loudly-with-structured-data` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
+Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `register-op-registers-and-invokes-through-op-registry` / `input-spec-invalid-input-fails-loudly-with-structured-data` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
 
 ---
 
@@ -87,7 +87,7 @@ Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `def
 
 **Situation.** Your weaver wants to call a peer's guild op, but you shouldn't hard-code the assumption that a given version still exists. You want to resolve the peer by its portable name, read what it currently offers, and only then invoke.
 
-**Composition.** The blessed `skein.api.peers.alpha` helpers resolve same-machine peers from mill metadata; `guild.describe` is the discovery call. Ask the peer what's `:active` and `:deprecated`, then invoke the version you confirmed with `call!`, handing the JSON input through `:argv`.
+**Composition.** The blessed `skein.api.peers.alpha` helpers resolve same-machine peers from mill metadata; `guild list` is the discovery call. Ask the peer what's `:active` and `:deprecated`, then invoke the version you confirmed with `call!`, handing the JSON input through `:argv`.
 
 ```clojure
 (require '[clojure.data.json :as json]
@@ -96,9 +96,10 @@ Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `def
 (def backend (peers/peer "backend"))    ; resolve exactly one running peer by name
 
 ;; discover: what does this weaver actually expose right now?
-(peers/call! backend "guild.describe")
+(peers/call! backend "guild" {:argv ["list"]})
 ;; => {"guild" "backend"
-;;     "active" [{"name" "gate.status.v1" "doc" … "spec" …}]
+;;     "operation" "guild list"
+;;     "active" [{"name" "gate.status.v1" "doc" … "input-spec" …}]
 ;;     "deprecated" [{"name" "gate.old.v1" "replacement" "gate.status.v1" …}]}
 
 ;; then invoke the version you confirmed is active
@@ -109,7 +110,7 @@ Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `def
 
 **Why this shape.**
 
-- **Describe-then-call survives evolution.** Reading `:active`/`:deprecated`
+- **List-then-call survives evolution.** Reading `:active`/`:deprecated`
   before invoking means a caller notices a version has moved to deprecated
   instead of blindly calling a handle that now fails. The discovery step is
   cheap and turns a silent break into a visible migration.
@@ -122,7 +123,7 @@ Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `def
   stream-class op all throw. That is the right default for coordination — a
   missing peer should stop you, not be papered over.
 
-Honest source: the peer-side of the worked example in [`guild.md`](./guild.md) (`peers/peer`, `peers/call!`, and the `guild.describe` payload) and the `skein.api.peers.alpha` helper listing in the [REPL API spec](../devflow/specs/repl-api.md); the `guild.describe` `:active` / `:deprecated` shape is pinned by `describe-lists-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj). (The two-weaver call is distilled from the contract's worked example and the describe test rather than run live here.)
+Honest source: the peer-side of the worked example in [`guild.md`](./guild.md) (`peers/peer`, `peers/call!`, and the `guild list` payload) and the `skein.api.peers.alpha` helper listing in the [REPL API spec](../devflow/specs/repl-api.md); the `guild list` `:active` / `:deprecated` shape is pinned by `guild-list-reports-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj). (The two-weaver call is distilled from the contract's worked example and the listing test rather than run live here.)
 
 ---
 
@@ -130,20 +131,20 @@ Honest source: the peer-side of the worked example in [`guild.md`](./guild.md) (
 
 **Situation.** `gate.status.v1`'s input or semantics need to change in a way an existing caller can't safely assume. You must not just repoint the old handle, and you must never leave behind a compatibility stub that *pretends* to succeed — for a coordination op, a false success can corrupt a peer's state.
 
-**Composition.** Add the new version alongside the old with a second `defop!`, let callers migrate while both are registered, then `deprecate!` the old handle. Deprecation replaces it with a stub that always throws structured data — it can explain or redirect, but it can never report success.
+**Composition.** Add the new version alongside the old with a second `register-op!`, let callers migrate while both are registered, then `deprecate!` the old handle. Deprecation replaces it with a stub that always throws structured data — it can explain or redirect, but it can never report success.
 
 ```clojure
 ;; 1. add the new version; keep v1 registered while callers migrate
-(guild/defop! 'gate.status.v2
-  {:doc "Return gate status with a reason." :spec ::gate-status-v2-input}
+(guild/register-op! runtime 'gate.status.v2
+  {:doc "Return gate status with a reason." :input-spec ::gate-status-v2-input}
   'user/gate-status-v2)
 
 ;; 2. once callers have moved, deprecate v1 with a pointer to its replacement
-(guild/deprecate! 'gate.status.v1
+(guild/deprecate! runtime 'gate.status.v1
   {:replacement "gate.status.v2" :since "<YYYY-MM-DD>"})
 
-;; now guild.describe reports v2 :active and v1 :deprecated; invoking v1 throws:
-;; ex-info {:code :op/deprecated :op "gate.status.v1" :replacement "gate.status.v2"}
+;; now guild list reports v2 :active and v1 :deprecated; invoking v1 throws:
+;; ex-info {:code :operation/deprecated :operation "gate.status.v1" :replacement "gate.status.v2"}
 ```
 
 **Why this shape.**
@@ -152,14 +153,14 @@ Honest source: the peer-side of the worked example in [`guild.md`](./guild.md) (
   means no caller breaks at the moment you ship the change; each migrates on its
   own schedule. You only remove or deprecate `v1` once the callers are gone.
 - **A loud stub leaves the workflow fixable.** A deprecated op throws `{:code
-  :op/deprecated …}`, so a caller that missed the migration stalls *visibly* and
+  :operation/deprecated …}`, so a caller that missed the migration stalls *visibly* and
   someone can repoint it. A noop that returned a plausible-looking success would
   let a peer commit on a lie — the failure mode the contract explicitly forbids.
 - **Deprecation is discoverable, not folklore.** The stub's `:replacement` and
-  `:since` also surface through `guild.describe`, so the migration path is
+  `:since` also surface through `guild list`, so the migration path is
   readable from the peer itself rather than buried in a changelog.
 
-Honest source: the naming/evolution conventions and the "never install a noop compatibility stub" rule in [`guild.md`](./guild.md), with the deprecated-op behaviour pinned by `deprecated-op-throws-structured-error-and-never-succeeds` and the describe output by `describe-lists-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
+Honest source: the naming/evolution conventions and the "never install a noop compatibility stub" rule in [`guild.md`](./guild.md), with the deprecated-op behaviour pinned by `deprecated-op-throws-structured-error-and-never-succeeds` and the listing output by `guild-list-reports-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj).
 
 ---
 
