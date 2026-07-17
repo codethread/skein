@@ -123,10 +123,10 @@ The runtime is pull-based and *every* strand is already a durable wait point: an
   gates can make `await!` stay silent while it is healthy. A gate whose
   waiter has no registered executor always surfaces immediately — there is no
   silent default.
-- A shipped local-root adapter, `ct.spools.executors.subagent`, fulfills ready
+- An external adapter, `ct.spools.executors.subagent`, fulfills ready
   `:subagent` gates by spawning agent-run runs, registers the `:subagent`
   executor, and closes each gate with the run's result. See
-  `executors/subagent.md`.
+  [its contract][subagent-contract].
 - A shipped classpath executor, `skein.spools.executors.shell`, fulfills ready `:shell`
   gates by running the gate's `shell/argv` command directly, registers the
   `:shell` executor, and closes each gate with `complete!` on a zero exit
@@ -232,7 +232,12 @@ Executor registration is keyed by gate `waiter` name via `register-executor!` (a
 (workflow/executors)                          ; => {:subagent gate-stalled? ...}
 ```
 
-This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered executor always surfaces as `:gate` immediately, and adapters such as the subagent executor register their own predicate for their own waiter name at install time (see `executors/subagent.md`). There is no more named "stall predicate" independent of a waiter, and no shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option are gone.
+This keeps the workflow namespace free of any executor's vocabulary: a waiter with no registered
+executor always surfaces as `:gate` immediately, and adapters such as the
+[external subagent executor][subagent-contract] register their own predicate for their own waiter
+name at install time. There is no more named "stall predicate" independent of a waiter, and no
+shipped default predicate — `register-stall-predicate!` and the old `:stall-predicate` await option
+are gone.
 
 ### Procedure join auto-close
 
@@ -480,7 +485,9 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
   runtime fns of this namespace as symbol-valued maps, for trusted
   registration by name (mirrors devflow's registries in `devflow.md` §5).
 - [README.md](./README.md) — shipped spools index and loading notes.
-- [`ct.spools.executors.subagent`](./executors/subagent.md) — shipped
-  local-root adapter that binds workflow `:subagent` gates to agent-run runs.
+- [`ct.spools.executors.subagent`][subagent-contract] — external adapter that binds workflow
+  `:subagent` gates to agent-run runs.
 - [`skein.spools.executors.shell`](./executors/shell.md) — shipped classpath executor that fulfills
   workflow `:shell` gates by running their command.
+
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md

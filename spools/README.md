@@ -1,6 +1,12 @@
 # Spools
 
-Spools are trusted, authorable Clojure loaded into the weaver. The `skein.spools.*` namespace family is reserved for exactly this kind of code (see the [REPL API spec](../devflow/specs/repl-api.md)), and the agent family in this directory (`agent-run`, `executors.subagent`, `delegation`, `bench`) lives under `ct.spools.*` — the author-prefix convention external spools like `ct.spools.kanban` use. The spools in this directory ship with Skein as working references — use them directly, copy them as starting points, or study them to author your own.
+Spools are trusted, authorable Clojure loaded into the weaver. The `skein.spools.*` namespace family
+is reserved for exactly this kind of code (see the [REPL API spec](../devflow/specs/repl-api.md)).
+The agent family (`agent-run`, `executors.subagent`, `delegation`, `bench`) lives in
+[`codethread/agent-harness.spool`](https://github.com/codethread/agent-harness.spool) under
+`ct.spools.*`, the author-prefix convention used by external spools such as `ct.spools.kanban`.
+The spools in this directory ship with Skein as working references. Use them directly, copy them
+as starting points, or study them to author your own.
 
 Every spool loads through one convention: an approved coordinate in `.skein/spools.edn`, synced into the weaver by explicit-runtime `sync!`, and activated by a `:spools`-guarded explicit-runtime `use!`. `batteries` is the single documented exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
 
@@ -24,10 +30,10 @@ Signatures live only in the generated API doc; contracts and cookbooks link to t
 
 ## Index
 
-Each spool lives in its own root under `spools/<name>/src`, off the weaver's source classpath. A
-spool's `.skein/spools.edn` coordinate is what makes it reachable — `runtime/sync!` adds the
-approved root to the weaver runtime, and a `:spools`-guarded `runtime/use!` activates it. These
-spools also serve as the worked example of authoring your own ([customising your
+Each repo-local spool lives in its own root under `spools/<name>/src`, off the weaver's source
+classpath. A spool's `.skein/spools.edn` coordinate is what makes it reachable — `runtime/sync!`
+adds the approved root to the weaver runtime, and a `:spools`-guarded `runtime/use!` activates it.
+The repo-local spools also serve as the worked example of authoring your own ([customising your
 workspace](../docs/spools/customisation.md#promoting-config-to-a-local-spool)); for publishing a
 spool for others by git coordinate, SHA-pinned approval, README dependency/activation snippets,
 Maven-only spool-root dependencies, and local development overrides, see [Writing shared
@@ -40,15 +46,27 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 | `skein.spools.roster` | `../spools/roster` | [roster.md](./roster.md) | [roster.api.md](./roster.api.md) · [cookbook](./roster.cookbook.md) | Active-work registry: `roster/*` attribute vocabulary, explicit-runtime `track!`/`heartbeat!`/`finish!`/`roster`/`await-quiet!` helpers, a declared-subcommand `roster` op and named query, awaitable quiet/stale semantics, and automatic workflow/devflow root stamping. |
 | `skein.spools.text-search` **(UNSAFE)** | `../spools/text-search` | [text-search.md](./text-search.md) | [text-search.api.md](./text-search.api.md) · [cookbook](./text-search.cookbook.md) | **UNSAFE reference spool** — requires `skein.core.db` and runs SQL against the physical tables to `LIKE`-search titles and attribute values, including archived rows the query language cannot see. Registers the `search` op. A maintained example of breaking the namespace-tier rules in the open, not a blessed path; read its [Unsafe declaration](./text-search.md#unsafe-declaration) before activating. |
 | `skein.spools.guild` | *(none approved in this repo)* | [guild.md](./guild.md) | [guild.api.md](./guild.api.md) · [cookbook](./guild.cookbook.md) | Versioned public weaver op API declarations, `guild.describe` introspection, and loud structured deprecation for local peer coordination. |
-| `ct.spools.agent-run` | `ct.spools/agent-run` | [agent-run/README.md](./agent-run/README.md) | [agent-run.api.md](./agent-run.api.md) · [cookbook](./agent-run.cookbook.md) | Agent-run **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, storage-enforced write-once run memory, and the preamble seam. Registers no ops. |
-| `ct.spools.delegation` | `ct.spools/delegation` | [delegation/README.md](./delegation/README.md) | [delegation.api.md](./delegation.api.md) · [cookbook](./delegation.cookbook.md) | Cross-harness subagent surface over agent-run: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
-| `ct.spools.executors.subagent` | `ct.spools/agent-run` (folded into the agent-run root) | [executors/subagent.md](./executors/subagent.md) | [executors/subagent.api.md](./executors/subagent.api.md) · [cookbook](./executors/subagent.cookbook.md) | Workflow gate bridge: fulfills ready `:subagent` gates by spawning agent-run runs and delivering successful results through `workflow/complete!`. |
+| `ct.spools.agent-run` | git, sha-pinned (see below) | [agent-run/README.md][agent-run-contract] | [agent-run.api.md][agent-run-api] · [cookbook][agent-run-cookbook] | Agent-run **engine**: readiness-driven headless coding-agent runs plus interactive multiplexer sessions (backend registry, claims-model reaping), harness aliases, crash reconciliation, storage-enforced write-once run memory, and the preamble seam. Registers no ops. |
+| `ct.spools.delegation` | git, sha-pinned (see below) | [delegation/README.md][delegation-contract] | [delegation.api.md][delegation-api] · [cookbook][delegation-cookbook] | Cross-harness subagent surface over agent-run: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
+| `ct.spools.executors.subagent` | git, sha-pinned `agent-run` root (see below) | [agent-run/subagent.md][subagent-contract] | [subagent.api.md][subagent-api] · [cookbook][subagent-cookbook] | Workflow gate bridge: fulfills ready `:subagent` gates by spawning agent-run runs and delivering successful results through `workflow/complete!`. |
 | `skein.spools.chime` | `../spools/chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) · [cookbook](./chime.cookbook.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
 | `ct.spools.kanban` | git, sha-pinned (see below) | [kanban.md](https://github.com/codethread/kanban.spool/blob/c33dc70c6e2d477e489b34e8584f5092a6b2041c/kanban.md) | — | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`; this repo binds devflow as its tracker through `.skein/kanban_tracker.clj`. |
 | `skein.spools.cron` | `../spools/cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) · [cookbook](./cron.cookbook.md) | Userland recurrence layer over durable scheduler wakes: registers named interval+jitter jobs, records last-outcome/failure status, and leaves next-fire timing to scheduler introspection. Ships no jobs. |
-| `ct.spools.bench` | `ct.spools/bench` | [bench/README.md](./bench/README.md) | [bench.api.md](./bench.api.md) | Deterministic, containerized benchmarking of coding-agent harnesses: pinned repo/prompt/memory overlays, bench-owned entry execution, normalized metrics, and an agent-run served judge. |
+| `ct.spools.bench` | git, sha-pinned (see below) | [bench/README.md][bench-contract] | [bench.api.md][bench-api] | Deterministic, containerized benchmarking of coding-agent harnesses: pinned repo/prompt/memory overlays, bench-owned entry execution, normalized metrics, and an agent-run served judge. |
 | `ct.spools.devflow` | git, sha-pinned (see below) | [devflow.md](https://github.com/codethread/devflow.spool/blob/84c83f6a78812dd12ff74d330d58d6dc26b910ad/devflow.md) | — | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
 | `skein.spools.dresser` | *(none approved in this repo)* | [dresser.md](https://github.com/codethread/dresser.loom/blob/fea1d340be3591d008cf0ddeb72b0091d95a380d/dresser.md) | — | Brings a repo onto shared working conventions and surfaces convention upgrades later. Two flavours: scaffold a new shared-spool repo, or install a self-contained `.skein/` workspace into any host repo. Applied versions are recorded in the target at `.skein/conventions.edn`. |
+
+[agent-run-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/README.md
+[agent-run-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.api.md
+[agent-run-cookbook]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.cookbook.md
+[delegation-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/README.md
+[delegation-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.api.md
+[delegation-cookbook]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.cookbook.md
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md
+[subagent-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.api.md
+[subagent-cookbook]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.cookbook.md
+[bench-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/README.md
+[bench-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/bench.api.md
 
 `guild` is a never-activated reference root. This repo carries its source and tests because
 kanban.spool's peering layer depends on it, but adds no `.skein/spools.edn` coordinate. A downstream
@@ -58,7 +76,7 @@ user opts in by adding one.
 2026-07-11). It is replaceable library code: use it, rebuild it, or find
 something better. Promotion to `skein.api.*` was rejected because that tier promises more stability
 than a deliberately swappable engine should; extraction to its own repo was rejected because
-workflow is a hub (devflow.spool, `executors.subagent` in the agent-run root, and this repo's
+workflow is a hub (devflow.spool, `executors.subagent` in agent-harness.spool, and this repo's
 `.skein` config all require it), so an external pin would put bump ceremony on the hottest path of
 engine development. Consumers who want the engine pinned independently of a checkout address it
 with a sha-pinned nested-root git coordinate (`:git/url` + `:git/sha` + `:deps/root
@@ -80,6 +98,13 @@ of a tracker; this repo's `.skein/kanban_tracker.clj` binds devflow after both s
 Like devflow, `.skein/spools.edn` and the test JVM (`deps.edn`) pin the same sha-pinned
 `:git/url`+`:git/sha` coordinate — config_test enforces the pairing — and developers override it
 with a gitignored `spools.local.edn` local root.
+
+The `ct.spools.agent-run`, `ct.spools.executors.subagent`, `ct.spools.delegation`, and
+`ct.spools.bench` family lives in
+[`codethread/agent-harness.spool`](https://github.com/codethread/agent-harness.spool). This repo
+pins its `agent-run`, `delegation`, and `bench` roots to the same sha in `.skein/spools.edn` and
+`deps.edn`; `config_test` enforces each pair. Developers override all three coordinates with
+gitignored `spools.local.edn` local roots from one agent-harness.spool checkout.
 
 `skein.spools.dresser` ([`codethread/dresser.loom`](https://github.com/codethread/dresser.loom)) is also external, but this repo approves no coordinate for it. Dresser is activated in whichever workspace drives a setup run, and the repo being set up needs no weaver or spool approvals of its own, so consumption is a per-operator choice. Its README carries the dependency and activation recipe.
 

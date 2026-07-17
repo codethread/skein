@@ -171,7 +171,13 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
   argv over the stored handle. If a backend has no attach template yet, the rule
   says no attach hint is configured instead of inventing a command.
 
-Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/agent-run/src/ct/spools/agent_run.clj`](agent-run/src/ct/spools/agent_run.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/delegation/README.md`](delegation/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+Honest source: agent-run's `run-summary` / `runs` implementation in
+[`agent_run.clj`][agent-run-source] renders `:attach` from the backend's display-only `:attach` op,
+and the external [`delegation/README.md`][delegation-contract] documents that `strand agent ps`
+carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+
+[agent-run-source]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/src/ct/spools/agent_run.clj
+[delegation-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/README.md
 
 ---
 
