@@ -610,7 +610,8 @@
   in the selected workspace remains the default. `:release-marker` explicitly
   claims the running source generation as a canonical `v<int>` marker; without
   a claim, startup uses an annotated marker tag on the source checkout's HEAD
-  when one can be resolved."
+  when one can be resolved. Options conform to
+  `:skein.core.specs/weaver-start-options`."
   ([] (start! nil {}))
   ([db-file] (start! db-file {}))
   ([db-file opts]

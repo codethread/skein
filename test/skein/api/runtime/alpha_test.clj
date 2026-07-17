@@ -174,6 +174,8 @@
         (delete-tree! source-root)))))
 
 (deftest runtime-result-specs-own-public-shapes
+  (is (s/valid? ::specs/release-marker-syntax "v0"))
+  (is (not (s/valid? ::specs/release-marker-syntax "v01")))
   (is (s/valid? ::specs/release-marker-claim "v12"))
   (is (not (s/valid? ::specs/release-marker-claim "v0")))
   (is (s/valid? ::specs/release-marker-result

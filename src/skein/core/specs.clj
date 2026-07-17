@@ -77,6 +77,8 @@
 
 (def ^:private release-marker-syntax-pattern #"v(?:0|[1-9][0-9]*)")
 
+;; Public runtime boundary contracts. Public API docstrings name these specs and
+;; the runtime API tests exercise each one directly.
 (s/def ::release-marker-syntax
   #(and (string? %) (boolean (re-matches release-marker-syntax-pattern %))))
 (s/def ::release-marker-claim
@@ -93,6 +95,8 @@
 (s/def ::config-dir-result non-blank-string?)
 (s/def ::spools-file-result #(instance? File %))
 
+;; Implementation-only field specs used to compose ::weaver-start-options. The
+;; owning public contract is ::weaver-start-options, not these field keywords.
 (s/def :skein.weaver-start/config-dir non-blank-string?)
 (s/def :skein.weaver-start/state-dir non-blank-string?)
 (s/def :skein.weaver-start/data-dir non-blank-string?)
