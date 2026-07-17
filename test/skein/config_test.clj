@@ -206,6 +206,10 @@
   ;; the text ships from skein.spools.delegation, the accessor stays on agent-run
   (is (= (var-get (requiring-resolve 'skein.spools.delegation/review-contract))
          ((requiring-resolve 'skein.spools.agent-run/default-review-contract-text))))
+  ;; this repo runs the agent-plan task workflow, which no spool registers for
+  ;; it: harnesses.clj opts its serving runs into the exported fragment
+  (is (= (var-get (requiring-resolve 'skein.spools.delegation/worker-contract))
+         ((requiring-resolve 'skein.spools.agent-run/default-task-contract-text))))
   ;; the repo owns chime's attention rules; the chime engine ships none
   (is (= [:agent-failure :gate-error :hitl-checkpoint-ready :kanban-blocked :kanban-completed
           :kanban-started :parked-run]
@@ -632,8 +636,11 @@
                    (or (get-in s [:attributes k])
                        (get-in s [:attributes (name k)])))]
         (is (= #{"a" "b"} (set (keys by-task))))
-        (is (str/includes? (attr (by-task "a") :agent-run/prompt)
-                           "[worker contract]"))
+        (is (str/includes? (attr (by-task "a") :agent-run/prompt) "A body"))
+        ;; a gate's run serves the gate, so the agent-run preamble injects the
+        ;; contract this repo registers; prepending it here would double it
+        (is (not (str/includes? (attr (by-task "a") :agent-run/prompt) "[worker contract]")))
+        (is (not (str/includes? (attr (by-task "a") :agent-run/prompt) "[task workflow]")))
         (is (= "worker" (attr (by-task "b") :agent-run/harness))))))
   (testing "acceptance checkpoint is optional and task max-attempts pass through"
     (with-config-runtime

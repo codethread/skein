@@ -94,8 +94,15 @@
                    |maintainability risks; say when no findings are found."))))
 
 (def worker-contract
-  "Worker contract text appended to every run preamble."
-  (str "[worker contract]\n- "
+  "Task-workflow contract this spool exports for the agent-run task-contract slot.
+
+  The engine's own worker contract already rides every preamble-carrying
+  headless run; this is the delegation-specific remainder, which only makes
+  sense for a run serving a task. Nothing registers it automatically: a
+  workspace that wants this task workflow opts in with
+  `agent-run/set-default-task-contract!`, which substitutes the served strand's
+  id for `<task-id>` and the receiving run's own id for `<your-run-id>`."
+  (str "[task workflow]\n- "
        (str/join "\n- "
                  (concat
                   (fmt/fill "
@@ -105,32 +112,14 @@
                     |
                     |Record progress as you go: strand update <task-id> --attr progress=...
                     |
-                    |Set --attr status=implemented only when your validation gate is green.
-                    |
-                    |Never close your assigned strand. Never mutate sibling or parent
-                    |strands. Never commit unless your contract says so.
-                    |
-                    |Kill processes by PID only — never pkill -f/pattern kills. The shipped
-                    |claude/pi harnesses now deliver the worker prompt on stdin, but
-                    |other/custom harnesses may still pass it in argv (:prompt-via :arg,
-                    |the default), so a pattern kill aimed at a stuck JVM can still strafe
-                    |sibling agents whose prompt quotes the same text (a pkill -f
-                    |\"clojure -M:test\" murdered two delegated runs on 2026-07-05). Find
-                    |the pid and kill it.
-                    |
-                    |Spawn read-only helpers freely: agent spawn --harness explore --prompt
-                    |\"...\" --spawned-by <your-run-id>; then agent await <helper-run-id> —
-                    |the findings are in the returned result.")
+                    |Set --attr status=implemented only when your validation gate is green.")
                   ;; the note-writing instruction renders through the single
                   ;; `writer-ref->prompt` renderer (skein.api.notes.alpha)
                   [(str "Leave durable findings for the coordinator and successors: "
                         (notes/writer-ref->prompt {:target "<task-id>"
                                                    :by "<your-run-id>"
                                                    :decoration {}})
-                        ".")]
-                  (fmt/fill "
-                    |Keep delegation shallow; never spawn a second mutator inside your own
-                    |file scope.")))))
+                        ".")]))))
 
 (def about-doc
   "Structured manual returned by `agent about`."
@@ -591,10 +580,10 @@
      |forensics, fix the task body or environment, then agent retry <task-id>.")
    :workers
    (fmt/reflow "
-     |Every headless run already receives the engine preamble plus the worker
-     |contract (strand etiquette, notes discipline, status conventions), so a
-     |task body carries only what the contract cannot know: scope, owned files,
-     |validation commands, and commit policy.")
+     |Every preamble-carrying headless run already receives the engine preamble
+     |plus the worker contract (strand etiquette, notes discipline, status
+     |conventions), so a task body carries only what the contract cannot know:
+     |scope, owned files, validation commands, and commit policy.")
    :pointers ["strand agent about — the verb-by-verb manual"
               "strand help agent — generated invocation detail for every verb"
               "strand pattern explain agent-plan — weave a feature plan with task/review children"
@@ -2350,10 +2339,13 @@
           tasks)))
 
 (defn install!
-  "Install the delegation op surface, pattern, query, and worker preamble hook."
+  "Install the delegation op surface, pattern, and query.
+
+  Claims neither agent-run preamble slot: the injected worker text is the
+  workspace's call, so a workspace wanting this spool's task workflow registers
+  `worker-contract` itself (see the README)."
   []
   (let [runtime (rt)]
-    (agent-run/set-preamble-extension! worker-contract)
     (vocab/declare! runtime
                     {:kind :attr-namespace
                      :name "review"

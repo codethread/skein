@@ -230,9 +230,11 @@ Honest source: the panel composition layer in [`delegation/README.md` §6](./del
 
 **Composition.** `spawn` a read-only helper on a cheap harness, tagged with your own run id via `--spawned-by`, and `await` its result. Its findings come back in `result`; you rarely need logs for a success.
 
+Seats are workspace data, so no seat name is portable: run `strand agent harnesses` to see which your workspace defines, and pick a cheap read-through one.
+
 ```sh
 # From inside a running worker (a1fx9 is *your* run id):
-helper=$(strand agent spawn --harness explore \
+helper=$(strand agent spawn --harness <read-only-seat> \
   --prompt "Locate every caller of parse-token; return file:line list" \
   --spawned-by a1fx9 | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
 
@@ -248,12 +250,13 @@ strand agent await "$helper"   # => {"runs":[{"result":"...file:line list..."}]}
   `agent status` nests the helper under you in the delegation tree. It's distinct
   from `--for` (which attaches a run to the strand it serves) precisely because a
   helper serves *you*, not the task.
-- **Helpers read; they don't mutate — keep it that way.** The worker contract lets
-  you spawn read-only helpers freely, but forbids a second mutator inside your own
-  file scope. Recon fans out; writing stays single-owner. Delegation stays
-  shallow.
+- **Helpers read; they don't mutate — keep it that way.** Nothing stops you fanning
+  out: the spawn and await one-liners ride the agent-run context block of every
+  preamble-carrying headless run, so a worker always has them to hand. What the
+  engine's worker contract does forbid is a second mutator inside your own file
+  scope. Recon fans out; writing stays single-owner. Delegation stays shallow.
 
-Honest source: the `spawn` verb and `serves`-edge model in [`delegation/README.md` §3](./delegation/README.md#engine-verbs), the worker contract's "spawn read-only helpers freely" rule (§5), and the spawn coverage in ``delegation_test.clj``.
+Honest source: the `spawn` verb and `serves`-edge model in [`delegation/README.md` §3](./delegation/README.md#engine-verbs), the context block and engine worker contract in [`agent-run/README.md` §7](./agent-run/README.md#7-preamble-and-contract-text), and the spawn coverage in ``delegation_test.clj``.
 
 ---
 

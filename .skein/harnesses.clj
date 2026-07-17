@@ -338,7 +338,7 @@
             |frontier design or broad implementation work.")})])
 
 (defn install!
-  "Register the repo's harness seats and the default review contract."
+  "Register the repo's harness seats and the default review and task contracts."
   []
   {:installed true
    :namespace 'harnesses
@@ -346,4 +346,9 @@
    ;; agent review consumes the one authoritative policy text by default; the
    ;; text itself ships from skein.spools.delegation, set-default-review-contract!
    ;; still lives on the agent-run engine
-   :review-contract (shuttle/set-default-review-contract! agents/review-contract)})
+   :review-contract (shuttle/set-default-review-contract! agents/review-contract)
+   ;; this repo runs the agent-plan task workflow (progress=, the
+   ;; awaiting_verification flow keyed on status=implemented), so it opts its
+   ;; serving runs into delegation's exported fragment; the engine's own worker
+   ;; contract rides every run regardless
+   :task-contract (shuttle/set-default-task-contract! agents/worker-contract)})
