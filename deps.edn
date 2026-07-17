@@ -12,12 +12,29 @@
  ;; "scripts" is on the test path so the one-shot cutover scripts under
  ;; scripts/cutover can be exercised by a registered test namespace rather than
  ;; only standalone; the runner's registry, not the classpath, decides what runs.
- {:test {:extra-paths ["test" "scripts" "spools/workflow/src" "spools/roster/src" "spools/text-search/src" "spools/guild/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"
+ {:test {:extra-paths ["test" "scripts" "spools/workflow/src" "spools/roster/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"
                        ".skein/spools/macros/src"]
          ;; devflow is a git-distributed spool. Keep this sha exactly synchronized
          ;; with .skein/spools.edn: config_test loads .skein/config.clj in-process,
          ;; while the weaver consumes the spools.edn coordinate.
-         :extra-deps {io.github.codethread/devflow.spool
+         :extra-deps {;; agent-harness is a multi-root git-distributed spool.
+                      ;; Keep these shas exactly synchronized with
+                      ;; .skein/spools.edn (config_test enforces the pairing);
+                      ;; developers override there with a gitignored
+                      ;; spools.local.edn local root.
+                      io.github.codethread/agent-run.agent-harness
+                      {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                       :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                       :deps/root "agent-run"}
+                      io.github.codethread/delegation.agent-harness
+                      {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                       :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                       :deps/root "delegation"}
+                      io.github.codethread/bench.agent-harness
+                      {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                       :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                       :deps/root "bench"}
+                      io.github.codethread/devflow.spool
                       {:git/url "https://github.com/codethread/devflow.spool.git"
                        :git/sha "312cdffeabf68d40cca2cb246e0bb404e99c5984"}
                       ;; kanban is a git-distributed spool. Keep this sha exactly
@@ -65,7 +82,7 @@
                      :main-opts ["-m" "quality.conventions-check"]}
   :lint/splint {:extra-deps {io.github.noahtheduke/splint {:mvn/version "1.21.0"}}
                 :main-opts ["-m" "noahtheduke.splint" "--output" "clj-kondo" "src" "spools/batteries/src" "spools/workflow/src" "spools/roster/src" "spools/text-search/src" "spools/guild/src" "test"]}
-  :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/roster/src" "spools/text-search/src" "spools/guild/src" "spools/agent-run/src" "spools/delegation/src" "spools/chime/src" "spools/cron/src" "spools/bench/src"]
+  :reflect-check {:extra-paths ["scripts" "spools/workflow/src" "spools/roster/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"]
                   :jvm-opts ["--enable-native-access=ALL-UNNAMED" "-Dclojure.compiler.direct-linking=true"]
                   :main-opts ["-m" "quality.reflect-check"]}
   :deps/antq {:extra-deps {com.github.liquidz/antq {:mvn/version "2.11.1276"}}

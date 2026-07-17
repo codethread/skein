@@ -155,7 +155,10 @@ Honest source: the argv contract in [`executors/shell.md`](./shell.md#gate-reque
   gate downstream of a `:subagent` gate keeps each executor single-purpose and
   the verification independently inspectable and recoverable.
 
-Honest source: the `depends-on` gate chaining in [`workflow.md`, "Gates"](../workflow.md#3-definition-layer), the subagent-executor `:subagent` contract in [`subagent.md`](./subagent.md), and the dependent `:shell` gate test in ``test/skein/spools/executors/shell_test.clj``.
+Honest source: the `depends-on` gate chaining in [`workflow.md`,
+"Gates"](../workflow.md#3-definition-layer), the subagent-executor `:subagent` contract in
+[`agent-harness.spool/agent-run/subagent.md`][subagent-contract], and the dependent `:shell` gate
+test in ``test/skein/spools/executors/shell_test.clj``.
 
 ---
 
@@ -212,5 +215,7 @@ Honest source: the recovery and attention sections in [`executors/shell.md`](./s
   public fn referenced above.
 - [`workflow.cookbook.md`](../workflow.cookbook.md) — the gate and fan-out recipes
   that author the gates the shell executor fulfils.
-- [`subagent.md`](./subagent.md) — the `:subagent` sibling the shell executor composes
-  with.
+- [`ct.spools.executors.subagent`][subagent-contract] — the external `:subagent` sibling the shell
+  executor composes with.
+
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md

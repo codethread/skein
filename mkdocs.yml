@@ -108,18 +108,6 @@ nav:
           - Cookbook: spools/text-search.cookbook.md
           - API: spools/text-search.api.md
       - Kanban Board: spools/kanban.md
-      - Agent Runs:
-          - Contract: spools/agent-run/README.md
-          - Cookbook: spools/agent-run.cookbook.md
-          - API: spools/agent-run.api.md
-      - Delegation Spool:
-          - Contract: spools/delegation/README.md
-          - Cookbook: spools/delegation.cookbook.md
-          - API: spools/delegation.api.md
-      - Subagent Gate Executor:
-          - Contract: spools/executors/subagent.md
-          - Cookbook: spools/executors/subagent.cookbook.md
-          - API: spools/executors/subagent.api.md
       - Shell Gate Executor:
           - Contract: spools/executors/shell.md
           - Cookbook: spools/executors/shell.cookbook.md
@@ -132,6 +120,19 @@ nav:
           - Contract: spools/cron/README.md
           - Cookbook: spools/cron.cookbook.md
           - API: spools/cron.api.md
+  - External Spools:
+      - Agent Runs:
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/README.md
+          - Cookbook: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.cookbook.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.api.md
+      - Delegation Spool:
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/README.md
+          - Cookbook: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.cookbook.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.api.md
+      - Subagent Gate Executor:
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md
+          - Cookbook: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.cookbook.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.api.md
       - Bench Harness Benchmarks:
-          - Contract: spools/bench/README.md
-          - API: spools/bench.api.md
+          - Contract: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/README.md
+          - API: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/bench.api.md

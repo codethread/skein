@@ -199,6 +199,9 @@ From the frontend weaver (or a manager weaver), discover the backend by its port
 - [`guild.cookbook.md`](./guild.cookbook.md) — worked composition recipes for this spool.
 - [`spools/README.md`](./README.md) — shipped spools index and loading notes.
 - [`skein.spools.workflow`](./workflow.md) — workflow gates are the durable wait points guild ops often inspect or complete.
-- [`ct.spools.executors.subagent`](./executors/subagent.md) — local-root gate adapter shape that guild-backed adapters can mirror.
+- [`ct.spools.executors.subagent`][subagent-contract] — external gate adapter shape that
+  guild-backed adapters can mirror.
 - [Weaver Runtime spec](../devflow/specs/daemon-runtime.md) — local weaver peering contract (SPEC-004.P10c).
 - [REPL API spec](../devflow/specs/repl-api.md) — blessed `skein.api.peers.alpha` helper listing.
+
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md

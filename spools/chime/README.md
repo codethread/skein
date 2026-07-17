@@ -117,5 +117,8 @@ Rule, notifier, and process failures are recorded by `(chime/recent-failures)` a
 ## See also
 
 - [`../README.md`](../README.md) — shipped and approved local-root spool index.
-- [`../agent-run/README.md`](../agent-run/README.md) — local-root layout and loading pattern.
+- [`agent-harness.spool/agent-run/README.md`][agent-run-contract] — external coordinate,
+  activation, and local-override pattern.
 - [`../../docs/spools/customisation.md#promoting-config-to-a-local-spool`](../../docs/spools/customisation.md#promoting-config-to-a-local-spool) — authoring and loading local spools.
+
+[agent-run-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/README.md
