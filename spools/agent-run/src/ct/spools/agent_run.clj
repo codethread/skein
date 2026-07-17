@@ -1,4 +1,4 @@
-(ns skein.spools.agent-run
+(ns ct.spools.agent-run
   "Userland spool that spawns coding agents in user-chosen harnesses.
 
   An agent run is a strand carrying `agent-run/*` attributes; creating the strand
@@ -64,7 +64,7 @@
 
   The whole spool composes public surfaces (`skein.api.weaver.alpha` inside the
   weaver JVM) and owns no privileged runtime state. Higher-level spools, such as
-  `skein.spools.delegation`, register CLI operations over this engine."
+  `ct.spools.delegation`, register CLI operations over this engine."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
@@ -333,10 +333,10 @@
 ;; instead of resolving to nil.
 (def ^:private resume-placeholder-inputs #{:agent-run/session-id})
 
-(s/def :skein.spools.agent-run.harness/resume-token
+(s/def :ct.spools.agent-run.harness/resume-token
   (s/or :literal string? :placeholder resume-placeholder-inputs))
-(s/def :skein.spools.agent-run.harness/resume
-  (s/coll-of :skein.spools.agent-run.harness/resume-token :kind vector? :min-count 1))
+(s/def :ct.spools.agent-run.harness/resume
+  (s/coll-of :ct.spools.agent-run.harness/resume-token :kind vector? :min-count 1))
 
 ;; Registry entry shapes. `::harness-def` and `::alias-def` are the source of
 ;; truth for the "is this a tool or a seat?" distinction: they are consulted by
@@ -346,40 +346,40 @@
 ;; valid registration carrying both. `:capture`/`:resume` are intentionally left
 ;; open here; their splice semantics need the dedicated validators a spec cannot
 ;; express.
-(s/def :skein.spools.agent-run.harness/argv (s/coll-of string? :kind vector? :min-count 1))
-(s/def :skein.spools.agent-run.harness/parse parse-strategies)
-(s/def :skein.spools.agent-run.harness/prompt-via prompt-via-strategies)
-(s/def :skein.spools.agent-run.harness/preamble? boolean?)
-(s/def :skein.spools.agent-run.harness/env map?)
-(s/def :skein.spools.agent-run.harness/cwd string?)
-(s/def :skein.spools.agent-run.harness/doc string?)
+(s/def :ct.spools.agent-run.harness/argv (s/coll-of string? :kind vector? :min-count 1))
+(s/def :ct.spools.agent-run.harness/parse parse-strategies)
+(s/def :ct.spools.agent-run.harness/prompt-via prompt-via-strategies)
+(s/def :ct.spools.agent-run.harness/preamble? boolean?)
+(s/def :ct.spools.agent-run.harness/env map?)
+(s/def :ct.spools.agent-run.harness/cwd string?)
+(s/def :ct.spools.agent-run.harness/doc string?)
 ;; A closed map of at least one cost-rate-key -> non-negative USD-per-1M rate; a
 ;; typo'd key fails the key predicate rather than silently going unpriced.
-(s/def :skein.spools.agent-run.harness/cost-rates
+(s/def :ct.spools.agent-run.harness/cost-rates
   (s/map-of cost-rate-keys (s/and number? (complement neg?)) :min-count 1))
 (s/def ::harness-def
-  (s/keys :req-un [:skein.spools.agent-run.harness/argv]
-          :opt-un [:skein.spools.agent-run.harness/parse
-                   :skein.spools.agent-run.harness/prompt-via
-                   :skein.spools.agent-run.harness/preamble?
-                   :skein.spools.agent-run.harness/env
-                   :skein.spools.agent-run.harness/cwd
-                   :skein.spools.agent-run.harness/doc
-                   :skein.spools.agent-run.harness/cost-rates]))
+  (s/keys :req-un [:ct.spools.agent-run.harness/argv]
+          :opt-un [:ct.spools.agent-run.harness/parse
+                   :ct.spools.agent-run.harness/prompt-via
+                   :ct.spools.agent-run.harness/preamble?
+                   :ct.spools.agent-run.harness/env
+                   :ct.spools.agent-run.harness/cwd
+                   :ct.spools.agent-run.harness/doc
+                   :ct.spools.agent-run.harness/cost-rates]))
 
-(s/def :skein.spools.agent-run.alias/alias-of
+(s/def :ct.spools.agent-run.alias/alias-of
   (s/or :keyword keyword? :symbol symbol? :string (s/and string? (complement str/blank?))))
-(s/def :skein.spools.agent-run.alias/extra-args (s/coll-of string? :kind vector?))
-(s/def :skein.spools.agent-run.alias/prompt-prefix string?)
-(s/def :skein.spools.agent-run.alias/doc string?)
+(s/def :ct.spools.agent-run.alias/extra-args (s/coll-of string? :kind vector?))
+(s/def :ct.spools.agent-run.alias/prompt-prefix string?)
+(s/def :ct.spools.agent-run.alias/doc string?)
 (s/def ::alias-def
-  (s/keys :req-un [:skein.spools.agent-run.alias/alias-of]
-          :opt-un [:skein.spools.agent-run.alias/extra-args
-                   :skein.spools.agent-run.alias/prompt-prefix
-                   :skein.spools.agent-run.alias/doc
+  (s/keys :req-un [:ct.spools.agent-run.alias/alias-of]
+          :opt-un [:ct.spools.agent-run.alias/extra-args
+                   :ct.spools.agent-run.alias/prompt-prefix
+                   :ct.spools.agent-run.alias/doc
                    ;; a seat picks the model (via --model / -m extra-args), so a
                    ;; seat-level rate card is how per-model codex pricing lands
-                   :skein.spools.agent-run.harness/cost-rates]))
+                   :ct.spools.agent-run.harness/cost-rates]))
 
 ;; Shape of every workspace-owned contract-text slot (`set-default-task-contract!`,
 ;; `set-default-review-contract!`): text to inject, or nil to clear. Blank text is
@@ -410,10 +410,10 @@
     (when-not (resume-placeholder-inputs token)
       (fail! "Harness :resume placeholder is not an available input"
              {:harness owner :token token :allowed resume-placeholder-inputs})))
-  (when-not (s/valid? :skein.spools.agent-run.harness/resume argv)
+  (when-not (s/valid? :ct.spools.agent-run.harness/resume argv)
     (fail! "Harness :resume does not conform to spec"
-           {:harness owner :spec :skein.spools.agent-run.harness/resume
-            :explain (s/explain-str :skein.spools.agent-run.harness/resume argv)}))
+           {:harness owner :spec :ct.spools.agent-run.harness/resume
+            :explain (s/explain-str :ct.spools.agent-run.harness/resume argv)}))
   argv)
 
 ;; Spliced-op plumbing shared by the backend registry and harness :capture:
@@ -2638,11 +2638,11 @@
     (events/register! runtime :agent-run/engine
                       #{:strand/added :strand/updated :batch/applied
                         :strand/burned :strand/superseded}
-                      'skein.spools.agent-run/on-event
+                      'ct.spools.agent-run/on-event
                       {:spool "agent-run"})
     (let [recovered (reconcile!)]
       {:installed true
-       :namespace 'skein.spools.agent-run
+       :namespace 'ct.spools.agent-run
        :harnesses (mapv :name (harnesses))
        :backends (mapv :name (backends))
        :recovered recovered})))

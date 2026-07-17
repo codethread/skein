@@ -1,4 +1,4 @@
-(ns skein.spools.executors.subagent
+(ns ct.spools.executors.subagent
   "Bridge workflow subagent gates to agent-run runs.
 
   The subagent executor watches workflow runs for ready `:subagent` gates, spawns
@@ -7,7 +7,7 @@
   adds no CLI surface and keeps workflow and agent-run decoupled: this namespace
   is the only adapter that knows both vocabularies."
   (:require [clojure.string :as str]
-            [skein.spools.agent-run :as agent-run]
+            [ct.spools.agent-run :as agent-run]
             [skein.spools.workflow :as workflow]
             [skein.api.spool.alpha :refer [fail! attr-get]]
             [skein.api.graph.alpha :as graph]
@@ -259,7 +259,7 @@
 (defn install!
   "Install the subagent executor's event handler and perform an initial scan.
 
-  Fails loudly unless `skein.spools.agent-run/install!` has already registered
+  Fails loudly unless `ct.spools.agent-run/install!` has already registered
   the agent-run engine in this weaver runtime."
   []
   (let [runtime (rt)
@@ -283,7 +283,7 @@
                            |executor's durable failure stamp, written by both the subagent and shell
                            |executors.")})
     (events/register! runtime :subagent/engine event-types
-                      'skein.spools.executors.subagent/on-event
+                      'ct.spools.executors.subagent/on-event
                       {:spool "subagent"})
     (workflow/register-executor! :subagent gate-stalled?)
     ;; The human attention surface for stuck gates; the rule lives on
@@ -295,4 +295,4 @@
                           [:missing [:attr "gate/delivered"]]])
     (scan!)
     {:installed true
-     :namespace 'skein.spools.executors.subagent}))
+     :namespace 'ct.spools.executors.subagent}))
