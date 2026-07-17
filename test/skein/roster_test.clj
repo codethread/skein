@@ -497,18 +497,17 @@
 (deftest graph-mutations-refresh-the-tracked-root-heartbeat
   (with-runtime
     (fn [rt _]
-      (roster/watch! rt)
-      (let [root (weaver/add rt {:title "Tracked root"
-                                 :attributes {:feature "roster-spool" :owner "agent-a"}})]
-        (is (wait-until #(stamped? rt (:id root))))
+      (let [baseline (Instant/parse "2020-01-01T00:00:00Z")
+            root (roster/start! rt {:title "Tracked root"
+                                    :feature "roster-spool"
+                                    :owner "agent-a"
+                                    :now baseline})
+            child (weaver/add rt {:title "child task"})
+            _ (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id child)}]})]
+        (roster/watch! rt)
         (testing "a mutation on a parent-of descendant refreshes the root's heartbeat"
-          (let [child (weaver/add rt {:title "child task"})
-                _ (weaver/update rt (:id root) {:edges [{:type "parent-of" :to (:id child)}]})
-                baseline (Instant/parse (attr (weaver/show rt (:id root)) :roster/heartbeat-at))
-                later? (fn [] (let [now (attr (weaver/show rt (:id root)) :roster/heartbeat-at)]
+          (let [later? (fn [] (let [now (attr (weaver/show rt (:id root)) :roster/heartbeat-at)]
                                 (when (and now (.isAfter (Instant/parse now) baseline)) now)))]
-            ;; ensure the wall clock advances so a fresh heartbeat is strictly later
-            (Thread/sleep 5)
             (weaver/update rt (:id child) {:title "child task (started)"})
             (is (wait-until later?)
                 "updating a descendant must advance the root's roster/heartbeat-at")))))))
