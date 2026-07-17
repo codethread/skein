@@ -86,6 +86,16 @@
       (finally
         (delete-tree! root)))))
 
+(deftest spool-state-opts-spec-owns-public-shape
+  (is (s/valid? ::runtime/spool-state-opts nil))
+  (is (s/valid? ::runtime/spool-state-opts {:version :v2 :migrate-fn identity}))
+  (doseq [opts [{:versoin 2}
+                {:version nil}
+                {:version 1.5}
+                {:version 1 :migrate-fn 5}
+                {:migrate-fn identity}]]
+    (is (not (s/valid? ::runtime/spool-state-opts opts)))))
+
 (deftest release-marker-resolution
   (let [source-root (git-source! "v3")]
     (try
@@ -195,7 +205,40 @@
                      {:world (test-world (io/file "/tmp/skein-start-options"))
                       :unknown true})))
   (is (s/valid? ::specs/config-dir-result "/tmp/config"))
-  (is (s/valid? ::specs/spools-file-result (io/file "/tmp/config/spools.edn"))))
+  (is (s/valid? ::specs/spools-file-result (io/file "/tmp/config/spools.edn")))
+  (is (s/valid? ::runtime/reload-spool-result
+                {:root-lib 'demo/root
+                 :root "/tmp/root"
+                 :namespaces [{:ns 'demo.core :file "/tmp/root/src/demo/core.clj"}]}))
+  (is (not (s/valid? ::runtime/reload-spool-result
+                     {:root-lib 'demo/root
+                      :root "/tmp/root"
+                      :namespaces []
+                      :unexpected true}))))
+
+(deftest module-use-result-specs-own-public-shapes
+  (let [loaded {:key :demo/loaded
+                :opts {:ns 'demo.core}
+                :status :loaded
+                :loaded {:ns 'demo.core}}
+        skipped {:key :demo/skipped
+                 :opts {:ns 'demo.core :spools ['demo/root]}
+                 :status :skipped
+                 :reason :not-approved
+                 :lib 'demo/root}
+        failed {:key :demo/failed
+                :opts {:file "module.clj"}
+                :status :failed
+                :error {:message "boom"
+                        :class "class clojure.lang.ExceptionInfo"
+                        :data {:reason :boom}}}]
+    (doseq [entry [loaded skipped failed]]
+      (is (s/valid? ::runtime/use-entry entry)))
+    (is (s/valid? ::runtime/uses-result
+                  {:demo/loaded loaded :demo/skipped skipped :demo/failed failed}))
+    (is (s/valid? ::runtime/use-result nil))
+    (is (not (s/valid? ::runtime/use-entry (assoc loaded :unexpected true))))
+    (is (not (s/valid? ::runtime/use-entry (dissoc failed :error))))))
 
 (deftest start-options-are-validated-before-destructuring
   (doseq [opts [nil {:unknown true} {:publish? :yes}]]

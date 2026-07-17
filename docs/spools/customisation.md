@@ -128,8 +128,8 @@ followed by `init.local.clj`. Missing files are skipped; present failures fail l
 
 Two blind spots to know about. `reload!` re-runs the startup files but does not unload namespaces or vars it
 already loaded, and a bare `(require ns :reload)` is classloader-blind to per-spool synced roots — so neither
-picks up updated code from an already-synced opt-in spool. `reload-spool!` covers that gap. It takes the
-spool's `spools.edn` coordinate symbol and reloads the coordinate's namespaces in dependency order:
+picks up updated code from an already-synced opt-in spool. `reload-spool!` covers that gap. It takes a
+root-lib symbol from the family's effective `:roots` map and reloads that root's namespaces in dependency order:
 
 ```clojure
 (runtime/reload-spool! (current/runtime) 'skein.spools/kanban)
@@ -137,7 +137,7 @@ spool's `spools.edn` coordinate symbol and reloads the coordinate's namespaces i
 
 The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs
 the startup files so `install!` re-registers ops, queries, and handlers. So the code-bump sequence
-is `reload-spool! coord` to make the code live, then a targeted re-`use!` of the spool's activation to
+is `reload-spool! root-lib` to make the code live, then a targeted re-`use!` of the spool's activation to
 re-register — or a full `reload!` when the bump changes registrations across the config.
 
 Some changes cannot load into a running weaver at all: removing an already-loaded root, repointing one at

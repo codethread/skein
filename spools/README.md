@@ -12,6 +12,30 @@ Every spool loads through one convention: an approved coordinate in `.skein/spoo
 
 Blessed alpha helpers such as `skein.api.peers.alpha` are also explicit-require userland APIs for trusted config and REPL workflows. Use that namespace's `peers`, `peer`, and `call!` helpers when a spool or repo config needs to discover and invoke same-machine sibling weavers.
 
+## Approved family coordinates
+
+Each `.skein/spools.edn` key names a family. A local family uses `:local/root`. A git family pins
+`:git/url` and `:git/sha`, then maps its public root libs to checkout paths with `:roots`:
+
+```clojure
+{:spools
+ {ct.spools/agent-run
+  {:git/url "https://github.com/codethread/agent-harness.spool.git"
+   :git/sha "<40-lowercase-hex>"
+   :git/tag "v1"
+   :roots {ct.spools/agent-run "agent-run"
+           ct.spools/delegation "delegation"
+           ct.spools/bench "bench"}
+   :requires {codethread/devflow "v2"}
+   :skein/min "v3"}}}
+```
+
+Without `:roots`, a family supplies one root named by the family symbol at `"."`. Every root lib
+has one owner. Release markers are positive `vN` strings. `:requires` sets minimum release markers
+for other approved roots; `:skein/min` sets the minimum running Skein marker. A local development
+override names the family once with `:local/root` and an explicit `:claims "vN"`; it inherits the
+shared root map and compatibility floors.
+
 ## Doc triad
 
 Each shipped spool's docs follow a three-file convention:
@@ -78,10 +102,15 @@ something better. Promotion to `skein.api.*` was rejected because that tier prom
 than a deliberately swappable engine should; extraction to its own repo was rejected because
 workflow is a hub (devflow.spool, `executors.subagent` in agent-harness.spool, and this repo's
 `.skein` config all require it), so an external pin would put bump ceremony on the hottest path of
-engine development. Consumers who want the engine pinned independently of a checkout address it
-with a sha-pinned nested-root git coordinate (`:git/url` + `:git/sha` + `:deps/root
-"spools/workflow"`); see [Nested-spool
-prerequisites](../docs/spools/writing-shared-spools.md#nested-spool-prerequisites).
+engine development. Consumers who want the engine pinned independently of a checkout declare one
+sha-pinned family and map its root within the checkout:
+
+```clojure
+{skein.spools/workflow
+ {:git/url "https://github.com/codethread/skein.git"
+  :git/sha "<40-lowercase-hex>"
+  :roots {skein.spools/workflow "spools/workflow"}}}
+```
 
 `ct.spools.devflow` is consumed from
 [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
@@ -102,9 +131,18 @@ with a gitignored `spools.local.edn` local root.
 The `ct.spools.agent-run`, `ct.spools.executors.subagent`, `ct.spools.delegation`, and
 `ct.spools.bench` family lives in
 [`codethread/agent-harness.spool`](https://github.com/codethread/agent-harness.spool). This repo
-pins its `agent-run`, `delegation`, and `bench` roots to the same sha in `.skein/spools.edn` and
-`deps.edn`; `config_test` enforces each pair. Developers override all three coordinates with
-gitignored `spools.local.edn` local roots from one agent-harness.spool checkout.
+pins one family coordinate with a `:roots` map for `agent-run`, `delegation`, and `bench`.
+`config_test` pairs that sha with the three test coordinates in `deps.edn`. Developers override the
+whole family from one checkout with one gitignored `spools.local.edn` entry:
+
+```clojure
+{:spools
+ {ct.spools/agent-run
+  {:local/root "../../agent-harness.spool"
+   :claims "v1"}}}
+```
+
+The override inherits the shared family's `:roots`, `:requires`, and `:skein/min` declarations.
 
 `skein.spools.dresser` ([`codethread/dresser.loom`](https://github.com/codethread/dresser.loom)) is also external, but this repo approves no coordinate for it. Dresser is activated in whichever workspace drives a setup run, and the repo being set up needs no weaver or spool approvals of its own, so consumption is a per-operator choice. Its README carries the dependency and activation recipe.
 

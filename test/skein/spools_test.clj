@@ -3,6 +3,7 @@
   spools.local.edn reading, sync!, layered use!, reload!, event helper routing,
   and daemon init."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.core.client :as client]
@@ -156,13 +157,13 @@
                             #"rename libs.edn/libs.local.edn to spools.edn/spools.local.edn"
                             (runtime/approved rt))))))
 
-(deftest approved-includes-shared-only-and-local-only-spools
+(deftest approved-includes-primary-local-spools
   (with-runtime
     (fn [rt config-dir]
       (let [shared-root (io/file config-dir "spools" "shared")
             local-root (io/file config-dir "spools" "local")]
-        (write-spools! config-dir (pr-str {:spools {'demo/shared {:local/root "spools/shared"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {'demo/local {:local/root "spools/local"}}}))
+        (write-spools! config-dir (pr-str {:spools {'demo/shared {:local/root "spools/shared"}
+                                                    'demo/local {:local/root "spools/local"}}}))
         (is (= {:spools {'demo/shared {:kind :local
                                        :local/root "spools/shared"
                                        :root (.getCanonicalPath shared-root)
@@ -170,23 +171,28 @@
                          'demo/local {:kind :local
                                       :local/root "spools/local"
                                       :root (.getCanonicalPath local-root)
-                                      :source (local-source config-dir)}}}
+                                      :source (shared-source config-dir)}}}
                (runtime/approved rt)))))))
 
 (deftest approved-local-spools-override-shared-by-coordinate
   (with-runtime
     (fn [rt config-dir]
-      (let [shared-root (io/file config-dir "spools" "shared")
-            local-root (io/file config-dir "spools" "local")]
-        (write-spools! config-dir (pr-str {:spools {'demo/override {:local/root "spools/shared"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {'demo/override {:local/root "spools/local"}}}))
+      (let [local-root (io/file config-dir "spools" "local")
+            sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/family {:git/url "https://example.invalid/demo.git"
+                                                       :git/sha sha
+                                                       :git/tag "v2"
+                                                       :roots {'demo/override "nested"}}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'demo/family {:local/root "spools/local"
+                                                             :claims "v2"}}}))
         (is (= {:kind :local
                 :local/root "spools/local"
-                :root (.getCanonicalPath local-root)
+                :claims "v2"
+                :root (.getPath (io/file (.getCanonicalPath local-root) "nested"))
                 :source (local-source config-dir)}
-               (get-in (runtime/approved rt) [:spools 'demo/override])))
-        (is (not= (.getCanonicalPath shared-root)
-                  (get-in (runtime/approved rt) [:spools 'demo/override :root])))))))
+               (get-in (runtime/approved rt) [:spools 'demo/override])))))))
 
 (deftest approved-fails-when-spools-edn-is-not-a-file
   (with-runtime
@@ -254,7 +260,7 @@
                                         :source (shared-source config-dir)}}}
                (runtime/approved rt)))))))
 
-(deftest approved-normalizes-git-spools-with-cache-base-and-deps-root
+(deftest approved-normalizes-git-family-roots
   (with-runtime
     (fn [rt config-dir]
       (let [cache-dir (io/file config-dir "cache")
@@ -265,23 +271,28 @@
             (write-spools! config-dir (pr-str {:spools {'demo/git {:git/url "file:///tmp/repo"
                                                                    :git/sha sha
                                                                    :git/tag "v1"
-                                                                   :deps/root "nested/spool"}}}))
-            (is (= {:spools {'demo/git {:kind :git
-                                        :git/url "file:///tmp/repo"
-                                        :git/sha sha
-                                        :git/tag "v1"
-                                        :deps/root "nested/spool"
-                                        :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
-                                        :source (shared-source config-dir)}}}
+                                                                   :roots {'demo/root "nested/spool"}}}}))
+            (is (= {:spools {'demo/root {:kind :git
+                                         :git/url "file:///tmp/repo"
+                                         :git/sha sha
+                                         :git/tag "v1"
+                                         :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
+                                         :source (shared-source config-dir)}}}
                    (runtime/approved rt)))))))))
 
 (deftest approved-rejects-malformed-git-spools
   (with-runtime
     (fn [rt config-dir]
       (doseq [[label entry pattern data-keys]
-              [["absolute deps root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :deps/root "/abs"} #":deps/root" [:deps/root]]
-               ["parent deps root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :deps/root "a/../b"} #":deps/root" [:deps/root]]
-               ["deps root on local" {:local/root "spools/demo" :deps/root "src"} #"exactly one coordinate kind" [:entry]]
+              [["absolute root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {'demo/lib "/abs"}} #"root path" [:root-path]]
+               ["parent root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {'demo/lib "a/../b"}} #"root path" [:root-path]]
+               ["empty roots" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {}} #":roots must be a non-empty map" [:roots]]
+               ["non-map roots" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots []} #":roots must be a non-empty map" [:roots]]
+               ["non-symbol root lib" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :roots {"demo/lib" "."}} #"root lib must be a symbol" [:root-lib]]
+               ["nil requires" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :requires nil} #":requires must be a map" [:requires]]
+               ["non-map requires" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :requires []} #":requires must be a map" [:requires]]
+               ["non-symbol required root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :requires {"demo/root" "v1"}} #"Required spool root must be a symbol" [:requires]]
+               ["legacy deps root" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef01234567" :deps/root "src"} #"replace :deps/root with :roots" [:deps/root]]
                ["short sha" {:git/url "u" :git/sha "012345"} #":git/sha" [:git/sha]]
                ["uppercase sha" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef0123456A"} #":git/sha" [:git/sha]]
                ["non-hex sha" {:git/url "u" :git/sha "0123456789abcdef0123456789abcdef0123456g"} #":git/sha" [:git/sha]]
@@ -297,6 +308,263 @@
               (is (re-find pattern (ex-message e)))
               (doseq [k data-keys]
                 (is (contains? (ex-data e) k))))))))))
+
+(deftest approved-validates-every-declared-marker-through-the-strict-parser
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (doseq [[field entry]
+                [[:git/tag {:git/url "u" :git/sha sha :git/tag "v0"}]
+                 [:requires {:git/url "u" :git/sha sha :requires {'other/root "v0"}}]
+                 [:skein/min {:git/url "u" :git/sha sha :skein/min "v0"}]]]
+          (testing (name field)
+            (write-spools! config-dir (pr-str {:spools {'demo/family entry}}))
+            (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+              (is (re-find #"v0 is reserved" (ex-message ex)))
+              (is (= field (:field (ex-data ex)))))))
+        (doseq [marker [nil :v1 1 "" "1" "v" "v01" "v-1" "v1.0" "V1"]]
+          (testing (pr-str marker)
+            (write-spools! config-dir
+                           (pr-str {:spools {'demo/family {:git/url "u"
+                                                           :git/sha sha
+                                                           :git/tag marker}}}))
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                  #"must match vN"
+                                  (runtime/approved rt)))))
+        (write-spools! config-dir
+                       (pr-str {:spools {'target/family {:git/url "target"
+                                                         :git/sha sha
+                                                         :git/tag "v123456789012345678901234567890"}
+                                         'client/family {:git/url "client"
+                                                         :git/sha sha
+                                                         :git/tag "v1"
+                                                         :requires {'target/family
+                                                                    "v123456789012345678901234567889"}}}}))
+        (is (= #{'target/family 'client/family}
+               (set (keys (:spools (runtime/approved rt))))))
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/family {:git/url "u"
+                                                       :git/sha sha
+                                                       :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'demo/family {:local/root "spools/demo"
+                                                             :claims "v0"}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (re-find #"v0 is reserved" (ex-message ex)))
+          (is (= :claims (:field (ex-data ex)))))))))
+
+(deftest approved-normalizes-one-stage-one-record-per-family
+  (let [source {:kind :shared :file "/tmp/spools.edn"}
+        sha "0123456789abcdef0123456789abcdef01234567"]
+    (is (= {:family 'demo/family
+            :coordinate {:kind :git :git/url "u" :git/sha sha :git/tag "v3"}
+            :roots-map {'demo/a "." 'demo/b "nested"}
+            :requires {'other/root "v2"}
+            :skein-min "v1"
+            :claims nil
+            :provenance :spools-edn
+            :source source}
+           (#'spool-sync/normalize-shared-family
+            source
+            'demo/family
+            {:git/url "u"
+             :git/sha sha
+             :git/tag "v3"
+             :roots {'demo/a "." 'demo/b "nested"}
+             :requires {'other/root "v2"}
+             :skein/min "v1"})))
+    (is (s/valid? :skein.core.weaver.spool-sync/normalized-family
+                  (#'spool-sync/normalize-shared-family
+                   source 'demo/family {:git/url "u" :git/sha sha})))
+    (is (= {'demo/local "."}
+           (:roots-map (#'spool-sync/normalize-shared-family
+                        source 'demo/local {:local/root "spools/local"}))))))
+
+(deftest approved-rejects-duplicate-git-family-urls
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/a {:git/url "https://example.invalid/same.git"
+                                                  :git/sha sha}
+                                         'demo/b {:git/url "https://example.invalid/same.git"
+                                                  :git/sha sha}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (re-find #"must not share :git/url" (ex-message ex)))
+          (is (= #{'demo/a 'demo/b} (set (:families (ex-data ex))))))))))
+
+(deftest approved-rejects-duplicate-root-lib-owners-before-requirements
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha-a "0123456789abcdef0123456789abcdef01234567"
+            sha-b "1123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/one {:git/url "one"
+                                                    :git/sha sha-a
+                                                    :roots {'shared/root "."}}
+                                         'demo/two {:git/url "two"
+                                                    :git/sha sha-b
+                                                    :roots {'shared/root "nested"}
+                                                    :requires {'missing/root "v1"}}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (= :duplicate-spool-root (:reason (ex-data ex))))
+          (is (= 'shared/root (:root-lib (ex-data ex))))
+          (is (= #{'demo/one 'demo/two} (set (:families (ex-data ex)))))
+          (is (not (contains? (ex-data ex) :findings))))))))
+
+(deftest approved-rejects-overlays-without-a-valid-claim-or-git-base
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/family {:git/url "u" :git/sha sha :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'demo/family {:local/root "spools/demo"}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (= :override-without-claim (:error (ex-data ex))))
+          (is (re-find #"add :claims \"vN\"" (:fix (ex-data ex)))))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {'other/family {:local/root "spools/other"
+                                                              :claims "v1"}}}))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"must shadow a shared git family"
+                              (runtime/approved rt)))))))
+
+(deftest malformed-family-shape-gates-marker-validation
+  (with-runtime
+    (fn [rt config-dir]
+      (write-spools! config-dir
+                     (pr-str {:spools {'demo/family {:git/url "u"
+                                                     :git/sha "short"
+                                                     :git/tag "v0"
+                                                     :unknown true}}}))
+      (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+        (is (re-find #"unknown keys" (ex-message ex)))
+        (is (not (re-find #"v0 is reserved" (ex-message ex))))))))
+
+(deftest sync-refuses-all-unsatisfied-family-and-skein-floors
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools!
+         config-dir
+         (pr-str
+          {:spools
+           {'target/family {:git/url "https://example.invalid/target.git"
+                            :git/sha sha
+                            :git/tag "v2"
+                            :roots {'target/root "."}}
+            'target/unmarked {:local/root "spools/unmarked"}
+            'client/one {:git/url "https://example.invalid/client-one.git"
+                         :git/sha sha
+                         :git/tag "v1"
+                         :requires {'target/root "v3"
+                                    'missing/root "v4"
+                                    'target/unmarked "v2"}
+                         :skein/min "v3"}
+            'client/two {:git/url "https://example.invalid/client-two.git"
+                         :git/sha sha
+                         :git/tag "v1"
+                         :requires {'target/root "v5"}}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo
+                              (spool-sync/sync-approved-spools rt "v2")))
+              data (ex-data ex)]
+          (is (= :spool-requirements-unsatisfied (:reason data)))
+          (is (= #{{:error :pin-below-minimum
+                    :requirer 'client/one
+                    :requires 'target/root
+                    :minimum "v3"
+                    :family 'target/family
+                    :pinned "v2"}
+                   {:error :required-root-not-approved
+                    :requirer 'client/one
+                    :requires 'missing/root
+                    :minimum "v4"}
+                   {:error :required-root-unmarked
+                    :requirer 'client/one
+                    :requires 'target/unmarked
+                    :minimum "v2"
+                    :family 'target/unmarked}
+                   {:error :skein-below-minimum
+                    :spool 'client/one
+                    :skein/min "v3"
+                    :running "v2"}
+                   {:error :pin-below-minimum
+                    :requirer 'client/two
+                    :requires 'target/root
+                    :minimum "v5"
+                    :family 'target/family
+                    :pinned "v2"}}
+                 (set (:findings data))))
+          (is (= {'target/family "v5"} (:suggestions data)))
+          (is (= {:spools {}} (runtime/syncs rt))))))))
+
+(deftest runtime-sync-validates-skein-minimum-against-its-release-marker
+  (let [family 'demo/skein-floor
+        sha "0123456789abcdef0123456789abcdef01234567"
+        write-floor! (fn [config-dir floor]
+                       (let [root (write-local-lib! config-dir "skein-floor" 'demo.skein_floor)]
+                         (write-spools! config-dir
+                                        (pr-str {:spools {family {:git/url "https://example.invalid/skein-floor.git"
+                                                                  :git/sha sha
+                                                                  :git/tag "v1"
+                                                                  :skein/min floor}}}))
+                         (write-local-spools! config-dir
+                                              (pr-str {:spools {family {:local/root "spools/skein-floor"
+                                                                        :claims "v1"}}}))
+                         root))]
+    (testing "satisfied floor"
+      (with-runtime
+        {:release-marker "v2"}
+        (fn [rt config-dir]
+          (let [root (write-floor! config-dir "v2")
+                result (runtime/sync! rt)]
+            (is (not (contains? result :pending-validations)))
+            (is (= :loaded (get-in result [:spools family :status])))
+            (is (= (.getCanonicalPath root) (get-in result [:spools family :root])))))))
+    (testing "violated floor"
+      (with-runtime
+        {:release-marker "v1"}
+        (fn [rt config-dir]
+          (write-floor! config-dir "v2")
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+            (is (= :spool-requirements-unsatisfied (:reason (ex-data ex))))
+            (is (= [{:error :skein-below-minimum
+                     :spool family
+                     :skein/min "v2"
+                     :running "v1"}]
+                   (:findings (ex-data ex))))))))
+    (testing "unmarked runtime with a declared floor"
+      (with-runtime
+        (fn [rt config-dir]
+          (write-floor! config-dir "v2")
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+            (is (= :release-marker-unavailable (:reason (ex-data ex))))
+            (is (= [{:family family :skein/min "v2"}]
+                   (:floors (ex-data ex))))))))
+    (testing "unmarked runtime without a declared floor"
+      (with-runtime
+        (fn [rt config-dir]
+          (let [root (write-local-lib! config-dir "no-skein-floor" 'demo.no_skein_floor)]
+            (write-spools! config-dir
+                           (pr-str {:spools {family {:local/root "spools/no-skein-floor"}}}))
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools family :status])))
+            (is (= (.getCanonicalPath root)
+                   (get-in (runtime/syncs rt) [:spools family :root])))))))))
+
+(deftest malformed-stage-one-entry-gates-requirement-arithmetic
+  (with-runtime
+    (fn [rt config-dir]
+      (write-spools!
+       config-dir
+       (pr-str {:spools {'demo/malformed {:git/url "u"
+                                          :git/sha "short"
+                                          :requires {'missing/root "v2"}}}}))
+      (let [ex (is (thrown? clojure.lang.ExceptionInfo
+                            (spool-sync/sync-approved-spools rt "v1")))]
+        (is (re-find #":git/sha" (ex-message ex)))
+        (is (not (contains? (ex-data ex) :findings)))
+        (is (not (contains? (ex-data ex) :suggestions)))))))
 
 (deftest event-helpers-register-list-replace-unregister-directly
   (with-runtime
@@ -342,10 +610,10 @@
                ["unknown top-level key" (pr-str {:spools {} :extra true}) #"unknown top-level keys"]
                ["missing :spools" (pr-str {}) #"requires :spools map"]
                ["non-map :spools" (pr-str {:spools []}) #"requires :spools map"]
-               ["non-symbol coordinate" (pr-str {:spools {"demo/lib" {:local/root "spools/demo"}}}) #"coordinate must be a symbol"]
+               ["non-symbol family" (pr-str {:spools {"demo/lib" {:local/root "spools/demo"}}}) #"family must be a symbol"]
                ["non-map entry" (pr-str {:spools {'demo/lib "spools/demo"}}) #"entry must be a map"]
                ["unknown per-lib key" (pr-str {:spools {'demo/lib {:local/root "spools/demo" :extra true}}}) #"unknown keys"]
-               ["missing root" (pr-str {:spools {'demo/lib {}}}) #"requires non-blank string"]
+               ["missing root" (pr-str {:spools {'demo/lib {}}}) #"exactly one coordinate kind"]
                ["non-string root" (pr-str {:spools {'demo/lib {:local/root 1}}}) #"requires non-blank string"]
                ["blank root" (pr-str {:spools {'demo/lib {:local/root "  "}}}) #"requires non-blank string"]]]
         (testing label
@@ -383,24 +651,33 @@
             root (write-local-lib! config-dir "demo" ns-sym)]
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/demo"}}}))
         (is (= {:spools {lib {:lib lib
+                              :family lib
+                              :coordinate {:kind :local :local/root "spools/demo"}
                               :kind :local
                               :local/root "spools/demo"
                               :root (.getCanonicalPath root)
                               :source (shared-source config-dir)
+                              :provenance :spools-edn
                               :status :loaded}}}
                (runtime/sync! rt)))
         (is (= {:spools {lib {:lib lib
+                              :family lib
+                              :coordinate {:kind :local :local/root "spools/demo"}
                               :kind :local
                               :local/root "spools/demo"
                               :root (.getCanonicalPath root)
                               :source (shared-source config-dir)
+                              :provenance :spools-edn
                               :status :loaded}}}
                (runtime/syncs rt)))
         (is (= {:spools {lib {:lib lib
+                              :family lib
+                              :coordinate {:kind :local :local/root "spools/demo"}
                               :kind :local
                               :local/root "spools/demo"
                               :root (.getCanonicalPath root)
                               :source (shared-source config-dir)
+                              :provenance :spools-edn
                               :status :already-available}}}
                (runtime/sync! rt)))))))
 
@@ -543,10 +820,13 @@
       (let [missing (io/file config-dir "spools" "missing")]
         (write-spools! config-dir (pr-str {:spools {'demo/missing {:local/root "spools/missing"}}}))
         (is (= {:spools {'demo/missing {:lib 'demo/missing
+                                        :family 'demo/missing
+                                        :coordinate {:kind :local :local/root "spools/missing"}
                                         :kind :local
                                         :local/root "spools/missing"
                                         :root (.getCanonicalPath missing)
                                         :source (shared-source config-dir)
+                                        :provenance :spools-edn
                                         :status :failed
                                         :reason :missing-root}}}
                (runtime/sync! rt)))
@@ -582,17 +862,23 @@
         (write-spools! config-dir (pr-str {:spools {'demo/missing {:local/root "spools/missing"}
                                                     'demo/not-dir {:local/root "spools/not-dir"}}}))
         (is (= {:spools {'demo/missing {:lib 'demo/missing
+                                        :family 'demo/missing
+                                        :coordinate {:kind :local :local/root "spools/missing"}
                                         :kind :local
                                         :local/root "spools/missing"
                                         :root (.getCanonicalPath (io/file config-dir "spools" "missing"))
                                         :source (shared-source config-dir)
+                                        :provenance :spools-edn
                                         :status :failed
                                         :reason :missing-root}
                          'demo/not-dir {:lib 'demo/not-dir
+                                        :family 'demo/not-dir
+                                        :coordinate {:kind :local :local/root "spools/not-dir"}
                                         :kind :local
                                         :local/root "spools/not-dir"
                                         :root (.getCanonicalPath not-dir)
                                         :source (shared-source config-dir)
+                                        :provenance :spools-edn
                                         :status :failed
                                         :reason :unreadable-root}}}
                (runtime/sync! rt)))))))
@@ -608,22 +894,65 @@
             (write-spools! config-dir (pr-str {:spools {'demo/git {:git/url "file:///tmp/repo"
                                                                    :git/sha sha
                                                                    :git/tag "v1"
-                                                                   :deps/root "spool"}}}))
-            (let [result (get-in (runtime/sync! rt) [:spools 'demo/git])]
-              (is (= {:lib 'demo/git
+                                                                   :roots {'demo/root "spool"}}}}))
+            (let [result (get-in (runtime/sync! rt) [:spools 'demo/root])]
+              (is (= {:lib 'demo/root
                       :kind :git
                       :git/url "file:///tmp/repo"
                       :git/sha sha
                       :git/tag "v1"
-                      :deps/root "spool"
                       :root (.getPath (io/file cache-dir "skein" "spools" sha "spool"))
                       :source (shared-source config-dir)
                       :status :failed
                       :reason :fetch-failed}
-                     (select-keys result [:lib :kind :git/url :git/sha :git/tag :deps/root :root :source :status :reason])))
+                     (select-keys result [:lib :kind :git/url :git/sha :git/tag :root :source :status :reason])))
               (is (integer? (:exit result)))
               (is (string? (:stderr result)))
               (is (not (contains? result :local/root))))))))))
+
+(deftest sync-converts-expected-materialization-io-failures
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"
+            lib 'demo/io-failure
+            original @#'spool-sync/materialize-git-spool!]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "file:///tmp/io-failure"
+                                              :git/sha sha}}}))
+        (try
+          (alter-var-root #'spool-sync/materialize-git-spool!
+                          (constantly (fn [_] (throw (java.io.IOException. "disk unavailable")))))
+          (let [result (get-in (runtime/sync! rt) [:spools lib])]
+            (is (= :failed (:status result)))
+            (is (= :fetch-failed (:reason result)))
+            (is (= 1 (:exit result)))
+            (is (= "disk unavailable" (:stderr result))))
+          (finally
+            (alter-var-root #'spool-sync/materialize-git-spool! (constantly original))))))))
+
+(deftest sync-lets-unexpected-materialization-throwables-escape
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"
+            lib 'demo/programming-failure
+            original @#'spool-sync/materialize-git-spool!]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "file:///tmp/programming-failure"
+                                              :git/sha sha}}}))
+        (try
+          (doseq [failure [(AssertionError. "broken invariant")
+                           (InterruptedException. "cancelled")
+                           (ex-info "unexpected ex-info" {:bug true})]]
+            (alter-var-root #'spool-sync/materialize-git-spool!
+                            (constantly (fn [_] (throw failure))))
+            (let [thrown (try
+                           (runtime/sync! rt)
+                           nil
+                           (catch Throwable t t))]
+              (is (identical? failure thrown))
+              (is (= {:spools {}} (runtime/syncs rt)))))
+          (finally
+            (alter-var-root #'spool-sync/materialize-git-spool! (constantly original))))))))
 
 (deftest sync-fetches-git-spool-and-uses-cache-hit-without-origin
   (with-runtime
@@ -751,6 +1080,32 @@
           (is (= :failed (:status result)))
           (is (= :runtime-add-failed (:reason result)))
           (is (re-find #"stay inside the spool root" (:message result))))))))
+
+(deftest sync-lets-unexpected-root-validation-throwables-escape
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.validation_failure_" suffix))
+            lib (symbol (str "demo/validation-failure-" suffix))
+            original @#'spool-sync/root-paths]
+        (write-local-lib! config-dir (str "validation-failure-" suffix) ns-sym)
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root
+                                              (str "spools/validation-failure-" suffix)}}}))
+        (try
+          (doseq [failure [(AssertionError. "broken invariant")
+                           (InterruptedException. "cancelled")
+                           (IllegalStateException. "unexpected state")]]
+            (alter-var-root #'spool-sync/root-paths
+                            (constantly (fn [_] (throw failure))))
+            (let [thrown (try
+                           (runtime/sync! rt)
+                           nil
+                           (catch Throwable t t))]
+              (is (identical? failure thrown))
+              (is (= {:spools {}} (runtime/syncs rt)))))
+          (finally
+            (alter-var-root #'spool-sync/root-paths (constantly original))))))))
 
 (deftest sync-accepts-deps-edn-path-naming-the-spool-root-itself
   (with-runtime
@@ -1079,7 +1434,13 @@
         (spit (io/file root "deps.edn")
               (pr-str {:paths ["src"]
                        :deps {'demo/source {:local/root "../other"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/local-deps-" suffix)}}}))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "https://example.invalid/local-deps.git"
+                                              :git/sha "0123456789abcdef0123456789abcdef01234567"
+                                              :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {lib {:local/root (str "spools/local-deps-" suffix)
+                                                    :claims "v1"}}}))
         (let [result (get-in (runtime/sync! rt) [:spools lib])]
           (is (= :failed (:status result)))
           (is (= :runtime-add-failed (:reason result)))
@@ -1273,11 +1634,75 @@
           (fn []
             (write-spools! config-dir (pr-str {:spools {'demo/mono {:git/url (file-url repo)
                                                                     :git/sha sha
-                                                                    :deps/root "nested/spool"}}}))
+                                                                    :roots {'demo/mono "nested/spool"}}}}))
             (let [result (get-in (runtime/sync! rt) [:spools 'demo/mono])]
               (is (= :loaded (:status result)))
               (is (= :fetched (:fetch result)))
               (is (= (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool")) (:root result))))))))))
+
+(deftest sync-materializes-family-once-and-vets-each-root
+  (with-runtime
+    (fn [rt config-dir]
+      (let [repo (io/file config-dir "family-repo")
+            good-root (io/file repo "good")
+            bad-root (io/file repo "bad")
+            cache-dir (io/file config-dir "cache")
+            family 'demo/family
+            coordinate {:kind :git}
+            _ (.mkdirs repo)
+            _ (run-git! repo "init")
+            _ (run-git! repo "config" "user.email" "skein-test@example.invalid")
+            _ (run-git! repo "config" "user.name" "Skein Test")
+            _ (write-git-lib! good-root 'demo.family_good)
+            _ (write-git-lib! bad-root 'demo.family_bad)
+            _ (spit (io/file bad-root "deps.edn") "{:paths [\"missing\"]}\n")
+            _ (run-git! repo "add" ".")
+            _ (run-git! repo "commit" "-m" "family roots")
+            sha (str/trim (run-git! repo "rev-parse" "HEAD"))
+            url (file-url repo)]
+        (with-cache-base
+          cache-dir
+          (fn []
+            (write-spools! config-dir
+                           (pr-str {:spools {family {:git/url url
+                                                     :git/sha sha
+                                                     :roots {'demo/good "good"
+                                                             'demo/bad "bad"}}}}))
+            (let [results (:spools (runtime/sync! rt))
+                  expected-coordinate (assoc coordinate :git/url url :git/sha sha)]
+              (is (= :loaded (get-in results ['demo/good :status])))
+              (is (= :runtime-add-failed (get-in results ['demo/bad :reason])))
+              (is (= #{:fetched} (set (map :fetch (vals results)))))
+              (doseq [result (vals results)]
+                (is (= family (:family result)))
+                (is (= expected-coordinate (:coordinate result)))
+                (is (= :spools-edn (:provenance result)))))))))))
+
+(deftest sync-local-overlay-inherits-family-roots
+  (with-runtime
+    (fn [rt config-dir]
+      (let [family 'demo/overlay-family
+            local-root (io/file config-dir "overlay-family")
+            _ (write-git-lib! (io/file local-root "one") 'demo.overlay_one)
+            _ (write-git-lib! (io/file local-root "two") 'demo.overlay_two)
+            sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {family {:git/url "https://example.invalid/family.git"
+                                                 :git/sha sha
+                                                 :git/tag "v2"
+                                                 :roots {'demo/one "one" 'demo/two "two"}}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {family {:local/root "overlay-family"
+                                                       :claims "v2"}}}))
+        (let [results (:spools (runtime/sync! rt))]
+          (is (= #{'demo/one 'demo/two} (set (keys results))))
+          (doseq [result (vals results)]
+            (is (= :loaded (:status result)))
+            (is (= family (:family result)))
+            (is (= {:kind :local :local/root "overlay-family"} (:coordinate result)))
+            (is (= "v2" (:claims result)))
+            (is (= :local-overlay (:provenance result)))
+            (is (= (local-source config-dir) (:source result)))))))))
 
 (deftest sync-git-deps-root-missing-after-fetch-keeps-fetch-outcome
   (with-runtime
@@ -1292,7 +1717,7 @@
           (fn []
             (write-spools! config-dir (pr-str {:spools {lib {:git/url (file-url repo)
                                                              :git/sha sha
-                                                             :deps/root "missing/spool"}}}))
+                                                             :roots {lib "missing/spool"}}}}))
             (let [result (get-in (runtime/sync! rt) [:spools lib])]
               (is (= :failed (:status result)))
               (is (= :missing-root (:reason result)))
@@ -1449,8 +1874,13 @@
             ns-sym (symbol (str "demo.override_gated_" suffix))
             lib (symbol (str "demo/override-gated-" suffix))
             root (write-local-lib! config-dir "override-gated-local" ns-sym)]
-        (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/missing-shared"}}}))
-        (write-local-spools! config-dir (pr-str {:spools {lib {:local/root "spools/override-gated-local"}}}))
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "https://example.invalid/override-gated.git"
+                                              :git/sha "0123456789abcdef0123456789abcdef01234567"
+                                              :git/tag "v1"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {lib {:local/root "spools/override-gated-local"
+                                                    :claims "v1"}}}))
         (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
         (is (= (local-source config-dir) (get-in (runtime/syncs rt) [:spools lib :source])))
         (let [result (runtime/use! rt :override/gated {:ns ns-sym :spools [lib]})]
@@ -1515,20 +1945,26 @@
 (deftest use-fails-loudly-on-malformed-options
   (with-runtime
     (fn [rt _]
+      (is (s/valid? ::runtime/use-registration
+                    [:demo/module {:ns 'demo.core :call 'demo.core/install!}]))
+      (is (not (s/valid? ::runtime/use-registration
+                         [:demo/module {:ns 'demo.core :file "module.clj"}])))
+      (is (not (s/valid? ::runtime/use-registration
+                         [:demo/module {:ns 'demo.core :call 'install!}])))
       (doseq [[label key opts pattern]
-              [["bad key" "bad" {:ns 'demo.core} #"key must be"]
-               ["non-map opts" :bad [] #"opts must be a map"]
-               ["unknown key" :bad {:ns 'demo.core :extra true} #"unknown keys"]
-               ["neither target" :bad {} #"exactly one"]
-               ["both targets" :bad {:ns 'demo.core :file "x.clj"} #"exactly one"]
-               ["bad ns" :bad {:ns "demo.core"} #":ns must be a symbol"]
-               ["bad file" :bad {:file ""} #":file must be"]
+              [["bad key" "bad" {:ns 'demo.core} #"invalid shape"]
+               ["non-map opts" :bad [] #"invalid shape"]
+               ["unknown key" :bad {:ns 'demo.core :extra true} #"invalid shape"]
+               ["neither target" :bad {} #"invalid shape"]
+               ["both targets" :bad {:ns 'demo.core :file "x.clj"} #"invalid shape"]
+               ["bad ns" :bad {:ns "demo.core"} #"invalid shape"]
+               ["bad file" :bad {:file ""} #"invalid shape"]
                ["absolute file" :bad {:file "/tmp/mod.clj"} #"relative to selected config-dir"]
                ["escaping file" :bad {:file "../mod.clj"} #"stay within selected config-dir"]
-               ["bad spools" :bad {:ns 'demo.core :spools ['demo/lib 1]} #":spools entries"]
-               ["bad after" :bad {:ns 'demo.core :after [1]} #":after entries"]
-               ["bad call" :bad {:ns 'demo.core :call 'install!} #":call must"]
-               ["bad required" :bad {:ns 'demo.core :required? :yes} #":required\? must"]]]
+               ["bad spools" :bad {:ns 'demo.core :spools ['demo/lib 1]} #"invalid shape"]
+               ["bad after" :bad {:ns 'demo.core :after [1]} #"invalid shape"]
+               ["bad call" :bad {:ns 'demo.core :call 'install!} #"invalid shape"]
+               ["bad required" :bad {:ns 'demo.core :required? :yes} #"invalid shape"]]]
         (testing label
           (is (thrown-with-msg? clojure.lang.ExceptionInfo pattern (runtime/use! rt key opts))))))))
 
@@ -1648,21 +2084,25 @@
   (with-runtime
     (fn [rt _config-dir]
       (testing "a typo'd key fails loudly instead of degrading to unversioned reuse"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown keys"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:versoin 2} (constantly {:v 1})))))
       (testing "opts must be a map or nil"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts must be a map"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo 2 (constantly {:v 1})))))
       (testing ":version must be a non-nil comparable tag"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":version must be"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:version nil} (constantly {:v 1}))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":version must be"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:version 1.5} (constantly {:v 1})))))
       (testing ":migrate-fn must be a function and requires a :version to compare"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":migrate-fn must be a function"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid shape"
                               (runtime/spool-state rt ::demo {:version 1 :migrate-fn 5} (constantly {:v 1}))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #":migrate-fn requires a :version"
-                              (runtime/spool-state rt ::demo {:migrate-fn identity} (constantly {:v 1}))))))))
+        (let [e (try
+                  (runtime/spool-state rt ::demo {:migrate-fn identity} (constantly {:v 1}))
+                  nil
+                  (catch clojure.lang.ExceptionInfo e e))]
+          (is (re-find #"invalid shape" (ex-message e)))
+          (is (contains? (ex-data e) :explain)))))))
 
 (deftest spool-state-serializes-concurrent-version-mismatch-reinit
   ;; Several threads observing the same version mismatch must not each build a
@@ -1704,9 +2144,9 @@
     (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
     root))
 
-(defn- reload-reason [rt coord]
+(defn- reload-reason [rt root-lib]
   (try
-    (spool-sync/reload-synced-spool! rt coord)
+    (spool-sync/reload-synced-spool! rt root-lib)
     nil
     (catch clojure.lang.ExceptionInfo e
       (:reason (ex-data e)))))
@@ -1722,18 +2162,18 @@
         (write-spools! config-dir (pr-str {:spools {lib {:local/root "spools/reload-ns"}}}))
         (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
         (let [result (spool-sync/reload-synced-spool! rt lib)]
-          (is (= lib (:coord result)))
+          (is (= lib (:root-lib result)))
           (is (= (.getCanonicalPath root) (:root result)))
           (is (= [{:ns ns-sym :file (.getCanonicalPath src-file)}]
                  (:namespaces result)))
           (is (= :synced-lib-loaded ((requiring-resolve (symbol (str ns-sym "/marker")))))))))))
 
-(deftest reload-synced-spool-fails-when-coordinate-not-approved
+(deftest reload-synced-spool-fails-when-root-lib-not-approved
   (with-runtime
     (fn [rt _config-dir]
       (is (= :not-approved (reload-reason rt 'demo/never-approved))))))
 
-(deftest reload-synced-spool-fails-when-coordinate-not-synced
+(deftest reload-synced-spool-fails-when-root-lib-not-synced
   (with-runtime
     (fn [rt config-dir]
       (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
@@ -1814,13 +2254,13 @@
               data (ex-data ex)]
           (is (= :duplicate-namespace (:reason data)))
           (is (= shared-ns (:namespace data)))
-          (is (= lib (:coord data)))
+          (is (= lib (:root-lib data)))
           (is (= #{(.getCanonicalPath file-a) (.getCanonicalPath file-b)}
                  (set (:files data)))))))))
 
 ;; A genuine circular intra-root require makes tools.namespace throw a raw
-;; `::circular-dependency` ex-info with no :status/:coord. The seam must catch it
-;; and rethrow under the documented `{:status :failed :reason :coord}` contract.
+;; `::circular-dependency` ex-info with no :status/:root-lib. The seam must catch it
+;; and rethrow under the documented `{:status :failed :reason :root-lib}` contract.
 ;; Sync only adds the root to the classpath (no compile), so the cycle surfaces at
 ;; reload-ordering rather than sync.
 (deftest reload-synced-spool-fails-on-circular-intra-root-requires
@@ -1840,7 +2280,7 @@
         (let [ex (is (thrown? clojure.lang.ExceptionInfo (spool-sync/reload-synced-spool! rt lib)))
               data (ex-data ex)]
           (is (= :circular-requires (:reason data)))
-          (is (= lib (:coord data)))
+          (is (= lib (:root-lib data)))
           (is (= #{ns-a ns-b} (set (vals (:cycle data))))))))))
 
 ;; PLAN-shr-001.V3: two intra-root namespaces where `a` uses a macro from `b`.
@@ -1911,7 +2351,7 @@
 ;; is not a symbol, rather than passing a bad key into the sync-state lookup. It
 ;; routes through the canonical `require-valid!` seam, so the failure carries the
 ;; standard `{:value :explain}` boundary-validation shape its siblings produce.
-(deftest reload-spool-verb-rejects-non-symbol-coordinate
+(deftest reload-spool-verb-rejects-non-symbol-root-lib
   (with-runtime
     (fn [rt _config-dir]
       (let [ex (is (thrown? clojure.lang.ExceptionInfo
@@ -1944,7 +2384,8 @@
         (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v2)\n"))
         (let [result (runtime/reload-spool! rt lib)]
           (is (= :v2 ((version))) "the blessed verb makes the bumped source live")
-          (is (= lib (:coord result)))
+          (is (s/valid? ::runtime/reload-spool-result result))
+          (is (= lib (:root-lib result)))
           (is (= (.getCanonicalPath root) (:root result)))
           (is (= [{:ns ns-sym :file (.getCanonicalPath src-file)}]
                  (:namespaces result))))))))

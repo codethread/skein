@@ -1,27 +1,21 @@
-{:spools {;; Keep these agent-harness shas exactly synchronized with deps.edn
-          ;; :test extra-deps (config_test enforces the pairing); developers
-          ;; override with a gitignored spools.local.edn local root.
+{:spools {;; Keep each family sha exactly synchronized with its deps.edn :test
+          ;; extra-deps (config_test pairs the agent family with all three
+          ;; per-root test coordinates until those move to spools.edn in F3).
+          ;; Developers override git families with gitignored spools.local.edn.
           ct.spools/agent-run {:git/url "https://github.com/codethread/agent-harness.spool.git"
                                :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                               :deps/root "agent-run"}
+                               :roots {ct.spools/agent-run "agent-run"
+                                       ct.spools/delegation "delegation"
+                                       ct.spools/bench "bench"}}
           skein.spools/workflow {:local/root "../spools/workflow"}
           skein.spools/roster {:local/root "../spools/roster"}
           skein.spools/text-search {:local/root "../spools/text-search"}
-          ct.spools/delegation {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                                :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                                :deps/root "delegation"}
           skein.spools/chime {:local/root "../spools/chime"}
           skein.spools/cron {:local/root "../spools/cron"}
-          ct.spools/bench {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                           :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                           :deps/root "bench"}
           skein.macros/macros {:local/root "spools/macros"}
-          ;; Keep this devflow sha exactly synchronized with deps.edn :test
-          ;; extra-deps until config_test no longer needs the spool on its JVM classpath.
           codethread/devflow {:git/url "https://github.com/codethread/devflow.spool.git"
-                              :git/sha "312cdffeabf68d40cca2cb246e0bb404e99c5984"}
-          ;; Keep this kanban sha exactly synchronized with deps.edn :test
-          ;; extra-deps (config_test enforces the pairing); developers override
-          ;; with a spools.local.edn local root to work against a checkout.
+                              :git/sha "312cdffeabf68d40cca2cb246e0bb404e99c5984"
+                              :roots {codethread/devflow "."}}
           codethread/kanban {:git/url "https://github.com/codethread/kanban.spool.git"
-                             :git/sha "43bb8d6e840f1b02865916d62dcfa0ca4249c50c"}}}
+                             :git/sha "43bb8d6e840f1b02865916d62dcfa0ca4249c50c"
+                             :roots {codethread/kanban "."}}}}

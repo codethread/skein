@@ -100,9 +100,24 @@ Event handlers receive one event map and may perform trusted side effects, inclu
 
 `skein.api.runtime.alpha` is the blessed alpha namespace for trusted config, activated spools, and live in-weaver REPL spool workspace workflows. Its functions take an explicit runtime first argument. `skein.api.current.alpha` exposes the blessed `(runtime)` facade for capturing the active in-process weaver runtime at trusted entry points, alongside its non-throwing `(runtime-or-nil)` probe sibling. It is explicit and is not preloaded into `skein.repl`. Loader/config helpers do not live under `skein.spools.*`; that namespace family is reserved for authorable spools and examples. Across the namespace map, `skein.api.*.alpha` is the accreting compatibility tier, `skein.core.*` is internal with no compatibility promise, `skein.spools.*` is authorable userland/reference code, and `skein.repl` is the interactive surface.
 
-Approved spool config is the effective overlay of `spools.edn` and `spools.local.edn` in the selected workspace. Both files use the same EDN grammar: exactly one top-level key, `:spools`, whose value is a map from symbol spool coordinates to entry maps of exactly one coordinate kind. Local kind: exactly `{:local/root <non-blank string path>}`. Git kind: required `:git/url` (non-blank string, passed to git verbatim) and `:git/sha` (exactly 40 lowercase hex characters), optional `:git/tag` (non-blank readability label verified against the sha at fetch time), and optional `:deps/root` (non-blank relative subpath, no leading `/`, `~`, or `..` segments; git-only). Unknown top-level keys, non-symbol coordinates, missing `:spools` in a present file, non-map entries, unknown per-lib keys, mixed kind keys, and malformed values fail loudly as structural config errors. Missing files contribute no spools. When both files define the same coordinate, the `spools.local.edn` entry replaces the `spools.edn` entry — including a local `:local/root` overriding a shared git pin for author dev workflows.
+Approved spool config comes from `spools.edn` plus `spools.local.edn` in the selected workspace. Each
+`spools.edn` key is a family symbol. A local family is `{:local/root path}`. A git family requires
+`:git/url` and `:git/sha`, and may add `:git/tag`, `:roots`, `:requires`, and `:skein/min`. `:roots`
+maps one or more root-lib symbols to relative paths within the pinned checkout; without it, the
+family supplies one root at `"."`. `:requires` maps root libs to minimum positive `vN` markers.
+`:git/tag` and `:skein/min` use the same marker grammar. Root libs must have unique owners across all
+families. Unknown keys, mixed kinds, malformed pins or paths, duplicate root owners, and unsatisfied
+release floors fail loudly before materialization.
 
-Relative `:local/root` values resolve against selected workspace; absolute roots are accepted as explicit user-approved paths; leading `~` and `~/` expand to the user home directory. Normalized approved config returns kind-tagged entries: local entries as `{lib-symbol {:kind :local :local/root original-path :root canonical-path :source {:kind :shared|:local :file path}}}`, git entries with `:kind :git`, the raw `:git/*`/`:deps/root` values, and `:root` computed as the content-addressed cache path (SPEC-004.C91) plus the `:deps/root` subpath. Per-spool missing/unreadable roots, fetch failures, and tag mismatches are not structural config errors; `(runtime/sync! runtime)` records them as failed sync outcomes so optional module activation can skip without aborting weaver startup.
+`spools.local.edn` may replace a shared git family with `{:local/root path :claims "vN"}`. The local
+coordinate applies to the whole family and inherits its root map and compatibility floors. The
+claim states which release contract the local tree satisfies. Relative local roots resolve against
+the selected workspace; absolute paths and home expansion remain explicit approvals. Normalized
+approved config is keyed by root lib. Each value has `:kind`, kind-specific source fields, effective
+`:root`, and source metadata. `sync!` adds `:lib`, owning `:family`, normalized family `:coordinate`,
+provenance, and `:status`; failures also carry `:reason` and reason-specific diagnostics. Missing
+roots, expected git/I/O acquisition failures, and tag mismatches are per-root outcomes. Unexpected
+JVM throwables and atomic Maven-resolution failures escape loudly.
 
 Spool metadata and spool prerequisites are documentation, not REPL API grammar. Shared spool authors document prerequisites, suggested pins, and activation order in their README using the convention described by `docs/spools/writing-shared-spools.md`. A `spool.edn` file, if present in a source tree for historical or local reasons, is ignored by the Skein spool contract and is not an authoritative manifest. This is a deliberate TEN-004-over-TEN-003 tradeoff scoped to manifest retirement: Skein does not read the file at all, so it cannot warn about it. The migration for authors is deleting the file.
 
@@ -111,14 +126,38 @@ Helpers include:
 - `(runtime/approved runtime)` returns normalized approved config.
 - `(runtime/sync! runtime)` materializes approved git coordinates into the content-addressed cache, uses Clojure runtime dependency tooling to add each entry's effective root, and returns structured results for loaded, already-available, and failed approved spools, including fetch and runtime-add/dependency-policy failure data where applicable.
 - `(runtime/syncs runtime)` returns weaver-lifetime approved-spool sync state.
+- `(runtime/reload-spool! runtime root-lib)` resolves a root-lib from a family's effective `:roots`
+  map through its per-root successful sync state and reloads that root's source files in dependency
+  order. It reloads code only; activation and registry changes require a later targeted `use!` or
+  `reload!`.
 - `(runtime/reload! runtime)` clears weaver-lifetime approved-spool sync state, module-use state, named queries, views, patterns, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads selected workspace startup files in order (`init.clj`, then `init.local.clj`) inside the active weaver and returns loaded file metadata plus final return values. Missing startup files are skipped; present failing files throw with file context. Event dispatch resumes after the fully layered config loads. Reload does not unload already-loaded Clojure namespaces or vars.
 - `(runtime/use! runtime key opts)` records one weaver-lifetime module-use attempt under keyword `key`; duplicate keys replace prior state for reload workflows.
 - `(runtime/uses runtime)` and `(runtime/use runtime key)` expose weaver-lifetime module-use state.
 - `(runtime/now runtime)` returns the runtime clock's current `java.time.Instant` — the blessed, runtime-scoped time source trusted spools read instead of `(Instant/now)` (SPEC-004.C1a). It defaults to the real wall clock; deterministic tests install and step an advanceable clock with `skein.test.alpha/set-clock!`/`advance!` (SPEC-003.C28a). It is data-first (an `Instant`, not the clock fn) and, like every `runtime.alpha` helper, takes the runtime first (SPEC-003.C18).
 
-`use!` options identify exactly one load target with `:ns` for weaver-side namespace loading or `:file` for selected workspace-relative weaver-side `load-file`; `:file` must be relative and must resolve within the selected workspace. For `:ns`, the weaver searches synced local-root classpath entries from each root's `deps.edn :paths` (defaulting to `["src"]`) and `load-file`s the located namespace source using Clojure's hyphen-to-underscore path mapping; when no synced root holds the namespace it fails loudly with a "Could not locate namespace source in synced spool roots" error naming the searched roots. Code resident on the mill-resolved source classpath — blessed `skein.api.*.alpha` namespaces and the single `batteries` spool exception — is loaded by an explicit top-level `require`, not through this `:ns` search; `require`'s already-loaded short-circuit means an explicit require placed above a matching `use!` lets that `use!` still record module state and run its `:call` without reaching the loader. Options may include `:spools`, a vector or set of symbol spool coordinate keys that must be approved and available before target loading; `:after`, a vector of prior loaded `use!` keys; `:call`, a fully qualified zero-arity function symbol to resolve and call after successful load; and `:required? true` for strict load/call failure behavior.
+`use!` options identify exactly one load target with `:ns` for weaver-side namespace loading or
+`:file` for selected workspace-relative weaver-side `load-file`; `:file` must be relative and must
+resolve within the selected workspace. For `:ns`, the weaver searches synced local-root classpath
+entries from each root's `deps.edn :paths` (defaulting to `["src"]`) and `load-file`s the located
+namespace source using Clojure's hyphen-to-underscore path mapping. When no synced root holds the
+namespace it fails loudly with a "Could not locate namespace source in synced spool roots" error
+naming the searched roots. Code resident on the mill-resolved source classpath — blessed
+`skein.api.*.alpha` namespaces and the single `batteries` spool exception — is loaded by an explicit
+top-level `require`, not through this `:ns` search. `require`'s already-loaded short-circuit means an
+explicit require placed above a matching `use!` lets that `use!` still record module state and run
+its `:call` without reaching the loader. Options may include `:spools`, a vector or set of root-lib
+symbols from family-effective `:roots` that must be approved and available before target loading;
+`:after`, a vector of prior loaded `use!` keys; `:call`, a fully qualified zero-arity function symbol
+to resolve and call after successful load; and `:required? true` for strict load/call failure
+behavior.
 
-Malformed `use!` options always throw. Unmet `:spools` requirements record and return `{:status :skipped ...}` before target loading, with reasons including `:not-approved`, `:not-synced`, or `:sync-failed` when known; under `:required? true`, each of those three skip reasons throws as a required skipped activation. Unmet `:after` requirements record and return `{:status :skipped ...}` with reason `:missing-after`. Load or call exceptions record and return `{:status :failed ...}` by default; `:required? true` rethrows after recording. Raw `require` remains the strict fail-fast path for required config.
+Malformed `use!` options always throw. Unmet root-lib requirements in `:spools` record and return
+`{:status :skipped ...}` before target loading, with reasons including `:not-approved`, `:not-synced`,
+or `:sync-failed` when known; under `:required? true`, each of those three skip reasons throws as a
+required skipped activation. Unmet `:after` requirements record and return `{:status :skipped ...}`
+with reason `:missing-after`. Load or call exceptions record and return `{:status :failed ...}` by
+default; `:required? true` rethrows after recording. Raw `require` remains the strict fail-fast path
+for required config.
 
 Maven dependencies declared in an approved spool root's top-level `deps.edn :deps` are part of the spool sync contract described by SPEC-004. Version ranges, alternate approved-spool config files, source fetching beyond approved spool coordinates, and direct explicit-client `require` of newly synced weaver spools remain outside the REPL API contract.
 

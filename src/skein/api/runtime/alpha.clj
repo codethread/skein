@@ -14,7 +14,9 @@
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
 
-(s/def ::coord symbol?)
+(s/def ::root-lib symbol?)
+(s/def ::ns symbol?)
+(s/def ::file (s/and string? (complement str/blank?)))
 (s/def ::status keyword?)
 (s/def ::lib symbol?)
 (s/def ::kind keyword?)
@@ -46,24 +48,50 @@
 (s/def ::retained-spool-state-entry (s/keys :req-un [::key ::generation ::current-generation]
                                             :opt-un [::reason]))
 (s/def ::retained-spool-state (s/coll-of ::retained-spool-state-entry :kind vector?))
-(s/def ::spools map?)
-(s/def ::sync-result (s/keys :req-un [::spools]
-                             :opt-un [::pending-generation ::retained-spool-state]))
+(s/def ::approved-result :skein.core.weaver.spool-sync/approved-result)
+(s/def ::sync-result :skein.core.weaver.spool-sync/sync-result)
 (s/def ::non-additive-sync-diff-ex-data
   (s/keys :req-un [::status ::reason ::diff ::pending-generation ::remedy]))
 
+(defn- exact-keys? [allowed value]
+  (and (map? value) (= allowed (set (keys value)))))
+
+(s/def ::reload-namespace
+  (s/and #(exact-keys? #{:ns :file} %)
+         #(s/valid? ::ns (:ns %))
+         #(s/valid? ::file (:file %))))
+(s/def ::namespaces (s/coll-of ::reload-namespace :kind vector?))
+(s/def ::canonical-root (s/and string? (complement str/blank?)))
+(s/def ::reload-spool-result
+  (s/and #(exact-keys? #{:root-lib :root :namespaces} %)
+         #(s/valid? ::root-lib (:root-lib %))
+         #(s/valid? ::canonical-root (:root %))
+         #(s/valid? ::namespaces (:namespaces %))))
+
 (defn- validate-sync-result! [result]
   (require-valid! ::sync-result result "runtime sync result has an invalid shape")
+  result)
+
+(defn- validate-approved-result! [result]
+  (require-valid! ::approved-result result "runtime approved spool config has an invalid shape")
   result)
 
 (defn- validate-sync-ex-data! [data]
   (when (= :non-additive-sync-diff (:reason data))
     (require-valid! ::non-additive-sync-diff-ex-data data "runtime sync exception data has an invalid shape")))
 
+(defn- running-release-marker [runtime]
+  (let [result (access/release-marker runtime)
+        _ (require-valid! ::specs/release-marker-result result
+                          "runtime release marker has an invalid shape")
+        {:keys [marker provenance]} result]
+    (if (= :none provenance) :none marker)))
+
 (defn approved
   "Return the normalized approved spool roots for `runtime`'s config dir."
   [runtime]
-  (spool-sync/approved-spools runtime))
+  (validate-approved-result!
+   (spool-sync/approved-spools runtime (running-release-marker runtime))))
 
 (defn release-marker
   "Return the running Skein release marker and its provenance.
@@ -114,7 +142,8 @@
   pending generation until the weaver process is replaced."
   [runtime]
   (try
-    (validate-sync-result! (spool-sync/sync-approved-spools runtime))
+    (validate-sync-result!
+     (spool-sync/sync-approved-spools runtime (running-release-marker runtime)))
     (catch clojure.lang.ExceptionInfo ex
       (validate-sync-ex-data! (ex-data ex))
       (throw ex))))
@@ -127,17 +156,29 @@
   [runtime]
   (validate-sync-result! (spool-sync/approved-spool-syncs runtime)))
 
+(s/fdef approved
+  :args (s/cat :runtime map?)
+  :ret ::approved-result)
+
+(s/fdef sync!
+  :args (s/cat :runtime map?)
+  :ret ::sync-result)
+
+(s/fdef syncs
+  :args (s/cat :runtime map?)
+  :ret ::sync-result)
+
 (defn reload!
   "Reload startup files from `runtime`'s config dir after clearing registries."
   [runtime]
   (weaver-runtime/reload-config! runtime))
 
 (defn reload-spool!
-  "Make `coord`'s latest synced source live in `runtime`.
+  "Make `root-lib`'s latest synced source live in `runtime`.
 
-  `coord` is a `spools.edn` coordinate symbol (e.g. `skein.spools/kanban`) — a
-  spool is many namespaces and sync state is keyed by coordinate, not namespace.
-  Returns a data-first map naming the coordinate, its resolved canonical root, and
+  `root-lib` is a root-lib symbol from a family's effective `:roots` map (e.g.
+  `skein.spools/kanban`). Sync state is keyed by root lib, not family or namespace.
+  Returns a data-first map naming the root lib, its resolved canonical root, and
   the namespaces reloaded in reload order with their source files.
 
   Fills the gap neither existing reload path covers: `reload!` re-runs startup
@@ -157,10 +198,19 @@
   the reload keeps its old definition. A revision that deletes or renames a
   namespace also leaves the old one loaded until restart.
 
-  Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data."
-  [runtime coord]
-  (require-valid! ::coord coord "reload-spool! coord must be a spool coordinate symbol")
-  (spool-sync/reload-synced-spool! runtime coord))
+  Fails loudly on an unresolvable `root-lib`, carrying a `:reason` keyword in
+  ex-data. Successful results conform to
+  `:skein.api.runtime.alpha/reload-spool-result`."
+  [runtime root-lib]
+  (require-valid! ::root-lib root-lib "reload-spool! root-lib must be a symbol")
+  (let [result (spool-sync/reload-synced-spool! runtime root-lib)]
+    (require-valid! ::reload-spool-result result
+                    "reload-spool! result has an invalid shape")
+    result))
+
+(s/fdef reload-spool!
+  :args (s/cat :runtime map? :root-lib ::root-lib)
+  :ret ::reload-spool-result)
 
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.
@@ -172,40 +222,89 @@
 
 (def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
 
+(s/def ::use-key keyword?)
+(s/def ::spools (s/and #(or (vector? %) (set? %))
+                       #(every? symbol? %)))
+(s/def ::after (s/coll-of keyword? :kind vector?))
+(s/def ::call (s/and symbol? (comp some? namespace)))
+(s/def ::required? boolean?)
+(s/def ::use-opts
+  (s/and (s/keys :opt-un [::ns ::file ::spools ::after ::call ::required?])
+         #(every? allowed-use-keys (keys %))
+         #(not= (contains? % :ns) (contains? % :file))))
+(s/def ::use-registration (s/tuple ::use-key ::use-opts))
+
+(s/def ::loaded
+  (s/or :namespace (s/and #(or (exact-keys? #{:ns} %)
+                               (exact-keys? #{:ns :file} %))
+                          #(contains? % :ns)
+                          #(s/valid? ::ns (:ns %))
+                          #(or (not (contains? % :file))
+                               (s/valid? ::file (:file %))))
+        :file (s/and #(exact-keys? #{:file} %)
+                     #(s/valid? ::file (:file %)))))
+(s/def ::fn (s/and symbol? (comp some? namespace)))
+(s/def ::call-result
+  (s/and #(exact-keys? #{:fn :return} %)
+         #(s/valid? ::fn (:fn %))))
+(s/def ::message (s/nilable string?))
+(s/def ::class string?)
+(s/def ::error
+  (s/and #(exact-keys? #{:message :class :data} %)
+         #(s/valid? ::message (:message %))
+         #(s/valid? ::class (:class %))))
+(s/def ::loaded-use-entry
+  (s/and #(or (exact-keys? #{:key :opts :status :loaded} %)
+              (exact-keys? #{:key :opts :status :loaded :call} %))
+         #(= :loaded (:status %))
+         #(s/valid? ::use-key (:key %))
+         #(s/valid? ::use-opts (:opts %))
+         #(s/valid? ::loaded (:loaded %))
+         #(or (not (contains? % :call))
+              (s/valid? ::call-result (:call %)))))
+(s/def ::failed-use-entry
+  (s/and #(exact-keys? #{:key :opts :status :error} %)
+         #(= :failed (:status %))
+         #(s/valid? ::use-key (:key %))
+         #(s/valid? ::use-opts (:opts %))
+         #(s/valid? ::error (:error %))))
+(s/def ::skipped-use-entry
+  (s/and
+   #(s/valid? ::use-key (:key %))
+   #(s/valid? ::use-opts (:opts %))
+   #(= :skipped (:status %))
+   #(case (:reason %)
+      (:not-approved :not-synced)
+      (and (exact-keys? #{:key :opts :status :reason :lib} %)
+           (symbol? (:lib %)))
+
+      :sync-failed
+      (and (exact-keys? #{:key :opts :status :reason :lib :sync} %)
+           (symbol? (:lib %))
+           (s/valid? :skein.core.weaver.spool-sync/sync-root-entry (:sync %)))
+
+      :missing-after
+      (and (exact-keys? #{:key :opts :status :reason :after :use} %)
+           (keyword? (:after %))
+           (or (nil? (:use %)) (s/valid? ::use-entry (:use %))))
+
+      false)))
+(s/def ::use-entry
+  (s/or :loaded ::loaded-use-entry
+        :skipped ::skipped-use-entry
+        :failed ::failed-use-entry))
+(s/def ::uses-result (s/map-of ::use-key ::use-entry))
+(s/def ::use-result (s/nilable ::use-entry))
+
 (defn- validate-use-opts! [key opts]
-  (when-not (keyword? key)
-    (throw (ex-info "Module use key must be a keyword" {:key key})))
-  (when-not (map? opts)
-    (throw (ex-info "Module use opts must be a map" {:key key :opts opts})))
-  (when-let [unknown (seq (remove allowed-use-keys (keys opts)))]
-    (throw (ex-info "Module use opts contain unknown keys" {:key key :keys (vec unknown)})))
-  (when (= (contains? opts :ns) (contains? opts :file))
-    (throw (ex-info "Module use opts require exactly one of :ns or :file" {:key key :opts opts})))
-  (when (and (contains? opts :ns) (not (symbol? (:ns opts))))
-    (throw (ex-info "Module use :ns must be a symbol" {:key key :ns (:ns opts)})))
-  (when (and (contains? opts :file) (not (and (string? (:file opts)) (not (str/blank? (:file opts))))))
-    (throw (ex-info "Module use :file must be a non-blank string" {:key key :file (:file opts)})))
+  (require-valid! ::use-registration [key opts]
+                  "Module use key/options have an invalid shape")
   (when (and (contains? opts :file) (.isAbsolute (io/file (:file opts))))
     (throw (ex-info "Module use :file must be relative to selected config-dir" {:key key :file (:file opts)})))
-  (when (and (contains? opts :spools)
-             (not (or (vector? (:spools opts)) (set? (:spools opts)))))
-    (throw (ex-info "Module use :spools must be a vector or set of symbols" {:key key :spools (:spools opts)})))
-  (doseq [lib (:spools opts)]
-    (when-not (symbol? lib)
-      (throw (ex-info "Module use :spools entries must be symbols" {:key key :lib lib}))))
-  (when (and (contains? opts :after) (not (vector? (:after opts))))
-    (throw (ex-info "Module use :after must be a vector" {:key key :after (:after opts)})))
-  (doseq [after (:after opts)]
-    (when-not (keyword? after)
-      (throw (ex-info "Module use :after entries must be keywords" {:key key :after after}))))
-  (when (and (contains? opts :call) (not (symbol? (:call opts))))
-    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
-  (when (and (symbol? (:call opts)) (nil? (namespace (:call opts))))
-    (throw (ex-info "Module use :call must be a fully qualified symbol" {:key key :call (:call opts)})))
-  (when (and (contains? opts :required?) (not (boolean? (:required? opts))))
-    (throw (ex-info "Module use :required? must be boolean" {:key key :required? (:required? opts)}))))
+  opts)
 
 (defn- record-use! [runtime key result]
+  (require-valid! ::use-entry result "Module use result has an invalid shape")
   (swap! (access/module-use-state runtime) assoc key result)
   result)
 
@@ -252,7 +351,9 @@
   Opts load either a synced namespace via `:ns` or a file via `:file`, and may
   include `:call` to invoke a no-arg function after load. Returns a registry
   entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
-  rethrow after recording failure metadata."
+  rethrow after recording failure metadata. The key/options pair conforms to
+  `:skein.api.runtime.alpha/use-registration`; the returned and recorded entry
+  conforms to `:skein.api.runtime.alpha/use-entry`."
   [runtime key opts]
   (validate-use-opts! key opts)
   (when-let [file (:file opts)]
@@ -289,14 +390,34 @@
             result))))))
 
 (defn uses
-  "Return `runtime`'s module-use registry as data-first maps."
+  "Return `runtime`'s module-use registry as data-first maps.
+
+  The result conforms to `:skein.api.runtime.alpha/uses-result`."
   [runtime]
-  (into (sorted-map) @(access/module-use-state runtime)))
+  (let [result (into (sorted-map) @(access/module-use-state runtime))]
+    (require-valid! ::uses-result result "Module use registry has an invalid shape")
+    result))
 
 (defn use
-  "Return one module-use registry entry from `runtime` by key."
+  "Return one module-use registry entry from `runtime` by key.
+
+  The nilable result conforms to `:skein.api.runtime.alpha/use-result`."
   [runtime key]
-  (get @(access/module-use-state runtime) key))
+  (let [result (get @(access/module-use-state runtime) key)]
+    (require-valid! ::use-result result "Module use entry has an invalid shape")
+    result))
+
+(s/fdef use!
+  :args (s/cat :runtime map? :key ::use-key :opts ::use-opts)
+  :ret ::use-entry)
+
+(s/fdef uses
+  :args (s/cat :runtime map?)
+  :ret ::uses-result)
+
+(s/fdef use
+  :args (s/cat :runtime map? :key ::use-key)
+  :ret ::use-result)
 
 (defn- warn!
   "Emit a loud-but-non-fatal runtime warning to the weaver's stderr log.
@@ -311,38 +432,20 @@
 
 (def ^:private spool-state-opt-keys #{:version :migrate-fn})
 
-(defn- validate-spool-state-opts!
-  "Reject a malformed spool-state opts map before it can silently degrade.
+(s/def ::version (s/or :integer integer? :keyword keyword? :string string?))
+(s/def ::migrate-fn ifn?)
+(s/def ::spool-state-opts
+  (s/nilable
+   (s/and (s/keys :opt-un [::version ::migrate-fn])
+          #(every? spool-state-opt-keys (keys %))
+          #(or (not (contains? % :migrate-fn))
+               (contains? % :version)))))
 
-  A misspelled or unknown key (e.g. `{:versoin 2}`) would otherwise leave
-  `version` nil and the accessor would reuse a shape-mismatched preserved value —
-  exactly the silent state-reuse bug class the version guard exists to close,
-  just moved one level up to the opts map. So the map is closed to
-  `:version`/`:migrate-fn`, `:version` must be a non-nil comparable tag, and
-  `:migrate-fn` (which only fires on a version mismatch) requires a `:version`.
-  Mirrors the closed-key discipline `ct.spools.agent-run/register-harness!` already
-  applies to its own def map."
+(defn- validate-spool-state-opts!
+  "Validate spool-state opts against their owning public spec."
   [opts]
-  (when (some? opts)
-    (when-not (map? opts)
-      (throw (ex-info "spool-state opts must be a map or nil" {:opts opts})))
-    (let [unknown (remove spool-state-opt-keys (keys opts))]
-      (when (seq unknown)
-        (throw (ex-info "spool-state opts has unknown keys"
-                        {:unknown (vec unknown) :allowed spool-state-opt-keys :opts opts}))))
-    (when (contains? opts :version)
-      (let [v (:version opts)]
-        (when-not (or (integer? v) (keyword? v) (string? v))
-          (throw (ex-info "spool-state :version must be a non-nil integer, keyword, or string"
-                          {:version v :class (some-> v class)})))))
-    (when (contains? opts :migrate-fn)
-      (when-not (ifn? (:migrate-fn opts))
-        (throw (ex-info "spool-state :migrate-fn must be a function"
-                        {:migrate-fn (:migrate-fn opts)})))
-      (when-not (contains? opts :version)
-        (throw (ex-info "spool-state :migrate-fn requires a :version to compare against"
-                        {:opts opts})))))
-  opts)
+  (require-valid! ::spool-state-opts opts
+                  "spool-state opts have an invalid shape"))
 
 (defn- tag-spool-state-generation
   "Tag `value` with the runtime generation that created it, when metadata permits it."
@@ -404,9 +507,9 @@
   not `=` `version`, the runtime deliberately reinits (or, with `:migrate-fn`,
   hands the old value to `f` to produce the new one) instead of reusing a
   shape-mismatched map. Silent reuse of shape-mismatched state is impossible
-  once a version is declared. A malformed opts map fails loudly at the call site
-  (see `validate-spool-state-opts!`) rather than degrading to the unversioned
-  path."
+  once a version is declared. Opts conform to
+  `:skein.api.runtime.alpha/spool-state-opts`; a malformed map fails loudly at
+  the call site rather than degrading to the unversioned path."
   ([runtime key init-fn] (spool-state runtime key nil init-fn))
   ([runtime key opts init-fn]
    (validate-spool-state-opts! opts)

@@ -85,25 +85,19 @@
         (pr-str {:spools {'ct.spools/agent-run
                           {:git/url "https://github.com/codethread/agent-harness.spool.git"
                            :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                           :deps/root "agent-run"}
+                           :roots {'ct.spools/agent-run "agent-run"
+                                   'ct.spools/delegation "delegation"
+                                   'ct.spools/bench "bench"}}
                           'skein.spools/workflow
                           {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
                           'skein.spools/roster
                           {:local/root (.getCanonicalPath (io/file "spools/roster"))}
                           'skein.spools/text-search
                           {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
-                          'ct.spools/delegation
-                          {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                           :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                           :deps/root "delegation"}
                           'skein.spools/chime
                           {:local/root (.getCanonicalPath (io/file "spools/chime"))}
                           'skein.spools/cron
                           {:local/root (.getCanonicalPath (io/file "spools/cron"))}
-                          'ct.spools/bench
-                          {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                           :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                           :deps/root "bench"}
                           ;; init.clj requires this spool; the omission used to be
                           ;; masked by fail-quiet required use!, which now throws.
                           ;; Its root lives inside the workspace (.skein/spools/macros),
@@ -219,77 +213,65 @@
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:seats (first rosters))))))
 
-(def ^:private external-spool-coordinate-pairs
-  "Pairs of weaver-side spools.edn keys and test-JVM deps.edn coordinates."
-  [{:spools-key 'ct.spools/agent-run
-    :deps-key 'io.github.codethread/agent-run.agent-harness}
-   {:spools-key 'ct.spools/delegation
-    :deps-key 'io.github.codethread/delegation.agent-harness}
-   {:spools-key 'ct.spools/bench
-    :deps-key 'io.github.codethread/bench.agent-harness}
-   {:spools-key 'codethread/devflow
-    :deps-key 'io.github.codethread/devflow.spool}
-   {:spools-key 'codethread/kanban
-    :deps-key 'io.github.codethread/kanban.spool}])
+(def ^:private external-spool-families
+  "Weaver-side families paired with their per-root test-JVM coordinates."
+  [{:family 'ct.spools/agent-run
+    :roots {'ct.spools/agent-run
+            {:path "agent-run" :deps-key 'io.github.codethread/agent-run.agent-harness}
+            'ct.spools/delegation
+            {:path "delegation" :deps-key 'io.github.codethread/delegation.agent-harness}
+            'ct.spools/bench
+            {:path "bench" :deps-key 'io.github.codethread/bench.agent-harness}}}
+   {:family 'codethread/devflow
+    :roots {'codethread/devflow
+            {:path "." :deps-key 'io.github.codethread/devflow.spool}}}
+   {:family 'codethread/kanban
+    :roots {'codethread/kanban
+            {:path "." :deps-key 'io.github.codethread/kanban.spool}}}])
 
 (deftest external-spool-coordinates-are-synced-across-spools-edn-and-deps-edn
   ;; The weaver resolves external spool coordinates from .skein/spools.edn while
   ;; config_test loads .skein/config.clj in-process through deps.edn's :test
-  ;; :extra-deps. Each external spool must name the same checkout in both files,
-  ;; otherwise the test JVM and the weaver can run different spool revisions.
+  ;; :extra-deps. Each family sha appears once in spools.edn and must name the
+  ;; same checkout as every per-root test coordinate in deps.edn.
   (let [spools-edn (edn/read-string (slurp ".skein/spools.edn"))
         deps-edn (edn/read-string (slurp "deps.edn"))
         spools (get spools-edn :spools)
-        declared-spools-keys (set (map :spools-key external-spool-coordinate-pairs))
-        external-spools-keys (set (keep (fn [[spools-key entry]]
-                                          (when (:git/url entry)
-                                            spools-key))
-                                        spools))
-        missing-pairs (sort (remove declared-spools-keys external-spools-keys))
-        extra-pairs (sort (remove external-spools-keys declared-spools-keys))]
-    (is (= external-spools-keys declared-spools-keys)
-        (str ".skein/spools.edn :git/url external spools must be declared in "
-             "external-spool-coordinate-pairs; missing " (pr-str missing-pairs)
-             ", extra " (pr-str extra-pairs)))
-    (doseq [{:keys [spools-key deps-key]} external-spool-coordinate-pairs]
-      (testing (str spools-key " <-> " deps-key)
-        (let [spools-entry (get-in spools-edn [:spools spools-key])
-              deps-entry (get-in deps-edn [:aliases :test :extra-deps deps-key])]
-          (is (map? spools-entry)
-              (str spools-key " missing from .skein/spools.edn for declared pair "
-                   spools-key " <-> " deps-key))
-          (is (map? deps-entry)
-              (str deps-key " missing from deps.edn :test :extra-deps for declared pair "
-                   spools-key " <-> " deps-key))
-          (cond
-            (and (:git/sha spools-entry) (:git/sha deps-entry))
-            (do
+        declared-families (set (map :family external-spool-families))
+        external-families (set (keep (fn [[family entry]]
+                                       (when (:git/url entry)
+                                         family))
+                                     spools))
+        missing-families (sort (remove declared-families external-families))
+        extra-families (sort (remove external-families declared-families))]
+    (is (= external-families declared-families)
+        (str ".skein/spools.edn :git/url families must be declared in "
+             "external-spool-families; missing " (pr-str missing-families)
+             ", extra " (pr-str extra-families)))
+    (doseq [{:keys [family roots]} external-spool-families]
+      (let [spools-entry (get-in spools-edn [:spools family])
+            expected-roots (into {} (map (fn [[root {:keys [path]}]] [root path])) roots)]
+        (is (map? spools-entry)
+            (str family " missing from .skein/spools.edn"))
+        (is (= expected-roots (:roots spools-entry))
+            (str family " must declare its complete family :roots map once"))
+        (doseq [[root {:keys [deps-key]}] roots]
+          (testing (str family " / " root " <-> " deps-key)
+            (let [deps-entry (get-in deps-edn [:aliases :test :extra-deps deps-key])]
+              (is (map? spools-entry)
+                  (str family " missing from .skein/spools.edn for " root " <-> " deps-key))
+              (is (map? deps-entry)
+                  (str deps-key " missing from deps.edn :test :extra-deps for declared pair "
+                       root " <-> " deps-key))
               (is (= (:git/sha spools-entry) (:git/sha deps-entry))
-                  (str spools-key " :git/sha in .skein/spools.edn (" (:git/sha spools-entry)
+                  (str family " :git/sha in .skein/spools.edn (" (:git/sha spools-entry)
                        ") must match " deps-key " :git/sha in deps.edn :test :extra-deps ("
                        (:git/sha deps-entry) ")"))
               (is (= (:git/url spools-entry) (:git/url deps-entry))
-                  (str spools-key " :git/url in .skein/spools.edn (" (:git/url spools-entry)
+                  (str family " :git/url in .skein/spools.edn (" (:git/url spools-entry)
                        ") must match " deps-key " :git/url in deps.edn :test :extra-deps ("
                        (:git/url deps-entry) ") — sha parity alone would accept the same sha"
-                       " from a different repository")))
-
-            (and (:local/root spools-entry) (:local/root deps-entry))
-            (let [spools-root (.getCanonicalFile (io/file ".skein" (:local/root spools-entry)))
-                  deps-root (.getCanonicalFile (io/file "." (:local/root deps-entry)))]
-              (is (= spools-root deps-root)
-                  (str spools-key " :local/root in .skein/spools.edn (" spools-root
-                       ") must resolve to the same checkout as " deps-key
-                       " :local/root in deps.edn :test :extra-deps (" deps-root ")")))
-
-            :else
-            ;; a failing assertion rather than a throw so one bad pair still
-            ;; lets the remaining declared pairs be checked in the same run
-            (is false
-                (str spools-key " <-> " deps-key
-                     " coordinates in .skein/spools.edn and deps.edn must both be "
-                     ":local/root or both be :git/sha; got " (pr-str spools-entry)
-                     " and " (pr-str deps-entry)))))))))
+                       " from a different repository")))))))))
 
 (deftest devflow-conventions-op-lists-repo-conventions
   ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
