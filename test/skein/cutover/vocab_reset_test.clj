@@ -9,14 +9,17 @@
   overloaded bench/run that stays put on marker rows, a kanban/status that is a
   lane only where it holds one), the guarded drops (a roster/* key goes only
   where the bare twin it is redundant with survives it, a kanban/devflow alias
-  only where the canonical binding answers), the closed-strand scope boundary,
-  idempotency, and the loud refusals."
+  only where the canonical binding answers), the two readings a decline can
+  carry and the exit code that separates them, the registry's boundary, the
+  closed-strand scope boundary, idempotency, and the loud refusals."
   (:require
    [clojure.test :refer [deftest is testing]]
    [cutover.vocab-reset :as cut]
    [next.jdbc :as jdbc]
    [skein.api.weaver.alpha :as weaver]
-   [skein.test.alpha :as test-alpha]))
+   [skein.test.alpha :as test-alpha])
+  (:import
+   [java.io StringWriter]))
 
 (defn- add!
   "Seed one strand in `state` carrying `attributes`; return its id."
@@ -36,6 +39,16 @@
   "Build the script's own datasource over the world's db, as -main does."
   [ctx]
   (jdbc/get-datasource {:dbtype "sqlite" :dbname (:db-path ctx)}))
+
+(defn- report!
+  "Run the script's report over `result`; return `[exit-code printed-output]`.
+
+  Reports through the same function -main hands to `System/exit`, so the exit
+  code an operator's automation reads is the one asserted here."
+  [result]
+  (let [out (StringWriter.)
+        code (binding [*out* out] (cut/report "/tmp/world.sqlite" result))]
+    [code (str out)]))
 
 (def ^:private world-opts
   "A bare disposable world: no spools, so nothing normalizes the seeded keys."
@@ -229,8 +242,8 @@
                                   "kanban/status" "claimed"
                                   "kanban/type" "feature"
                                   "kanban/priority" "p2"})
-          drift (add! rt "active" {"kanban/card" "true" "kanban/status" "done"})
-          {:keys [left-behind]} (cut/rewrite! ds)]
+          stray (add! rt "active" {"kanban/card" "true" "kanban/status" "done"})
+          {:keys [drift]} (cut/rewrite! ds)]
       (is (= {:kanban/card "true"
               :kanban/lane "claimed"
               :kanban/type "feature"
@@ -238,16 +251,56 @@
              (attrs rt card))
           "an active card's placement moves to the word the board now reads,
            and the keys the board kept are left alone")
-      (is (= {:kanban/card "true" :kanban/status "done"} (attrs rt drift))
+      (is (= {:kanban/card "true" :kanban/status "done"} (attrs rt stray))
           "an outcome is not a lane: an active card carrying one is drift, and
            the guard enumerates the whole lane vocabulary rather than one half
            of a split")
-      (is (= {"kanban/status -> kanban/lane (guarded)" [drift]} left-behind)
+      (is (= {"kanban/status -> kanban/lane (guarded)" [stray]} drift)
           "the drift is named for the operator rather than placed in a lane the
            card never sat in")
-      (is (= {:changes {} :total 0 :left-behind left-behind} (cut/rewrite! ds))
+      (is (= {:changes {} :total 0 :left-behind {} :drift drift} (cut/rewrite! ds))
           "a re-run against the migrated world is a no-op, and the decline is
            stable rather than a one-shot warning"))))
+
+(deftest fails-nonzero-on-drift-a-value-guard-enumerated-away
+  (test-alpha/with-weaver-world [ctx world-opts]
+    (let [rt (:runtime ctx)
+          ds (datasource ctx)
+          stray (add! rt "active" {"kanban/card" "true" "kanban/status" "done"})
+          moved (add! rt "active" {"kanban/card" "true" "kanban/status" "pending"})
+          result (cut/rewrite! ds)
+          [code out] (report! result)]
+      (is (= {:kanban/card "true" :kanban/lane "pending"} (attrs rt moved))
+          "the drift does not abort the transaction: every card the table can
+           place is migrated around the one it cannot")
+      (is (= 1 code)
+          "a strand left under a word the new code has no reading for is not a
+           cutover any automation may take for done")
+      (is (re-find #"kanban/status -> kanban/lane \(guarded\)" out)
+          "the failure names the migration whose vocabulary the row fell outside")
+      (is (re-find (re-pattern stray) out)
+          "and the strand the operator has to resolve by hand")
+      (let [re-run (cut/rewrite! ds)]
+        (is (zero? (:total re-run)) "the committed rewrite is idempotent")
+        (is (= [1 (:drift result)] [(first (report! re-run)) (:drift re-run)])
+            "the failure is stable across a re-run rather than a one-shot
+             warning: the exit stays 1 until the row itself is resolved")))))
+
+(deftest keeps-a-sibling-guard-decline-advisory
+  (test-alpha/with-weaver-world [ctx world-opts]
+    (let [rt (:runtime ctx)
+          lone (add! rt "active" {"roster/entry" "e3" "roster/owner" "ct"})
+          {:keys [left-behind drift] :as result} (cut/rewrite! (datasource ctx))
+          [code out] (report! result)]
+      (is (= {"drop roster/owner (guarded)" [lone]} left-behind))
+      (is (= {} drift)
+          "a sibling guard claims nothing about the key's whole vocabulary, so
+           its decline is not evidence of drift")
+      (is (zero? code)
+          "a strand shaped unlike the entry expected is a reading for the
+           operator, not a failed cutover")
+      (is (re-find #"drop roster/owner \(guarded\)" out)
+          "the advisory decline is still printed to be read"))))
 
 (deftest carries-each-card-run-binding-onto-the-tracker-key
   (test-alpha/with-weaver-world [ctx world-opts]
@@ -290,7 +343,7 @@
              (:changes first-run))
           "the report names each entry that touched a row")
       (is (= 3 (:total first-run)))
-      (is (= {:changes {} :total 0 :left-behind {}} second-run)
+      (is (= {:changes {} :total 0 :left-behind {} :drift {}} second-run)
           "a re-run against a migrated world is a no-op")
       (is (= {:workflow/form "review" :workflow/role "root"} (attrs rt run))
           "the migrated shape is stable across a second run"))))
@@ -304,6 +357,52 @@
                             (cut/rewrite! (datasource ctx)))
           "an inconsistent world fails loudly rather than raising a raw
            SQLite constraint violation"))))
+
+(deftest validates-the-migration-registry-against-its-contract
+  (testing "the shipped table satisfies the contract it publishes"
+    (is (cut/validate-table! cut/migrations)))
+  (testing "an entry the engine has no reading for"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed migration entry"
+                          (cut/validate-table! [{:migration :rename-column
+                                                 :from "a" :to "b"}]))))
+  (testing "a missing field"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed migration entry"
+                          (cut/validate-table! [{:migration :rename-key :from "a"}]))))
+  (testing "a misspelled guard, which would otherwise rewrite unguarded"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed migration entry"
+                          (cut/validate-table! [{:migration :drop-key :key "k"
+                                                 :when-sibling-ky "twin"}]))))
+  (testing "a guard of the wrong type"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed migration entry"
+                          (cut/validate-table! [{:migration :rename-key :from "a" :to "b"
+                                                 :when-value-in ["x"]}]))))
+  (testing "an enumeration no value could satisfy"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed migration entry"
+                          (cut/validate-table! [{:migration :rename-key :from "a" :to "b"
+                                                 :when-value-in #{}}]))))
+  (testing "two value guards, which would compose into a match on neither"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed migration entry"
+                          (cut/validate-table! [{:migration :rename-key :from "a" :to "b"
+                                                 :when-value "x" :unless-value "y"}]))))
+  (testing "the offending entry is named, not just the fact of a bad table"
+    (let [entry {:migration :drop-key :key "k" :when-sibling {"a" "b" "c" "d"}}]
+      (is (= entry (:entry (try (cut/validate-table! [{:migration :drop-key :key "ok"}
+                                                      entry])
+                                (catch clojure.lang.ExceptionInfo e (ex-data e)))))))))
+
+(deftest refuses-a-malformed-table-before-any-sql
+  (test-alpha/with-weaver-world [ctx world-opts]
+    (let [rt (:runtime ctx)
+          run (add! rt "active" {"workflow/phase" "review"})]
+      (with-redefs [cut/migrations [{:migration :rename-key
+                                     :from "workflow/phase" :to "workflow/form"}
+                                    {:migration :rename-key :from "a" :to "b"
+                                     :when-vlaue "x"}]]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed migration entry"
+                              (cut/rewrite! (datasource ctx)))))
+      (is (= {:workflow/phase "review"} (attrs rt run))
+          "the whole table is validated before the rewrite opens a transaction,
+           so a typo in a later entry cannot half-migrate a world"))))
 
 (deftest refuses-an-implicit-db-target
   (testing "no --db and no --workspace"
