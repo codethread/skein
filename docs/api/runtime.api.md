@@ -21,6 +21,17 @@ Function.
 Return the normalized approved spool roots for `runtime`'s config dir.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L66-L69">Source</a></sub></p>
 
+## <a name="skein.api.runtime.alpha/config-dir">`config-dir`</a>
+``` clojure
+(config-dir runtime)
+```
+Function.
+
+Return the selected config directory path for `runtime`.
+
+  The result conforms to `:skein.core.specs/config-dir-result`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L89-L97">Source</a></sub></p>
+
 ## <a name="skein.api.runtime.alpha/now">`now`</a>
 ``` clojure
 (now runtime)
@@ -31,7 +42,26 @@ Return the current java.time.Instant from `runtime`'s clock seam.
 
   Defaults to the real wall clock; deterministic tests inject an advanceable
   clock through `skein.test.alpha/set-clock!`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L142-L148">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L180-L186">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/release-marker">`release-marker`</a>
+``` clojure
+(release-marker runtime)
+```
+Function.
+
+Return the running Skein release marker and its provenance.
+
+  The result has marker `vN` and provenance `:claimed` for an explicit startup
+  claim, marker `vN` and provenance `:tag` for an annotated tag on the source
+  checkout's HEAD, or `{:marker nil :provenance :none}` when the checkout
+  resource is absent or non-filesystem, or successful inspection finds no
+  matching annotated tag. Git startup, checkout-root resolution, and nonzero
+  Git command failures throw. Consumers that require marker arithmetic must
+  reject `:none` explicitly. The result conforms to
+  `:skein.core.specs/release-marker-result`; marker claims conform to
+  `:skein.core.specs/release-marker-claim`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L71-L87">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/reload!">`reload!`</a>
 ``` clojure
@@ -40,7 +70,7 @@ Return the current java.time.Instant from `runtime`'s clock seam.
 Function.
 
 Reload startup files from `runtime`'s config dir after clearing registries.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L107-L110">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L145-L148">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/reload-spool!">`reload-spool!`</a>
 ``` clojure
@@ -73,7 +103,7 @@ Make `coord`'s latest synced source live in `runtime`.
   namespace also leaves the old one loaded until restart.
 
   Fails loudly on an unresolvable `coord`, carrying a `:reason` keyword in ex-data.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L112-L140">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L150-L178">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/spool-state">`spool-state`</a>
 ``` clojure
@@ -100,7 +130,18 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   once a version is declared. A malformed opts map fails loudly at the call site
   (see `validate-spool-state-opts!`) rather than degrading to the unversioned
   path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L368-L421">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L406-L459">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/spools-file">`spools-file`</a>
+``` clojure
+(spools-file runtime)
+```
+Function.
+
+Return the `java.io.File` for `runtime`'s shared `spools.edn`.
+
+  The result conforms to `:skein.core.specs/spools-file-result`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L99-L107">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/sync!">`sync!`</a>
 ``` clojure
@@ -116,7 +157,7 @@ Load approved spool roots and Maven jars into `runtime`.
   ExceptionInfo with `:reason :non-additive-sync-diff`, `:diff`,
   `:pending-generation`, and `:remedy`; later successful calls include the
   pending generation until the weaver process is replaced.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L71-L85">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L109-L123">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/syncs">`syncs`</a>
 ``` clojure
@@ -128,7 +169,7 @@ Return `runtime`'s most recent approved-root sync state.
 
   The result is `{:spools ...}` and may include the latest recorded
   `:pending-generation` from a refused non-additive sync diff.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L87-L93">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L125-L131">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/use">`use`</a>
 ``` clojure
@@ -137,7 +178,7 @@ Return `runtime`'s most recent approved-root sync state.
 Function.
 
 Return one module-use registry entry from `runtime` by key.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L273-L276">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L311-L314">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/use!">`use!`</a>
 ``` clojure
@@ -151,7 +192,7 @@ Load a runtime module and record its module-use state under keyword key.
   include `:call` to invoke a no-arg function after load. Returns a registry
   entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
   rethrow after recording failure metadata.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L226-L266">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L264-L304">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/uses">`uses`</a>
 ``` clojure
@@ -160,4 +201,4 @@ Load a runtime module and record its module-use state under keyword key.
 Function.
 
 Return `runtime`'s module-use registry as data-first maps.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L268-L271">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L306-L309">Source</a></sub></p>
