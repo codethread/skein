@@ -11,6 +11,7 @@
   `approved`/`sync!`/`syncs` publics and its module loading here and owns the
   blessed contract (SPEC-004, SPEC-005.C5)."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.tools.deps.interop :as deps-interop]
             [clojure.tools.namespace.dependency :as ns-dep]
@@ -34,7 +35,7 @@
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
 
-(defn marker-ordinal
+(defn- marker-ordinal
   "Return a release marker's positive integer ordinal.
 
   Markers are exactly `vN`, where N is a positive base-10 integer. `v0` has a
@@ -51,13 +52,6 @@
     (throw (ex-info "Release marker must match vN where N is a positive integer"
                     {:marker marker}))))
 
-(defn- validate-marker! [marker context]
-  (try
-    (marker-ordinal marker)
-    marker
-    (catch clojure.lang.ExceptionInfo e
-      (throw (ex-info (ex-message e) (merge context (ex-data e)) e)))))
-
 (defn- root-path-segments [root-path]
   (str/split root-path #"/"))
 
@@ -66,6 +60,79 @@
        (not (.isAbsolute (io/file root-path)))
        (not (str/starts-with? root-path "~"))
        (not-any? #{".."} (root-path-segments root-path))))
+
+(s/def ::non-blank-string non-blank-string?)
+(s/def ::release-marker #(and (string? %) (boolean (re-matches release-marker-pattern %))))
+(s/def ::root-path relative-root-path?)
+(s/def ::roots (s/map-of symbol? ::root-path :min-count 1))
+(s/def ::requires (s/map-of symbol? ::release-marker))
+(s/def :git/url ::non-blank-string)
+(s/def :git/sha #(and (string? %) (boolean (re-matches git-sha-pattern %))))
+(s/def :git/tag ::release-marker)
+(s/def :skein/min ::release-marker)
+(s/def :local/root ::non-blank-string)
+(s/def ::claims (s/nilable ::release-marker))
+
+(defn- exact-keys? [allowed value]
+  (and (map? value) (every? allowed (keys value))))
+
+(s/def ::git-family-entry
+  (s/and #(exact-keys? git-spool-keys %)
+         (s/keys :req [:git/url :git/sha]
+                 :opt [:git/tag :skein/min]
+                 :opt-un [::roots ::requires])))
+(s/def ::local-family-entry
+  (s/and #(exact-keys? local-spool-keys %)
+         (s/keys :req [:local/root])))
+(s/def ::family-entry (s/or :git ::git-family-entry :local ::local-family-entry))
+(s/def ::overlay-entry
+  (s/and #(exact-keys? overlay-spool-keys %)
+         (s/keys :req [:local/root] :req-un [::claims])
+         #(s/valid? ::release-marker (:claims %))))
+
+(s/def ::family symbol?)
+(s/def ::coordinate
+  (s/or :git (s/and #(= :git (:kind %))
+                    #(exact-keys? #{:kind :git/url :git/sha :git/tag} %)
+                    (s/keys :req [:git/url :git/sha] :opt [:git/tag]))
+        :local (s/and #(= :local (:kind %))
+                      #(exact-keys? #{:kind :local/root} %)
+                      (s/keys :req [:local/root]))))
+(s/def ::roots-map ::roots)
+(s/def ::skein-min (s/nilable ::release-marker))
+(s/def ::provenance #{:spools-edn :local-overlay})
+(s/def ::source #(and (map? %) (#{:shared :local} (:kind %)) (non-blank-string? (:file %))))
+(s/def ::normalized-family
+  (s/keys :req-un [::family ::coordinate ::roots-map ::requires ::skein-min
+                    ::provenance ::source]
+          :opt-un [::claims]))
+
+(defn- duplicate-root-owners [families]
+  (->> families
+       (mapcat (fn [{:keys [family roots-map]}]
+                 (map (fn [root-lib] [root-lib family]) (keys roots-map))))
+       (group-by first)
+       (keep (fn [[root-lib owners]]
+               (when (< 1 (count owners))
+                 [root-lib (mapv second owners)])))
+       (into {})))
+
+(s/def ::normalized-families
+  (s/and (s/coll-of ::normalized-family :kind vector?)
+         #(empty? (duplicate-root-owners %))))
+
+(defn- require-spec! [spec value message context]
+  (when-not (s/valid? spec value)
+    (throw (ex-info message
+                    (assoc context :spec spec :explain (s/explain-data spec value)))))
+  value)
+
+(defn- validate-marker! [marker context]
+  (try
+    (marker-ordinal marker)
+    marker
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info (ex-message e) (merge context (ex-data e)) e)))))
 
 (defn- validate-family-name! [source family]
   (when-not (symbol? family)
@@ -126,14 +193,20 @@
         (when-not (non-blank-string? (:local/root entry))
           (throw (ex-info "Spool entry requires non-blank string :local/root"
                           (assoc source :family family :local/root (:local/root entry) :entry entry))))
-        {:family family
-         :coordinate {:kind :local :local/root (:local/root entry)}
-         :roots-map {family "."}
-         :requires {}
-         :skein-min nil
-         :claims nil
-         :provenance :spools-edn
-         :source source})
+        (require-spec! ::family-entry entry "Spool family entry has an invalid shape"
+                       (assoc source :family family :entry entry))
+        (require-spec!
+         ::normalized-family
+         {:family family
+          :coordinate {:kind :local :local/root (:local/root entry)}
+          :roots-map {family "."}
+          :requires {}
+          :skein-min nil
+          :claims nil
+          :provenance :spools-edn
+          :source source}
+         "Normalized spool family has an invalid shape"
+         (assoc source :family family)))
       (do
         (when-not (non-blank-string? (:git/url entry))
           (throw (ex-info "Git spool entry requires non-blank string :git/url"
@@ -146,17 +219,22 @@
           (validate-marker! (:git/tag entry) (assoc source :family family :field :git/tag)))
         (when (contains? entry :skein/min)
           (validate-marker! (:skein/min entry) (assoc source :family family :field :skein/min)))
-        {:family family
-         :coordinate (cond-> {:kind :git
-                              :git/url (:git/url entry)
-                              :git/sha (:git/sha entry)}
-                       (contains? entry :git/tag) (assoc :git/tag (:git/tag entry)))
-         :roots-map (normalize-roots-map source family entry)
-         :requires (normalize-requires source family entry)
-         :skein-min (:skein/min entry)
-         :claims nil
-         :provenance :spools-edn
-         :source source}))))
+        (let [normalized {:family family
+                          :coordinate (cond-> {:kind :git
+                                               :git/url (:git/url entry)
+                                               :git/sha (:git/sha entry)}
+                                        (contains? entry :git/tag) (assoc :git/tag (:git/tag entry)))
+                          :roots-map (normalize-roots-map source family entry)
+                          :requires (normalize-requires source family entry)
+                          :skein-min (:skein/min entry)
+                          :claims nil
+                          :provenance :spools-edn
+                          :source source}]
+          (require-spec! ::family-entry entry "Spool family entry has an invalid shape"
+                         (assoc source :family family :entry entry))
+          (require-spec! ::normalized-family normalized
+                         "Normalized spool family has an invalid shape"
+                         (assoc source :family family)))))))
 
 (defn- normalize-overlay [source family entry]
   (validate-entry-map! source family entry overlay-spool-keys)
@@ -171,6 +249,8 @@
                            :local/root (:local/root entry)
                            :fix "add :claims \"vN\" — the release whose contract this tree honors"))))
   (validate-marker! (:claims entry) (assoc source :family family :field :claims))
+  (require-spec! ::overlay-entry entry "Local spool override has an invalid shape"
+                 (assoc source :family family :entry entry))
   {:family family
    :coordinate {:kind :local :local/root (:local/root entry)}
    :claims (:claims entry)
@@ -216,6 +296,16 @@
                                 :marker (effective-marker entry)}])
                        (keys roots-map))))
         families))
+
+(defn- reject-duplicate-root-libs! [families]
+  (when-let [[root-lib owners] (first (duplicate-root-owners families))]
+    (throw (ex-info "Spool root lib must be owned by exactly one family"
+                    {:reason :duplicate-spool-root
+                     :root-lib root-lib
+                     :families owners})))
+  (require-spec! ::normalized-families (vec families)
+                 "Approved spool families have an invalid shape" {})
+  families)
 
 (defn- requirement-findings [families]
   (let [index (root-family-index families)]
@@ -414,6 +504,65 @@
                       {:legacy-files (vec legacy-files)
                        :config-dir (config-dir runtime)})))))
 
+(defn- kind-shaped-root? [entry]
+  (case (:kind entry)
+    :git (and (s/valid? :git/url (:git/url entry))
+              (s/valid? :git/sha (:git/sha entry))
+              (not (contains? entry :local/root)))
+    :local (and (s/valid? :local/root (:local/root entry))
+                (not-any? #(contains? entry %) [:git/url :git/sha :git/tag]))
+    false))
+
+(s/def ::root non-blank-string?)
+(s/def ::approved-root-entry
+  (s/and map?
+         kind-shaped-root?
+         #(non-blank-string? (:root %))
+         #(s/valid? ::source (:source %))))
+(s/def ::approved-root-map
+  (s/and (s/map-of symbol? ::approved-root-entry)
+         #(every? (fn [[lib entry]]
+                    (and (symbol? lib)
+                         (symbol? (::family (meta entry)))
+                         (s/valid? ::coordinate (::coordinate (meta entry)))
+                         (s/valid? ::provenance (::provenance (meta entry)))))
+                  %)))
+(s/def ::mvn-overrides map?)
+(s/def ::pending-validations vector?)
+(s/def ::approved-result
+  (s/and #(exact-keys? #{:spools :mvn-overrides :pending-validations} %)
+         #(contains? % :spools)
+         #(s/valid? ::approved-root-map (:spools %))
+         #(or (not (contains? % :mvn-overrides)) (map? (:mvn-overrides %)))
+         #(or (not (contains? % :pending-validations)) (vector? (:pending-validations %)))))
+
+(s/def ::status #{:loaded :already-available :failed})
+(s/def ::reason keyword?)
+(s/def ::sync-root-entry
+  (s/and map?
+         kind-shaped-root?
+         #(symbol? (:lib %))
+         #(symbol? (:family %))
+         #(s/valid? ::coordinate (:coordinate %))
+         #(s/valid? ::provenance (:provenance %))
+         #(non-blank-string? (:root %))
+         #(s/valid? ::source (:source %))
+         #(s/valid? ::status (:status %))
+         #(or (not= :failed (:status %)) (keyword? (:reason %)))))
+(s/def ::sync-root-map
+  (s/and (s/map-of symbol? ::sync-root-entry)
+         #(every? (fn [[lib entry]] (= lib (:lib entry))) %)))
+(s/def ::pending-generation map?)
+(s/def ::retained-spool-state vector?)
+(s/def ::sync-result
+  (s/and #(exact-keys? #{:spools :pending-validations :pending-generation
+                         :retained-spool-state} %)
+         #(contains? % :spools)
+         #(s/valid? ::sync-root-map (:spools %))
+         #(or (not (contains? % :pending-validations)) (vector? (:pending-validations %)))
+         #(or (not (contains? % :pending-generation)) (map? (:pending-generation %)))
+         #(or (not (contains? % :retained-spool-state)) (vector? (:retained-spool-state %)))))
+
 (defn approved-spools
   "Read and validate the effective runtime spool allowlist.
 
@@ -431,6 +580,7 @@
          local (approved-spools-file runtime "spools.local.edn" :local normalize-overlay)
          _ (reject-shared-git-urls! (:families shared))
          families (vals (apply-overlays (:families shared) (:families local)))
+         _ (reject-duplicate-root-libs! families)
          pending-validations (validate-family-requirements! families running-marker)
          overrides (merge (:mvn-overrides shared) (:mvn-overrides local))
          spools (into {}
@@ -453,10 +603,13 @@
                                             ::coordinate coordinate
                                             ::provenance provenance})]))
                                 roots-map)))
-                       families))]
-     (cond-> {:spools spools}
-       (seq overrides) (assoc :mvn-overrides overrides)
-       (seq pending-validations) (assoc :pending-validations pending-validations)))))
+                       families))
+         result (cond-> {:spools spools}
+                  (seq overrides) (assoc :mvn-overrides overrides)
+                  (seq pending-validations) (assoc :pending-validations pending-validations))]
+     (require-spec! ::approved-result result
+                    "Normalized approved spool config has an invalid shape" {})
+     result)))
 
 (defn- spool-source-fields [entry]
   (case (:kind entry)
@@ -747,15 +900,21 @@
   (try
     {:fetch (materialize-git-spool! entry)}
     (catch clojure.lang.ExceptionInfo e
-      (if (= :tag-mismatch (:reason (ex-data e)))
-        {:failure {:reason :tag-mismatch
-                   :data (select-keys (ex-data e) [:tag :expected :actual])}}
-        (let [data (ex-data e)]
+      (let [data (ex-data e)]
+        (cond
+          (= :tag-mismatch (:reason data))
+          {:failure {:reason :tag-mismatch
+                     :data (select-keys data [:tag :expected :actual])}}
+
+          (integer? (:exit data))
           {:failure {:reason :fetch-failed
                      :data (cond-> (fetch-failure data)
                              (:remote data) (assoc :remote (:remote data))
-                             (:cache-path data) (assoc :cache-path (:cache-path data)))}})))
-    (catch Throwable t
+                             (:cache-path data) (assoc :cache-path (:cache-path data)))}}
+
+          :else
+          (throw e))))
+    (catch java.io.IOException t
       {:failure {:reason :fetch-failed
                  :data {:exit 1
                         :stderr (stderr-tail (ex-message t))}}})))
@@ -1040,17 +1199,25 @@
                       (into (sorted-map) (filter successful-sync?) results)))
        (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
        (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
-       (cond-> {:spools results}
-         (seq (:pending-validations approved))
-         (assoc :pending-validations (:pending-validations approved))
-         (seq retained) (assoc :retained-spool-state retained)
-         @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime)))))))
+       (let [result (cond-> {:spools results}
+                      (seq (:pending-validations approved))
+                      (assoc :pending-validations (:pending-validations approved))
+                      (seq retained) (assoc :retained-spool-state retained)
+                      @(:pending-spool-generation runtime)
+                      (assoc :pending-generation @(:pending-spool-generation runtime)))]
+         (require-spec! ::sync-result result
+                        "Approved spool sync result has an invalid shape" {})
+         result)))))
 
 (defn approved-spool-syncs
   "Return the most recent approved spool sync results."
   [runtime]
-  (cond-> {:spools (into (sorted-map) @(approved-spool-sync-state runtime))}
-    @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime))))
+  (let [result (cond-> {:spools (into (sorted-map) @(approved-spool-sync-state runtime))}
+                 @(:pending-spool-generation runtime)
+                 (assoc :pending-generation @(:pending-spool-generation runtime)))]
+    (require-spec! ::sync-result result
+                   "Approved spool sync state has an invalid shape" {})
+    result))
 
 (defn module-file
   "Resolve module-use `path` against `runtime`'s config-dir, failing on escape.

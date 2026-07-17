@@ -46,14 +46,17 @@
 (s/def ::retained-spool-state-entry (s/keys :req-un [::key ::generation ::current-generation]
                                             :opt-un [::reason]))
 (s/def ::retained-spool-state (s/coll-of ::retained-spool-state-entry :kind vector?))
-(s/def ::spools map?)
-(s/def ::sync-result (s/keys :req-un [::spools]
-                             :opt-un [::pending-generation ::retained-spool-state]))
+(s/def ::approved-result :skein.core.weaver.spool-sync/approved-result)
+(s/def ::sync-result :skein.core.weaver.spool-sync/sync-result)
 (s/def ::non-additive-sync-diff-ex-data
   (s/keys :req-un [::status ::reason ::diff ::pending-generation ::remedy]))
 
 (defn- validate-sync-result! [result]
   (require-valid! ::sync-result result "runtime sync result has an invalid shape")
+  result)
+
+(defn- validate-approved-result! [result]
+  (require-valid! ::approved-result result "runtime approved spool config has an invalid shape")
   result)
 
 (defn- validate-sync-ex-data! [data]
@@ -63,7 +66,7 @@
 (defn approved
   "Return the normalized approved spool roots for `runtime`'s config dir."
   [runtime]
-  (spool-sync/approved-spools runtime))
+  (validate-approved-result! (spool-sync/approved-spools runtime)))
 
 (defn release-marker
   "Return the running Skein release marker and its provenance.
@@ -126,6 +129,18 @@
   `:pending-generation` from a refused non-additive sync diff."
   [runtime]
   (validate-sync-result! (spool-sync/approved-spool-syncs runtime)))
+
+(s/fdef approved
+  :args (s/cat :runtime map?)
+  :ret ::approved-result)
+
+(s/fdef sync!
+  :args (s/cat :runtime map?)
+  :ret ::sync-result)
+
+(s/fdef syncs
+  :args (s/cat :runtime map?)
+  :ret ::sync-result)
 
 (defn reload!
   "Reload startup files from `runtime`'s config dir after clearing registries."

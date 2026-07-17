@@ -3,6 +3,7 @@
   spools.local.edn reading, sync!, layered use!, reload!, event helper routing,
   and daemon init."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [skein.core.client :as client]
@@ -308,19 +309,6 @@
               (doseq [k data-keys]
                 (is (contains? (ex-data e) k))))))))))
 
-(deftest release-marker-parser-is-strict-and-reserves-v0
-  (is (= "1" (str (spool-sync/marker-ordinal "v1"))))
-  (is (= "123456789012345678901234567890"
-         (str (spool-sync/marker-ordinal "v123456789012345678901234567890"))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                        #"v0 is reserved; WIP repos stay untagged — v1 is the smallest promise"
-                        (spool-sync/marker-ordinal "v0")))
-  (doseq [marker [nil :v1 1 "" "1" "v" "v01" "v-1" "v1.0" "V1"]]
-    (testing (pr-str marker)
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"must match vN"
-                            (spool-sync/marker-ordinal marker))))))
-
 (deftest approved-validates-every-declared-marker-through-the-strict-parser
   (with-runtime
     (fn [rt config-dir]
@@ -334,6 +322,26 @@
             (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
               (is (re-find #"v0 is reserved" (ex-message ex)))
               (is (= field (:field (ex-data ex)))))))
+        (doseq [marker [nil :v1 1 "" "1" "v" "v01" "v-1" "v1.0" "V1"]]
+          (testing (pr-str marker)
+            (write-spools! config-dir
+                            (pr-str {:spools {'demo/family {:git/url "u"
+                                                            :git/sha sha
+                                                            :git/tag marker}}}))
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                  #"must match vN"
+                                  (runtime/approved rt)))))
+        (write-spools! config-dir
+                       (pr-str {:spools {'target/family {:git/url "target"
+                                                        :git/sha sha
+                                                        :git/tag "v123456789012345678901234567890"}
+                                         'client/family {:git/url "client"
+                                                        :git/sha sha
+                                                        :git/tag "v1"
+                                                        :requires {'target/family
+                                                                   "v123456789012345678901234567889"}}}}))
+        (is (= #{'target/family 'client/family}
+               (set (keys (:spools (runtime/approved rt))))))
         (write-spools! config-dir
                        (pr-str {:spools {'demo/family {:git/url "u"
                                                        :git/sha sha
@@ -365,6 +373,9 @@
              :roots {'demo/a "." 'demo/b "nested"}
              :requires {'other/root "v2"}
              :skein/min "v1"})))
+    (is (s/valid? :skein.core.weaver.spool-sync/normalized-family
+                  (#'spool-sync/normalize-shared-family
+                   source 'demo/family {:git/url "u" :git/sha sha})))
     (is (= {'demo/local "."}
            (:roots-map (#'spool-sync/normalize-shared-family
                         source 'demo/local {:local/root "spools/local"}))))))
@@ -381,6 +392,25 @@
         (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
           (is (re-find #"must not share :git/url" (ex-message ex)))
           (is (= #{'demo/a 'demo/b} (set (:families (ex-data ex))))))))))
+
+(deftest approved-rejects-duplicate-root-lib-owners-before-requirements
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha-a "0123456789abcdef0123456789abcdef01234567"
+            sha-b "1123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {'demo/one {:git/url "one"
+                                                    :git/sha sha-a
+                                                    :roots {'shared/root "."}}
+                                         'demo/two {:git/url "two"
+                                                    :git/sha sha-b
+                                                    :roots {'shared/root "nested"}
+                                                    :requires {'missing/root "v1"}}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
+          (is (= :duplicate-spool-root (:reason (ex-data ex))))
+          (is (= 'shared/root (:root-lib (ex-data ex))))
+          (is (= #{'demo/one 'demo/two} (set (:families (ex-data ex)))))
+          (is (not (contains? (ex-data ex) :findings))))))))
 
 (deftest approved-rejects-overlays-without-a-valid-claim-or-git-base
   (with-runtime
@@ -851,6 +881,50 @@
               (is (integer? (:exit result)))
               (is (string? (:stderr result)))
               (is (not (contains? result :local/root))))))))))
+
+(deftest sync-converts-expected-materialization-io-failures
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"
+            lib 'demo/io-failure
+            original @#'spool-sync/materialize-git-spool!]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "file:///tmp/io-failure"
+                                              :git/sha sha}}}))
+        (try
+          (alter-var-root #'spool-sync/materialize-git-spool!
+                          (constantly (fn [_] (throw (java.io.IOException. "disk unavailable")))))
+          (let [result (get-in (runtime/sync! rt) [:spools lib])]
+            (is (= :failed (:status result)))
+            (is (= :fetch-failed (:reason result)))
+            (is (= 1 (:exit result)))
+            (is (= "disk unavailable" (:stderr result))))
+          (finally
+            (alter-var-root #'spool-sync/materialize-git-spool! (constantly original))))))))
+
+(deftest sync-lets-unexpected-materialization-throwables-escape
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"
+            lib 'demo/programming-failure
+            original @#'spool-sync/materialize-git-spool!]
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:git/url "file:///tmp/programming-failure"
+                                              :git/sha sha}}}))
+        (try
+          (doseq [failure [(AssertionError. "broken invariant")
+                           (InterruptedException. "cancelled")
+                           (ex-info "unexpected ex-info" {:bug true})]]
+            (alter-var-root #'spool-sync/materialize-git-spool!
+                            (constantly (fn [_] (throw failure))))
+            (let [thrown (try
+                           (runtime/sync! rt)
+                           nil
+                           (catch Throwable t t))]
+              (is (identical? failure thrown))
+              (is (= {:spools {}} (runtime/syncs rt)))))
+          (finally
+            (alter-var-root #'spool-sync/materialize-git-spool! (constantly original))))))))
 
 (deftest sync-fetches-git-spool-and-uses-cache-hit-without-origin
   (with-runtime
