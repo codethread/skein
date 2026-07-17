@@ -130,7 +130,7 @@ The runtime is pull-based and *every* strand is already a durable wait point: an
 - A shipped classpath executor, `skein.spools.executors.shell`, fulfills ready `:shell`
   gates by running the gate's `shell/argv` command directly, registers the
   `:shell` executor, and closes each gate with `complete!` on a zero exit
-  (stamping a loud `shell/error` otherwise). See `executors/shell.md`.
+  (stamping a loud `gate/error` otherwise). See `executors/shell.md`.
 
 **Dynamic fan-out needs no primitive.** The run subgraph is recomputed live from the graph on every poll, so userland may add strands to a running molecule mid-flight — ordinary `strand!` plus `parent-of`/`depends-on` edges to the run's root — to spawn e.g. sub-agent steps discovered at runtime. Set `workflow/role "step"` on them so they count as workflow work and gate the run's done-check exactly like poured steps.
 
@@ -484,4 +484,3 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
   local-root adapter that binds workflow `:subagent` gates to agent-run runs.
 - [`skein.spools.executors.shell`](./executors/shell.md) — shipped classpath executor that fulfills
   workflow `:shell` gates by running their command.
-

@@ -17,7 +17,7 @@ One consistent way to run and coordinate coding-agent subagents, across every ha
 - **Cross-harness.** A subagent can be Claude, pi, or any tool you registered as a harness. Switching a whole workspace to a new provider is one `register-harness!`/`register-alias!` line in trusted config — no prompts, scripts, or workflows change.
 - **Everything is durable, observable, and awaitable.** Each subagent is a strand. You (or another agent) can list it, read its result, await it, read its notes, and see how it hangs off the plan — long after the session that spawned it ended. Nothing lives only in one harness's private memory.
 - **The graph is the scheduler.** You describe work and its dependencies once as a plan; readiness starts each piece the moment its blockers close. There is no separate queue to babysit.
-- **Human-in-the-loop tasks are plan nodes too.** `delegate --interactive` opens the agent in a live terminal-multiplexer session (tmux by default; your multiplexer is one `defbackend!` in trusted config) serving the task. You attach with the command `ps` hands you, pair with the agent, and when you agree the work is done the agent closes the task — the session is torn down and dependents unblock, exactly like any other task. This is how `hitl=true` tasks get delegated instead of stalling the plan.
+- **Human-in-the-loop tasks are plan nodes too.** `delegate --interactive` opens the agent in a live terminal-multiplexer session (tmux by default; your multiplexer is one `register-backend!` in trusted config) serving the task. You attach with the command `ps` hands you, pair with the agent, and when you agree the work is done the agent closes the task — the session is torn down and dependents unblock, exactly like any other task. This is how `hitl=true` tasks get delegated instead of stalling the plan.
 
 ### The vocabulary your agents already know
 
@@ -154,7 +154,7 @@ agent harnesses
 ```
 agent backends
 ```
-List configured interactive session backends (terminal multiplexers registered with `defbackend!` in trusted config; see the [agent-run backend registry](../agent-run/README.md#4-backend-registry-interactive-sessions)). → `[{"name","ops":["start","alive","stop",...],"doc"?}]`
+List configured interactive session backends (terminal multiplexers registered with `register-backend!` in trusted config; see the [agent-run backend registry](../agent-run/README.md#4-backend-registry-interactive-sessions)). → `[{"name","ops":["start","alive","stop",...],"doc"?}]`
 
 ### Delegation verbs (the task-contract layer)
 

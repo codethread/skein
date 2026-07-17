@@ -136,7 +136,7 @@ spool's `spools.edn` coordinate symbol and reloads the coordinate's namespaces i
 ```
 
 The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs
-the startup files so `install!`/`activate!` re-registers ops, queries, and handlers. So the code-bump sequence
+the startup files so `install!` re-registers ops, queries, and handlers. So the code-bump sequence
 is `reload-spool! coord` to make the code live, then a targeted re-`use!` of the spool's activation to
 re-register — or a full `reload!` when the bump changes registrations across the config.
 
