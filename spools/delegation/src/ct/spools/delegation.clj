@@ -1,4 +1,4 @@
-(ns skein.spools.delegation
+(ns ct.spools.delegation
   "Agent coordination spool layered over the agent-run engine."
   (:require [clojure.java.shell :as shell]
             [clojure.spec.alpha :as s]
@@ -12,7 +12,7 @@
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.api.format.alpha :as fmt]
-            [skein.spools.agent-run :as agent-run]
+            [ct.spools.agent-run :as agent-run]
             [skein.api.spool.alpha :refer [fail! attr-get reject-unknown-keys! require-valid!]]))
 
 (defn- rt
@@ -148,9 +148,9 @@
               :composition (fmt/reflow "
                              |council is a preset over an internal PANEL primitive — seats × a
                              |shared blackboard × turn-as-run rows × synthesis
-                             |(skein.spools.delegation/panel!). review shares the same blackboard
+                             |(ct.spools.delegation/panel!). review shares the same blackboard
                              |protocol and is expressible as a single-round panel
-                             |(skein.spools.delegation/roster->panel), but fans out through
+                             |(ct.spools.delegation/roster->panel), but fans out through
                              |roster-review-specs so its established prompts and attrs stay
                              |frozen. There is deliberately no panel verb: compose panels from
                              |trusted Clojure or reach for them through these presets.")
@@ -471,7 +471,7 @@
                                   |<name> fans it out over a target. A roster is the panel
                                   |primitive's seat vector, so it speaks panel's seat vocabulary.
                                   |
-                                  |Workflow composition: skein.spools.delegation/roster-review-specs
+                                  |Workflow composition: ct.spools.delegation/roster-review-specs
                                   |(trusted Clojure) returns the same fan-out as gate-ready specs,
                                   |sharing one prompt source with the verb.")
                      :returns [{"name" "roster name"
@@ -493,7 +493,7 @@
                                   |
                                   |The CLI is scalar-only. Per-seat harness/brief (the :seats
                                   |vector) is trusted-Clojure / inline-panel territory
-                                  |(skein.spools.delegation/council! or panel!), keeping rich
+                                  |(ct.spools.delegation/council! or panel!), keeping rich
                                   |structured data out of shell argv.
                                   |
                                   |--fanout-cap K stamps one shared fan-out group on every
@@ -834,108 +834,108 @@
 ;; outside the string-typed panel-specs/review-specs seams, merged onto spawn
 ;; attrs downstream). `fanout-attrs` builds this shape; validating it here keeps
 ;; a hand-built option map from stamping a cap the agent-run window would reject.
-(s/def :skein.spools.delegation.council-input/fanout-attrs
+(s/def :ct.spools.delegation.council-input/fanout-attrs
   (s/and map?
          #(non-blank? (get % "agent-run/fanout-group"))
          #(pos-int? (get % "agent-run/fanout-cap"))))
-(s/def :skein.spools.delegation.council-input/harness harness-ref?)
-(s/def :skein.spools.delegation.council-input/synthesizer harness-ref?)
-(s/def :skein.spools.delegation.council-input/seat-count pos-int?)
-(s/def :skein.spools.delegation.council-input/rounds pos-int?)
-(s/def :skein.spools.delegation.council-input/spawned-by non-blank?)
-(s/def :skein.spools.delegation.council-input/cwd non-blank?)
-(s/def :skein.spools.delegation.council.seat/name non-blank?)
-(s/def :skein.spools.delegation.council.seat/harness harness-ref?)
-(s/def :skein.spools.delegation.council.seat/brief non-blank?)
-(s/def :skein.spools.delegation.council/seat
-  (s/keys :req-un [:skein.spools.delegation.council.seat/name]
-          :opt-un [:skein.spools.delegation.council.seat/harness
-                   :skein.spools.delegation.council.seat/brief]))
+(s/def :ct.spools.delegation.council-input/harness harness-ref?)
+(s/def :ct.spools.delegation.council-input/synthesizer harness-ref?)
+(s/def :ct.spools.delegation.council-input/seat-count pos-int?)
+(s/def :ct.spools.delegation.council-input/rounds pos-int?)
+(s/def :ct.spools.delegation.council-input/spawned-by non-blank?)
+(s/def :ct.spools.delegation.council-input/cwd non-blank?)
+(s/def :ct.spools.delegation.council.seat/name non-blank?)
+(s/def :ct.spools.delegation.council.seat/harness harness-ref?)
+(s/def :ct.spools.delegation.council.seat/brief non-blank?)
+(s/def :ct.spools.delegation.council/seat
+  (s/keys :req-un [:ct.spools.delegation.council.seat/name]
+          :opt-un [:ct.spools.delegation.council.seat/harness
+                   :ct.spools.delegation.council.seat/brief]))
 (def ^:private council-seat-input-keys
   #{:name :harness :brief})
 
-(s/def :skein.spools.delegation.council-input/seats
-  (s/coll-of :skein.spools.delegation.council/seat :kind vector? :min-count 1))
-(s/def :skein.spools.delegation/council-input
-  (s/keys :opt-un [:skein.spools.delegation.council-input/harness
-                   :skein.spools.delegation.council-input/seat-count
-                   :skein.spools.delegation.council-input/rounds
-                   :skein.spools.delegation.council-input/seats
-                   :skein.spools.delegation.council-input/synthesizer
-                   :skein.spools.delegation.council-input/spawned-by
-                   :skein.spools.delegation.council-input/cwd
-                   :skein.spools.delegation.council-input/fanout-attrs]))
+(s/def :ct.spools.delegation.council-input/seats
+  (s/coll-of :ct.spools.delegation.council/seat :kind vector? :min-count 1))
+(s/def :ct.spools.delegation/council-input
+  (s/keys :opt-un [:ct.spools.delegation.council-input/harness
+                   :ct.spools.delegation.council-input/seat-count
+                   :ct.spools.delegation.council-input/rounds
+                   :ct.spools.delegation.council-input/seats
+                   :ct.spools.delegation.council-input/synthesizer
+                   :ct.spools.delegation.council-input/spawned-by
+                   :ct.spools.delegation.council-input/cwd
+                   :ct.spools.delegation.council-input/fanout-attrs]))
 
-(s/def :skein.spools.delegation.panel-input/target non-blank?)
-(s/def :skein.spools.delegation.panel-input/review-id non-blank?)
-(s/def :skein.spools.delegation/panel-input
-  (s/keys :opt-un [:skein.spools.delegation.council-input/spawned-by
-                   :skein.spools.delegation.council-input/cwd
-                   :skein.spools.delegation.council-input/fanout-attrs
-                   :skein.spools.delegation.panel-input/target
-                   :skein.spools.delegation.panel-input/review-id]))
+(s/def :ct.spools.delegation.panel-input/target non-blank?)
+(s/def :ct.spools.delegation.panel-input/review-id non-blank?)
+(s/def :ct.spools.delegation/panel-input
+  (s/keys :opt-un [:ct.spools.delegation.council-input/spawned-by
+                   :ct.spools.delegation.council-input/cwd
+                   :ct.spools.delegation.council-input/fanout-attrs
+                   :ct.spools.delegation.panel-input/target
+                   :ct.spools.delegation.panel-input/review-id]))
 
 ;; The roster shape is spec-defined: the spec is the source of truth for
 ;; structure, and validation consults it. Manual checks below cover only what
 ;; s/keys cannot express: closed key sets (s/keys maps are open) and
 ;; cross-entry name uniqueness.
-(s/def :skein.spools.delegation.roster/name non-blank?)
-(s/def :skein.spools.delegation.roster/harness harness-ref?)
-(s/def :skein.spools.delegation.roster/brief non-blank?)
-(s/def :skein.spools.delegation.roster/scope non-blank?)
-(s/def :skein.spools.delegation.roster/seat
-  (s/keys :req-un [:skein.spools.delegation.roster/name
-                   :skein.spools.delegation.roster/harness
-                   :skein.spools.delegation.roster/brief]
-          :opt-un [:skein.spools.delegation.roster/scope]))
-(s/def :skein.spools.delegation.roster/seats
-  (s/coll-of :skein.spools.delegation.roster/seat :kind vector? :min-count 1))
-(s/def :skein.spools.delegation.roster/synthesis
-  (s/keys :req-un [:skein.spools.delegation.roster/harness]))
-(s/def :skein.spools.delegation/roster
-  (s/keys :req-un [:skein.spools.delegation.roster/seats]
-          :opt-un [:skein.spools.delegation.roster/synthesis]))
+(s/def :ct.spools.delegation.roster/name non-blank?)
+(s/def :ct.spools.delegation.roster/harness harness-ref?)
+(s/def :ct.spools.delegation.roster/brief non-blank?)
+(s/def :ct.spools.delegation.roster/scope non-blank?)
+(s/def :ct.spools.delegation.roster/seat
+  (s/keys :req-un [:ct.spools.delegation.roster/name
+                   :ct.spools.delegation.roster/harness
+                   :ct.spools.delegation.roster/brief]
+          :opt-un [:ct.spools.delegation.roster/scope]))
+(s/def :ct.spools.delegation.roster/seats
+  (s/coll-of :ct.spools.delegation.roster/seat :kind vector? :min-count 1))
+(s/def :ct.spools.delegation.roster/synthesis
+  (s/keys :req-un [:ct.spools.delegation.roster/harness]))
+(s/def :ct.spools.delegation/roster
+  (s/keys :req-un [:ct.spools.delegation.roster/seats]
+          :opt-un [:ct.spools.delegation.roster/synthesis]))
 
 ;; Change context: the caller-supplied diff surface (commit range + changed
 ;; files, plus cheap code windows) injected into every reviewer prompt so
 ;; reviewers stop re-deriving the diff. Distinct from dynamic reviewer
 ;; *selection* from git changes, which remains deferred to a future RFC.
-(s/def :skein.spools.delegation.change-context/commit-range non-blank?)
-(s/def :skein.spools.delegation.change-context/files (s/coll-of non-blank? :kind vector? :min-count 1))
-(s/def :skein.spools.delegation.change-context.window/path non-blank?)
-(s/def :skein.spools.delegation.change-context.window/lines non-blank?)
-(s/def :skein.spools.delegation.change-context/window
-  (s/keys :req-un [:skein.spools.delegation.change-context.window/path]
-          :opt-un [:skein.spools.delegation.change-context.window/lines]))
-(s/def :skein.spools.delegation.change-context/windows
-  (s/coll-of :skein.spools.delegation.change-context/window :kind vector? :min-count 1))
-(s/def :skein.spools.delegation/change-context
-  (s/keys :opt-un [:skein.spools.delegation.change-context/commit-range
-                   :skein.spools.delegation.change-context/files
-                   :skein.spools.delegation.change-context/windows]))
+(s/def :ct.spools.delegation.change-context/commit-range non-blank?)
+(s/def :ct.spools.delegation.change-context/files (s/coll-of non-blank? :kind vector? :min-count 1))
+(s/def :ct.spools.delegation.change-context.window/path non-blank?)
+(s/def :ct.spools.delegation.change-context.window/lines non-blank?)
+(s/def :ct.spools.delegation.change-context/window
+  (s/keys :req-un [:ct.spools.delegation.change-context.window/path]
+          :opt-un [:ct.spools.delegation.change-context.window/lines]))
+(s/def :ct.spools.delegation.change-context/windows
+  (s/coll-of :ct.spools.delegation.change-context/window :kind vector? :min-count 1))
+(s/def :ct.spools.delegation/change-context
+  (s/keys :opt-un [:ct.spools.delegation.change-context/commit-range
+                   :ct.spools.delegation.change-context/files
+                   :ct.spools.delegation.change-context/windows]))
 
 ;; roster-review-specs output: the public seam shape workflow authors consume.
-(s/def :skein.spools.delegation.review-specs/prompt non-blank?)
+(s/def :ct.spools.delegation.review-specs/prompt non-blank?)
 ;; string->string compiler seam; the fan-out cap (an integer) never flows
 ;; through here — it merges onto spawn attrs downstream of this contract.
-(s/def :skein.spools.delegation.review-specs/attrs (s/map-of string? string?))
-(s/def :skein.spools.delegation.review-specs/reviewer
-  (s/keys :req-un [:skein.spools.delegation.roster/name
-                   :skein.spools.delegation.roster/harness
-                   :skein.spools.delegation.review-specs/prompt
-                   :skein.spools.delegation.review-specs/attrs]))
-(s/def :skein.spools.delegation.review-specs/reviewers
-  (s/coll-of :skein.spools.delegation.review-specs/reviewer :kind vector? :min-count 1))
-(s/def :skein.spools.delegation.review-specs/synthesizer :skein.spools.delegation.review-specs/reviewer)
-(s/def :skein.spools.delegation.review-specs/roster keyword?)
-(s/def :skein.spools.delegation.review-specs/target non-blank?)
-(s/def :skein.spools.delegation.review-specs/pass non-blank?)
-(s/def :skein.spools.delegation/review-specs
-  (s/keys :req-un [:skein.spools.delegation.review-specs/roster
-                   :skein.spools.delegation.review-specs/target
-                   :skein.spools.delegation.review-specs/pass
-                   :skein.spools.delegation.review-specs/reviewers
-                   :skein.spools.delegation.review-specs/synthesizer]))
+(s/def :ct.spools.delegation.review-specs/attrs (s/map-of string? string?))
+(s/def :ct.spools.delegation.review-specs/reviewer
+  (s/keys :req-un [:ct.spools.delegation.roster/name
+                   :ct.spools.delegation.roster/harness
+                   :ct.spools.delegation.review-specs/prompt
+                   :ct.spools.delegation.review-specs/attrs]))
+(s/def :ct.spools.delegation.review-specs/reviewers
+  (s/coll-of :ct.spools.delegation.review-specs/reviewer :kind vector? :min-count 1))
+(s/def :ct.spools.delegation.review-specs/synthesizer :ct.spools.delegation.review-specs/reviewer)
+(s/def :ct.spools.delegation.review-specs/roster keyword?)
+(s/def :ct.spools.delegation.review-specs/target non-blank?)
+(s/def :ct.spools.delegation.review-specs/pass non-blank?)
+(s/def :ct.spools.delegation/review-specs
+  (s/keys :req-un [:ct.spools.delegation.review-specs/roster
+                   :ct.spools.delegation.review-specs/target
+                   :ct.spools.delegation.review-specs/pass
+                   :ct.spools.delegation.review-specs/reviewers
+                   :ct.spools.delegation.review-specs/synthesizer]))
 
 (def ^:private roster-seat-keys #{:name :harness :brief :scope})
 (def ^:private roster-keys #{:seats :synthesis})
@@ -944,7 +944,7 @@
 (defn- validate-roster!
   "Validate roster data: closed key sets first — a typo'd key diagnoses far
   better as \"unknown keys [:breif]\" than as the missing-`:brief` spec
-  explain it also causes — then the :skein.spools.delegation/roster spec for
+  explain it also causes — then the :ct.spools.delegation/roster spec for
   structure, then seat-name uniqueness. Key checks are guarded on map
   shape so non-map garbage still falls through to the spec failure. Returns
   the roster."
@@ -964,11 +964,11 @@
         (when-let [unknown (seq (remove roster-synthesis-keys (keys synthesis)))]
           (fail! "Roster :synthesis has unknown keys"
                  {:roster roster-id :unknown (vec unknown) :allowed (sort roster-synthesis-keys)})))))
-  (when-not (s/valid? :skein.spools.delegation/roster roster)
+  (when-not (s/valid? :ct.spools.delegation/roster roster)
     (fail! "Roster does not conform to spec"
            {:roster roster-id
-            :spec :skein.spools.delegation/roster
-            :explain (s/explain-str :skein.spools.delegation/roster roster)}))
+            :spec :ct.spools.delegation/roster
+            :explain (s/explain-str :ct.spools.delegation/roster roster)}))
   (let [names (mapv :name (:seats roster))]
     (when-not (apply distinct? names)
       (fail! "Roster seat :name values must be unique" {:roster roster-id :names names})))
@@ -984,7 +984,7 @@
   "Register or replace a named reviewer roster (weaver-lifetime state, so
   trusted startup config re-registers it like harness aliases and queries).
 
-  Roster data is plain and spec-defined — see `:skein.spools.delegation/roster`:
+  Roster data is plain and spec-defined — see `:ct.spools.delegation/roster`:
   `{:seats [{:name :harness :brief :scope?} ...] :synthesis {:harness ...}?}`,
   the panel primitive's seat vocabulary (a roster is a single-round,
   target-blackboard panel; see `roster->panel`). Each seat is one independent
@@ -1143,17 +1143,17 @@
 
 (defn- validate-change-context!
   "Fail loudly unless `change-context` is nil or conforms to
-  `:skein.spools.delegation/change-context`. Both the roster path
+  `:ct.spools.delegation/change-context`. Both the roster path
   (`roster-review-specs`) and the ad-hoc path (`review!`) route through this so a
   malformed diff surface can never reach a reviewer prompt. `caller` names the
   seam for the failure message."
   [caller change-context]
   (when (and (some? change-context)
-             (not (s/valid? :skein.spools.delegation/change-context change-context)))
+             (not (s/valid? :ct.spools.delegation/change-context change-context)))
     (fail! (str caller " :change-context does not conform to spec")
            {:change-context change-context
-            :spec :skein.spools.delegation/change-context
-            :explain (s/explain-str :skein.spools.delegation/change-context change-context)}))
+            :spec :ct.spools.delegation/change-context
+            :explain (s/explain-str :ct.spools.delegation/change-context change-context)}))
   change-context)
 
 (defn- reject-card-target!
@@ -1195,7 +1195,7 @@
 
 (defn roster-review-specs
   "Return a roster's review fan-out as plain, fully-built run specs
-  (shape: `:skein.spools.delegation/review-specs`).
+  (shape: `:ct.spools.delegation/review-specs`).
 
   This is the one prompt-building source for roster reviews. `review!` spawns
   agent-run runs from these specs, and workflow authors map them onto
@@ -1211,7 +1211,7 @@
   target fail loudly.
 
   `roster` is a registered roster name **or an inline roster value** — a map
-  conforming to `:skein.spools.delegation/roster`, validated identically to
+  conforming to `:ct.spools.delegation/roster`, validated identically to
   `defroster!` input. Inline values are how parameterised compositions work:
   rosters are plain data, so pour-time code may filter, augment, or construct
   one and hand it straight to this seam (specs/attrs label it `:inline`;
@@ -1223,7 +1223,7 @@
   accumulates notes across rounds — run ids cannot serve here because
   workflow-composed synthesis is defined before any run exists.
 
-  `:change-context` (an optional `:skein.spools.delegation/change-context` value:
+  `:change-context` (an optional `:ct.spools.delegation/change-context` value:
   `{:commit-range :files :windows}`) is the caller-supplied diff surface. When
   present it is injected into every reviewer prompt so reviewers read the
   changed files instead of re-deriving the diff; the synthesizer never carries
@@ -1284,77 +1284,77 @@
 
 ;; The panel shape is spec-defined; validation consults the spec. Manual checks
 ;; cover only what s/keys cannot: closed key sets and seat-name uniqueness.
-(s/def :skein.spools.delegation.panel.seat/name non-blank?)
-(s/def :skein.spools.delegation.panel.seat/harness harness-ref?)
-(s/def :skein.spools.delegation.panel.seat/brief non-blank?)
-(s/def :skein.spools.delegation.panel.seat/scope non-blank?)
-(s/def :skein.spools.delegation.panel.seat/continuity #{:fresh :resume})
-(s/def :skein.spools.delegation.panel/seat
-  (s/keys :req-un [:skein.spools.delegation.panel.seat/name
-                   :skein.spools.delegation.panel.seat/harness
-                   :skein.spools.delegation.panel.seat/brief]
-          :opt-un [:skein.spools.delegation.panel.seat/scope
-                   :skein.spools.delegation.panel.seat/continuity]))
-(s/def :skein.spools.delegation.panel/seats
-  (s/coll-of :skein.spools.delegation.panel/seat :kind vector? :min-count 1))
-(s/def :skein.spools.delegation.panel.turns/rounds pos-int?)
-(s/def :skein.spools.delegation.panel/turns
-  (s/keys :req-un [:skein.spools.delegation.panel.turns/rounds]))
-(s/def :skein.spools.delegation.panel/blackboard #{:target :fresh})
-(s/def :skein.spools.delegation.panel.synthesis/harness harness-ref?)
-(s/def :skein.spools.delegation.panel.synthesis/brief non-blank?)
-(s/def :skein.spools.delegation.panel/synthesis
+(s/def :ct.spools.delegation.panel.seat/name non-blank?)
+(s/def :ct.spools.delegation.panel.seat/harness harness-ref?)
+(s/def :ct.spools.delegation.panel.seat/brief non-blank?)
+(s/def :ct.spools.delegation.panel.seat/scope non-blank?)
+(s/def :ct.spools.delegation.panel.seat/continuity #{:fresh :resume})
+(s/def :ct.spools.delegation.panel/seat
+  (s/keys :req-un [:ct.spools.delegation.panel.seat/name
+                   :ct.spools.delegation.panel.seat/harness
+                   :ct.spools.delegation.panel.seat/brief]
+          :opt-un [:ct.spools.delegation.panel.seat/scope
+                   :ct.spools.delegation.panel.seat/continuity]))
+(s/def :ct.spools.delegation.panel/seats
+  (s/coll-of :ct.spools.delegation.panel/seat :kind vector? :min-count 1))
+(s/def :ct.spools.delegation.panel.turns/rounds pos-int?)
+(s/def :ct.spools.delegation.panel/turns
+  (s/keys :req-un [:ct.spools.delegation.panel.turns/rounds]))
+(s/def :ct.spools.delegation.panel/blackboard #{:target :fresh})
+(s/def :ct.spools.delegation.panel.synthesis/harness harness-ref?)
+(s/def :ct.spools.delegation.panel.synthesis/brief non-blank?)
+(s/def :ct.spools.delegation.panel/synthesis
   (s/or :none #{:none}
-        :spec (s/keys :req-un [:skein.spools.delegation.panel.synthesis/harness]
-                      :opt-un [:skein.spools.delegation.panel.synthesis/brief])))
-(s/def :skein.spools.delegation/panel
-  (s/keys :req-un [:skein.spools.delegation.panel/seats]
-          :opt-un [:skein.spools.delegation.panel/turns
-                   :skein.spools.delegation.panel/blackboard
-                   :skein.spools.delegation.panel/synthesis]))
+        :spec (s/keys :req-un [:ct.spools.delegation.panel.synthesis/harness]
+                      :opt-un [:ct.spools.delegation.panel.synthesis/brief])))
+(s/def :ct.spools.delegation/panel
+  (s/keys :req-un [:ct.spools.delegation.panel/seats]
+          :opt-un [:ct.spools.delegation.panel/turns
+                   :ct.spools.delegation.panel/blackboard
+                   :ct.spools.delegation.panel/synthesis]))
 
 ;; panel-specs output: the compiled run-spec shape spawners and gate authors
 ;; consume. Turns are ordered rows (turn 1 first); a run spec carries both
 ;; prompt forms plus, for a resuming turn, the seat index it continues.
-(s/def :skein.spools.delegation.panel-specs/name non-blank?)
-(s/def :skein.spools.delegation.panel-specs/harness harness-ref?)
-(s/def :skein.spools.delegation.panel-specs/prompt non-blank?)
-(s/def :skein.spools.delegation.panel-specs/resume-prompt non-blank?)
+(s/def :ct.spools.delegation.panel-specs/name non-blank?)
+(s/def :ct.spools.delegation.panel-specs/harness harness-ref?)
+(s/def :ct.spools.delegation.panel-specs/prompt non-blank?)
+(s/def :ct.spools.delegation.panel-specs/resume-prompt non-blank?)
 ;; string->string compiler seam; the fan-out cap (an integer) never flows
 ;; through here — it merges onto spawn attrs downstream of this contract.
-(s/def :skein.spools.delegation.panel-specs/attrs (s/map-of string? string?))
-(s/def :skein.spools.delegation.panel-specs/resume-ref nat-int?)
-(s/def :skein.spools.delegation.panel-specs/run
-  (s/keys :req-un [:skein.spools.delegation.panel-specs/name
-                   :skein.spools.delegation.panel-specs/harness
-                   :skein.spools.delegation.panel-specs/prompt
-                   :skein.spools.delegation.panel-specs/attrs]
-          :opt-un [:skein.spools.delegation.panel-specs/resume-prompt
-                   :skein.spools.delegation.panel-specs/resume-ref]))
-(s/def :skein.spools.delegation.panel-specs/turn
-  (s/coll-of :skein.spools.delegation.panel-specs/run :kind vector? :min-count 1))
-(s/def :skein.spools.delegation.panel-specs/turns
-  (s/coll-of :skein.spools.delegation.panel-specs/turn :kind vector? :min-count 1))
-(s/def :skein.spools.delegation.panel-specs.blackboard/kind #{:target :fresh})
-(s/def :skein.spools.delegation.panel-specs.blackboard/id non-blank?)
+(s/def :ct.spools.delegation.panel-specs/attrs (s/map-of string? string?))
+(s/def :ct.spools.delegation.panel-specs/resume-ref nat-int?)
+(s/def :ct.spools.delegation.panel-specs/run
+  (s/keys :req-un [:ct.spools.delegation.panel-specs/name
+                   :ct.spools.delegation.panel-specs/harness
+                   :ct.spools.delegation.panel-specs/prompt
+                   :ct.spools.delegation.panel-specs/attrs]
+          :opt-un [:ct.spools.delegation.panel-specs/resume-prompt
+                   :ct.spools.delegation.panel-specs/resume-ref]))
+(s/def :ct.spools.delegation.panel-specs/turn
+  (s/coll-of :ct.spools.delegation.panel-specs/run :kind vector? :min-count 1))
+(s/def :ct.spools.delegation.panel-specs/turns
+  (s/coll-of :ct.spools.delegation.panel-specs/turn :kind vector? :min-count 1))
+(s/def :ct.spools.delegation.panel-specs.blackboard/kind #{:target :fresh})
+(s/def :ct.spools.delegation.panel-specs.blackboard/id non-blank?)
 ;; `:id` is not blanket-optional: a `:target` directive must carry the board
 ;; strand id it deliberates over, and a `:fresh` directive must omit it (the id
 ;; does not exist until the spawner mints the board), so consumers of this seam
 ;; can trust the directive shape rather than re-checking kind/id agreement.
-(s/def :skein.spools.delegation.panel-specs/blackboard
+(s/def :ct.spools.delegation.panel-specs/blackboard
   (s/or :target (s/and #(= :target (:kind %))
-                       (s/keys :req-un [:skein.spools.delegation.panel-specs.blackboard/kind
-                                        :skein.spools.delegation.panel-specs.blackboard/id]))
+                       (s/keys :req-un [:ct.spools.delegation.panel-specs.blackboard/kind
+                                        :ct.spools.delegation.panel-specs.blackboard/id]))
         :fresh (s/and #(= :fresh (:kind %))
                       #(not (contains? % :id))
-                      (s/keys :req-un [:skein.spools.delegation.panel-specs.blackboard/kind]))))
-(s/def :skein.spools.delegation.panel-specs/pass non-blank?)
-(s/def :skein.spools.delegation.panel-specs/synthesizer :skein.spools.delegation.panel-specs/run)
-(s/def :skein.spools.delegation/panel-specs
-  (s/keys :req-un [:skein.spools.delegation.panel-specs/blackboard
-                   :skein.spools.delegation.panel-specs/pass
-                   :skein.spools.delegation.panel-specs/turns]
-          :opt-un [:skein.spools.delegation.panel-specs/synthesizer]))
+                      (s/keys :req-un [:ct.spools.delegation.panel-specs.blackboard/kind]))))
+(s/def :ct.spools.delegation.panel-specs/pass non-blank?)
+(s/def :ct.spools.delegation.panel-specs/synthesizer :ct.spools.delegation.panel-specs/run)
+(s/def :ct.spools.delegation/panel-specs
+  (s/keys :req-un [:ct.spools.delegation.panel-specs/blackboard
+                   :ct.spools.delegation.panel-specs/pass
+                   :ct.spools.delegation.panel-specs/turns]
+          :opt-un [:ct.spools.delegation.panel-specs/synthesizer]))
 
 (def ^:private panel-keys #{:seats :turns :blackboard :synthesis})
 (def ^:private panel-seat-keys #{:name :harness :brief :scope :continuity})
@@ -1364,7 +1364,7 @@
 (defn- validate-panel!
   "Validate panel data: closed key sets first — so a typo'd key diagnoses as
   \"unknown keys\" rather than as the missing-key spec explain it also causes —
-  then the :skein.spools.delegation/panel spec for structure, then seat-name
+  then the :ct.spools.delegation/panel spec for structure, then seat-name
   uniqueness. Key checks are guarded on map shape so non-map garbage falls
   through to the spec failure. Returns the panel."
   [panel-id panel]
@@ -1386,11 +1386,11 @@
       (when-let [unknown (seq (remove panel-synthesis-keys (keys (:synthesis panel))))]
         (fail! "Panel :synthesis has unknown keys"
                {:panel panel-id :unknown (vec unknown) :allowed (sort panel-synthesis-keys)}))))
-  (when-not (s/valid? :skein.spools.delegation/panel panel)
+  (when-not (s/valid? :ct.spools.delegation/panel panel)
     (fail! "Panel does not conform to spec"
            {:panel panel-id
-            :spec :skein.spools.delegation/panel
-            :explain (s/explain-str :skein.spools.delegation/panel panel)}))
+            :spec :ct.spools.delegation/panel
+            :explain (s/explain-str :ct.spools.delegation/panel panel)}))
   (let [names (mapv :name (:seats panel))]
     (when-not (apply distinct? names)
       (fail! "Panel seat :name values must be unique" {:panel panel-id :names names})))
@@ -1437,10 +1437,10 @@
 
 (defn panel-specs
   "Compile an **inline panel value** into plain, fully-built run specs
-  (shape: `:skein.spools.delegation/panel-specs`). This is the one prompt-building
+  (shape: `:ct.spools.delegation/panel-specs`). This is the one prompt-building
   source for panels; `panel!` spawns runs from these specs.
 
-  `panel` is a map conforming to `:skein.spools.delegation/panel`, validated
+  `panel` is a map conforming to `:ct.spools.delegation/panel`, validated
   identically to `panel!` input (closed keys and uniqueness before spec
   conform). Defaults are applied here: `:turns {:rounds 1}`, `:blackboard
   :target`, per-seat `:continuity :fresh`.
@@ -1543,13 +1543,13 @@
   rounds block prior rounds). The synthesizer, when the panel declares one,
   depends on the final turn row.
 
-  Options are validated by `:skein.spools.delegation/panel-input`. `:target` is
+  Options are validated by `:ct.spools.delegation/panel-input`. `:target` is
   required for a `:target` blackboard, `:review-id` tags notes and resumes,
   `:spawned-by` and `:cwd` ride onto every run.
 
   Returns `{:panel :blackboard :turns [[run-ids...]...] :synthesizer? :pass}`."
   [panel opts]
-  (let [opts (require-valid! :skein.spools.delegation/panel-input
+  (let [opts (require-valid! :ct.spools.delegation/panel-input
                               (reject-unknown-keys! "panel! options" #{:target :review-id :spawned-by :cwd :fanout-attrs} opts)
                               "panel! options do not conform to spec")
         {:keys [target review-id spawned-by cwd fanout-attrs]} opts
@@ -1637,13 +1637,13 @@
   "Spawn independent read-only reviewers for a target strand.
 
   `:roster` names a `defroster!` roster (or is an inline
-  `:skein.spools.delegation/roster` value) and is the one authoritative source of
+  `:ct.spools.delegation/roster` value) and is the one authoritative source of
   reviewer count, harnesses, and contracts for that review: combining it with
   `:reviewers`, `:seat-count`, `:harnesses`, or `:contract` fails loudly. A
   roster review always synthesizes, from the same `roster-review-specs` data
   a workflow composition would consume.
 
-  `:change-context` (a `:skein.spools.delegation/change-context` value) is the
+  `:change-context` (a `:ct.spools.delegation/change-context` value) is the
   caller-supplied diff surface — commit range, changed files, cheap code
   windows — injected into every reviewer prompt so reviewers read the diff
   instead of re-deriving it. The synthesizer never receives it (it weighs
@@ -1744,7 +1744,7 @@
   shared council strand across turns, then a synthesizer weighs the whole
   deliberation.
 
-  Option input is validated by `:skein.spools.delegation/council-input`.
+  Option input is validated by `:ct.spools.delegation/council-input`.
 
   Scalar convenience: `:seat-count n` mints N identical seats, each running the
   council-wide `:harness`. Rich control: `:seats [{:name :harness? :brief?}]`
@@ -1757,7 +1757,7 @@
   Returns `{:blackboard <shared strand id> :turns [[run-ids]...] :synthesizer
   <run id>}`."
   [topic opts]
-  (let [opts (require-valid! :skein.spools.delegation/council-input
+  (let [opts (require-valid! :ct.spools.delegation/council-input
                               (cond-> (reject-unknown-keys! "council! options" #{:harness :seat-count :rounds :seats :synthesizer :spawned-by :cwd :fanout-attrs} opts)
                                 (contains? opts :seats)
                                 (update :seats #(mapv (partial reject-unknown-keys! "council! seat" council-seat-input-keys) %)))
@@ -1859,7 +1859,7 @@
              {:cwd cwd :commit-range commit-range :exit exit :git-error (str/trim (str err))}))))
 
 (defn- change-context-from-flags
-  "Build a `:skein.spools.delegation/change-context` value from review flags, or nil
+  "Build a `:ct.spools.delegation/change-context` value from review flags, or nil
   when the caller supplied no diff surface. An explicit `--changed-files` list
   wins; otherwise `--commit-range` is expanded to its files via git at `--cwd`.
   A commit range that cannot be expanded fails loudly — a missing `--cwd`, or a
@@ -2359,15 +2359,15 @@
                      :keys ["panel/blackboard" "panel/pass" "panel/seat" "panel/turn" "panel/synthesis"]
                      :doc "Panel deliberation run attrs stamped by panel-specs; the review and council presets stamp them too (advisory key list)."})
     {:installed true
-     :namespace 'skein.spools.delegation
+     :namespace 'ct.spools.delegation
      :op (weaver/register-op! runtime 'agent
                            {:doc (:doc agent-arg-spec)
                             :arg-spec agent-arg-spec
                             :returns agent-returns
                             ;; await blocks for arbitrarily long coordination waits
                             :deadline-class :unbounded}
-                           'skein.spools.delegation/agent-op)
+                           'ct.spools.delegation/agent-op)
      :pattern (patterns/register-pattern! runtime 'agent-plan
                                           "Create a feature strand plus task/review children for agent work."
-                                          'skein.spools.delegation/agent-plan ::agent-plan-input)
+                                          'ct.spools.delegation/agent-plan ::agent-plan-input)
      :query (graph/register-query! runtime 'agent-failures [:and [:= :state "active"] [:= [:attr "agent-run/run"] "true"] [:in [:attr "agent-run/phase"] ["failed" "exhausted"]]])}))
