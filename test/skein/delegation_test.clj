@@ -110,6 +110,43 @@
           (is (contains? review-flags :commit-range))
           (is (contains? review-flags :changed-files)))))))
 
+(deftest agents-install-claims-neither-preamble-slot
+  ;; PROP-Wct-001@2.S4: injected worker text is the workspace's call, so
+  ;; installing this spool must leave both agent-run slots as the engine
+  ;; defaults — a workspace opts in by registering worker-contract itself.
+  (with-agents
+    (fn [_rt]
+      (is (nil? @(#'shuttle/preamble-extension)))
+      (is (nil? (shuttle/default-task-contract-text)))))
+  (testing "the exported fragment is the task workflow alone"
+    (is (str/includes? agents/worker-contract "Read your assigned strand AND its notes"))
+    (is (str/includes? agents/worker-contract "--attr progress="))
+    (is (str/includes? agents/worker-contract "status=implemented"))
+    (is (str/includes? agents/worker-contract "<task-id>")
+        "the slot substitutes the served id, so the fragment carries the placeholder")
+    (testing "engine invariants and repo lore stay out of it"
+      (is (not (str/includes? agents/worker-contract "pkill")))
+      (is (not (str/includes? agents/worker-contract "--harness")))
+      (is (not (str/includes? agents/worker-contract "Never close your assigned strand"))))))
+
+(deftest registered-task-contract-reaches-a-serving-run-once
+  ;; The workspace opt-in path end to end: a delegated (serving) run's launch
+  ;; prompt carries the fragment exactly once, with its own task id rendered in.
+  (with-agents
+    (fn [rt]
+      (try
+        (shuttle/set-default-task-contract! agents/worker-contract)
+        (let [task (weaver/add rt {:title "Serve me" :attributes {:body "body" :agent-run/harness "sh"}})
+              delegated (agents/agent-op {:op/argv ["delegate" (:id task)]})
+              run (weaver/show rt (get-in delegated [:run :id]))
+              prompt (#'shuttle/effective-prompt {:preamble? true} run)]
+          (is (= 1 (count (re-seq #"\[task workflow\]" prompt)))
+              "one occurrence: the preamble is the only injector")
+          (is (str/includes? prompt (str "strand show " (:id task))))
+          (is (not (str/includes? prompt "<task-id>"))))
+        (finally
+          (shuttle/set-default-task-contract! nil))))))
+
 (deftest agents-install-declares-review-and-panel-vocab
   (with-agents
     (fn [rt]
