@@ -102,8 +102,8 @@
   (s/keys :req-un [:skein.weaver-start/config-dir
                    :skein.weaver-start/state-dir
                    :skein.weaver-start/data-dir
-                   :skein.weaver-start/config-file
-                   :skein.weaver-start/db-path]))
+                   :skein.weaver-start/db-path]
+          :opt-un [:skein.weaver-start/config-file]))
 (s/def :skein.weaver-start/name (s/nilable non-blank-string?))
 (s/def :skein.weaver-start/publish? boolean?)
 (s/def :skein.weaver-start/storage keyword?)

@@ -14,7 +14,7 @@
   ['skein.core.db-test 'skein.core.query-compile-test 'skein.core.contract-props-test 'skein.core.specs-test 'skein.core.scheduler-test 'skein.plugin-test 'skein.relations-test 'skein.notes-test 'skein.vocab-test
    'skein.spools.text-search-test
    'skein.guild-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
-   'skein.api.return-shape.alpha-test 'skein.api.runtime.alpha-test
+   'skein.api.return-shape.alpha-test
    'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
    'skein.spools.batteries-test 'skein.roster-test 'skein.api.spool-test 'skein.config-ops-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
@@ -38,7 +38,9 @@
 
 (def serial-namespaces
   "JVM-global namespaces the parent still runs serially outside add-libs shards."
-  [;; ambient REPL connection atoms.
+  [;; Release-marker fixtures redefine source checkout resolution.
+   'skein.api.runtime.alpha-test
+   ;; ambient REPL connection atoms.
    'skein.repl-test
    ;; module-local bind! is process-global and loud-failure asserts no published runtime.
    'skein.userland-test

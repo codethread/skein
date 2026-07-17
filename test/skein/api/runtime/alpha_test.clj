@@ -136,28 +136,41 @@
         (delete-tree! world-root)
         (delete-tree! source-root)))))
 
-(deftest git-inspection-failures-abort-release-marker-resolution
+(deftest non-repo-classpath-release-marker-resolution
   (let [source-root (temp-dir "skein-non-git-source")
         world-root (temp-dir "skein-git-failure-world")
         resource-url (compiled-runtime-resource! source-root)]
     (try
-      (let [error (try
-                    (with-runtime-resource
-                      resource-url
-                      #(weaver-runtime/start! nil {:world (test-world world-root)
-                                                   :publish? false
-                                                   :storage :sqlite-memory}))
-                    nil
-                    (catch clojure.lang.ExceptionInfo e e))
-            data (ex-data error)]
-        (is (= :git-inspection-failed (:reason data)))
-        (is (= ["git" "rev-parse" "--show-toplevel"] (:command data)))
-        (is (= (.getCanonicalPath (io/file source-root "target/classes/skein/core/weaver"))
-               (:root data)))
-        (is (pos-int? (:exit data)))
-        (is (not (str/blank? (:stderr data)))))
+      (with-runtime-resource
+        resource-url
+        #(let [rt (weaver-runtime/start! nil {:world (test-world world-root)
+                                              :publish? false
+                                              :storage :sqlite-memory})]
+           (try
+             (is (= {:marker nil :provenance :none}
+                    (runtime/release-marker rt)))
+             (finally
+               (weaver-runtime/stop! rt)))))
       (finally
         (delete-tree! world-root)
+        (delete-tree! source-root)))))
+
+(deftest git-inspection-command-failures-remain-loud
+  (let [source-root (git-source! nil)
+        run-git (deref (ns-resolve 'skein.core.weaver.runtime 'run-git))]
+    (try
+      (doseq [[args expected-exit]
+              [[["rev-parse" "--verify" "refs/heads/missing"] 128]
+               [["-c" "alias.noisy=!echo warning >&2" "noisy"] 0]]]
+        (let [error (try
+                      (apply run-git source-root args)
+                      nil
+                      (catch clojure.lang.ExceptionInfo e e))
+              data (ex-data error)]
+          (is (= :git-inspection-failed (:reason data)))
+          (is (= expected-exit (:exit data)))
+          (is (not (str/blank? (:stderr data))))))
+      (finally
         (delete-tree! source-root)))))
 
 (deftest runtime-result-specs-own-public-shapes
@@ -173,6 +186,9 @@
                  :publish? false
                  :storage :sqlite-memory
                  :release-marker "v2"}))
+  (is (s/valid? ::specs/weaver-start-options
+                {:world (dissoc (test-world (io/file "/tmp/skein-start-options"))
+                                :config-file)}))
   (is (not (s/valid? ::specs/weaver-start-options
                      {:world (test-world (io/file "/tmp/skein-start-options"))
                       :unknown true})))

@@ -107,8 +107,10 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
   tag pointing exactly at the Skein source checkout's HEAD is used when the
   checkout is resolvable. Git-root discovery works from source and compiled
   classpath layouts. A successful inspection with no matching annotated tag is
-  the only inspected-checkout path to `:none`; command startup, root resolution,
-  and nonzero Git failures fail loudly with command, root, exit, and stderr.
+  one inspected-checkout path to `:none`; a filesystem classpath rooted outside
+  a Git checkout is another. Command startup, unexpected nonzero Git failures,
+  invalid root output, and stderr noise fail loudly with command, root, exit,
+  and stderr.
   When the classpath resource does not identify a filesystem checkout, the
   record is
   `{:marker nil :provenance :none}`. Claims must use canonical `v<int>` syntax

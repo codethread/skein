@@ -421,7 +421,7 @@
                     :exit exit
                     :stdout @stdout
                     :stderr @stderr}]
-        (when-not (zero? exit)
+        (when (or (not (zero? exit)) (not (str/blank? (:stderr result))))
           (throw (ex-info "Git inspection command failed"
                           (failure-data exit (:stderr result)))))
         result)
@@ -430,18 +430,28 @@
                         (failure-data 127 (ex-message e))
                         e))))))
 
+(defn- non-repo-root-result? [data]
+  (and (= ["git" "rev-parse" "--show-toplevel"] (:command data))
+       (not (zero? (:exit data)))
+       (boolean (re-find #"(?i)not a git repository" (or (:stderr data) "")))))
+
 (defn- source-checkout-root
   ([] (source-checkout-root (io/resource "skein/core/weaver/runtime.clj")))
   ([^java.net.URL url]
    (when (and url (= "file" (.getProtocol url)))
      (let [resource-dir (-> (io/file (.toURI url)) .getCanonicalFile .getParentFile)
-           result (run-git resource-dir "rev-parse" "--show-toplevel")
-           root-path (str/trim (:stdout result))]
-       (when (str/blank? root-path)
-         (throw (ex-info "Git inspection returned no source checkout root"
-                         (assoc (select-keys result [:command :root :exit :stderr])
-                                :reason :invalid-git-root))))
-       (.getCanonicalFile (io/file root-path))))))
+           result (try
+                    (run-git resource-dir "rev-parse" "--show-toplevel")
+                    (catch clojure.lang.ExceptionInfo e
+                      (when-not (non-repo-root-result? (ex-data e))
+                        (throw e))))]
+       (when result
+         (let [root-path (str/trim (:stdout result))]
+           (when (str/blank? root-path)
+             (throw (ex-info "Git inspection returned no source checkout root"
+                             (assoc (select-keys result [:command :root :exit :stderr])
+                                    :reason :invalid-git-root))))
+           (.getCanonicalFile (io/file root-path))))))))
 
 (defn- annotated-head-release-markers [source-root]
   (when source-root
