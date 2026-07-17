@@ -1,7 +1,5 @@
-{:spools {;; Keep each family sha exactly synchronized with its deps.edn :test
-          ;; extra-deps (config_test pairs the agent family with all three
-          ;; per-root test coordinates until those move to spools.edn in F3).
-          ;; Developers override git families with gitignored spools.local.edn.
+{:spools {;; Git family coordinates are the consumer's single source; developers
+          ;; override them with gitignored spools.local.edn entries.
           ct.spools/agent-run {:git/url "https://github.com/codethread/agent-harness.spool.git"
                                :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
                                :roots {ct.spools/agent-run "agent-run"

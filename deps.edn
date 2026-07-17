@@ -14,38 +14,7 @@
  ;; only standalone; the runner's registry, not the classpath, decides what runs.
  {:test {:extra-paths ["test" "scripts" "spools/workflow/src" "spools/roster/src" "spools/text-search/src" "spools/guild/src" "spools/chime/src" "spools/cron/src"
                        ".skein/spools/macros/src"]
-         ;; devflow is a git-distributed spool. Keep this sha exactly synchronized
-         ;; with .skein/spools.edn: config_test loads .skein/config.clj in-process,
-         ;; while the weaver consumes the spools.edn coordinate.
-         :extra-deps {;; agent-harness is a multi-root git-distributed spool.
-                      ;; Keep these shas exactly synchronized with
-                      ;; .skein/spools.edn (config_test enforces the pairing);
-                      ;; developers override there with a gitignored
-                      ;; spools.local.edn local root.
-                      io.github.codethread/agent-run.agent-harness
-                      {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                       :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                       :deps/root "agent-run"}
-                      io.github.codethread/delegation.agent-harness
-                      {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                       :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                       :deps/root "delegation"}
-                      io.github.codethread/bench.agent-harness
-                      {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                       :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                       :deps/root "bench"}
-                      io.github.codethread/devflow.spool
-                      {:git/url "https://github.com/codethread/devflow.spool.git"
-                       :git/sha "312cdffeabf68d40cca2cb246e0bb404e99c5984"}
-                      ;; kanban is a git-distributed spool. Keep this sha exactly
-                      ;; synchronized with .skein/spools.edn (config_test enforces
-                      ;; the pairing): config_test loads .skein/config.clj
-                      ;; in-process, while the weaver consumes the spools.edn
-                      ;; coordinate.
-                      io.github.codethread/kanban.spool
-                      {:git/url "https://github.com/codethread/kanban.spool.git"
-                       :git/sha "43bb8d6e840f1b02865916d62dcfa0ca4249c50c"}
-                      ;; Test-only ergonomics: readable nested-map/JSON assertions
+         :extra-deps {;; Test-only ergonomics: readable nested-map/JSON assertions
                       ;; (match?) and spec-driven property tests (defspec). Kept
                       ;; off the main src/weaver classpath.
                       nubank/matcher-combinators {:mvn/version "3.9.1"}

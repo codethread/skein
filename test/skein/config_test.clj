@@ -16,10 +16,7 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]
-            [ct.spools.devflow :as devflow]
-            [skein.spools.workflow :as workflow]
-            [skein.test.alpha :as test-alpha]))
+            [skein.core.weaver.runtime :as weaver-runtime]))
 
 (defn- delete-directory!
   "Delete a directory tree rooted at `path` if it exists."
@@ -36,6 +33,35 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
+(defn- embedded-spools-edn
+  "Return the repo spool approvals with local roots made checkout-absolute."
+  []
+  (update (edn/read-string (slurp ".skein/spools.edn"))
+          :spools
+          (fn [spools]
+            (into {}
+                  (map (fn [[family entry]]
+                         [family
+                          (if-let [root (:local/root entry)]
+                            (assoc entry :local/root
+                                   (.getCanonicalPath (io/file ".skein" root)))
+                            entry)]))
+                  spools))))
+
+(defn- write-embedded-spools!
+  "Write repo spool approvals into target for an embedded runtime."
+  [target]
+  (spit (io/file target "spools.edn") (pr-str (embedded-spools-edn))))
+
+(defn- with-runtime-loader
+  "Run f with runtime's ambient binding and synced spool classloader."
+  [rt f]
+  (weaver-runtime/with-runtime-and-spool-classloader
+    rt
+    (fn []
+      (runtime/sync! rt)
+      (f))))
+
 (defn- with-config-runtime
   "Run f with an isolated runtime and the repo-local .skein config loaded.
 
@@ -48,21 +74,26 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-config-test-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
+    (write-embedded-spools! config-dir)
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
       (try
-        ;; harnesses.clj's worker alias layers over the shipped :pi harness,
-        ;; which shuttle/install! registers in real startups; this fixture
-        ;; loads the config files alone, so register the defaults here.
-        ((requiring-resolve 'ct.spools.agent-run/register-default-harnesses!))
-        (load-file ".skein/config.clj")
-        (load-file ".skein/harnesses.clj")
-        (load-file ".skein/workflows.clj")
-        (load-file ".skein/analytics.clj")
-        ((requiring-resolve 'config/install!))
-        ((requiring-resolve 'harnesses/install!))
-        ((requiring-resolve 'workflows/install!))
-        ((requiring-resolve 'analytics/install!))
-        (f rt)
+        (with-runtime-loader
+          rt
+          (fn []
+            ;; harnesses.clj's worker alias layers over the shipped :pi harness,
+            ;; which shuttle/install! registers in real startups; this fixture
+            ;; loads the config files alone, so register the defaults here.
+            ((requiring-resolve 'ct.spools.agent-run/register-default-harnesses!))
+            (load-file ".skein/config.clj")
+            (load-file ".skein/harnesses.clj")
+            (load-file ".skein/workflows.clj")
+            (load-file ".skein/analytics.clj")
+            ((requiring-resolve 'config/install!))
+            ((requiring-resolve 'harnesses/install!))
+            ((requiring-resolve 'workflows/install!))
+            ((requiring-resolve 'analytics/install!))
+            (f rt)))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -76,38 +107,9 @@
                 "attention.clj" "nvd_scan.clj" "reviewers.clj" "analytics.clj"
                 "kanban_tracker.clj" "spools.edn"]]
     (io/copy (io/file ".skein" name) (io/file target name)))
-  ;; The shipped spools.edn approves local roots relative to the config dir,
-  ;; which does not resolve from a copy. Rewrite it to the repo's canonical
-  ;; spool roots so the whole test JVM syncs one root per lib
-  ;; (tools.deps add-libs state is JVM-global; see skein.test-runner's
-  ;; ordering note).
-  (spit (io/file target "spools.edn")
-        (pr-str {:spools {'ct.spools/agent-run
-                          {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                           :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
-                           :roots {'ct.spools/agent-run "agent-run"
-                                   'ct.spools/delegation "delegation"
-                                   'ct.spools/bench "bench"}}
-                          'skein.spools/workflow
-                          {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
-                          'skein.spools/roster
-                          {:local/root (.getCanonicalPath (io/file "spools/roster"))}
-                          'skein.spools/text-search
-                          {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
-                          'skein.spools/chime
-                          {:local/root (.getCanonicalPath (io/file "spools/chime"))}
-                          'skein.spools/cron
-                          {:local/root (.getCanonicalPath (io/file "spools/cron"))}
-                          ;; init.clj requires this spool; the omission used to be
-                          ;; masked by fail-quiet required use!, which now throws.
-                          ;; Its root lives inside the workspace (.skein/spools/macros),
-                          ;; unlike the repo-root spools above.
-                          'skein.macros/macros
-                          {:local/root (.getCanonicalPath (io/file ".skein/spools/macros"))}
-                          'codethread/devflow
-                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "ct/spools/devflow.clj"))}
-                          'codethread/kanban
-                          {:local/root (.getCanonicalPath (test-alpha/spool-checkout-root "ct/spools/kanban.clj"))}}}))
+  ;; The copied config dir would reinterpret repo-relative local roots. Git
+  ;; families remain byte-for-byte sourced from the checked-in approvals.
+  (write-embedded-spools! target)
   ;; The shipped config leaves chime's notifier to each developer's personal
   ;; init.local.clj. Bind an inert command through that same overlay hook
   ;; (loaded after init.clj on startup and on every reload) so the test also
@@ -123,9 +125,10 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-config-startup-" (java.util.UUID/randomUUID))]
     (copy-config-dir! config-dir)
-    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
       (try
-        (f rt)
+        (with-runtime-loader rt #(f rt))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -168,12 +171,17 @@
   (let [db-file (db-test/temp-db-file)
         config-dir (str "/tmp/skein-surface-" (java.util.UUID/randomUUID))]
     (.mkdirs (java.io.File. config-dir))
-    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)})]
+    (write-embedded-spools! config-dir)
+    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir)
+                                             :publish? false})]
       (try
-        (load-file config-path)
-        ((requiring-resolve 'config/install!))
-        {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
-         :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}
+        (with-runtime-loader
+          rt
+          (fn []
+            (load-file config-path)
+            ((requiring-resolve 'config/install!))
+            {:op-help (into {} (map (fn [op] [op (op! "help" [op])])) config-op-names)
+             :queries (into {} (map (fn [q] [q (get (graph/queries rt) q)])) named-query-names)}))
         (finally
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file)
@@ -212,66 +220,6 @@
   (let [rosters ((requiring-resolve 'ct.spools.delegation/rosters))]
     (is (= [:change-review :complex-patch-review :docs-review] (mapv :name rosters)))
     (is (some #(= "test-sleeps" (:name %)) (:seats (first rosters))))))
-
-(def ^:private external-spool-families
-  "Weaver-side families paired with their per-root test-JVM coordinates."
-  [{:family 'ct.spools/agent-run
-    :roots {'ct.spools/agent-run
-            {:path "agent-run" :deps-key 'io.github.codethread/agent-run.agent-harness}
-            'ct.spools/delegation
-            {:path "delegation" :deps-key 'io.github.codethread/delegation.agent-harness}
-            'ct.spools/bench
-            {:path "bench" :deps-key 'io.github.codethread/bench.agent-harness}}}
-   {:family 'codethread/devflow
-    :roots {'codethread/devflow
-            {:path "." :deps-key 'io.github.codethread/devflow.spool}}}
-   {:family 'codethread/kanban
-    :roots {'codethread/kanban
-            {:path "." :deps-key 'io.github.codethread/kanban.spool}}}])
-
-(deftest external-spool-coordinates-are-synced-across-spools-edn-and-deps-edn
-  ;; The weaver resolves external spool coordinates from .skein/spools.edn while
-  ;; config_test loads .skein/config.clj in-process through deps.edn's :test
-  ;; :extra-deps. Each family sha appears once in spools.edn and must name the
-  ;; same checkout as every per-root test coordinate in deps.edn.
-  (let [spools-edn (edn/read-string (slurp ".skein/spools.edn"))
-        deps-edn (edn/read-string (slurp "deps.edn"))
-        spools (get spools-edn :spools)
-        declared-families (set (map :family external-spool-families))
-        external-families (set (keep (fn [[family entry]]
-                                       (when (:git/url entry)
-                                         family))
-                                     spools))
-        missing-families (sort (remove declared-families external-families))
-        extra-families (sort (remove external-families declared-families))]
-    (is (= external-families declared-families)
-        (str ".skein/spools.edn :git/url families must be declared in "
-             "external-spool-families; missing " (pr-str missing-families)
-             ", extra " (pr-str extra-families)))
-    (doseq [{:keys [family roots]} external-spool-families]
-      (let [spools-entry (get-in spools-edn [:spools family])
-            expected-roots (into {} (map (fn [[root {:keys [path]}]] [root path])) roots)]
-        (is (map? spools-entry)
-            (str family " missing from .skein/spools.edn"))
-        (is (= expected-roots (:roots spools-entry))
-            (str family " must declare its complete family :roots map once"))
-        (doseq [[root {:keys [deps-key]}] roots]
-          (testing (str family " / " root " <-> " deps-key)
-            (let [deps-entry (get-in deps-edn [:aliases :test :extra-deps deps-key])]
-              (is (map? spools-entry)
-                  (str family " missing from .skein/spools.edn for " root " <-> " deps-key))
-              (is (map? deps-entry)
-                  (str deps-key " missing from deps.edn :test :extra-deps for declared pair "
-                       root " <-> " deps-key))
-              (is (= (:git/sha spools-entry) (:git/sha deps-entry))
-                  (str family " :git/sha in .skein/spools.edn (" (:git/sha spools-entry)
-                       ") must match " deps-key " :git/sha in deps.edn :test :extra-deps ("
-                       (:git/sha deps-entry) ")"))
-              (is (= (:git/url spools-entry) (:git/url deps-entry))
-                  (str family " :git/url in .skein/spools.edn (" (:git/url spools-entry)
-                       ") must match " deps-key " :git/url in deps.edn :test :extra-deps ("
-                       (:git/url deps-entry) ") — sha parity alone would accept the same sha"
-                       " from a different repository")))))))))
 
 (deftest devflow-conventions-op-lists-repo-conventions
   ;; :queries derives from skein.macros.queries/remembered-queries (TASK-Srm-007);
@@ -730,7 +678,8 @@
   workflows.clj without installing the shell executor, so tests stand in
   for its pass path."
   [feature notes]
-  (workflow/complete! feature {:by "shell" :notes notes}))
+  ((requiring-resolve 'skein.spools.workflow/complete!)
+   feature {:by "shell" :notes notes}))
 
 (deftest land-ops-drive-a-poured-run-end-to-end
   (with-config-runtime
@@ -759,7 +708,7 @@
         (is (= "checkpoint" (:role (first (:ready at-checkpoint)))))
         (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
       ;; the sign-off checkpoint offers approved + abort; abort requires a reason
-      (let [choices (workflow/choice-details "land-x")
+      (let [choices ((requiring-resolve 'skein.spools.workflow/choice-details) "land-x")
             abort-input (get-in choices ["abort" "input"])]
         (is (= #{"approved" "abort"} (set (keys choices))))
         (is (= "reason" (get (first abort-input) "key")))
@@ -817,7 +766,7 @@
       ;; completing push-draft-pr starts the automated CI watch and review
       ;; pipeline, so it is the completion that moves the card to in_review
       (op! "land" ["complete" "land-y"])           ; push-draft-pr
-      (let [root (workflow/current-root "land-y")
+      (let [root ((requiring-resolve 'skein.spools.workflow/current-root) "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
         (is (= "in_review" (get-in (weaver/show rt card-id) [:attributes :kanban/lane]))))
@@ -827,7 +776,7 @@
         (is (= "land choose" (:operation aborted)))
         ;; routing is a hard cutover to the reason-recording continuation
         (is (= "land.abort.record" (:action-ref (first (:ready aborted))))))
-      (let [root (workflow/current-root "land-y")
+      (let [root ((requiring-resolve 'skein.spools.workflow/current-root) "land-y")
             context (get-in root [:attributes :workflow/context])
             card-id (or (:card context) (get context "card"))]
         (is (= "claimed" (get-in (weaver/show rt card-id) [:attributes :kanban/lane]))))
@@ -968,31 +917,35 @@
     (is (re-find #"Bound tracker: devflow" (:tracker (op! "kanban" ["about"]))))))
 
 (deftest kanban-tracker-devflow-projection-contract
-  (load-file ".skein/kanban_tracker.clj")
-  (let [project (requiring-resolve 'kanban-tracker/devflow-projection)]
-    (testing "an active root projects its stage and ready steps"
-      (with-redefs [devflow/current-root (constantly {:attributes {:devflow/stage "tasks"}})
-                    devflow/ready (constantly [{:id "next" :title "Do next" :role "step"}])]
-        (is (= {:status "tasks"
-                :ready [{:id "next" :title "Do next" :role "step"}]}
-               (project "active-run")))))
-    (testing "no active root is the accepted nil-status projection"
-      (with-redefs [devflow/current-root (constantly nil)
-                    devflow/ready (fn [_] (throw (ex-info "must not read steps" {})))]
-        (is (= {:status nil :ready []}
-               (project "inactive-run")))))
-    (testing "a malformed run id fails at the adapter boundary"
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string"
-                            (project ""))))
-    (testing "an active root without a stage fails loudly"
-      (with-redefs [devflow/current-root (constantly {:attributes {}})]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank devflow/stage"
-                              (project "missing-stage")))))
-    (testing "malformed ready steps fail the owning kanban projection spec"
-      (with-redefs [devflow/current-root (constantly {:attributes {:devflow/stage "tasks"}})
-                    devflow/ready (constantly [{}])]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
-                              (project "malformed-step")))))))
+  (with-config-runtime
+    (fn [_rt]
+      (load-file ".skein/kanban_tracker.clj")
+      (let [project (requiring-resolve 'kanban-tracker/devflow-projection)
+            current-root (requiring-resolve 'ct.spools.devflow/current-root)
+            ready (requiring-resolve 'ct.spools.devflow/ready)]
+        (testing "an active root projects its stage and ready steps"
+          (with-redefs-fn {current-root (constantly {:attributes {:devflow/stage "tasks"}})
+                           ready (constantly [{:id "next" :title "Do next" :role "step"}])}
+            #(is (= {:status "tasks"
+                     :ready [{:id "next" :title "Do next" :role "step"}]}
+                    (project "active-run")))))
+        (testing "no active root is the accepted nil-status projection"
+          (with-redefs-fn {current-root (constantly nil)
+                           ready (fn [_] (throw (ex-info "must not read steps" {})))}
+            #(is (= {:status nil :ready []}
+                    (project "inactive-run")))))
+        (testing "a malformed run id fails at the adapter boundary"
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string"
+                                (project ""))))
+        (testing "an active root without a stage fails loudly"
+          (with-redefs-fn {current-root (constantly {:attributes {}})}
+            #(is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank devflow/stage"
+                                   (project "missing-stage")))))
+        (testing "malformed ready steps fail the owning kanban projection spec"
+          (with-redefs-fn {current-root (constantly {:attributes {:devflow/stage "tasks"}})
+                           ready (constantly [{}])}
+            #(is (thrown-with-msg? clojure.lang.ExceptionInfo #"projection must match"
+                                   (project "malformed-step")))))))))
 
 (defn- assert-roster-spool-consent-edge
   "Assert repo startup guards the activated roster spool with its coordinate."
