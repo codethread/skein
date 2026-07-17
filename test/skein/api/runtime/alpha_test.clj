@@ -1,9 +1,11 @@
 (ns skein.api.runtime.alpha-test
   "Release-marker and path-accessor coverage for the explicit runtime API."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.api.runtime.alpha :as runtime]
+            [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime]))
 
@@ -42,6 +44,13 @@
     (when tag
       (run-git! root "tag" "-a" tag "-m" tag))
     root))
+
+(defn- compiled-runtime-resource! [source-root]
+  (let [resource (io/file source-root
+                          "target/classes/skein/core/weaver/runtime.clj")]
+    (.mkdirs (.getParentFile resource))
+    (spit resource "compiled fixture\n")
+    (.toURL (.toURI resource))))
 
 (defn- test-world [root]
   (weaver-config/world (str (io/file root "config"))
@@ -100,6 +109,69 @@
                    (runtime/release-marker rt)))))
         (finally
           (delete-tree! source-root))))))
+
+(deftest compiled-classpath-release-marker-resolution
+  (let [source-root (git-source! "v4")
+        world-root (temp-dir "skein-compiled-marker-world")
+        resource-url (compiled-runtime-resource! source-root)
+        default-resource io/resource]
+    (try
+      (with-redefs-fn
+        {(ns-resolve 'clojure.java.io 'resource)
+         (fn [name]
+           (if (= "skein/core/weaver/runtime.clj" name)
+             resource-url
+             (default-resource name)))}
+        #(let [rt (weaver-runtime/start! nil {:world (test-world world-root)
+                                              :publish? false
+                                              :storage :sqlite-memory})]
+           (try
+             (is (= {:marker "v4" :provenance :tag}
+                    (runtime/release-marker rt)))
+             (finally
+               (weaver-runtime/stop! rt)))))
+      (finally
+        (delete-tree! world-root)
+        (delete-tree! source-root)))))
+
+(deftest git-inspection-failures-abort-release-marker-resolution
+  (let [source-root (temp-dir "skein-non-git-source")
+        world-root (temp-dir "skein-git-failure-world")
+        resource-url (compiled-runtime-resource! source-root)
+        default-resource io/resource]
+    (try
+      (let [error (try
+                    (with-redefs-fn
+                      {(ns-resolve 'clojure.java.io 'resource)
+                       (fn [name]
+                         (if (= "skein/core/weaver/runtime.clj" name)
+                           resource-url
+                           (default-resource name)))}
+                      #(weaver-runtime/start! nil {:world (test-world world-root)
+                                                   :publish? false
+                                                   :storage :sqlite-memory}))
+                    nil
+                    (catch clojure.lang.ExceptionInfo e e))
+            data (ex-data error)]
+        (is (= :git-inspection-failed (:reason data)))
+        (is (= ["git" "rev-parse" "--show-toplevel"] (:command data)))
+        (is (= (.getCanonicalPath (io/file source-root "target/classes/skein/core/weaver"))
+               (:root data)))
+        (is (pos-int? (:exit data)))
+        (is (not (str/blank? (:stderr data)))))
+      (finally
+        (delete-tree! world-root)
+        (delete-tree! source-root)))))
+
+(deftest runtime-result-specs-own-public-shapes
+  (is (s/valid? ::specs/release-marker-claim "v12"))
+  (is (not (s/valid? ::specs/release-marker-claim "v0")))
+  (is (s/valid? ::specs/release-marker-result
+                {:marker nil :provenance :none}))
+  (is (not (s/valid? ::specs/release-marker-result
+                     {:marker "v2" :provenance :none})))
+  (is (s/valid? ::specs/config-dir-result "/tmp/config"))
+  (is (s/valid? ::specs/spools-file-result (io/file "/tmp/config/spools.edn"))))
 
 (deftest malformed-release-marker-claims-fail-loudly
   (doseq [claim ["1" "v01" "v-1" :v2]]

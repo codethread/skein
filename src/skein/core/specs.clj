@@ -7,7 +7,8 @@
   attributes."
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str])
-  (:import [java.time Instant]))
+  (:import [java.io File]
+           [java.time Instant]))
 
 (defn- non-blank-string? [x]
   (and (string? x) (not (str/blank? x))))
@@ -73,6 +74,24 @@
 (s/def ::format #{"human" "edn" "json"})
 (s/def ::db non-blank-string?)
 (s/def ::opts (s/keys :req-un [::db ::format]))
+
+(def ^:private release-marker-syntax-pattern #"v(?:0|[1-9][0-9]*)")
+
+(s/def ::release-marker-syntax
+  #(and (string? %) (boolean (re-matches release-marker-syntax-pattern %))))
+(s/def ::release-marker-claim
+  #(and (s/valid? ::release-marker-syntax %) (not= "v0" %)))
+(s/def :skein.release-marker/marker (s/nilable ::release-marker-claim))
+(s/def :skein.release-marker/provenance #{:claimed :tag :none})
+(s/def ::release-marker-result
+  (s/and (s/keys :req-un [:skein.release-marker/marker
+                          :skein.release-marker/provenance])
+         #(case (:provenance %)
+            :none (nil? (:marker %))
+            (:claimed :tag) (some? (:marker %))
+            false)))
+(s/def ::config-dir-result non-blank-string?)
+(s/def ::spools-file-result #(instance? File %))
 
 (s/def ::add-command (s/cat :title ::title :opts (s/* string?)))
 (s/def ::update-command (s/cat :id ::id :opts (s/* string?)))

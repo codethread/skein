@@ -1,8 +1,11 @@
 (ns skein.core.weaver.runtime
   "Start, stop, and supervise the in-process weaver daemon runtime."
   (:require [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [nrepl.server :as nrepl]
+            [skein.api.cli.alpha :as cli]
+            [skein.core.specs :as specs]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.scheduler :as scheduler]
@@ -13,7 +16,6 @@
            [java.util.concurrent ArrayBlockingQueue]))
 
 (def ^:private loopback-host "127.0.0.1")
-(def ^:private release-marker-pattern #"v(?:0|[1-9][0-9]*)")
 (def ^:private reserved-release-marker-message
   "Release marker v0 is reserved; the first public release marker is v1")
 
@@ -376,42 +378,70 @@
     (throw (ex-info "Unknown weaver storage kind" {:storage storage}))))
 
 (defn- require-release-marker! [marker provenance]
-  (when-not (and (string? marker) (re-matches release-marker-pattern marker))
+  (when-not (s/valid? ::specs/release-marker-syntax marker)
     (throw (ex-info "Release marker must be strictly v<int> with no leading zeroes"
                     {:reason :invalid-release-marker
                      :marker marker
-                     :provenance provenance})))
+                     :provenance provenance
+                     :spec ::specs/release-marker-syntax
+                     :explain (s/explain-data ::specs/release-marker-syntax marker)})))
   (when (= "v0" marker)
     (throw (ex-info reserved-release-marker-message
                     {:reason :reserved-release-marker
                      :marker marker
                      :provenance provenance})))
+  (when-not (s/valid? ::specs/release-marker-claim marker)
+    (throw (ex-info "Release marker claim has an invalid shape"
+                    {:reason :invalid-release-marker
+                     :marker marker
+                     :provenance provenance
+                     :spec ::specs/release-marker-claim
+                     :explain (s/explain-data ::specs/release-marker-claim marker)})))
   marker)
 
-(defn- source-checkout-root []
-  (when-let [url (io/resource "skein/core/weaver/runtime.clj")]
-    (when (= "file" (.getProtocol url))
-      ;; src/skein/core/weaver/runtime.clj -> checkout root is five parents up.
-      (-> (io/file (.toURI url))
-          .getParentFile
-          .getParentFile
-          .getParentFile
-          .getParentFile
-          .getParentFile
-          .getCanonicalFile))))
-
 (defn- run-git [dir & args]
-  (try
-    (let [process (-> (ProcessBuilder. ^"[Ljava.lang.String;" (into-array String (cons "git" args)))
-                      (.directory dir)
-                      (.redirectErrorStream false)
-                      (.start))
-          stderr (future (slurp (.getErrorStream process)))
-          stdout (future (slurp (.getInputStream process)))
-          exit (.waitFor process)]
-      {:exit exit :stdout @stdout :stderr @stderr})
-    (catch java.io.IOException e
-      {:exit 127 :stderr (ex-message e)})))
+  (let [command (vec (cons "git" args))
+        root (some-> dir io/file .getCanonicalFile)
+        failure-data (fn [exit stderr]
+                       {:reason :git-inspection-failed
+                        :command command
+                        :root (some-> root .getPath)
+                        :exit exit
+                        :stderr stderr})]
+    (try
+      (let [process (-> (ProcessBuilder. ^"[Ljava.lang.String;" (into-array String command))
+                        (.directory dir)
+                        (.redirectErrorStream false)
+                        (.start))
+            stderr (future (slurp (.getErrorStream process)))
+            stdout (future (slurp (.getInputStream process)))
+            exit (.waitFor process)
+            result {:command command
+                    :root (.getPath root)
+                    :exit exit
+                    :stdout @stdout
+                    :stderr @stderr}]
+        (when-not (zero? exit)
+          (throw (ex-info "Git inspection command failed"
+                          (failure-data exit (:stderr result)))))
+        result)
+      (catch java.io.IOException e
+        (throw (ex-info "Git inspection command could not start"
+                        (failure-data 127 (ex-message e))
+                        e))))))
+
+(defn- source-checkout-root
+  ([] (source-checkout-root (io/resource "skein/core/weaver/runtime.clj")))
+  ([^java.net.URL url]
+   (when (and url (= "file" (.getProtocol url)))
+     (let [resource-dir (-> (io/file (.toURI url)) .getCanonicalFile .getParentFile)
+           result (run-git resource-dir "rev-parse" "--show-toplevel")
+           root-path (str/trim (:stdout result))]
+       (when (str/blank? root-path)
+         (throw (ex-info "Git inspection returned no source checkout root"
+                         (assoc (select-keys result [:command :root :exit :stderr])
+                                :reason :invalid-git-root))))
+       (.getCanonicalFile (io/file root-path))))))
 
 (defn- annotated-head-release-markers [source-root]
   (when source-root
@@ -421,29 +451,38 @@
                           "HEAD"
                           "--format=%(objecttype)%09%(refname:short)"
                           "refs/tags")]
-      (when (zero? (:exit result))
-        (->> (str/split-lines (:stdout result))
-             (keep (fn [line]
-                     (let [[object-type tag] (str/split line #"\t" 2)]
-                       (when (and (= "tag" object-type)
-                                  (re-matches release-marker-pattern tag))
-                         tag))))
-             distinct
-             sort
-             vec)))))
+      (->> (str/split-lines (:stdout result))
+           (keep (fn [line]
+                   (let [[object-type tag] (str/split line #"\t" 2)]
+                     (when (and (= "tag" object-type)
+                                (s/valid? ::specs/release-marker-syntax tag))
+                       tag))))
+           distinct
+           sort
+           vec))))
+
+(defn- require-release-marker-result! [result]
+  (when-not (s/valid? ::specs/release-marker-result result)
+    (throw (ex-info "Resolved release marker has an invalid shape"
+                    {:reason :invalid-release-marker-result
+                     :result result
+                     :spec ::specs/release-marker-result
+                     :explain (s/explain-data ::specs/release-marker-result result)})))
+  result)
 
 (defn- resolve-release-marker [claim]
-  (if (some? claim)
-    {:marker (require-release-marker! claim :claimed)
-     :provenance :claimed}
-    (let [markers (annotated-head-release-markers (source-checkout-root))]
-      (case (count markers)
-        0 {:marker nil :provenance :none}
-        1 {:marker (require-release-marker! (first markers) :tag)
-           :provenance :tag}
-        (throw (ex-info "Source HEAD has multiple annotated release marker tags"
-                        {:reason :ambiguous-release-marker
-                         :markers markers}))))))
+  (require-release-marker-result!
+   (if (some? claim)
+     {:marker (require-release-marker! claim :claimed)
+      :provenance :claimed}
+     (let [markers (annotated-head-release-markers (source-checkout-root))]
+       (case (count markers)
+         0 {:marker nil :provenance :none}
+         1 {:marker (require-release-marker! (first markers) :tag)
+            :provenance :tag}
+         (throw (ex-info "Source HEAD has multiple annotated release marker tags"
+                         {:reason :ambiguous-release-marker
+                          :markers markers})))))))
 
 (defn start!
   "Start a weaver runtime for `db-file` and optional `world`.
@@ -575,40 +614,26 @@
     (metadata/delete! {:state-dir state-dir}))
   {:stopped true})
 
-(defn- require-main-dir! [opts k flag]
-  (or (get opts k)
-      (throw (ex-info (str flag " is required") {:args opts :missing flag}))))
+(def ^:private main-arg-spec
+  {:op :weaver-start
+   :flags {:workspace {:required? true
+                       :doc "Selected config directory."}
+           :state-dir {:required? true
+                       :doc "Selected runtime-state directory."}
+           :data-dir {:required? true
+                      :doc "Selected persistent-data directory."}
+           :name {:doc "Friendly weaver name."}
+           :release-marker {:doc "Explicit canonical vN release marker claim."}}})
 
-(defn- parse-main-args [args]
-  (loop [remaining args
-         opts {}]
-    (case (first remaining)
-      nil {:config-dir (require-main-dir! opts :config-dir "--workspace")
-           :state-dir (require-main-dir! opts :state-dir "--state-dir")
-           :data-dir (require-main-dir! opts :data-dir "--data-dir")
-           :name (:name opts)
-           :release-marker (:release-marker opts)}
-      "--workspace" (let [[_ dir & more] remaining]
-                      (when-not dir
-                        (throw (ex-info "--workspace requires a directory" {:args args})))
-                      (recur more (assoc opts :config-dir dir)))
-      "--state-dir" (let [[_ dir & more] remaining]
-                      (when-not dir
-                        (throw (ex-info "--state-dir requires a directory" {:args args})))
-                      (recur more (assoc opts :state-dir dir)))
-      "--data-dir" (let [[_ dir & more] remaining]
-                     (when-not dir
-                       (throw (ex-info "--data-dir requires a directory" {:args args})))
-                     (recur more (assoc opts :data-dir dir)))
-      "--name" (let [[_ name & more] remaining]
-                 (when (str/blank? name)
-                   (throw (ex-info "--name requires a non-blank value" {:args args})))
-                 (recur more (assoc opts :name name)))
-      "--release-marker" (let [[_ marker & more] remaining]
-                           (when-not marker
-                             (throw (ex-info "--release-marker requires a marker" {:args args})))
-                           (recur more (assoc opts :release-marker marker)))
-      (throw (ex-info "Usage: skein.core.weaver.runtime --workspace <dir> --state-dir <dir> --data-dir <dir> [--name <name>] [--release-marker <vN>]" {:args args})))))
+(defn- parse-main-args
+  ([args] (parse-main-args args {}))
+  ([args payloads]
+   (let [opts (cli/parse main-arg-spec args payloads)]
+     (when (and (contains? opts :name) (str/blank? (:name opts)))
+       (throw (ex-info "--name requires a non-blank value" {:args args})))
+     (-> opts
+         (assoc :config-dir (:workspace opts))
+         (dissoc :workspace)))))
 
 (defn- install-signal-shutdown!
   "Run the clean stop path on SIGTERM/SIGINT (and normal JVM exit).

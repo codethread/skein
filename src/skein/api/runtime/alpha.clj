@@ -9,6 +9,7 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.spool.alpha :refer [require-valid!]]
+            [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync]))
@@ -70,19 +71,34 @@
   The result has marker `vN` and provenance `:claimed` for an explicit startup
   claim, marker `vN` and provenance `:tag` for an annotated tag on the source
   checkout's HEAD, or `{:marker nil :provenance :none}` when neither resolves.
-  Consumers that require marker arithmetic must reject `:none` explicitly."
+  Consumers that require marker arithmetic must reject `:none` explicitly. The
+  result conforms to `:skein.core.specs/release-marker-result`; marker claims
+  conform to `:skein.core.specs/release-marker-claim`."
   [runtime]
-  (access/release-marker runtime))
+  (let [result (access/release-marker runtime)]
+    (require-valid! ::specs/release-marker-result result
+                    "runtime release marker has an invalid shape")
+    result))
 
 (defn config-dir
-  "Return the selected config directory path for `runtime`."
+  "Return the selected config directory path for `runtime`.
+
+  The result conforms to `:skein.core.specs/config-dir-result`."
   [runtime]
-  (access/config-dir runtime))
+  (let [result (access/config-dir runtime)]
+    (require-valid! ::specs/config-dir-result result
+                    "runtime config directory has an invalid shape")
+    result))
 
 (defn spools-file
-  "Return the `java.io.File` for `runtime`'s shared `spools.edn`."
+  "Return the `java.io.File` for `runtime`'s shared `spools.edn`.
+
+  The result conforms to `:skein.core.specs/spools-file-result`."
   [runtime]
-  (access/spools-file runtime "spools.edn"))
+  (let [result (access/spools-file runtime "spools.edn")]
+    (require-valid! ::specs/spools-file-result result
+                    "runtime spools file has an invalid shape")
+    result))
 
 (defn sync!
   "Load approved spool roots and Maven jars into `runtime`.

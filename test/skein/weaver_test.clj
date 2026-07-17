@@ -541,12 +541,26 @@
 
 (deftest startup-fails-clearly-when-required-main-dirs-are-missing
   (let [parse-main-args (ns-resolve 'skein.core.weaver.runtime 'parse-main-args)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--workspace is required"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required flag --workspace"
                           (parse-main-args [])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--state-dir is required"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required flag --state-dir"
                           (parse-main-args ["--workspace" "/tmp/c" "--data-dir" "/tmp/d"])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--data-dir is required"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Missing required flag --data-dir"
                           (parse-main-args ["--workspace" "/tmp/c" "--state-dir" "/tmp/s"])))))
+
+(deftest startup-release-marker-uses-declared-payload-resolution
+  (let [parse-main-args (ns-resolve 'skein.core.weaver.runtime 'parse-main-args)
+        required ["--workspace" "/tmp/c"
+                  "--state-dir" "/tmp/s"
+                  "--data-dir" "/tmp/d"]]
+    (is (= "v8"
+           (:release-marker
+            (parse-main-args (conj required "--release-marker" ":stdin")
+                             {"stdin" "v8"}))))
+    (is (= "v9"
+           (:release-marker
+            (parse-main-args (conj required "--release-marker" ":payload/marker")
+                             {"marker" "v9"}))))))
 
 (deftest startup-failing-init-aborts-before-ready-metadata
   (let [world (temp-world)]
