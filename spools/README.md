@@ -1,6 +1,6 @@
 # Spools
 
-Spools are trusted, authorable Clojure loaded into the weaver. The `skein.spools.*` namespace family is reserved for exactly this kind of code (see the [REPL API spec](../devflow/specs/repl-api.md)); the spools in this directory ship with Skein as working references — use them directly, copy them as starting points, or study them to author your own.
+Spools are trusted, authorable Clojure loaded into the weaver. The `skein.spools.*` namespace family is reserved for exactly this kind of code (see the [REPL API spec](../devflow/specs/repl-api.md)), and the agent family in this directory (`agent-run`, `executors.subagent`, `delegation`, `bench`) lives under `ct.spools.*` — the author-prefix convention external spools like `ct.spools.kanban` use. The spools in this directory ship with Skein as working references — use them directly, copy them as starting points, or study them to author your own.
 
 Every spool loads through one convention: an approved coordinate in `.skein/spools.edn`, synced into the weaver by explicit-runtime `sync!`, and activated by a `:spools`-guarded explicit-runtime `use!`. `batteries` is the single documented exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
 
