@@ -1081,6 +1081,32 @@
           (is (= :runtime-add-failed (:reason result)))
           (is (re-find #"stay inside the spool root" (:message result))))))))
 
+(deftest sync-lets-unexpected-root-validation-throwables-escape
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.validation_failure_" suffix))
+            lib (symbol (str "demo/validation-failure-" suffix))
+            original @#'spool-sync/root-paths]
+        (write-local-lib! config-dir (str "validation-failure-" suffix) ns-sym)
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root
+                                              (str "spools/validation-failure-" suffix)}}}))
+        (try
+          (doseq [failure [(AssertionError. "broken invariant")
+                           (InterruptedException. "cancelled")
+                           (IllegalStateException. "unexpected state")]]
+            (alter-var-root #'spool-sync/root-paths
+                            (constantly (fn [_] (throw failure))))
+            (let [thrown (try
+                           (runtime/sync! rt)
+                           nil
+                           (catch Throwable t t))]
+              (is (identical? failure thrown))
+              (is (= {:spools {}} (runtime/syncs rt)))))
+          (finally
+            (alter-var-root #'spool-sync/root-paths (constantly original))))))))
+
 (deftest sync-accepts-deps-edn-path-naming-the-spool-root-itself
   (with-runtime
     (fn [rt config-dir]
@@ -2358,6 +2384,7 @@
         (spit src-file (str "(ns " ns-sym ")\n(defn version [] :v2)\n"))
         (let [result (runtime/reload-spool! rt lib)]
           (is (= :v2 ((version))) "the blessed verb makes the bumped source live")
+          (is (s/valid? ::runtime/reload-spool-result result))
           (is (= lib (:root-lib result)))
           (is (= (.getCanonicalPath root) (:root result)))
           (is (= [{:ns ns-sym :file (.getCanonicalPath src-file)}]

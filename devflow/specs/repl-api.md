@@ -135,9 +135,29 @@ Helpers include:
 - `(runtime/uses runtime)` and `(runtime/use runtime key)` expose weaver-lifetime module-use state.
 - `(runtime/now runtime)` returns the runtime clock's current `java.time.Instant` — the blessed, runtime-scoped time source trusted spools read instead of `(Instant/now)` (SPEC-004.C1a). It defaults to the real wall clock; deterministic tests install and step an advanceable clock with `skein.test.alpha/set-clock!`/`advance!` (SPEC-003.C28a). It is data-first (an `Instant`, not the clock fn) and, like every `runtime.alpha` helper, takes the runtime first (SPEC-003.C18).
 
-`use!` options identify exactly one load target with `:ns` for weaver-side namespace loading or `:file` for selected workspace-relative weaver-side `load-file`; `:file` must be relative and must resolve within the selected workspace. For `:ns`, the weaver searches synced local-root classpath entries from each root's `deps.edn :paths` (defaulting to `["src"]`) and `load-file`s the located namespace source using Clojure's hyphen-to-underscore path mapping; when no synced root holds the namespace it fails loudly with a "Could not locate namespace source in synced spool roots" error naming the searched roots. Code resident on the mill-resolved source classpath — blessed `skein.api.*.alpha` namespaces and the single `batteries` spool exception — is loaded by an explicit top-level `require`, not through this `:ns` search; `require`'s already-loaded short-circuit means an explicit require placed above a matching `use!` lets that `use!` still record module state and run its `:call` without reaching the loader. Options may include `:spools`, a vector or set of symbol spool coordinate keys that must be approved and available before target loading; `:after`, a vector of prior loaded `use!` keys; `:call`, a fully qualified zero-arity function symbol to resolve and call after successful load; and `:required? true` for strict load/call failure behavior.
+`use!` options identify exactly one load target with `:ns` for weaver-side namespace loading or
+`:file` for selected workspace-relative weaver-side `load-file`; `:file` must be relative and must
+resolve within the selected workspace. For `:ns`, the weaver searches synced local-root classpath
+entries from each root's `deps.edn :paths` (defaulting to `["src"]`) and `load-file`s the located
+namespace source using Clojure's hyphen-to-underscore path mapping. When no synced root holds the
+namespace it fails loudly with a "Could not locate namespace source in synced spool roots" error
+naming the searched roots. Code resident on the mill-resolved source classpath — blessed
+`skein.api.*.alpha` namespaces and the single `batteries` spool exception — is loaded by an explicit
+top-level `require`, not through this `:ns` search. `require`'s already-loaded short-circuit means an
+explicit require placed above a matching `use!` lets that `use!` still record module state and run
+its `:call` without reaching the loader. Options may include `:spools`, a vector or set of root-lib
+symbols from family-effective `:roots` that must be approved and available before target loading;
+`:after`, a vector of prior loaded `use!` keys; `:call`, a fully qualified zero-arity function symbol
+to resolve and call after successful load; and `:required? true` for strict load/call failure
+behavior.
 
-Malformed `use!` options always throw. Unmet `:spools` requirements record and return `{:status :skipped ...}` before target loading, with reasons including `:not-approved`, `:not-synced`, or `:sync-failed` when known; under `:required? true`, each of those three skip reasons throws as a required skipped activation. Unmet `:after` requirements record and return `{:status :skipped ...}` with reason `:missing-after`. Load or call exceptions record and return `{:status :failed ...}` by default; `:required? true` rethrows after recording. Raw `require` remains the strict fail-fast path for required config.
+Malformed `use!` options always throw. Unmet root-lib requirements in `:spools` record and return
+`{:status :skipped ...}` before target loading, with reasons including `:not-approved`, `:not-synced`,
+or `:sync-failed` when known; under `:required? true`, each of those three skip reasons throws as a
+required skipped activation. Unmet `:after` requirements record and return `{:status :skipped ...}`
+with reason `:missing-after`. Load or call exceptions record and return `{:status :failed ...}` by
+default; `:required? true` rethrows after recording. Raw `require` remains the strict fail-fast path
+for required config.
 
 Maven dependencies declared in an approved spool root's top-level `deps.edn :deps` are part of the spool sync contract described by SPEC-004. Version ranges, alternate approved-spool config files, source fetching beyond approved spool coordinates, and direct explicit-client `require` of newly synced weaver spools remain outside the REPL API contract.
 

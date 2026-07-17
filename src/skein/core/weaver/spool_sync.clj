@@ -482,6 +482,25 @@
                      (normalize-entry source family entry))
                    (:spools config))})
 
+(defn- read-config-edn-file
+  "Read an approved-spool EDN file, adding source context to expected failures."
+  [file message context]
+  (letfn [(contextual-message [t]
+            (str message (when-let [detail (ex-message t)] (str ": " detail))))]
+    (try
+      (query/read-edn-file file)
+      (catch java.io.IOException t
+        (throw (ex-info (contextual-message t) context t)))
+      (catch clojure.lang.ExceptionInfo t
+        (throw (ex-info (contextual-message t) context t)))
+      (catch RuntimeException t
+        ;; clojure.edn reports syntax and unknown-tag failures as exactly
+        ;; RuntimeException. RuntimeException subclasses are unexpected here and
+        ;; keep their original type rather than becoming config diagnostics.
+        (if (= RuntimeException (class t))
+          (throw (ex-info (contextual-message t) context t))
+          (throw t))))))
+
 (defn- approved-spools-file [runtime name kind normalize-entry]
   (let [file (spools-file runtime name)
         source {:kind kind
@@ -498,10 +517,7 @@
       (normalize-approved-spools-file
        name
        source
-       (try
-         (query/read-edn-file file)
-         (catch Throwable t
-           (throw (ex-info (str name " is malformed or unreadable") source t))))
+       (read-config-edn-file file (str name " is malformed or unreadable") source)
        normalize-entry))))
 
 (defn- legacy-config-present? [^java.io.File file]
@@ -658,7 +674,8 @@
   (let [deps-file (io/file root "deps.edn")]
     (when-not (.isFile deps-file)
       (throw (ex-info "Spool root must contain deps.edn" {:root root})))
-    (let [deps (query/read-edn-file deps-file)
+    (let [deps (read-config-edn-file deps-file "Spool deps.edn is malformed or unreadable"
+                                     {:root root :deps-file (.getPath deps-file)})
           paths (or (:paths deps) ["src"])
           ;; Approval covers the root only; a :paths entry resolving outside it
           ;; (via .. or a symlink) would load code the user never consented to.
@@ -821,14 +838,20 @@
             (when (= :cached outcome)
               (delete-tree! tmp))
             outcome)
+          ;; Cleanup must run for every abnormal exit, including JVM Errors and
+          ;; interruption, but the original throwable is always rethrown. This
+          ;; broad catch is cleanup-only; it never translates failure to data.
           (catch Throwable t
+            (when (instance? InterruptedException t)
+              (.interrupt (Thread/currentThread)))
             (delete-tree! tmp)
             (throw t)))))))
 
 (defn- read-spool-deps-edn [entry]
   (let [deps-file (io/file (:root entry) "deps.edn")]
     (when (.isFile deps-file)
-      (assoc (query/read-edn-file deps-file)
+      (assoc (read-config-edn-file deps-file "Spool deps.edn is malformed or unreadable"
+                                   {:root (:root entry) :deps-file (.getPath deps-file)})
              ::deps-file (.getPath deps-file)))))
 
 (defn- validate-spool-maven-deps! [entry deps]
@@ -944,6 +967,13 @@
                            (materialize-git-family-outcome entry))])))
         (group-by (comp ::family meta val) spools)))
 
+(defn- runtime-add-failure [lib entry fetch t]
+  {:failed (sync-failed lib entry :runtime-add-failed
+                        (cond-> {:message (ex-message t)
+                                 :class (str (class t))}
+                          (ex-data t) (assoc :data (ex-data t))
+                          fetch (assoc :fetch fetch)))})
+
 (defn- materialize-and-validate-spool
   "Phase 1: materialize a git root, verify it on disk, and validate it per-root.
 
@@ -978,12 +1008,10 @@
                       :maven-deps maven-deps
                       :source-paths source-paths
                       :fetch fetch}})
-        (catch Throwable t
-          {:failed (sync-failed lib entry :runtime-add-failed
-                                (cond-> {:message (ex-message t)
-                                         :class (str (class t))}
-                                  (ex-data t) (assoc :data (ex-data t))
-                                  fetch (assoc :fetch fetch)))})))))
+        (catch clojure.lang.ExceptionInfo t
+          (runtime-add-failure lib entry fetch t))
+        (catch java.io.IOException t
+          (runtime-add-failure lib entry fetch t))))))
 
 (defn- merge-maven-universe
   "Merge every surviving root's declared Maven deps into one resolution universe.
@@ -1159,8 +1187,8 @@
   per-root `:failed` outcomes. Phase 2 resolves the union of every surviving root's
   Maven deps (with `:mvn-overrides` applied) once against skein's launch classpath,
   adds the delta jars and each surviving root's source paths to the single spool
-  classloader, and classifies each root `:loaded`/`:already-available`. Maven
-  A non-additive diff restores the previous public sync state, records a
+  classloader, and classifies each root `:loaded`/`:already-available`. A
+  non-additive diff restores the previous public sync state, records a
   `:pending-generation`, and throws before touching the classloader. Maven
   resolution is atomic: a cross-root version conflict or an unresolvable universe
   fails the whole sync loudly, leaving `{}` sync state rather than partial results.

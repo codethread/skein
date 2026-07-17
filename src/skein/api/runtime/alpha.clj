@@ -15,6 +15,8 @@
             [skein.core.weaver.spool-sync :as spool-sync]))
 
 (s/def ::root-lib symbol?)
+(s/def ::ns symbol?)
+(s/def ::file (s/and string? (complement str/blank?)))
 (s/def ::status keyword?)
 (s/def ::lib symbol?)
 (s/def ::kind keyword?)
@@ -50,6 +52,21 @@
 (s/def ::sync-result :skein.core.weaver.spool-sync/sync-result)
 (s/def ::non-additive-sync-diff-ex-data
   (s/keys :req-un [::status ::reason ::diff ::pending-generation ::remedy]))
+
+(defn- exact-keys? [allowed value]
+  (and (map? value) (= allowed (set (keys value)))))
+
+(s/def ::reload-namespace
+  (s/and #(exact-keys? #{:ns :file} %)
+         #(s/valid? ::ns (:ns %))
+         #(s/valid? ::file (:file %))))
+(s/def ::namespaces (s/coll-of ::reload-namespace :kind vector?))
+(s/def ::canonical-root (s/and string? (complement str/blank?)))
+(s/def ::reload-spool-result
+  (s/and #(exact-keys? #{:root-lib :root :namespaces} %)
+         #(s/valid? ::root-lib (:root-lib %))
+         #(s/valid? ::canonical-root (:root %))
+         #(s/valid? ::namespaces (:namespaces %))))
 
 (defn- validate-sync-result! [result]
   (require-valid! ::sync-result result "runtime sync result has an invalid shape")
@@ -182,10 +199,18 @@
   namespace also leaves the old one loaded until restart.
 
   Fails loudly on an unresolvable `root-lib`, carrying a `:reason` keyword in
-  ex-data."
+  ex-data. Successful results conform to
+  `:skein.api.runtime.alpha/reload-spool-result`."
   [runtime root-lib]
   (require-valid! ::root-lib root-lib "reload-spool! root-lib must be a symbol")
-  (spool-sync/reload-synced-spool! runtime root-lib))
+  (let [result (spool-sync/reload-synced-spool! runtime root-lib)]
+    (require-valid! ::reload-spool-result result
+                    "reload-spool! result has an invalid shape")
+    result))
+
+(s/fdef reload-spool!
+  :args (s/cat :runtime map? :root-lib ::root-lib)
+  :ret ::reload-spool-result)
 
 (defn now
   "Return the current java.time.Instant from `runtime`'s clock seam.
@@ -198,8 +223,6 @@
 (def ^:private allowed-use-keys #{:ns :file :spools :after :call :required?})
 
 (s/def ::use-key keyword?)
-(s/def ::ns symbol?)
-(s/def ::file (s/and string? (complement str/blank?)))
 (s/def ::spools (s/and #(or (vector? %) (set? %))
                        #(every? symbol? %)))
 (s/def ::after (s/coll-of keyword? :kind vector?))
@@ -211,6 +234,68 @@
          #(not= (contains? % :ns) (contains? % :file))))
 (s/def ::use-registration (s/tuple ::use-key ::use-opts))
 
+(s/def ::loaded
+  (s/or :namespace (s/and #(or (exact-keys? #{:ns} %)
+                               (exact-keys? #{:ns :file} %))
+                          #(contains? % :ns)
+                          #(s/valid? ::ns (:ns %))
+                          #(or (not (contains? % :file))
+                               (s/valid? ::file (:file %))))
+        :file (s/and #(exact-keys? #{:file} %)
+                     #(s/valid? ::file (:file %)))))
+(s/def ::fn (s/and symbol? (comp some? namespace)))
+(s/def ::call-result
+  (s/and #(exact-keys? #{:fn :return} %)
+         #(s/valid? ::fn (:fn %))))
+(s/def ::message (s/nilable string?))
+(s/def ::class string?)
+(s/def ::error
+  (s/and #(exact-keys? #{:message :class :data} %)
+         #(s/valid? ::message (:message %))
+         #(s/valid? ::class (:class %))))
+(s/def ::loaded-use-entry
+  (s/and #(or (exact-keys? #{:key :opts :status :loaded} %)
+              (exact-keys? #{:key :opts :status :loaded :call} %))
+         #(= :loaded (:status %))
+         #(s/valid? ::use-key (:key %))
+         #(s/valid? ::use-opts (:opts %))
+         #(s/valid? ::loaded (:loaded %))
+         #(or (not (contains? % :call))
+              (s/valid? ::call-result (:call %)))))
+(s/def ::failed-use-entry
+  (s/and #(exact-keys? #{:key :opts :status :error} %)
+         #(= :failed (:status %))
+         #(s/valid? ::use-key (:key %))
+         #(s/valid? ::use-opts (:opts %))
+         #(s/valid? ::error (:error %))))
+(s/def ::skipped-use-entry
+  (s/and
+   #(s/valid? ::use-key (:key %))
+   #(s/valid? ::use-opts (:opts %))
+   #(= :skipped (:status %))
+   #(case (:reason %)
+      (:not-approved :not-synced)
+      (and (exact-keys? #{:key :opts :status :reason :lib} %)
+           (symbol? (:lib %)))
+
+      :sync-failed
+      (and (exact-keys? #{:key :opts :status :reason :lib :sync} %)
+           (symbol? (:lib %))
+           (s/valid? :skein.core.weaver.spool-sync/sync-root-entry (:sync %)))
+
+      :missing-after
+      (and (exact-keys? #{:key :opts :status :reason :after :use} %)
+           (keyword? (:after %))
+           (or (nil? (:use %)) (s/valid? ::use-entry (:use %))))
+
+      false)))
+(s/def ::use-entry
+  (s/or :loaded ::loaded-use-entry
+        :skipped ::skipped-use-entry
+        :failed ::failed-use-entry))
+(s/def ::uses-result (s/map-of ::use-key ::use-entry))
+(s/def ::use-result (s/nilable ::use-entry))
+
 (defn- validate-use-opts! [key opts]
   (require-valid! ::use-registration [key opts]
                   "Module use key/options have an invalid shape")
@@ -219,6 +304,7 @@
   opts)
 
 (defn- record-use! [runtime key result]
+  (require-valid! ::use-entry result "Module use result has an invalid shape")
   (swap! (access/module-use-state runtime) assoc key result)
   result)
 
@@ -266,7 +352,8 @@
   include `:call` to invoke a no-arg function after load. Returns a registry
   entry with status `:loaded`, `:skipped`, or `:failed`; failed required uses
   rethrow after recording failure metadata. The key/options pair conforms to
-  `:skein.api.runtime.alpha/use-registration`."
+  `:skein.api.runtime.alpha/use-registration`; the returned and recorded entry
+  conforms to `:skein.api.runtime.alpha/use-entry`."
   [runtime key opts]
   (validate-use-opts! key opts)
   (when-let [file (:file opts)]
@@ -303,14 +390,34 @@
             result))))))
 
 (defn uses
-  "Return `runtime`'s module-use registry as data-first maps."
+  "Return `runtime`'s module-use registry as data-first maps.
+
+  The result conforms to `:skein.api.runtime.alpha/uses-result`."
   [runtime]
-  (into (sorted-map) @(access/module-use-state runtime)))
+  (let [result (into (sorted-map) @(access/module-use-state runtime))]
+    (require-valid! ::uses-result result "Module use registry has an invalid shape")
+    result))
 
 (defn use
-  "Return one module-use registry entry from `runtime` by key."
+  "Return one module-use registry entry from `runtime` by key.
+
+  The nilable result conforms to `:skein.api.runtime.alpha/use-result`."
   [runtime key]
-  (get @(access/module-use-state runtime) key))
+  (let [result (get @(access/module-use-state runtime) key)]
+    (require-valid! ::use-result result "Module use entry has an invalid shape")
+    result))
+
+(s/fdef use!
+  :args (s/cat :runtime map? :key ::use-key :opts ::use-opts)
+  :ret ::use-entry)
+
+(s/fdef uses
+  :args (s/cat :runtime map?)
+  :ret ::uses-result)
+
+(s/fdef use
+  :args (s/cat :runtime map? :key ::use-key)
+  :ret ::use-result)
 
 (defn- warn!
   "Emit a loud-but-non-fatal runtime warning to the weaver's stderr log.
