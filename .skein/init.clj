@@ -23,10 +23,6 @@
 (runtime/use! runtime :skein/spools-batteries
               {:ns 'skein.spools.batteries
                :call 'skein.spools.batteries/install!})
-(runtime/use! runtime :skein/spools-ephemeral
-              {:ns 'skein.spools.ephemeral
-               :spools ['skein.spools/ephemeral]
-               :call 'skein.spools.ephemeral/install!})
 (runtime/use! runtime :skein/spools-workflow
               {:ns 'skein.spools.workflow
                :spools ['skein.spools/workflow]
@@ -35,12 +31,6 @@
               {:ns 'skein.spools.roster
                :spools ['skein.spools/roster]
                :call 'skein.spools.roster/install!})
-;; loom is a read-only work-graph projection library (registers no ops);
-;; config.clj's current-dags/branches/flow-status ops are thin wrappers over it.
-(runtime/use! runtime :skein/spools-loom
-              {:ns 'skein.spools.loom
-               :spools ['skein.spools/loom]
-               :call 'skein.spools.loom/install!})
 ;; The shell executor ships in the workflow spool root and fulfils :shell workflow
 ;; gates by running the gate command directly. Its install! runs an initial
 ;; scan, so it is ordered after workflow (which owns the executor registry it
@@ -157,10 +147,10 @@
                :required? true})
 (runtime/use! runtime :config
               {:file "config.clj"
-               :spools ['skein.spools/carder 'skein.spools/loom 'skein.spools/workflow
-                        'skein.spools/agent-run 'codethread/devflow 'skein.macros/macros]
-               :after [:skein/spools-ephemeral :skein/spools-workflow :skein/spools-devflow
-                       :skein/spools-loom :skein/spools-shuttle :macros/patterns]
+               :spools ['skein.spools/workflow 'skein.spools/agent-run
+                        'codethread/devflow 'skein.macros/macros]
+               :after [:skein/spools-workflow :skein/spools-devflow
+                       :skein/spools-shuttle :macros/patterns]
                :call 'config/install!
                :required? true})
 ;; Analytics is a read-only rollup surface over agent-run usage stamps; it
@@ -176,7 +166,7 @@
 ;; the :config module.
 (runtime/use! runtime :workflows
               {:file "workflows.clj"
-               :spools ['skein.spools/loom 'skein.spools/workflow 'skein.spools/delegation]
+               :spools ['skein.spools/workflow 'skein.spools/delegation]
                :after [:skein/spools-workflow :skein/spools-delegation :config]
                :call 'workflows/install!
                :required? true})

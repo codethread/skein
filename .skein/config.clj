@@ -4,13 +4,9 @@
 
   Thin glue only: `ct.spools.devflow` owns the feature lifecycle,
   `skein.spools.workflow` is the engine, `skein.spools.delegation` owns the
-  `strand agent` surface plus the `agent-plan` pattern, and `skein.spools.loom`
-  owns the read-only work-graph projections (all activated from init.clj).
-  This file registers the devflow wrapper ops, the loom projection ops
-  (`current-dags`/`branches`/`flow-status` — the generic projection logic lives
-  in the spool; the ops here supply repo policy such as which attribute names a
-  branch and which query feeds the ready frontier), the `kanban-tree` board
-  projection op, the `hitl` session op, and a few named queries. Sibling
+  `strand agent` surface plus the `agent-plan` pattern (all activated from
+  init.clj). This file registers the devflow wrapper ops, the `kanban-tree`
+  board projection op, the `hitl` session op, and a few named queries. Sibling
   init.clj modules hold the rest of the repo
   policy: hand-authored workflows in workflows.clj, harness seats in
   harnesses.clj, chime attention rules in attention.clj, the NVD scan cron job
@@ -19,9 +15,7 @@
             [clojure.string :as str]
             [skein.macros.ops :refer [defop forget-ops! install-ops!]]
             [skein.macros.queries :refer [defquery forget-queries! install-queries! remembered-queries]]
-            [skein.spools.carder :as carder]
             [ct.spools.devflow :as devflow]
-            [skein.spools.loom :as loom]
             [skein.spools.agent-run :as shuttle]
             [skein.spools.workflow :as workflow]
             [skein.api.current.alpha :as current]
@@ -109,23 +103,6 @@
    [:or
     [:missing [:attr "workflow/role"]]
     [:not [:in [:attr "workflow/role"] ["root" "digest" "procedure"]]]]])
-
-;; ---------------------------------------------------------------------------
-;; current-dags: active work-DAG projection (loom)
-;; ---------------------------------------------------------------------------
-
-(defop current-dags
-  "Return active parent-of work DAGs and their active depends-on edges.
-
-  This is an operation rather than only a named query because the CLI query
-  surface returns flat strand rows; `skein.spools.loom/work-dags` projects
-  roots, hierarchy edges, dependency edges, and compact strand rows into one
-  JSON-compatible structure for agents and humans."
-  {:returns stamped-op-return :arg-spec {:op "current-dags"
-                                         :doc "Show active parent-of work DAGs with active depends-on edges."}}
-  [_ctx]
-  (merge {:operation "current-dags"}
-         (loom/work-dags (current/runtime))))
 
 ;; ---------------------------------------------------------------------------
 ;; kanban-tree: epic -> feature -> task projection for the agent dashboard
@@ -545,22 +522,17 @@
             {:namespace "ct.spools.devflow"
              :doc "spools/devflow.md"
              :purpose "Feature lifecycle (intake -> proposal -> spec-plan -> tasks/implementation) keyed by feature name."}
-            {:namespace "skein.spools.ephemeral"
-             :doc "spools/ephemeral.md"
-             :purpose "Temporary parent-owned strands burned via a userland attribute."}
             {:namespace "ct.spools.kanban"
              :doc "spools/kanban.md"
              :purpose "User-facing kanban board: feature/epic cards with refinement/pending/claimed/in_review lanes."}]
    ;; The config-owned entries below stay hand-authored: their editorial grouping
-   ;; (e.g. branches leading, current-dags sitting beside carder-report) does not
-   ;; match the defop author order in this file, and reordering the defop forms
-   ;; to force a match would trade that grouping away (RFC-020.Q2 tradeoff; see
-   ;; PLAN-Srm-001.DN1). :queries has no such mismatch and derives below.
+   ;; does not match the defop author order in this file, and reordering the defop
+   ;; forms to force a match would trade that grouping away (RFC-020.Q2 tradeoff;
+   ;; see PLAN-Srm-001.DN1). :queries has no such mismatch and derives below.
    :ops [{:name "kanban" :help "strand help kanban" :manual "strand kanban about"}
          {:name "kanban-export" :help "strand help kanban-export"}
          {:name "kanban-tree" :help "strand help kanban-tree"
           :purpose "Epic -> feature -> task kanban hierarchy with derived task status, in one projection for renderers."}
-         {:name "branches" :help "strand help branches"}
          {:name "devflow-start" :help "strand help devflow-start"}
          {:name "devflow-ready" :help "strand help devflow-ready"}
          {:name "devflow-choices" :help "strand help devflow-choices"}
@@ -572,13 +544,10 @@
          {:name "devflow-squash-run" :help "strand help devflow-squash-run"}
          {:name "devflow-status" :help "strand help devflow-status"}
          {:name "workflow-runs" :help "strand help workflow-runs"}
-         {:name "current-dags" :help "strand help current-dags"}
-         {:name "carder-report" :help "strand help carder-report"}
          {:name "feature-costs" :help "strand help feature-costs"
           :purpose "Agent-run cost/usage rollup beneath a work root, as pure data. Registered by .skein/analytics.clj."}
          {:name "agent" :help "strand help agent" :manual "strand agent about"}
          {:name "flow-await" :help "strand help flow-await"}
-         {:name "flow-status" :help "strand help flow-status"}
          {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
          {:name "land" :help "strand help land" :manual "strand land about"
           :purpose (format-alpha/reflow
@@ -595,48 +564,6 @@
                     :usage "strand ready --query kanban-pending"}]
                   (map #(update % :name str))
                   (remembered-queries 'config))})
-
-(defn- config-attr
-  "Read strand attribute k, tolerating keyword- or string-keyed maps."
-  [strand k]
-  (let [attrs (:attributes strand)]
-    (or (get attrs k) (get attrs (subs (str k) 1)))))
-
-(defn- kanban-card-orphan?
-  "Return true when an orphan row is an unclaimed kanban card.
-
-  Refinement and pending cards (and unclaimed epics) intentionally sit as
-  root strands on the board; they are queue entries, not graph hygiene
-  problems. Claimed cards keep surfacing so missing task/devflow children
-  stay visible."
-  [row]
-  (and (= "true" (config-attr row :kanban/card))
-       (contains? #{"pending" "refinement"} (config-attr row :kanban/lane))))
-
-(defn- suppress-expected-carder-orphans
-  "Return report with expected repo-local orphan rows removed."
-  [report]
-  (let [rows (remove kanban-card-orphan? (get-in report [:orphans :rows]))]
-    (assoc report :orphans {:count (count rows) :rows (vec rows)})))
-
-(defop carder-report
-  "Return the carder graph hygiene report for active work.
-
-  This is a read-only wrapper around `skein.spools.carder/report` for checking
-  stale active strands, orphaned strands, and work blocked by failed agent runs.
-  Repo-local expected kanban board roots are suppressed from the orphan list."
-  {:returns unstamped-op-return :arg-spec {:op "carder-report"
-                                           :doc "Show the read-only carder graph hygiene report."
-                                           :flags {:days {:type :int
-                                                          :doc "Maximum active age, in days, before a strand is stale."}
-                                                   :include-plumbing {:type :boolean-token
-                                                                      :doc "Whether to include workflow and agent-run plumbing: true or false."}}}}
-  [ctx]
-  (let [{:keys [days include-plumbing]} (:op/args ctx)]
-    (suppress-expected-carder-orphans
-     (carder/report (cond-> {}
-                      days (assoc :days days)
-                      (some? include-plumbing) (assoc :include-plumbing? include-plumbing))))))
 
 (defop flow-await
   "Block until a workflow run is done or needs coordinator attention.
@@ -657,24 +584,6 @@
   (let [{:keys [workflow-run-id timeout-secs]} (:op/args ctx)]
     (workflow/await! workflow-run-id (cond-> {}
                                        timeout-secs (assoc :timeout-secs timeout-secs)))))
-
-(defop flow-status
-  "Return workflow flow status by joining history, frontier, gates, runs, and stalls.
-
-  The JSON payload is read-only and suitable for renderers; no workflow,
-  agent-run, or gate state is mutated. The join and Mermaid gate chain live in
-  `skein.spools.loom/flow-status`; this op only names the run and stamps the
-  operation."
-  {:returns stamped-op-return :arg-spec {:op "flow-status"
-                                         :doc "Show workflow flow status for renderer consumption."
-                                         :positionals [{:name :workflow-run-id
-                                                        :type :string
-                                                        :required? true
-                                                        :doc "Workflow run id."}]}}
-  [ctx]
-  (let [{run-id :workflow-run-id} (:op/args ctx)]
-    (merge {:operation "flow-status"}
-           (loom/flow-status (current/runtime) run-id))))
 
 ;; ---------------------------------------------------------------------------
 ;; hitl: interactive human-in-the-loop working sessions
@@ -762,37 +671,6 @@
          :parent parent-id
          :run (shuttle/run-summary run)
          :next "strand agent ps shows the attach command once the session is live; the session ends when the tracking strand closes."}))))
-
-;; ---------------------------------------------------------------------------
-;; branches: branch-visibility projection over work-root strands (loom)
-;; ---------------------------------------------------------------------------
-
-(defop branches
-  "Group active branch-stamped work roots into a per-branch progress view.
-
-  The repo convention stamps `branch` (plus `owner`/`worktree`) on exactly one
-  active work root per branch — `kanban claim` does this for cards — and hangs
-  all execution strands beneath that root with parent-of edges. This op supplies
-  the repo policy — the `branch` attribute names the branch and the `work` query
-  feeds the ready frontier (so workflow plumbing and agent run records stay
-  hidden) — and delegates the projection to `skein.spools.loom/branch-views`.
-  A scoping `branch` argument that matches no stamped root fails loudly."
-  {:returns stamped-op-return :arg-spec {:op "branches"
-                                         :doc "Show active branch-stamped work roots grouped by branch."
-                                         :positionals [{:name :branch
-                                                        :type :string
-                                                        :doc "Optional branch name to scope the projection."}]}}
-  [ctx]
-  (let [{:keys [branch]} (:op/args ctx)
-        branches (loom/branch-views (current/runtime)
-                                    {:branch-attr :branch
-                                     :ready-query work-query
-                                     :branch branch})]
-    (when (and branch (empty? branches))
-      (throw (ex-info "no active work root is stamped with this branch"
-                      {:branch branch})))
-    {:operation "branches"
-     :branches branches}))
 
 ;; ---------------------------------------------------------------------------
 ;; install!
