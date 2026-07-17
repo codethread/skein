@@ -1,4 +1,4 @@
-(ns skein.spools.bench.metrics
+(ns ct.spools.bench.metrics
   "Deterministic, code-owned metrics extractors for the bench spool (README §7).
 
   Each shipped extractor is a pure `(fn [ctx] -> partial metrics map)` over the

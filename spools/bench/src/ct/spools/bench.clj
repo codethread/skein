@@ -1,4 +1,4 @@
-(ns skein.spools.bench
+(ns ct.spools.bench
   "Trusted userland spool for deterministic, containerized benchmarking of
   coding-agent harnesses.
 
@@ -10,7 +10,7 @@
   the judge — a decoupled fulfilment seam (an agent run by default, but
   fulfillable by any mechanism) that writes a comparative verdict.
 
-  Setup and measurement are code (this namespace plus `skein.spools.bench.exec`);
+  Setup and measurement are code (this namespace plus `ct.spools.bench.exec`);
   only judgment is a model. Two registries — harness definitions and suites — are
   weaver-lifetime trusted config validated loudly at registration. All public
   functions take `runtime` explicitly and keep state runtime-owned via
@@ -27,10 +27,10 @@
             [skein.api.vocab.alpha :as vocab]
             [skein.api.graph.alpha :as graph]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.bench.exec :as exec]
-            [skein.spools.bench.metrics :as metrics]
+            [ct.spools.bench.exec :as exec]
+            [ct.spools.bench.metrics :as metrics]
             [skein.api.format.alpha :as fmt]
-            [skein.spools.agent-run :as agent-run]
+            [ct.spools.agent-run :as agent-run]
             [skein.api.spool.alpha :refer [fail! reject-unknown-keys! require-valid! attr-get]])
   (:import [java.io File]
            [java.util.concurrent ExecutorService Executors Semaphore ThreadFactory TimeUnit]))
@@ -207,7 +207,7 @@
   defaults `:arg`. Container entries are non-interactive and prompts routinely
   exceed a safe argv, so a definition that needs `:arg` must say so explicitly.
 
-  A bench harness is NOT a `skein.spools.agent-run` harness, and the two
+  A bench harness is NOT a `ct.spools.agent-run` harness, and the two
   registries are not interchangeable. A bench harness is a *container*
   definition (`:image`/`:auth`/`:model-flag`/`:thinking-flag`/`:extractor`)
   resolved by bench's own registry to run one entry cell; an agent-run harness
@@ -576,7 +576,7 @@
   Preparing → running → done closes the strand with metrics stamped; any throw
   leaves it active with `bench/phase failed` and `bench/error` (TEN-003), plus
   `bench/error-detail` with the full stderr when the failure carried one
-  (e.g. a git command failure from `skein.spools.bench.exec`)."
+  (e.g. a git command failure from `ct.spools.bench.exec`)."
   [runtime ctx entry]
   (let [{:keys [run-id engine suite semaphore]} ctx
         {:keys [entry-id slug cell prompt-text]} entry
@@ -762,7 +762,7 @@
   this output — the strand's `bench/judge-prompt` and an agent run's
   `agent-run/prompt` come from this one builder, so they never drift. A workflow
   author calls `judge-spec` at pour time and maps it onto a `:subagent` gate
-  exactly as roster review specs do (`skein.spools.delegation/roster-review-specs`):
+  exactly as roster review specs do (`ct.spools.delegation/roster-review-specs`):
   `:prompt` becomes the gate's `agent-run/prompt`, the author picks the gate's
   `agent-run/harness`, `:attrs` merge into the gate, and the gate depends on
   `:entry-ids`. Bench thus never requires or references the workflow spool.
@@ -1282,7 +1282,7 @@
                              |:none runs a judgeless, metrics-only suite. Exactly one of
                              |:harness/:external.")
                     :composition (fmt/reflow
-                                  "|skein.spools.bench/judge-spec (trusted Clojure) returns {:prompt
+                                  "|ct.spools.bench/judge-spec (trusted Clojure) returns {:prompt
                                    |:attrs :entry-ids} — the same source run! pours from. A workflow
                                    |author maps it onto a :subagent gate (agent-run/prompt from
                                    |:prompt, gate depends on :entry-ids), exactly like agents'
@@ -1458,7 +1458,7 @@
           "bench/tool-errors" "bench/diff-files" "bench/diff-insertions"
           "bench/diff-deletions" "bench/validation-exit" "bench/exit-code"
           "bench/judge" "bench/run-id" "bench/judge-prompt" "bench/verdict"]
-   :doc "Bench run-root, entry, and judge attributes written by skein.spools.bench/run!."})
+   :doc "Bench run-root, entry, and judge attributes written by ct.spools.bench/run!."})
 
 (defn install!
   "Activate bench on the current runtime.
@@ -1480,7 +1480,7 @@
     (detect-engine! runtime)
     (let [reconciled (reconcile! runtime)]
       {:installed true
-       :namespace 'skein.spools.bench
+       :namespace 'ct.spools.bench
        :engine (engine runtime)
        :harnesses (mapv :name (harnesses runtime))
        :suites (mapv :name (suites runtime))
@@ -1492,6 +1492,6 @@
                               ;; run/reconcile may fetch a git mirror synchronously
                               :deadline-class :unbounded
                               :hook-class :mutating}
-                             'skein.spools.bench/bench-op)
+                             'ct.spools.bench/bench-op)
        :query (graph/register-query! runtime 'bench-runs
                                    [:and [:= :state "active"] [:= [:attr "bench/run"] "true"]])})))

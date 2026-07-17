@@ -1,4 +1,4 @@
-(ns skein.spools.bench.exec
+(ns ct.spools.bench.exec
   "Host-side deterministic workspace preparation and container execution for the
   bench spool.
 
