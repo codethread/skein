@@ -16,12 +16,19 @@
     {:migration :drop-key     :key \"k\"}
 
   Each entry may narrow its rows with guards, of two readings. Value guards —
-  `:when-value` / `:unless-value` — match the row's own JSON value, and are what
-  let one overloaded key split two ways: `bench/run` carries a root id on judge
-  strands but a plain \"true\" marker elsewhere, and only the former becomes
-  `bench/run-id`. Sibling guards ask about the strand around the row instead:
-  `:when-sibling` requires another attribute at a given value, and
-  `:when-sibling-key` requires only that the strand carry a key at all.
+  `:when-value` / `:unless-value` / `:when-value-in` — match the row's own JSON
+  value, and are what let one overloaded key split two ways: `bench/run` carries
+  a root id on judge strands but a plain \"true\" marker elsewhere, and only the
+  former becomes `bench/run-id`. `:when-value-in` is the enumerated form, and
+  says something stronger than one half of a split: it names the whole
+  vocabulary the key may carry on an active strand, so a value outside the set
+  is drift rather than the other half. `kanban/status` becomes `kanban/lane`
+  only for the four board lanes; an active card stamped with a finished card's
+  outcome is a card the new board itself refuses to place, so the cutover
+  reports it rather than renaming it into a lane it never sat in. Sibling guards
+  ask about the strand around the row instead: `:when-sibling` requires another
+  attribute at a given value, and `:when-sibling-key` requires only that the
+  strand carry a key at all.
 
   `:when-sibling-key` is what makes a drop safe to write down. Four of roster's
   keys are dropped rather than renamed because the entries dual-wrote a bare
@@ -30,18 +37,23 @@
   twin's presence means the delete can never destroy the last copy of an
   identity: a strand shaped otherwise keeps its data and is reported.
 
-  Table order matters only where an entry guards on a sibling another entry
-  drops: the plan-root `kind` rename reads `workflow` \"agent-plan\", so it is
-  listed before the entry that drops that key. Every other pair is independent.
+  Table order matters only where an entry reads a key another entry moves: the
+  plan-root `kind` rename reads `workflow` \"agent-plan\", so it is listed before
+  the entry that drops that key, and the `kanban/devflow` drop reads `kanban/run`
+  before the rename carries that key to `kanban/run-id` — an order that also
+  keeps the two roads to `kanban/run-id` from meeting on one strand. Every other
+  pair is independent.
 
   Idempotent by construction: each statement matches the *old* shape, so a
   re-run against a migrated world matches nothing and reports a zero total. A
   strand carrying both the old and the new key is an inconsistent world rather
   than a migrated one — the attributes primary key (strand_id, key) cannot hold
   both after the rewrite — so the pre-flight refuses it loudly instead of
-  surfacing a raw SQLite constraint violation. Rows a *sibling* guard declined
-  are reported too, so a strand shaped unexpectedly is read by the operator
-  rather than migrated blind or dropped in silence. A value guard's declines are
+  surfacing a raw SQLite constraint violation. Rows a guard declined as
+  *unexpected* are reported too, so a strand shaped unlike anything the table
+  describes is read by the operator rather than migrated blind or dropped in
+  silence: that is every sibling guard, and `:when-value-in`, whose enumeration
+  is a claim about the whole key. A `:when-value` / `:unless-value` decline is
   not reported: those rows are the deliberate other half of a split, still
   spelled the way this table intends to leave them.
 
@@ -73,7 +85,13 @@
   from a prefix rule: the old vocabulary split one prefix across several new
   owners (`review/*` became `panel/*` only for the blackboard/pass/synthesis
   keys, while `review/roster` and `review/focus` kept their word), so a blanket
-  prefix rewrite would mis-map its neighbours."
+  prefix rewrite would mis-map its neighbours.
+
+  The kanban entries come from the same transcription applied to the sibling
+  spools' own adoption of the reset vocabulary (kanban.spool 505e873), read at
+  the pins this repo now builds against rather than from this repo's history.
+  The devflow spool renamed no durable attribute in that slice, so it adds no
+  entry here."
   [;; workflow: the run's shape is its form, and role names the graph position.
    {:migration :rename-key :from "workflow/phase" :to "workflow/form"
     :note "phase collided with agent-run/phase's lifecycle reading"}
@@ -149,7 +167,29 @@
    {:migration :drop-key :key "roster/feature" :when-sibling-key "feature"}
    {:migration :drop-key :key "roster/owner" :when-sibling-key "owner"}
    {:migration :drop-key :key "roster/branch" :when-sibling-key "branch"}
-   {:migration :drop-key :key "roster/worktree" :when-sibling-key "worktree"}])
+   {:migration :drop-key :key "roster/worktree" :when-sibling-key "worktree"}
+
+   ;; kanban: the board split one status word in two — the lane an active card
+   ;; sits in, and the outcome a finished one ended on. Only the lane half is in
+   ;; scope, because an outcome is stamped as the card closes and closed cards
+   ;; are historical memory; the four lanes are therefore the whole vocabulary
+   ;; an active card may carry, and the new board reads anything else as drift.
+   {:migration :rename-key :from "kanban/status" :to "kanban/lane"
+    :when-value-in #{"refinement" "pending" "claimed" "in_review"}
+    :note "the board owns placement; outcomes stay on the closed cards they end"}
+
+   ;; The card's run binding, and the alias that preceded it. `kanban/devflow`
+   ;; was already deprecated to a fallback the old spool read only where
+   ;; `kanban/run` was absent, so the two entries follow that same reading:
+   ;; where kanban/run answers, the alias is a value the code had already
+   ;; stopped consulting and goes; where the alias is the sole copy, it *is* the
+   ;; binding and takes the new word. Order-dependent (see the ns docstring).
+   {:migration :drop-key :key "kanban/devflow" :when-sibling-key "kanban/run"
+    :note "the deprecated alias, on a card whose canonical key already answers"}
+   {:migration :rename-key :from "kanban/run" :to "kanban/run-id"
+    :note "the id is the run's own; the tracker seam joins on kanban/run-id"}
+   {:migration :rename-key :from "kanban/devflow" :to "kanban/run-id"
+    :note "sole-copy rows: the alias held the run the old fallback reader used"}])
 
 (def ^:private active-scope
   "SQL predicate narrowing a statement to attributes of active strands."
@@ -175,15 +215,26 @@
      [when-sibling-key]]))
 
 (defn- value-clause
-  "Return `[sql params]` matching (or excluding) the row's own JSON value."
-  [{:keys [when-value unless-value]}]
-  (cond
-    (and when-value unless-value)
-    (throw (ex-info "An entry takes :when-value or :unless-value, not both"
-                    {:when-value when-value :unless-value unless-value}))
-    when-value [" AND value = ?" [(json/write-str when-value)]]
-    unless-value [" AND value <> ?" [(json/write-str unless-value)]]
-    :else nil))
+  "Return `[sql params]` matching (or excluding) the row's own JSON value.
+
+  `:when-value-in` enumerates the values the key may legitimately carry, which
+  an empty set could never describe."
+  [{:keys [when-value unless-value when-value-in] :as entry}]
+  (let [given (filterv (partial contains? entry)
+                       [:when-value :unless-value :when-value-in])]
+    (when (< 1 (count given))
+      (throw (ex-info "An entry takes at most one value guard" {:guards given})))
+    (when (and when-value-in (empty? when-value-in))
+      (throw (ex-info "A :when-value-in guard needs at least one value"
+                      {:entry entry})))
+    (cond
+      when-value [" AND value = ?" [(json/write-str when-value)]]
+      unless-value [" AND value <> ?" [(json/write-str unless-value)]]
+      when-value-in [(str " AND value IN ("
+                          (str/join ", " (repeat (count when-value-in) "?"))
+                          ")")
+                     (mapv json/write-str (sort when-value-in))]
+      :else nil)))
 
 (defn- guards
   "Return `[sql params]` for an entry's row guards, composed in table order."
@@ -194,15 +245,18 @@
     [(str/join (map first clauses))
      (into [] (mapcat second) clauses)]))
 
-(defn- sibling-guarded?
-  "True when `entry` narrows its rows by the shape of the strand around them.
+(defn- reports-declines?
+  "True when `entry` guards on a shape it claims is the complete expected one.
 
   The distinction the reporting turns on: a sibling guard's decline means the
-  strand was not what the entry expected, while a value guard's decline is the
-  intended other half of a split."
+  strand was not what the entry expected, and a `:when-value-in` decline means
+  the value fell outside the whole vocabulary the entry enumerates — either way
+  a strand only the operator can read. A `:when-value` / `:unless-value` decline
+  is the intended other half of a split."
   [entry]
   (boolean (and (#{:rename-key :drop-key} (:migration entry))
-                (some (partial contains? entry) [:when-sibling :when-sibling-key]))))
+                (some (partial contains? entry)
+                      [:when-sibling :when-sibling-key :when-value-in]))))
 
 (defn- source-key
   "Return the attribute key an entry's rows carry before it runs."
@@ -212,7 +266,7 @@
 (defn- label
   "Return the human-readable name this entry reports itself under."
   [{:keys [migration from to key] :as entry}]
-  (let [guarded (when (sibling-guarded? entry) " (guarded)")]
+  (let [guarded (when (reports-declines? entry) " (guarded)")]
     (case migration
       :rename-key (str from " -> " to guarded)
       :rename-value (str key ": " from " -> " to)
@@ -274,14 +328,16 @@
   Called after the rewrite, so a row still carrying an entry's source key is by
   construction one its guard declined — the migrated rows have moved on.
 
-  A sibling guard narrows a key to the strands whose shape earns the rewrite:
-  `harness` is agent-run's word on a delegated task and nobody else's, and
-  `roster/owner` is redundant only where the bare `owner` twin survives it. A
-  row the guard skipped is therefore either correctly none of our business or a
-  strand shaped unexpectedly, and only the operator can tell which: report it
-  rather than migrate it blind or drop it silently. For the guarded drops that
-  reading is the point — the rows named here are the ones whose only copy of an
-  identity would have gone. Advisory, not fatal."
+  These guards narrow a key to the rows whose shape earns the rewrite:
+  `harness` is agent-run's word on a delegated task and nobody else's,
+  `roster/owner` is redundant only where the bare `owner` twin survives it, and
+  `kanban/status` is a lane only where it holds a lane. A row the guard skipped
+  is therefore either correctly none of our business or a strand shaped
+  unexpectedly, and only the operator can tell which: report it rather than
+  migrate it blind or drop it silently. For the guarded drops that reading is
+  the point — the rows named here are the ones whose only copy of an identity
+  would have gone. A row a later entry claimed under another name is not named
+  here, because it no longer carries the key. Advisory, not fatal."
   [tx]
   (into {}
         (keep (fn [entry]
@@ -292,7 +348,7 @@
                                  (source-key entry)])
                                (mapv :attributes/strand_id))]
                   (when (seq ids) [(label entry) ids]))))
-        (filter sibling-guarded? migrations)))
+        (filter reports-declines? migrations)))
 
 (defn rewrite!
   "Apply every migration to `ds` (a next.jdbc datasource) in one transaction.

@@ -6,9 +6,11 @@
 
   The cases are the ones the table cannot make obvious by inspection — the
   guarded splits (a bare key that is only agent-run's word on a task strand, an
-  overloaded bench/run that stays put on marker rows), the guarded drops (a
-  roster/* key goes only where the bare twin it is redundant with survives it),
-  the closed-strand scope boundary, idempotency, and the loud refusals."
+  overloaded bench/run that stays put on marker rows, a kanban/status that is a
+  lane only where it holds one), the guarded drops (a roster/* key goes only
+  where the bare twin it is redundant with survives it, a kanban/devflow alias
+  only where the canonical binding answers), the closed-strand scope boundary,
+  idempotency, and the loud refusals."
   (:require
    [clojure.test :refer [deftest is testing]]
    [cutover.vocab-reset :as cut]
@@ -76,10 +78,15 @@
 (deftest leaves-closed-strands-as-written
   (test-alpha/with-weaver-world [ctx world-opts]
     (let [rt (:runtime ctx)
-          closed (add! rt "closed" {"workflow/phase" "review" "review/target" "board-1"})]
+          closed (add! rt "closed" {"workflow/phase" "review" "review/target" "board-1"})
+          card (add! rt "closed" {"kanban/card" "true" "kanban/status" "done"})]
       (cut/rewrite! (datasource ctx))
       (is (= {:workflow/phase "review" :review/target "board-1"} (attrs rt closed))
-          "closed strands are historical memory, not authority"))))
+          "closed strands are historical memory, not authority")
+      (is (= {:kanban/card "true" :kanban/status "done"} (attrs rt card))
+          "a finished card keeps the word it was closed under: kanban/outcome is
+           stamped as a card closes, and the board counts closed cards by state
+           rather than reading an outcome off them"))))
 
 (deftest namespaces-bare-keys-only-on-task-strands
   (test-alpha/with-weaver-world [ctx world-opts]
@@ -213,6 +220,60 @@
            its twin and goes, while roster/branch is the only copy and stays")
       (is (= {"drop roster/branch (guarded)" [half]} left-behind)
           "only the key actually left behind is reported"))))
+
+(deftest moves-an-active-card-onto-the-board-lane
+  (test-alpha/with-weaver-world [ctx world-opts]
+    (let [rt (:runtime ctx)
+          ds (datasource ctx)
+          card (add! rt "active" {"kanban/card" "true"
+                                  "kanban/status" "claimed"
+                                  "kanban/type" "feature"
+                                  "kanban/priority" "p2"})
+          drift (add! rt "active" {"kanban/card" "true" "kanban/status" "done"})
+          {:keys [left-behind]} (cut/rewrite! ds)]
+      (is (= {:kanban/card "true"
+              :kanban/lane "claimed"
+              :kanban/type "feature"
+              :kanban/priority "p2"}
+             (attrs rt card))
+          "an active card's placement moves to the word the board now reads,
+           and the keys the board kept are left alone")
+      (is (= {:kanban/card "true" :kanban/status "done"} (attrs rt drift))
+          "an outcome is not a lane: an active card carrying one is drift, and
+           the guard enumerates the whole lane vocabulary rather than one half
+           of a split")
+      (is (= {"kanban/status -> kanban/lane (guarded)" [drift]} left-behind)
+          "the drift is named for the operator rather than placed in a lane the
+           card never sat in")
+      (is (= {:changes {} :total 0 :left-behind left-behind} (cut/rewrite! ds))
+          "a re-run against the migrated world is a no-op, and the decline is
+           stable rather than a one-shot warning"))))
+
+(deftest carries-each-card-run-binding-onto-the-tracker-key
+  (test-alpha/with-weaver-world [ctx world-opts]
+    (let [rt (:runtime ctx)
+          ds (datasource ctx)
+          claimed (add! rt "active" {"kanban/card" "true" "kanban/run" "bla23"})
+          aliased (add! rt "active" {"kanban/card" "true" "kanban/devflow" "py7pm"})
+          both (add! rt "active" {"kanban/card" "true"
+                                  "kanban/run" "bla23"
+                                  "kanban/devflow" "stale"})
+          {:keys [left-behind total]} (cut/rewrite! ds)]
+      (is (= {:kanban/card "true" :kanban/run-id "bla23"} (attrs rt claimed))
+          "the canonical run key takes the word the tracker seam joins on")
+      (is (= {:kanban/card "true" :kanban/run-id "py7pm"} (attrs rt aliased))
+          "the deprecated alias holds the only copy of the binding here, so it
+           survives under the new word rather than going as redundant")
+      (is (= {:kanban/card "true" :kanban/run-id "bla23"} (attrs rt both))
+          "where the canonical key answers, the alias is the value the old
+           spool's fallback reader had already stopped consulting: the binding
+           the board honoured wins, and the alias does not overwrite it")
+      (is (= 4 total) "three cards, four rows: the alias half is dropped too")
+      (is (= {} left-behind)
+          "nothing is left behind — the drop's declines are the sole-copy rows
+           the rename carried, not rows the cutover skipped")
+      (is (zero? (:total (cut/rewrite! ds)))
+          "a re-run against the migrated world is a no-op"))))
 
 (deftest reports-rows-and-is-idempotent
   (test-alpha/with-weaver-world [ctx world-opts]
