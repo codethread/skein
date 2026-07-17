@@ -123,7 +123,7 @@ The runtime is pull-based and *every* strand is already a durable wait point: an
   gates can make `await!` stay silent while it is healthy. A gate whose
   waiter has no registered executor always surfaces immediately — there is no
   silent default.
-- A shipped local-root adapter, `skein.spools.executors.subagent`, fulfills ready
+- A shipped local-root adapter, `ct.spools.executors.subagent`, fulfills ready
   `:subagent` gates by spawning agent-run runs, registers the `:subagent`
   executor, and closes each gate with the run's result. See
   `executors/subagent.md`.
@@ -480,7 +480,7 @@ The test suite in [`test/skein/spools/workflow_test.clj`](../test/skein/spools/w
   runtime fns of this namespace as symbol-valued maps, for trusted
   registration by name (mirrors devflow's registries in `devflow.md` §5).
 - [README.md](./README.md) — shipped spools index and loading notes.
-- [`skein.spools.executors.subagent`](./executors/subagent.md) — shipped
+- [`ct.spools.executors.subagent`](./executors/subagent.md) — shipped
   local-root adapter that binds workflow `:subagent` gates to agent-run runs.
 - [`skein.spools.executors.shell`](./executors/shell.md) — shipped classpath executor that fulfills
   workflow `:shell` gates by running their command.

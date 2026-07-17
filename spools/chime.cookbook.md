@@ -133,7 +133,7 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
   "Workspace attention rules."
   (:require [clojure.string :as str]
             [skein.spools.chime :as chime]
-            [skein.spools.agent-run :as agent-run]))
+            [ct.spools.agent-run :as agent-run]))
 
 (defn interactive-session-running
   "Notify when an interactive agent-run session is ready for the human."
@@ -171,7 +171,7 @@ Honest source: this repo's `agent-failure-rule` and `hitl-checkpoint-ready-rule`
   argv over the stored handle. If a backend has no attach template yet, the rule
   says no attach hint is configured instead of inventing a command.
 
-Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/agent-run/src/skein/spools/agent_run.clj`](agent-run/src/skein/spools/agent_run.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/delegation/README.md`](delegation/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
+Honest source: agent-run's `run-summary` / `runs` implementation in [`spools/agent-run/src/ct/spools/agent_run.clj`](agent-run/src/ct/spools/agent_run.clj) renders `:attach` from the backend's display-only `:attach` op, and [`spools/delegation/README.md`](delegation/README.md) documents that `strand agent ps` carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
 
 ---
 

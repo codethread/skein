@@ -2,7 +2,7 @@
 """bench host engine: speaks the docker/podman CLI dialect the bench spool
 emits, but executes the command directly on the host.
 
-Supported calls (exactly what skein.spools.bench.exec emits):
+Supported calls (exactly what ct.spools.bench.exec emits):
   host-engine run --rm -i --name NAME -e K=V ... -v SRC:DST[:ro] ... -w DIR IMAGE CMD...
   host-engine image inspect --format {{.Id}} IMAGE
   host-engine kill NAME

@@ -109,7 +109,7 @@ The spool also registers the `stalled-shell-gates` named query for coordinator i
 
 - [`skein.spools.workflow`](../workflow.md) — workflow gates, `complete!`, and the
   `register-executor!` registry the shell executor plugs into.
-- [`skein.spools.executors.subagent`](./subagent.md) — the agent-run-backed sibling that
+- [`ct.spools.executors.subagent`](./subagent.md) — the agent-run-backed sibling that
   fulfils `:subagent` gates; the shell executor is the same shape without the run engine.
 - [`executors/shell.cookbook.md`](./shell.cookbook.md) — worked composition recipes.
 - ``test/skein/spools/executors/shell_test.clj`` —
