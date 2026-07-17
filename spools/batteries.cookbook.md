@@ -218,6 +218,46 @@ Honest source: the `weave`/`pattern` ops and their strict input parsing in `spoo
 
 ---
 
+## Recipe: Burn temporary strands owned by one parent
+
+**Situation.** A task needs scratch strands while it runs, but those strands
+should disappear when the task finishes.
+
+**Composition.** Mark each scratch strand at creation with a userland owner
+attribute such as `tmp/owner=<parent-id>`. Register a parameterized query for
+that attribute, then list and burn the matching ids when the parent finishes.
+
+```clojure
+;; Register once in trusted config or the live weaver REPL.
+(defquery! 'temporary-by-owner
+  {:params [:owner]
+   :where [:and
+           [:= :state "active"]
+           [:= [:attr "tmp/owner"] [:param :owner]]]})
+```
+
+```sh
+parent_id=$(strand add "Investigate parser failure" | id)
+strand add "Scratch: malformed input" --attr tmp/owner="$parent_id"
+strand add "Scratch: upstream response" --attr tmp/owner="$parent_id"
+
+# Run this cleanup when the parent finishes.
+strand list --query temporary-by-owner --param owner="$parent_id" \
+  | python3 -c 'import json,sys; print("\n".join(x["id"] for x in json.load(sys.stdin)))' \
+  | while IFS= read -r tmp_id; do strand burn "$tmp_id"; done
+```
+
+**Why this shape.** The attribute records ownership without adding a lifecycle
+rule to the engine. The query scopes cleanup to one parent, and `burn` removes
+only the disposable strands selected by that query. Keep decisions, results,
+and other durable work as ordinary strands or notes instead.
+
+Honest source: the `add`, parameterized `list --query`, and `burn` ops in
+`spools/src/skein/spools/batteries.clj`, with their behavior covered by
+`test/skein/spools/batteries_test.clj`.
+
+---
+
 ## Recipe: Retire work honestly — supersede, close, or burn
 
 **Situation.** A strand is finished, wrong, or replaced by a better version, and you need to take it out of the ready frontier without corrupting the graph. Three ops do different things here, and reaching for the wrong one loses history or strands dependents.
