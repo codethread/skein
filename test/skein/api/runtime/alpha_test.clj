@@ -370,6 +370,27 @@
           (is (= 'demo/bad (:family (ex-data error))))
           (is (= before (slurp file))))))))
 
+(deftest spool-config-writes-refuse-trailing-edn-without-changing-the-file
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [file (io/file (:config-dir world) "spools.edn")
+            config "{:spools {demo/family {:local/root \"spools/demo\"}}}\n{:ignored true}\n"]
+        (.mkdirs (.getParentFile file))
+        (doseq [write! [#(runtime/upsert-spool-entry!
+                          rt 'demo/family {:local/root "spools/replacement"})
+                        #(runtime/remove-spool-entry! rt 'demo/family)]]
+          (spit file config)
+          (let [error (try
+                        (write!)
+                        nil
+                        (catch clojure.lang.ExceptionInfo exception exception))]
+            (is (re-find #"trailing content" (ex-message error)))
+            (is (= (.getPath file) (:file (ex-data error))))
+            (is (= "{:ignored true}" (:trailing-content (ex-data error))))
+            (is (= config (slurp file)))))))))
+
 (deftest remove-spool-entry-refuses-requirers-and-removes-unreferenced-family
   (with-started-runtime
     nil

@@ -15,7 +15,8 @@
             [skein.core.weaver.access :as access]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.weaver.spool-sync :as spool-sync])
-  (:import [java.nio.file Files StandardCopyOption]
+  (:import [java.io PushbackReader StringReader]
+           [java.nio.file Files StandardCopyOption]
            [java.nio.file.attribute FileAttribute]))
 
 (s/def ::root-lib symbol?)
@@ -254,10 +255,25 @@
 (defn- parse-primary-spools-config [{:keys [content exists?]} file]
   (if exists?
     (try
-      (edn/read-string content)
+      (let [eof ::eof
+            reader (PushbackReader. (StringReader. content))
+            config (edn/read reader)
+            remainder (slurp reader)]
+        (try
+          (when-not (= eof (edn/read {:eof eof} (PushbackReader. (StringReader. remainder))))
+            (throw (ex-info "spools.edn contains trailing content"
+                            {:trailing-content (str/trim remainder)})))
+          config
+          (catch RuntimeException error
+            (throw (ex-info (str "spools.edn contains malformed trailing content: "
+                                 (ex-message error))
+                            (merge {:trailing-content (str/trim remainder)}
+                                   (ex-data error))
+                            error)))))
       (catch RuntimeException error
         (throw (ex-info (str "spools.edn is malformed or unreadable: " (ex-message error))
-                        {:kind :shared :file (.getPath ^java.io.File file)}
+                        (merge {:kind :shared :file (.getPath ^java.io.File file)}
+                               (ex-data error))
                         error))))
     {:spools {}}))
 
