@@ -176,6 +176,11 @@
                     :verb "about"
                     :semantics ["Return the agent coordination manual."]
                     :returns {"manual" "string"}}
+           :prime {:group "memory-review"
+                   :help-topic "strand help agent"
+                   :verb "prime"
+                   :semantics ["Return run-first coordinator priming: the working discipline distilled from this manual."]
+                   :returns {"operation" "agent prime"}}
            :spawn {:group "engine"
                    :help-topic "strand help agent"
                    :verb "spawn"
@@ -557,6 +562,43 @@
                                  |and the warm runtime files are gitignored, so no
                                  |Done-when may depend on warm state.")}
    :worker-contract worker-contract})
+
+(def prime-doc
+  "Run-first coordinator priming returned by `agent prime`.
+
+  A selection over `about-doc`, not new prose: the traps, coordinator loop,
+  and delegation policy an agent must load before delegating, without the
+  verb-by-verb reference that `about` and `strand help agent` carry."
+  {:operation "agent prime"
+   :working-agreement
+   (fmt/reflow "
+     |You coordinate delegated work over the strand graph: weave a plan,
+     |delegate ready tasks, verify, close. Load this discipline before
+     |delegating; `agent about` is the verb-by-verb manual and
+     |`strand help agent` answers exact invocation.")
+   :concepts (select-keys (:concepts about-doc) [:traps :scheduler :run-result])
+   :coordinator-loop (:coordinator-loop about-doc)
+   ;; :tiered-validation hardcodes repo-specific validation commands (issue
+   ;; #81); prime stays workspace-neutral
+   :policy (dissoc (:policy about-doc) :tiered-validation)
+   :staying-aware
+   (fmt/fill "
+     |agent ps --active lists live runs; agent status <plan-id> is the
+     |coordinator dashboard: ready, running, failed, awaiting_verification,
+     |blocked.
+     |
+     |Failures stay loud until handled: agent logs <run-id> --tail 80 for
+     |forensics, fix the task body or environment, then agent retry <task-id>.")
+   :workers
+   (fmt/reflow "
+     |Every headless run already receives the engine preamble plus the worker
+     |contract (strand etiquette, notes discipline, status conventions), so a
+     |task body carries only what the contract cannot know: scope, owned files,
+     |validation commands, and commit policy.")
+   :pointers ["strand agent about — the verb-by-verb manual"
+              "strand help agent — generated invocation detail for every verb"
+              "strand pattern explain agent-plan — weave a feature plan with task/review children"
+              "strand agent harnesses / strand agent rosters — configured seats and review rosters"]})
 
 (defn- parse-argv [argv flag-spec]
   (loop [xs argv pos [] flags {}]
@@ -2020,6 +2062,7 @@
    :doc "Spawn and coordinate coding-agent runs. Run `strand agent about` for the manual."
    :subcommands
    {"about" {:doc "Return the agent coordination manual."}
+    "prime" {:doc "Return run-first coordinator priming: working discipline to load before delegating."}
     "spawn" {:doc "Spawn a raw agent run."
              :flags {:harness {:required? true :doc "Harness or alias name."}
                      :prompt {:required? true :doc "Prompt text for the run."}
@@ -2122,6 +2165,12 @@
              :required {:operation :string :concepts {:type :map :extra :json}
                         :verbs {:type :map :extra :json}}
              :extra :json}
+    "prime" {:type :map
+             :required {:operation :string
+                        :concepts {:type :map :extra :json}
+                        :coordinator-loop {:type :collection :items {:type :map :extra :json}}
+                        :policy {:type :map :extra :json}}
+             :extra :json}
     "spawn" (update run-summary-return :required assoc :operation :string)
     ;; This is intentionally the agent-run domain summary, not an entity projection.
     "ps" {:type :collection :items run-summary-return}
@@ -2213,6 +2262,7 @@
   (let [args (or args (cli/parse agent-arg-spec argv))]
     (case (:subcommand args)
       "about" about-doc
+      "prime" prime-doc
       "spawn" (op-spawn (parsed->legacy-argv args []))
       "ps" (agent-run/runs (cond-> {:active (boolean (:active args))}
                            (:for args) (assoc :for (:for args))))

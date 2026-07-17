@@ -59,6 +59,7 @@
             run {:id "run-1" :title "run" :state "active" :phase "pending" :harness "sh"}
             representatives
             {"about" (assoc (agents/agent-op {:op/argv ["about"]}) :operation "agent about")
+             "prime" (agents/agent-op {:op/argv ["prime"]})
              "spawn" (assoc run :operation "agent spawn")
              "ps" [run]
              "spend" {:operation "agent spend" :filters {} :totals {} :groups [] :runs []}
@@ -94,7 +95,7 @@
       (is (map? (agents/agent-op {:op/argv ["about"]})))
       (let [detail (weaver/resolve-op rt 'agent)]
         (is (not (contains? detail :raw-envelope)))
-        (is (= ["about" "await" "backends" "council" "delegate" "harnesses" "kill" "logs" "note" "notes" "ps" "retry" "review" "rosters" "spawn" "spend" "status"]
+        (is (= ["about" "await" "backends" "council" "delegate" "harnesses" "kill" "logs" "note" "notes" "prime" "ps" "retry" "review" "rosters" "spawn" "spend" "status"]
                (sort (keys (get-in detail [:arg-spec :subcommands])))))
         (let [review-flags (get-in detail [:arg-spec :subcommands "review" :flags])
               manual-entries (->> agents/about-doc :verbs vals)
@@ -150,6 +151,21 @@
                     (:coordinator-loop about)))
           (is (some #(= "validation" %) (get-in about [:plan-creation :task-fields])))
           (is (str/includes? (:worker-contract about) "Read your assigned strand AND its notes"))))
+      (testing "prime is a drift-proof selection over the about manual"
+        (let [about (agents/agent-op {:op/argv ["about"]})
+              prime (agents/agent-op {:op/argv ["prime"]})]
+          (is (= "agent prime" (:operation prime)))
+          (is (= (:coordinator-loop about) (:coordinator-loop prime)))
+          (is (= (get-in about [:concepts :traps]) (get-in prime [:concepts :traps])))
+          (is (not (contains? (:concepts prime) :phase-enum))
+              "prime carries discipline, not the reference enums")
+          (is (contains? (:policy prime) :native-subagents))
+          (is (not (contains? (:policy prime) :tiered-validation))
+              "workspace validation tiers stay out of the spool-shipped prime")
+          (is (not (contains? prime :verbs)))
+          (is (not (contains? prime :worker-contract)))
+          (is (seq (:working-agreement prime)))
+          (is (seq (:pointers prime)))))
       (testing "spawn/ps/await/notes drive a full run over argv"
         (let [spawned (agents/agent-op {:op/argv ["spawn" "--harness" "sh" "--prompt" "echo via-op"]})]
           (is (= "pending" (:phase spawned)))
