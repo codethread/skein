@@ -381,6 +381,21 @@
                    ;; seat-level rate card is how per-model codex pricing lands
                    :skein.spools.agent-run.harness/cost-rates]))
 
+;; Shape of every workspace-owned contract-text slot (`set-default-task-contract!`,
+;; `set-default-review-contract!`): text to inject, or nil to clear. Blank text is
+;; not "clear" — it is a config bug that would inject an empty section, so it
+;; fails rather than silently reading as nil.
+(s/def ::contract-text (s/nilable (s/and string? (complement str/blank?))))
+
+(defn- validate-contract-text!
+  "Validate a workspace contract-text slot against `::contract-text`, failing
+  loudly with the offending value. `slot` names the caller's slot so the message
+  points at the setter the config called."
+  [slot text]
+  (when-not (s/valid? ::contract-text text)
+    (fail! (str slot " must be a non-blank string or nil") {:text text}))
+  text)
+
 (defn- validate-resume-argv!
   "Validate a harness :resume splice: a non-empty vector of literal strings and
   placeholder keywords drawn from the closed `resume-placeholder-inputs` set.
@@ -835,7 +850,7 @@
 
 
 
-(def generic-worker-contract
+(def ^:private generic-worker-contract
   "Worker contract every preamble-carrying headless run receives.
 
   Deliberately only the invariants the engine itself couples to: the run/strand
@@ -864,16 +879,17 @@
   A serving run — one with an outgoing `serves` edge — is a delegation of its
   target's work, so this is where task-workflow conventions (reading the
   assigned strand, progress reporting, status gates) belong; ad-hoc spawns that
-  serve nothing never see it. The literal `<task-id>` placeholder is replaced
-  with the served strand's id at preamble time, so injected commands are
-  runnable as written.
+  serve nothing never see it. Two literal placeholders are substituted at
+  preamble time so injected commands are runnable as written: `<task-id>` for
+  the served strand's id, and `<your-run-id>` for the receiving run's own id
+  (the `--by` author of any note it writes).
 
-  Workspace-owned configuration, so re-registration replaces silently: unlike
-  `set-preamble-extension!` there is no cross-spool claim to conflict over.
-  Reload-tolerant through the engine's versioned state."
+  Text is validated against `::contract-text`: a non-blank string, or nil to
+  clear. Workspace-owned configuration, so re-registration replaces silently:
+  unlike `set-preamble-extension!` there is no cross-spool claim to conflict
+  over. Reload-tolerant through the engine's versioned state."
   [text]
-  (when (and (some? text) (or (not (string? text)) (str/blank? text)))
-    (fail! "Default task contract must be a non-blank string or nil" {:text text}))
+  (validate-contract-text! "Default task contract" text)
   (reset! (default-task-contract) text)
   {:default-task-contract (boolean text)})
 
@@ -945,7 +961,10 @@
          (when-let [extension @(preamble-extension)]
            (str extension "\n"))
          (when-let [task (and served-target @(default-task-contract))]
-           (str (str/replace task "<task-id>" served-target) "\n"))
+           (str (-> task
+                    (str/replace "<task-id>" served-target)
+                    (str/replace "<your-run-id>" run-id))
+                "\n"))
          "[task]\n"
          prompt-prefix)))
 
@@ -2577,10 +2596,12 @@
 
 
 (defn set-default-review-contract!
-  "Set the workspace default review contract text; nil restores the generic one."
+  "Set the workspace default review contract text; nil restores the generic one.
+
+  Text is validated against `::contract-text`: a non-blank string, or nil to
+  clear."
   [text]
-  (when (and (some? text) (or (not (string? text)) (str/blank? text)))
-    (fail! "Default review contract must be a non-blank string or nil" {:text text}))
+  (validate-contract-text! "Default review contract" text)
   (reset! (default-review-contract) text)
   {:default-review-contract (boolean text)})
 

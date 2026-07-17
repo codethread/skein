@@ -96,11 +96,12 @@
 (def worker-contract
   "Task-workflow contract this spool exports for the agent-run task-contract slot.
 
-  The engine's own `generic-worker-contract` already rides every headless
-  preamble; this is the delegation-specific remainder, which only makes sense
-  for a run serving a task. Nothing registers it automatically: a workspace that
-  wants this task workflow opts in with `agent-run/set-default-task-contract!`,
-  which substitutes the served strand's id for `<task-id>`."
+  The engine's own worker contract already rides every preamble-carrying
+  headless run; this is the delegation-specific remainder, which only makes
+  sense for a run serving a task. Nothing registers it automatically: a
+  workspace that wants this task workflow opts in with
+  `agent-run/set-default-task-contract!`, which substitutes the served strand's
+  id for `<task-id>` and the receiving run's own id for `<your-run-id>`."
   (str "[task workflow]\n- "
        (str/join "\n- "
                  (concat
@@ -579,10 +580,10 @@
      |forensics, fix the task body or environment, then agent retry <task-id>.")
    :workers
    (fmt/reflow "
-     |Every headless run already receives the engine preamble plus the worker
-     |contract (strand etiquette, notes discipline, status conventions), so a
-     |task body carries only what the contract cannot know: scope, owned files,
-     |validation commands, and commit policy.")
+     |Every preamble-carrying headless run already receives the engine preamble
+     |plus the worker contract (strand etiquette, notes discipline, status
+     |conventions), so a task body carries only what the contract cannot know:
+     |scope, owned files, validation commands, and commit policy.")
    :pointers ["strand agent about — the verb-by-verb manual"
               "strand help agent — generated invocation detail for every verb"
               "strand pattern explain agent-plan — weave a feature plan with task/review children"

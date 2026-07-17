@@ -241,7 +241,7 @@ Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/age
 
 **Situation.** Every run you spawn needs the same standing contract — how to talk back to the graph, what a delegated worker may and may not close, where to leave notes — and you don't want to paste it into every prompt.
 
-**Composition.** The engine already injects a minimal, role-blind preamble (run id, the pinned `strand` command, spawn/await/note one-liners) plus its own `generic-worker-contract`, which you cannot switch off. Layer your policy on from trusted startup config with two slots: `set-preamble-extension!` for text every headless run gets, and `set-default-task-contract!` for text only runs serving a task get.
+**Composition.** The engine already injects a minimal, role-blind preamble (run id, the pinned `strand` command, spawn/await/note one-liners) plus its own worker contract, which you cannot switch off. Layer your policy on from trusted startup config with two slots: `set-preamble-extension!` for text every preamble-carrying headless run gets, and `set-default-task-contract!` for text only runs serving a task get.
 
 ```clojure
 (require '[skein.spools.agent-run :as agent-run])

@@ -400,8 +400,13 @@
                                                       :contract "Explicit contract"})
                 run* (weaver/show rt (first (:reviewers review*)))]
             (is (str/includes? (get-in run* [:attributes :agent-run/prompt]) "Explicit contract"))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank"
-                              (shuttle/set-default-review-contract! "  ")))
+        ;; the ::contract-text seam: anything but non-blank text or nil is a
+        ;; config bug, and a rejected set must not disturb the live contract
+        (doseq [bad ["" "  " 42 :text]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string or nil"
+                                (shuttle/set-default-review-contract! bad))))
+        (is (str/includes? (shuttle/default-review-contract-text) "Workspace policy contract")
+            "a rejected set leaves the prior contract intact")
         (finally
           (shuttle/set-default-review-contract! nil))))))
 

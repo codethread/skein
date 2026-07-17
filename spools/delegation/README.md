@@ -81,7 +81,7 @@ Move work onto this surface whenever the result should be **durable, awaitable b
 - the **`agent-plan` weave pattern** (`strand weave --pattern agent-plan`);
 - the **`agent-failures` named query** (`strand list --query agent-failures`) selecting active runs in phase `failed`/`exhausted`.
 
-It claims neither agent-run preamble slot: the engine's own `generic-worker-contract` already rides every headless run, and a workspace that wants this spool's task workflow registers the exported `worker-contract` itself via `agent-run/set-default-task-contract!` (delivered only to serving runs — see [§5](#5-worker-contract-and-coordinator-loop)).
+It claims neither agent-run preamble slot: the engine's own worker contract already rides every preamble-carrying headless run, and a workspace that wants this spool's task workflow registers the exported `worker-contract` itself via `agent-run/set-default-task-contract!` (delivered only to serving runs — see [§5](#5-worker-contract-and-coordinator-loop)).
 
 Loading agent-run without delegation gives you the run engine but **no** `strand agent` surface.
 
@@ -330,9 +330,9 @@ Roles are lenses, not capabilities: there is one API. Any worker may promote its
 
 A delegated run is handed its contract in two parts.
 
-The [agent-run engine](../agent-run/README.md#7-preamble-and-contract-text) injects its own `generic-worker-contract` into every preamble-carrying headless run, whatever spools or workspace you run: never close your assigned strand, never mutate siblings or parents, never commit unless your contract says so; kill processes by PID only; keep delegation shallow, one mutator per file scope. A workspace cannot switch this off, because these are the rules the graph itself depends on.
+The [agent-run engine](../agent-run/README.md#7-preamble-and-contract-text) injects its own worker contract into every preamble-carrying headless run, whatever spools or workspace you run: never close your assigned strand, never mutate siblings or parents, never commit unless your contract says so; kill processes by PID only; keep delegation shallow, one mutator per file scope. A workspace cannot switch this off, because these are the rules the graph itself depends on.
 
-The task workflow below is this spool's, exported as `skein.spools.delegation/worker-contract`. Installing delegation does not inject it: the text a workspace hands its workers is the workspace's call, and a workspace that never runs this task workflow should not be told to `--attr progress=` against a plan it doesn't have. Opt in from trusted config, and the engine will deliver it to serving runs only, with the served strand's id substituted for `<task-id>`:
+The task workflow below is this spool's, exported as `skein.spools.delegation/worker-contract`. Installing delegation does not inject it: the text a workspace hands its workers is the workspace's call, and a workspace that never runs this task workflow should not be told to `--attr progress=` against a plan it doesn't have. Opt in from trusted config, and the engine will deliver it to serving runs only, substituting the served strand's id for `<task-id>` and the run's own id for `<your-run-id>`:
 
 ```clojure
 (skein.spools.agent-run/set-default-task-contract! skein.spools.delegation/worker-contract)

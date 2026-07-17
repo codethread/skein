@@ -977,22 +977,25 @@
     (fn [_rt]
       (testing "an unconfigured workspace ships the engine contract alone"
         (let [text (#'shuttle/preamble "run-1" nil "")]
-          (is (str/includes? text shuttle/generic-worker-contract))
+          (is (str/includes? text "[worker contract]"))
           (is (str/includes? text "Kill processes by PID only"))
-          (is (not (str/includes? shuttle/generic-worker-contract "--harness"))
+          (is (not (str/includes? @#'shuttle/generic-worker-contract "--harness"))
               "the contract names no concrete harness: seats are workspace data")))
       (shuttle/set-preamble-extension! "workspace extension text")
-      (shuttle/set-default-task-contract! "Task rules: strand show <task-id> --by <task-id>")
+      (shuttle/set-default-task-contract!
+       "Task rules: strand show <task-id> --by <task-id>, note --by <your-run-id>")
       (testing "a run serving nothing carries the extension but no task contract"
         (let [text (#'shuttle/preamble "run-1" nil "")]
           (is (str/includes? text "workspace extension text"))
           (is (not (str/includes? text "Task rules")))))
-      (testing "a serving run carries the task contract with its target substituted"
+      (testing "a serving run carries the task contract with every placeholder substituted"
         (let [text (#'shuttle/preamble "run-1" "tgt-7" "")]
-          (is (str/includes? text "Task rules: strand show tgt-7 --by tgt-7")
-              "every placeholder occurrence renders as the served id")
+          (is (str/includes? text "Task rules: strand show tgt-7 --by tgt-7, note --by run-1")
+              "the served id and the run's own id both render, at every occurrence")
           (is (not (str/includes? text "<task-id>")))
-          (is (< (str/index-of text shuttle/generic-worker-contract)
+          (is (not (str/includes? text "<your-run-id>"))
+              "a literal placeholder would reach the worker as an unrunnable command")
+          (is (< (str/index-of text "[worker contract]")
                  (str/index-of text "workspace extension text")
                  (str/index-of text "Task rules")
                  (str/index-of text "[task]"))
