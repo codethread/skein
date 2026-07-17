@@ -369,8 +369,8 @@
                              ["A3" {:feature "alpha" :kind "note"}]
                              ["B1" {:feature "beta" :kind "task" :owner "amy"}]
                              ["R1" {:workflow/run-id "alpha"}]
-                             ["M1" {:workflow/role "molecule"}]
-                             ["D1" {:workflow/role "molecule" :workflow/family "devflow"}]
+                             ["M1" {:workflow/role "root"}]
+                             ["D1" {:workflow/role "root" :workflow/family "devflow"}]
                              ["S1" {:agent-run/run "true"}]
                              ["K1" {:kanban/card "true" :kanban/status "refinement"}]]]
         (weaver/add rt {:title title :state "active" :attributes attrs}))
@@ -699,7 +699,7 @@
 (deftest work-query-excludes-workflow-plumbing-but-keeps-steps
   (with-config-runtime
     (fn [rt]
-      (doseq [[title role] [["Root" "molecule"]
+      (doseq [[title role] [["Root" "root"]
                             ["Procedure" "procedure"]
                             ["Digest" "digest"]
                             ["Step" "step"]

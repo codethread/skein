@@ -56,7 +56,7 @@ Section meanings:
   parsed as an instant, then creation time, then id. The section shape is
   bobbin's; the note concept and its order are the primitive's.
 - `:workflow` — present only for targets carrying `workflow/*` attributes;
-  includes at least run id, role, workflow attributes, and the molecule root
+  includes at least run id, role, workflow attributes, and the workflow root
   summary when resolvable.
 
 ## 4. See also

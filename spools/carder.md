@@ -60,7 +60,7 @@ Options accepted by all report functions:
   `report`; default is `14`.
 - `:include-plumbing?` — when true, include workflow plumbing and agent-run run
   records. By default all sections exclude strands with `workflow/role` in
-  `"molecule"`, `"procedure"`, or `"digest"`, and strands with
+  `"root"`, `"procedure"`, or `"digest"`, and strands with
   `agent-run/run "true"`.
 
 Malformed options fail loudly with `ex-info`; unknown keys are not ignored.

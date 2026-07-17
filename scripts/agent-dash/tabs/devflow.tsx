@@ -171,7 +171,7 @@ async function fetchDevflow(all: boolean): Promise<DevflowRow[]> {
 
 // ── graph build ────────────────────────────────────────────────────────────
 // Shape the feature's step subtree into the shared graph pipeline's generic
-// nodes. `subgraph <run-id>` returns the molecule and its step/checkpoint
+// nodes. `subgraph <run-id>` returns the root and its step/checkpoint
 // children joined by parent-of; each subagent gate that has fulfilled its step
 // contributes a run node hung beneath that step, so the DAG shows which agent ran
 // each delegated step and where it stands.
