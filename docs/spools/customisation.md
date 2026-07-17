@@ -135,6 +135,9 @@ root-lib symbol from the family's effective `:roots` map and reloads that root's
 (runtime/reload-spool! (current/runtime) 'skein.spools/kanban)
 ```
 
+The result names the root lib, canonical root, and namespaces in reload order, and conforms to
+`:skein.api.runtime.alpha/reload-spool-result`.
+
 The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs
 the startup files so `install!` re-registers ops, queries, and handlers. So the code-bump sequence
 is `reload-spool! root-lib` to make the code live, then a targeted re-`use!` of the spool's activation to

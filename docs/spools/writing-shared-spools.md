@@ -66,6 +66,8 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    on version-mismatch reinit; supply a `:migrate-fn` when a version bump must
    carry durable sub-state across (it then owns the old value's resources). See
    `skein.api.runtime.alpha/spool-state` and SPEC-004.C95 for the full contract.
+   The four-argument option map conforms to
+   `:skein.api.runtime.alpha/spool-state-opts`; malformed options fail at the call site.
    Pin the current key set with a drift-alarm test using
    `skein.spools.test-support/assert-state-shape`, which fails loudly if
    `new-state` and `state-version` drift apart.
@@ -353,13 +355,19 @@ Requirement failures share the exception reason
 - `:pin-below-minimum` when an approved family's `:git/tag` or local overlay `:claims` is below a
   `:requires` floor;
 - `:required-root-not-approved` when no approved family supplies the required root;
-- `:required-root-unmarked` when the root comes from an unmarked shared local entry;
-- `:skein-below-minimum` when a running Skein marker is available and below `:skein/min`.
+- `:required-root-unmarked` when the family supplying the root has no effective marker, including an
+  untagged Git family or a shared local family;
+- `:skein-below-minimum` when the running Skein release marker is below `:skein/min`.
 
 Pin suggestions contain the greatest minimum found for each below-floor family. There is no
-suggestion for an unapproved or unmarked root. When the runtime has no running Skein marker,
-`:skein/min` checks remain visible under `:pending-validations` with reason
-`:running-marker-unavailable`; they are not reported as satisfied.
+suggestion for an unapproved or unmarked root. A root lib may belong to only one family; duplicate
+ownership fails with `:reason :duplicate-spool-root` and names the root lib and its owning families.
+
+The public runtime validates `:skein/min` against its running release marker. If any family declares
+that floor while the running core has no annotated release marker or explicit startup claim,
+`approved` and `sync!` refuse with `:reason :release-marker-unavailable`, the declared floors, and a
+remedy to start the runtime with a release-marker claim. An unmarked core never treats those floors
+as satisfied.
 
 ### Accretion under a name
 
@@ -531,7 +539,8 @@ another. The spool in this example exposes a zero-argument `acme.priority.alpha/
 
 `use!` is the blessed early prerequisite check. Under `:required? true`, missing, unsynced, or
 failed spool approvals throw for the surviving `:spools` skip reasons. Namespace load and `:call`
-failures also fail loudly through the normal activation path.
+failures also fail loudly through the normal activation path. Its returned and recorded entry
+conforms to `:skein.api.runtime.alpha/use-entry`.
 
 ### Maven dependencies in a spool root
 
