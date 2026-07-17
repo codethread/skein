@@ -133,8 +133,10 @@
   by entry shape. v4 added `:fanout-ceiling` (the workspace headless fan-out cap
   the claim! window consults): a preserved v3 map lacks the key, so `reload!`
   reinits through `migrate-state` and lets `new-state`'s default seed it rather
-  than reusing a map with no ceiling."
-  4)
+  than reusing a map with no ceiling. v5 added `:default-task-contract` (the
+  workspace task-contract text serving runs receive), carried and defaulted the
+  same way."
+  5)
 
 (defn- new-state []
   (let [scheduler (ScheduledThreadPoolExecutor. 1 (daemon-thread-factory "agent-run-recovery"))
@@ -158,6 +160,9 @@
      ;; as queryable state rather than a stderr line lost on a long-lived daemon.
      :preamble-conflicts (atom [])
      :default-review-contract (atom nil)
+     ;; workspace task-contract text; nil means serving runs get no task
+     ;; fragment beyond the engine's own worker contract.
+     :default-task-contract (atom nil)
      :close-fn (fn []
                  (.shutdownNow scheduler)
                  (.shutdownNow workers)
@@ -190,11 +195,12 @@
   The v2 mixed `:harness-registry` is split by entry shape into the v3
   `:harness-registry` (tools) and `:alias-registry` (seats); backend registry,
   in-flight tracking, and the config override atoms (preamble extension, default
-  review contract, `:fanout-ceiling`) carry over; the executors and close hook
-  are rebuilt fresh so scan!/scheduling never runs against a stale or missing
-  executor. A pre-v4 map lacks `:fanout-ceiling`, so `select-keys` omits it and
-  `new-state`'s default survives (the `(merge (new-state) (select-keys old ...))`
-  order never leaves the ceiling nil); a v4 map's configured value is preserved. The old recovery scheduler is stopped (best-effort,
+  review contract, default task contract, `:fanout-ceiling`) carry over; the
+  executors and close hook are rebuilt fresh so scan!/scheduling never runs
+  against a stale or missing executor. A map predating a slot lacks its key, so
+  `select-keys` omits it and `new-state`'s default survives (the `(merge
+  (new-state) (select-keys old ...))` order never leaves a slot nil where the
+  default is non-nil); a configured value is preserved. The old recovery scheduler is stopped (best-effort,
   accepting no new ticks) while the old worker pool is left to drain any
   in-flight run monitors as daemon threads rather than being interrupted
   mid-run."
@@ -209,7 +215,8 @@
     (merge (new-state)
            (select-keys old [:backend-registry :in-flight
                              :preamble-extension :preamble-conflicts
-                             :default-review-contract :fanout-ceiling])
+                             :default-review-contract :default-task-contract
+                             :fanout-ceiling])
            {:harness-registry (atom (into {} (:harness grouped)))
             :alias-registry (atom (into {} (:alias grouped)))})))
 
@@ -286,6 +293,11 @@
   "Workspace review-contract override atom; nil means the generic contract applies."
   []
   (:default-review-contract (state)))
+
+(defn- default-task-contract
+  "Workspace task-contract atom; nil means serving runs receive no task text."
+  []
+  (:default-task-contract (state)))
 
 (defn- sattr
   "Read the `agent-run/<k>` attribute from a normalized strand."
@@ -823,6 +835,53 @@
 
 
 
+(def generic-worker-contract
+  "Worker contract every preamble-carrying headless run receives.
+
+  Deliberately only the invariants the engine itself couples to: the run/strand
+  ownership rules the graph depends on, the PID-only kill rule (the engine may
+  carry a run's prompt in argv), and the delegation-depth rule. Task-workflow
+  conventions and workspace lore belong in the workspace-owned slots
+  (`set-preamble-extension!`, `set-default-task-contract!`), so a workspace that
+  configures neither still gets a run that cannot corrupt the graph."
+  (str "[worker contract]\n- "
+       (str/join "\n- "
+                 (fmt/fill "
+                   |Never close your assigned strand. Never mutate sibling or parent
+                   |strands. Never commit unless your contract says so.
+                   |
+                   |Kill processes by PID only — never pkill -f/pattern kills: a run's
+                   |prompt may ride in the harness argv, so a pattern kill aimed at a
+                   |stuck process can strafe sibling agents whose prompt merely quotes
+                   |the same text. Find the pid and kill it.
+                   |
+                   |Keep delegation shallow; never spawn a second mutator inside your own
+                   |file scope."))))
+
+(defn set-default-task-contract!
+  "Register the workspace task-contract text serving runs receive; nil clears it.
+
+  A serving run — one with an outgoing `serves` edge — is a delegation of its
+  target's work, so this is where task-workflow conventions (reading the
+  assigned strand, progress reporting, status gates) belong; ad-hoc spawns that
+  serve nothing never see it. The literal `<task-id>` placeholder is replaced
+  with the served strand's id at preamble time, so injected commands are
+  runnable as written.
+
+  Workspace-owned configuration, so re-registration replaces silently: unlike
+  `set-preamble-extension!` there is no cross-spool claim to conflict over.
+  Reload-tolerant through the engine's versioned state."
+  [text]
+  (when (and (some? text) (or (not (string? text)) (str/blank? text)))
+    (fail! "Default task contract must be a non-blank string or nil" {:text text}))
+  (reset! (default-task-contract) text)
+  {:default-task-contract (boolean text)})
+
+(defn default-task-contract-text
+  "Return the workspace task-contract text, or nil when none is registered."
+  []
+  @(default-task-contract))
+
 (defn set-preamble-extension!
   "Register additional preamble text appended after the engine's worker contract.
 
@@ -863,7 +922,11 @@
   []
   @(preamble-conflicts-atom))
 
-(defn- preamble [run-id prompt-prefix]
+(defn- preamble
+  "Headless run preamble: engine context, the always-on worker contract, then
+  the workspace-configured text — the unconditional extension, and the task
+  contract only when `served-target` names the strand this run serves."
+  [run-id served-target prompt-prefix]
   (let [cmd (pinned-strand-command)]
     (str "[agent-run context]\n"
          "You are a headless subagent run managed by the Skein agent-run spool.\n"
@@ -878,16 +941,20 @@
          " (init.clj, spools.edn, config.json, libs.edn): if strand commands fail, report the"
          " exact error as your result instead of repairing the environment.\n"
          "- Your final message is captured automatically as this run's result; end with a clear, self-contained report for your caller.\n"
+         generic-worker-contract "\n"
          (when-let [extension @(preamble-extension)]
            (str extension "\n"))
+         (when-let [task (and served-target @(default-task-contract))]
+           (str (str/replace task "<task-id>" served-target) "\n"))
          "[task]\n"
          prompt-prefix)))
 
 (defn- interactive-preamble
-  "Preamble for interactive sessions. Deliberately excludes the headless
-  preamble extension: that seam carries the delegated-worker contract (never
-  close your strand), which is the opposite of the interactive completion
-  contract (closing the served strand is how the session ends)."
+  "Preamble for interactive sessions. Deliberately excludes every headless
+  worker-contract text — the engine's own contract and both workspace slots —
+  because they carry the delegated-worker rules (never close your strand),
+  which are the opposite of the interactive completion contract (closing the
+  served strand is how the session ends)."
   [run]
   (let [cmd (pinned-strand-command)
         id (:id run)
@@ -1184,7 +1251,7 @@
   (when-let [deferred-until (sattr run "recovery-deferred-until")]
     (.isAfter (Instant/parse deferred-until) (Instant/now))))
 
-(declare claim! claim-ready! launch-run! note! scan!)
+(declare claim! claim-ready! launch-run! note! run-for-target scan!)
 
 (defn- schedule-deferred-recovery!
   "Schedule a recovered run retry on the runtime-owned recovery executor."
@@ -1264,7 +1331,7 @@
     (cond
       (false? (:preamble? harness)) prompt
       (interactive? run) (str (interactive-preamble run) prompt)
-      :else (str (preamble (:id run) "") prompt))))
+      :else (str (preamble (:id run) (run-for-target run) "") prompt))))
 
 (defn- resume-args
   "Resolve a resuming run's harness `:resume` splice against its predecessor's

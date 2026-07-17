@@ -937,7 +937,7 @@
    #'shuttle/new-state
    #{:harness-registry :alias-registry :backend-registry :in-flight
      :recovery-scheduler :worker-executor :preamble-extension :preamble-conflicts
-     :default-review-contract :fanout-ceiling :close-fn}))
+     :default-review-contract :default-task-contract :fanout-ceiling :close-fn}))
 
 (deftest set-preamble-extension-tolerates-reload
   (with-shuttle
@@ -949,7 +949,7 @@
         (let [result (shuttle/set-preamble-extension! "worker contract B")]
           (is (true? (:replaced result)))
           (is (true? (:preamble-extension result))))
-        (is (str/includes? (#'shuttle/preamble "run-1" "task body") "worker contract B"))))))
+        (is (str/includes? (#'shuttle/preamble "run-1" nil "task body") "worker contract B"))))))
 
 (deftest set-preamble-extension-records-conflicts-durably
   ;; A genuine cross-spool clash (different text) must leave a durable trace, not
@@ -968,6 +968,80 @@
           (is (= "worker contract A" (:previous (first conflicts))))
           (is (= "worker contract B" (:replacement (first conflicts))))
           (is (string? (:at (first conflicts)))))))))
+
+(deftest preamble-composes-engine-contract-then-workspace-text
+  ;; PROP-Wct-001@2.G1/G3: the engine contract is unconditional, the extension
+  ;; is workspace-wide, and the task contract reaches serving runs only — an
+  ;; ad-hoc spawn serving nothing must not be told to read an assigned strand.
+  (with-shuttle
+    (fn [_rt]
+      (testing "an unconfigured workspace ships the engine contract alone"
+        (let [text (#'shuttle/preamble "run-1" nil "")]
+          (is (str/includes? text shuttle/generic-worker-contract))
+          (is (str/includes? text "Kill processes by PID only"))
+          (is (not (str/includes? shuttle/generic-worker-contract "--harness"))
+              "the contract names no concrete harness: seats are workspace data")))
+      (shuttle/set-preamble-extension! "workspace extension text")
+      (shuttle/set-default-task-contract! "Task rules: strand show <task-id> --by <task-id>")
+      (testing "a run serving nothing carries the extension but no task contract"
+        (let [text (#'shuttle/preamble "run-1" nil "")]
+          (is (str/includes? text "workspace extension text"))
+          (is (not (str/includes? text "Task rules")))))
+      (testing "a serving run carries the task contract with its target substituted"
+        (let [text (#'shuttle/preamble "run-1" "tgt-7" "")]
+          (is (str/includes? text "Task rules: strand show tgt-7 --by tgt-7")
+              "every placeholder occurrence renders as the served id")
+          (is (not (str/includes? text "<task-id>")))
+          (is (< (str/index-of text shuttle/generic-worker-contract)
+                 (str/index-of text "workspace extension text")
+                 (str/index-of text "Task rules")
+                 (str/index-of text "[task]"))
+              "engine contract precedes workspace text, which precedes the task body"))))))
+
+(deftest set-default-task-contract-validates-and-clears
+  ;; Mirrors the review-contract seam: non-blank string or nil, nothing else,
+  ;; and no conflict recording — the slot is workspace config, not a claim.
+  (with-shuttle
+    (fn [_rt]
+      (is (nil? (shuttle/default-task-contract-text)) "no task contract by default")
+      (is (= {:default-task-contract true} (shuttle/set-default-task-contract! "task text")))
+      (is (= "task text" (shuttle/default-task-contract-text)))
+      (testing "re-registration replaces silently"
+        (shuttle/set-default-task-contract! "other task text")
+        (is (= "other task text" (shuttle/default-task-contract-text)))
+        (is (= [] (shuttle/preamble-extension-conflicts))))
+      (testing "anything but a non-blank string or nil fails loudly"
+        (doseq [bad ["" "   " 42 :text]]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-blank string or nil"
+                                (shuttle/set-default-task-contract! bad))))
+        (is (= "other task text" (shuttle/default-task-contract-text))
+            "a rejected set leaves the prior text intact"))
+      (testing "nil clears back to no task contract"
+        (is (= {:default-task-contract false} (shuttle/set-default-task-contract! nil)))
+        (is (nil? (shuttle/default-task-contract-text)))))))
+
+(deftest task-contract-survives-state-version-reload
+  ;; The v5 slot follows the ceiling's migration contract: a configured value is
+  ;; carried, and a map predating the slot reinits to new-state's nil default.
+  (with-shuttle
+    (fn [rt]
+      (testing "a configured task contract survives a state-version reload"
+        ;; an untagged map has no stored version, so accessing state reinits
+        ;; through migrate-state (as a post-bump reload of a preserved map would)
+        (let [preserved (assoc (#'shuttle/new-state)
+                               :default-task-contract (atom "carried task text"))]
+          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state preserved)
+          (is (= "carried task text" (shuttle/default-task-contract-text))
+              "migrate-state carries the configured task contract forward")))
+      (testing "a pre-v5 map lacking the slot reinits to the nil default"
+        (let [pre-v5 {:harness-registry (atom {})
+                      :backend-registry (atom {})
+                      :in-flight (atom {})
+                      :preamble-extension (atom nil)
+                      :default-review-contract (atom nil)}]
+          (swap! (:spool-state rt) assoc :skein.spools.agent-run/state pre-v5)
+          (is (nil? (shuttle/default-task-contract-text))
+              "select-keys omits the absent key so new-state's default survives"))))))
 
 (deftest interactive-preamble-renders-completion-note-through-single-renderer
   ;; TASK-Nwt-011.DW1: the for-id completion-contract note line converges on the
