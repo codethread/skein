@@ -519,8 +519,8 @@
       (roster/watch! rt)
       (let [no-owner (weaver/add rt {:title "No owner" :attributes {:feature "roster-spool"}})
             no-feature (weaver/add rt {:title "No feature" :attributes {:owner "agent-a"}})
-            plumbing (weaver/add rt {:title "Workflow molecule"
-                                     :attributes {:workflow/role "molecule"
+            plumbing (weaver/add rt {:title "Workflow root"
+                                     :attributes {:workflow/role "root"
                                                   :workflow/run-id "roster-spool"
                                                   :owner "agent-a"}})
             closed (weaver/add rt {:title "Closed root" :state "closed"

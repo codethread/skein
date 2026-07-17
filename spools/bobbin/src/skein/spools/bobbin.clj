@@ -136,7 +136,7 @@
   [rt run-id]
   (let [roots (weaver/list rt [:and
                                [:= [:attr "workflow/run-id"] run-id]
-                               [:= [:attr "workflow/role"] "molecule"]] {})]
+                               [:= [:attr "workflow/role"] "root"]] {})]
     (case (count roots)
       0 nil
       1 (first roots)

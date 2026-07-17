@@ -58,7 +58,7 @@ For every strand add/update the handler either:
 - **Auto-stamps** a sufficient, unstamped graph root into a roster entry, or
 - **Refreshes the heartbeat** of the active roster entry that roots the touched strand's `parent-of` ancestry (including the strand itself), so graph-tracked flows stay fresh without an explicit `heartbeat!` (SPEC-RosterSpool-001.C14).
 
-A root is **sufficient** for auto-stamping when it is active, is not workflow plumbing (`workflow/role` absent or not `molecule`/`procedure`/`digest`), is a graph root (no incoming `parent-of` edge), and carries both a feature slug and an owner (SPEC-RosterSpool-001.C13):
+A root is **sufficient** for auto-stamping when it is active, is not workflow plumbing (`workflow/role` absent or not `root`/`procedure`/`digest`), is a graph root (no incoming `parent-of` edge), and carries both a feature slug and an owner (SPEC-RosterSpool-001.C13):
 
 - feature slug, in priority order: `workflow/run-id`, `devflow/feature`, `feature`.
 - owner, in priority order: `owner`, `workflow/actor`, `devflow/actor`, `actor`.

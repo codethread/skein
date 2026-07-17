@@ -21,7 +21,7 @@
   "Default age threshold, in days, used by `stale`."
   14)
 
-(def ^:private excluded-workflow-roles #{"molecule" "procedure" "digest"})
+(def ^:private excluded-workflow-roles #{"root" "procedure" "digest"})
 (def ^:private failed-run-phases #{"failed" "exhausted"})
 
 (defn- require-map! [opts context]

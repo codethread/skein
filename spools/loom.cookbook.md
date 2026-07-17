@@ -35,7 +35,7 @@ Each recipe cites the honest source it was distilled from — the spool itself, 
 
 ```clojure
 ;; the repo's own "ready work" definition: active work, minus agent-run run records
-;; and the bookkeeping strands (workflow/role molecule / digest / procedure) that
+;; and the bookkeeping strands (workflow/role root / digest / procedure) that
 ;; would clutter a human's frontier.
 ;; Query forms are data: [:and ...] requires all clauses, [:or ...] any, [:= a b]
 ;; tests equality, [:missing [:attr k]] matches a strand lacking attribute k,
@@ -46,7 +46,7 @@ Each recipe cites the honest source it was distilled from — the spool itself, 
    [:or [:missing [:attr "agent-run/run"]]
     [:not [:= [:attr "agent-run/run"] "true"]]]
    [:or [:missing [:attr "workflow/role"]]
-    [:not [:in [:attr "workflow/role"] ["molecule" "digest" "procedure"]]]]])
+    [:not [:in [:attr "workflow/role"] ["root" "digest" "procedure"]]]]])
 
 ;; all branches at once …
 (loom/branch-views rt {:branch-attr :branch :ready-query work-query})

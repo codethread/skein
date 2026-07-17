@@ -413,7 +413,7 @@
 (def ^:private plumbing-roles
   "`workflow/role` values that mark a root as workflow plumbing, never work
   (SPEC-RosterSpool-001.C13). Matches the `work` query's hidden roles."
-  #{"molecule" "procedure" "digest"})
+  #{"root" "procedure" "digest"})
 
 (def ^:private feature-slug-attrs
   "Attribute keys consulted, in priority order, for a root's feature slug."

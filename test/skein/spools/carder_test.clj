@@ -63,7 +63,7 @@
   (with-runtime
     (fn [rt _]
       (let [stale-work (repl/strand! "Stale work")
-            workflow-root (repl/strand! "Workflow root" {"workflow/role" "molecule"})
+            workflow-root (repl/strand! "Workflow root" {"workflow/role" "root"})
             shuttle-run (repl/strand! "Run record" {"agent-run/run" "true"})]
         (set-updated-at! rt (:id stale-work) "2026-01-01 00:00:00")
         (set-updated-at! rt (:id workflow-root) "2026-01-01 00:00:00")

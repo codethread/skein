@@ -121,7 +121,7 @@
   (with-runtime
     (fn [_rt _]
       (let [root (repl/strand! "Run" {"workflow/run-id" "run-1"
-                                      "workflow/role" "molecule"})
+                                      "workflow/role" "root"})
             target (repl/strand! "Step" {"workflow/run-id" "run-1"
                                          "workflow/role" "step"})]
         (repl/update! (:id root) {:edges [{:type "parent-of" :to (:id target)}]})
@@ -136,7 +136,7 @@
       ;; Packing a finished target to brief a reviewer is a first-class use, and
       ;; a finished run's root is closed — invisible to workflow/current-root.
       (let [root (repl/strand! "Run" {"workflow/run-id" "run-2"
-                                      "workflow/role" "molecule"} {:state "closed"})
+                                      "workflow/role" "root"} {:state "closed"})
             target (repl/strand! "Step" {"workflow/run-id" "run-2"
                                          "workflow/role" "step"})]
         (repl/update! (:id root) {:edges [{:type "parent-of" :to (:id target)}]})
