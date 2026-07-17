@@ -1,11 +1,20 @@
-{:spools {ct.spools/agent-run {:local/root "../spools/agent-run"}
+{:spools {;; Keep these agent-harness shas exactly synchronized with deps.edn
+          ;; :test extra-deps (config_test enforces the pairing); developers
+          ;; override with a gitignored spools.local.edn local root.
+          ct.spools/agent-run {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                               :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                               :deps/root "agent-run"}
           skein.spools/workflow {:local/root "../spools/workflow"}
           skein.spools/roster {:local/root "../spools/roster"}
           skein.spools/text-search {:local/root "../spools/text-search"}
-          ct.spools/delegation {:local/root "../spools/delegation"}
+          ct.spools/delegation {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                                :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                                :deps/root "delegation"}
           skein.spools/chime {:local/root "../spools/chime"}
           skein.spools/cron {:local/root "../spools/cron"}
-          ct.spools/bench {:local/root "../spools/bench"}
+          ct.spools/bench {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                           :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                           :deps/root "bench"}
           skein.macros/macros {:local/root "spools/macros"}
           ;; Keep this devflow sha exactly synchronized with deps.edn :test
           ;; extra-deps until config_test no longer needs the spool on its JVM classpath.

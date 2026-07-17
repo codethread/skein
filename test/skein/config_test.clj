@@ -83,7 +83,9 @@
   ;; ordering note).
   (spit (io/file target "spools.edn")
         (pr-str {:spools {'ct.spools/agent-run
-                          {:local/root (.getCanonicalPath (io/file "spools/agent-run"))}
+                          {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                           :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                           :deps/root "agent-run"}
                           'skein.spools/workflow
                           {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
                           'skein.spools/roster
@@ -91,13 +93,17 @@
                           'skein.spools/text-search
                           {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
                           'ct.spools/delegation
-                          {:local/root (.getCanonicalPath (io/file "spools/delegation"))}
+                          {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                           :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                           :deps/root "delegation"}
                           'skein.spools/chime
                           {:local/root (.getCanonicalPath (io/file "spools/chime"))}
                           'skein.spools/cron
                           {:local/root (.getCanonicalPath (io/file "spools/cron"))}
                           'ct.spools/bench
-                          {:local/root (.getCanonicalPath (io/file "spools/bench"))}
+                          {:git/url "https://github.com/codethread/agent-harness.spool.git"
+                           :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                           :deps/root "bench"}
                           ;; init.clj requires this spool; the omission used to be
                           ;; masked by fail-quiet required use!, which now throws.
                           ;; Its root lives inside the workspace (.skein/spools/macros),
@@ -215,7 +221,13 @@
 
 (def ^:private external-spool-coordinate-pairs
   "Pairs of weaver-side spools.edn keys and test-JVM deps.edn coordinates."
-  [{:spools-key 'codethread/devflow
+  [{:spools-key 'ct.spools/agent-run
+    :deps-key 'io.github.codethread/agent-run.agent-harness}
+   {:spools-key 'ct.spools/delegation
+    :deps-key 'io.github.codethread/delegation.agent-harness}
+   {:spools-key 'ct.spools/bench
+    :deps-key 'io.github.codethread/bench.agent-harness}
+   {:spools-key 'codethread/devflow
     :deps-key 'io.github.codethread/devflow.spool}
    {:spools-key 'codethread/kanban
     :deps-key 'io.github.codethread/kanban.spool}])
