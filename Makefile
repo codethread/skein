@@ -91,8 +91,9 @@ lint-clj:
 lint-splint:
 	clojure -M:lint/splint
 
-# repo conventions that prose alone cannot hold: ns docstrings everywhere and
-# no local bindings named after clojure.core macros (see scripts/quality)
+# repo conventions that prose alone cannot hold: ns docstrings everywhere, no
+# local bindings named after clojure.core macros, and requires embedded in
+# quoted forms resolving to real namespaces (see scripts/quality)
 lint-conventions:
 	clojure -M:lint/conventions
 
