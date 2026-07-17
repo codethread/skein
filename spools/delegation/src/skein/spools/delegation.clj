@@ -290,7 +290,7 @@
            :backends {:group "engine"
                       :help-topic "strand help agent"
                       :verb "backends"
-                      :semantics ["List configured interactive session backends (terminal multiplexers registered with defbackend! in trusted config)."]
+                      :semantics ["List configured interactive session backends (terminal multiplexers registered with register-backend! in trusted config)."]
                       :returns [{"name" "string" "ops" ["start alive stop capture attach subset"] "doc" "optional string"}]}
            :delegate {:group "delegation"
                       :help-topic "strand help agent"
