@@ -29,7 +29,7 @@ The surface is deliberately built from words coding agents are already trained o
 - **retry** — recover a failed task by superseding its dead run and respawning (`agent retry`).
 - **status** — the coordinator dashboard (`agent status`): what's ready, running, failed, or awaiting your verification.
 - **harness / alias** — which agent tool runs the work (`worker`, `explore`, `build`, …).
-- **worker contract** — the standing rules every delegated agent is handed automatically.
+- **worker contract** — this spool's task-workflow rules, delivered to serving runs when the workspace opts in (§5); the engine's own invariant core rides every run regardless.
 - **notes** — durable, storage-enforced write-once memory linked to any strand by the blessed `notes` relation.
 
 ### How to prompt effectively
@@ -79,8 +79,9 @@ Move work onto this surface whenever the result should be **durable, awaitable b
 
 - the **`agent` CLI operation** (`strand agent ...`) — the full verb surface below;
 - the **`agent-plan` weave pattern** (`strand weave --pattern agent-plan`);
-- the **`agent-failures` named query** (`strand list --query agent-failures`) selecting active runs in phase `failed`/`exhausted`;
-- the **worker contract** into agent-run's preamble-extension seam, so every delegated run is launched with it.
+- the **`agent-failures` named query** (`strand list --query agent-failures`) selecting active runs in phase `failed`/`exhausted`.
+
+It claims neither agent-run preamble slot: the engine's own `generic-worker-contract` already rides every headless run, and a workspace that wants this spool's task workflow registers the exported `worker-contract` itself via `agent-run/set-default-task-contract!` (delivered only to serving runs — see [§5](#5-worker-contract-and-coordinator-loop)).
 
 Loading agent-run without delegation gives you the run engine but **no** `strand agent` surface.
 
@@ -162,7 +163,7 @@ List configured interactive session backends (terminal multiplexers registered w
 agent delegate <task-id> [--harness h] [--cwd dir] [--prompt <extra>] [--spawned-by <run-id>]
                          [--interactive [--backend b] [--reap auto|manual]]
 ```
-Delegate one **active** task strand: builds the worker prompt from the task's current title + body + `validation` attribute, injects the worker contract, and spawns a run attached `--for` the task.
+Delegate one **active** task strand: builds the worker prompt from the task's current title + body + `validation` attribute and spawns a run attached `--for` the task (the run preamble carries the engine's worker core, plus the workspace's task contract because the run serves the task).
 - **Harness resolution:** `--harness` flag > task's `harness` attribute > fail loudly (no default).
 - **cwd resolution:** `--cwd` flag > task's `cwd` attribute > workspace root.
 - **`--interactive`** opens a live multiplexer session for the task instead of a headless run — this is how `hitl=true` tasks are delegated. Backend resolution: `--backend` flag > task's `backend` attribute > fail loudly. The prompt frames the agent as pairing *with* the user (the human is the authority on scope and completion), and the session is reaped when the task closes.
