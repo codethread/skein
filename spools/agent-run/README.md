@@ -219,7 +219,7 @@ orphaned run.
 
 Notes are append-only memory: a note-content rewrite throws, and burn is the only escape hatch. Each note carries `note/text` and `note/at` (storage-enforced write-once), plus optional `note/by` / `note/round`; the linkage is the `notes` edge, never a `note/for` attribute.
 
-## 7. Preamble seam
+## 7. Preamble and contract text
 
 Every spawned run (unless its harness sets `:preamble? false`) is launched with an injected preamble the engine owns. The preamble is deliberately minimal and role-blind — it carries only run identity and the mechanics a worker needs to talk back to the graph:
 
@@ -227,16 +227,17 @@ Every spawned run (unless its harness sets `:preamble? false`) is launched with 
 - the fully pinned `strand` invocation (`env XDG_STATE_HOME=… strand --workspace …`) that must prefix every strand command, because harness shells re-source dotfiles and cannot be trusted to inherit ambient env;
 - spawn/await/note one-liners and the pointer to `strand agent about`.
 
-Higher-level policy is layered on through a single seam so the engine stays free of workflow opinion:
+After that block comes `generic-worker-contract`, the one piece of contract text the engine ships and every preamble-carrying headless run receives: never close your assigned strand, never mutate siblings or parents, never commit unless your contract says so; kill by PID only; keep delegation shallow. These are the invariants the engine itself couples to, so a workspace cannot switch them off. Everything else about the injected text is the workspace's call, through two slots:
 
 | Fn | Behavior |
 |---|---|
-| `(set-preamble-extension! text)` | Register additional preamble text appended after the engine contract. Reload-tolerant, distinguishing replay from conflict: re-registering the **same** text is a silent no-op, and **different** text (a genuine cross-spool clash) replaces the prior value (returned as `:replaced true`) rather than failing. A hard failure here would abort `reload!` mid-startup — the config re-runs this on every reload — and a preamble-text change between deploys must not leave the world with no ops. Instead of a stderr-only warning that scrolls off a long-lived daemon, a conflict is recorded durably in agent-run state (see `preamble-extension-conflicts`) in addition to the warning. The delegation spool fills this with its worker contract. |
+| `(set-preamble-extension! text)` | Register additional preamble text appended after the engine contract, for every headless run. Reload-tolerant, distinguishing replay from conflict: re-registering the **same** text is a silent no-op, and **different** text (a genuine cross-spool clash) replaces the prior value (returned as `:replaced true`) rather than failing. A hard failure here would abort `reload!` mid-startup — the config re-runs this on every reload — and a preamble-text change between deploys must not leave the world with no ops. Instead of a stderr-only warning that scrolls off a long-lived daemon, a conflict is recorded durably in agent-run state (see `preamble-extension-conflicts`) in addition to the warning. |
+| `(set-default-task-contract! text)` / `(default-task-contract-text)` | Register the task-workflow text **serving runs only** receive (a run with an outgoing `serves` edge — the engine's delegation discriminator), appended last. The literal `<task-id>` in the text is replaced with the served strand's id, so injected commands are runnable as written. Defaults to `nil`: an unconfigured workspace injects no task text, and an ad-hoc spawn that serves nothing never sees it. Non-blank string or `nil` (which clears it); anything else fails loudly. Re-registration replaces silently — this is workspace configuration, not a cross-spool claim. Weaver-lifetime state, carried across `reload!`. The delegation spool exports a fragment for it (`skein.spools.delegation/worker-contract`), but registering it is the workspace's opt-in. |
 | `(preamble-extension-conflicts)` | Return the durable record of genuine `set-preamble-extension!` conflicts — a vector of `{:at <iso-instant> :previous <text> :replacement <text>}`, one per re-registration that replaced an existing non-identical value. Identical replays are not recorded. The record survives for the weaver lifetime and across `reload!` (carried through the state migrate hook), so a cross-spool worker-contract clash stays visible to operators and attention detectors after the stderr warning has scrolled away. |
 | `(pinned-strand-command)` | Return the fully pinned `strand` invocation prefix. Public accessor the delegation spool consumes to build worker/review prompts. |
 | `(set-default-review-contract! text)` / `(default-review-contract-text)` | Hold the workspace-default reviewer contract text as weaver-lifetime state (re-set by startup config like harness aliases); `nil` restores the generic default. The delegation spool's `review` verb consumes this when no explicit contract is passed. |
 
-Interactive runs get their own preamble variant carrying the completion contract (note → goodbye → close the served strand, in that order). It deliberately **excludes** the preamble extension: that seam carries the delegated-worker contract ("never close your assigned strand"), which is the opposite of the interactive contract where closing the served strand is how the session ends.
+Interactive runs get their own preamble variant carrying the completion contract (note → goodbye → close the served strand, in that order). It deliberately **excludes** every headless contract text — the engine's own and both workspace slots — because they carry the delegated-worker rules ("never close your assigned strand"), which are the opposite of the interactive contract where closing the served strand is how the session ends.
 
 ## 8. Attribute vocabulary
 

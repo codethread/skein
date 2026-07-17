@@ -323,20 +323,28 @@ Delegation shapes the strand graph by convention, so the whole tree is inspectab
 
 ## 5. Worker contract and coordinator loop
 
-Roles are lenses, not capabilities: there is one API. Any worker may promote itself to coordinator for its own sub-world using the same verbs. The two guidance sets below differ only in placement — the worker contract is injected automatically; the coordinator loop is opt-in via `agent prime` (and, with the full reference, `agent about`).
+Roles are lenses, not capabilities: there is one API. Any worker may promote itself to coordinator for its own sub-world using the same verbs. The two guidance sets below differ only in placement — the worker contract rides the run preamble; the coordinator loop is opt-in via `agent prime` (and, with the full reference, `agent about`).
 
 ### Worker contract
 
-Injected automatically into every delegated run's preamble (shown here for reference):
+A delegated run is handed its contract in two parts.
+
+The [agent-run engine](../agent-run/README.md#7-preamble-and-contract-text) injects its own `generic-worker-contract` into every preamble-carrying headless run, whatever spools or workspace you run: never close your assigned strand, never mutate siblings or parents, never commit unless your contract says so; kill processes by PID only; keep delegation shallow, one mutator per file scope. A workspace cannot switch this off, because these are the rules the graph itself depends on.
+
+The task workflow below is this spool's, exported as `skein.spools.delegation/worker-contract`. Installing delegation does not inject it: the text a workspace hands its workers is the workspace's call, and a workspace that never runs this task workflow should not be told to `--attr progress=` against a plan it doesn't have. Opt in from trusted config, and the engine will deliver it to serving runs only, with the served strand's id substituted for `<task-id>`:
+
+```clojure
+(skein.spools.agent-run/set-default-task-contract! skein.spools.delegation/worker-contract)
+```
 
 - **Read your assigned strand AND its notes first:** `strand show <task-id>`; `agent notes <task-id>` — the body may be newer than your launch prompt, and a predecessor's notes may save you from repeating its mistakes.
 - **Record progress as you go:** `strand update <task-id> --attr progress=...`.
 - **Set `--attr status=implemented` only when your validation gate is green.**
-- **Never close your assigned strand. Never mutate sibling or parent strands. Never commit unless your contract says so.**
-- **Kill processes by PID only — never `pkill -f`/pattern kills.** The shipped `claude`/`pi` harnesses now deliver the worker prompt on stdin, but other/custom harnesses may still pass it in argv (`:prompt-via :arg`, the default), so a pattern kill aimed at a stuck JVM can still strafe sibling agents whose prompt quotes the same text (a `pkill -f "clojure -M:test"` murdered two delegated runs on 2026-07-05). Find the pid and kill it.
-- **Spawn read-only helpers freely:** `agent spawn --harness explore --prompt "..." --spawned-by <your-run-id>`; then `agent await <helper-run-id>` — the findings are in the returned `result`.
 - **Leave durable findings** for the coordinator and successors: `agent note <task-id> "..." --by <your-run-id>`.
-- **Keep delegation shallow;** never spawn a second mutator inside your own file scope.
+
+#### Why the PID-only rule is in the engine's core
+
+A run's prompt can ride in the harness argv (`:prompt-via :arg` is the default for custom harnesses; the shipped `claude`/`pi` harnesses deliver it on stdin), so a pattern kill matches every sibling whose prompt merely quotes the command you are hunting. On 2026-07-05 in this repo, a `pkill -f "clojure -M:test"` aimed at one stuck JVM murdered two healthy delegated runs whose prompts contained that string. Find the pid and kill that.
 
 ### Coordinator loop (the whole job, in order)
 

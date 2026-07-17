@@ -13,7 +13,6 @@
             [skein.api.format.alpha :as format-alpha]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
-            [skein.spools.delegation :as agents]
             [skein.api.spool.alpha :refer [attr-get entity-projection]]
             [skein.spools.workflow :as workflow]))
 
@@ -165,10 +164,13 @@
   (or (get task k) (get task (name k))))
 
 (defn- pipeline-task-prompt
-  "Return the prompt for one delegate-pipeline task."
+  "Return the prompt for one delegate-pipeline task.
+
+  Carries no worker-contract text: a gate's run serves its gate strand, so the
+  agent-run preamble already delivers the contract this repo registers in
+  harnesses.clj, and prepending it here would inject it twice."
   [run-id item]
-  (str agents/worker-contract "\n\n"
-       "Delegated pipeline run: " run-id "\n"
+  (str "Delegated pipeline run: " run-id "\n"
        "Task: " (task-value item :title) "\n\n"
        (or (task-value item :body) (task-value item :title))))
 

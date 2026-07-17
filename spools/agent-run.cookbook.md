@@ -241,41 +241,48 @@ Honest source: `dependent-run-waits-for-blocker-and-fans-in` in ``test/skein/age
 
 **Situation.** Every run you spawn needs the same standing contract — how to talk back to the graph, what a delegated worker may and may not close, where to leave notes — and you don't want to paste it into every prompt.
 
-**Composition.** The engine already injects a minimal, role-blind preamble (run id, the pinned `strand` command, spawn/await/note one-liners). Layer your policy on with `set-preamble-extension!` from trusted startup config: its text is appended after the engine contract on every spawned run.
+**Composition.** The engine already injects a minimal, role-blind preamble (run id, the pinned `strand` command, spawn/await/note one-liners) plus its own `generic-worker-contract`, which you cannot switch off. Layer your policy on from trusted startup config with two slots: `set-preamble-extension!` for text every headless run gets, and `set-default-task-contract!` for text only runs serving a task get.
 
 ```clojure
 (require '[skein.spools.agent-run :as agent-run])
 
 ;; run once from startup config (init.clj / a spool install!)
 (agent-run/set-preamble-extension!
-  "You are a delegated worker.
-   - Read your assigned strand and its notes before acting.
-   - Set status=implemented only when your validation gate is green.
-   - Never close your assigned strand; leave findings as notes.")
+  "House rules for every run here:
+   - Read ./AGENTS.md before touching code.
+   - Never run the deploy scripts.")
+
+;; only runs with a `serves` edge see this; <task-id> renders as the served id
+(agent-run/set-default-task-contract!
+  "You serve a task:
+   - Read it and its notes before acting: strand show <task-id>.
+   - Set status=implemented on it only when your validation gate is green.")
 ```
 
 **Why this shape.**
 
-- **One seam keeps the engine free of workflow opinion.** The engine's own
-  preamble carries only run identity and the mechanics of talking to the graph.
-  Higher-level policy — the worker contract — arrives through this single
-  extension point, so the engine never grows a notion of "delegated worker."
-  The delegation spool fills exactly this seam with its worker contract on
-  `install!` (contract [§7, "Preamble seam"](./agent-run/README.md#7-preamble-seam)).
-- **Reload-tolerant: replay is silent, a genuine clash is recorded.** Startup
-  config re-runs on every `reload!`, so re-registering the *same* text is a
-  no-op. A second registrant with *different* text is a real cross-spool clash;
-  rather than throwing (which would abort `reload!` mid-startup and leave the
-  world with no ops) it replaces the value and records the conflict durably in
-  `preamble-extension-conflicts`, so an operator sees it long after the stderr
-  warning scrolled away.
-- **Interactive runs opt out by design.** The extension carries the
-  delegated-worker contract ("never close your assigned strand"), which is the
-  opposite of an interactive session's contract, where closing the served
-  strand is how the session ends. The interactive preamble variant deliberately
-  excludes it.
+- **The engine owns only what it couples to.** Its contract is the graph
+  invariants (never close your assigned strand, PID-only kills, shallow
+  delegation); workflow opinion — what "done" means, which docs to read —
+  arrives through the slots, so the engine never grows a notion of your
+  workflow (contract [§7, "Preamble and contract text"](./agent-run/README.md#7-preamble-and-contract-text)).
+- **Task text follows the `serves` edge, not the spawn.** An ad-hoc recon spawn
+  serves nothing, so telling it to report `progress=` on an assigned task would
+  be a lie; the task slot is delivered only to runs that actually serve a
+  strand, with `<task-id>` rendered as that strand's id.
+- **The two slots fail differently, on purpose.** The extension is a shared
+  seam, so a second registrant with *different* text is a real cross-spool
+  clash: rather than throwing (which would abort `reload!` mid-startup and leave
+  the world with no ops) it replaces the value and records the conflict durably
+  in `preamble-extension-conflicts`. The task slot is workspace configuration
+  with no claim to contest, so re-registration just replaces. Both are
+  reload-tolerant, and both take an identical replay silently.
+- **Interactive runs opt out by design.** Both slots carry the delegated-worker
+  contract ("never close your assigned strand"), which is the opposite of an
+  interactive session's contract, where closing the served strand is how the
+  session ends. The interactive preamble variant deliberately excludes them.
 
-Honest source: `skein.spools.delegation/install!` calling `set-preamble-extension!` with its worker contract, and `set-preamble-extension-tolerates-reload` / `set-preamble-extension-records-conflicts-durably` in ``test/skein/agent_run_test.clj``.
+Honest source: `preamble-composes-engine-contract-then-workspace-text`, `set-default-task-contract-validates-and-clears`, and `set-preamble-extension-tolerates-reload` / `set-preamble-extension-records-conflicts-durably` in ``test/skein/agent_run_test.clj``; this repo's own opt-in in [`.skein/harnesses.clj`](../.skein/harnesses.clj).
 
 ---
 
