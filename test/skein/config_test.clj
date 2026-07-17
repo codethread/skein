@@ -84,7 +84,7 @@
   (spit (io/file target "spools.edn")
         (pr-str {:spools {'ct.spools/agent-run
                           {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                           :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                           :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
                            :deps/root "agent-run"}
                           'skein.spools/workflow
                           {:local/root (.getCanonicalPath (io/file "spools/workflow"))}
@@ -94,7 +94,7 @@
                           {:local/root (.getCanonicalPath (io/file "spools/text-search"))}
                           'ct.spools/delegation
                           {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                           :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                           :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
                            :deps/root "delegation"}
                           'skein.spools/chime
                           {:local/root (.getCanonicalPath (io/file "spools/chime"))}
@@ -102,7 +102,7 @@
                           {:local/root (.getCanonicalPath (io/file "spools/cron"))}
                           'ct.spools/bench
                           {:git/url "https://github.com/codethread/agent-harness.spool.git"
-                           :git/sha "27c7429c1642d1fdb609af4c37d11d51db202bb4"
+                           :git/sha "54e1a50bc77cc9f81b6e7c8d48c6b4928f50939f"
                            :deps/root "bench"}
                           ;; init.clj requires this spool; the omission used to be
                           ;; masked by fail-quiet required use!, which now throws.
