@@ -205,6 +205,97 @@
    (into {} (map (juxt :family identity)) shared-families)
    overlays))
 
+(defn- effective-marker [{:keys [coordinate claims]}]
+  (or claims (:git/tag coordinate)))
+
+(defn- root-family-index [families]
+  (into {}
+        (mapcat (fn [{:keys [family roots-map] :as entry}]
+                  (map (fn [root]
+                         [root {:family family
+                                :marker (effective-marker entry)}])
+                       (keys roots-map))))
+        families))
+
+(defn- requirement-findings [families]
+  (let [index (root-family-index families)]
+    (vec
+     (keep identity
+           (for [{:keys [family requires]} families
+                 [root minimum] requires
+                 :let [{required-family :family pinned :marker} (get index root)]]
+             (cond
+               (nil? required-family)
+               {:error :required-root-not-approved
+                :requirer family
+                :requires root
+                :minimum minimum}
+
+               (nil? pinned)
+               {:error :required-root-unmarked
+                :requirer family
+                :requires root
+                :minimum minimum
+                :family required-family}
+
+               (< (marker-ordinal pinned) (marker-ordinal minimum))
+               {:error :pin-below-minimum
+                :requirer family
+                :requires root
+                :minimum minimum
+                :family required-family
+                :pinned pinned}))))))
+
+(defn- skein-minimum-findings [families running-marker]
+  (if running-marker
+    (vec
+     (for [{:keys [family skein-min]} families
+           :when (and skein-min
+                      (< (marker-ordinal running-marker)
+                         (marker-ordinal skein-min)))]
+       {:error :skein-below-minimum
+        :spool family
+        :skein/min skein-min
+        :running running-marker}))
+    []))
+
+(defn- pending-skein-validations [families running-marker]
+  (when-not running-marker
+    (vec
+     (for [{:keys [family skein-min]} families
+           :when skein-min]
+       {:check :skein/min
+        :spool family
+        :skein/min skein-min
+        :status :pending
+        :reason :running-marker-unavailable}))))
+
+(defn- requirement-suggestions [findings]
+  (reduce (fn [result {:keys [error family minimum]}]
+            (if (= :pin-below-minimum error)
+              (update result family
+                      (fn [current]
+                        (if (and current
+                                 (>= (marker-ordinal current)
+                                     (marker-ordinal minimum)))
+                          current
+                          minimum)))
+              result))
+          {}
+          findings))
+
+(defn- validate-family-requirements! [families running-marker]
+  (when running-marker
+    (validate-marker! running-marker {:field :running}))
+  (let [findings (into (requirement-findings families)
+                       (skein-minimum-findings families running-marker))]
+    (when (seq findings)
+      (throw (ex-info "Approved spool requirements are not satisfied"
+                      {:reason :spool-requirements-unsatisfied
+                       :findings findings
+                       :suggestions (requirement-suggestions findings)})))
+    (pending-skein-validations families running-marker)))
+
 (def ^:private allowed-spool-maven-coordinate-keys
   #{:mvn/version :exclusions :classifier :extension})
 
@@ -329,38 +420,43 @@
   Stage 1 normalizes each `spools.edn` entry as one family, then applies claimed
   `spools.local.edn` coordinate overlays while inheriting family roots and floors.
   The returned `:spools` map remains keyed by root lib. Missing files contribute
-  no spools, while malformed present files fail loudly. The optional top-level
-  `:mvn-overrides` map is overlaid shared-then-local and returned only when non-empty."
-  [runtime]
-  (reject-legacy-spool-config! runtime)
-  (let [shared (approved-spools-file runtime "spools.edn" :shared normalize-shared-family)
-        local (approved-spools-file runtime "spools.local.edn" :local normalize-overlay)
-        _ (reject-shared-git-urls! (:families shared))
-        families (vals (apply-overlays (:families shared) (:families local)))
-        overrides (merge (:mvn-overrides shared) (:mvn-overrides local))
-        spools (into {}
-                     (mapcat
-                      (fn [{:keys [family coordinate roots-map claims provenance source]}]
-                        (let [kind (:kind coordinate)
-                              coordinate-root (if (= :git kind)
-                                                (io/file (cache-base) "skein" "spools" (:git/sha coordinate))
-                                                (io/file (canonical-root runtime (:local/root coordinate))))]
-                          (map (fn [[lib root-path]]
-                                 (let [root (if (= "." root-path)
-                                              coordinate-root
-                                              (io/file coordinate-root root-path))]
-                                   [lib (with-meta
-                                          (cond-> (assoc coordinate
-                                                         :root (.getPath root)
-                                                         :source source)
-                                            claims (assoc :claims claims))
-                                          {::family family
-                                           ::coordinate coordinate
-                                           ::provenance provenance})]))
-                               roots-map)))
-                      families))]
-    (cond-> {:spools spools}
-      (seq overrides) (assoc :mvn-overrides overrides))))
+  no spools, while malformed present files fail loudly. Stage 2 checks every root
+  floor before materialization. When `running-marker` is absent, declared
+  `:skein/min` checks are returned under `:pending-validations`."
+  ([runtime]
+   (approved-spools runtime nil))
+  ([runtime running-marker]
+   (reject-legacy-spool-config! runtime)
+   (let [shared (approved-spools-file runtime "spools.edn" :shared normalize-shared-family)
+         local (approved-spools-file runtime "spools.local.edn" :local normalize-overlay)
+         _ (reject-shared-git-urls! (:families shared))
+         families (vals (apply-overlays (:families shared) (:families local)))
+         pending-validations (validate-family-requirements! families running-marker)
+         overrides (merge (:mvn-overrides shared) (:mvn-overrides local))
+         spools (into {}
+                      (mapcat
+                       (fn [{:keys [family coordinate roots-map claims provenance source]}]
+                         (let [kind (:kind coordinate)
+                               coordinate-root (if (= :git kind)
+                                                 (io/file (cache-base) "skein" "spools" (:git/sha coordinate))
+                                                 (io/file (canonical-root runtime (:local/root coordinate))))]
+                           (map (fn [[lib root-path]]
+                                  (let [root (if (= "." root-path)
+                                               coordinate-root
+                                               (io/file coordinate-root root-path))]
+                                    [lib (with-meta
+                                           (cond-> (assoc coordinate
+                                                          :root (.getPath root)
+                                                          :source source)
+                                             claims (assoc :claims claims))
+                                           {::family family
+                                            ::coordinate coordinate
+                                            ::provenance provenance})]))
+                                roots-map)))
+                       families))]
+     (cond-> {:spools spools}
+       (seq overrides) (assoc :mvn-overrides overrides)
+       (seq pending-validations) (assoc :pending-validations pending-validations)))))
 
 (defn- spool-source-fields [entry]
   (case (:kind entry)
@@ -893,56 +989,62 @@
   A non-additive diff restores the previous public sync state, records a
   `:pending-generation`, and throws before touching the classloader. Maven
   resolution is atomic: a cross-root version conflict or an unresolvable universe
-  fails the whole sync loudly, leaving `{}` sync state rather than partial results."
-  [runtime]
-  ;; Stale state clears before anything that can throw — a structural spools.edn
-  ;; failure or an atomic-resolution abort both leave {} rather than stale results.
-  (let [public-previous @(approved-spool-sync-state runtime)
-        previous @(:approved-spool-generation-state runtime)
-        previous-fingerprints @(:approved-spool-generation-fingerprints runtime)
-        previous-maven @(:approved-spool-generation-maven runtime)]
-    (reset! (approved-spool-sync-state runtime) {})
-    (let [approved (approved-spools runtime)
-          materializations (materialize-families (:spools approved))
-          phase1 (mapv (fn [[lib entry]]
-                         (materialize-and-validate-spool
-                          lib entry (get materializations (::family (meta entry)))))
-                       (:spools approved))
-          failed (into {} (keep :failed) phase1)
-          survivors (into [] (keep :survivor) phase1)
-          structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {})
-          _ (when (seq structural-diff)
-              (reset! (approved-spool-sync-state runtime) public-previous)
-              (fail-non-additive-diff! runtime structural-diff approved))
-          universe (merge-maven-universe survivors (:mvn-overrides approved))
-          added (resolve-spool-maven-libs universe)
-          resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
-          diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)
-          _ (when (seq diff)
-              (reset! (approved-spool-sync-state runtime) public-previous)
-              (fail-non-additive-diff! runtime diff approved))
-          loader (:spool-classloader runtime)
-          pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
-          _ (add-delta-jars! loader added pre-urls)
-          survivor-results (into {}
-                                 (map (fn [{:keys [lib entry maven-deps source-paths fetch]}]
-                                        (add-source-paths! loader source-paths)
-                                        [lib (cond-> (assoc (sync-result-base lib entry)
-                                                            :status (spool-load-status maven-deps source-paths added pre-urls))
-                                               fetch (assoc :fetch fetch))]))
-                                 survivors)
-          results (into (sorted-map) (concat failed survivor-results))
-          fingerprints (into {} (map (juxt :lib (comp root-fingerprint :source-paths))) survivors)
-          retained (stale-spool-state-report runtime)]
-      (reset! (approved-spool-sync-state runtime) results)
-      (reset! (:approved-spool-generation-state runtime)
-              (merge (into (sorted-map) previous)
-                     (into (sorted-map) (filter successful-sync?) results)))
-      (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
-      (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
-      (cond-> {:spools results}
-        (seq retained) (assoc :retained-spool-state retained)
-        @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime))))))
+  fails the whole sync loudly, leaving `{}` sync state rather than partial results.
+  An optional running release marker enables `:skein/min` validation; absent it,
+  those checks remain visible in the returned `:pending-validations`."
+  ([runtime]
+   (sync-approved-spools runtime nil))
+  ([runtime running-marker]
+   ;; Stale state clears before anything that can throw — a structural spools.edn
+   ;; failure or an atomic-resolution abort both leave {} rather than stale results.
+   (let [public-previous @(approved-spool-sync-state runtime)
+         previous @(:approved-spool-generation-state runtime)
+         previous-fingerprints @(:approved-spool-generation-fingerprints runtime)
+         previous-maven @(:approved-spool-generation-maven runtime)]
+     (reset! (approved-spool-sync-state runtime) {})
+     (let [approved (approved-spools runtime running-marker)
+           materializations (materialize-families (:spools approved))
+           phase1 (mapv (fn [[lib entry]]
+                          (materialize-and-validate-spool
+                           lib entry (get materializations (::family (meta entry)))))
+                        (:spools approved))
+           failed (into {} (keep :failed) phase1)
+           survivors (into [] (keep :survivor) phase1)
+           structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {})
+           _ (when (seq structural-diff)
+               (reset! (approved-spool-sync-state runtime) public-previous)
+               (fail-non-additive-diff! runtime structural-diff approved))
+           universe (merge-maven-universe survivors (:mvn-overrides approved))
+           added (resolve-spool-maven-libs universe)
+           resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
+           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)
+           _ (when (seq diff)
+               (reset! (approved-spool-sync-state runtime) public-previous)
+               (fail-non-additive-diff! runtime diff approved))
+           loader (:spool-classloader runtime)
+           pre-urls (set (map str (.getURLs ^java.net.URLClassLoader loader)))
+           _ (add-delta-jars! loader added pre-urls)
+           survivor-results (into {}
+                                  (map (fn [{:keys [lib entry maven-deps source-paths fetch]}]
+                                         (add-source-paths! loader source-paths)
+                                         [lib (cond-> (assoc (sync-result-base lib entry)
+                                                             :status (spool-load-status maven-deps source-paths added pre-urls))
+                                                fetch (assoc :fetch fetch))]))
+                                  survivors)
+           results (into (sorted-map) (concat failed survivor-results))
+           fingerprints (into {} (map (juxt :lib (comp root-fingerprint :source-paths))) survivors)
+           retained (stale-spool-state-report runtime)]
+       (reset! (approved-spool-sync-state runtime) results)
+       (reset! (:approved-spool-generation-state runtime)
+               (merge (into (sorted-map) previous)
+                      (into (sorted-map) (filter successful-sync?) results)))
+       (reset! (:approved-spool-generation-fingerprints runtime) (merge previous-fingerprints fingerprints))
+       (reset! (:approved-spool-generation-maven runtime) (merge previous-maven resolved-maven))
+       (cond-> {:spools results}
+         (seq (:pending-validations approved))
+         (assoc :pending-validations (:pending-validations approved))
+         (seq retained) (assoc :retained-spool-state retained)
+         @(:pending-spool-generation runtime) (assoc :pending-generation @(:pending-spool-generation runtime)))))))
 
 (defn approved-spool-syncs
   "Return the most recent approved spool sync results."

@@ -182,9 +182,7 @@
                        (pr-str {:spools {'demo/family {:git/url "https://example.invalid/demo.git"
                                                        :git/sha sha
                                                        :git/tag "v2"
-                                                       :roots {'demo/override "nested"}
-                                                       :requires {'other/root "v1"}
-                                                       :skein/min "v1"}}}))
+                                                       :roots {'demo/override "nested"}}}}))
         (write-local-spools! config-dir
                              (pr-str {:spools {'demo/family {:local/root "spools/local"
                                                              :claims "v2"}}}))
@@ -413,6 +411,102 @@
       (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/approved rt)))]
         (is (re-find #"unknown keys" (ex-message ex)))
         (is (not (re-find #"v0 is reserved" (ex-message ex))))))))
+
+(deftest sync-refuses-all-unsatisfied-family-and-skein-floors
+  (with-runtime
+    (fn [rt config-dir]
+      (let [sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools!
+         config-dir
+         (pr-str
+          {:spools
+           {'target/family {:git/url "https://example.invalid/target.git"
+                            :git/sha sha
+                            :git/tag "v2"
+                            :roots {'target/root "."}}
+            'target/unmarked {:local/root "spools/unmarked"}
+            'client/one {:git/url "https://example.invalid/client-one.git"
+                         :git/sha sha
+                         :git/tag "v1"
+                         :requires {'target/root "v3"
+                                    'missing/root "v4"
+                                    'target/unmarked "v2"}
+                         :skein/min "v3"}
+            'client/two {:git/url "https://example.invalid/client-two.git"
+                         :git/sha sha
+                         :git/tag "v1"
+                         :requires {'target/root "v5"}}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo
+                              (spool-sync/sync-approved-spools rt "v2")))
+              data (ex-data ex)]
+          (is (= :spool-requirements-unsatisfied (:reason data)))
+          (is (= #{{:error :pin-below-minimum
+                    :requirer 'client/one
+                    :requires 'target/root
+                    :minimum "v3"
+                    :family 'target/family
+                    :pinned "v2"}
+                   {:error :required-root-not-approved
+                    :requirer 'client/one
+                    :requires 'missing/root
+                    :minimum "v4"}
+                   {:error :required-root-unmarked
+                    :requirer 'client/one
+                    :requires 'target/unmarked
+                    :minimum "v2"
+                    :family 'target/unmarked}
+                   {:error :skein-below-minimum
+                    :spool 'client/one
+                    :skein/min "v3"
+                    :running "v2"}
+                   {:error :pin-below-minimum
+                    :requirer 'client/two
+                    :requires 'target/root
+                    :minimum "v5"
+                    :family 'target/family
+                    :pinned "v2"}}
+                 (set (:findings data))))
+          (is (= {'target/family "v5"} (:suggestions data)))
+          (is (= {:spools {}} (runtime/syncs rt))))))))
+
+(deftest sync-reports-skein-minimum-pending-until-running-marker-is-injected
+  (with-runtime
+    (fn [rt config-dir]
+      (let [family 'demo/skein-floor
+            root (write-local-lib! config-dir "skein-floor" 'demo.skein_floor)
+            sha "0123456789abcdef0123456789abcdef01234567"]
+        (write-spools! config-dir
+                       (pr-str {:spools {family {:git/url "https://example.invalid/skein-floor.git"
+                                                 :git/sha sha
+                                                 :git/tag "v1"
+                                                 :skein/min "v2"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {family {:local/root "spools/skein-floor"
+                                                       :claims "v1"}}}))
+        (is (= [{:check :skein/min
+                 :spool family
+                 :skein/min "v2"
+                 :status :pending
+                 :reason :running-marker-unavailable}]
+               (:pending-validations (runtime/sync! rt))))
+        (let [result (spool-sync/sync-approved-spools rt "v2")]
+          (is (not (contains? result :pending-validations)))
+          (is (= :already-available (get-in result [:spools family :status])))
+          (is (= (.getCanonicalPath root) (get-in result [:spools family :root]))))))))
+
+(deftest malformed-stage-one-entry-gates-requirement-arithmetic
+  (with-runtime
+    (fn [rt config-dir]
+      (write-spools!
+       config-dir
+       (pr-str {:spools {'demo/malformed {:git/url "u"
+                                          :git/sha "short"
+                                          :requires {'missing/root "v2"}}}}))
+      (let [ex (is (thrown? clojure.lang.ExceptionInfo
+                            (spool-sync/sync-approved-spools rt "v1")))]
+        (is (re-find #":git/sha" (ex-message ex)))
+        (is (not (contains? (ex-data ex) :findings)))
+        (is (not (contains? (ex-data ex) :suggestions)))))))
 
 (deftest event-helpers-register-list-replace-unregister-directly
   (with-runtime
