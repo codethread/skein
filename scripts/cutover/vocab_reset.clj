@@ -15,11 +15,20 @@
     {:migration :rename-value :key \"k\" :from \"old\" :to \"new\"}
     {:migration :drop-key     :key \"k\"}
 
-  Each entry may narrow its rows with guards: `:when-value` / `:unless-value`
-  match the row's own JSON value, and `:when-sibling` requires the strand to
-  carry another attribute at a given value. Guards are what let one overloaded
-  key split two ways — `bench/run` carries a root id on judge strands but a
-  plain \"true\" marker elsewhere, and only the former becomes `bench/run-id`.
+  Each entry may narrow its rows with guards, of two readings. Value guards —
+  `:when-value` / `:unless-value` — match the row's own JSON value, and are what
+  let one overloaded key split two ways: `bench/run` carries a root id on judge
+  strands but a plain \"true\" marker elsewhere, and only the former becomes
+  `bench/run-id`. Sibling guards ask about the strand around the row instead:
+  `:when-sibling` requires another attribute at a given value, and
+  `:when-sibling-key` requires only that the strand carry a key at all.
+
+  `:when-sibling-key` is what makes a drop safe to write down. Four of roster's
+  keys are dropped rather than renamed because the entries dual-wrote a bare
+  twin (`roster/owner` alongside `owner`), so the roster/* half is redundant —
+  but only on a strand that really carries the twin. Guarding each drop on the
+  twin's presence means the delete can never destroy the last copy of an
+  identity: a strand shaped otherwise keeps its data and is reported.
 
   Table order matters only where an entry guards on a sibling another entry
   drops: the plan-root `kind` rename reads `workflow` \"agent-plan\", so it is
@@ -30,9 +39,11 @@
   strand carrying both the old and the new key is an inconsistent world rather
   than a migrated one — the attributes primary key (strand_id, key) cannot hold
   both after the rewrite — so the pre-flight refuses it loudly instead of
-  surfacing a raw SQLite constraint violation. Rows a guard declined are
-  reported too, so a strand shaped unexpectedly is read by the operator rather
-  than migrated blind or dropped in silence.
+  surfacing a raw SQLite constraint violation. Rows a *sibling* guard declined
+  are reported too, so a strand shaped unexpectedly is read by the operator
+  rather than migrated blind or dropped in silence. A value guard's declines are
+  not reported: those rows are the deliberate other half of a split, still
+  spelled the way this table intends to leave them.
 
   The db target must be explicit (--db, or --workspace resolved through
   `mill weaver status`); the script refuses to guess a canonical world. A live
@@ -127,12 +138,18 @@
    {:migration :rename-key :from "roster/result" :to "roster/outcome"}
    ;; roster/body had no bare twin — it moves rather than goes, or the entry
    ;; loses its text. The four below did dual-write their bare convention key,
-   ;; so dropping the roster/* half keeps the surviving copy.
+   ;; so dropping the roster/* half keeps the surviving copy — but each guards
+   ;; on the twin it is redundant with, because the dual-write is a claim about
+   ;; the spool's writes, not about every strand in a live world. Entries
+   ;; written before the dual-write, or restamped from a root that carried only
+   ;; the roster/* form (the pre-reset `resolve-identity!` read roster/feature
+   ;; *or* feature, so that shape was reachable), hold the sole copy: without
+   ;; the guard the drop is the deletion of a durable identity.
    {:migration :rename-key :from "roster/body" :to "body"}
-   {:migration :drop-key :key "roster/feature"}
-   {:migration :drop-key :key "roster/owner"}
-   {:migration :drop-key :key "roster/branch"}
-   {:migration :drop-key :key "roster/worktree"}])
+   {:migration :drop-key :key "roster/feature" :when-sibling-key "feature"}
+   {:migration :drop-key :key "roster/owner" :when-sibling-key "owner"}
+   {:migration :drop-key :key "roster/branch" :when-sibling-key "branch"}
+   {:migration :drop-key :key "roster/worktree" :when-sibling-key "worktree"}])
 
 (def ^:private active-scope
   "SQL predicate narrowing a statement to attributes of active strands."
@@ -150,6 +167,13 @@
             " WHERE key = ? AND value = ?)")
        [k (json/write-str v)]])))
 
+(defn- sibling-key-clause
+  "Return `[sql params]` requiring the strand to carry `k` at any value, or nil."
+  [when-sibling-key]
+  (when when-sibling-key
+    [(str " AND strand_id IN (SELECT strand_id FROM attributes WHERE key = ?)")
+     [when-sibling-key]]))
+
 (defn- value-clause
   "Return `[sql params]` matching (or excluding) the row's own JSON value."
   [{:keys [when-value unless-value]}]
@@ -165,17 +189,34 @@
   "Return `[sql params]` for an entry's row guards, composed in table order."
   [entry]
   (let [clauses (keep identity [(value-clause entry)
-                                (sibling-clause (:when-sibling entry))])]
+                                (sibling-clause (:when-sibling entry))
+                                (sibling-key-clause (:when-sibling-key entry))])]
     [(str/join (map first clauses))
      (into [] (mapcat second) clauses)]))
+
+(defn- sibling-guarded?
+  "True when `entry` narrows its rows by the shape of the strand around them.
+
+  The distinction the reporting turns on: a sibling guard's decline means the
+  strand was not what the entry expected, while a value guard's decline is the
+  intended other half of a split."
+  [entry]
+  (boolean (and (#{:rename-key :drop-key} (:migration entry))
+                (some (partial contains? entry) [:when-sibling :when-sibling-key]))))
+
+(defn- source-key
+  "Return the attribute key an entry's rows carry before it runs."
+  [{:keys [migration from key]}]
+  (if (= :rename-key migration) from key))
 
 (defn- label
   "Return the human-readable name this entry reports itself under."
   [{:keys [migration from to key] :as entry}]
-  (case migration
-    :rename-key (str from " -> " to (when (:when-sibling entry) " (guarded)"))
-    :rename-value (str key ": " from " -> " to)
-    :drop-key (str "drop " key)))
+  (let [guarded (when (sibling-guarded? entry) " (guarded)")]
+    (case migration
+      :rename-key (str from " -> " to guarded)
+      :rename-value (str key ": " from " -> " to)
+      :drop-key (str "drop " key guarded))))
 
 (defn- apply-entry!
   "Apply one migration entry within `tx`; return the number of rows changed."
@@ -228,25 +269,30 @@
         (filter (comp #{:rename-key} :migration) migrations)))
 
 (defn- left-behind
-  "Return the active rows a `:when-sibling` guard declined, by entry label.
+  "Return the active rows a sibling guard declined, by entry label.
 
-  A guard narrows a bare key to the strands whose owner it is — `harness` is
-  agent-run's word on a delegated task, and nobody else's. A row the guard
-  skipped is therefore either correctly none of our business or a strand shaped
-  unexpectedly, and only the operator can tell which: report it rather than
-  migrate it blind or drop it silently. Advisory, not fatal."
+  Called after the rewrite, so a row still carrying an entry's source key is by
+  construction one its guard declined — the migrated rows have moved on.
+
+  A sibling guard narrows a key to the strands whose shape earns the rewrite:
+  `harness` is agent-run's word on a delegated task and nobody else's, and
+  `roster/owner` is redundant only where the bare `owner` twin survives it. A
+  row the guard skipped is therefore either correctly none of our business or a
+  strand shaped unexpectedly, and only the operator can tell which: report it
+  rather than migrate it blind or drop it silently. For the guarded drops that
+  reading is the point — the rows named here are the ones whose only copy of an
+  identity would have gone. Advisory, not fatal."
   [tx]
   (into {}
-        (keep (fn [{:keys [from] :as entry}]
+        (keep (fn [entry]
                 (let [ids (->> (jdbc/execute!
                                 tx
                                 [(str "SELECT strand_id FROM attributes WHERE key = ? AND "
                                       active-scope)
-                                 from])
+                                 (source-key entry)])
                                (mapv :attributes/strand_id))]
                   (when (seq ids) [(label entry) ids]))))
-        (filter (every-pred (comp #{:rename-key} :migration) :when-sibling)
-                migrations)))
+        (filter sibling-guarded? migrations)))
 
 (defn rewrite!
   "Apply every migration to `ds` (a next.jdbc datasource) in one transaction.

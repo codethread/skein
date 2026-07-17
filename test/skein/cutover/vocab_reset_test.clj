@@ -6,8 +6,9 @@
 
   The cases are the ones the table cannot make obvious by inspection — the
   guarded splits (a bare key that is only agent-run's word on a task strand, an
-  overloaded bench/run that stays put on marker rows), the closed-strand scope
-  boundary, idempotency, and the loud refusals."
+  overloaded bench/run that stays put on marker rows), the guarded drops (a
+  roster/* key goes only where the bare twin it is redundant with survives it),
+  the closed-strand scope boundary, idempotency, and the loud refusals."
   (:require
    [clojure.test :refer [deftest is testing]]
    [cutover.vocab-reset :as cut]
@@ -156,8 +157,8 @@
                                    "roster/branch" "b"
                                    "branch" "b"
                                    "roster/worktree" "/tmp/wt"
-                                   "worktree" "/tmp/wt"})]
-      (cut/rewrite! (datasource ctx))
+                                   "worktree" "/tmp/wt"})
+          {:keys [left-behind]} (cut/rewrite! (datasource ctx))]
       (is (= {:roster/entry "e1"
               :roster/phase "active"
               :body "the brief"
@@ -167,7 +168,51 @@
               :worktree "/tmp/wt"}
              (attrs rt entry))
           "status becomes phase, the body moves to its bare key rather than
-           being lost, and each twin drops in favour of the surviving copy"))))
+           being lost, and each twin drops in favour of the surviving copy")
+      (is (= {} left-behind)
+          "a fully dual-written entry leaves nothing behind to read"))))
+
+(deftest keeps-a-roster-identity-that-never-dual-wrote-its-twin
+  (test-alpha/with-weaver-world [ctx world-opts]
+    (let [rt (:runtime ctx)
+          ds (datasource ctx)
+          lone (add! rt "active" {"roster/entry" "e2"
+                                  "roster/feature" "py7pm"
+                                  "roster/owner" "ct"
+                                  "roster/branch" "b"
+                                  "roster/worktree" "/tmp/wt"})
+          {:keys [left-behind total]} (cut/rewrite! ds)]
+      (is (= {:roster/entry "e2"
+              :roster/feature "py7pm"
+              :roster/owner "ct"
+              :roster/branch "b"
+              :roster/worktree "/tmp/wt"}
+             (attrs rt lone))
+          "a strand holding the only copy of its identity keeps every key: the
+           drop is redundant with a surviving twin, and there is no twin here")
+      (is (zero? total) "nothing was rewritten, so nothing was lost")
+      (is (= {"drop roster/feature (guarded)" [lone]
+              "drop roster/owner (guarded)" [lone]
+              "drop roster/branch (guarded)" [lone]
+              "drop roster/worktree (guarded)" [lone]}
+             left-behind)
+          "every key left in the old vocabulary is named for the operator
+           rather than skipped in silence")
+      (is (= left-behind (:left-behind (cut/rewrite! ds)))
+          "the decline is stable across re-runs, not a one-shot warning"))))
+
+(deftest guards-each-roster-drop-on-its-own-twin
+  (test-alpha/with-weaver-world [ctx world-opts]
+    (let [rt (:runtime ctx)
+          half (add! rt "active" {"roster/owner" "ct"
+                                  "owner" "ct"
+                                  "roster/branch" "b"})
+          {:keys [left-behind]} (cut/rewrite! (datasource ctx))]
+      (is (= {:owner "ct" :roster/branch "b"} (attrs rt half))
+          "the guard is per key, not per strand: roster/owner is redundant with
+           its twin and goes, while roster/branch is the only copy and stays")
+      (is (= {"drop roster/branch (guarded)" [half]} left-behind)
+          "only the key actually left behind is reported"))))
 
 (deftest reports-rows-and-is-idempotent
   (test-alpha/with-weaver-world [ctx world-opts]
