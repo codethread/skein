@@ -22,7 +22,7 @@ repo-local `.skein` workspace:
   config.local.json  -> personal config overlay
   init.clj           -> shared trusted startup code loaded by the weaver
   init.local.clj     -> personal startup overlay loaded after init.clj
-  spools.edn         -> shared approved local spool roots
+  spools.edn         -> shared approved spool families and roots
   spools.local.edn   -> personal approved-spool overlay
   spools/            -> optional local spools
 ```
@@ -135,6 +135,9 @@ root-lib symbol from the family's effective `:roots` map and reloads that root's
 (runtime/reload-spool! (current/runtime) 'skein.spools/kanban)
 ```
 
+The result names the root lib, canonical root, and namespaces in reload order, and conforms to
+`:skein.api.runtime.alpha/reload-spool-result`.
+
 The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs
 the startup files so `install!` re-registers ops, queries, and handlers. So the code-bump sequence
 is `reload-spool! root-lib` to make the code live, then a targeted re-`use!` of the spool's activation to
@@ -199,15 +202,17 @@ workspace/
       src/my/workflow.clj
 ```
 
-Approve the local spool root in `spools.edn`:
+Approve the local spool as an implicit one-root family in `spools.edn`:
 
 ```clojure
 {:spools {my/workflow {:local/root "spools/my-workflow"}}}
 ```
 
-Relative `:local/root` values resolve against the selected workspace. Absolute paths are accepted as explicit
-user-approved paths, and `~` expands to your home directory. Create a minimal `deps.edn` in the spool root (if
-`:paths` is omitted, Skein's namespace loading defaults to `["src"]`):
+A shared local entry has one root at `.` under the entry's symbol. Git families can map
+several roots with `:roots`; local overlays inherit that map from their shared Git family. Relative
+`:local/root` values resolve against the selected workspace. Absolute paths are accepted as
+explicit user-approved paths, and `~` expands to your home directory. Create a minimal `deps.edn`
+in the root (if `:paths` is omitted, Skein's namespace loading defaults to `["src"]`):
 
 ```clojure
 {:paths ["src"]}
@@ -235,7 +240,7 @@ Activate it from `init.clj`, after the `sync!` and batteries activation already 
    :call 'my.workflow/install!})
 ```
 
-Each piece has one job. `spools.edn` is approval: it says which local roots the weaver may load.
+Each piece has one job. `spools.edn` is approval: it says which source family and roots the weaver may load.
 `runtime/sync!` makes approved roots available to the weaver. `runtime/use!` activates one module and records
 whether it loaded, skipped, or failed; its `:call` must name a fully qualified zero-argument function. A
 direct `require` from `mill weaver repl` evaluates in the weaver JVM and is useful for trusted

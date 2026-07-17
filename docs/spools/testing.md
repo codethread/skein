@@ -24,9 +24,10 @@ my-spool/
     my/spool_test.clj
 ```
 
-There is no package registry, installer, or lockfile. You publish by pushing Git commits/tags;
-consumers select a version by checking out your repo (or vendoring it) and approving its local root
-in their `spools.edn`.
+There is no package registry, installer, or lockfile. You publish with an annotated Git tag and its
+peeled commit sha. Consumers approve one Git family entry per repository in `spools.edn`; its
+`:roots` map selects the libraries available from that source. A shared local entry is one implicit
+root at `.` under the entry's symbol.
 
 ## deps.edn: Skein as a local-root test dependency
 
@@ -111,8 +112,8 @@ Two evaluation contexts exist even though the test weaver runs in your test JVM 
 - **Direct `require` in test code** uses your test JVM classpath (your library
   plus the Skein checkout). This never proves the weaver can load your spool.
 - **Weaver-routed forms via `repl!`** evaluate inside the weaver runtime.
-  Spool code becomes visible there only through the real workflow: approve the
-  root in `spools.edn`, `skein.api.runtime.alpha/sync!`, then `use!`.
+  Spool code becomes visible there only through the real workflow: approve its
+  family and roots in `spools.edn`, `skein.api.runtime.alpha/sync!`, then `use!`.
 
 A spool that passes tier-2 tests can still fail tier 3 — missing `deps.edn` paths in the spool root,
 load-order problems in `install!`, or reliance on your test JVM classpath. Tier 3 exists to catch
@@ -132,7 +133,8 @@ Write the spool fixture and approval into the generated world, sync it from `ini
 ```clojure
 (deftest spool-syncs-and-activates
   (t/with-weaver-world
-    [ctx {:spools-edn {:spools {'demo/lib {:local/root "spools/demo"}}}
+    [ctx {:spools-edn {:spools {'demo/spool
+                                {:local/root "spools/demo"}}}
           :files {"spools/demo/deps.edn" "{:paths [\"src\"]}\n"
                   "spools/demo/src/demo/lib.clj"
                   "(ns demo.lib)\n(defn install! [] :ok)\n"}
@@ -145,25 +147,27 @@ Write the spool fixture and approval into the generated world, sync it from `ini
                        (require '[skein.api.current.alpha :as current]
                                 '[skein.api.runtime.alpha :as runtime])
                        (runtime/use! (current/runtime) :demo/lib
-                                     {:ns 'demo.lib :spools #{'demo/lib}})))
+                                     {:ns 'demo.lib :spools #{'demo/spool}})))
                    [:status])))))
 ```
 
-To test your actual library instead of an inline fixture, point the approved `:local/root` at your
-library checkout (an absolute path works in `:spools-edn` data). When the checkout comes from the
-test classpath rather than a fixed local path, `skein.test.alpha/spool-checkout-root` resolves the
-root from one of the spool's source resources and fails loudly if that resource is absent. Its
-one-argument form uses `clojure.java.io/resource`; tests for the resolver can pass a resource-loader
-function as the second argument.
+To test your actual one-root library instead of an inline fixture, use its library symbol as the
+family key and point `:local/root` at the checkout (an absolute local root works in `:spools-edn`
+data). When the checkout comes from the test classpath rather than a fixed local path,
+`skein.test.alpha/spool-checkout-root` resolves the root from one of the spool's source resources
+and fails loudly if that resource is absent. Its one-argument form uses
+`clojure.java.io/resource`; tests for the resolver can pass a resource-loader function as the
+second argument.
 
-Two constraints from tools.deps to know about:
+Two runtime-local constraints matter:
 
-- `sync!` mutates JVM-global classpath state (`add-libs`). Synced roots and
-  lib coordinates persist for the JVM lifetime. Use unique lib names per test
-  world (e.g. suffix a UUID) if multiple tests sync fixture spools in one JVM.
-- Do not delete a synced root while the JVM may sync again: pass an explicit
-  `:root` you control (the helper then skips deletion by default), or accept
-  the default temp-root cleanup only for worlds that never sync.
+- Each weaver runtime has one spool `DynamicClassLoader` and its own successful-sync state. Separate
+  `with-weaver-world` calls may reuse the same library symbols in one test JVM; they do not share a
+  retained tools.deps resolution universe.
+- Within one runtime generation, `sync!` only adds source paths and Maven jars. Removing or replacing
+  an already-synced root is a non-additive change: `sync!` records a pending generation and refuses
+  the change. Do not delete fixture roots while their world is running. The helper stops the runtime
+  before deleting its default temporary root.
 
 ## Storage selection
 

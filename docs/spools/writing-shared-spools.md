@@ -66,6 +66,8 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    on version-mismatch reinit; supply a `:migrate-fn` when a version bump must
    carry durable sub-state across (it then owns the old value's resources). See
    `skein.api.runtime.alpha/spool-state` and SPEC-004.C95 for the full contract.
+   The four-argument option map conforms to
+   `:skein.api.runtime.alpha/spool-state-opts`; malformed options fail at the call site.
    Pin the current key set with a drift-alarm test using
    `skein.spools.test-support/assert-state-shape`, which fails loudly if
    `new-state` and `state-version` drift apart.
@@ -134,10 +136,10 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    convention, not a namespace to converge into: use them as found, and mint
    no new ones. A concept unrelated to another spool's that happens to share
    its noun is not inheritance — it is a reader trap; pick a different word.
-   When a surface converges on this rule the rename is a clean break
-   (TEN-000): durable attributes on closed strands stay as written — they are
-   memory, not authority — and a rename ships a cutover for active rows when
-   continuity needs it.
+   Before a `v1` promise, convergence may be a clean break under TEN-000:
+   durable attributes on closed strands stay as written because they are
+   memory, not authority. After `v1`, the corrected contract takes a new name;
+   ship an explicit cutover for active rows when continuity needs it.
 
 ### Applying the vocabulary rule
 
@@ -299,120 +301,227 @@ applies to shared-spool CLIs.
   `backends` for a fixed catalog.
 - Prefer one op with declared subcommands for a cohesive multi-verb domain. Keep
   single-purpose projections and config-registered ops flat.
-- Renames are clean breaks (TEN-000): when a surface converges on this
-  vocabulary, the old name goes — no compatibility aliases.
+- Before a `v1` promise, a vocabulary correction may be a clear cut under
+  TEN-000. After `v1`, keep the old contract and publish the correction under a
+  new name as described in [Versioning and release](#versioning-and-release).
 
 Every text-bearing flag or positional MUST use the declared arg-spec parser so
 whole-value `:stdin` and `:payload/<name>` references resolve.
 
-## Publishing a shared spool with git distribution
+## Versioning and release
 
-A shared spool can be published as an ordinary git repository and consumed from a workspace
-`spools.edn` by explicit approval of a pinned commit. The approving workspace chooses the coordinate
-symbol; that symbol is the consent handle used by `sync!`, `use!`, and local overrides.
+### Publishing a shared spool with git distribution
 
-> **Worked example.** Skein's own devflow lifecycle is distributed exactly this
-> way: its source lives in [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool),
-> this repo approves it with a sha-pinned `:git/url`+`:git/sha` coordinate in
-> `.skein/spools.edn`, activates it (`:required? true`) from `.skein/init.clj`,
-> pins the same sha as a tools.deps git dep for the test JVM (`deps.edn`), and
-> developers override it with a gitignored `spools.local.edn` local root. See
-> [`spools/devflow.md`](../../spools/devflow.md) for the consumer side.
-
-A consumer pins the exact source content they consent to run:
+A spool repository is one release unit. Approve it once in `spools.edn`, at one commit, and map each
+library root to its path in that checkout:
 
 ```clojure
 {:spools
- {acme/priority
-  {:git/url "https://github.com/acme/skein-priority-spool.git"
+ {acme/priority-spool
+  {:git/url "https://github.com/acme/priority.spool.git"
+   :git/tag "v3"
    :git/sha "0123456789abcdef0123456789abcdef01234567"
-   :git/tag "v0.1.0"}}}
+   :roots {acme/priority "priority"
+           acme/reports "reports"}
+   :requires {skein.spools/workflow "v2"}
+   :skein/min "v1"}}}
 ```
 
-- `:git/sha` is the behavior contract: it must be exactly 40 lowercase hex
-  characters, and the weaver caches the fetched tree by sha. On a cache miss,
-  the weaver fetches the pinned sha directly; if the remote does not satisfy
-  that direct request, it performs one bounded refetch of advertised tags and
-  branches from the same remote before failing loudly with the remote URL and
-  cache path.
-- `:git/tag` is an optional human-readable label. When a fetch occurs, the tag
-  must resolve to the same sha or sync records a `:tag-mismatch` failure. Cache
-  hits trust the sha and do not re-check the tag.
-- `:git/url` is passed to system `git` as-is, so users can choose HTTPS, SSH, or
-  `file://` transports that match their own credentials and trust model.
-- `:deps/root` is available for monorepos. It is a relative path inside the
-  checkout, with no leading `/`, `~`, or `..` segment.
+This family shape makes mixed generations of roots from one repository unrepresentable. `:git/sha`
+is the consent boundary: it names the exact source a consumer agreed to run. `:git/tag` is an
+ordered release marker of the form `v<int>`, with no SemVer range or resolver semantics. Releases
+use annotated tags. An annotated tag has a tag-object sha and a peeled commit sha; `:git/sha` must
+be the peeled commit reported as `refs/tags/vN^{}` by `git ls-remote`.
 
-### README dependency information
+A work-in-progress repository is untagged and can only be sha-pinned. Floors cannot target it, and
+the missing `:git/tag` in a consumer file is the visible nudge that no promise exists yet. Authors
+may use labels such as `alpha-3` for humans, but those labels are mechanically inert. The marker
+parser rejects them. `v0` is reserved and rejected.
 
-Do not put composition metadata in machine-readable spool files. A shared spool's metadata,
-prerequisites, suggested pins, and activation order belong in its README, where an agent or human
-can copy the complete approval and activation recipe and still make an explicit consent decision for
-every source root.
+`v1` is the smallest promise: from here, breaks take new names. It carries none of SemVer 1.0's
+baggage. Later markers record release order, not degrees of compatibility.
 
-Include a **Dependency information** section with a complete `spools.edn` snippet for this spool and
-every spool prerequisite. Use author-suggested URLs and pins inline; consumers may choose newer
-pins, local overrides, or no approval at all. No prerequisite is fetched transitively.
+### Consumer-file validation
 
-```clojure
-;; spools.edn
-{:spools
- {acme/graph
-  {:git/url "https://github.com/acme/skein-graph-spool.git"
-   :git/sha "89abcdef0123456789abcdef0123456789abcdef"
-   :git/tag "v0.2.0"}
+Core validates the whole effective consumer file before materializing a family. Shape and marker
+errors fail first. `:claims "vN"` on a `spools.local.edn` family means the local checkout preserves
+that family's published contracts through marker `vN`. Choose the greatest published marker whose
+[compatibility alarm](#compatibility-alarm) passes against the checkout. Core requires the claim on
+every local family overlay and uses it as that family's pin for `:requires` floor validation.
 
-  acme/priority
-  {:git/url "https://github.com/acme/skein-priority-spool.git"
-   :git/sha "0123456789abcdef0123456789abcdef01234567"
-   :git/tag "v0.1.0"}}}
-```
+Requirement failures share the exception reason
+`:spool-requirements-unsatisfied` and appear in `:findings` as:
 
-If a prerequisite is a blessed `skein.api.*.alpha` namespace or `skein.spools.batteries` (Skein's
-one classpath-shipped spool, see [Classpath exception:
-batteries](../../spools/README.md#classpath-exception-batteries)), document the namespace and why it
-is required, but do not invent a coordinate for it — both are already trusted as part of the
-selected Skein checkout. Every other reference spool is never a shipped-classpath prerequisite: if
-your spool depends on one, list it as an ordinary `spools.edn` coordinate above, the same as any
-other spool prerequisite.
+- `:pin-below-minimum` when an approved family's `:git/tag` or local overlay `:claims` is below a
+  `:requires` floor;
+- `:required-root-not-approved` when no approved family supplies the required root;
+- `:required-root-unmarked` when the family supplying the root has no effective marker, including an
+  untagged Git family or a shared local family;
+- `:skein-below-minimum` when the running Skein release marker is below `:skein/min`.
+
+Pin suggestions contain the greatest minimum found for each below-floor family. There is no
+suggestion for an unapproved or unmarked root. A root lib may belong to only one family; duplicate
+ownership fails with `:reason :duplicate-spool-root` and names the root lib and its owning families.
+
+The public runtime validates `:skein/min` against its running release marker. If any family declares
+that floor while the running core has no annotated release marker or explicit startup claim,
+`approved` and `sync!` refuse with `:reason :release-marker-unavailable`, the declared floors, and a
+remedy to start the runtime with a release-marker claim. An unmarked core never treats those floors
+as satisfied.
+
+### Accretion under a name
+
+Keep every published name accretion-only. The classification rule is exact:
+
+> rejecting input the published contract accepted is breaking even when it improves validation;
+> rejecting what the contract declared invalid is a fix.
+
+A new optional key, function, op, or root is accretion. Removing a case, changing a default, making
+an optional field required, changing an accepted type, or giving an old name new behavior is a
+break. Name contracts, not broad concepts: `capture-on!` says what changed more clearly than a
+generic `capture-v2!`. When a whole model needs the same concept name and no contract-specific name
+fits, use a numeric suffix such as `notebook2`; do not mix `next`, `new`, dates, and release-marker
+suffixes for the same purpose.
+
+The rename cost depends on the surface:
+
+| Broken surface | What gets a new name | Cost to callers |
+| --- | --- | --- |
+| Function | A fresh function in the same namespace | Small: call sites opt into the new contract. |
+| Registered op or CLI verb | A new op or subcommand; the old one stays registered | Scripts, help text, and automation must opt in. |
+| Attribute vocabulary | A new namespaced key or value vocabulary | Highest: persisted rows, queries, views, and contributing spools need an explicit migration boundary. |
+
+Escalate only as far as the break reaches:
+
+1. For one function contract, add a function name. Keep `capture!` unchanged and add
+   `capture-on!`; changing `capture!` from two arguments to three would break its old callers.
+2. When a namespace model changes, add a sibling root in the same repository. A family may keep
+   `records` and add `records2`; adding the root is accretion at family level.
+3. When the whole concept changes, start a repository and family. This should be rare.
+
+A sibling root should provide a complete contract for its task. Consumers may load old and new roots while
+migrating, but should not mix their requires to assemble one job. Give every public var in the new
+root a fresh `defn` and its own docstring. Do not re-export vars with `(def f old/f)` or Potemkin:
+arglists, docs, and source navigation must describe the new contract. Bodies may delegate.
+
+Share internal namespaces while the compatibility alarm runs old tests against the whole working
+tree. When the old contract can use the new implementation, put the implementation in the new root
+and keep fresh wrappers in the old root.
+
+Floor raises in `:requires` or `:skein/min` are not breaks. They constrain which release families
+may be assembled; they do not change a published name's input contract. Raise a floor only with
+evidence from tests at that floor.
+
+### Compatibility alarm
+
+Keep `bin/compat-alarm` in the spool repository. It takes a previous marker, extracts that release's
+tests, and runs them against the working tree. The
+[agent-harness.spool alarm](https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/bin/compat-alarm)
+is a shipped example.
+
+`v1` has no previous marker, so its release gate is the current test suite only. Start running the
+previous-marker alarm when cutting `v2`.
+
+The alarm catches behavior covered by the old suite; it does not classify changes or prove
+compatibility. Authors still apply the contract rule above. Core validation has a different job: it
+refuses family pins below declared floors and roots the consumer has not approved. A helper may run
+the alarm before writing a bump, but the floor validator stays offline and never selects or fetches
+a newer release.
+
+### Author tests
+
+Test two different facts:
+
+1. Classpath tests prove each declared floor. Pin required roots and Skein at exactly the markers in
+   `:requires` and `:skein/min`, not at newer convenient releases. A floor raise and its test-pin
+   bump belong in one commit. A small in-repo check may resolve markers with `git ls-remote` and
+   verify that those pins match the declared floors; this is helper or repository policy, not core.
+2. Runtime integration tests prove the consumer path. Keep a literal consumer-workspace fixture
+   whose `spools.edn` pins the spool family and its requirements. A fixture `spools.local.edn`
+   overrides the family with `:local/root` plus `:claims "vN"`. Sync them in an embedded runtime
+   with `:publish? false`.
+
+For cross-repository work, a tools.deps `:sibling` alias should override the same dependency that a
+gitignored `spools.local.edn` family override replaces. The local family entry carries `:claims
+"vN"`; the alias uses `:override-deps`. This symmetry lets both test tiers exercise the same sibling
+checkout without weakening the committed floors. The runtime tier must execute its fixture through
+an embedded unpublished runtime; committing the files alone does not prove the consumer path.
+
+### Open attribute vocabularies
+
+Composition across release skew works best through open, namespaced attributes. Declare the
+namespace owner and document each key's contract. A renderer must render unknown contributors in
+that vocabulary instead of rejecting a closed set of contributor names. A spool may then add
+`journal.section/daily-update` without a release of the journal spool.
+
+The live precedent is workflow and agent-run composing through the `:subagent` relation: each spool
+owns its behavior while the shared graph vocabulary carries the connection. This is an extension
+point, not permission to mint keys in another spool's namespace; coordinate the vocabulary contract
+with its owner.
+
+### Release and bump sequence
+
+Sha pins let producer and consumer repositories land independently:
+
+1. In the producer, make the change accretive or give the broken surface a new name. For `v1`, run
+   current tests only. From `v2`, also run `bin/compat-alarm` against the previous marker.
+2. Update `spool.edn` floors and their test pins together when a floor changes. Commit, create the
+   next annotated `v<int>` tag, push it, and obtain its peeled commit sha.
+3. In each consumer, change `:git/tag` and `:git/sha` atomically. Add a new root mapping only when
+   opting into that root. Validate the whole consumer file before loading or landing the bump.
+4. Land downstream changes in dependency order. Every unchanged consumer remains on its old sha;
+   no upstream push can alter it.
+
+If a consumer uses a new name, its code and family-entry bump land together. Do not delete the old
+name as cleanup: pinned consumers may still rely on it, and bump-time validation is the place to
+refuse a release that no longer contains an approved root.
 
 ### Nested-spool prerequisites
 
-When your spool's prerequisite is one of Skein's in-repo spool roots (the workflow engine is the
-common case), your dependency snippet should offer the consumer both coordinate forms for that
-root. A local root points into the consumer's own Skein checkout, which is what this repo's
-`spools.edn` does:
+A repository that contains several spool roots gets one Git family entry. Use one sha-pinned Git
+coordinate, then map each approved library to its relative path with `:roots`. A local checkout
+overrides that Git family through `spools.local.edn` and inherits its root map. A requiring spool
+names the library root and floor in `:requires`; the consumer adds or bumps the family that owns
+that root. Do not create a separate `:deps/root` coordinate for each nested root.
+
+### Optional producer manifest (`spool.edn`)
+
+Authors may publish the singular advisory manifest `spool.edn` at the repository root. It is
+distinct from the consumer's plural `spools.edn`:
 
 ```clojure
-{:spools {skein.spools/workflow {:local/root "/path/to/your/skein/spools/workflow"}}}
+{:spool/format 1
+ :skein/min "v1"
+ :roots {acme/priority {:root "priority"}
+         acme/reports {:root "reports"}}
+ :requires {skein.spools/workflow "v2"}}
 ```
 
-A sha-pinned nested-root git coordinate on the Skein repo pins the engine independently of any
-checkout, using the `:deps/root` monorepo key described above. This block is schematic, not
-copyable: the `:git/sha` placeholder fails the 40-lowercase-hex validation by design, so a consumer
-must substitute the sha of the Skein commit they are consenting to before approval:
+The pinned
+[agent-harness.spool manifest](https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/spool.edn)
+is a real multi-root example. The
+[kanban.spool manifest](https://github.com/codethread/kanban.spool/blob/dfd6948afb5db9c8ca30778cb1ba329a3afff877/spool.edn)
+shows the single-root form.
 
-```clojure
-{:spools {skein.spools/workflow
-          {:git/url "https://github.com/codethread/skein.git"
-           :git/sha "<40-hex-sha-for-the-pinned-commit>"
-           :deps/root "spools/workflow"}}}
-```
+This follows the package.el split. Authoring helpers may read it to prepare a consumer family entry;
+the core loader never reads it. The committed `spools.edn` remains the consumer's explicit consent
+record and the only input to load-boundary validation. A README should still show the full family
+entry and activation order, so a consumer can review what a helper would write. No prerequisite is
+fetched transitively.
 
-Both forms resolve to the same spool root; which one a consumer approves is their consent decision,
-not yours.
+Core enforces load-boundary checks. Authoring helpers, including planned batteries support, help
+users write entries that pass those checks. Userland may replace the helpers, but not the checks.
 
-State the version-skew convention plainly in your README: a runtime loads one version of a
-namespace, so a spool pinned at sha X always runs against the consumer's single chosen workflow
-version, whichever coordinate supplied it. Compatibility across that skew is managed by accretion
-as a convention (the engine adds, it does not break), not by a contract your spool can pin against.
+If a prerequisite is a blessed `skein.api.*.alpha` namespace or `skein.spools.batteries`, document
+the namespace and why it is required but do not invent a family coordinate for it. Both ship on the
+selected Skein classpath. Every other source repository gets its own family entry.
 
 ### README activation snippet
 
 Include an **Activation** section with the complete trusted `init.clj` snippet. The consumer owns
 the runtime, calls `sync!`, and activates modules explicitly with `use!`. Use `:spools` guards for
 every approved spool whose sync state is a prerequisite and `:after` when one activation depends on
-another.
+another. The spool in this example exposes a zero-argument `acme.priority.alpha/install!` function.
 
 ```clojure
 (require '[skein.api.current.alpha :as current]
@@ -421,21 +530,17 @@ another.
 (def rt (current/runtime))
 (runtime/sync! rt)
 
-(runtime/use! rt :acme/graph
-  {:ns 'acme.graph.alpha
-   :spools '[acme/graph]
-   :required? true})
-
 (runtime/use! rt :acme/priority
   {:ns 'acme.priority.alpha
-   :spools '[acme/priority acme/graph]
-   :after [:acme/graph]
+   :spools '[acme/priority]
+   :call 'acme.priority.alpha/install!
    :required? true})
 ```
 
 `use!` is the blessed early prerequisite check. Under `:required? true`, missing, unsynced, or
 failed spool approvals throw for the surviving `:spools` skip reasons. Namespace load and `:call`
-failures also fail loudly through the normal activation path.
+failures also fail loudly through the normal activation path. Its returned and recorded entry
+conforms to `:skein.api.runtime.alpha/use-entry`.
 
 ### Maven dependencies in a spool root
 
@@ -451,7 +556,8 @@ The policy is intentionally narrow:
 - Every `:deps` entry must be a Maven coordinate map containing `:mvn/version`.
 - Source-bearing coordinates are rejected in spool-root `deps.edn :deps`,
   including `:git/url`, `:git/sha`, and `:local/root`. If a spool composes with
-  another source root, document that root as its own `spools.edn` entry.
+  another source root, document that root's repository as a family entry in
+  `spools.edn`.
 - Mutable Maven versions are rejected: no `-SNAPSHOT`, `RELEASE`, or `LATEST`.
 - Repo redirection is rejected: no top-level `:mvn/repos` or `:mvn/local-repo`
   in the spool root.
@@ -485,31 +591,35 @@ versions, and no source-bearing coordinate keys.
 
 ## Local development overrides
 
-Use the same coordinate in shared `spools.edn` and gitignored `spools.local.edn` to develop against
-a checkout while other users stay pinned to the git sha. Local entries overlay shared entries by
-coordinate.
+Use the same family coordinate in shared `spools.edn` and gitignored `spools.local.edn` to develop
+against a checkout while other users stay pinned to the git sha. Local entries overlay shared
+entries by coordinate and must claim the release contract they preserve.
 
 Shared `spools.edn`:
 
 ```clojure
 {:spools
- {acme/priority
+ {acme/priority-spool
   {:git/url "https://github.com/acme/skein-priority-spool.git"
    :git/sha "0123456789abcdef0123456789abcdef01234567"
-   :git/tag "v0.1.0"}}}
+   :git/tag "v3"
+   :roots {acme/priority "priority"
+           acme/reports "reports"}}}}
 ```
 
 Developer-only `spools.local.edn`:
 
 ```clojure
 {:spools
- {acme/priority
-  {:local/root "~/dev/projects/skein-priority-spool"}}}
+ {acme/priority-spool
+  {:local/root "~/dev/projects/skein-priority-spool"
+   :claims "v3"}}}
 ```
 
-The effective root is whichever entry wins the overlay. `:deps/root` is git-only because a local
-root can already point directly at any subdirectory you want to use. The Maven-only dependency
-policy still applies to local override roots.
+The overlay inherits the base family's `:roots`, `:requires`, and `:skein/min`; it replaces the
+source coordinate. A missing `:claims` fails loudly. Run the local checkout's compatibility alarm
+against the claimed marker to check the claim. The Maven-only dependency policy still applies to
+every local override root.
 
 **Caution: `sync!` resolves the current approved Maven universe.** Each call
 reads the roots approved at that moment, validates their `deps.edn` files, and
@@ -519,40 +629,18 @@ root set to stub out. If a root is still approved but its directory was deleted
 or moved, that root reports a per-spool missing/unreadable failure until you
 update or restore the approved entry.
 
-## Testing your spool against a Skein checkout
+## Test mechanics
 
-A shared spool repo carries its own standalone test suite and runs it against a
-Skein checkout — the reference layout is siblings on disk (`your-spool/` beside
-`skein-src/`), which is also how Skein's own CI can run your suite against a
-candidate checkout. The pieces, worked in both `devflow.spool` and
-`kanban.spool`:
+The floor-pinned and consumer-workspace tiers above use ordinary Clojure test tooling. Put the
+spool's roots in `:paths`, its tests in a `:test` alias, and each required root in `:extra-deps` at
+the peeled sha for its declared floor. Give the test namespace a `-main` that exits non-zero on
+failure so `clojure -M:test` works in CI.
 
-```clojure
-;; deps.edn
-{:paths ["src"]
- :aliases
- {:test {:extra-paths ["test"]
-         ;; io.skein/skein exposes only Skein's base classpath (src/,
-         ;; batteries). Any reference spool your code requires — most
-         ;; commonly the workflow engine — lives in a spool root off that
-         ;; classpath and must join the test JVM as its own dep.
-         :extra-deps {io.skein/skein {:local/root "../skein-src"}
-                      io.skein/workflow-spool {:local/root "../skein-src/spools/workflow"}}
-         :jvm-opts ["--enable-native-access=ALL-UNNAMED"]
-         :main-opts ["-m" "acme.priority-test"]}}}
-```
-
-Keep every skein-supplied root on the **same checkout** — mixing a sibling
-`io.skein/skein` with a sha-pinned spool root would test your spool against an
-engine version the rest of the classpath never shipped with. Fixture-wise, use
-the public author helper rather than repo-local scaffolding:
-`skein.test.alpha/with-weaver-world` for a disposable weaver world, and take the
-runtime it hands you explicitly — your shared spool never resolves it internally.
-Reach for `skein.core.weaver.runtime/with-runtime-binding` only when a test must
-exercise *userland* code that resolves the ambient runtime, never the shared
-spool's own functions. Give the test namespace a `-main` that exits non-zero on
-failure so `clojure -M:test` is CI-usable. The devflow.spool and kanban.spool
-test suites are the worked examples of all of this.
+Use `skein.test.alpha/with-weaver-world` for the consumer-workspace tier and take the runtime it
+hands you explicitly. Reach for `skein.core.weaver.runtime/with-runtime-binding` only when a test
+must exercise userland code that resolves the ambient runtime, never the shared spool's own
+functions. The general fixture API and isolation rules live in [Testing your config and
+spools](./testing.md).
 
 ## The pattern pair
 

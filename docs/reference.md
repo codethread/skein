@@ -27,7 +27,7 @@ selected workspace (normally canonical repo .skein)
   config.local.json  -> personal config overlay
   init.clj           -> shared trusted startup code loaded by the weaver
   init.local.clj     -> personal startup overlay loaded after init.clj
-  spools.edn         -> shared approved local spool roots
+  spools.edn         -> shared approved spool families and roots
   spools.local.edn   -> personal approved-spool overlay
   spools/            -> optional local spools
 
