@@ -34,14 +34,14 @@
                     |  strand add \"title\"
                     |  strand ready"))))
 
-(deftest bar-less-blocks-fail-loudly
-  (is (thrown? clojure.lang.ExceptionInfo (fmt/reflow "no bars here")))
-  (is (thrown? clojure.lang.ExceptionInfo (fmt/fill "no bars here"))))
-
-(deftest non-string-blocks-fail-loudly
-  (doseq [bad [nil 42 [:not :a :string]]]
-    (is (thrown? clojure.lang.ExceptionInfo (fmt/reflow bad)))
-    (is (thrown? clojure.lang.ExceptionInfo (fmt/fill bad)))))
+(deftest invalid-blocks-fail-loudly-with-the-offending-value
+  (doseq [bad ["no bars here" nil 42 [:not :a :string]]
+          f [fmt/reflow fmt/fill]]
+    (let [ex (try (f bad) nil (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? ex) (pr-str bad))
+      (is (contains? (ex-data ex) :block))
+      (is (= bad (:block (ex-data ex))))
+      (is (contains? (ex-data ex) :explain)))))
 
 (deftest generated-blocks-satisfy-declared-contracts
   ;; exercises the ::block generator against the fdefs, including reflow's

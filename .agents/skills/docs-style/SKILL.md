@@ -78,7 +78,7 @@ Prose that ships as data inside Clojure source (op payloads, `about` surfaces, r
 
 - Never trade accuracy for style: if a rewrite changes what the sentence claims, revert and rewrite again.
 - Never mechanically strip a tell into worse prose; the goal is writing a human would produce, not zero grep hits.
-- Do not apply this to generated API reference (`spools/*.api.md`) — those mirror docstrings.
+- Do not apply this to generated API reference (`spools/*.api.md`, `docs/api/*.api.md` — anything `make api-docs` writes); those mirror docstrings.
 
 ## Validation
 

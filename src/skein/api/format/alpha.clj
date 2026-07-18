@@ -3,8 +3,9 @@
 
   Long strings in source hurt readability and IDE viewports; author them as
   `|`-margin blocks instead and reflow with these helpers. Both helpers
-  consult the `::block` contract: a string in which at least one line
-  carries a bar. Anything else fails loudly."
+  validate their input against the promised qualified spec key
+  `:skein.api.format.alpha/block` — a string in which at least one line
+  carries a `|` — and fail loudly with the offending value in ex-data."
   (:require [clojure.spec.alpha :as s]
             [clojure.spec.gen.alpha :as gen]
             [clojure.string :as str]
@@ -16,8 +17,11 @@
   The bar marks column 0, a bare `|` line separates items, flush-left prose
   soft-wraps into one line per item, and any indentation past the bar keeps the
   whole item verbatim for command samples and other intentional layout. Throws
-  when the input is not a `::block` — a bar-less block is an authoring error."
+  when the input does not satisfy `::block`."
   [block]
+  (when-not (s/valid? ::block block)
+    (throw (ex-info "fill needs a ::block: a string with at least one |-margin line"
+                    {:block block :explain (s/explain-data ::block block)})))
   (format/fill block))
 
 (defn reflow
@@ -25,9 +29,12 @@
 
   The single-item companion to `fill` for a lone prose value; item and verbatim
   semantics do not apply — every barred line is trimmed and space-joined, so
-  the result never contains a newline. Throws when the input is not a
+  the result never contains a newline. Throws when the input does not satisfy
   `::block`, like `fill`."
   [block]
+  (when-not (s/valid? ::block block)
+    (throw (ex-info "reflow needs a ::block: a string with at least one |-margin line"
+                    {:block block :explain (s/explain-data ::block block)})))
   (format/reflow block))
 
 (s/def ::block

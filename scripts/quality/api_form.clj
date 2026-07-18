@@ -72,7 +72,7 @@
   internal (tests may)."
   [analysis]
   (for [{:keys [from to filename row]} (:namespace-usages analysis)
-        :when (str/starts-with? (str filename) "src/")
+        :when (re-find #"(?:^|/)src/" (str filename))
         :let [[from-module from-tier] (api-ns-module from)
               [to-module to-tier] (api-ns-module to)
               finding

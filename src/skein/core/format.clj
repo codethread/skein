@@ -23,7 +23,7 @@
   it was meant to carry."
   [block]
   (when-not (string? block)
-    (throw (ex-info "|-margin block must be a string"
+    (throw (ex-info "|-margin block must be a string with at least one barred line"
                     {:block block :type (type block)})))
   (let [lines (keep bar-content (str/split-lines block))]
     (when (empty? lines)

@@ -114,6 +114,10 @@
           findings (api-form/findings {:namespace-usages [usage]} {} #{})]
       (is (= 1 (count findings)))
       (is (re-find #"only the module's own alpha" (first findings)))))
+  (testing "absolute kondo filenames still hit the source-tier rule"
+    (let [usage {:from 'skein.core.weaver :to 'skein.api.tidy.internal
+                 :filename "/abs/repo/src/skein/core/weaver.clj" :row 3}]
+      (is (= 1 (count (api-form/findings {:namespace-usages [usage]} {} #{}))))))
   (testing "the module's own alpha and its tests are allowed"
     (let [own {:from 'skein.api.tidy.alpha :to 'skein.api.tidy.internal
                :filename "src/skein/api/tidy/alpha.clj" :row 3}
