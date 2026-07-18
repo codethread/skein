@@ -73,6 +73,11 @@
 (deftest unknown-flag-fails
   (is (= :unknown-flag (reason #(cli/parse add-spec ["--owner" "me" "--bogus" "x" "t"])))))
 
+(deftest errors-retain-public-qualified-marker
+  (is (true? (::cli/error
+              (thrown-data #(cli/parse add-spec
+                                       ["--owner" "me" "--bogus" "x" "t"]))))))
+
 (deftest missing-required-flag-fails
   (is (= :missing-required (reason #(cli/parse add-spec ["--state" "closed" "t"])))))
 
@@ -377,3 +382,15 @@
           :positionals [{:name "title" :type "string" :required true :variadic false :parse nil :doc "Title"}
                         {:name "note" :type "string" :required false :variadic false :parse nil :doc "Optional note"}]}
          (cli/explain add-spec))))
+
+(deftest declared-parse-kinds-are-validated-up-front
+  (testing "an unsupported :parse fails at validate!, not at first invocation"
+    (is (= :invalid-parse-kind
+           (reason #(cli/validate! {:op "x"
+                                    :flags {:data {:type :string :parse :yaml}}}))))
+    (let [data (thrown-data #(cli/validate!
+                              {:op "x"
+                               :positionals [{:name :items :type :string
+                                              :parse :yaml}]}))]
+      (is (= :yaml (:parse data)))
+      (is (= [:json :jsonl] (:supported-parse-kinds data))))))
