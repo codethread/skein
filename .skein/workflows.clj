@@ -251,6 +251,54 @@
 ;; `workflow/instruction` text as the enforcement surface, shipped as data.
 ;; ---------------------------------------------------------------------------
 
+(def ^:private feature-ci-watch-script
+  "POSIX script for the feature ci-green shell gate: wait up to the supplied
+  startup budget for the PR head to match local HEAD and report at least one
+  check, then replace the poller with `gh pr checks --watch --fail-fast`.
+
+  Successful lookups with stale head metadata or zero checks are the only
+  retryable states. Command failures and malformed successful output fail
+  immediately. The gate's `shell/timeout-secs` bounds the whole startup and
+  check watch."
+  (str "set -eu\n"
+       "branch=$1\n"
+       "startup_timeout=$2\n"
+       "poll_interval=$3\n"
+       "expected_sha=$(git rev-parse HEAD)\n"
+       "deadline=$(( $(date +%s) + startup_timeout ))\n"
+       "last_pr_sha='<none>'\n"
+       "last_check_count='<unknown>'\n"
+       "while :; do\n"
+       "  metadata=$(gh pr view \"$branch\" --json headRefOid,statusCheckRollup --jq "
+       "'[.headRefOid, (.statusCheckRollup | length)] | @tsv')\n"
+       "  set -- $metadata\n"
+       "  if [ \"$#\" -ne 2 ]; then\n"
+       "    echo \"malformed PR check metadata for $branch: $metadata\" >&2\n"
+       "    exit 1\n"
+       "  fi\n"
+       "  last_pr_sha=$1\n"
+       "  last_check_count=$2\n"
+       "  case \"$last_pr_sha\" in\n"
+       "    ''|*[!0-9a-fA-F]*) echo \"malformed PR head for $branch: $last_pr_sha\" >&2; exit 1 ;;\n"
+       "  esac\n"
+       "  if [ \"${#last_pr_sha}\" -ne \"${#expected_sha}\" ]; then\n"
+       "    echo \"malformed PR head for $branch: $last_pr_sha\" >&2\n"
+       "    exit 1\n"
+       "  fi\n"
+       "  case \"$last_check_count\" in\n"
+       "    ''|*[!0-9]*) echo \"malformed PR check count for $branch: $last_check_count\" >&2; exit 1 ;;\n"
+       "  esac\n"
+       "  if [ \"$last_pr_sha\" = \"$expected_sha\" ] && [ \"$last_check_count\" -gt 0 ]; then\n"
+       "    exec gh pr checks \"$branch\" --watch --fail-fast\n"
+       "  fi\n"
+       "  if [ \"$(date +%s)\" -ge \"$deadline\" ]; then\n"
+       "    echo \"timed out after ${startup_timeout}s waiting for CI checks on $branch\" >&2\n"
+       "    echo \"expected HEAD: $expected_sha; last PR HEAD: $last_pr_sha; checks: $last_check_count\" >&2\n"
+       "    exit 1\n"
+       "  fi\n"
+       "  sleep \"$poll_interval\"\n"
+       "done\n"))
+
 (def ^:private main-ci-watch-script
   "POSIX script for the main-ci-green shell gate: poll the full workflow-run
   set at the merged main sha until it is non-empty, every run has completed,
@@ -483,20 +531,23 @@
                   :depends-on [:push-draft-pr]
                   :attributes {"workflow/action-ref" "land.ci.green"
                                "shell/argv" (fn [{:keys [branch]}]
-                                              ["gh" "pr" "checks" branch "--watch" "--fail-fast"])
+                                              ["sh" "-c" feature-ci-watch-script
+                                               "land-ci-watch" branch "180" "5"])
                                "shell/cwd" (fn [{:keys [worktree]}] worktree)
                                "shell/timeout-secs" 5400
                                "workflow/instruction"
                                (fn [{:keys [branch]}]
-                                 (str "Machine gate: the shell executor watches CI at the branch HEAD"
-                                      " (`gh pr checks " branch " --watch --fail-fast`) and closes this"
-                                      " gate only when ALL checks are green — `land complete` refuses"
-                                      " gates. A red or unstarted watch stamps `gate/error` with the"
-                                      " captured output: fix in the worktree, commit, `git push`, then"
-                                      " clear the stamp (`strand update <gate-id> --attr gate/error=`)"
-                                      " to re-run the watch. The gate closing asserts green CI at the"
-                                      " watched HEAD sha; the exit code and output tail are recorded on"
-                                      " the gate."))})
+                                 (format-alpha/reflow
+                                  (format
+                                   "|Machine gate: the shell executor waits up to three minutes for
+                                    |GitHub to register checks at %s HEAD, then runs `gh pr checks %s
+                                    |--watch --fail-fast`. It closes this gate only when all checks are
+                                    |green; `land complete` refuses gates. A startup timeout, red check,
+                                    |or command failure stamps `gate/error` with captured output. Fix the
+                                    |cause, commit and push when needed, then clear the stamp (`strand
+                                    |update <gate-id> --attr gate/error=`) to retry. The exit code and
+                                    |output tail are recorded on the gate."
+                                   branch branch)))})
    (workflow/step :signoff-review
                   (fn [{:keys [branch]}] (str "Run roster sign-off review for " branch))
                   :self
