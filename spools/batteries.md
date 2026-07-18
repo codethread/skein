@@ -296,6 +296,11 @@ strand spool-status
 mutating subcommands under one op. The offline projection is the separate read op `spool-status`,
 so read hooks do not inherit mutation gating.
 
+The public boundary specs are `::spool-op-context`, `::spool-status-op-context`,
+`::spool-about-result`, `::spool-add-result`, `::spool-bump-result`, `::spool-status-result`, and
+`::advisory-manifest` in `skein.spools.batteries`. Closed result and manifest maps also use the named
+`exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys.
+
 Add lists the remote tags and accepts annotated `vN` tags only, where `N` is a positive integer.
 It resolves the peeled `refs/tags/vN^{}` commit and records that 40-character commit sha, never the
 tag-object sha. `--tag` chooses one release; without it, add chooses the highest numbered release.

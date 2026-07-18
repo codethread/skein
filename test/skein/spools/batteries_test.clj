@@ -82,6 +82,9 @@
   (stub-git-client! rt {:ls-remote (fn [_git-url] tags)
                         :manifest-at (fn [_git-url _sha] manifest)}))
 
+(defn- call-private [name & args]
+  (apply (deref (ns-resolve 'skein.spools.batteries name)) args))
+
 (deftest activate-registers-ops-with-provenance-and-hook-classes
   (with-batteries
     (fn [rt]
@@ -195,6 +198,39 @@
           (is (= :inserted (:status result)))
           (is (s/valid? ::batteries/spool-add-result result))
           (is (false? (get-in result [:requirements :valid?]))))))))
+
+(deftest manifest-at-distinguishes-confirmed-absence-from-operational-failure
+  (let [git-url "https://example.invalid/demo.git"
+        commit (sha "b")
+        run-git-var (ns-resolve 'skein.spools.batteries 'run-git)]
+    (testing "a failed object probe plus an empty successful tree lookup confirms absence"
+      (with-redefs-fn
+        {run-git-var
+         (fn [_dir & args]
+           (case (first args)
+             "init" {:exit 0 :stdout "" :stderr ""}
+             "fetch" {:exit 0 :stdout "" :stderr ""}
+             "cat-file" {:exit 128 :stdout "" :stderr "fatal: path does not exist"}
+             "ls-tree" {:exit 0 :stdout "" :stderr ""}))}
+        #(is (nil? (call-private 'manifest-at git-url commit)))))
+    (testing "a failed object probe for a path which exists is operational"
+      (with-redefs-fn
+        {run-git-var
+         (fn [_dir & args]
+           (case (first args)
+             "init" {:exit 0 :stdout "" :stderr ""}
+             "fetch" {:exit 0 :stdout "" :stderr ""}
+             "cat-file" {:exit 70 :stdout "" :stderr "object database unavailable\n"}
+             "ls-tree" {:exit 0 :stdout "spool.edn\n" :stderr ""}))}
+        #(let [error (is (thrown? clojure.lang.ExceptionInfo
+                                  (call-private 'manifest-at git-url commit)))]
+           (is (= "Git command failed while reading advisory spool.edn" (ex-message error)))
+           (is (= {:git-url git-url
+                   :git/sha commit
+                   :argv ["git" "cat-file" "-e" "FETCH_HEAD:spool.edn"]
+                   :exit 70
+                   :stderr "object database unavailable"}
+                  (ex-data error))))))))
 
 (deftest spool-add-implicit-root-and-release-tag-failures
   (with-runtime

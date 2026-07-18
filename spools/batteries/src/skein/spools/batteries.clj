@@ -277,15 +277,35 @@
 (defn- ls-remote [git-url]
   (checked-git nil "ls-remote" "--tags" git-url))
 
+(defn- throw-manifest-git-failure! [git-url sha args result]
+  (throw (ex-info "Git command failed while reading advisory spool.edn"
+                  {:git-url git-url
+                   :git/sha sha
+                   :argv (vec (cons "git" args))
+                   :exit (:exit result)
+                   :stderr (str/trim (:stderr result))})))
+
 (defn- manifest-at [git-url sha]
   (let [tmp (.toFile (Files/createTempDirectory "skein-spool-manifest-"
                                                 (make-array FileAttribute 0)))]
     (try
       (checked-git tmp "init" "--quiet")
       (checked-git tmp "fetch" "--quiet" "--depth=1" git-url sha)
-      (let [probe (run-git tmp "cat-file" "-e" "FETCH_HEAD:spool.edn")]
-        (when (zero? (:exit probe))
-          (checked-git tmp "show" "FETCH_HEAD:spool.edn")))
+      (let [probe-args ["cat-file" "-e" "FETCH_HEAD:spool.edn"]
+            probe (apply run-git tmp probe-args)]
+        (if (zero? (:exit probe))
+          (checked-git tmp "show" "FETCH_HEAD:spool.edn")
+          (let [missing-args ["ls-tree" "--name-only" "FETCH_HEAD" "--" "spool.edn"]
+                missing-check (apply run-git tmp missing-args)]
+            (cond
+              (not (zero? (:exit missing-check)))
+              (throw-manifest-git-failure! git-url sha missing-args missing-check)
+
+              (str/blank? (:stdout missing-check))
+              nil
+
+              :else
+              (throw-manifest-git-failure! git-url sha probe-args probe)))))
       (finally
         (delete-tree! tmp)))))
 
@@ -542,7 +562,12 @@
       |declared and adopted state without attempting sync or reload.")]})
 
 (defn spool-op
-  "Dispatch validated `strand spool about|add|bump` inputs and results."
+  "Dispatch validated `strand spool about|add|bump` inputs and results.
+
+  Input uses `::spool-op-context`; results use `::spool-about-result`,
+  `::spool-add-result`, or `::spool-bump-result`. Producer manifests use
+  `::advisory-manifest`. Each closed result/manifest map also uses the named
+  `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys."
   [ctx]
   (require-valid! ::spool-op-context ctx "spool received an invalid operation context")
   (case (:subcommand (:op/args ctx))
@@ -554,7 +579,11 @@
                            "spool bump returned an invalid result")))
 
 (defn spool-status-op
-  "Return validated offline spool declaration and adoption status."
+  "Return validated offline spool declaration and adoption status.
+
+  Input uses `::spool-status-op-context`; the result uses
+  `::spool-status-result`. Its closed result maps also use the named
+  `exact-keys?` predicate because `clojure.spec.alpha/keys` accepts extra keys."
   [ctx]
   (require-valid! ::spool-status-op-context ctx
                   "spool-status received an invalid operation context")
