@@ -8,7 +8,7 @@ Read `./devflow/TENETS.md` and `./devflow/PHILOSOPHY.md` before all work. This f
 
 **Working with the user** — claim a kanban card first; `strand kanban prime` is the board discipline.
 
-**Starting multi-step work** — `mill strand prime`: the planning/tracking workflow. Feature work runs the devflow lifecycle (`strand devflow-start <feature>`); large module changes pour the story workflow (`strand flow start <f> --workflow story`, then `flow next` — see `strand devflow-conventions`).
+**Starting multi-step work** — `mill strand prime`: the planning/tracking workflow. Feature work runs the devflow lifecycle (`strand devflow-start <feature>`); large module changes pour the registered story workflow — invocation and discipline via `strand devflow-conventions` and `strand help flow`.
 
 **Delegating** — `strand agent prime` first; `strand agent about` is the full verb manual. Delegate real work as tracked agent runs, never harness-native subagents (recon-only). Seats and review rosters: `strand agent harnesses` / `strand agent rosters`, with routing policy beside the definitions in `.skein/harnesses.clj` / `.skein/reviewers.clj`.
 
