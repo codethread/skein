@@ -113,6 +113,8 @@ sha-pinned family and map its root within the checkout — an entry in the consu
   :roots {skein.spools/workflow "spools/workflow"}}}
 ```
 
+## External spool consumption
+
 How to apply and verify entries like these: [Writing shared
 spools](../docs/spools/writing-shared-spools.md) covers the coordinate shape and publishing;
 [customisation](../docs/spools/customisation.md) covers activating config changes against a
@@ -124,26 +126,24 @@ than a local root — the worked example of publishing a spool for others (RFC-0
 spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution)).
 This repo pins one family coordinate in `.skein/spools.edn`: the `:git/url`, a release
 `:git/tag`, and its peeled `:git/sha`. That entry is the single source of the pin, and
-`.skein/init.clj` activates the spool with `:required? true`. The test JVM has no pin of its
-own: `config_test` copies the repo's `spools.edn` entries into an embedded runtime and syncs
-them with `skein.api.runtime.alpha/sync!`, so tests exercise the same coordinate the weaver
-serves. Developers override the coordinate with a gitignored `spools.local.edn` local root to
-work against a checkout.
+`.skein/init.clj` activates the spool with `:required? true`. Tests consume the approved
+coordinate rather than carrying a second pin, so the test and weaver pins cannot drift.
+Developers override the coordinate with a gitignored `spools.local.edn` local root to work
+against a checkout.
 
 `ct.spools.kanban` is the second external spool: it lives in
 [`codethread/kanban.spool`](https://github.com/codethread/kanban.spool). Kanban loads independently
 of a tracker; this repo's `.skein/kanban_tracker.clj` binds devflow after both spools are active.
 Like devflow, its pin lives only in `.skein/spools.edn`: a release `:git/tag` plus its peeled
-`:git/sha`. Tests exercise that same entry through the embedded-runtime path above, and
-developers override it with a gitignored `spools.local.edn` local root.
+`:git/sha`. Tests consume that same entry, and developers override it with a gitignored
+`spools.local.edn` local root.
 
 The `ct.spools.agent-run`, `ct.spools.executors.subagent`, `ct.spools.delegation`, and
 `ct.spools.bench` family lives in
 [`codethread/agent-harness.spool`](https://github.com/codethread/agent-harness.spool). This repo
 pins one family coordinate with a `:roots` map for `agent-run`, `delegation`, and `bench`.
-Tests sync all three roots from that one entry through the embedded-runtime path above.
-Developers override the whole family from one checkout with one gitignored
-`spools.local.edn` entry:
+Tests consume all three roots from that one entry. Developers override the whole family
+from one checkout with one gitignored `spools.local.edn` entry:
 
 ```clojure
 {:spools
