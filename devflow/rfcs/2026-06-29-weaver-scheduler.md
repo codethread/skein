@@ -66,7 +66,6 @@ The decision: should skein bless a weaver-owned scheduler so libraries share one
 
   (sched/cancel! :release-cooldown)
   (sched/scheduled)        ;; data-first pending entries + next wake
-  (sched/recent-failures)  ;; bounded, like events
   ```
 
 Whether the durable record is a strand (with a scheduler attribute convention) or dedicated runtime storage is left to the proposal/spec (see RFC-009.Q1).

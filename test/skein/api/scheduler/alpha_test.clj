@@ -4,9 +4,9 @@
   Storage validation lives in `skein.core.scheduler-test` and runtime timer/
   dispatch behavior lives in `skein.scheduler-runtime-test`; here the focus is
   `skein.api.scheduler.alpha` itself: explicit-runtime schedule!/cancel!,
-  data-first introspection shapes (decoded payload, symbol handler), the
-  classloader handler-resolution check this tier adds on top of storage
-  validation, and that a rejected schedule! persists nothing."
+  pending-wake shapes (decoded payload, symbol handler), the classloader
+  handler-resolution check this tier adds on top of storage validation, and
+  that a rejected schedule! persists nothing."
   (:require [clojure.test :refer [deftest is testing]]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.core.db :as db]
@@ -23,11 +23,6 @@
   [ctx]
   (reset! captured ctx)
   (deliver @fired true))
-
-(defn throwing-handler
-  "Throw so failure introspection can be asserted."
-  [_ctx]
-  (throw (ex-info "handler blew up" {:code :boom})))
 
 (defn- reject-explain
   "schedule! must reject `wake`; return the s/explain-str in its ex-data."
@@ -69,8 +64,8 @@
         (db/mark-wake-attempt! (:datasource rt) "k" (.toEpochMilli far-future))
         (let [replaced (scheduler/schedule! rt {:key "k"
                                                 :wake-at (.plusSeconds far-future 1)
-                                                :handler `throwing-handler})]
-          (is (= `throwing-handler (:handler replaced)))
+                                                :handler `deliver-fire-handler})]
+          (is (= `deliver-fire-handler (:handler replaced)))
           (is (zero? (:attempts replaced)))
           (is (= 1 (count (scheduler/pending rt))) "replacing a key does not duplicate rows"))))))
 
@@ -106,7 +101,7 @@
                                                        :handler `captured}))))
       (is (empty? (scheduler/pending rt)) "no row is persisted for any rejected handler"))))
 
-(deftest cancel-removes-pending-row-and-records-cancellation-history
+(deftest cancel-removes-pending-row
   (wt/with-runtime
     (fn [rt _db-file]
       (let [far-future (.plusSeconds (Instant/now) 100000)]
@@ -116,11 +111,10 @@
           (is (= "cancelled" (:status cancelled))))
         (is (empty? (scheduler/pending rt)))
         (is (nil? (first (scheduler/pending rt))) "no pending wake remains after cancel")
-        (is (= ["cancel-me"] (mapv :key (scheduler/recent-cancellations rt))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not found"
                               (scheduler/cancel! rt "cancel-me")))))))
 
-(deftest recent-fires-and-recent-failures-reflect-real-dispatch
+(deftest due-wake-dispatches-and-drains-pending
   (wt/with-runtime
     (fn [rt _db-file]
       (testing "a due wake fires, completes, and is removed from pending"
@@ -130,12 +124,4 @@
                                  :handler `deliver-fire-handler :payload {:n 1}})
         (is (await-fire) "the near-future wake fires")
         (is (await-empty-pending rt))
-        (is (= {:n 1} (:payload @captured)))
-        (is (= ["soon"] (mapv :key (scheduler/recent-fires rt)))))
-      (testing "a due wake whose handler throws is captured as a failure, not a crash"
-        (scheduler/schedule! rt {:key "boom" :wake-at (.plusMillis (Instant/now) 100)
-                                 :handler `throwing-handler})
-        (is (await-empty-pending rt))
-        (let [failure (first (scheduler/recent-failures rt))]
-          (is (= "boom" (:key failure)))
-          (is (re-find #"handler blew up" (:error failure))))))))
+        (is (= {:n 1} (:payload @captured)))))))
