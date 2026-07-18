@@ -9,18 +9,23 @@
   the key is contract, the location is not.")
 
 (def scalar-shapes
+  "JSON scalar shape keywords the grammar accepts."
   #{:string :integer :number :boolean :null :json})
 
 (def nullable-scalar-shapes
+  "Scalar shapes permitted inside `[:nullable <scalar>]`."
   #{:string :integer :number :boolean})
 
 (defn fail!
+  "Throw the module's structured error: `message` plus `data` stamped with
+  the published alpha-qualified marker and `:reason`."
   [reason message data]
   (throw (ex-info message (assoc data
                                  :skein.api.return-shape.alpha/error true
                                  :reason reason))))
 
 (defn exact-keys!
+  "Fail when `value` carries keys outside `allowed` for a `kind` declaration."
   [value allowed path kind]
   (when-let [unknown (seq (remove allowed (keys value)))]
     (fail! :unknown-declaration-keys
@@ -28,12 +33,15 @@
            {:path path :keys (vec unknown) :value value})))
 
 (defn mismatch!
+  "Fail a value/shape mismatch at `path` with expected and actual attached."
   [path expected actual reason]
   (fail! reason
          (str "Return value does not match declaration at " (pr-str path))
          {:path path :expected expected :actual actual}))
 
 (defn json-compatible?
+  "True when `value` round-trips as JSON: scalars, keyword/string-keyed
+  maps, and sequential collections of the same."
   [value]
   (cond
     (or (nil? value) (string? value) (number? value) (boolean? value)) true
@@ -43,6 +51,7 @@
     :else false))
 
 (defn scalar-match?
+  "True when `value` satisfies the scalar `shape` keyword."
   [shape value]
   (case shape
     :string (string? value)

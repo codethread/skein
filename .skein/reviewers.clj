@@ -120,6 +120,10 @@
               |cannot follow them; privates below the publics are fine, and
               |.internal is for plumbing that would drown the file (C19a -
               |the split line is taste; judge readability, not var counts).
+              |Concurrency shape is story: sequencing, fan-out (future,
+              |pmap), and blocking derefs read in the public body - flag
+              |helpers that bury them where reviewers cannot question the
+              |call flow.
               |Changed markdown is the counter-rule: prose
               |paragraphs run full length, one source line each, for the
               |IDE to wrap - flag newly hard-wrapped markdown prose (code

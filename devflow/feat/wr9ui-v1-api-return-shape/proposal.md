@@ -10,10 +10,10 @@
 
 ## PROP-Vrs-001.P2 Approach
 
-Mechanical form conversion under the playbook at [PLAN-Vaf-001.P2](../g1men-v1-api-format/g1men-v1-api-format.plan.md); no behavior change, no surface change, so no root-spec delta beyond the pending-set deletion (SPEC-005.C9 internal-only).
+Superseded in part by the P3 recalibration below — A2's thin-delegation shape was implemented, reviewed, and rejected by the owner; the shipped shape is story-bearing alpha bodies, and the recalibration also rewrote SPEC-003.C19a (a root-spec delta this section originally ruled out). Original approach kept for the record:
 
 - **PROP-Vrs-001.A1:** Surface audit: all three public fns are load-bearing (`weaver.alpha` validates and explains registry returns, `test.alpha/check-op-return!` checks, guild consumes) — all stay; nothing else is public today, so nothing to cut.
-- **PROP-Vrs-001.A2:** All plumbing moves to `skein.api.return-shape.internal`; `alpha.clj` keeps the three documented fns delegating thinly, public-first. The published ex-data key stays literally `:skein.api.return-shape.alpha/error` in internal — the qualified-key hazard the counsel named; consumers and error shapes see zero change. "No surface change" means promised surface: moved helpers are plain public defns in internal, which SPEC-005.C5b places outside the contract regardless of var visibility.
+- **PROP-Vrs-001.A2:** All plumbing moves to `skein.api.return-shape.internal`; `alpha.clj` keeps the three documented fns public-first (originally as thin delegators; see P3 for the shipped story-bearing shape). The published ex-data key stays literally `:skein.api.return-shape.alpha/error` in internal — the qualified-key hazard the counsel named; consumers and error shapes see zero change. "No surface change" means promised surface: moved helpers are plain public defns in internal, which SPEC-005.C5b places outside the contract regardless of var visibility.
 - **PROP-Vrs-001.A3:** Wrap the three wide lines; delete `"return-shape"` from `quality.api-form/pending` so `make lint` gates the conversion.
 - **PROP-Vrs-001.A4:** Existing `skein.api.return-shape.alpha-test` runs unchanged through the public surface and is the behavior lock; the gates and the `change-review` roster (first pass with the registered `source-form` seat) validate the form.
 

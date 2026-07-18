@@ -139,6 +139,25 @@ A public namespace should read as a story: the promised fns lead, and each body 
   (internal/link! config-path))
 ```
 
+Concurrency shape is part of the story. Where calls run in sequence, where they fan out, and where the code blocks must read in the public body — a helper that hides a `future`, `pmap`, or blocking deref hides exactly the thing a review should question ("could we have started that fetch sooner?").
+
+```clojure
+;; BAD - the fan-out and the blocking joins are buried in the helper.
+(defn load-dashboard
+  "Assemble the dashboard for `ctx`."
+  [ctx]
+  (fetch-everything ctx))
+
+;; GOOD - sequence, parallelism, and joins read at the top level.
+(defn load-dashboard
+  "Assemble the dashboard for `ctx`."
+  [ctx]
+  (let [profile (future (fetch-profile ctx))   ; starts now
+        boards  (future (fetch-boards ctx))    ; runs alongside profile
+        prefs   (fetch-prefs ctx)]             ; must resolve before the join
+    (render-dashboard @profile @boards prefs)))
+```
+
 Guidelines, not gates: a public fn may run long (even ~100 lines) when that keeps one story in one place; a module comfortably under ~150 lines rarely needs an internal file; recursion clusters stay together on whichever side they live. The worked example is `skein.api.return-shape.alpha` — grammar walking in alpha as the story, error construction and scalar semantics in its `internal` sibling.
 
 ### Public vs private helpers
