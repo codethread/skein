@@ -242,8 +242,9 @@
 ;; The encoded discipline a coordinator drives before a branch is considered
 ;; landed. COORDINATOR-ONLY: worker agents never land — they stop at
 ;; implemented+committed. The ordering is the enforcement: sign-off is only
-;; valid on a pushed branch with a draft PR and green CI, and a merge to main
-;; requires green CI plus a green local smoke run. The two CI watches are
+;; valid on a pushed branch with a draft PR and green CI, and main is
+;; branch-protected — it only moves via `gh pr merge` with green CI, never a
+;; direct push, after a green local verification run. The two CI watches are
 ;; `:shell` gates the shell executor (skein.spools.executors.shell) fulfils
 ;; mechanically — a red watch stamps `gate/error` on the gate for a
 ;; fix-push-clear retry, and `land complete` refuses gates. Human steps keep
@@ -252,7 +253,7 @@
 
 (def ^:private main-ci-watch-script
   "POSIX script for the main-ci-green shell gate: poll the full workflow-run
-  set at the pushed main sha until it is non-empty, every run has completed,
+  set at the merged main sha until it is non-empty, every run has completed,
   and the all-green state holds across two consecutive polls — the
   stabilisation window that catches workflows GitHub registers late, which a
   one-shot snapshot of the first non-empty listing would miss. Any completed
@@ -320,8 +321,9 @@
   COORDINATOR-ONLY: worker agents never land. Sequential single molecule, one
   linear DAG plus an abort cutover: push + draft PR, green CI at HEAD,
   roster sign-off (only valid on a pushed branch with green CI), a coordinator
-  sign-off checkpoint, squash-merge to LOCAL main behind the singleton merge
-  lock, push main, green main CI, then cleanup. Both CI watches are `:shell`
+  sign-off checkpoint, verification squash-merge to LOCAL main behind the
+  singleton merge lock, PR merge via `gh pr merge` (main is branch-protected;
+  never pushed directly), green main CI, then cleanup. Both CI watches are `:shell`
   gates the shell executor fulfils by running the recorded `gh` watch; the
   coordinator only sees them when a red watch stamps `gate/error`. Card-backed
   runs move the card to `in_review` when push-draft-pr completes (the automated
@@ -419,9 +421,14 @@
                   :attributes {"workflow/action-ref" "land.merge.local-verify"
                                "workflow/instruction"
                                (fn [{:keys [branch]}]
-                                 (str "Squash-merge " branch " into LOCAL main without pushing (coding:git-merge"
-                                      " semantics: a semantic squash subject plus a `Squashed commits` body)."
-                                      " If spool docstrings changed, regenerate `make api-docs` into the squash."
+                                 (str "Squash-merge " branch " into LOCAL main without pushing — a verification"
+                                      " build only; the canonical squash commit is created by `gh pr merge` in the"
+                                      " next step. Use coding:git-merge semantics (a semantic squash subject plus a"
+                                      " `Squashed commits` body) and reuse the same subject/body at the merge step."
+                                      " If spool docstrings changed, regenerate `make api-docs`, commit it on the"
+                                      " branch, push, and re-establish green CI (`gh pr checks " branch " --watch`)"
+                                      " — the merged commit is built from the branch tip, so nothing may live only"
+                                      " in the local squash."
                                       " Then, on the merged local main, run the full local verification gate:"
                                       " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" flock -w 3600 /tmp/skein-test.lock clojure -M:test`,"
                                       " `(cd cli && go test ./...)`, `make fmt-check lint reflect-check docs-check`,"
@@ -430,22 +437,30 @@
                                       " `git reset --hard origin/main`, fix on the branch, re-establish green CI at"
                                       " the new HEAD (`gh pr checks <branch> --watch`), and re-run the"
                                       " signoff-review bar before re-attempting. Record every gate result in notes."
-                                      " Do NOT push in this step."))})
-   (workflow/step :push-main
-                  "Push the merged main to origin"
+                                      " Do NOT push in this step — main is branch-protected and only moves via"
+                                      " `gh pr merge`."))})
+   (workflow/step :merge-pr
+                  (fn [{:keys [branch]}] (str "Merge the PR for " branch " via gh"))
                   :self
                   :depends-on [:merge-local-verify]
-                  :attributes {"workflow/action-ref" "land.main.push"
+                  :attributes {"workflow/action-ref" "land.pr.merge"
                                "workflow/instruction"
-                               (format-alpha/reflow
-                                "|Push main: `git push origin main`. Completing this step hands the
-                                 |watch to the main-ci-green shell gate, which follows every workflow
-                                 |run at the pushed sha. Record the pushed sha
-                                 |(`git rev-parse origin/main`) in notes.")})
+                               (fn [{:keys [branch]}]
+                                 (str "Main is branch-protected: never `git push origin main` — the merge goes"
+                                      " through GitHub. Mark the PR ready (`gh pr ready " branch "`), then merge"
+                                      " it with the verified squash subject/body from merge-local-verify:"
+                                      " `gh pr merge " branch " --squash --subject <semantic subject>"
+                                      " --body <Squashed commits body>`. Branch protection refuses the merge"
+                                      " unless CI is green at HEAD. Then sync local main to the canonical squash"
+                                      " GitHub created: `git checkout main && git fetch origin &&"
+                                      " git reset --hard origin/main` — discarding the local verification squash"
+                                      " is expected; the shas differ. Record the merged sha"
+                                      " (`git rev-parse origin/main`) in notes. Completing this step hands the"
+                                      " watch to the main-ci-green shell gate."))})
    (workflow/gate :main-ci-green
-                  "Watch main CI to green at the pushed sha"
+                  "Watch main CI to green at the merged sha"
                   :shell
-                  :depends-on [:push-main]
+                  :depends-on [:merge-pr]
                   :attributes {"workflow/action-ref" "land.main.ci-green"
                                "shell/argv" ["sh" "-c" main-ci-watch-script]
                                ;; The feature worktree shares the repo's refs and outlives this
@@ -455,7 +470,7 @@
                                "workflow/instruction"
                                (format-alpha/reflow
                                 "|Machine gate: the shell executor polls the full workflow-run set at
-                                 |the pushed main sha (`gh run list --commit <sha>`) until it is
+                                 |the merged main sha (`gh run list --commit <sha>`) until it is
                                  |non-empty, every run has completed, and the all-green state holds
                                  |across two consecutive polls, so late-registering workflows are
                                  |caught. Any conclusion besides success or skipped stamps
@@ -475,8 +490,8 @@
                                       " in " worktree " — it reaps the recorded PID from `.test-repl.pid` (by PID only,"
                                       " never `pkill -f`) and clears the `.test-repl-port`/`.test-repl.pid` files, so no"
                                       " orphaned warm JVM outlives the worktree."
-                                      " Delete the remote branch (`git push origin --delete " branch "`), which also"
-                                      " closes the draft PR. Remove the worktree and local branch"
+                                      " Delete the remote branch (`git push origin --delete " branch "`); the PR is"
+                                      " already merged and closed. Remove the worktree and local branch"
                                       " (`wktree remove --branch " branch " --force`; force is expected after the"
                                       " squash-merge)."
                                       (if (non-blank-string? card)
@@ -524,23 +539,25 @@
                  |stamps gate/error on the gate; fix, push, and clear the stamp
                  |(`strand update <gate-id> --attr gate/error=`) to re-run it. For
                  |card-backed runs, completing push-draft-pr moves the card to
-                 |in_review, and aborting sign-off moves it back to claimed. A merge
-                 |is a squash into LOCAL main guarded by a singleton merge lock. The
-                 |lock is acquired after sign-off approval, immediately before the
-                 |local merge step, so review/CI work can run concurrently but only
-                 |one coordinator mutates main. Local main must pass the full
-                 |verification gate (tests + go tests + fmt/lint/reflect/docs +
-                 |smoke) before main is pushed; main is only landed once the
-                 |main-ci-green shell gate watches its CI to green. Aborting at
-                 |sign-off records a reason and leaves the branch/worktree
-                 |untouched.")
+                 |in_review, and aborting sign-off moves it back to claimed. The
+                 |squash into LOCAL main is a verification build guarded by a
+                 |singleton merge lock. The lock is acquired after sign-off
+                 |approval, immediately before the local merge step, so review/CI
+                 |work can run concurrently but only one coordinator mutates main.
+                 |Local main must pass the full verification gate (tests + go
+                 |tests + fmt/lint/reflect/docs + smoke) before the PR merges.
+                 |Main is branch-protected: it only moves via `gh pr merge
+                 |--squash` with green CI, never a direct push, and is only landed
+                 |once the main-ci-green shell gate watches its CI to green.
+                 |Aborting at sign-off records a reason and leaves the
+                 |branch/worktree untouched.")
    :steps [{:step "push-draft-pr" :purpose "Push the branch and open (or reuse) a draft PR against main; completing it starts the automated CI watch and moves a card-backed run's card to in_review."}
            {:step "ci-green" :purpose "Machine shell gate: the executor watches CI to green at the branch HEAD; a red watch stamps gate/error for a fix-push-clear retry."}
            {:step "signoff-review" :purpose "Run the declared roster review and drive fix rounds; every fix round re-establishes green CI."}
            {:step "signoff" :purpose "Coordinator sign-off checkpoint (:agent): approved continues in the molecule, abort routes to a reason-recording step."}
-           {:step "merge-local-verify" :purpose "Squash-merge into local main without pushing, then run the full local verification gate + smoke."}
-           {:step "push-main" :purpose "Push main; hands the watch to the main-ci-green gate."}
-           {:step "main-ci-green" :purpose "Machine shell gate: the executor watches every main workflow run at the pushed sha to green."}
+           {:step "merge-local-verify" :purpose "Verification squash-merge into local main without pushing, then run the full local verification gate + smoke."}
+           {:step "merge-pr" :purpose "Mark the PR ready and merge it via `gh pr merge --squash` (branch protection requires green CI), then sync local main; hands the watch to the main-ci-green gate."}
+           {:step "main-ci-green" :purpose "Machine shell gate: the executor watches every main workflow run at the merged sha to green."}
            {:step "cleanup" :purpose "Delete the remote branch/PR, remove the worktree+branch, finish the card, and close the run."}]
    :commands [{:verb "start" :purpose "Pour and start the land run: land start <feature> --branch <b> --worktree <path> [--card <id>]."}
               {:verb "next" :purpose "Show the ready land step views for a feature."}
