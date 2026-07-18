@@ -335,10 +335,10 @@
   `register!` and a notifier with `set-notifier!`."
   []
   (let [runtime (rt)]
-    (hooks/register! runtime :chime/registration-barrier mutation-hook-types
+    (hooks/register-hook! runtime :chime/registration-barrier mutation-hook-types
                      'skein.spools.chime/mutation-registration-barrier!
                      {:order Long/MAX_VALUE :spool "chime"})
-    (events/register! runtime :chime/engine event-types
+    (events/register-handler! runtime :chime/engine event-types
                       'skein.spools.chime/on-event
                       {:spool "chime"})
     {:installed true

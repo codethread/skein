@@ -56,7 +56,7 @@
   [runtime]
   (mapv val (sort-by key @(pattern-registry runtime))))
 
-(defn pattern
+(defn resolve-pattern
   "Return the registered weave pattern for a simple symbol or keyword name.
 
   Missing patterns fail loudly."
@@ -66,6 +66,11 @@
         (throw (ex-info "Pattern not found" {:pattern pattern-name
                                              :canonical-pattern canonical-name
                                              :available (sort (keys @(pattern-registry runtime)))})))))
+
+(defn ^:deprecated pattern
+  "Renamed to resolve-pattern (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply resolve-pattern args))
 
 (defn- spec-form [spec-name]
   (let [form (s/form spec-name)]
@@ -104,7 +109,7 @@
   Missing patterns or unregistered input specs fail loudly."
   [runtime pattern-name]
   ;; :fn is renamed on destructure: a local named `fn` shadows the fn macro.
-  (let [{:keys [name doc input-spec] fn-sym :fn} (pattern runtime pattern-name)
+  (let [{:keys [name doc input-spec] fn-sym :fn} (resolve-pattern runtime pattern-name)
         contract (pattern-input-contract input-spec)]
     (cond-> (merge {:name name
                     :fn (str fn-sym)
@@ -188,7 +193,7 @@
   ([runtime pattern-name input]
    (weave! runtime pattern-name input (request-context :weave)))
   ([runtime pattern-name input req-ctx]
-   (let [{fn-sym :fn input-spec :input-spec} (pattern runtime pattern-name)
+   (let [{fn-sym :fn input-spec :input-spec} (resolve-pattern runtime pattern-name)
          canonical-name (canonical-pattern-name pattern-name)]
      (spec-form input-spec)
      (when-not (s/valid? input-spec input)

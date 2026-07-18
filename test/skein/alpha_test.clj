@@ -57,9 +57,9 @@
   (with-runtime
     (fn [rt]
       (weaver/init rt)
-      (let [feature (weaver/add rt {:title "Feature" :attributes {:kind "feature"}})
-            task (weaver/add rt {:title "Task" :attributes {:owner "agent"}})]
-        (weaver/update rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
+      (let [feature (weaver/add! rt {:title "Feature" :attributes {:kind "feature"}})
+            task (weaver/add! rt {:title "Task" :attributes {:owner "agent"}})]
+        (weaver/update! rt (:id feature) {:edges [{:type "parent-of" :to (:id task)}]})
         (graph/register-query! rt 'agent-owned [:= [:attr :owner] "agent"])
         (is (= [(:id task)] (graph/query-ids rt 'agent-owned {})))
         (is (= [(:id task)] (mapv :id (graph/strands-by-ids rt [(:id task) (:id task)]))))
@@ -75,13 +75,13 @@
                 :archived? false
                 :changed 1}
                (weaver/unarchive! rt (:id task) [:owner])))
-        (weaver/update rt (:id task) {:attributes {:payload (str/join (repeat 1100 "x"))}})
+        (weaver/update! rt (:id task) {:attributes {:payload (str/join (repeat 1100 "x"))}})
         (let [lean-task (first (filter #(= (:id task) (:id %))
                                        (weaver/ready-lean rt 1024)))
               payload (get-in lean-task [:attributes :payload])]
           (is (true? (:skein/omitted payload)))
           (is (pos-int? (:bytes payload))))
-        (weaver/update rt (:id task) {:attributes {:payload nil}})
+        (weaver/update! rt (:id task) {:attributes {:payload nil}})
         (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id task)] {})))
         (is (= #{(:id feature) (:id task)}
                (set (map :id (:strands (graph/subgraph rt [(:id feature)]))))))
@@ -96,14 +96,14 @@
                 :fn 'skein.alpha-test/test-hook
                 :order 5
                 :metadata {:doc "policy"}}
-               (hooks/register! rt :policy #{:payload/received} 'skein.alpha-test/test-hook {:order 5 :doc "policy"})))
+               (hooks/register-hook! rt :policy #{:payload/received} 'skein.alpha-test/test-hook {:order 5 :doc "policy"})))
         (is (= [{:key :policy
                  :types #{:payload/received}
                  :fn 'skein.alpha-test/test-hook
                  :order 5
                  :metadata {:doc "policy"}}]
                (hooks/hooks rt)))
-        (is (= :policy (hooks/unregister! rt :policy)))
+        (is (= :policy (hooks/unregister-hook! rt :policy)))
         (let [batch-result (batch/apply! rt {:refs {:feature (:id feature)
                                                     :task (:id task)}
                                              :strands [{:ref :task

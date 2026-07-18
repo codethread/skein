@@ -97,9 +97,9 @@
 (defn- in-process-call [rt op args]
   (case op
     :init (weaver/init rt)
-    :add (apply weaver/add rt args)
-    :update (apply weaver/update rt args)
-    :supersede (apply weaver/supersede rt args)
+    :add (apply weaver/add! rt args)
+    :update (apply weaver/update! rt args)
+    :supersede (apply weaver/supersede! rt args)
     :show (apply weaver/show rt args)
     :declare-acyclic-relation! (apply weaver/declare-acyclic-relation! rt args)
     :acyclic-relations (weaver/acyclic-relations rt)
@@ -112,7 +112,7 @@
     :ready (if (seq args) (apply weaver/ready rt args) (weaver/ready rt))
     :register-pattern! (apply patterns/register-pattern! rt args)
     :patterns (patterns/patterns rt)
-    :resolve-pattern (apply patterns/pattern rt args)
+    :resolve-pattern (apply patterns/resolve-pattern rt args)
     :pattern-explain (apply patterns/explain rt args)
     :weave! (apply patterns/weave! rt args)))
 

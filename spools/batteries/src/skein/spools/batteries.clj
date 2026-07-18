@@ -734,11 +734,11 @@
     (check-attr-duplicates! (:op/argv ctx))
     (let [merged (merge (attributes->map attributes) (or attr {}))
           edges (parse-edges edge)]
-      (weaver/add rt
-                  (cond-> {:title title :attributes merged}
-                    (some? state) (assoc :state (validate-generic-state state))
-                    (seq edges) (assoc :edges edges))
-                  (request-context :add)))))
+      (weaver/add! rt
+                   (cond-> {:title title :attributes merged}
+                     (some? state) (assoc :state (validate-generic-state state))
+                     (seq edges) (assoc :edges edges))
+                   (request-context :add)))))
 
 (defn update-op
   "Patch one strand's title, state, attributes, and outgoing edges."
@@ -753,7 +753,7 @@
                   (some? title) (assoc :title title)
                   (some? state) (assoc :state (validate-generic-state state))
                   (contains? args :attr) (assoc :attributes attr))]
-      (weaver/update rt id patch (request-context :update)))))
+      (weaver/update! rt id patch (request-context :update)))))
 
 (defn show-op
   "Return one normalized strand by id."
@@ -764,7 +764,7 @@
   "Replace one strand with another and return the supersession result."
   [ctx]
   (let [{:keys [old-id replacement-id]} (:op/args ctx)]
-    (weaver/supersede (:op/runtime ctx) old-id replacement-id (request-context :supersede))))
+    (weaver/supersede! (:op/runtime ctx) old-id replacement-id (request-context :supersede))))
 
 (defn burn-op
   "Physically delete one strand by id and return the burn summary."

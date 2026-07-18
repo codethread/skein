@@ -418,7 +418,7 @@
    '(defn reject-blocked-owner [ctx]
       (when (= "blocked" (get-in ctx [:strand/after :attributes :owner]))
         (throw (ex-info "smoke hook rejected blocked owner" {:code :smoke/blocked-owner}))))
-   '(hooks/register! runtime :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)
+   '(hooks/register-hook! runtime :smoke/reject-blocked-owner #{:strand/add-before-commit} 'smoke.startup/reject-blocked-owner)
    '(defn review-pattern [{:keys [input]}]
       (let [title (:title input)]
         [{:ref 'impl :title title :attributes {:owner "smoke"}}
@@ -434,7 +434,7 @@
          :ids ids
          :strands (graph/strands-by-ids runtime ids)}))
    '(views/register-view! runtime 'smoke-owned-view 'smoke.startup/smoke-owned-view)
-   '(events/register! runtime :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})])
+   '(events/register-handler! runtime :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})])
 
 (defn smoke-startup-transformations! [db-file]
   (let [workspace (bootstrap-workspace db-file "startup-transform")
@@ -619,7 +619,7 @@
 (defn smoke-scheduler-handler
   "Smoke wake handler: mutate the graph, then signal the fire promise."
   [{:keys [runtime payload]}]
-  (weaver-api/add runtime {:title (:title payload) :attributes {:origin "smoke-scheduler"}})
+  (weaver-api/add! runtime {:title (:title payload) :attributes {:origin "smoke-scheduler"}})
   (deliver @scheduler-fired true))
 
 (defn smoke-scheduler! [runtime]
@@ -651,9 +651,9 @@
 
 (defn smoke-attribute-storage! [runtime]
   (let [owner "attribute-storage-smoke"
-        strand (weaver-api/add runtime {:title "Attribute storage smoke"
-                                        :attributes {:owner owner
-                                                     :payload {:nested true}}})
+        strand (weaver-api/add! runtime {:title "Attribute storage smoke"
+                                         :attributes {:owner owner
+                                                      :payload {:nested true}}})
         strand-id (:id strand)
         rows (mapv #(update % :value json/read-str :key-fn keyword)
                    (db/execute! (:datasource runtime)

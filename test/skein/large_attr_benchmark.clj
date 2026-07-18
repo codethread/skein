@@ -790,7 +790,7 @@
 
   `db/add-strand!` and `db/archive-attributes!` write the exact rows, indexes,
   and `archived` flags production carries; going through core storage rather than
-  `weaver/add` keeps seeding off the event queue (whose 1024-slot backpressure a
+  `weaver/add!` keeps seeding off the event queue (whose 1024-slot backpressure a
   250k bulk seed would trip) while measuring storage, not event fanout. Returns
   seed metadata including the ids sampled for point reads."
   [rt opts]

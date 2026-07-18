@@ -237,14 +237,14 @@
   [rt]
   (let [signal (promise)]
     (reset! event-drain-signal signal)
-    (events/register! rt :event-drain #{:test/event-drain}
-                      'skein.weaver-test/event-drain-handler {})
+    (events/register-handler! rt :event-drain #{:test/event-drain}
+                              'skein.weaver-test/event-drain-handler {})
     (try
       (dispatch/enqueue! rt (test-event :test/event-drain (str (random-uuid))))
       (when-not (deref signal (test-support/await-budget-ms 5000) false)
         (throw (ex-info "Timed out draining event queue" {})))
       (finally
-        (events/unregister! rt :event-drain)))))
+        (events/unregister-handler! rt :event-drain)))))
 
 (def not-callable-event-handler 42)
 
@@ -477,11 +477,11 @@
           (is (true? (get status "ok")))
           (is (= "sqlite-memory" (get-in status ["result" "database_kind"])))
           (is (nil? (get-in status ["result" "database_path"])))))
-      (let [strand (weaver/add rt {:title "Mem strand" :attributes {:owner "mem"}})]
+      (let [strand (weaver/add! rt {:title "Mem strand" :attributes {:owner "mem"}})]
         (is (= [(:id strand)] (mapv :id (weaver/ready rt)))))
       (testing "concurrent weaver API calls at test scale"
         (let [ids (->> (range 10)
-                       (mapv (fn [i] (future (:id (weaver/add rt {:title (str "c" i)})))))
+                       (mapv (fn [i] (future (:id (weaver/add! rt {:title (str "c" i)})))))
                        (mapv deref))]
           (is (= 10 (count (distinct ids))))
           (is (= 11 (count (weaver/list rt))))))
@@ -514,8 +514,8 @@
       (weaver/init rt-b)
       (graph/register-query! rt-a 'mine [:= [:attr :owner] "a"])
       (graph/register-query! rt-b 'mine [:= [:attr :owner] "b"])
-      (let [a (weaver/add rt-a {:title "A" :attributes {:owner "a"}})
-            b (weaver/add rt-b {:title "B" :attributes {:owner "b"}})]
+      (let [a (weaver/add! rt-a {:title "A" :attributes {:owner "a"}})
+            b (weaver/add! rt-b {:title "B" :attributes {:owner "b"}})]
         (is (= [(:id a)] (mapv :id (weaver/list-query rt-a 'mine {}))))
         (is (= [(:id b)] (mapv :id (weaver/list-query rt-b 'mine {}))))
         (is (nil? (weaver/show rt-a (:id b))))
@@ -732,8 +732,8 @@
       (let [workspace (get-in rt [:metadata :config-dir])]
         (graph/register-query! rt 'prior [:= [:attr :owner] "prior"])
         (reset! delivered-events [])
-        (events/register! rt :prior #{:strand/added} 'skein.weaver-test/capture-event {})
-        (hooks/register! rt :prior #{:payload/received} 'skein.weaver-test/capture-hook {})
+        (events/register-handler! rt :prior #{:strand/added} 'skein.weaver-test/capture-event {})
+        (hooks/register-hook! rt :prior #{:payload/received} 'skein.weaver-test/capture-hook {})
         (source-file/spit-forms!
          (io/file workspace "init.clj")
          ['(require '[skein.api.current.alpha :as current]
@@ -742,7 +742,7 @@
                     '[skein.core.weaver.dispatch :as dispatch])
           '(let [rt (current/runtime)]
              (graph/register-query! rt 'shared [:= [:attr :owner] "shared"])
-             (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
+             (events/register-handler! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
              (dispatch/enqueue! rt {:event/type :strand/added :event/id "shared-only"
                                     :event/at "2026-06-29T00:00:00Z" :event/source :test}))])
         (source-file/spit-forms!
@@ -770,9 +770,9 @@
   (with-runtime
     (fn [rt _]
       (let [workspace (get-in rt [:metadata :config-dir])]
-        (events/register! rt :stale #{:strand/added} 'skein.weaver-test/capture-event {})
-        (hooks/register! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (events/register! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
+        (events/register-handler! rt :stale #{:strand/added} 'skein.weaver-test/capture-event {})
+        (hooks/register-hook! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
+        (events/register-handler! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
         (dispatch/enqueue! rt (test-event :strand/added "before-reload"))
         (t/await-quiescent! rt)
         (is (seq (events/recent-failures rt)))
@@ -782,16 +782,16 @@
                     '[skein.api.events.alpha :as events]
                     '[skein.api.hooks.alpha :as hooks])
           '(let [rt (current/runtime)]
-             (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
-             (hooks/register! rt :shared #{:payload/received} 'skein.weaver-test/capture-hook))])
+             (events/register-handler! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
+             (hooks/register-hook! rt :shared #{:payload/received} 'skein.weaver-test/capture-hook))])
         (source-file/spit-forms!
          (io/file workspace "init.local.clj")
          ['(require '[skein.api.current.alpha :as current]
                     '[skein.api.events.alpha :as events]
                     '[skein.api.hooks.alpha :as hooks])
           '(let [rt (current/runtime)]
-             (events/register! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)
-             (hooks/register! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))])
+             (events/register-handler! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)
+             (hooks/register-hook! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))])
         (runtime/reload! rt)
         (is (= #{:shared :local} (set (mapv :key (events/handlers rt)))))
         (is (= #{:shared :local} (set (mapv :key (hooks/hooks rt)))))
@@ -801,14 +801,14 @@
   (with-runtime
     (fn [rt _]
       (is (= {:database "initialized"} (weaver/init rt)))
-      (let [design (weaver/add rt {:title "Design" :state "closed" :attributes {:priority "high"}})
-            docs (weaver/add rt {:title "Docs" :attributes {:owner "agent"}})]
+      (let [design (weaver/add! rt {:title "Design" :state "closed" :attributes {:priority "high"}})
+            docs (weaver/add! rt {:title "Docs" :attributes {:owner "agent"}})]
         (is (= ["depends-on" "notes" "parent-of" "serves" "supersedes"] (weaver/acyclic-relations rt)))
         (is (= {:relation "blocks" :acyclic true} (weaver/declare-acyclic-relation! rt "blocks")))
         (is (= ["blocks" "depends-on" "notes" "parent-of" "serves" "supersedes"] (weaver/acyclic-relations rt)))
         (is (= {:priority "high"} (:attributes design)))
-        (weaver/update rt (:id docs) {:attributes {:phase "write"}
-                                      :edges [{:type "depends-on" :to (:id design)}]})
+        (weaver/update! rt (:id docs) {:attributes {:phase "write"}
+                                       :edges [{:type "depends-on" :to (:id design)}]})
         (is (= {:owner "agent" :phase "write"} (:attributes (weaver/show rt (:id docs)))))
         (is (= #{(:id design) (:id docs)} (set (map :id (weaver/list rt)))))
         (is (= [(:id docs)] (mapv :id (weaver/ready rt))))))))
@@ -817,7 +817,7 @@
   (with-runtime
     (fn [rt _]
       (reset! delivered-events [])
-      (let [entry (events/register! rt :capture #{:strand/added} 'skein.weaver-test/capture-event {:purpose :test})]
+      (let [entry (events/register-handler! rt :capture #{:strand/added} 'skein.weaver-test/capture-event {:purpose :test})]
         (is (= {:key :capture
                 :types #{:strand/added}
                 :fn 'skein.weaver-test/capture-event
@@ -828,7 +828,7 @@
                 :types #{:strand/updated}
                 :fn 'skein.weaver-test/capture-event
                 :metadata {:purpose :replacement}}
-               (events/register! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event {:purpose :replacement})))
+               (events/register-handler! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event {:purpose :replacement})))
         (is (= [] @delivered-events))
         (dispatch/enqueue! rt (test-event :strand/added "ignored"))
         (t/await-quiescent! rt)
@@ -836,7 +836,7 @@
         (dispatch/enqueue! rt (test-event :strand/updated "delivered"))
         (t/await-quiescent! rt)
         (is (= [(test-event :strand/updated "delivered")] @delivered-events))
-        (events/register! rt :fails #{:strand/updated} 'skein.weaver-test/failing-event {})
+        (events/register-handler! rt :fails #{:strand/updated} 'skein.weaver-test/failing-event {})
         (dispatch/enqueue! rt (test-event :strand/updated "fails"))
         (t/await-quiescent! rt)
         (let [failure (last (events/recent-failures rt))]
@@ -846,7 +846,7 @@
           (is (= :strand/updated (:event/type failure)))
           (is (= "handler failed" (:exception/message failure)))
           (is (string? (:failed/at failure))))
-        (is (= {:unregistered :capture} (events/unregister! rt :capture)))
+        (is (= {:unregistered :capture} (events/unregister-handler! rt :capture)))
         (is (= [:fails] (mapv :key (events/handlers rt))))))))
 
 (deftest weaver-supersession-emits-semantic-event
@@ -854,13 +854,13 @@
     (fn [rt _]
       (weaver/init rt)
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/superseded} 'skein.weaver-test/capture-event {})
-      (let [old (weaver/add rt {:title "Old"})
-            replacement (weaver/add rt {:title "Replacement"})
-            dependent (weaver/add rt {:title "Dependent"})]
-        (weaver/update rt (:id dependent) {:edges [{:type "depends-on" :to (:id old)}]})
+      (events/register-handler! rt :capture #{:strand/superseded} 'skein.weaver-test/capture-event {})
+      (let [old (weaver/add! rt {:title "Old"})
+            replacement (weaver/add! rt {:title "Replacement"})
+            dependent (weaver/add! rt {:title "Dependent"})]
+        (weaver/update! rt (:id dependent) {:edges [{:type "depends-on" :to (:id old)}]})
         (reset! delivered-events [])
-        (let [result (weaver/supersede rt (:id old) (:id replacement))
+        (let [result (weaver/supersede! rt (:id old) (:id replacement))
               event (first (wait-for-events 1))]
           (is (= "replaced" (get-in result [:old :after :state])))
           (is (= (:id replacement) (:replacement-id result)))
@@ -878,14 +878,14 @@
       (weaver/init rt)
       (reset! hook-contexts [])
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/superseded} 'skein.weaver-test/capture-event {})
-      (hooks/register! rt :capture-supersede #{:strand/supersede-before-commit} 'skein.weaver-test/capture-hook {})
-      (let [old (weaver/add rt {:title "Old"})
-            replacement (weaver/add rt {:title "Replacement"})
-            dependent (weaver/add rt {:title "Dependent"})]
-        (weaver/update rt (:id dependent) {:edges [{:type "depends-on" :to (:id old) :attributes {:reason "old"}}]})
+      (events/register-handler! rt :capture #{:strand/superseded} 'skein.weaver-test/capture-event {})
+      (hooks/register-hook! rt :capture-supersede #{:strand/supersede-before-commit} 'skein.weaver-test/capture-hook {})
+      (let [old (weaver/add! rt {:title "Old"})
+            replacement (weaver/add! rt {:title "Replacement"})
+            dependent (weaver/add! rt {:title "Dependent"})]
+        (weaver/update! rt (:id dependent) {:edges [{:type "depends-on" :to (:id old) :attributes {:reason "old"}}]})
         (reset! delivered-events [])
-        (let [result (weaver/supersede rt (:id old) (:id replacement))
+        (let [result (weaver/supersede! rt (:id old) (:id replacement))
               event (first (wait-for-events 1))
               context (last @hook-contexts)]
           (is (= :strand/supersede-before-commit (:hook/type context)))
@@ -902,15 +902,15 @@
           (is (= {:reason "old"} (get-in result [:rewired-dependencies 0 :edge :attributes])))
           (is (= :strand/superseded (:event/type event)))
           (is (= (:supersedes-edge result) (:supersession/supersedes-edge event))))
-        (hooks/unregister! rt :capture-supersede)
-        (let [reject-old (weaver/add rt {:title "Reject old"})
-              reject-replacement (weaver/add rt {:title "Reject replacement"})
-              reject-dependent (weaver/add rt {:title "Reject dependent"})]
-          (weaver/update rt (:id reject-dependent) {:edges [{:type "depends-on" :to (:id reject-old) :attributes {:reason "rollback"}}]})
+        (hooks/unregister-hook! rt :capture-supersede)
+        (let [reject-old (weaver/add! rt {:title "Reject old"})
+              reject-replacement (weaver/add! rt {:title "Reject replacement"})
+              reject-dependent (weaver/add! rt {:title "Reject dependent"})]
+          (weaver/update! rt (:id reject-dependent) {:edges [{:type "depends-on" :to (:id reject-old) :attributes {:reason "rollback"}}]})
           (reset! delivered-events [])
-          (hooks/register! rt :reject-supersede #{:strand/supersede-before-commit} 'skein.weaver-test/rejecting-hook {})
+          (hooks/register-hook! rt :reject-supersede #{:strand/supersede-before-commit} 'skein.weaver-test/rejecting-hook {})
           (try
-            (weaver/supersede rt (:id reject-old) (:id reject-replacement))
+            (weaver/supersede! rt (:id reject-old) (:id reject-replacement))
             (is false "expected supersede hook rejection")
             (catch clojure.lang.ExceptionInfo e
               (is (= "hook/failed" (:code (ex-data e))))
@@ -940,25 +940,25 @@
       (weaver/init rt)
       (reset! hook-contexts [])
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/superseded} 'skein.weaver-test/capture-event {})
-      (hooks/register! rt :capture-supersede #{:strand/supersede-before-commit} 'skein.weaver-test/capture-hook {})
-      (let [old (weaver/add rt {:title "Old"})
-            replacement (weaver/add rt {:title "Replacement"})
-            closed-replacement (weaver/add rt {:title "Closed" :state "closed"})
-            dependent (weaver/add rt {:title "Dependent"})]
-        (weaver/update rt (:id dependent) {:edges [{:type "depends-on" :to (:id old)}]})
-        (weaver/update rt (:id replacement) {:edges [{:type "depends-on" :to (:id dependent)}]})
+      (events/register-handler! rt :capture #{:strand/superseded} 'skein.weaver-test/capture-event {})
+      (hooks/register-hook! rt :capture-supersede #{:strand/supersede-before-commit} 'skein.weaver-test/capture-hook {})
+      (let [old (weaver/add! rt {:title "Old"})
+            replacement (weaver/add! rt {:title "Replacement"})
+            closed-replacement (weaver/add! rt {:title "Closed" :state "closed"})
+            dependent (weaver/add! rt {:title "Dependent"})]
+        (weaver/update! rt (:id dependent) {:edges [{:type "depends-on" :to (:id old)}]})
+        (weaver/update! rt (:id replacement) {:edges [{:type "depends-on" :to (:id dependent)}]})
         (reset! hook-contexts [])
         (reset! delivered-events [])
         (let [before (db-test/graph-snapshot (:datasource rt))]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Replacement strand must be active"
-                                (weaver/supersede rt (:id old) (:id closed-replacement))))
+                                (weaver/supersede! rt (:id old) (:id closed-replacement))))
           (is (empty? @hook-contexts))
           (is (empty? @delivered-events))
           (is (= before (db-test/graph-snapshot (:datasource rt)))))
         (let [before (db-test/graph-snapshot (:datasource rt))]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"create a cycle"
-                                (weaver/supersede rt (:id old) (:id replacement))))
+                                (weaver/supersede! rt (:id old) (:id replacement))))
           (is (empty? @hook-contexts))
           (is (empty? @delivered-events))
           (is (= before (db-test/graph-snapshot (:datasource rt)))))))))
@@ -968,8 +968,8 @@
     (fn [rt _]
       (weaver/init rt)
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/added :strand/updated :strand/burned} 'skein.weaver-test/capture-event {})
-      (let [added (weaver/add rt {:title "Evented" :attributes {:owner "agent"}})
+      (events/register-handler! rt :capture #{:strand/added :strand/updated :strand/burned} 'skein.weaver-test/capture-event {})
+      (let [added (weaver/add! rt {:title "Evented" :attributes {:owner "agent"}})
             add-event (first (wait-for-events 1))]
         (is (= :strand/added (:event/type add-event)))
         (is (string? (:event/id add-event)))
@@ -977,7 +977,7 @@
         (is (= :skein.api.weaver.alpha (:event/source add-event)))
         (is (= (:id added) (:strand/id add-event)))
         (is (= added (:strand add-event)))
-        (let [updated (weaver/update rt (:id added) {:state "closed" :attributes {:phase "done"}})
+        (let [updated (weaver/update! rt (:id added) {:state "closed" :attributes {:phase "done"}})
               update-event (second (wait-for-events 2))]
           (is (= :strand/updated (:event/type update-event)))
           (is (= (:id added) (:strand/id update-event)))
@@ -987,10 +987,10 @@
           (is (= "closed" (get-in update-event [:strand/after :state])))
           (is (= {:owner "agent" :phase "done"} (get-in update-event [:strand/after :attributes])))
           (is (= updated (:strand/after update-event))))
-        (let [edge-target (weaver/add rt {:title "Target"})]
+        (let [edge-target (weaver/add! rt {:title "Target"})]
           (reset! delivered-events [])
           (let [edge-patch {:edges [{:type "depends-on" :to (:id edge-target)}]}
-                result (weaver/update rt (:id added) edge-patch)
+                result (weaver/update! rt (:id added) edge-patch)
                 update-event (first (filter #(= :strand/updated (:event/type %)) (wait-for-events 2)))]
             (is (= result (:strand/after update-event)))
             (is (= edge-patch (:strand/patch update-event)))))
@@ -1009,16 +1009,16 @@
     (fn [rt _]
       (weaver/init rt)
       (reset! cleanup-events [])
-      (events/register! rt :cleanup-temporary #{:strand/updated}
-                        'skein.weaver-test/burn-temporary-children-on-inactive-parent
-                        {:purpose :integration-cleanup})
-      (let [parent (weaver/add rt {:title "Parent"})
-            temporary-child (weaver/add rt {:title "Temporary child" :attributes {:temporary "true"}})
-            durable-child (weaver/add rt {:title "Durable child" :attributes {:temporary "false"}})
-            unrelated-temporary (weaver/add rt {:title "Unrelated temporary" :attributes {:temporary "true"}})]
-        (weaver/update rt (:id parent) {:edges [{:type "parent-of" :to (:id temporary-child)}
-                                                {:type "parent-of" :to (:id durable-child)}]})
-        (weaver/update rt (:id parent) {:state "closed"})
+      (events/register-handler! rt :cleanup-temporary #{:strand/updated}
+                                'skein.weaver-test/burn-temporary-children-on-inactive-parent
+                                {:purpose :integration-cleanup})
+      (let [parent (weaver/add! rt {:title "Parent"})
+            temporary-child (weaver/add! rt {:title "Temporary child" :attributes {:temporary "true"}})
+            durable-child (weaver/add! rt {:title "Durable child" :attributes {:temporary "false"}})
+            unrelated-temporary (weaver/add! rt {:title "Unrelated temporary" :attributes {:temporary "true"}})]
+        (weaver/update! rt (:id parent) {:edges [{:type "parent-of" :to (:id temporary-child)}
+                                                 {:type "parent-of" :to (:id durable-child)}]})
+        (weaver/update! rt (:id parent) {:state "closed"})
         (is (wait-until #(= [{:root (:id parent) :burned [(:id temporary-child)]}]
                             @cleanup-events)))
         (is (nil? (weaver/show rt (:id temporary-child))))
@@ -1032,10 +1032,10 @@
       (reset! delivered-events [])
       (reset! handler-started (promise))
       (reset! handler-release (promise))
-      (events/register! rt :slow #{:strand/updated} 'skein.weaver-test/slow-capture-event {})
-      (events/register! rt :fails #{:strand/updated} 'skein.weaver-test/failing-event {})
-      (let [strand (weaver/add rt {:title "Slow handler target"})
-            update-result (future (weaver/update rt (:id strand) {:state "closed"}))]
+      (events/register-handler! rt :slow #{:strand/updated} 'skein.weaver-test/slow-capture-event {})
+      (events/register-handler! rt :fails #{:strand/updated} 'skein.weaver-test/failing-event {})
+      (let [strand (weaver/add! rt {:title "Slow handler target"})
+            update-result (future (weaver/update! rt (:id strand) {:state "closed"}))]
         (try
           (is (deref @handler-started (test-support/await-budget-ms 1000) false))
           (let [updated (deref update-result (test-support/await-budget-ms 1000) ::mutation-blocked)]
@@ -1057,7 +1057,7 @@
       (reset! delivered-events [])
       (reset! handler-started (promise))
       (reset! handler-release (promise))
-      (events/register! rt :slow #{:x} 'skein.weaver-test/slow-capture-event {})
+      (events/register-handler! rt :slow #{:x} 'skein.weaver-test/slow-capture-event {})
       (dispatch/enqueue! rt (test-event :x "started"))
       (is (deref @handler-started (test-support/await-budget-ms 1000) false))
       (doseq [n (range weaver-runtime/event-queue-capacity)]
@@ -1070,7 +1070,7 @@
          ['(require '[skein.api.current.alpha :as current]
                     '[skein.api.events.alpha :as events])
           '(let [rt (current/runtime)]
-             (events/register! rt :after-reload #{:x} 'skein.weaver-test/capture-event))])
+             (events/register-handler! rt :after-reload #{:x} 'skein.weaver-test/capture-event))])
         (runtime/reload! rt)
         (deliver @handler-release true)
         (is (= [:after-reload] (mapv :key (events/handlers rt))))
@@ -1085,13 +1085,13 @@
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
-      (let [existing-b (weaver/add rt {:title "Existing B" :attributes {:owner "agent"}})
-            existing-a (weaver/add rt {:title "Existing A" :attributes {:owner "agent"}})
-            burned (weaver/add rt {:title "Burned"})]
+      (let [existing-b (weaver/add! rt {:title "Existing B" :attributes {:owner "agent"}})
+            existing-a (weaver/add! rt {:title "Existing A" :attributes {:owner "agent"}})
+            burned (weaver/add! rt {:title "Burned"})]
         (drain-events! rt)
         (reset! delivered-events [])
-        (events/register! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
-                          'skein.weaver-test/capture-event {})
+        (events/register-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
+                                  'skein.weaver-test/capture-event {})
         (let [result (batch/apply! rt {:refs {:existing-b (:id existing-b)
                                               :existing-a (:id existing-a)
                                               :burned (:id burned)}
@@ -1153,14 +1153,14 @@
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
-      (let [from (weaver/add rt {:title "From"})
-            to (weaver/add rt {:title "To"})]
+      (let [from (weaver/add! rt {:title "From"})
+            to (weaver/add! rt {:title "To"})]
         (t/await-quiescent! rt)
         (reset! hook-contexts [])
         (reset! delivered-events [])
-        (events/register! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
-                          'skein.weaver-test/capture-event {})
-        (hooks/register! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
+        (events/register-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
+                                  'skein.weaver-test/capture-event {})
+        (hooks/register-hook! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
         (let [result (batch/apply! rt {:refs {:from (:id from) :to (:id to)}
                                        :edges [{:op :upsert :from :from :to :to :type "related-to"}]})
               events (wait-for-events 1)
@@ -1178,12 +1178,12 @@
       (weaver/init rt)
       (reset! hook-contexts [])
       (reset! delivered-events [])
-      (events/register! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
-                        'skein.weaver-test/capture-event {})
-      (hooks/register! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {})
-      (hooks/register! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
-      (let [existing (weaver/add rt {:title "Existing" :attributes {:owner "agent"}})
-            burnable (weaver/add rt {:title "Burnable"})]
+      (events/register-handler! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
+                                'skein.weaver-test/capture-event {})
+      (hooks/register-hook! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {})
+      (hooks/register-hook! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
+      (let [existing (weaver/add! rt {:title "Existing" :attributes {:owner "agent"}})
+            burnable (weaver/add! rt {:title "Burnable"})]
         (drain-events! rt)
         (reset! hook-contexts [])
         (reset! delivered-events [])
@@ -1214,10 +1214,10 @@
                          :updated (:batch/updated batch-event)
                          :burned (:batch/burned batch-event)
                          :edges (:batch/edges batch-event)})))
-        (hooks/unregister! rt :capture-batch)
-        (hooks/register! rt :reject-batch #{:batch/apply-before-commit} 'skein.weaver-test/rejecting-hook {})
-        (let [keep (weaver/add rt {:title "Keep" :attributes {:stable true}})
-              burn-reject (weaver/add rt {:title "Burn reject"})
+        (hooks/unregister-hook! rt :capture-batch)
+        (hooks/register-hook! rt :reject-batch #{:batch/apply-before-commit} 'skein.weaver-test/rejecting-hook {})
+        (let [keep (weaver/add! rt {:title "Keep" :attributes {:stable true}})
+              burn-reject (weaver/add! rt {:title "Burn reject"})
               before (db-test/graph-snapshot (:datasource rt))]
           (drain-events! rt)
           (reset! delivered-events [])
@@ -1242,9 +1242,9 @@
     (fn [rt _]
       (weaver/init rt)
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/burned} 'skein.weaver-test/capture-event {})
-      (let [a (weaver/add rt {:title "A"})
-            b (weaver/add rt {:title "B"})
+      (events/register-handler! rt :capture #{:strand/burned} 'skein.weaver-test/capture-event {})
+      (let [a (weaver/add! rt {:title "A"})
+            b (weaver/add! rt {:title "B"})
             requested [(:id b) (:id a) (:id b)]
             result (graph/burn-by-ids! rt requested)
             burn-event (first (wait-for-events 1))]
@@ -1257,19 +1257,19 @@
 (deftest weaver-event-runtime-fails-loudly-on-invalid-registration
   (with-runtime
     (fn [rt _]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"key" (events/register! rt [] #{:x} 'skein.weaver-test/capture-event {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-empty" (events/register! rt :bad #{} 'skein.weaver-test/capture-event {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"set" (events/register! rt :bad [:x] 'skein.weaver-test/capture-event {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified" (events/register! rt :bad #{:x} 'capture-event {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"could not be resolved" (events/register! rt :bad #{:x} 'missing.ns/handler {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"callable" (events/register! rt :bad #{:x} 'skein.weaver-test/not-callable-event-handler {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"metadata" (events/register! rt :bad #{:x} 'skein.weaver-test/capture-event :opaque)))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"key" (events/register-handler! rt [] #{:x} 'skein.weaver-test/capture-event {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-empty" (events/register-handler! rt :bad #{} 'skein.weaver-test/capture-event {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"set" (events/register-handler! rt :bad [:x] 'skein.weaver-test/capture-event {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified" (events/register-handler! rt :bad #{:x} 'capture-event {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"could not be resolved" (events/register-handler! rt :bad #{:x} 'missing.ns/handler {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"callable" (events/register-handler! rt :bad #{:x} 'skein.weaver-test/not-callable-event-handler {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"metadata" (events/register-handler! rt :bad #{:x} 'skein.weaver-test/capture-event :opaque)))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Event requires key" (dispatch/enqueue! rt {:event/type :x :event/id "missing-shape"}))))))
 
 (deftest weaver-hook-registry-registers-replaces-orders-and-unregisters
   (with-runtime
     (fn [rt _]
-      (let [entry (hooks/register! rt :capture #{:payload/received} 'skein.weaver-test/capture-hook {:doc "Capture"})]
+      (let [entry (hooks/register-hook! rt :capture #{:payload/received} 'skein.weaver-test/capture-hook {:doc "Capture"})]
         (is (= {:key :capture
                 :types #{:payload/received}
                 :fn 'skein.weaver-test/capture-hook
@@ -1279,40 +1279,40 @@
         (is (= [entry] (hooks/hooks rt)))
         (is (not (contains? (first (hooks/hooks rt)) :fn-value)))
         (is (ifn? (:fn-value (get @(:hook-registry rt) :capture))))
-        (let [replacement (hooks/register! rt :capture #{:strand/add-before-commit} 'skein.weaver-test/capture-hook {:order 10 :doc "Replaced"})
-              early (hooks/register! rt "early" #{:payload/received} 'skein.weaver-test/capture-hook {:order -1})
-              peer-a (hooks/register! rt :a #{:payload/received} 'skein.weaver-test/capture-hook {})
-              peer-b (hooks/register! rt :b #{:payload/received} 'skein.weaver-test/capture-hook {})]
+        (let [replacement (hooks/register-hook! rt :capture #{:strand/add-before-commit} 'skein.weaver-test/capture-hook {:order 10 :doc "Replaced"})
+              early (hooks/register-hook! rt "early" #{:payload/received} 'skein.weaver-test/capture-hook {:order -1})
+              peer-a (hooks/register-hook! rt :a #{:payload/received} 'skein.weaver-test/capture-hook {})
+              peer-b (hooks/register-hook! rt :b #{:payload/received} 'skein.weaver-test/capture-hook {})]
           (is (= ["early" :a :b :capture] (mapv :key (hooks/hooks rt))))
           (is (= [early peer-a peer-b replacement] (hooks/hooks rt)))
-          (is (= :a (hooks/unregister! rt :a)))
+          (is (= :a (hooks/unregister-hook! rt :a)))
           (is (= ["early" :b :capture] (mapv :key (hooks/hooks rt)))))))))
 
 (deftest weaver-hook-registry-validates-inputs
   (with-runtime
     (fn [rt _]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"key" (hooks/register! rt [] #{:x} 'skein.weaver-test/capture-hook {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-empty" (hooks/register! rt :bad #{} 'skein.weaver-test/capture-hook {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"set" (hooks/register! rt :bad [:x] 'skein.weaver-test/capture-hook {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"keywords" (hooks/register! rt :bad #{"x"} 'skein.weaver-test/capture-hook {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified" (hooks/register! rt :bad #{:x} 'capture-hook {})))
-      (is (thrown? Throwable (hooks/register! rt :bad #{:x} 'missing.ns/hook {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"callable" (hooks/register! rt :bad #{:x} 'skein.weaver-test/not-callable-hook {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts" (hooks/register! rt :bad #{:x} 'skein.weaver-test/capture-hook :opaque)))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"data-first" (hooks/register! rt :bad #{:x} 'skein.weaver-test/capture-hook {:opaque (Object.)})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer" (hooks/register! rt :bad #{:x} 'skein.weaver-test/capture-hook {:order 1.5}))))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"key" (hooks/register-hook! rt [] #{:x} 'skein.weaver-test/capture-hook {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-empty" (hooks/register-hook! rt :bad #{} 'skein.weaver-test/capture-hook {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"set" (hooks/register-hook! rt :bad [:x] 'skein.weaver-test/capture-hook {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"keywords" (hooks/register-hook! rt :bad #{"x"} 'skein.weaver-test/capture-hook {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified" (hooks/register-hook! rt :bad #{:x} 'capture-hook {})))
+      (is (thrown? Throwable (hooks/register-hook! rt :bad #{:x} 'missing.ns/hook {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"callable" (hooks/register-hook! rt :bad #{:x} 'skein.weaver-test/not-callable-hook {})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"opts" (hooks/register-hook! rt :bad #{:x} 'skein.weaver-test/capture-hook :opaque)))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"data-first" (hooks/register-hook! rt :bad #{:x} 'skein.weaver-test/capture-hook {:opaque (Object.)})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integer" (hooks/register-hook! rt :bad #{:x} 'skein.weaver-test/capture-hook {:order 1.5}))))))
 
 (deftest reload-config-clears-and-reinstalls-hooks
   (with-runtime
     (fn [rt _]
       (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
-        (hooks/register! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
+        (hooks/register-hook! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
         (source-file/spit-forms!
          init
          ['(require '[skein.api.current.alpha :as current]
                     '[skein.api.hooks.alpha :as hooks])
           '(let [rt (current/runtime)]
-             (hooks/register! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))])
+             (hooks/register-hook! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))])
         (runtime/reload! rt)
         (is (= [{:key :fresh
                  :types #{:payload/received}
@@ -1327,12 +1327,12 @@
       (weaver/init rt)
       (reset! hook-contexts [])
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/added :strand/updated} 'skein.weaver-test/capture-event {})
-      (hooks/register! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {:order 0})
-      (hooks/register! rt :flag #{:attributes/normalize} 'skein.weaver-test/add-normalized-flag-hook {:order 1})
-      (let [added (weaver/add rt {:title "Normalize" :attributes {"storyPoints" "3"}})
+      (events/register-handler! rt :capture #{:strand/added :strand/updated} 'skein.weaver-test/capture-event {})
+      (hooks/register-hook! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {:order 0})
+      (hooks/register-hook! rt :flag #{:attributes/normalize} 'skein.weaver-test/add-normalized-flag-hook {:order 1})
+      (let [added (weaver/add! rt {:title "Normalize" :attributes {"storyPoints" "3"}})
             _add-event (first (wait-for-events 1))
-            updated (weaver/update rt (:id added) {:attributes {:storyPoints "5"}})
+            updated (weaver/update! rt (:id added) {:attributes {:storyPoints "5"}})
             update-event (second (wait-for-events 2))]
         (is (= {:storyPoints 3 :normalized true} (:attributes added)))
         (is (= {:storyPoints 5 :normalized true} (:attributes updated)))
@@ -1347,32 +1347,32 @@
     (fn [rt _]
       (weaver/init rt)
       (reset! expected-hook-loader (:spool-classloader rt))
-      (hooks/register! rt :classloader #{:attributes/normalize} 'skein.weaver-test/asserting-classloader-hook {})
-      (is (= {:a "b"} (:attributes (weaver/add rt {:title "Classloader" :attributes {:a "b"}})))))))
+      (hooks/register-hook! rt :classloader #{:attributes/normalize} 'skein.weaver-test/asserting-classloader-hook {})
+      (is (= {:a "b"} (:attributes (weaver/add! rt {:title "Classloader" :attributes {:a "b"}})))))))
 
 (deftest attribute-normalize-hooks-require-wrapper-and-json-compatible-values
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
-      (hooks/register! rt :noop #{:attributes/normalize} 'skein.weaver-test/noop-normalize-hook {})
-      (is (= {:a "b"} (:attributes (weaver/add rt {:title "Noop" :attributes {:a "b"}}))))
+      (hooks/register-hook! rt :noop #{:attributes/normalize} 'skein.weaver-test/noop-normalize-hook {})
+      (is (= {:a "b"} (:attributes (weaver/add! rt {:title "Noop" :attributes {:a "b"}}))))
       (doseq [[k f] [[:nil 'skein.weaver-test/nil-normalize-hook]
                      [:plain 'skein.weaver-test/non-wrapper-normalize-hook]
                      [:invalid 'skein.weaver-test/invalid-attributes-hook]]]
-        (hooks/register! rt k #{:attributes/normalize} f {})
+        (hooks/register-hook! rt k #{:attributes/normalize} f {})
         (is (thrown? clojure.lang.ExceptionInfo
-                     (weaver/add rt {:title (str "Bad " k) :attributes {:a "b"}})))
-        (hooks/unregister! rt k)))))
+                     (weaver/add! rt {:title (str "Bad " k) :attributes {:a "b"}})))
+        (hooks/unregister-hook! rt k)))))
 
 (deftest attribute-normalize-hook-failures-rollback-and-preserve-cause-data
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/added :strand/updated} 'skein.weaver-test/capture-event {})
-      (hooks/register! rt :reject #{:attributes/normalize} 'skein.weaver-test/rejecting-normalize-hook {})
+      (events/register-handler! rt :capture #{:strand/added :strand/updated} 'skein.weaver-test/capture-event {})
+      (hooks/register-hook! rt :reject #{:attributes/normalize} 'skein.weaver-test/rejecting-normalize-hook {})
       (try
-        (weaver/add rt {:title "Rejected" :attributes {:a "b"}})
+        (weaver/add! rt {:title "Rejected" :attributes {:a "b"}})
         (is false "expected hook rejection")
         (catch clojure.lang.ExceptionInfo e
           (is (= "hook/failed" (:code (ex-data e))))
@@ -1384,21 +1384,21 @@
       (t/await-quiescent! rt)
       (is (empty? (weaver/list rt)))
       (is (empty? @delivered-events))
-      (hooks/unregister! rt :reject)
-      (hooks/register! rt :wrapped #{:attributes/normalize} 'skein.weaver-test/wrapping-rejecting-normalize-hook {})
+      (hooks/unregister-hook! rt :reject)
+      (hooks/register-hook! rt :wrapped #{:attributes/normalize} 'skein.weaver-test/wrapping-rejecting-normalize-hook {})
       (try
-        (weaver/add rt {:title "Wrapped" :attributes {:a "b"}})
+        (weaver/add! rt {:title "Wrapped" :attributes {:a "b"}})
         (is false "expected wrapped hook rejection")
         (catch clojure.lang.ExceptionInfo e
           (is (= "hook/failed" (:code (ex-data e))))
           (is (= "policy/inner" (:hook/cause-code (ex-data e))))))
-      (hooks/unregister! rt :wrapped)
-      (let [strand (weaver/add rt {:title "Stored" :attributes {:a "b"}})]
+      (hooks/unregister-hook! rt :wrapped)
+      (let [strand (weaver/add! rt {:title "Stored" :attributes {:a "b"}})]
         (wait-for-events 1)
         (reset! delivered-events [])
-        (hooks/register! rt :reject #{:attributes/normalize} 'skein.weaver-test/rejecting-normalize-hook {})
+        (hooks/register-hook! rt :reject #{:attributes/normalize} 'skein.weaver-test/rejecting-normalize-hook {})
         (is (thrown? clojure.lang.ExceptionInfo
-                     (weaver/update rt (:id strand) {:attributes {:c "d"}})))
+                     (weaver/update! rt (:id strand) {:attributes {:c "d"}})))
         (t/await-quiescent! rt)
         (is (= {:a "b"} (:attributes (weaver/show rt (:id strand)))))
         (is (empty? @delivered-events))))))
@@ -1409,9 +1409,9 @@
       (weaver/init rt)
       (reset! hook-contexts [])
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/added :strand/updated :strand/burned} 'skein.weaver-test/capture-event {})
-      (hooks/register! rt :capture-add #{:strand/add-before-commit} 'skein.weaver-test/capture-hook {})
-      (let [created (weaver/add rt {:title "Hooked" :attributes {:owner "agent"}})
+      (events/register-handler! rt :capture #{:strand/added :strand/updated :strand/burned} 'skein.weaver-test/capture-event {})
+      (hooks/register-hook! rt :capture-add #{:strand/add-before-commit} 'skein.weaver-test/capture-hook {})
+      (let [created (weaver/add! rt {:title "Hooked" :attributes {:owner "agent"}})
             add-event (first (wait-for-events 1))
             add-context (first @hook-contexts)]
         (is (= :strand/add-before-commit (:hook/type add-context)))
@@ -1425,9 +1425,9 @@
         (is (= {:owner "agent"} (get-in add-context [:strand/after :attributes])))
         (is (= :strand/added (:event/type add-event)))
         (is (= created (:strand add-event)))
-        (hooks/register! rt :reject-add #{:strand/add-before-commit} 'skein.weaver-test/rejecting-hook {})
+        (hooks/register-hook! rt :reject-add #{:strand/add-before-commit} 'skein.weaver-test/rejecting-hook {})
         (try
-          (weaver/add rt {:title "Rejected" :attributes {:owner "blocked"}})
+          (weaver/add! rt {:title "Rejected" :attributes {:owner "blocked"}})
           (is false "expected add hook rejection")
           (catch clojure.lang.ExceptionInfo e
             (is (= "hook/failed" (:code (ex-data e))))
@@ -1438,19 +1438,19 @@
         (t/await-quiescent! rt)
         (is (nil? (some #(when (= "Rejected" (:title %)) %) (weaver/list rt))))
         (is (= 1 (count @delivered-events)))
-        (hooks/unregister! rt :reject-add)
+        (hooks/unregister-hook! rt :reject-add)
         (reset! hook-contexts [])
         (reset! delivered-events [])
-        (let [target (weaver/add rt {:title "Target"})]
+        (let [target (weaver/add! rt {:title "Target"})]
           (wait-for-events 1)
           (reset! hook-contexts [])
           (reset! delivered-events [])
-          (hooks/register! rt :capture-update #{:strand/update-before-commit} 'skein.weaver-test/capture-hook {})
+          (hooks/register-hook! rt :capture-update #{:strand/update-before-commit} 'skein.weaver-test/capture-hook {})
           (let [patch {:title "Updated"
                        :state "closed"
                        :attributes {:phase "done"}
                        :edges [{:type "depends-on" :to (:id target)}]}
-                updated (weaver/update rt (:id created) patch)
+                updated (weaver/update! rt (:id created) patch)
                 update-event (first (wait-for-events 1))
                 update-context (first @hook-contexts)]
             (is (= :strand/update-before-commit (:hook/type update-context)))
@@ -1466,11 +1466,11 @@
                    (:strand/edge-ops update-context)))
             (is (= :strand/updated (:event/type update-event)))
             (is (= updated (:strand/after update-event)))
-            (hooks/register! rt :reject-update #{:strand/update-before-commit} 'skein.weaver-test/rejecting-hook {})
+            (hooks/register-hook! rt :reject-update #{:strand/update-before-commit} 'skein.weaver-test/rejecting-hook {})
             (try
-              (weaver/update rt (:id created) {:title "Rejected update"
-                                               :attributes {:phase "blocked"}
-                                               :edges [{:type "parent-of" :to (:id target)}]})
+              (weaver/update! rt (:id created) {:title "Rejected update"
+                                                :attributes {:phase "blocked"}
+                                                :edges [{:type "parent-of" :to (:id target)}]})
               (is false "expected update hook rejection")
               (catch clojure.lang.ExceptionInfo e
                 (is (= "hook/failed" (:code (ex-data e))))
@@ -1483,10 +1483,10 @@
                                      ["SELECT 1 FROM strand_edges WHERE from_strand_id = ? AND to_strand_id = ? AND edge_type = 'parent-of'"
                                       (:id created) (:id target)])))
             (is (= 1 (count @delivered-events)))
-            (hooks/unregister! rt :reject-update)))
+            (hooks/unregister-hook! rt :reject-update)))
         (reset! hook-contexts [])
         (reset! delivered-events [])
-        (hooks/register! rt :capture-burn #{:strand/burn-before-commit} 'skein.weaver-test/capture-hook {})
+        (hooks/register-hook! rt :capture-burn #{:strand/burn-before-commit} 'skein.weaver-test/capture-hook {})
         (let [requested [(:id created) (:id created)]
               burn-result (graph/burn-by-ids! rt requested)
               burn-event (first (wait-for-events 1))
@@ -1500,13 +1500,13 @@
           (is (= requested (:strand/requested-ids burn-context)))
           (is (= (:strand/before burn-event) (:strand/before burn-context)))
           (is (= :strand/burned (:event/type burn-event))))
-        (let [burn-target (weaver/add rt {:title "Burn reject"})
-              edge-target (weaver/add rt {:title "Burn edge target"})]
-          (weaver/update rt (:id burn-target) {:edges [{:type "depends-on" :to (:id edge-target)}]})
+        (let [burn-target (weaver/add! rt {:title "Burn reject"})
+              edge-target (weaver/add! rt {:title "Burn edge target"})]
+          (weaver/update! rt (:id burn-target) {:edges [{:type "depends-on" :to (:id edge-target)}]})
           (let [burn-target (weaver/show rt (:id burn-target))]
             (t/await-quiescent! rt)
             (reset! delivered-events [])
-            (hooks/register! rt :reject-burn #{:strand/burn-before-commit} 'skein.weaver-test/rejecting-hook {})
+            (hooks/register-hook! rt :reject-burn #{:strand/burn-before-commit} 'skein.weaver-test/rejecting-hook {})
             (try
               (graph/burn-by-ids! rt [(:id burn-target)])
               (is false "expected burn hook rejection")
@@ -1538,8 +1538,8 @@
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
-      (let [agent (weaver/add rt {:title "Agent" :attributes {:owner "agent"}})
-            human (weaver/add rt {:title "Human" :attributes {:owner "human"}})
+      (let [agent (weaver/add! rt {:title "Agent" :attributes {:owner "agent"}})
+            human (weaver/add! rt {:title "Human" :attributes {:owner "human"}})
             owners-query {:params [:owners]
                           :where [:in [:attr :owner] [:param :owners]]}]
         (is (= {"owners" owners-query} (graph/register-query! rt 'owners owners-query)))
@@ -1557,11 +1557,11 @@
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
-      (let [blocker (weaver/add rt {:title "Blocker"})
-            blocked (weaver/add rt {:title "Blocked" :attributes {:owner "agent"}})
+      (let [blocker (weaver/add! rt {:title "Blocker"})
+            blocked (weaver/add! rt {:title "Blocked" :attributes {:owner "agent"}})
             edge-query {:params [:relation]
                         :where [:edge/out [:param :relation] [:= :state "active"]]}]
-        (weaver/update rt (:id blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
+        (weaver/update! rt (:id blocked) {:edges [{:type "depends-on" :to (:id blocker)}]})
         (is (= {"blocked" edge-query} (graph/register-query! rt 'blocked edge-query)))
         (is (= [(:id blocked)] (mapv :id (weaver/list-query rt :blocked {:relation "depends-on"}))))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"nested edge predicates"
@@ -1627,11 +1627,11 @@
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
-      (let [agent (weaver/add rt {:title "Agent" :attributes {:owner "agent"}})
-            human (weaver/add rt {:title "Human" :attributes {:owner "human"}})
-            feature (weaver/add rt {:title "Feature" :attributes {:kind "feature"}})]
-        (weaver/update rt (:id feature) {:edges [{:type "parent-of" :to (:id agent)}
-                                                 {:type "parent-of" :to (:id human)}]})
+      (let [agent (weaver/add! rt {:title "Agent" :attributes {:owner "agent"}})
+            human (weaver/add! rt {:title "Human" :attributes {:owner "human"}})
+            feature (weaver/add! rt {:title "Feature" :attributes {:kind "feature"}})]
+        (weaver/update! rt (:id feature) {:edges [{:type "parent-of" :to (:id agent)}
+                                                  {:type "parent-of" :to (:id human)}]})
         (graph/register-query! rt 'agent-owned {:params [:owner]
                                                 :where [:= [:attr :owner] [:param :owner]]})
         (is (= [(:id agent)] (graph/query-ids rt 'agent-owned {:owner "agent"})))
@@ -2205,8 +2205,8 @@
       (is (str/includes? (:spec-form (patterns/explain rt :dev-task))
                          "clojure.spec.alpha/keys"))
       (reset! delivered-events [])
-      (events/register! rt :capture-weave #{:batch/applied}
-                        'skein.weaver-test/capture-event {})
+      (events/register-handler! rt :capture-weave #{:batch/applied}
+                                'skein.weaver-test/capture-event {})
       (let [result (patterns/weave! rt :dev-task {:title "Implement weave"})]
         (is (= ["Implement weave" "Review: Implement weave"] (mapv :title (:created result))))
         (is (= #{"impl" "review"} (set (keys (:refs result)))))
@@ -2217,7 +2217,7 @@
           (is (= :batch/applied (:event/type event)))
           (is (= "dev-task" (str (:pattern/name event))))
           (is (= 2 (count (:batch/created event))))))
-      (events/unregister! rt :capture-weave)
+      (events/unregister-handler! rt :capture-weave)
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern input failed spec validation"
                             (patterns/weave! rt :dev-task {})))
@@ -2251,8 +2251,8 @@
       (reset! hook-contexts [])
       (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
       (patterns/register-pattern! rt 'points 'skein.weaver-test/points-pattern ::pattern-input)
-      (hooks/register! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {})
-      (hooks/register! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
+      (hooks/register-hook! rt :parse #{:attributes/normalize} 'skein.weaver-test/parse-story-points-hook {})
+      (hooks/register-hook! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
       (let [points-result (patterns/weave! rt :points {:title "Pointed"})]
         (is (= {:storyPoints 8} (get-in points-result [:created 0 :attributes])))
         (is (= {:storyPoints 8}
@@ -2294,9 +2294,9 @@
       (reset! pattern-call-count 0)
       (reset! hook-contexts [])
       (reset! delivered-events [])
-      (events/register! rt :capture #{:strand/added :batch/applied} 'skein.weaver-test/capture-event {})
+      (events/register-handler! rt :capture #{:strand/added :batch/applied} 'skein.weaver-test/capture-event {})
       (patterns/register-pattern! rt 'counting 'skein.weaver-test/counting-pattern ::never-valid)
-      (hooks/register! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
+      (hooks/register-hook! rt :capture-batch #{:batch/apply-before-commit} 'skein.weaver-test/capture-hook {})
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Pattern input failed spec validation"
                             (patterns/weave! rt :counting {:title "Nope"})))
@@ -2310,8 +2310,8 @@
       (is (empty? (weaver/list rt)))
       (is (empty? (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"])))
       (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
-      (hooks/unregister! rt :capture-batch)
-      (hooks/register! rt :reject-batch #{:batch/apply-before-commit} 'skein.weaver-test/rejecting-hook {})
+      (hooks/unregister-hook! rt :capture-batch)
+      (hooks/register-hook! rt :reject-batch #{:batch/apply-before-commit} 'skein.weaver-test/rejecting-hook {})
       (try
         (patterns/weave! rt :dev-task {:title "Rejected weave"})
         (is false "expected weave hook rejection")
@@ -2340,7 +2340,7 @@
         (is (empty? (patterns/patterns rt)))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Pattern not found"
-                              (patterns/pattern rt 'dev-task)))))))
+                              (patterns/resolve-pattern rt 'dev-task)))))))
 
 (deftest json-socket-invoke-dispatch
   (with-runtime
@@ -2472,7 +2472,7 @@
     (fn [rt _]
       (weaver/register-op! rt 'mutate 'skein.weaver-test/test-op)
       (weaver/register-op! rt 'reader {:hook-class :read} 'skein.weaver-test/test-op)
-      (hooks/register! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
+      (hooks/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/capture-hook {})
       (is (true? (get (invoke-request rt "mutate" ["--flag" "value"] {"body" "hi"}) "ok")))
       ;; a read-class op skips payload hooks, preserving the old read exemption
       (is (true? (get (invoke-request rt "reader" ["x"]) "ok")))
@@ -2510,7 +2510,7 @@
   (with-runtime
     (fn [rt _]
       (weaver/register-op! rt 'reader {:hook-class :read} 'skein.weaver-test/test-op)
-      (hooks/register! rt :payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
+      (hooks/register-hook! rt :payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
       (is (true? (get (invoke-request rt "reader" []) "ok")))
       (is (true? (get (socket-request rt "status" {}) "ok")))
       (is (empty? @hook-contexts))
@@ -2533,7 +2533,7 @@
   (with-runtime
     (fn [rt _]
       (weaver/register-op! rt 'mutate 'skein.weaver-test/side-effecting-op)
-      (hooks/register! rt :reject-payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
+      (hooks/register-hook! rt :reject-payload #{:payload/received} 'skein.weaver-test/rejecting-hook {})
       (let [response (invoke-request rt "mutate" ["arg"] {"body" "payload"})]
         (is (false? (get response "ok")))
         (is (= "domain" (get-in response ["error" "type"])))
@@ -2580,15 +2580,15 @@
   (with-runtime
     (fn [rt _]
       (weaver/init rt)
-      (let [source (weaver/add rt {:title "Source"})
-            target (weaver/add rt {:title "Target"})]
+      (let [source (weaver/add! rt {:title "Source"})
+            target (weaver/add! rt {:title "Target"})]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"Strand not found"
-                              (weaver/update rt "missing" {:edges [{:type "depends-on" :to (:id target)}]})))
+                              (weaver/update! rt "missing" {:edges [{:type "depends-on" :to (:id target)}]})))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"non-blank"
-                              (weaver/update rt (:id source) {:title ""
-                                                              :edges [{:type "depends-on" :to (:id target)}]})))
+                              (weaver/update! rt (:id source) {:title ""
+                                                               :edges [{:type "depends-on" :to (:id target)}]})))
         (is (empty? (db/execute! (:datasource rt) ["SELECT 1 FROM strand_edges WHERE from_strand_id = ?" (:id source)])))))))
 
 (deftest runtime-uses-world-default-database-and-directories

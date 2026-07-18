@@ -14,13 +14,13 @@
 
 (def ^:private api-symbols
   {:init 'skein.api.weaver.alpha/init
-   :add 'skein.api.weaver.alpha/add
-   :update 'skein.api.weaver.alpha/update
+   :add 'skein.api.weaver.alpha/add!
+   :update 'skein.api.weaver.alpha/update!
    :show 'skein.api.weaver.alpha/show
    :burn-by-ids 'skein.api.graph.alpha/burn-by-ids!
    :list 'skein.api.weaver.alpha/list
    :ready 'skein.api.weaver.alpha/ready
-   :supersede 'skein.api.weaver.alpha/supersede
+   :supersede 'skein.api.weaver.alpha/supersede!
    :declare-acyclic-relation! 'skein.api.weaver.alpha/declare-acyclic-relation!
    :acyclic-relations 'skein.api.weaver.alpha/acyclic-relations
    :register-query 'skein.api.graph.alpha/register-query!
@@ -35,12 +35,12 @@
    :register-view! 'skein.api.views.alpha/register-view!
    :view! 'skein.api.views.alpha/view!
    :views 'skein.api.views.alpha/views
-   :register-event-handler! 'skein.api.events.alpha/register!
-   :unregister-event-handler! 'skein.api.events.alpha/unregister!
+   :register-event-handler! 'skein.api.events.alpha/register-handler!
+   :unregister-event-handler! 'skein.api.events.alpha/unregister-handler!
    :event-handlers 'skein.api.events.alpha/handlers
    :recent-event-failures 'skein.api.events.alpha/recent-failures
-   :register-hook! 'skein.api.hooks.alpha/register!
-   :unregister-hook! 'skein.api.hooks.alpha/unregister!
+   :register-hook! 'skein.api.hooks.alpha/register-hook!
+   :unregister-hook! 'skein.api.hooks.alpha/unregister-hook!
    :hooks 'skein.api.hooks.alpha/hooks
    :register-pattern! 'skein.api.patterns.alpha/register-pattern!
    :register-op! 'skein.api.weaver.alpha/register-op!
@@ -49,7 +49,7 @@
    :resolve-op 'skein.api.weaver.alpha/resolve-op
    :op! 'skein.api.weaver.alpha/op!
    :patterns 'skein.api.patterns.alpha/patterns
-   :resolve-pattern 'skein.api.patterns.alpha/pattern
+   :resolve-pattern 'skein.api.patterns.alpha/resolve-pattern
    :pattern-explain 'skein.api.patterns.alpha/explain
    :weave! 'skein.api.patterns.alpha/weave!
    :apply-batch 'skein.api.batch.alpha/apply!
@@ -59,7 +59,7 @@
    :reload-config! 'skein.api.runtime.alpha/reload!
    :use! 'skein.api.runtime.alpha/use!
    :uses 'skein.api.runtime.alpha/uses
-   :use 'skein.api.runtime.alpha/use})
+   :use 'skein.api.runtime.alpha/use-entry})
 
 (defn- fail
   "Throw an ExceptionInfo with message and structured client error data."

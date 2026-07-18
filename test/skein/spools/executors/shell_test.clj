@@ -109,17 +109,17 @@
           ;; thread strictly before the only worker-pool submission path, so a
           ;; re-dispatch regression is visible as a claim marker the moment scan!
           ;; returns — no marker means nothing was submitted.
-          (weaver/add rt {:title "noise-1"})
-          (weaver/add rt {:title "noise-2"})
+          (weaver/add! rt {:title "noise-1"})
+          (weaver/add! rt {:title "noise-2"})
           (shell/scan!)
           (is (nil? (attr (weaver/show rt gate-id) :shell/running)))
           (is (some? (attr (weaver/show rt gate-id) :gate/error)))
           (is (= 1 (run-count)))
           ;; clearing gate/error (and fixing the command) re-runs the check once
           ;; and closes the gate on the next scan.
-          (weaver/update rt gate-id {:attributes {"gate/error" nil
-                                                  "shell/running" nil
-                                                  "shell/argv" (argv 0)}})
+          (weaver/update! rt gate-id {:attributes {"gate/error" nil
+                                                   "shell/running" nil
+                                                   "shell/argv" (argv 0)}})
           (test-alpha/await-quiescent! rt)
           (let [closed (await-eventually #(let [g (weaver/show rt gate-id)]
                                             (when (= "closed" (:state g)) g)))]
@@ -142,8 +142,8 @@
           ;; the CLI clearing idiom (`strand update <gate-id> --attr gate/error=`)
           ;; stores a blank string rather than removing the attribute; a blank
           ;; stamp must count as cleared so the next scan re-runs the check.
-          (weaver/update rt gate-id {:attributes {"gate/error" ""
-                                                  "shell/argv" (argv 0)}})
+          (weaver/update! rt gate-id {:attributes {"gate/error" ""
+                                                   "shell/argv" (argv 0)}})
           (test-alpha/await-quiescent! rt)
           (let [closed (await-eventually #(let [g (weaver/show rt gate-id)]
                                             (when (= "closed" (:state g)) g)))]
@@ -151,9 +151,9 @@
             (is (= 2 (run-count)))))
         ;; a blank-stamped active gate is not a stall: neither the predicate nor
         ;; the coordinator query reports it
-        (let [decoy (weaver/add rt {:title "Blank decoy"
-                                    :attributes {"workflow/gate" "shell"
-                                                 "gate/error" ""}})]
+        (let [decoy (weaver/add! rt {:title "Blank decoy"
+                                     :attributes {"workflow/gate" "shell"
+                                                  "gate/error" ""}})]
           (is (nil? (shell/gate-stalled? {:id (:id decoy)})))
           (is (not-any? #(= (:id decoy) (:id %))
                         (weaver/list-query rt 'stalled-shell-gates {}))))))))

@@ -143,17 +143,17 @@
           roster-attrs (start-attributes (merge identity attrs) started-at now)]
       (if existing
         ;; Send only the roster attribute delta, not a merge over the whole
-        ;; stale attribute snapshot: `weaver/update` applies attributes via SQLite
+        ;; stale attribute snapshot: `weaver/update!` applies attributes via SQLite
         ;; json_patch (RFC 7396 merge-patch), so resending unchanged keys would
         ;; silently revert any concurrent write to them (the auto-heartbeat
         ;; event worker and a direct caller race on the same entry) — see
         ;; SPEC-RosterSpool-001.C4.
-        (weaver/update runtime id
-                       (cond-> {:attributes roster-attrs}
-                         (not= "active" (:state existing)) (assoc :state "active")
-                         (and title (not= title (:title existing))) (assoc :title title)))
-        (weaver/add runtime {:title (or title (str "Roster: " (:feature identity) " (" (:owner identity) ")"))
-                             :attributes roster-attrs})))))
+        (weaver/update! runtime id
+                        (cond-> {:attributes roster-attrs}
+                          (not= "active" (:state existing)) (assoc :state "active")
+                          (and title (not= title (:title existing))) (assoc :title title)))
+        (weaver/add! runtime {:title (or title (str "Roster: " (:feature identity) " (" (:owner identity) ")"))
+                              :attributes roster-attrs})))))
 
 ;; ---------------------------------------------------------------------------
 ;; shared entry lookup
@@ -197,7 +197,7 @@
       (fail! "heartbeat! opts must be a map" {:opts opts}))
     (reject-unknown-keys! "heartbeat!" #{:now} opts))
   (require-active-roster-entry! runtime entry-id "heartbeat")
-  (weaver/update runtime entry-id {:attributes {:roster/heartbeat-at (now-str opts)}}))
+  (weaver/update! runtime entry-id {:attributes {:roster/heartbeat-at (now-str opts)}}))
 
 ;; ---------------------------------------------------------------------------
 ;; finish!
@@ -269,7 +269,7 @@
           attrs (cond-> {:roster/phase phase
                          :roster/finished-at now}
                   (:outcome opts) (assoc :roster/outcome (:outcome opts)))]
-      (weaver/update runtime entry-id {:attributes attrs :state "closed"}))))
+      (weaver/update! runtime entry-id {:attributes attrs :state "closed"}))))
 
 ;; ---------------------------------------------------------------------------
 ;; entry listing + stale derivation
@@ -555,10 +555,10 @@
   "Register roster's async workflow/devflow graph-integration handler on
   strand add/update events."
   [runtime]
-  (events/register! runtime integration-event-key
-                    #{:strand/added :strand/updated}
-                    'skein.spools.roster/on-event
-                    {:purpose :roster/workflow-devflow-integration}))
+  (events/register-handler! runtime integration-event-key
+                            #{:strand/added :strand/updated}
+                            'skein.spools.roster/on-event
+                            {:purpose :roster/workflow-devflow-integration}))
 
 ;; ---------------------------------------------------------------------------
 ;; discovery: about / prime

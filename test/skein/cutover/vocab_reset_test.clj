@@ -24,7 +24,7 @@
 (defn- add!
   "Seed one strand in `state` carrying `attributes`; return its id."
   [rt state attributes]
-  (:id (weaver/add rt {:title "seed" :state state :attributes attributes})))
+  (:id (weaver/add! rt {:title "seed" :state state :attributes attributes})))
 
 (defn- attrs
   "Return the strand's current attribute map, as the weaver reads it back.

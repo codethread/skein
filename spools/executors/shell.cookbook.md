@@ -179,7 +179,7 @@ test in ``test/skein/spools/executors/shell_test.clj``.
 
 ;; recover: fix the underlying problem, then clear the error.
 ;; Clearing gate/error is what lets the next scan re-run the check.
-(weaver/update rt gate-id {:attributes {"gate/error" nil
+(weaver/update! rt gate-id {:attributes {"gate/error" nil
                                         "shell/argv" ["clojure" "-M:test"]}})
 ;; next scan re-runs the check and closes the gate on exit 0.
 ```

@@ -98,7 +98,7 @@
   (when (and (string? s) (not (str/blank? s))) s))
 
 (defn- stamp! [id attributes]
-  (weaver/update (rt) id {:attributes attributes}))
+  (weaver/update! (rt) id {:attributes attributes}))
 
 (defn- now [] (str (Instant/now)))
 
@@ -331,9 +331,9 @@
                      :keys ["shell/argv" "shell/cwd" "shell/timeout-secs"
                             "shell/running" "shell/exit-code" "shell/output"]
                      :doc "Shell-gate command inputs and process outcome attributes stamped by the shell executor."})
-    (events/register! runtime :shell/engine event-types
-                      'skein.spools.executors.shell/on-event
-                      {:spool "shell"})
+    (events/register-handler! runtime :shell/engine event-types
+                              'skein.spools.executors.shell/on-event
+                              {:spool "shell"})
     (workflow/register-executor! :shell gate-stalled?)
     ;; The coordinator attention surface for stuck shell gates: an active `:shell`
     ;; gate carrying a non-blank `gate/error` (a blank stamp is the CLI clearing

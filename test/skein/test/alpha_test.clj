@@ -87,8 +87,8 @@
                                          '(do
                                             (require '[skein.api.current.alpha :as current]
                                                      '[skein.api.weaver.alpha :as weaver])
-                                            (weaver/add (current/runtime)
-                                                        {:title "From repl"})))]
+                                            (weaver/add! (current/runtime)
+                                                         {:title "From repl"})))]
                      (is (= "From repl" (:title strand)))))
                  (is (= 1 (count (t/repl! ctx
                                           '(do
@@ -141,7 +141,7 @@
       (t/repl! outer '(do
                         (require '[skein.api.current.alpha :as current]
                                  '[skein.api.weaver.alpha :as weaver])
-                        (weaver/add (current/runtime) {:title "outer"})))
+                        (weaver/add! (current/runtime) {:title "outer"})))
       (is (= 1 (count (t/repl! outer '(do
                                         (require '[skein.api.current.alpha :as current]
                                                  '[skein.api.weaver.alpha :as weaver])

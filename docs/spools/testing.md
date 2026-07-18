@@ -83,7 +83,7 @@ transport:
                     '(do
                        (require '[skein.api.current.alpha :as current]
                                 '[skein.api.weaver.alpha :as weaver])
-                       (weaver/add (current/runtime)
+                       (weaver/add! (current/runtime)
                                    {:title "Sketch model"}))))))))
 ```
 

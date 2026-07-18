@@ -25,7 +25,7 @@ Delegate to `skein.test.alpha/await-quiescent!`.
 
   This compatibility alias moves to the author-side test API and will be
   removed before the v1 stamp, after agent-harness.spool v3 migrates.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L82-L89">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L92-L99">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/handlers">`handlers`</a>
 ``` clojure
@@ -34,7 +34,7 @@ Delegate to `skein.test.alpha/await-quiescent!`.
 Function.
 
 Return data-first event handler registry entries from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L71-L75">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L81-L85">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/recent-failures">`recent-failures`</a>
 ``` clojure
@@ -43,12 +43,21 @@ Return data-first event handler registry entries from `runtime`.
 Function.
 
 Return recent asynchronous event handler failures from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L77-L80">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L87-L90">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/register!">`register!`</a>
 ``` clojure
-(register! runtime key types fn-sym)
-(register! runtime key types fn-sym metadata)
+(register! & args)
+```
+Function.
+
+Renamed to register-handler! (card d6xgt); this alias is removed before the v1 stamp.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L71-L74">Source</a></sub></p>
+
+## <a name="skein.api.events.alpha/register-handler!">`register-handler!`</a>
+``` clojure
+(register-handler! runtime key types fn-sym)
+(register-handler! runtime key types fn-sym metadata)
 ```
 Function.
 
@@ -57,7 +66,16 @@ Register or replace an event handler in `runtime` for selected event types.
 
 ## <a name="skein.api.events.alpha/unregister!">`unregister!`</a>
 ``` clojure
-(unregister! runtime key)
+(unregister! & args)
+```
+Function.
+
+Renamed to unregister-handler! (card d6xgt); this alias is removed before the v1 stamp.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L76-L79">Source</a></sub></p>
+
+## <a name="skein.api.events.alpha/unregister-handler!">`unregister-handler!`</a>
+``` clojure
+(unregister-handler! runtime key)
 ```
 Function.
 

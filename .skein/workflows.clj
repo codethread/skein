@@ -59,20 +59,20 @@
                             {:lock (:id held)
                              :owner (attr-value held :owner)
                              :land/run-id (attr-value held :land/run-id)})))
-          (weaver/add rt {:title (str "Merge lock: " feature)
-                          :attributes {:kind merge-lock-kind
-                                       :owner owner
-                                       :land/run-id feature}}))))))
+          (weaver/add! rt {:title (str "Merge lock: " feature)
+                           :attributes {:kind merge-lock-kind
+                                        :owner owner
+                                        :land/run-id feature}}))))))
 
 (defn- release-merge-lock!
   "Release the merge lock held by feature, if one exists."
   [feature reason]
   (doseq [lock (active-merge-locks)
           :when (= feature (attr-value lock :land/run-id))]
-    (weaver/update (current/runtime)
-                   (:id lock)
-                   {:state "closed"
-                    :attributes {:land/released-reason reason}})))
+    (weaver/update! (current/runtime)
+                    (:id lock)
+                    {:state "closed"
+                     :attributes {:land/released-reason reason}})))
 
 (defn- inspect-merge-lock
   "Return the active merge-lock snapshot, or nil."
@@ -88,10 +88,10 @@
       (throw (ex-info "multiple active merge locks found; inspect and repair manually"
                       {:locks (mapv :id locks)})))
     (if-let [lock (first locks)]
-      {:broken (entity-projection (weaver/update (current/runtime)
-                                                 (:id lock)
-                                                 {:state "closed"
-                                                  :attributes {:land/broken-reason reason}}))}
+      {:broken (entity-projection (weaver/update! (current/runtime)
+                                                  (:id lock)
+                                                  {:state "closed"
+                                                   :attributes {:land/broken-reason reason}}))}
       {:broken nil})))
 
 (defn- move-card-to-review!

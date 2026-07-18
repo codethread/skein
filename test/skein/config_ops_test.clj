@@ -118,10 +118,10 @@
      (load-file ".skein/config.clj")
      ((requiring-resolve 'ct.spools.kanban/install!))
      ((requiring-resolve 'config/install!))
-     (let [card (weaver/add runtime
-                            {:title "Feature"
-                             :attributes {:kanban/card "true"
-                                          :kanban/type "feature"}})
+     (let [card (weaver/add! runtime
+                             {:title "Feature"
+                              :attributes {:kanban/card "true"
+                                           :kanban/type "feature"}})
            projection ((ns-resolve 'config 'kanban-tree-projection) runtime false)
            row (first (:cards projection))]
        (is (= (select-keys card [:id :title :state :attributes])

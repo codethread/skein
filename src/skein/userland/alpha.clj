@@ -118,7 +118,7 @@
   ([title attributes]
    (strand! title (terse/reject-core-attribute-keys! attributes) {}))
   ([title attributes lifecycle]
-   (weaver/add (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
+   (weaver/add! (resolve-runtime) (merge {:title title :attributes attributes} lifecycle))))
 
 (defn strand
   "Return the normalized strand row for `id`, or nil when no such strand exists."
@@ -128,12 +128,12 @@
 (defn update!
   "Apply `patch` to strand `id` and return the normalized update result."
   [id patch]
-  (weaver/update (resolve-runtime) id patch))
+  (weaver/update! (resolve-runtime) id patch))
 
 (defn supersede!
   "Replace `old-id` with `replacement-id` and return the supersession result."
   [old-id replacement-id]
-  (weaver/supersede (resolve-runtime) old-id replacement-id))
+  (weaver/supersede! (resolve-runtime) old-id replacement-id))
 
 (defn burn!
   "Physically delete one or more strands and their incident edges.
@@ -241,7 +241,7 @@
 (defn pattern
   "Return the registered pattern named `pattern-name`. Missing patterns fail loudly."
   [pattern-name]
-  (patterns/pattern (resolve-runtime) pattern-name))
+  (patterns/resolve-pattern (resolve-runtime) pattern-name))
 
 (defn pattern-explain
   "Return serializable input guidance for the registered pattern `pattern-name`."

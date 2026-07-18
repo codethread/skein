@@ -31,8 +31,8 @@
 (defn- arm-blocking-handler! [rt]
   (reset! handler-started (promise))
   (reset! handler-release (promise))
-  (events/register! rt :blocking #{:test/quiescence}
-                    'skein.events-quiescence-test/blocking-handler {})
+  (events/register-handler! rt :blocking #{:test/quiescence}
+                            'skein.events-quiescence-test/blocking-handler {})
   (dispatch/enqueue! rt (test-event (str (random-uuid))))
   ;; The single event is now claimed and mid-dispatch, so the queue is empty and
   ;; only the dispatch-in-progress flag keeps the lane unsettled.

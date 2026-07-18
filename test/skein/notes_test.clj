@@ -18,7 +18,7 @@
   (test-alpha/set-clock! rt (fn [] @clock)))
 
 (defn- target! [rt]
-  (:id (weaver/add rt {:title "target" :state "active"})))
+  (:id (weaver/add! rt {:title "target" :state "active"})))
 
 (deftest note!-writes-content-attrs-and-edge-not-note-for
   (with-runtime

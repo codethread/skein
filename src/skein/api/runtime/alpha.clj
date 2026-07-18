@@ -656,7 +656,7 @@
     (require-valid! ::uses-result result "Module use registry has an invalid shape")
     result))
 
-(defn use
+(defn use-entry
   "Return one module-use registry entry from `runtime` by key.
 
   The nilable result conforms to `:skein.api.runtime.alpha/use-result`."
@@ -673,9 +673,14 @@
   :args (s/cat :runtime map?)
   :ret ::uses-result)
 
-(s/fdef use
+(s/fdef use-entry
   :args (s/cat :runtime map? :key ::use-key)
   :ret ::use-result)
+
+(defn ^:deprecated use
+  "Renamed to use-entry (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply use-entry args))
 
 (defn- warn!
   "Emit a loud-but-non-fatal runtime warning to the weaver's stderr log.
