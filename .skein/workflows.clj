@@ -955,7 +955,11 @@
    {:params {:feature (workflow/param :required true)
              :module (workflow/param :required true)
              :worktree (workflow/param :required true)
-             :card (workflow/param :default nil)}
+             :card (workflow/param :default nil)
+             ;; The engine cannot know which agent is driving, so the
+             ;; cross-vendor invariant lives here: the pourer names a
+             ;; review seat OUTSIDE its own model family.
+             :reviewer-harness (workflow/param :default "sol-med")}
     :attributes {"workflow/family" "story"
                  "story/module" (fn [{:keys [module]}] module)}}
    (workflow/step :identify-modules
@@ -980,23 +984,43 @@
                                   "|Make the feature's behavior changes first - the refactor
                                    |wave comes after, over the changed result. A pure form
                                    |conversion records that there are none and completes."))})
-   (workflow/step :intent-review
+   (workflow/gate :intent-review
                   (fn [{:keys [feature]}] (str "Adversarial intent review for " feature))
-                  :self
+                  :subagent
                   :depends-on [:overall-changes]
                   :attributes {"workflow/action-ref" "story.intent-review"
+                               "agent-run/harness" (fn [{:keys [reviewer-harness]}]
+                                                     reviewer-harness)
+                               "agent-run/cwd" (fn [{:keys [worktree]}] worktree)
+                               "agent-run/prompt"
+                               (fn [{:keys [feature module]}]
+                                 (str "Adversarial intent review for " feature "."
+                                      " Read the diff (`git diff main...HEAD`) and the"
+                                      " feature intent (kanban card, proposal, or step"
+                                      " notes on this run). Challenge the INTENT, not"
+                                      " style: is the change the right change, does the"
+                                      " approach fit the specs it cites, what will age"
+                                      " badly for module `" module "`. Your FINAL MESSAGE"
+                                      " becomes the gate's outcome notes: put the full"
+                                      " findings there, verdict first. Do not write to"
+                                      " workflow strands. Never the full roster lens -"
+                                      " that runs once at land."))})
+   (workflow/step :resolve-intent
+                  (fn [_] "Resolve intent-review findings")
+                  :self
+                  :depends-on [:intent-review]
+                  :attributes {"workflow/action-ref" "story.resolve-intent"
                                "workflow/instruction"
                                (fn [_]
                                  (format-alpha/reflow
-                                  "|Swift adversarial pass on the intent and diff so far: one or
-                                   |two cross-vendor seats via `strand agent review <task-id>
-                                   |--contract ... --commit-range <base>..HEAD` - never the full
-                                   |roster, which runs once at land. Record pass ids and verdict
-                                   |in notes; fix or adjudicate findings before completing."))})
+                                  "|Read the gate's review note and verdict. Fix or explicitly
+                                   |adjudicate every finding - a reviewer run succeeds even
+                                   |when it finds problems, so this step is where the findings
+                                   |get faced. Record the resolution before completing."))})
    (workflow/step :identify-large
                   (fn [_] "Identify large-change modules for refactor waves")
                   :self
-                  :depends-on [:intent-review]
+                  :depends-on [:resolve-intent]
                   :attributes {"workflow/action-ref" "story.identify-large"
                                "workflow/instruction"
                                (fn [{:keys [module]}]
@@ -1034,23 +1058,40 @@
                                   "|Write or keep tests against the public surface only - they
                                    |are the behavior lock that survives any later fold. Cold
                                    |run green before completing."))})
-   (workflow/step :split-review
+   (workflow/gate :split-review
                   (fn [{:keys [module]}] (str "Swift adversarial review of the " module " split"))
-                  :self
+                  :subagent
                   :depends-on [:public-tests]
                   :attributes {"workflow/action-ref" "story.split-review"
+                               "agent-run/harness" (fn [{:keys [reviewer-harness]}]
+                                                     reviewer-harness)
+                               "agent-run/cwd" (fn [{:keys [worktree]}] worktree)
+                               "agent-run/prompt"
+                               (fn [{:keys [module]}]
+                                 (str "Adversarial review of the fresh per-concern split of"
+                                      " module `" module "` (diff: `git diff main...HEAD`),"
+                                      " while the concern boundaries are still visible: bad"
+                                      " or arbitrary boundaries, forwarding husks in alpha,"
+                                      " story helpers exiled from reading reach, tests"
+                                      " leaning on internals instead of the public surface,"
+                                      " dependency-rule breaches. Your FINAL MESSAGE becomes"
+                                      " the gate's outcome notes: full findings there,"
+                                      " verdict first. Do not write to workflow strands."))})
+   (workflow/step :resolve-split
+                  (fn [_] "Resolve split-review findings")
+                  :self
+                  :depends-on [:split-review]
+                  :attributes {"workflow/action-ref" "story.resolve-split"
                                "workflow/instruction"
                                (fn [_]
                                  (format-alpha/reflow
-                                  "|Swift adversarial pass (one or two cross-vendor seats via
-                                   |--contract) while the concern boundaries are still visible:
-                                   |bad boundaries, husks, story helpers exiled from reading
-                                   |reach, tests leaning on internals. Record pass ids and fix
-                                   |or adjudicate findings before completing."))})
+                                  "|Read the gate's review note and verdict; fix or explicitly
+                                   |adjudicate every finding and record the resolution before
+                                   |completing."))})
    (workflow/step :measure
                   (fn [{:keys [module]}] (str "Measure the folded size of " module))
                   :self
-                  :depends-on [:split-review]
+                  :depends-on [:resolve-split]
                   :attributes {"workflow/action-ref" "story.measure"
                                "workflow/instruction"
                                (fn [_]
