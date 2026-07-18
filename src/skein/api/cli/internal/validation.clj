@@ -7,6 +7,26 @@
   "Argument types understood by the parser."
   #{:string :int :boolean :boolean-token :map})
 
+(def supported-parse-kinds
+  "Declared whole-value parse kinds the parser can apply."
+  #{:json :jsonl})
+
+(defn validate-declared-parse!
+  "Validate a flag or positional declared :parse when one is present."
+  [op subcommand field arg spec]
+  (when-let [kind (:parse spec)]
+    (when-not (contains? supported-parse-kinds kind)
+      (shared/fail!
+       :invalid-parse-kind
+       (str "Unknown parse kind " (pr-str kind))
+       (cond-> {:op op
+                :field field
+                :arg arg
+                :parse kind
+                :value spec
+                :supported-parse-kinds (vec (sort-by name supported-parse-kinds))}
+         subcommand (assoc :subcommand subcommand))))))
+
 (defn validate-declared-type!
   "Validate a flag or positional declared :type when one is present."
   [op subcommand field arg spec]
@@ -52,7 +72,8 @@
            "Flag specs must be maps"
            (cond-> {:op op :field :flags :arg flag :value spec}
              subcommand (assoc :subcommand subcommand))))
-        (validate-declared-type! op subcommand :flags flag spec)))))
+        (validate-declared-type! op subcommand :flags flag spec)
+        (validate-declared-parse! op subcommand :flags flag spec)))))
 
 (defn validate-positionals!
   "Validate a :positionals container and its entries."
@@ -84,6 +105,8 @@
            (cond-> {:op op :field :positionals :index idx :value spec}
              subcommand (assoc :subcommand subcommand))))
         (validate-declared-type!
+         op subcommand :positionals (:name spec) spec)
+        (validate-declared-parse!
          op subcommand :positionals (:name spec) spec)))))
 
 (defn validate-subcommands!

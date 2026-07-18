@@ -994,17 +994,20 @@
                                "agent-run/cwd" (fn [{:keys [worktree]}] worktree)
                                "agent-run/prompt"
                                (fn [{:keys [feature module]}]
-                                 (str "Adversarial intent review for " feature "."
-                                      " Read the diff (`git diff main...HEAD`) and the"
-                                      " feature intent (kanban card, proposal, or step"
-                                      " notes on this run). Challenge the INTENT, not"
-                                      " style: is the change the right change, does the"
-                                      " approach fit the specs it cites, what will age"
-                                      " badly for module `" module "`. Your FINAL MESSAGE"
-                                      " becomes the gate's outcome notes: put the full"
-                                      " findings there, verdict first. Do not write to"
-                                      " workflow strands. Never the full roster lens -"
-                                      " that runs once at land."))})
+                                 (str "Adversarial intent review for " feature ". "
+                                      (format-alpha/reflow
+                                       "|Read the diff (`git diff main...HEAD`) and the
+                                        |feature intent (kanban card, proposal, or step
+                                        |notes on this run). Challenge the INTENT, not
+                                        |style: is the change the right change, does the
+                                        |approach fit the specs it cites, what will age
+                                        |badly for module")
+                                      " `" module "`. "
+                                      (format-alpha/reflow
+                                       "|Your FINAL MESSAGE becomes the gate's outcome
+                                        |notes: put the full findings there, verdict
+                                        |first. Do not write to workflow strands. Never
+                                        |the full roster lens - that runs once at land.")))})
    (workflow/step :resolve-intent
                   (fn [_] "Resolve intent-review findings")
                   :self
@@ -1068,15 +1071,18 @@
                                "agent-run/cwd" (fn [{:keys [worktree]}] worktree)
                                "agent-run/prompt"
                                (fn [{:keys [module]}]
-                                 (str "Adversarial review of the fresh per-concern split of"
-                                      " module `" module "` (diff: `git diff main...HEAD`),"
-                                      " while the concern boundaries are still visible: bad"
-                                      " or arbitrary boundaries, forwarding husks in alpha,"
-                                      " story helpers exiled from reading reach, tests"
-                                      " leaning on internals instead of the public surface,"
-                                      " dependency-rule breaches. Your FINAL MESSAGE becomes"
-                                      " the gate's outcome notes: full findings there,"
-                                      " verdict first. Do not write to workflow strands."))})
+                                 (str "Adversarial review of the fresh per-concern split"
+                                      " of module `" module "` "
+                                      (format-alpha/reflow
+                                       "|(diff: `git diff main...HEAD`), while the concern
+                                        |boundaries are still visible: bad or arbitrary
+                                        |boundaries, forwarding husks in alpha, story
+                                        |helpers exiled from reading reach, tests leaning
+                                        |on internals instead of the public surface,
+                                        |dependency-rule breaches. Your FINAL MESSAGE
+                                        |becomes the gate's outcome notes: full findings
+                                        |there, verdict first. Do not write to workflow
+                                        |strands.")))})
    (workflow/step :resolve-split
                   (fn [_] "Resolve split-review findings")
                   :self
