@@ -11,7 +11,6 @@
   one weaver survives a real stop/start and re-arms in a fresh weaver."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
-            [skein.api.events.alpha :as events]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db :as db]
@@ -50,7 +49,7 @@
                                :handler `add-strand-handler
                                :payload {:title "Scheduled strand"}})
       (test-alpha/advance! rt (Duration/ofSeconds 2))
-      (events/await-quiescent! rt)
+      (test-alpha/await-quiescent! rt)
       (is (= ["Scheduled strand"] (scheduler-strand-titles rt))
           "the handler mutated the strand graph on the shared lane")
       (is (nil? (first (scheduler/pending rt))) "no wake remains armed"))))
@@ -87,7 +86,7 @@
           ;; and re-arm happen later in the same run-fire! dispatch. Settle the
           ;; event lane so pending has drained before we read scheduler state,
           ;; the same quiescence gate the first test uses.
-          (events/await-quiescent! rt2)
+          (test-alpha/await-quiescent! rt2)
           (is (= ["Survivor strand"] (scheduler-strand-titles rt2))
               "the re-armed handler mutated the graph in the fresh weaver")
           (is (empty? (scheduler/pending rt2))

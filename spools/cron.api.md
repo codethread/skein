@@ -42,12 +42,12 @@ Block until every offloaded cron job on `runtime` has finished, then return
   `runtime`.
 
   The deterministic join for tests: because job bodies run off the event lane,
-  `skein.api.events.alpha/await-quiescent!` returns before a job completes. The
+  `skein.test.alpha/await-quiescent!` returns before a job completes. The
   in-flight latch is incremented on the event lane in `fire-wake` before submit,
   so once the lane has quiesced any offloaded job is already counted. Polls the
   latch atom until the count reaches zero or the budget expires, throwing loudly
   on timeout (TEN-003), mirroring the event-lane join in
-  `skein.api.events.alpha/await-quiescent!`. `opts` accepts `:timeout-ms` (a
+  `skein.test.alpha/await-quiescent!`. `opts` accepts `:timeout-ms` (a
   positive integer); unknown keys are rejected loudly. The default budget comes
   from `skein.spools.test-support/await-budget-ms`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/spools/cron/src/skein/spools/cron.clj#L223-L251">Source</a></sub></p>

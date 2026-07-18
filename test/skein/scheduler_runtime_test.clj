@@ -9,7 +9,6 @@
   real weaver runtime and its shared event worker."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
-            [skein.api.events.alpha :as events]
             [skein.api.runtime.alpha :as runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
@@ -334,7 +333,7 @@
       (scheduler/rearm! rt)
       (scheduler/rearm! rt)
       (test-alpha/advance! rt (Duration/ofSeconds 2))
-      (events/await-quiescent! rt)
+      (test-alpha/await-quiescent! rt)
       (is (= 1 @fire-count) "repeated re-arm must not double-arm the same wake"))))
 
 (deftest reload-rearm-does-not-refire-completed-wake

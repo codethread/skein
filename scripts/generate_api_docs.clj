@@ -16,12 +16,16 @@
 ;; The blessed spool-facing API tier (SPEC-005.C2). Generated reference only —
 ;; the behavior contracts stay in the root specs.
 (def alpha-api-docs
-  (for [nm ["batch" "cli" "current" "events" "format" "graph" "hooks" "notes"
-            "patterns" "peers" "relations" "return-shape" "runtime" "scheduler" "spool" "views"
-            "vocab" "weaver"]]
-    {:name nm
-     :source (str "src/skein/api/" (if (= nm "return-shape") "return_shape" nm) "/alpha.clj")
-     :outfile (str "docs/api/" nm ".api.md")}))
+  (concat
+   (for [nm ["batch" "cli" "current" "events" "format" "graph" "hooks" "notes"
+             "patterns" "peers" "relations" "return-shape" "runtime" "scheduler" "spool" "views"
+             "vocab" "weaver"]]
+     {:name nm
+      :source (str "src/skein/api/" (if (= nm "return-shape") "return_shape" nm) "/alpha.clj")
+      :outfile (str "docs/api/" nm ".api.md")})
+   [{:name "test"
+     :source "src/skein/test/alpha.clj"
+     :outfile "docs/api/test.api.md"}]))
 
 (doseq [{:keys [source outfile]} (concat spool-docs alpha-api-docs)]
   (quickdoc/quickdoc

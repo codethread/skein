@@ -191,18 +191,17 @@ Honest source: this repo's `:nvd-scan` job in
 
 **Situation.** A test advances a manual clock and expects a cron job's side
 effect. The scheduler event lane can quiesce before the offloaded job body
-finishes, so `events/await-quiescent!` alone is not enough.
+finishes, so `test-alpha/await-quiescent!` alone is not enough.
 
 **Composition.** Use the deterministic join sequence: advance the manual clock,
 wait for the event lane, then wait for cron's execution executor to go idle.
 
 ```clojure
-(require '[skein.api.events.alpha :as events]
-         '[skein.spools.cron :as cron]
+(require '[skein.spools.cron :as cron]
          '[skein.test.alpha :as test-alpha])
 
 (test-alpha/advance! runtime java.time.Duration/ofMinutes 10)
-(events/await-quiescent! runtime)
+(test-alpha/await-quiescent! runtime)
 (cron/await-quiescent! runtime)
 
 ;; Now assert the job's side effect or cron status.

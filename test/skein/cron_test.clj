@@ -7,12 +7,11 @@
 
   Fires drive off a manual runtime clock and `skein.test.alpha/advance!`: the
   scheduler's own clock pump releases the due wake onto the event lane, so
-  `advance!` + `events/await-quiescent!` settles the lane and
+  `advance!` + `test-alpha/await-quiescent!` settles the lane and
   `cron/await-quiescent!` joins the offloaded job body — no `Thread/sleep` or
   wall waits
   (`PLAN-cron-on-scheduler-001.V3`). Cron registers no pump of its own."
   (:require [clojure.test :refer [deftest is testing]]
-            [skein.api.events.alpha :as events]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.spools.cron :as cron]
             [skein.spools.test-support :as test-support]
@@ -43,7 +42,7 @@
   the offloaded job body, so a fired job's result is observable."
   [rt]
   (test-alpha/advance! rt (Duration/ofSeconds 2))
-  (events/await-quiescent! rt)
+  (test-alpha/await-quiescent! rt)
   (cron/await-quiescent! rt))
 
 (deftest register-persists-wake-lists-and-unregisters

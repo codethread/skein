@@ -1,14 +1,15 @@
 (ns skein.api.events.alpha
-  "Explicit-runtime API for registering, inspecting, and submitting weaver events.
+  "Explicit-runtime API for registering and inspecting weaver event handlers.
 
   Callers own runtime selection and pass the target weaver runtime as the first
   argument. This namespace owns event handler validation, function resolution,
-  registry state, asynchronous failure capture, and event submission; the queue
-  submission and worker dispatch live in `skein.core.weaver.dispatch` and
-  `skein.core.weaver.runtime`."
+  registry state, and asynchronous failure capture. Internal mutation APIs
+  submit events through `skein.core.weaver.dispatch`; this public namespace is
+  observe-only."
   (:require [clojure.string :as str]
             [skein.core.weaver.access :as access]
-            [skein.core.weaver.dispatch :as dispatch]))
+            [skein.core.weaver.dispatch :as dispatch]
+            [skein.test.alpha :as test-alpha]))
 
 (defn- validate-event-handler-key! [key]
   (when-not (or (keyword? key) (symbol? key) (string? key))
@@ -78,38 +79,11 @@
   [runtime]
   @(:recent-failures (access/event-system runtime)))
 
-(defn enqueue!
-  "Submit an event map to `runtime`'s event system for asynchronous dispatch."
-  [runtime event]
-  (dispatch/enqueue! runtime event))
-
 (defn await-quiescent!
-  "Block until `runtime`'s event lane settles, then return `runtime`.
+  "Delegate to `skein.test.alpha/await-quiescent!`.
 
-  Settled means the bounded event queue is empty *and* no handler dispatch is in
-  flight; the worker raises its dispatch-in-progress flag before it claims an
-  event, so this never reports settled while a just-claimed dispatch is still
-  running. Throws an `ex-info` on timeout. The default budget comes from
-  `skein.spools.test-support/await-budget-ms`; override it with `:timeout-ms`.
-
-  This is a lane-only primitive: it says nothing about off-lane completion
-  signals a handler may have kicked off (poll-until loops, agent-run awaits)."
-  ([runtime] (await-quiescent! runtime {}))
+  This compatibility alias moves to the author-side test API and will be
+  removed before the v1 stamp, after agent-harness.spool v3 migrates."
+  ([runtime] (test-alpha/await-quiescent! runtime))
   ([runtime {:keys [timeout-ms]}]
-   (let [event-system (access/event-system runtime)
-         queue ^java.util.concurrent.BlockingQueue (:queue event-system)
-         dispatch-in-progress? (:dispatch-in-progress? event-system)
-         timeout-ms (or timeout-ms ((requiring-resolve 'skein.spools.test-support/await-budget-ms)))
-         _ (when-not (and (integer? timeout-ms) (pos? timeout-ms))
-             (throw (ex-info "await-quiescent! :timeout-ms must be a positive integer"
-                             {:timeout-ms timeout-ms})))
-         deadline (+ (System/currentTimeMillis) timeout-ms)]
-     (loop []
-       (cond
-         (and (.isEmpty queue) (not @dispatch-in-progress?)) runtime
-         (> (System/currentTimeMillis) deadline)
-         (throw (ex-info "Timed out awaiting event-lane quiescence"
-                         {:timeout-ms timeout-ms
-                          :queue-size (.size queue)
-                          :dispatch-in-progress? @dispatch-in-progress?}))
-         :else (do (Thread/sleep 5) (recur)))))))
+   (test-alpha/await-quiescent! runtime {:timeout-ms timeout-ms})))

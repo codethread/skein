@@ -3,13 +3,13 @@
 # <a name="skein.api.events.alpha">skein.api.events.alpha</a>
 
 
-Explicit-runtime API for registering, inspecting, and submitting weaver events.
+Explicit-runtime API for registering and inspecting weaver event handlers.
 
   Callers own runtime selection and pass the target weaver runtime as the first
   argument. This namespace owns event handler validation, function resolution,
-  registry state, asynchronous failure capture, and event submission; the queue
-  submission and worker dispatch live in `skein.core.weaver.dispatch` and
-  `skein.core.weaver.runtime`.
+  registry state, and asynchronous failure capture. Internal mutation APIs
+  submit events through `skein.core.weaver.dispatch`; this public namespace is
+  observe-only.
 
 
 
@@ -21,26 +21,11 @@ Explicit-runtime API for registering, inspecting, and submitting weaver events.
 ```
 Function.
 
-Block until `runtime`'s event lane settles, then return `runtime`.
+Delegate to `skein.test.alpha/await-quiescent!`.
 
-  Settled means the bounded event queue is empty *and* no handler dispatch is in
-  flight; the worker raises its dispatch-in-progress flag before it claims an
-  event, so this never reports settled while a just-claimed dispatch is still
-  running. Throws an `ex-info` on timeout. The default budget comes from
-  `skein.spools.test-support/await-budget-ms`; override it with `:timeout-ms`.
-
-  This is a lane-only primitive: it says nothing about off-lane completion
-  signals a handler may have kicked off (poll-until loops, agent-run awaits).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L86-L115">Source</a></sub></p>
-
-## <a name="skein.api.events.alpha/enqueue!">`enqueue!`</a>
-``` clojure
-(enqueue! runtime event)
-```
-Function.
-
-Submit an event map to `runtime`'s event system for asynchronous dispatch.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L81-L84">Source</a></sub></p>
+  This compatibility alias moves to the author-side test API and will be
+  removed before the v1 stamp, after agent-harness.spool v3 migrates.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L82-L89">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/handlers">`handlers`</a>
 ``` clojure
@@ -49,7 +34,7 @@ Submit an event map to `runtime`'s event system for asynchronous dispatch.
 Function.
 
 Return data-first event handler registry entries from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L70-L74">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L71-L75">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/recent-failures">`recent-failures`</a>
 ``` clojure
@@ -58,7 +43,7 @@ Return data-first event handler registry entries from `runtime`.
 Function.
 
 Return recent asynchronous event handler failures from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L76-L79">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L77-L80">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/register!">`register!`</a>
 ``` clojure
@@ -68,7 +53,7 @@ Return recent asynchronous event handler failures from `runtime`.
 Function.
 
 Register or replace an event handler in `runtime` for selected event types.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L50-L61">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L51-L62">Source</a></sub></p>
 
 ## <a name="skein.api.events.alpha/unregister!">`unregister!`</a>
 ``` clojure
@@ -77,4 +62,4 @@ Register or replace an event handler in `runtime` for selected event types.
 Function.
 
 Unregister an event handler by stable key from `runtime`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L63-L68">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/events/alpha.clj#L64-L69">Source</a></sub></p>
