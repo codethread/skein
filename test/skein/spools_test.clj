@@ -136,7 +136,7 @@
 (deftest approved-returns-empty-spools-when-files-are-missing
   (with-runtime
     (fn [rt _]
-      (is (= {:spools {}} (runtime/approved rt))))))
+      (is (= {:spools {}} (select-keys (runtime/approved rt) [:spools]))))))
 
 (deftest approved-fails-loudly-when-local-spools-edn-is-malformed
   (with-runtime
@@ -174,7 +174,7 @@
                                       :root (.getCanonicalPath local-root)
                                       :source (shared-source config-dir)
                                       :provenance :spools-edn}}}
-               (runtime/approved rt)))))))
+               (select-keys (runtime/approved rt) [:spools])))))))
 
 (deftest approved-local-spools-override-shared-by-coordinate
   (with-runtime
@@ -225,7 +225,7 @@
                                          :root (.getCanonicalPath relative-root)
                                          :source (shared-source config-dir)
                                          :provenance :spools-edn}}}
-               (runtime/approved rt)))))))
+               (select-keys (runtime/approved rt) [:spools])))))))
 
 (deftest approved-expands-home-relative-roots
   (with-runtime
@@ -238,7 +238,7 @@
                                      :root (.getCanonicalPath home-root)
                                      :source (shared-source config-dir)
                                      :provenance :spools-edn}}}
-               (runtime/approved rt)))))))
+               (select-keys (runtime/approved rt) [:spools])))))))
 
 (deftest approved-canonicalizes-symlink-roots
   (with-runtime
@@ -254,7 +254,7 @@
                                      :root (.getCanonicalPath target)
                                      :source (shared-source config-dir)
                                      :provenance :spools-edn}}}
-               (runtime/approved rt)))))))
+               (select-keys (runtime/approved rt) [:spools])))))))
 
 (deftest approved-does-not-reject-missing-local-roots
   (with-runtime
@@ -266,7 +266,7 @@
                                         :root (.getCanonicalPath missing)
                                         :source (shared-source config-dir)
                                         :provenance :spools-edn}}}
-               (runtime/approved rt)))))))
+               (select-keys (runtime/approved rt) [:spools])))))))
 
 (deftest approved-normalizes-git-family-roots
   (with-runtime
@@ -287,7 +287,7 @@
                                          :root (.getPath (io/file cache-dir "skein" "spools" sha "nested/spool"))
                                          :source (shared-source config-dir)
                                          :provenance :spools-edn}}}
-                   (runtime/approved rt)))))))))
+                   (select-keys (runtime/approved rt) [:spools])))))))))
 
 (deftest approved-rejects-malformed-git-spools
   (with-runtime

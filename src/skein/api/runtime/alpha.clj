@@ -106,8 +106,9 @@
   "Return the normalized approved spool roots for `runtime`'s config dir.
 
   Each root entry includes `:provenance :spools-edn|:local-overlay`; overlay
-  entries also include their explicit `:claims` marker. The result conforms to
-  `::approved-result`."
+  entries also include their explicit `:claims` marker. `:families` maps family
+  symbols to the declared `spools.edn` entry, effective post-overlay coordinate,
+  provenance, and overlay claim or nil. The result conforms to `::approved-result`."
   [runtime]
   (validate-approved-result!
    (spool-sync/approved-spools runtime (running-release-marker runtime))))

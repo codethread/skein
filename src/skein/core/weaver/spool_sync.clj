@@ -535,17 +535,16 @@
     (cond
       (and (not (.exists file))
            (not (java.nio.file.Files/isSymbolicLink (.toPath file))))
-      {:spools {}}
+      {:spools {}
+       :declared-spools {}}
 
       (not (.isFile file))
       (throw (ex-info (str name " is malformed or unreadable") source))
 
       :else
-      (normalize-approved-spools-file
-       name
-       source
-       (read-config-edn-file file (str name " is malformed or unreadable") source)
-       normalize-entry))))
+      (let [config (read-config-edn-file file (str name " is malformed or unreadable") source)]
+        (assoc (normalize-approved-spools-file name source config normalize-entry)
+               :declared-spools (:spools config))))))
 
 (defn- legacy-config-present? [^java.io.File file]
   (or (.exists file)
@@ -585,11 +584,18 @@
                          (s/valid? ::coordinate (::coordinate (meta entry)))
                          (s/valid? ::provenance (::provenance (meta entry)))))
                   %)))
+(s/def ::declared ::family-entry)
+(s/def ::effective-coordinate ::coordinate)
+(s/def ::approved-family-entry
+  (s/and #(exact-keys? #{:declared :effective-coordinate :provenance :claims} %)
+         (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims])))
+(s/def ::approved-family-map (s/map-of symbol? ::approved-family-entry))
 (s/def ::pending-validations vector?)
 (s/def ::approved-result
-  (s/and #(exact-keys? #{:spools :mvn-overrides :pending-validations} %)
+  (s/and #(exact-keys? #{:spools :families :mvn-overrides :pending-validations} %)
          #(contains? % :spools)
          #(s/valid? ::approved-root-map (:spools %))
+         #(s/valid? ::approved-family-map (:families %))
          #(or (not (contains? % :mvn-overrides)) (map? (:mvn-overrides %)))
          #(or (not (contains? % :pending-validations)) (vector? (:pending-validations %)))))
 
@@ -625,11 +631,13 @@
 
   Stage 1 normalizes each `spools.edn` entry as one family, then applies claimed
   `spools.local.edn` coordinate overlays while inheriting family roots and floors.
-  The returned `:spools` map remains keyed by root lib. Missing files contribute
-  no spools, while malformed present files fail loudly. Stage 2 checks every root
-  floor before materialization. When `running-marker` is omitted, declared
-  `:skein/min` checks are returned under `:pending-validations`; explicit `:none`
-  rejects declared floors."
+  The returned `:spools` map remains keyed by root lib. `:families` maps each
+  family to its declared `spools.edn` entry, effective post-overlay coordinate,
+  provenance, and optional overlay claim. Missing files contribute no spools,
+  while malformed present files fail loudly. Stage 2 checks every root floor
+  before materialization. When `running-marker` is omitted, declared `:skein/min`
+  checks are returned under `:pending-validations`; explicit `:none` rejects
+  declared floors."
   ([runtime]
    (approved-spools runtime nil))
   ([runtime running-marker]
@@ -641,6 +649,13 @@
          _ (reject-duplicate-root-libs! families)
          pending-validations (validate-family-requirements! families running-marker)
          overrides (merge (:mvn-overrides shared) (:mvn-overrides local))
+         family-projection (into {}
+                                 (map (fn [{:keys [family coordinate claims provenance]}]
+                                        [family {:declared (get (:declared-spools shared) family)
+                                                 :effective-coordinate coordinate
+                                                 :provenance provenance
+                                                 :claims claims}]))
+                                 families)
          spools (into {}
                       (mapcat
                        (fn [{:keys [family coordinate roots-map claims provenance source]}]
@@ -663,7 +678,8 @@
                                             ::provenance provenance})]))
                                 roots-map)))
                        families))
-         result (cond-> {:spools spools}
+         result (cond-> {:spools spools
+                         :families family-projection}
                   (seq overrides) (assoc :mvn-overrides overrides)
                   (seq pending-validations) (assoc :pending-validations pending-validations))]
      (require-spec! ::approved-result result
