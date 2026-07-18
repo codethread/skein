@@ -47,7 +47,8 @@
   :codex-ro in harnesses.clj) - read-only stays prompt-discipline. Two
   sign-off invariants: the synthesizer is never a seat that reviewed, and at
   least one reviewing seat comes from outside the authoring model family."
-  (:require [ct.spools.delegation :as agents]))
+  (:require [ct.spools.delegation :as agents]
+            [skein.api.format.alpha :as fmt]))
 
 (def change-review
   "Roster fanned out over each reviewed change in this repository."
@@ -102,6 +103,30 @@
                  "changed-file list with targeted diff reads and one bounded guide read; do "
                  "not read whole namespaces or re-read a file in slices after a whole read. "
                  "Budget ~15-18 calls.")}
+
+    {:name "source-form"
+     :harness :luna-low
+     :brief (fmt/reflow
+             "|Police source form, not behavior. In changed Clojure files:
+              |docstrings and comments are hard-wrapped in source (match the
+              |namespace; 96 columns in skein.api.* modules per
+              |SPEC-003.C19a), and long prose values are |-margin blocks
+              |reflowed through skein.api.format.alpha, never (str ...)
+              |chains or one wide literal.
+              |Reading order is public-first: the surface at the top of the
+              |file, plumbing below, `declare` where definition order fights
+              |it; in skein.api.*.alpha files C19a is normative -
+              |contract-bearing forms only (public promised vars, public
+              |spec registrations), implementation in the sibling .internal
+              |namespace. Changed markdown is the counter-rule: prose
+              |paragraphs run full length, one source line each, for the
+              |IDE to wrap - flag newly hard-wrapped markdown prose (code
+              |fences and tables excepted). The mechanical width and
+              |privacy gate for converted api modules is lint's job
+              |(quality.api-form); do not re-run it - judge what it cannot:
+              |wrap points that fight reading, ordering that buries the
+              |surface, prose authored against the grain. Work from the
+              |diff with ranged reads; budget ~10-12 calls.")}
 
     {:name "spec-shapes"
      :harness :luna-low

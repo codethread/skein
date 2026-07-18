@@ -1,7 +1,7 @@
 (ns quality.conventions-check
   "Enforce repo-wide Clojure conventions that prose alone cannot hold.
 
-  Three checks, all held at zero findings:
+  Four checks, all held at zero findings:
   - every namespace carries a docstring;
   - no local binding is named after a clojure.core macro (a local named
     `fn` shadows the macro and turns later thunks into eager calls; rename
@@ -9,12 +9,16 @@
   - every literal `(require ...)` embedded in code-as-data — the quoted
     forms tests route through `skein.test.alpha/repl!` and init fixtures —
     names a namespace that resolves to a source file, so a namespace rename
-    cannot silently strand a tested form until weaver-side eval."
+    cannot silently strand a tested form until weaver-side eval;
+  - converted `skein.api.*` modules keep the v1 form contract
+    (SPEC-003.C19a); the check and its shrinking `pending` ratchet live
+    in `quality.api-form`."
   (:require [clj-kondo.core :as kondo]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.reader :as reader]
-            [clojure.tools.reader.reader-types :as reader-types]))
+            [clojure.tools.reader.reader-types :as reader-types]
+            [quality.api-form :as api-form]))
 
 (def ^:private source-roots
   ;; Everything lintable: engine, batteries, local-root spools, trusted
@@ -142,7 +146,8 @@
                     (str file ":" row ": local `" local
                          "` shadows the clojure.core macro; rename on destructure"
                          " (e.g. `{" local "-sym :" local "}`)"))
-                  (embedded-require-findings))]
+                  (embedded-require-findings)
+                  (api-form/check analysis))]
     (if (seq findings)
       (do (binding [*out* *err*]
             (doseq [f findings] (println f))
