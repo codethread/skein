@@ -341,6 +341,30 @@
           (is (s/valid? ::batteries/spool-bump-result result))
           (is (true? (get-in result [:requirements :valid?]))))))))
 
+(deftest spool-bump-reports-only-usable-compare-urls
+  (doseq [[git-url expected-base]
+          [["git@github.com:demo/family.git" "https://github.com/demo/family"]
+           ["ssh://git@example.invalid/demo/family.git" nil]]]
+    (testing git-url
+      (with-runtime
+        (fn [rt _config-dir]
+          (batteries/install! rt)
+          (let [old-sha (sha "1")
+                new-sha (sha "2")]
+            (runtime/upsert-spool-entry!
+             rt 'demo/family
+             {:git/url git-url
+              :git/tag "v1"
+              :git/sha old-sha
+              :roots {'demo/root "."}})
+            (stub-git! rt (tag-lines ["v2" (sha "a") new-sha]) nil)
+            (let [result (weaver/op! rt 'spool ["bump" "demo/family" "--to" "v2"])]
+              (is (= (when expected-base
+                       (str expected-base "/compare/" old-sha "..." new-sha))
+                     (:compare-url result)))
+              (is (contains? result :compare-url))
+              (is (s/valid? ::batteries/spool-bump-result result)))))))))
+
 (deftest spool-status-joins-overlay-sync-use-pending-and-release-truth-without-git
   (with-runtime
     {:release-marker "v5"}
@@ -415,7 +439,25 @@
                                               :status :loaded}}})]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                 #"spool-status returned an invalid result"
-                                (weaver/op! rt 'spool-status []))))))))
+                                (weaver/op! rt 'spool-status [])))))))
+  (testing "malformed runtime use entry"
+    (with-batteries
+      (fn [rt]
+        (runtime/upsert-spool-entry!
+         rt 'demo/family
+         {:git/url "https://example.invalid/demo.git"
+          :git/tag "v1"
+          :git/sha (sha "d")
+          :roots {'demo/root "."}})
+        (let [use-entry {:key :demo/module :status :loaded}]
+          (with-redefs [runtime/uses (fn [_] {:demo/module use-entry})]
+            (let [error (try
+                          (weaver/op! rt 'spool-status [])
+                          nil
+                          (catch clojure.lang.ExceptionInfo error error))]
+              (is (= "Runtime use entry has an invalid shape" (ex-message error)))
+              (is (= :demo/module (:use-key (ex-data error))))
+              (is (= use-entry (:use-entry (ex-data error)))))))))))
 
 (deftest spool-contracts-and-dispatch-fail-loudly
   (is (s/valid? ::batteries/advisory-manifest

@@ -80,7 +80,7 @@
          #(exact-keys? #{:tag :sha} %)))
 (s/def ::old ::coordinate)
 (s/def ::new ::coordinate)
-(s/def ::compare-url ::non-blank-string)
+(s/def ::compare-url (s/nilable ::non-blank-string))
 (s/def ::spool-bump-result
   (s/and (s/keys :req-un [::operation ::status ::family ::old ::new ::compare-url ::requirements])
          #(exact-keys? #{:operation :status :family :old :new :compare-url :requirements} %)))
@@ -471,8 +471,18 @@
                             {:family family
                              :requirements requirements})))))))
 
+(defn- github-web-url [git-url]
+  (when-let [[_ owner repository]
+             (or (re-matches #"(?i)https?://github\.com/([^/]+)/([^/?#]+?)(?:\.git)?/?" git-url)
+                 (re-matches #"(?i)ssh://(?:[^@/]+@)?github\.com(?:\:\d+)?/([^/]+)/([^/?#]+?)(?:\.git)?/?" git-url)
+                 (re-matches #"(?i)(?:[^@/:]+@)?github\.com:([^/]+)/([^/?#]+?)(?:\.git)?/?" git-url))]
+    (str "https://github.com/" owner "/" repository)))
+
 (defn- compare-url [git-url old-sha new-sha]
-  (str (str/replace git-url #"\.git$" "") "/compare/" old-sha "..." new-sha))
+  (when-let [web-url (or (github-web-url git-url)
+                         (when (re-matches #"(?i)https?://.+" git-url)
+                           (str/replace git-url #"\.git$" "")))]
+    (str web-url "/compare/" old-sha "..." new-sha)))
 
 (defn- bump-spool-op [ctx]
   (let [rt (:op/runtime ctx)
@@ -510,6 +520,12 @@
          :requirements (:requirements (runtime-api/declared rt))}))))
 
 (defn- family-uses [uses roots]
+  (doseq [[use-key use-entry] uses]
+    (when-not (s/valid? ::runtime-api/use-entry use-entry)
+      (throw (ex-info "Runtime use entry has an invalid shape"
+                      {:use-key use-key
+                       :use-entry use-entry
+                       :explain (s/explain-data ::runtime-api/use-entry use-entry)}))))
   (into (sorted-map)
         (filter (fn [[_ use-entry]]
                   (seq (set/intersection roots (set (get-in use-entry [:opts :spools]))))))
@@ -1113,7 +1129,7 @@
                               :entry :json :requirements :json}}
             "bump" {:type :map
                     :required {:operation :string :status :string :family :string :old :json :new :json
-                               :compare-url :string :requirements :json}}}}
+                               :compare-url [:nullable :string] :requirements :json}}}}
    'spool-status {:type :map
                   :required {:operation :string :families :json :requirements :json
                              :pending-generation :json :release-marker :json}}})

@@ -320,13 +320,17 @@ that implicit symbol. The completed entry goes through the validated, comment-pr
 Bump lists the same annotated, peeled releases and updates `:git/tag` and `:git/sha` together. An
 explicit `--to vN` chooses the target. Without `--to`, a failing declared floor chooses its computed
 suggestion for that family; when current requirements pass, bump chooses the highest release. The
-result includes a `<repository>/compare/<old-sha>...<new-sha>` URL as a review hint. It does not
-claim that the compared releases are compatible.
+result always includes `compare-url`. GitHub HTTPS, SSH, and SCP remotes become an HTTPS web URL
+before the compare path is added. Other HTTP(S) remotes keep their transport URL without a trailing
+`.git`. An unrecognized non-HTTP(S) remote produces a nil `compare-url`, because batteries cannot
+infer a usable web URL. The hint does not claim that the compared releases are compatible.
 
 `spool-status` performs no Git call, file write, sync, reload, or adoption action. It joins the
 running runtime's declared family projection with local-overlay provenance and claims, sync state,
 uses, pending generation, requirement outcome, and release marker. The result reports current
-truth; it does not try to repair or adopt anything.
+truth; it does not try to repair or adopt anything. Every runtime use entry is validated before
+family filtering. A malformed entry fails loudly with its use key and value instead of disappearing
+from the status result.
 
 ## 4. Attribute and edge flag semantics
 
