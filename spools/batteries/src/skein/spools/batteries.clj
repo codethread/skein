@@ -43,6 +43,71 @@
 (def ^:private readable-states #{"active" "closed" "replaced"})
 (def ^:private release-tag-pattern #"v([1-9][0-9]*)")
 
+(defn- exact-keys? [expected value]
+  (and (map? value) (= expected (set (keys value)))))
+
+;; Public data contracts for the spool op. The manifest spec owns the producer
+;; input shape; the result specs own the three JSON-bearing command results.
+(s/def ::non-blank-string (s/and string? (complement str/blank?)))
+(s/def ::root ::non-blank-string)
+(s/def ::manifest-root
+  (s/and (s/keys :req-un [::root])
+         #(exact-keys? #{:root} %)))
+(s/def ::roots (s/map-of symbol? ::manifest-root :min-count 1))
+(s/def ::requires (s/map-of symbol? ::specs/release-marker-claim))
+(s/def :spool/format #{1})
+(s/def ::advisory-manifest
+  (s/and (s/keys :req [:spool/format]
+                 :req-un [::roots]
+                 :opt [:skein/min]
+                 :opt-un [::requires])
+         #(exact-keys? #{:spool/format :skein/min :roots :requires}
+                       (merge {:skein/min nil :requires nil} %))))
+
+(s/def ::status #{:inserted :updated})
+(s/def ::operation ::non-blank-string)
+(s/def ::family symbol?)
+(s/def ::entry ::runtime-api/spool-entry)
+(s/def ::requirements
+  #(s/valid? ::runtime-api/declared-result {:families {} :requirements %}))
+(s/def ::spool-add-result
+  (s/and (s/keys :req-un [::operation ::status ::family ::entry ::requirements])
+         #(exact-keys? #{:operation :status :family :entry :requirements} %)))
+(s/def ::tag ::specs/release-marker-claim)
+(s/def ::sha #(and (string? %) (boolean (re-matches #"[0-9a-f]{40}" %))))
+(s/def ::coordinate
+  (s/and (s/keys :req-un [::tag ::sha])
+         #(exact-keys? #{:tag :sha} %)))
+(s/def ::old ::coordinate)
+(s/def ::new ::coordinate)
+(s/def ::compare-url ::non-blank-string)
+(s/def ::spool-bump-result
+  (s/and (s/keys :req-un [::operation ::status ::family ::old ::new ::compare-url ::requirements])
+         #(exact-keys? #{:operation :status :family :old :new :compare-url :requirements} %)))
+(s/def ::status-family
+  (s/and map?
+         #(exact-keys? #{:declared :effective-coordinate :provenance :claims :syncs :uses} %)
+         #(s/valid? ::runtime-api/spool-entry (:declared %))
+         #(map? (:effective-coordinate %))
+         #(keyword? (:provenance %))
+         #(or (nil? (:claims %)) (string? (:claims %)))
+         #(map? (:syncs %))
+         #(map? (:uses %))))
+(s/def ::families (s/map-of symbol? ::status-family))
+(s/def ::pending-generation (s/nilable ::runtime-api/pending-generation))
+(s/def ::release-marker ::specs/release-marker-result)
+(s/def ::spool-status-result
+  (s/and (s/keys :req-un [::operation ::families ::requirements ::pending-generation ::release-marker])
+         #(exact-keys? #{:operation :families :requirements :pending-generation :release-marker} %)))
+
+(defn- require-valid! [spec value message]
+  (when-not (s/valid? spec value)
+    (throw (ex-info message
+                    {:spec spec
+                     :value value
+                     :explain (s/explain-data spec value)})))
+  value)
+
 (defn- validate-generic-state
   "Return state when it is active|closed, else fail loudly (mutations)."
   [state]
@@ -187,20 +252,6 @@
 (defn- git-client-state [rt]
   (runtime-api/spool-state rt ::git-client #(atom default-git-client)))
 
-(defn set-git-client!
-  "Set the remote Git seam for spool helper operations on `runtime`.
-
-  `client` must contain `:ls-remote` and `:manifest-at` functions. This is a
-  runtime-owned test and trusted-config seam; normal callers use the default
-  subprocess-backed client."
-  [rt client]
-  (when-not (and (= #{:ls-remote :manifest-at} (set (keys client)))
-                 (every? fn? (vals client)))
-    (throw (ex-info "Spool Git client must contain :ls-remote and :manifest-at functions"
-                    {:client client})))
-  (reset! (git-client-state rt) client)
-  client)
-
 (defn- git-client [rt]
   @(git-client-state rt))
 
@@ -208,10 +259,24 @@
   (when-let [[_ n] (and (string? tag) (re-matches release-tag-pattern tag))]
     (bigint n)))
 
-(defn- require-release-tag [tag role]
+(defn- available-tags-description [available]
+  (if (seq available)
+    (str/join ", " available)
+    "none found"))
+
+(defn- release-tag-diagnostics [available]
+  {:accepted-format "vN where N is a positive integer"
+   :available (vec available)})
+
+(defn- require-release-tag [tag role available]
   (when-not (release-number tag)
-    (throw (ex-info (str role " must be an ordered release marker vN; v0 is reserved")
-                    {:tag tag :reason :invalid-release-marker})))
+    (throw (ex-info
+            (str role " must match vN where N is a positive integer; v0 is reserved. "
+                 "Available annotated tags: " (available-tags-description available))
+            {:tag tag
+             :reason :invalid-release-marker
+             :accepted-format (:accepted-format (release-tag-diagnostics available))
+             :available (:available (release-tag-diagnostics available))})))
   tag)
 
 (defn- peeled-tags [output]
@@ -226,20 +291,28 @@
 (defn- select-tag [output requested]
   (let [tags (peeled-tags output)
         tag (if requested
-              (require-release-tag requested "Requested tag")
+              (require-release-tag requested "Requested tag" (keys tags))
               (last (keys tags)))]
     (when-not tag
       (if (re-find #"refs/tags/v0\^\{\}" output)
-        (throw (ex-info "v0 is reserved; WIP repositories stay untagged"
-                        {:reason :reserved-release-marker :tag "v0"}))
         (throw (ex-info
-                "Repository has no annotated vN release tags; pin a reviewed sha manually in spools.edn"
-                {:reason :no-release-tags}))))
+                (str "v0 is reserved; release tags must match vN where N is a positive integer. "
+                     "Available annotated tags: " (available-tags-description (keys tags)))
+                (merge {:reason :reserved-release-marker :tag "v0"}
+                       (release-tag-diagnostics (keys tags)))))
+        (throw (ex-info
+                (str "Repository has no annotated release tags matching vN where N is a positive "
+                     "integer; available annotated tags: none found. Pin a reviewed sha manually "
+                     "in spools.edn")
+                (merge {:reason :no-release-tags}
+                       (release-tag-diagnostics (keys tags)))))))
     (when-not (contains? tags tag)
-      (throw (ex-info "Release tag is missing or is not annotated"
-                      {:reason :annotated-tag-not-found
-                       :tag tag
-                       :available (vec (keys tags))})))
+      (throw (ex-info
+              (str "Release tag is missing or is not annotated; accepted format is vN where N is a "
+                   "positive integer. Available annotated tags: "
+                   (available-tags-description (keys tags)))
+              (merge {:reason :annotated-tag-not-found :tag tag}
+                     (release-tag-diagnostics (keys tags))))))
     {:tag tag :sha (get tags tag)}))
 
 (defn- url-basename [git-url]
@@ -261,34 +334,12 @@
       (when (or (identical? eof manifest)
                 (not (identical? eof (edn/read {:eof eof} rdr))))
         (throw (ex-info "Advisory spool.edn must contain exactly one EDN value" {})))
-      (when-not (and (map? manifest)
-                     (= 1 (:spool/format manifest))
-                     (contains? manifest :roots))
-        (throw (ex-info "Advisory spool.edn must be a map with :spool/format 1 and :roots"
-                        {:manifest manifest})))
-      (when-let [unknown (seq (remove #{:spool/format :skein/min :roots :requires}
-                                      (keys manifest)))]
-        (throw (ex-info "Advisory spool.edn contains unknown keys"
-                        {:unknown (vec unknown)})))
-      manifest)))
+      (require-valid! ::advisory-manifest manifest
+                      "Advisory spool.edn has an invalid manifest shape"))))
 
 (defn- manifest-roots [manifest implicit-lib]
   (if manifest
-    (let [roots (:roots manifest)]
-      (when-not (and (map? roots) (seq roots))
-        (throw (ex-info "Advisory spool.edn :roots must be a non-empty map"
-                        {:roots roots})))
-      (into {}
-            (map (fn [[lib opts]]
-                   (when-not (and (symbol? lib)
-                                  (map? opts)
-                                  (= #{:root} (set (keys opts)))
-                                  (string? (:root opts))
-                                  (not (str/blank? (:root opts))))
-                     (throw (ex-info "Advisory spool.edn :roots entries must be {lib {:root path}}"
-                                     {:lib lib :entry opts})))
-                   [lib (:root opts)]))
-            roots))
+    (into {} (map (fn [[lib opts]] [lib (:root opts)])) (:roots manifest))
     {implicit-lib "."}))
 
 (defn- family-entry [git-url tag sha manifest lib]
@@ -316,7 +367,7 @@
 
 (defn- bump-target [declared family requested tags]
   (if requested
-    (require-release-tag requested "Target tag")
+    (require-release-tag requested "Target tag" (keys tags))
     (let [requirements (:requirements declared)]
       (if (:valid? requirements)
         (last (keys tags))
@@ -341,11 +392,18 @@
     (let [tags (peeled-tags ((:ls-remote (git-client rt)) (:git/url old-entry)))
           target (bump-target declared family to tags)]
       (when-not target
-        (throw (ex-info "Repository has no annotated vN release tags"
-                        {:family family :reason :no-release-tags})))
+        (throw (ex-info
+                (str "Repository has no annotated release tags matching vN where N is a positive "
+                     "integer; available annotated tags: none found")
+                (merge {:family family :reason :no-release-tags}
+                       (release-tag-diagnostics (keys tags))))))
       (when-not (contains? tags target)
-        (throw (ex-info "Target release tag is missing or is not annotated"
-                        {:family family :tag target :available (vec (keys tags))})))
+        (throw (ex-info
+                (str "Target release tag is missing or is not annotated; accepted format is vN "
+                     "where N is a positive integer. Available annotated tags: "
+                     (available-tags-description (keys tags)))
+                (merge {:family family :reason :annotated-tag-not-found :tag target}
+                       (release-tag-diagnostics (keys tags))))))
       (let [new-sha (get tags target)
             entry (assoc old-entry :git/tag target :git/sha new-sha)
             write (runtime-api/upsert-spool-entry! rt family entry)]
@@ -380,14 +438,28 @@
      :pending-generation (:pending-generation sync-result)
      :release-marker (runtime-api/release-marker rt)}))
 
-(defn spool-about
-  "Return the spool helper's purpose and non-network status contract."
+(defn- spool-about
   []
   {:operation "spool about"
    :purpose (format-alpha/reflow
              "|Add and bump annotated Git spool releases through the validated,
               |comment-preserving runtime write verb. Status joins declared,
               |overlay, sync, use, pending-generation, and release-marker state.")
+   :commands
+   [{:form "strand spool add <git-url> [--tag vN] [--lib family]"
+     :behavior (format-alpha/reflow
+                "|Queries remote annotated tags, fetches the optional advisory
+                 |spool.edn at the selected peeled commit, then atomically writes
+                 |the validated tag and commit pin to the workspace spools.edn.")}
+    {:form "strand spool bump <family> [--to vN]"
+     :behavior (format-alpha/reflow
+                "|Queries remote annotated tags, selects a requested, floor-driven,
+                 |or latest release, then atomically rewrites its tag and peeled
+                 |commit pin together.")}
+    {:form "strand spool status"
+     :behavior (format-alpha/reflow
+                "|Reads runtime and workspace state only. It performs no network,
+                 |file write, sync, reload, or other adoption action.")}]
    :conventions
    [(format-alpha/reflow
      "|Add and bump resolve only peeled refs/tags/vN^{} commits. v0,
@@ -405,9 +477,16 @@
   [ctx]
   (case (:subcommand (:op/args ctx))
     "about" (spool-about)
-    "add" (add-spool-op ctx)
-    "bump" (bump-spool-op ctx)
-    "status" (spool-status (:op/runtime ctx))))
+    "add" (require-valid! ::spool-add-result (assoc (add-spool-op ctx) :operation "spool add")
+                          "spool add returned an invalid result")
+    "bump" (require-valid! ::spool-bump-result (assoc (bump-spool-op ctx) :operation "spool bump")
+                           "spool bump returned an invalid result")
+    "status" (require-valid! ::spool-status-result
+                             (assoc (spool-status (:op/runtime ctx)) :operation "spool status")
+                             "spool status returned an invalid result")
+    (throw (ex-info "Unknown spool subcommand"
+                    {:subcommand (:subcommand (:op/args ctx))
+                     :allowed ["about" "add" "bump" "status"]}))))
 
 ;; The blessed parser's :parse :json uses clojure.data.json/read-str, which
 ;; silently returns the first value and ignores trailing input, so it cannot
@@ -907,9 +986,15 @@
                               :declared-acyclic? :boolean}}}
    'spool {:subcommands
            {"about" {:type :map :required {:operation :string} :extra :json}
-            "add" :json
-            "bump" :json
-            "status" :json}}})
+            "add" {:type :map
+                   :required {:operation :string :status :string :family :string
+                              :entry :json :requirements :json}}
+            "bump" {:type :map
+                    :required {:operation :string :status :string :family :string :old :json :new :json
+                               :compare-url :string :requirements :json}}
+            "status" {:type :map
+                      :required {:operation :string :families :json :requirements :json
+                                 :pending-generation :json :release-marker :json}}}}})
 
 (def ^:private op-registrations
   "Each shipped op: [op-name arg-spec hook-class handler-symbol]."

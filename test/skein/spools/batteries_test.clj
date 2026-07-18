@@ -75,11 +75,12 @@
                        (str commit "\trefs/tags/" tag "^{}")])
                     tag-shas)))
 
+(defn- stub-git-client! [rt client]
+  (reset! (runtime/spool-state rt :skein.spools.batteries/git-client #(atom nil)) client))
+
 (defn- stub-git! [rt tags manifest]
-  (batteries/set-git-client!
-   rt
-   {:ls-remote (fn [_git-url] tags)
-    :manifest-at (fn [_git-url _sha] manifest)}))
+  (stub-git-client! rt {:ls-remote (fn [_git-url] tags)
+                        :manifest-at (fn [_git-url _sha] manifest)}))
 
 (deftest activate-registers-ops-with-provenance-and-hook-classes
   (with-batteries
@@ -164,7 +165,7 @@
       (let [seen-sha (atom nil)
             peeled-v9 (sha "9")
             peeled-v12 (sha "d")]
-        (batteries/set-git-client!
+        (stub-git-client!
          rt
          {:ls-remote
           (fn [_]
@@ -191,6 +192,7 @@
                  entry))
           (is (= entry (get-in (runtime/declared rt) [:families 'acme/demo-spool :declared])))
           (is (= :inserted (:status result)))
+          (is (s/valid? ::batteries/spool-add-result result))
           (is (false? (get-in result [:requirements :valid?]))))))))
 
 (deftest spool-add-implicit-root-and-release-tag-failures
@@ -204,13 +206,22 @@
                                    ["add" "https://example.invalid/acme/demo.spool.git"])
                        [:entry :roots]))))
       (testing "v0 is reserved"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"v0 is reserved"
-                              (weaver/op! rt 'spool
-                                          ["add" "https://example.invalid/demo.git" "--tag" "v0"]))))
+        (stub-git! rt (tag-lines ["v1" (sha "a") (sha "b")]) nil)
+        (let [error (is (thrown? clojure.lang.ExceptionInfo
+                                 (weaver/op! rt 'spool
+                                             ["add" "https://example.invalid/demo.git"
+                                              "--tag" "v0"])))]
+          (is (re-find #"must match vN" (ex-message error)))
+          (is (= "vN where N is a positive integer" (:accepted-format (ex-data error))))
+          (is (= ["v1"] (:available (ex-data error))))))
       (testing "lightweight or absent releases name the manual sha-pin path"
         (stub-git! rt (str (sha "c") "\trefs/tags/v1") nil)
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"pin a reviewed sha manually in spools.edn"
-                              (weaver/op! rt 'spool ["add" "https://example.invalid/untagged.git"])))))))
+        (let [error (is (thrown? clojure.lang.ExceptionInfo
+                                 (weaver/op! rt 'spool
+                                             ["add" "https://example.invalid/untagged.git"])))]
+          (is (re-find #"(?i)pin a reviewed sha manually in spools.edn" (ex-message error)))
+          (is (= "vN where N is a positive integer" (:accepted-format (ex-data error))))
+          (is (= [] (:available (ex-data error)))))))))
 
 (deftest spool-bump-prefers-floor-suggestion-and-rewrites-tag-sha-together
   (with-runtime
@@ -246,6 +257,7 @@
                  (select-keys (get-in (runtime/declared rt)
                                       [:families 'target/family :declared])
                               [:git/tag :git/sha])))
+          (is (s/valid? ::batteries/spool-bump-result result))
           (is (true? (get-in result [:requirements :valid?]))))))))
 
 (deftest spool-status-joins-overlay-sync-use-pending-and-release-truth-without-git
@@ -263,7 +275,7 @@
             (pr-str {:spools {'demo/family {:local/root "../demo" :claims "v3"}}}))
       (spit (io/file config-dir "module.clj") "{:loaded true}\n")
       (runtime/use! rt :demo/module {:file "module.clj" :spools ['demo/root]})
-      (batteries/set-git-client!
+      (stub-git-client!
        rt
        {:ls-remote (fn [_] (throw (ex-info "network called" {})))
         :manifest-at (fn [_ _] (throw (ex-info "network called" {})))})
@@ -274,7 +286,26 @@
         (is (= {} (:syncs family)))
         (is (= :not-synced (get-in family [:uses :demo/module :reason])))
         (is (nil? (:pending-generation result)))
+        (is (s/valid? ::batteries/spool-status-result result))
         (is (= {:marker "v5" :provenance :claimed} (:release-marker result)))))))
+
+(deftest spool-contracts-and-dispatch-fail-loudly
+  (is (s/valid? ::batteries/advisory-manifest
+                {:spool/format 1
+                 :roots {'demo/root {:root "."}}
+                 :requires {'base/root "v2"}
+                 :skein/min "v1"}))
+  (is (not (s/valid? ::batteries/advisory-manifest
+                     {:spool/format 1 :roots {'demo/root {:root "."}} :extra true})))
+  (let [about (batteries/spool-op {:op/args {:subcommand "about"}})]
+    (is (= ["strand spool add <git-url> [--tag vN] [--lib family]"
+            "strand spool bump <family> [--to vN]"
+            "strand spool status"]
+           (mapv :form (:commands about)))))
+  (let [error (is (thrown? clojure.lang.ExceptionInfo
+                           (batteries/spool-op {:op/args {:subcommand :unexpected}})))]
+    (is (= :unexpected (:subcommand (ex-data error))))
+    (is (= ["about" "add" "bump" "status"] (:allowed (ex-data error))))))
 
 (deftest add-happy-path-and-json-shape
   (with-batteries
