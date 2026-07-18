@@ -7,7 +7,7 @@ Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
 
   This namespace owns the primitives no domain namespace does: strand
   create/read/update (`add`, `update`, `supersede`, `archive!`/`unarchive!`,
-  `show`, `list`/`list-lean`/`list-query`, `ready`/`ready-lean`/`ready-query`),
+  `show`, `list`/`list-lean`/`list-query`, and `ready`/`ready-lean`),
   database schema `init`, acyclic-relation declaration
   (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
   (`register-op!`, `replace-op!`, `ops`, `resolve-op`, `op!`,
@@ -75,7 +75,7 @@ Return an op detail projection when argv/envelope form a help alias.
   The alias applies only to ops whose arg-spec declares `:subcommands`, argv is
   exactly one reserved help token, and the envelope carries no payloads. Returns
   nil when the invocation must flow through normal parsing and handler dispatch.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L463-L476">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L458-L471">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/init">`init`</a>
 ``` clojure
@@ -146,7 +146,7 @@ Invoke a registered CLI operation with raw string argv from a root-level `strand
   actual labels.
   Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L484-L526">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L479-L521">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op-help-handler">`op-help-handler`</a>
 ``` clojure
@@ -162,7 +162,7 @@ Project the op registry as help.
   arg-spec (or a raw-envelope marker) and a JSON-safe explanation of any
   declared return shape. Unknown names fail loudly through `resolve-op`, which
   carries the available names.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L563-L579">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L558-L574">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure
@@ -171,7 +171,7 @@ Project the op registry as help.
 Function.
 
 Return registered CLI operation entries for the current weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L444-L447">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L439-L442">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ready">`ready`</a>
 ``` clojure
@@ -197,15 +197,6 @@ Return ready strands with oversized attributes replaced by descriptors.
   in-process arities remain unbounded by default.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L242-L252">Source</a></sub></p>
 
-## <a name="skein.api.weaver.alpha/ready-query">`ready-query`</a>
-``` clojure
-(ready-query runtime query-name params)
-```
-Function.
-
-Return ready strands from the result set of a registered query definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L254-L257">Source</a></sub></p>
-
 ## <a name="skein.api.weaver.alpha/register-built-in-ops!">`register-built-in-ops!`</a>
 ``` clojure
 (register-built-in-ops! runtime)
@@ -213,7 +204,7 @@ Return ready strands from the result set of a registered query definition.
 Function.
 
 Install Skein-provided CLI operations into the runtime op registry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L581-L606">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L576-L601">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-op!">`register-op!`</a>
 ``` clojure
@@ -241,7 +232,7 @@ Register a trusted weaver-side CLI operation.
   deliberately. Registry contents live only for the current weaver lifetime and
   are normally installed from init.clj or a live REPL; `reload!` clears the
   registry before re-running init, so re-registration is collision-free.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L392-L424">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L387-L419">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/replace-op!">`replace-op!`</a>
 ``` clojure
@@ -254,7 +245,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 
   Same signature as `register-op!`. This is the deliberate override for a name
   that already exists; unlike `register-op!` it requires the name to be present.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L426-L442">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L421-L437">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/resolve-op">`resolve-op`</a>
 ``` clojure
@@ -263,7 +254,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 Function.
 
 Return the registered CLI operation entry for `op-name`, or fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L449-L456">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L444-L451">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/show">`show`</a>
 ``` clojure

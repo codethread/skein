@@ -17,7 +17,6 @@
    :add 'skein.api.weaver.alpha/add
    :update 'skein.api.weaver.alpha/update
    :show 'skein.api.weaver.alpha/show
-   :burn-by-id 'skein.api.graph.alpha/burn-by-id!
    :burn-by-ids 'skein.api.graph.alpha/burn-by-ids!
    :list 'skein.api.weaver.alpha/list
    :ready 'skein.api.weaver.alpha/ready
@@ -25,12 +24,10 @@
    :declare-acyclic-relation! 'skein.api.weaver.alpha/declare-acyclic-relation!
    :acyclic-relations 'skein.api.weaver.alpha/acyclic-relations
    :register-query 'skein.api.graph.alpha/register-query!
-   :load-queries 'skein.api.graph.alpha/load-queries!
    :queries 'skein.api.graph.alpha/queries
    :query-explain 'skein.api.graph.alpha/query-explain
    :resolve-query 'skein.api.graph.alpha/resolve-query
    :list-query 'skein.api.weaver.alpha/list-query
-   :ready-query 'skein.api.weaver.alpha/ready-query
    :query-ids 'skein.api.graph.alpha/query-ids
    :strands-by-ids 'skein.api.graph.alpha/strands-by-ids
    :ancestor-root-ids 'skein.api.graph.alpha/ancestor-root-ids
@@ -105,7 +102,6 @@
   {:add {:request/source :nrepl :request/operation :add}
    :update {:request/source :nrepl :request/operation :update}
    :supersede {:request/source :nrepl :request/operation :supersede}
-   :burn-by-id {:request/source :nrepl :request/operation :burn}
    :burn-by-ids {:request/source :nrepl :request/operation :burn}
    :weave! {:request/source :nrepl :request/operation :weave}
    :apply-batch {:request/source :nrepl :request/operation :apply-batch}})

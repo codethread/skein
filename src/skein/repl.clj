@@ -103,16 +103,13 @@
     :show (apply weaver/show rt args)
     :declare-acyclic-relation! (apply weaver/declare-acyclic-relation! rt args)
     :acyclic-relations (weaver/acyclic-relations rt)
-    :burn-by-id (apply graph/burn-by-id! rt args)
     :burn-by-ids (apply graph/burn-by-ids! rt args)
     :register-query (apply graph/register-query! rt args)
-    :load-queries (apply graph/load-queries! rt args)
     :queries (graph/queries rt)
     :query-explain (apply graph/query-explain rt args)
     :list (if (seq args) (apply weaver/list rt args) (weaver/list rt))
     :list-query (apply weaver/list-query rt args)
     :ready (if (seq args) (apply weaver/ready rt args) (weaver/ready rt))
-    :ready-query (apply weaver/ready-query rt args)
     :register-pattern! (apply patterns/register-pattern! rt args)
     :patterns (patterns/patterns rt)
     :resolve-pattern (apply patterns/pattern rt args)
@@ -185,7 +182,7 @@
 
   Missing ids fail loudly. Returns the weaver burn summary."
   ([id]
-   (daemon :burn-by-id id))
+   (daemon :burn-by-ids [id]))
   ([id & ids]
    (daemon :burn-by-ids (vec (cons id ids)))))
 
@@ -262,7 +259,10 @@
   (let [registry (query/read-edn-file path)]
     (when-not (map? registry)
       (throw (ex-info "Query file must contain one EDN map of query names to query definitions" {:path path})))
-    (daemon :load-queries registry)))
+    (reduce-kv (fn [loaded query-name query-def]
+                 (merge loaded (daemon :register-query query-name query-def)))
+               {}
+               registry)))
 
 (defn queries
   "Return the active weaver's in-memory named query registry."
@@ -314,7 +314,9 @@
   ([query-or-def]
    (ready query-or-def {}))
   ([query-or-def params]
-   (run-query query-or-def params :ready :ready-query)))
+   (if (terse/named-query? query-or-def)
+     (daemon :ready (daemon :resolve-query query-or-def) params)
+     (daemon :ready query-or-def params))))
 
 (defn defpattern!
   "Register a runtime pattern in the active weaver pattern registry.

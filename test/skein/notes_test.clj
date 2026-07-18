@@ -110,7 +110,7 @@
       (let [target (target! rt)
             {note-id :id} (notes/note! rt target "outlives its target" {})]
         (is (= 1 (count (notes/notes rt target {}))))
-        (graph/burn-by-id! rt target)
+        (graph/burn-by-ids! rt [target])
         (testing "the note strand survives but is unreachable through the read"
           (is (some? (weaver/show rt note-id)))
           (is (empty? (graph/incoming-edges rt [target] "notes")))

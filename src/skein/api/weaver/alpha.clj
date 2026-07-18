@@ -3,7 +3,7 @@
 
   This namespace owns the primitives no domain namespace does: strand
   create/read/update (`add`, `update`, `supersede`, `archive!`/`unarchive!`,
-  `show`, `list`/`list-lean`/`list-query`, `ready`/`ready-lean`/`ready-query`),
+  `show`, `list`/`list-lean`/`list-query`, and `ready`/`ready-lean`),
   database schema `init`, acyclic-relation declaration
   (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
   (`register-op!`, `replace-op!`, `ops`, `resolve-op`, `op!`,
@@ -250,11 +250,6 @@
    (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params))))
   ([runtime lean-byte-floor query-def params limit]
    (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params limit)))))
-
-(defn ready-query
-  "Return ready strands from the result set of a registered query definition."
-  [runtime query-name params]
-  (ready runtime (query/query-def @(query-registry runtime) query-name) params))
 
 (defn- validate-op-fn-symbol! [fn-sym]
   (validate-fn-symbol! "Operation" fn-sym))
