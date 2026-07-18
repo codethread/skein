@@ -2,10 +2,12 @@
   "The api-form slice of quality.conventions-check: SPEC-003.C19a over
   converted `skein.api.*` modules.
 
-  A converted module's `alpha.clj` holds only contract-bearing top-level
-  forms — public promised vars (each with a docstring) and intentionally
-  public spec registrations — with plumbing in the sibling `internal`
-  namespace and no source line past column 96. `pending` names the modules
+  A converted module's `alpha.clj` leads with its public promised vars,
+  each carrying a docstring; private helpers below them are welcome when
+  they are part of the file's story, genuine plumbing moves to the sibling
+  `internal` namespace, and no source line passes column 96. Reading order
+  and the story/plumbing line are judgment (the source-form reviewer);
+  this gate checks only what is mechanical. `pending` names the modules
   not yet converted; each conversion card under epic 9nu0q deletes its own
   entry, and a stale entry is a finding. Two dependency rules hold for
   every internal namespace regardless of pending: an internal namespace
@@ -104,10 +106,6 @@
    (for [[m dir] (sort dirs)
          :when (not (contains? pending-set m))
          finding (concat
-                  (for [{:keys [filename row name]} (filter :private (alpha-vars analysis dir))]
-                    (str filename ":" row ": private var `" name "` in a converted"
-                         " api module; plumbing belongs in skein.api." m ".internal"
-                         " (SPEC-003.C19a)"))
                   (for [{:keys [filename row name]} (filter undocumented? (alpha-vars analysis dir))]
                     (str filename ":" row ": public var `" name "` in a converted"
                          " api module has no docstring (SPEC-003.C19a)"))

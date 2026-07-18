@@ -113,6 +113,34 @@ When scanning Clojure conformity, actively look for and report these before list
 - Public functions or `def` values appear unused, under-tested, or accidentally public. Constants, SQL fragments, dynamic compiler state, and implementation tables should normally be `^:private` unless they are intentional API and documented.
 - Tests only cover examples when a broad invariant would be better captured by property testing.
 
+### The story-file shape (api modules)
+
+A public namespace should read as a story: the promised fns lead, and each body shows the meat of its algorithm as named, composed steps. Placement of helpers — file-local privates below the publics, or a sibling `internal` namespace — is taste; what is not negotiable is that the public body surfaces the shape of the problem. SPEC-003.C19a holds converted `skein.api.*` modules to this.
+
+```clojure
+;; GOOD: the public fn IS the pipeline; helpers are named steps below it.
+(defn link!
+  "Link every configured project's dotfiles into place; return the
+  projects that changed."
+  [config-path]
+  (->> (load-configs config-path)
+       (pmap project-files-to-link)
+       (assert-no-conflicts!)
+       (mapv relink-project!)
+       (filterv changed?)))
+```
+
+```clojure
+;; BAD: a delegation husk — the story has been exiled to another file,
+;; and the reader learns nothing here.
+(defn link!
+  "Link every configured project's dotfiles into place."
+  [config-path]
+  (internal/link! config-path))
+```
+
+Guidelines, not gates: a public fn may run long (even ~100 lines) when that keeps one story in one place; a module comfortably under ~150 lines rarely needs an internal file; recursion clusters stay together on whichever side they live. The worked example is `skein.api.return-shape.alpha` — grammar walking in alpha as the story, error construction and scalar semantics in its `internal` sibling.
+
 ### Public vs private helpers
 
 Do not make a public var private just because it has lower-level mechanics. Classify visibility before changing it.

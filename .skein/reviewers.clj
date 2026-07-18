@@ -113,12 +113,14 @@
               |SPEC-003.C19a), and long prose values are |-margin blocks
               |reflowed through skein.api.format.alpha, never (str ...)
               |chains or one wide literal.
-              |Reading order is public-first: the surface at the top of the
-              |file, plumbing below, `declare` where definition order fights
-              |it; in skein.api.*.alpha files C19a is normative -
-              |contract-bearing forms only (public promised vars, public
-              |spec registrations), implementation in the sibling .internal
-              |namespace. Changed markdown is the counter-rule: prose
+              |Reading order is public-first and public bodies carry the
+              |meat: a promised fn composes named steps into the story
+              |(threading where natural). Flag delegation husks that only
+              |forward to internal, and story helpers exiled where a reader
+              |cannot follow them; privates below the publics are fine, and
+              |.internal is for plumbing that would drown the file (C19a -
+              |the split line is taste; judge readability, not var counts).
+              |Changed markdown is the counter-rule: prose
               |paragraphs run full length, one source line each, for the
               |IDE to wrap - flag newly hard-wrapped markdown prose (code
               |fences and tables excepted). The mechanical width and
