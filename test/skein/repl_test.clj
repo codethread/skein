@@ -9,7 +9,8 @@
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db-test :as db-test]
-            [skein.repl :as repl]))
+            [skein.repl :as repl]
+            [skein.source-file :as source-file]))
 (defn test-world [config-dir]
   (weaver-config/world config-dir
                        (str config-dir "/state")
@@ -239,12 +240,13 @@
     (fn [rt _]
       (let [out (java.io.StringWriter.)]
         (binding [*in* (java.io.StringReader.
-                        (str "(require '[skein.api.current.alpha :as current] "
-                             "'[skein.api.runtime.alpha :as runtime])\n"
-                             "(def rt (current/runtime))\n"
-                             "(runtime/approved rt)\n"
-                             "(runtime/syncs rt)\n"
-                             "(runtime/uses rt)\n"))
+                        (source-file/render-forms
+                         ['(require '[skein.api.current.alpha :as current]
+                                    '[skein.api.runtime.alpha :as runtime])
+                          '(def rt (current/runtime))
+                          '(runtime/approved rt)
+                          '(runtime/syncs rt)
+                          '(runtime/uses rt)]))
                   *out* out
                   *err* (java.io.StringWriter.)
                   *ns* (the-ns 'user)]
