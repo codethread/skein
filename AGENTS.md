@@ -10,6 +10,8 @@ Read `./devflow/TENETS.md` and `./devflow/PHILOSOPHY.md` before all work. This f
 
 **Starting multi-step work** — `mill strand prime`: the planning/tracking workflow. Feature work runs the devflow lifecycle (`strand devflow-start <feature>`); `strand devflow-conventions` lists this repo's registered ops, queries, and patterns.
 
+**Shaping module code** — any large module change runs the registered story workflow: `strand flow start <feature> --workflow story '{"feature":…,"module":…,"worktree":…,"reviewer-harness":"<seat outside your model family>"}'`, then `strand flow next`/`complete`/`choose` as each step instructs (`strand help flow`). It forces the split-first discipline of SPEC-003.C19a — per-concern draft, public-surface tests, auto-spawned adversarial review gates, measure, then fold-back or keep-split at a checkpoint (~500-line tip). Devflow remains the feature lifecycle; story is poured at its implementation stage. Worked examples: `skein.api.{format,return-shape,cli}`.
+
 **Delegating** — `strand agent prime` first; `strand agent about` is the full verb manual. Delegate real work as tracked agent runs, never harness-native subagents (recon-only). Seats and review rosters: `strand agent harnesses` / `strand agent rosters`, with routing policy beside the definitions in `.skein/harnesses.clj` / `.skein/reviewers.clj`.
 
 **Waiting on or recovering runs** — `strand flow-await <run-id>` blocks until a run needs you (`strand help flow-await` for the await cap); `strand ready --query work` is the default ready view; failures surface via `strand list --query agent-failures` and `strand agent logs <run-id> --tail 80`.
