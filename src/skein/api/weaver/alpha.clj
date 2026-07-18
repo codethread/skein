@@ -189,6 +189,11 @@
   archived. Archiving a registered immutable key is rejected — it would hide
   write-once history.
 
+  The strand id and key set are validated by the storage layer against
+  `:skein.core.specs/attribute-key-set`, failing loudly on malformed or
+  missing input; the result is checked here against
+  `:skein.core.specs/attribute-archive-result`.
+
   This is a trusted in-process primitive only; it has no socket or CLI
   surface, runs no lifecycle hooks, and enqueues no event."
   ([runtime strand-id]
@@ -203,6 +208,11 @@
   Restores hot-tier visibility without changing any value. Untouched archived
   keys remain archived. Unarchiving a registered immutable key is legal — it
   is the recovery path for immutable rows archived before enforcement existed.
+
+  The strand id and key set are validated by the storage layer against
+  `:skein.core.specs/attribute-key-set`, failing loudly on malformed or
+  missing input; the result is checked here against
+  `:skein.core.specs/attribute-archive-result`.
 
   This is a trusted in-process primitive only; it has no socket or CLI
   surface, runs no lifecycle hooks, and enqueues no event."
