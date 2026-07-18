@@ -4,6 +4,7 @@
             [clojure.test :refer [deftest is]]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.source-file :as source-file]
             [skein.weaver-test :refer [delete-tree! temp-world]]))
 
 (deftest stop-unpublishes-published-runtime
@@ -20,7 +21,7 @@
   (let [world (temp-world)
         init (io/file (:config-dir world) "init.clj")]
     (try
-      (spit init "(throw (ex-info \"init failed\" {}))")
+      (source-file/spit-forms! init ['(throw (ex-info "init failed" {}))])
       (is (thrown? Exception (weaver-runtime/start! nil {:world world})))
       (is (nil? @weaver-runtime/current-runtime))
       (is (nil? (metadata/read-metadata world)))

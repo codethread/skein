@@ -22,6 +22,7 @@
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db :as db]
             [skein.core.db-test :as db-test]
+            [skein.source-file :as source-file]
             [skein.spools.test-support :as test-support]
             [skein.test.alpha :as t])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
@@ -529,9 +530,10 @@
 (deftest unpublished-startup-config-resolves-current-runtime
   (let [world (temp-world)
         marker (io/file (:config-dir world) "startup-runtime.edn")]
-    (spit (io/file (:config-dir world) "init.clj")
-          (str "(require '[skein.api.current.alpha :as current])\n"
-               "(spit " (pr-str (str marker)) " (pr-str (get-in (current/runtime) [:metadata :nonce])))\n"))
+    (source-file/spit-forms!
+     (io/file (:config-dir world) "init.clj")
+     ['(require '[skein.api.current.alpha :as current])
+      `(spit ~(str marker) (pr-str (get-in (current/runtime) [:metadata :nonce])))])
     (let [rt (weaver-runtime/start! nil {:world world :publish? false})]
       (try
         (is (= (get-in rt [:metadata :nonce]) (read-string (slurp marker))))
@@ -565,8 +567,9 @@
 (deftest startup-failing-init-aborts-before-ready-metadata
   (let [world (temp-world)]
     (try
-      (spit (io/file (:config-dir world) "init.clj")
-            "(throw (ex-info \"init boom\" {:source :shared}))\n")
+      (source-file/spit-forms!
+       (io/file (:config-dir world) "init.clj")
+       ['(throw (ex-info "init boom" {:source :shared}))])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"startup file failed"
                             (weaver-runtime/start! nil {:world world :publish? false})))
       (is (nil? (metadata/read-metadata world)))
@@ -594,28 +597,29 @@
   (let [world (temp-world)
         thread-prefix (str "skein-test-startup-spool-" (random-uuid))]
     (try
-      (spit (io/file (:config-dir world) "init.clj")
-            (str "(require '[skein.api.runtime.alpha :as runtime]\n"
-                 "         '[skein.core.weaver.runtime :as weaver-runtime])\n"
-                 "(let [thread-prefix " (pr-str thread-prefix) "\n"
-                 "      worker (doto (Thread. (reify Runnable\n"
-                 "                               (run [_]\n"
-                 "                                 (try\n"
-                 "                                   (while true\n"
-                 "                                     (Thread/sleep 100))\n"
-                 "                                   (catch Throwable _ nil))))\n"
-                 "                             (str thread-prefix \"-worker\"))\n"
-                 "               (.setDaemon true))\n"
-                 "      rt weaver-runtime/*runtime*]\n"
-                 "  (.start worker)\n"
-                 "  (runtime/spool-state rt :test/executor\n"
-                 "                       (fn [] {:close-fn (fn []\n"
-                 "                                          (.interrupt worker)\n"
-                 "                                          (.join worker 1000))}))\n"
-                 "  (runtime/spool-state rt :test/bad-close\n"
-                 "                       (fn [] {:close-fn (fn []\n"
-                 "                                          (throw (ex-info \"close boom\" {:source :spool-close})))}))\n"
-                 "  (throw (ex-info \"post spool boom\" {:source :startup})))\n"))
+      (source-file/spit-forms!
+       (io/file (:config-dir world) "init.clj")
+       ['(require '[skein.api.runtime.alpha :as runtime]
+                  '[skein.core.weaver.runtime :as weaver-runtime])
+        (list 'let ['thread-prefix thread-prefix]
+              '(let [worker (doto (Thread. (reify Runnable
+                                             (run [_]
+                                               (try
+                                                 (while true
+                                                   (Thread/sleep 100))
+                                                 (catch Throwable _ nil))))
+                                           (str thread-prefix "-worker"))
+                              (.setDaemon true))
+                     rt weaver-runtime/*runtime*]
+                 (.start worker)
+                 (runtime/spool-state rt :test/executor
+                                      (fn [] {:close-fn (fn []
+                                                          (.interrupt worker)
+                                                          (.join worker 1000))}))
+                 (runtime/spool-state rt :test/bad-close
+                                      (fn [] {:close-fn (fn []
+                                                          (throw (ex-info "close boom" {:source :spool-close})))}))
+                 (throw (ex-info "post spool boom" {:source :startup}))))])
       (let [failure (try
                       (weaver-runtime/start! nil {:world world :publish? false})
                       nil
@@ -635,11 +639,15 @@
         world (temp-world)
         order-file (io/file (:config-dir world) "startup-order.edn")]
     (try
-      (spit (io/file (:config-dir world) "init.clj")
-            (str "(spit " (pr-str (str order-file)) " (pr-str [:shared]))\n:shared\n"))
-      (spit (io/file (:config-dir world) "init.local.clj")
-            (str "(let [xs (read-string (slurp " (pr-str (str order-file)) "))]\n"
-                 "  (spit " (pr-str (str order-file)) " (pr-str (conj xs :local))))\n:local\n"))
+      (source-file/spit-forms!
+       (io/file (:config-dir world) "init.clj")
+       [`(spit ~(str order-file) (pr-str [:shared]))
+        :shared])
+      (source-file/spit-forms!
+       (io/file (:config-dir world) "init.local.clj")
+       [`(spit ~(str order-file)
+               (pr-str (conj (read-string (slurp ~(str order-file))) :local)))
+        :local])
       (let [rt (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
           (is (= [:shared :local] (read-string (slurp order-file))))
@@ -654,8 +662,9 @@
         world (temp-world)
         marker (io/file (:config-dir world) "shared.edn")]
     (try
-      (spit (io/file (:config-dir world) "init.clj")
-            (str "(spit " (pr-str (str marker)) " (pr-str :shared))\n"))
+      (source-file/spit-forms!
+       (io/file (:config-dir world) "init.clj")
+       [`(spit ~(str marker) (pr-str :shared))])
       (let [rt (weaver-runtime/start! db-file {:world world :publish? false})]
         (try
           (is (= :shared (read-string (slurp marker))))
@@ -669,8 +678,9 @@
   (let [db-file (db-test/temp-db-file)
         world (temp-world)]
     (try
-      (spit (io/file (:config-dir world) "init.local.clj")
-            "(throw (ex-info \"local boom\" {:source :local}))\n")
+      (source-file/spit-forms!
+       (io/file (:config-dir world) "init.local.clj")
+       ['(throw (ex-info "local boom" {:source :local}))])
       (try
         (weaver-runtime/start! db-file {:world world :publish? false})
         (is false "expected startup failure")
@@ -688,11 +698,15 @@
     (fn [rt _]
       (let [workspace (get-in rt [:metadata :config-dir])
             order-file (io/file workspace "reload-order.edn")]
-        (spit (io/file workspace "init.clj")
-              (str "(spit " (pr-str (str order-file)) " (pr-str [:shared]))\n:shared\n"))
-        (spit (io/file workspace "init.local.clj")
-              (str "(let [xs (read-string (slurp " (pr-str (str order-file)) "))]\n"
-                   "  (spit " (pr-str (str order-file)) " (pr-str (conj xs :local))))\n:local\n"))
+        (source-file/spit-forms!
+         (io/file workspace "init.clj")
+         [`(spit ~(str order-file) (pr-str [:shared]))
+          :shared])
+        (source-file/spit-forms!
+         (io/file workspace "init.local.clj")
+         [`(spit ~(str order-file)
+                 (pr-str (conj (read-string (slurp ~(str order-file))) :local)))
+          :local])
         (is (= {:status :loaded
                 :files [{:name "init.clj"
                          :file (.getCanonicalPath (io/file workspace "init.clj"))
@@ -719,17 +733,19 @@
         (reset! delivered-events [])
         (events/register! rt :prior #{:strand/added} 'skein.weaver-test/capture-event {})
         (hooks/register! rt :prior #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (spit (io/file workspace "init.clj")
-              (str "(require '[skein.api.current.alpha :as current]\n"
-                   "         '[skein.api.graph.alpha :as graph]\n"
-                   "         '[skein.api.events.alpha :as events])\n"
-                   "(let [rt (current/runtime)]\n"
-                   "  (graph/register-query! rt 'shared [:= [:attr :owner] \"shared\"])\n"
-                   "  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n"
-                   "  (events/enqueue! rt {:event/type :strand/added :event/id \"shared-only\" "
-                   ":event/at \"2026-06-29T00:00:00Z\" :event/source :test}))\n"))
-        (spit (io/file workspace "init.local.clj")
-              "(throw (ex-info \"local boom\" {:source :local}))\n")
+        (source-file/spit-forms!
+         (io/file workspace "init.clj")
+         ['(require '[skein.api.current.alpha :as current]
+                    '[skein.api.graph.alpha :as graph]
+                    '[skein.api.events.alpha :as events])
+          '(let [rt (current/runtime)]
+             (graph/register-query! rt 'shared [:= [:attr :owner] "shared"])
+             (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
+             (events/enqueue! rt {:event/type :strand/added :event/id "shared-only"
+                                  :event/at "2026-06-29T00:00:00Z" :event/source :test}))])
+        (source-file/spit-forms!
+         (io/file workspace "init.local.clj")
+         ['(throw (ex-info "local boom" {:source :local}))])
         (try
           (runtime/reload! rt)
           (is false "expected reload failure")
@@ -758,20 +774,22 @@
         (events/enqueue! rt (test-event :strand/added "before-reload"))
         (events/await-quiescent! rt)
         (is (seq (events/recent-failures rt)))
-        (spit (io/file workspace "init.clj")
-              (str "(require '[skein.api.current.alpha :as current]\n"
-                   "         '[skein.api.events.alpha :as events]\n"
-                   "         '[skein.api.hooks.alpha :as hooks])\n"
-                   "(let [rt (current/runtime)]\n"
-                   "  (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)\n"
-                   "  (hooks/register! rt :shared #{:payload/received} 'skein.weaver-test/capture-hook))\n"))
-        (spit (io/file workspace "init.local.clj")
-              (str "(require '[skein.api.current.alpha :as current]\n"
-                   "         '[skein.api.events.alpha :as events]\n"
-                   "         '[skein.api.hooks.alpha :as hooks])\n"
-                   "(let [rt (current/runtime)]\n"
-                   "  (events/register! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)\n"
-                   "  (hooks/register! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))\n"))
+        (source-file/spit-forms!
+         (io/file workspace "init.clj")
+         ['(require '[skein.api.current.alpha :as current]
+                    '[skein.api.events.alpha :as events]
+                    '[skein.api.hooks.alpha :as hooks])
+          '(let [rt (current/runtime)]
+             (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
+             (hooks/register! rt :shared #{:payload/received} 'skein.weaver-test/capture-hook))])
+        (source-file/spit-forms!
+         (io/file workspace "init.local.clj")
+         ['(require '[skein.api.current.alpha :as current]
+                    '[skein.api.events.alpha :as events]
+                    '[skein.api.hooks.alpha :as hooks])
+          '(let [rt (current/runtime)]
+             (events/register! rt :local #{:strand/updated} 'skein.weaver-test/capture-event)
+             (hooks/register! rt :local #{:strand/add-before-commit} 'skein.weaver-test/capture-hook))])
         (runtime/reload! rt)
         (is (= #{:shared :local} (set (mapv :key (events/handlers rt)))))
         (is (= #{:shared :local} (set (mapv :key (hooks/hooks rt)))))
@@ -1045,10 +1063,12 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"queue is full"
                             (events/enqueue! rt (test-event :x "full"))))
       (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
-        (spit init (str "(require '[skein.api.current.alpha :as current]\n"
-                        "         '[skein.api.events.alpha :as events])\n"
-                        "(let [rt (current/runtime)]\n"
-                        "  (events/register! rt :after-reload #{:x} 'skein.weaver-test/capture-event))\n"))
+        (source-file/spit-forms!
+         init
+         ['(require '[skein.api.current.alpha :as current]
+                    '[skein.api.events.alpha :as events])
+          '(let [rt (current/runtime)]
+             (events/register! rt :after-reload #{:x} 'skein.weaver-test/capture-event))])
         (runtime/reload! rt)
         (deliver @handler-release true)
         (is (= [:after-reload] (mapv :key (events/handlers rt))))
@@ -1285,10 +1305,12 @@
     (fn [rt _]
       (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
         (hooks/register! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
-        (spit init (str "(require '[skein.api.current.alpha :as current]\n"
-                        "         '[skein.api.hooks.alpha :as hooks])\n"
-                        "(let [rt (current/runtime)]\n"
-                        "  (hooks/register! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))\n"))
+        (source-file/spit-forms!
+         init
+         ['(require '[skein.api.current.alpha :as current]
+                    '[skein.api.hooks.alpha :as hooks])
+          '(let [rt (current/runtime)]
+             (hooks/register! rt :fresh #{:payload/received} 'skein.weaver-test/capture-hook {:order 2}))])
         (runtime/reload! rt)
         (is (= [{:key :fresh
                  :types #{:payload/received}
@@ -2314,7 +2336,11 @@
   (with-runtime
     (fn [rt _]
       (let [init-file (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
-        (spit init-file "(require '[skein.api.current.alpha :as current]\n         '[skein.api.runtime.alpha :as runtime])\n(runtime/sync! (current/runtime))\n")
+        (source-file/spit-forms!
+         init-file
+         ['(require '[skein.api.current.alpha :as current]
+                    '[skein.api.runtime.alpha :as runtime])
+          '(runtime/sync! (current/runtime))])
         (patterns/register-pattern! rt 'dev-task 'skein.weaver-test/test-pattern ::pattern-input)
         (is (= 1 (count (patterns/patterns rt))))
         (runtime/reload! rt)
@@ -2600,7 +2626,11 @@
   (let [world (temp-world)
         init (io/file (:config-dir world) "init.clj")]
     (try
-      (spit init "(require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph]) (graph/register-query! (current/runtime) 'trusted [:= :state \"active\"])")
+      (source-file/spit-forms!
+       init
+       ['(require '[skein.api.current.alpha :as current]
+                  '[skein.api.graph.alpha :as graph])
+        '(graph/register-query! (current/runtime) 'trusted [:= :state "active"])])
       (let [rt (weaver-runtime/start! nil {:world world :publish? false})]
         (try
           (is (= {"trusted" [:= :state "active"]} (graph/queries rt)))
