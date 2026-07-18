@@ -87,8 +87,7 @@
         (let [analysis {:var-definitions [(var-def (dirs "messy")
                                                    {:private true :name 'helper})]}]
           (is (empty? (api-form/findings analysis dirs #{"messy"})))))))
-  (testing "a conformant pending module forces nothing; shrinking pending is
-            the conversion card's own deliberate act"
+  (testing "a conformant pending module forces nothing; deletion is deliberate"
     (with-modules {"tidy" conformant-source}
       (fn [dirs]
         (is (empty? (api-form/findings {} dirs #{"tidy"})))))))

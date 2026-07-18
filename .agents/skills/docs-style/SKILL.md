@@ -64,7 +64,7 @@ The rule is two-sided. Markdown prose is not hard-wrapped: each paragraph or bul
 
 Prose inside Clojure source is the opposite: hard-wrapped in the file so it reads without soft-wrap — 96 columns in `skein.api.*` modules (SPEC-003.C19a), matching the namespace elsewhere, and never past column 180 anywhere.
 
-Prose that ships as data inside Clojure source (op payloads, `about` surfaces, rule descriptions) is still human-facing and gets this skill's sweep, but its authoring format is the `|`-margin block reflowed through `skein.api.format.alpha` (or `skein.spools.format` inside spools) — never one long string literal or `(str ...)` fragments. See `docs/spools/writing-shared-spools.md` for the block contract.
+Prose that ships as data inside Clojure source (op payloads, `about` surfaces, rule descriptions) is still human-facing and gets this skill's sweep, but its authoring format is the `|`-margin block reflowed through `skein.api.format.alpha` — never one long string literal or `(str ...)` fragments. See `docs/spools/writing-shared-spools.md` for the block contract.
 
 ## Procedures
 

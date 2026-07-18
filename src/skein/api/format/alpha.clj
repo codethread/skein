@@ -2,8 +2,13 @@
   "Blessed `|`-margin doc-block helpers for any tier that publishes prose as data.
 
   Long strings in source hurt readability and IDE viewports; author them as
-  `|`-margin blocks instead and reflow with these helpers."
-  (:require [skein.core.format :as format]))
+  `|`-margin blocks instead and reflow with these helpers. Both helpers
+  consult the `::block` contract: a string in which at least one line
+  carries a bar. Anything else fails loudly."
+  (:require [clojure.spec.alpha :as s]
+            [clojure.spec.gen.alpha :as gen]
+            [clojure.string :as str]
+            [skein.core.format :as format]))
 
 (defn fill
   "Reflow a `|`-margin doc block into a vector of item strings.
@@ -11,7 +16,7 @@
   The bar marks column 0, a bare `|` line separates items, flush-left prose
   soft-wraps into one line per item, and any indentation past the bar keeps the
   whole item verbatim for command samples and other intentional layout. Throws
-  when no line carries a bar — a bar-less block is an authoring error."
+  when the input is not a `::block` — a bar-less block is an authoring error."
   [block]
   (format/fill block))
 
@@ -19,7 +24,21 @@
   "Soft-wrap a single-paragraph `|`-margin block into one string.
 
   The single-item companion to `fill` for a lone prose value; item and verbatim
-  semantics do not apply — every barred line is trimmed and space-joined.
-  Throws when no line carries a bar, like `fill`."
+  semantics do not apply — every barred line is trimmed and space-joined, so
+  the result never contains a newline. Throws when the input is not a
+  `::block`, like `fill`."
   [block]
   (format/reflow block))
+
+(s/def ::block
+  (s/with-gen (s/and string? #(str/includes? % "|"))
+    #(gen/fmap (fn [s] (str "|" s)) (gen/string-alphanumeric))))
+
+(s/fdef fill
+  :args (s/cat :block ::block)
+  :ret (s/coll-of string? :kind vector?))
+
+(s/fdef reflow
+  :args (s/cat :block ::block)
+  :ret string?
+  :fn (fn [{:keys [ret]}] (not (str/includes? ret "\n"))))

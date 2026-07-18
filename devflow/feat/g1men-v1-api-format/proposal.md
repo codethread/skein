@@ -28,7 +28,7 @@ The v1 tag is close, and the seventeen `skein.api.*.alpha` namespaces are the pr
 - **PROP-Vaf-001.S1:** `devflow/specs/repl-api.md` gains SPEC-003.C19a stating the converted-module form contract; `devflow/specs/alpha-surface.md` P3 gains one sentence naming `skein.api.*.internal` as exclusionary-internal.
 - **PROP-Vaf-001.S2:** `scripts/quality/conventions_check.clj` gains the converted-module check and the pending set, factored pure enough to unit-test the ratchet edges.
 - **PROP-Vaf-001.S3:** `.skein/reviewers.clj` gains the `source-form` seat in `change-review`, authored as a `|`-margin block through `skein.api.format.alpha/reflow` — the module under audit, dogfooded in the roster that will review it. Picked up by `runtime/reload!`, never a weaver restart.
-- **PROP-Vaf-001.S4:** `.claude/skills/docs-style/SKILL.md` line-length section carries the two-sided wrap rule. Kanban bodies for epic `9nu0q` and its sixteen open features are updated over the strand CLI (coordination data, not repo files).
+- **PROP-Vaf-001.S4:** `.agents/skills/docs-style/SKILL.md` (served to Claude via the `.claude` symlink) line-length section carries the two-sided wrap rule. Kanban bodies for epic `9nu0q` and its sixteen open features are updated over the strand CLI (coordination data, not repo files).
 - **PROP-Vaf-001.S5:** Validation: focused cold test runs for touched namespaces, `make fmt-check lint reflect-check docs-check`, `make api-docs` if any docstring changes, then a `change-review` roster run over the branch diff as the dogfood pass.
 
 ## PROP-Vaf-001.P5 Counsel outcomes

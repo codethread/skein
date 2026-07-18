@@ -6,7 +6,9 @@
 Blessed `|`-margin doc-block helpers for any tier that publishes prose as data.
 
   Long strings in source hurt readability and IDE viewports; author them as
-  `|`-margin blocks instead and reflow with these helpers.
+  `|`-margin blocks instead and reflow with these helpers. Both helpers
+  consult the `::block` contract: a string in which at least one line
+  carries a bar. Anything else fails loudly.
 
 
 
@@ -22,8 +24,8 @@ Reflow a `|`-margin doc block into a vector of item strings.
   The bar marks column 0, a bare `|` line separates items, flush-left prose
   soft-wraps into one line per item, and any indentation past the bar keeps the
   whole item verbatim for command samples and other intentional layout. Throws
-  when no line carries a bar — a bar-less block is an authoring error.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/format/alpha.clj#L8-L16">Source</a></sub></p>
+  when the input is not a `::block` — a bar-less block is an authoring error.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/format/alpha.clj#L13-L21">Source</a></sub></p>
 
 ## <a name="skein.api.format.alpha/reflow">`reflow`</a>
 ``` clojure
@@ -34,6 +36,7 @@ Function.
 Soft-wrap a single-paragraph `|`-margin block into one string.
 
   The single-item companion to `fill` for a lone prose value; item and verbatim
-  semantics do not apply — every barred line is trimmed and space-joined.
-  Throws when no line carries a bar, like `fill`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/format/alpha.clj#L18-L25">Source</a></sub></p>
+  semantics do not apply — every barred line is trimmed and space-joined, so
+  the result never contains a newline. Throws when the input is not a
+  `::block`, like `fill`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/format/alpha.clj#L23-L31">Source</a></sub></p>

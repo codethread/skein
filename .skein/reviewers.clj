@@ -111,8 +111,8 @@
               |docstrings and comments are hard-wrapped in source (match the
               |namespace; 96 columns in skein.api.* modules per
               |SPEC-003.C19a), and long prose values are |-margin blocks
-              |reflowed through skein.api.format.alpha (skein.spools.format
-              |inside spools), never (str ...) chains or one wide literal.
+              |reflowed through skein.api.format.alpha, never (str ...)
+              |chains or one wide literal.
               |Reading order is public-first: the surface at the top of the
               |file, plumbing below, `declare` where definition order fights
               |it; in skein.api.*.alpha files C19a is normative -
