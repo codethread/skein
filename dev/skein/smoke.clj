@@ -403,7 +403,6 @@
                 [skein.api.events.alpha :as events]
                 [skein.api.graph.alpha :as graph]
                 [skein.api.hooks.alpha :as hooks]
-                [skein.api.views.alpha :as views]
                 [skein.api.patterns.alpha :as patterns]))
    '(def runtime (current/runtime))
    '(runtime/sync! runtime)
@@ -427,13 +426,6 @@
    (list 'def 'event-marker event-marker-path)
    '(defn record-added! [event]
       (spit event-marker (:title (:strand event))))
-   '(defn smoke-owned-view [{:keys [params]}]
-      (let [runtime (current/runtime)
-            ids (graph/query-ids runtime 'smoke-owned {})]
-        {:params params
-         :ids ids
-         :strands (graph/strands-by-ids runtime ids)}))
-   '(views/register-view! runtime 'smoke-owned-view 'smoke.startup/smoke-owned-view)
    '(events/register-handler! runtime :smoke/record-added #{:strand/added} 'smoke.startup/record-added! {:source :smoke})])
 
 (defn smoke-startup-transformations! [db-file]
@@ -483,20 +475,11 @@
                       (source-file/render-forms
                        ['(do
                            (require '[skein.api.current.alpha :as current]
-                                    '[skein.api.graph.alpha :as graph]
-                                    '[skein.api.views.alpha :as views])
+                                    '[skein.api.graph.alpha :as graph])
                            (let [runtime (current/runtime)]
-                             {:query-ids (graph/query-ids runtime 'smoke-owned {})
-                              :view (views/view! runtime 'smoke-owned-view {:source "stdin"})
-                              :views (views/views runtime)}))])
+                             {:query-ids (graph/query-ids runtime 'smoke-owned {})}))])
                       "weaver" "repl" "--stdin"))]
         (assert= [strand-id] (:query-ids payload) "startup registered query is available through graph helper")
-        (assert= {:source "stdin"} (get-in payload [:view :params]) "startup view receives params")
-        (assert= [strand-id] (get-in payload [:view :ids]) "startup view can call graph/query-ids")
-        (assert= ["Startup transformed strand"] (titles (get-in payload [:view :strands])) "startup view can hydrate graph strands")
-        (assert= [{:name "smoke-owned-view" :fn 'smoke.startup/smoke-owned-view}]
-                 (:views payload)
-                 "startup registered view is introspectable")
         (assert= "Startup transformed strand" (slurp event-marker) "startup event handler observes async strand add event")
         (let [query-entry (some #(when (= "smoke-owner" (:name %)) %) (parse-json (run-strand-config! workspace "query" "list")))
               explanation (parse-json (run-strand-config! workspace "query" "explain" "smoke-owner"))]

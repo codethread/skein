@@ -14,7 +14,6 @@
             [skein.api.graph.alpha :as graph]
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
             [skein.api.runtime.alpha :as runtime]
-            [skein.api.views.alpha :as views]
             [skein.source-file :as source-file]
             [skein.test.alpha :as t]))
 
@@ -1786,7 +1785,6 @@
       (write-module-file! config-dir "modules/stale.clj" "(ns demo.stale)\n(defn handler [_] :ok)\n")
       (is (= :loaded (:status (runtime/use! rt :stale {:file "modules/stale.clj"}))))
       (graph/register-query! rt 'stale [:= [:attr :owner] "stale"])
-      (views/register-view! rt 'stale-view 'demo.stale/view)
       (reset! reload-deliveries [])
       (events/register-handler! rt :stale #{:strand/added} 'demo.stale/handler {})
       (events/register-handler! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
@@ -1808,7 +1806,6 @@
       (is (nil? (runtime/use-entry rt :stale)))
       (is (nil? (get (graph/queries rt) "stale")))
       (is (= [:= [:attr :owner] "fresh"] (get (graph/queries rt) "fresh")))
-      (is (= [] (views/views rt)))
       (is (= [:fresh] (mapv :key (events/handlers rt))))
       (is (= [] (events/recent-failures rt)))
       (dispatch/enqueue! rt {:event/type :strand/added

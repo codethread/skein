@@ -34,11 +34,6 @@
   [runtime]
   (:query-registry runtime))
 
-(defn view-registry
-  "Return the runtime's view registry atom."
-  [runtime]
-  (:view-registry runtime))
-
 (defn pattern-registry
   "Return the runtime's weave-pattern registry atom."
   [runtime]

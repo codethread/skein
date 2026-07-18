@@ -12,8 +12,8 @@
   normalization of persisted rows into data-first maps; durable storage lives
   in `skein.core.db` and timer arming/dispatch in `skein.core.weaver.scheduler`.
 
-  Pull-based `wake-at` strand attributes plus views remain the default answer
-  when a poller already exists. Reach for this namespace only for the
+  Pull-based `wake-at` strand attributes plus named queries remain the default
+  answer when a poller already exists. Reach for this namespace only for the
   no-poller case where something must proactively happen at instant T with no
   client polling to trigger it.
 

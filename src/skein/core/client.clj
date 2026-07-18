@@ -32,9 +32,6 @@
    :strands-by-ids 'skein.api.graph.alpha/strands-by-ids
    :ancestor-root-ids 'skein.api.graph.alpha/ancestor-root-ids
    :subgraph 'skein.api.graph.alpha/subgraph
-   :register-view! 'skein.api.views.alpha/register-view!
-   :view! 'skein.api.views.alpha/view!
-   :views 'skein.api.views.alpha/views
    :register-event-handler! 'skein.api.events.alpha/register-handler!
    :unregister-event-handler! 'skein.api.events.alpha/unregister-handler!
    :event-handlers 'skein.api.events.alpha/handlers

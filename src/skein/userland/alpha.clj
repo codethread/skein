@@ -81,7 +81,7 @@
 (defn runtime
   "Return the resolved terse-call runtime for explicit `skein.api.*.alpha` use.
 
-  Escape hatch for reaching the surface this module does not wrap (graph, views,
+  Escape hatch for reaching the surface this module does not wrap (graph,
   events, hooks): grab the runtime and call the explicit-runtime API directly."
   []
   (resolve-runtime))

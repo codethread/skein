@@ -1,10 +1,9 @@
 (ns skein.alpha-test
-  "Tests for the blessed skein.api.*.alpha surfaces (batch, graph, hooks, views)."
+  "Tests for the blessed skein.api.*.alpha surfaces (batch, graph, hooks)."
   (:require [skein.api.batch.alpha :as batch]
             [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.hooks.alpha :as hooks]
-            [skein.api.views.alpha :as views]
             [clojure.string :as str]
             [clojure.test :refer [deftest is use-fixtures]]
             [skein.api.weaver.alpha :as weaver]
@@ -31,9 +30,6 @@
           (reset-repl-state!)
           (weaver-runtime/stop! rt)
           (db-test/delete-sqlite-family! db-file))))))
-
-(defn test-view [{:keys [params]}]
-  {:alpha-view params})
 
 ;; Namespace-level on purpose: hooks are registered by symbol and resolved
 ;; to top-level vars, so capture state cannot be a per-test local. Reset by
@@ -85,12 +81,6 @@
         (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id task)] {})))
         (is (= #{(:id feature) (:id task)}
                (set (map :id (:strands (graph/subgraph rt [(:id feature)]))))))
-        (is (= {:name "daily" :fn 'skein.alpha-test/test-view}
-               (views/register-view! rt :daily 'skein.alpha-test/test-view)))
-        (is (= [{:name "daily" :fn 'skein.alpha-test/test-view}]
-               (views/views rt)))
-        (is (= {:alpha-view {:owner "agent"}}
-               (views/view! rt 'daily {:owner "agent"})))
         (is (= {:key :policy
                 :types #{:payload/received}
                 :fn 'skein.alpha-test/test-hook

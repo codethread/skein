@@ -1,7 +1,7 @@
 # Customising your workspace
 
 Skein's core is deliberately small; most of what your workspace *means* lives in trusted Clojure code the
-weaver loads for you — named queries, weave patterns, views, event handlers, ops. This page is the ladder for
+weaver loads for you — named queries, weave patterns, event handlers, ops. This page is the ladder for
 that code. You start with a few lines in `init.clj`, promote them to a local spool when the config grows, and
 only when a spool leaves your machine do the authoring rules change. Everything up to that last step lives here.
 
@@ -75,7 +75,7 @@ failing files fail loudly with file context. The generated `init.clj` is intenti
 not an ordinary user spool, which is why loader/config helpers do not live under `skein.spools.*`.
 
 Startup files matter because runtime registries are weaver-lifetime state: named queries, weave patterns,
-views, and event handlers registered from a live REPL vanish with the process. Anything you want after every
+and event handlers registered from a live REPL vanish with the process. Anything you want after every
 restart belongs in startup-loaded code. A first customisation is often a single named query, registered
 directly by appending two lines to the generated `init.clj`:
 
@@ -122,7 +122,7 @@ Use reload during development instead of restarting the weaver:
 (runtime/reload! (current/runtime))
 ```
 
-Reload clears weaver-lifetime spool sync state, module-use state, named queries, weave patterns, views, custom
+Reload clears weaver-lifetime spool sync state, module-use state, named queries, weave patterns, custom
 ops, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads `init.clj`
 followed by `init.local.clj`. Missing files are skipped; present failures fail loudly.
 

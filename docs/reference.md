@@ -35,7 +35,6 @@ running weaver
   owns SQLite storage
   owns named queries
   owns weave pattern registrations
-  owns view registrations
   owns event handler registrations
   owns synced spool state
 
@@ -147,7 +146,6 @@ The weaver is the application core. It is a long-lived local Clojure process tha
 - strand creation, update, query, readiness, and burn operations;
 - the in-memory named-query registry;
 - the in-memory weave-pattern registry;
-- the in-memory view registry;
 - the in-memory event handler registry and async dispatch worker;
 - the approved-spool sync state;
 - runtime module activation state.
@@ -185,7 +183,7 @@ The weaver exposes two local transports:
 - an nREPL endpoint used by the live weaver REPL.
 
 A selected workspace may have one running weaver. Runtime registries are weaver-lifetime state, so
-named queries, weave patterns, views, and synced spool state should be loaded from startup config if
+named queries, weave patterns, and synced spool state should be loaded from startup config if
 you want them to appear after every restart.
 
 ## Weaver generations and cutover
@@ -600,7 +598,7 @@ strands that were never burned are not restored, so re-create them explicitly ag
 ## Startup config and customisation
 
 The weaver loads trusted startup files from the selected workspace in order — `init.clj`, then
-`init.local.clj` — and everything registered there (named queries, weave patterns, views, event
+`init.local.clj` — and everything registered there (named queries, weave patterns, event
 handlers, activated spools) is weaver-lifetime runtime state. The full customisation story is its
 own page: [customising your workspace](./spools/customisation.md) covers the files `mill init`
 bootstraps, direct `init.clj` registrations, smoke-testing config in a disposable world,
@@ -664,9 +662,9 @@ transactional batch engine as REPL-only `skein.api.batch.alpha/apply!`. Raw batc
 loading-dock door: it can create, update, burn, and upsert edges, so it remains a Clojure
 config/REPL workflow instead of a public CLI command.
 
-Like queries and views, patterns are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload.
+Like queries, patterns are weaver-lifetime runtime state. Register them from startup config if they should always exist after restart or reload.
 
-## Views and graph helpers
+## Graph helpers
 
 Skein ships built-in privileged alpha namespaces for trusted runtime transformations. They are
 source-visible helper namespaces from the Skein checkout/classpath, not user/community spools that
@@ -675,23 +673,17 @@ need `spools.edn` approval — `skein.api.spool.alpha` (the spool-authoring help
 one of them, the blessed home every reference spool builds on:
 
 ```clojure
-(require '[skein.api.graph.alpha :as graph]
-         '[skein.api.views.alpha :as views])
+(require '[skein.api.graph.alpha :as graph])
 ```
 
 Graph helpers include operations such as query id selection, strand hydration by ids, ancestor-root traversal, subgraph expansion, and burn-by-id helpers.
 
-Views let you register named read-only transformations backed by weaver-loadable function symbols. A
-view name is a simple unqualified name; the function symbol must be fully qualified and loadable in
-the weaver runtime.
-
 ```clojure
 (ns my.workflow
   (:require [skein.api.graph.alpha :as graph]
-            [skein.api.views.alpha :as views]
             [skein.api.current.alpha :as current]))
 
-(defn owned-view [{:keys [params]}]
+(defn owned-strands [params]
   (let [rt (current/runtime)
         ids (graph/query-ids rt 'owned params)]
     {:ids ids
@@ -700,32 +692,19 @@ the weaver runtime.
 (defn install! []
   (let [rt (current/runtime)]
     (graph/register-query! rt 'owned [:= [:attr :owner] "ct"])
-    (views/register-view! rt 'owned-view 'my.workflow/owned-view)
     {:installed true}))
-```
-
-Call a registered view from trusted Clojure, usually the live weaver REPL:
-
-```clojure
-(require '[skein.api.current.alpha :as current]
-         '[skein.api.views.alpha :as views])
-(views/view! (current/runtime) 'owned-view {})
 ```
 
 For scripts, use `mill weaver repl --stdin`:
 
 ```sh
-printf "(do (require '[skein.api.current.alpha :as current] '[skein.api.views.alpha :as views]) (views/view! (current/runtime) 'owned-view {}))\n" \
+printf "(do (require 'my.workflow) (my.workflow/owned-strands {}))\n" \
   | mill weaver repl --stdin --workspace "$workspace"
 ```
 
-There is no public `strand view` CLI command; view registration and invocation are trusted
-config/REPL workflows. A view returns whatever serializable Clojure data your function returns. The
-`{:ids ... :strands ...}` shape above is a convention, not a required schema.
-
-Like queries, views are weaver-lifetime runtime state. Register them from startup config if they
-should always exist after restart or reload. View functions should be read-only; mutating workflows
-such as updates, burns, or cleanup helpers should be ordinary trusted functions, not views.
+Named read surfaces beyond queries are registered CLI operations (`register-op!` with
+`:hook-class :read`), which add docs, arg parsing, and `strand <op>` invocation on top of
+plain trusted functions like the one above.
 
 ## Events
 
@@ -772,7 +751,7 @@ Event handler state is weaver-lifetime runtime state. Register handlers from `in
 ## Scheduler (no-poller wakeups)
 
 The default answer for time-based work is still pull: stamp a `wake-at` attribute on a strand and
-let a view or query surface it to whatever already polls the graph. That keeps timing in ordinary,
+let a named query surface it to whatever already polls the graph. That keeps timing in ordinary,
 inspectable strand data. Reach for the scheduler only for the **no-poller** case — when something
 must proactively happen at instant `T` and there is no client polling to trigger it.
 
@@ -894,10 +873,10 @@ Covers:
 - `mill weaver repl --stdin` behavior;
 - query registration and execution;
 - `skein.api.runtime.alpha` loader/config helpers;
-- graph, view, event, and explicit batch helper namespaces;
+- graph, event, and explicit batch helper namespaces;
 - runtime spool workspace activation.
 
-Read this when writing trusted Clojure forms, config code, local spools, or custom query/view workflows.
+Read this when writing trusted Clojure forms, config code, local spools, or custom query workflows.
 
 ### Weaver runtime
 
@@ -913,7 +892,7 @@ Covers:
 - startup config loading;
 - named query registry behavior;
 - runtime spool workspace model;
-- graph/view runtime primitives;
+- graph runtime primitives;
 - trusted event handler runtime and helper contracts.
 
 Read this when debugging weaver startup, metadata, transports, runtime state, spool loading, or multi-workspace behavior.
