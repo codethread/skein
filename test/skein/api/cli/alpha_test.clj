@@ -73,6 +73,11 @@
 (deftest unknown-flag-fails
   (is (= :unknown-flag (reason #(cli/parse add-spec ["--owner" "me" "--bogus" "x" "t"])))))
 
+(deftest errors-retain-public-qualified-marker
+  (is (true? (::cli/error
+              (thrown-data #(cli/parse add-spec
+                                       ["--owner" "me" "--bogus" "x" "t"]))))))
+
 (deftest missing-required-flag-fails
   (is (= :missing-required (reason #(cli/parse add-spec ["--state" "closed" "t"])))))
 
