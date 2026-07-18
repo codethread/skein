@@ -55,7 +55,7 @@
   (with-runtime
     (fn [rt _]
       (let [strand (repl/strand! "Old session" {"transcript" "secretword"})]
-        (weaver/archive! rt (:id strand) ["transcript"])
+        (weaver/archive-attributes! rt (:id strand) ["transcript"])
         (testing "an archived attribute value is invisible to the query language and to a default search"
           (is (empty? (text-search/search rt {:substring "secretword"}))))
         (testing "--archived opts the cold row back in"
@@ -110,7 +110,7 @@
   (with-runtime
     (fn [rt _]
       (let [strand (repl/strand! "Session log" {"transcript" "coldvalue"})]
-        (weaver/archive! rt (:id strand) ["transcript"])
+        (weaver/archive-attributes! rt (:id strand) ["transcript"])
         (testing "absent --archived reads as false"
           (is (empty? (text-search/search-op {:op/runtime rt :op/args {:substring "coldvalue"}}))))
         (testing "present --archived reads as true"
