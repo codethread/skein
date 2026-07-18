@@ -322,16 +322,13 @@
     {}
     (:positionals arg-spec))))
 
-(defn parse-flat
-  "Parse a flat arg-spec after public routing selects the active spec."
-  [arg-spec argv payloads]
-  (let [op (:op arg-spec)
-        parsed (parse-argv arg-spec (vec argv))
-        resolved (resolve-payloads op parsed payloads)]
-    (reduce-kv
-     (fn [result arg kind]
-       (if (contains? result arg)
-         (update result arg #(apply-parse op arg kind %))
-         result))
-     resolved
-     (parse-declarations arg-spec))))
+(defn apply-declared-parses
+  "Apply every declared `:parse` kind of `arg-spec` to its resolved value."
+  [arg-spec op resolved]
+  (reduce-kv
+   (fn [result arg kind]
+     (if (contains? result arg)
+       (update result arg #(apply-parse op arg kind %))
+       result))
+   resolved
+   (parse-declarations arg-spec)))

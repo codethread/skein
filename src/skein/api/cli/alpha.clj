@@ -53,6 +53,8 @@
             [skein.api.cli.internal.shared :as shared]
             [skein.api.cli.internal.validation :as validation]))
 
+(declare parse-selected)
+
 (def reserved-subcommand-names
   "Subcommand names reserved for dispatch-level help aliases.
 
@@ -110,11 +112,11 @@
                          {:op op
                           :token subcommand
                           :available-subcommands available}))
-         (assoc (parsing/parse-flat (assoc (get subcommands subcommand) :op op)
-                                    (subvec argv 1)
-                                    payloads)
+         (assoc (parse-selected (assoc (get subcommands subcommand) :op op)
+                                (subvec argv 1)
+                                payloads)
                 :subcommand subcommand))
-       (parsing/parse-flat arg-spec argv payloads)))))
+       (parse-selected arg-spec argv payloads)))))
 
 (defn explain
   "Render `arg-spec` as JSON-safe help data.
@@ -129,3 +131,14 @@
              (mapv help/render-subcommand
                    (sort-by key (:subcommands arg-spec))))
       (help/explain-flat arg-spec))))
+
+;; --- the selected-spec parse pipeline ---------------------------------
+
+(defn- parse-selected
+  "Parse one selected flat spec: argv tokens, then payload resolution,
+  then the declared value parses - the three stages every parse runs."
+  [arg-spec argv payloads]
+  (let [op (:op arg-spec)
+        parsed (parsing/parse-argv arg-spec (vec argv))
+        resolved (parsing/resolve-payloads op parsed payloads)]
+    (parsing/apply-declared-parses arg-spec op resolved)))
