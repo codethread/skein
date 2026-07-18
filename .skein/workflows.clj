@@ -686,23 +686,38 @@
                          "|Pour and start the land run: land start <feature> --branch
                           |<b> --worktree <path> [--card <id>].")}
               {:verb "next"
-               :purpose "Show the ready land step views for a feature."}
+               :purpose "Show ready land step views, including checkpoint choice input details."}
               {:verb "complete"
                :purpose (format-alpha/reflow
                          "|Close the current non-checkpoint land step, optionally with
                           |notes and a step=<id> selector. CI shell gates are closed by
-                          |the executor, never by complete.")}
+                          |the executor, never by complete. The result includes input
+                          |details when completion reaches a checkpoint.")}
               {:verb "choose"
                :purpose (format-alpha/reflow
                          "|Decide sign-off: approved requires
                           |{\"subject\":\"...\",\"body\":\"...\"}; abort requires
                           |{\"reason\":\"...\"}.")}
               {:verb "status"
-               :purpose "Show the land root, ready steps, done state, run history, and merge lock."}
+               :purpose (format-alpha/reflow
+                         "|Show the land root, ready steps, checkpoint input details,
+                          |done state, run history, and merge lock.")}
               {:verb "break-lock"
                :purpose "Explicitly break a stale merge lock with a reason."}]
    :discovery {:help "strand help land"
                :conventions "strand devflow-conventions"}})
+
+(defn- land-result
+  "Add canonical choice details to ready land checkpoint views."
+  [feature result]
+  (update result :ready
+          (fn [ready]
+            (mapv (fn [view]
+                    (if (= "checkpoint" (:role view))
+                      (assoc view :choice-details
+                             (workflow/choice-details feature {:step (:id view)}))
+                      view))
+                  ready))))
 
 (defn land-op
   "Dispatch parsed `strand land ...` subcommands over the land workflow."
@@ -710,11 +725,13 @@
   (let [{:keys [subcommand feature choice tail] :as args} (:op/args ctx)]
     (condp = subcommand
       "about" (land-about)
-      "start" (merge {:feature feature}
-                     (land-start! feature (select-keys args [:branch :worktree :card])))
+      "start" (land-result feature
+                           (merge {:feature feature}
+                                  (land-start! feature (select-keys args [:branch :worktree :card]))))
       "next" (do (config/require-non-blank! :feature feature)
-                 {:feature feature
-                  :ready (workflow/ready feature)})
+                 (land-result feature
+                              {:feature feature
+                               :ready (workflow/ready feature)}))
       "complete" (let [[rest-tokens step] (config/pop-step-selector "land complete" tail)
                        notes (first rest-tokens)]
                    (config/require-non-blank! :feature feature)
@@ -738,7 +755,7 @@
                                                                   step (assoc :step step)))]
                          (when releasing?
                            (release-merge-lock! feature "land terminal cleanup"))
-                         (merge {:feature feature} result))
+                         (land-result feature (merge {:feature feature} result)))
                        (catch Throwable t
                          (when reviewing?
                            (suppressing-rollback! t #(move-card-to-rework! card)))
@@ -758,8 +775,9 @@
                    (when aborting?
                      (move-card-to-rework! card))
                    (try
-                     (merge {:feature feature :choice choice}
-                            (workflow/choose! feature (keyword choice) input (if step {:step step} {})))
+                     (land-result feature
+                                  (merge {:feature feature :choice choice}
+                                         (workflow/choose! feature (keyword choice) input (if step {:step step} {}))))
                      (catch Throwable t
                        (when lock
                          (suppressing-rollback! t #(release-merge-lock! feature "land choose failed")))
@@ -768,12 +786,14 @@
                        (throw t)))))
       "status" (do (config/require-non-blank! :feature feature)
                    (let [root (workflow/current-root feature)]
-                     {:feature feature
-                      :roots (mapv entity-projection (if root [root] []))
-                      :done (workflow/done? feature)
-                      :ready (workflow/ready feature)
-                      :history (workflow/run-history feature)
-                      :merge-lock (inspect-merge-lock)}))
+                     (land-result
+                      feature
+                      {:feature feature
+                       :roots (mapv entity-projection (if root [root] []))
+                       :done (workflow/done? feature)
+                       :ready (workflow/ready feature)
+                       :history (workflow/run-history feature)
+                       :merge-lock (inspect-merge-lock)})))
       "break-lock" (let [reason (first tail)]
                      (when (> (count tail) 1)
                        (throw (ex-info "land break-lock accepts one reason argument"
@@ -796,11 +816,11 @@
              :positionals [{:name :feature
                             :required? true
                             :doc "Feature/branch slug; the land run id."}]}
-    "next" {:doc "Show the ready land step views for a feature."
+    "next" {:doc "Show ready land step views, including checkpoint choice input details."
             :positionals [{:name :feature
                            :required? true
                            :doc "Land run id (feature/branch slug)."}]}
-    "complete" {:doc "Close the current non-checkpoint land step for a feature."
+    "complete" {:doc "Close a land step; checkpoint results include choice input details."
                 :positionals [{:name :feature
                                :required? true
                                :doc "Land run id."}
@@ -821,7 +841,7 @@
                                     |{\"subject\":\"...\",\"body\":\"...\"}; abort
                                     |requires {\"reason\":\"...\"}. A trailing
                                     |step=<id> selector is optional.")}]}
-    "status" {:doc "Show the land root, ready steps, done state, run history, and merge lock."
+    "status" {:doc "Show land state and ready steps, including checkpoint choice input details."
               :positionals [{:name :feature
                              :required? true
                              :doc "Land run id."}]}

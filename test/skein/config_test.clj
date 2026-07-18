@@ -781,7 +781,8 @@
       (let [started (op! "land" ["start" "land-x" "--branch" "land-x" "--worktree" "/tmp/land-x"])]
         (is (= "land start" (:operation started)))
         (is (false? (:done started)))
-        (is (= "land.pr.open" (:action-ref (first (:ready started))))))
+        (is (= "land.pr.open" (:action-ref (first (:ready started)))))
+        (is (not (contains? (first (:ready started)) :choice-details))))
       ;; completing push-draft-pr leaves the machine ci-green shell gate ready,
       ;; carrying the interpolated watch command for the shell executor
       (let [completed (op! "land" ["complete" "land-x" "pushed; PR #1"])
@@ -790,6 +791,7 @@
         (is (= "land complete" (:operation completed)))
         (is (= "land.ci.green" (:action-ref gate)))
         (is (= "shell" (:gate gate)))
+        (is (not (contains? gate :choice-details)))
         (is (= ["sh" "-c" "land-ci-watch" "land-x" "180" "5"]
                (let [[command flag _script & args] (:shell/argv gate-attrs)]
                  (into [command flag] args))))
@@ -800,11 +802,20 @@
       (shell-gate-complete! "land-x" "checks green")
       (is (= "land.signoff.review"
              (:action-ref (first (:ready (op! "land" ["next" "land-x"]))))))
-      (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])]
-        (is (= "checkpoint" (:role (first (:ready at-checkpoint)))))
-        (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
+      (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])
+            checkpoint (first (:ready at-checkpoint))
+            choices ((requiring-resolve 'skein.spools.workflow/choice-details) "land-x")
+            next-checkpoint (first (:ready (op! "land" ["next" "land-x"])))
+            status-checkpoint (first (:ready (op! "land" ["status" "land-x"])))]
+        (is (= "checkpoint" (:role checkpoint)))
+        (is (= "signoff" (:checkpoint checkpoint)))
+        (is (= ["approved" "abort"] (:choices checkpoint)))
+        (is (= choices (:choice-details checkpoint)))
+        (is (= choices (:choice-details next-checkpoint)))
+        (is (= choices (:choice-details status-checkpoint))))
       ;; the sign-off checkpoint offers approved + abort; both declare required input
-      (let [choices ((requiring-resolve 'skein.spools.workflow/choice-details) "land-x")
+      (let [choices (:choice-details
+                     (first (:ready (op! "land" ["next" "land-x"]))))
             approved-input (get-in choices ["approved" "input"])
             abort-input (get-in choices ["abort" "input"])]
         (is (= #{"approved" "abort"} (set (keys choices))))
@@ -826,6 +837,7 @@
         (is (= "land choose" (:operation approved)))
         (is (= "land.pr.merge" (:action-ref gate)))
         (is (= "shell" (:gate gate)))
+        (is (not (contains? gate :choice-details)))
         (is (str/includes? script "gh pr merge"))
         (is (= ["sh" "-c" script "land-merge" "land-x" subject body]
                (:shell/argv gate-attrs)))
