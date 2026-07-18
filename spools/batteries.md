@@ -109,7 +109,7 @@ with SQLite `json_patch` (`skein.core.db/update-strand!`), so keys you pass are 
 and keys you omit are left untouched. Because `--attr` values are always strings, `update` has no
 way to *remove* an attribute key: `--attr key=null` stores the literal string `"null"`, and `update`
 accepts no `--attributes` flag to carry a typed JSON `null` (the merge-patch value that would delete
-a key). Removing a key is a trusted-path operation — `skein.api.weaver.alpha/update` with
+a key). Removing a key is a trusted-path operation — `skein.api.weaver.alpha/update!` with
 `{:attributes {"key" nil}}`. Duplicate keys within one `--attr` set fail loudly, as on `add`.
 `--attributes` is not accepted here (it is `add`-only, old C7). Accepts `active|closed`; cannot set
 `replaced`. Returns the normalized strand.

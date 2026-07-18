@@ -31,7 +31,7 @@ stop/start (`.V1`), and a blocking `:run!` never holds the shared event lane
   (`PLAN-cron-on-scheduler-001.V2`): register a job whose `:run!` blocks on a
   release latch (mirror the `blocking-handler` pattern in
   `test/skein/events_quiescence_test.clj`); after the fire is dispatched, assert
-  `events/await-quiescent!` returns while the job is still blocked (the body ran
+  `test-alpha/await-quiescent!` returns while the job is still blocked (the body ran
   off-lane, so the lane settled), and a subsequent event still dispatches. Release
   the latch and join via `cron/await-idle!` before teardown.
 

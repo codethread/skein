@@ -154,7 +154,7 @@ Cancel a cron job's pending wake and remove it from `runtime`.
 
   Returns `{:unregistered id}` when the job existed (in-memory config or a
   pending `cron/<id>` wake), else `{:unregistered nil}` — the delta from
-  `skein.api.events.alpha/unregister!`, which echoes the key back whether or not
+  `skein.api.events.alpha/unregister-handler!`, which echoes the key back whether or not
   a handler was registered. Cron reports absence because a job's existence spans
   two stores (the in-memory table and the durable wake), so a caller cannot infer
   it. The scheduler `cancel!` fails loudly on an unknown key, so the cancel is

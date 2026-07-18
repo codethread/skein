@@ -67,16 +67,6 @@
     (swap! (access/hook-registry runtime) dissoc key)
     key))
 
-(defn ^:deprecated register!
-  "Renamed to register-hook! (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply register-hook! args))
-
-(defn ^:deprecated unregister!
-  "Renamed to unregister-hook! (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply unregister-hook! args))
-
 (defn hooks
   "Return data-first lifecycle hook registry entries in execution order."
   [runtime]

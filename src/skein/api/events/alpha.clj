@@ -8,8 +8,7 @@
   observe-only."
   (:require [clojure.string :as str]
             [skein.core.weaver.access :as access]
-            [skein.core.weaver.dispatch :as dispatch]
-            [skein.test.alpha :as test-alpha]))
+            [skein.core.weaver.dispatch :as dispatch]))
 
 (defn- validate-event-handler-key! [key]
   (when-not (or (keyword? key) (symbol? key) (string? key))
@@ -68,16 +67,6 @@
     (swap! (:handler-registry (access/event-system runtime)) dissoc key)
     {:unregistered key}))
 
-(defn ^:deprecated register!
-  "Renamed to register-handler! (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply register-handler! args))
-
-(defn ^:deprecated unregister!
-  "Renamed to unregister-handler! (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply unregister-handler! args))
-
 (defn handlers
   "Return data-first event handler registry entries from `runtime`."
   [runtime]
@@ -88,12 +77,3 @@
   "Return recent asynchronous event handler failures from `runtime`."
   [runtime]
   @(:recent-failures (access/event-system runtime)))
-
-(defn await-quiescent!
-  "Delegate to `skein.test.alpha/await-quiescent!`.
-
-  This compatibility alias moves to the author-side test API and will be
-  removed before the v1 stamp, after agent-harness.spool v3 migrates."
-  ([runtime] (test-alpha/await-quiescent! runtime))
-  ([runtime {:keys [timeout-ms]}]
-   (test-alpha/await-quiescent! runtime {:timeout-ms timeout-ms})))

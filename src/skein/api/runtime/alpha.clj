@@ -4,7 +4,7 @@
   Callers own runtime selection and pass the target weaver runtime as the first
   argument. Use `skein.api.current.alpha/runtime` only at trusted in-process entry
   points that need to capture the active runtime."
-  (:refer-clojure :exclude [sync use])
+  (:refer-clojure :exclude [sync])
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
@@ -676,11 +676,6 @@
 (s/fdef use-entry
   :args (s/cat :runtime map? :key ::use-key)
   :ret ::use-result)
-
-(defn ^:deprecated use
-  "Renamed to use-entry (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply use-entry args))
 
 (defn- warn!
   "Emit a loud-but-non-fatal runtime warning to the weaver's stderr log.

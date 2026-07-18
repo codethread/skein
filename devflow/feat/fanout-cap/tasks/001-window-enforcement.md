@@ -68,7 +68,7 @@ and never a durable queue (`PROP-Foc-001.NG3`, `NG4`; `PLAN-Foc-001.A2`, `A4`).
 - **TASK-Foc-001.MI9 — window tests (V1).** In `test/skein/agent_run_test.clj`, register a gate
   harness (`defharness!` real `sh`) whose argv blocks until the test releases a per-run
   sentinel/FIFO, so a run stays `running` exactly until released — no timing assumption. After each
-  `scan!`-triggering mutation settle with `skein.api.events.alpha/await-quiescent!`, then assert
+  `scan!`-triggering mutation settle with `skein.test.alpha/await-quiescent!`, then assert
   `in-flight-run-ids` for the exact admitted count; for "a slot never opened" poll
   `skein.api.spool.alpha/poll-until-deadline!` with a fail-loud budget. Cases (`PLAN-Foc-001.V1`,
   `PROP-Foc-001.P6`): (1) ceiling 2, 5 gated runs → exactly 2 in-flight, 3 pending; (2) release one

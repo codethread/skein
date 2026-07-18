@@ -67,11 +67,6 @@
                                              :canonical-pattern canonical-name
                                              :available (sort (keys @(pattern-registry runtime)))})))))
 
-(defn ^:deprecated pattern
-  "Renamed to resolve-pattern (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply resolve-pattern args))
-
 (defn- spec-form [spec-name]
   (let [form (s/form spec-name)]
     (when (= ::s/unknown form)

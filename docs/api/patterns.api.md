@@ -23,16 +23,7 @@ Function.
 Describe a registered weave pattern and its input contract in `runtime`.
 
   Missing patterns or unregistered input specs fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L106-L119">Source</a></sub></p>
-
-## <a name="skein.api.patterns.alpha/pattern">`pattern`</a>
-``` clojure
-(pattern & args)
-```
-Function.
-
-Renamed to resolve-pattern (card d6xgt); this alias is removed before the v1 stamp.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L70-L73">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L101-L114">Source</a></sub></p>
 
 ## <a name="skein.api.patterns.alpha/patterns">`patterns`</a>
 ``` clojure
@@ -72,4 +63,4 @@ Return the registered weave pattern for a simple symbol or keyword name.
 Function.
 
 Validate pattern input, invoke the pattern, and apply its create-only batch.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L191-L228">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/patterns/alpha.clj#L186-L223">Source</a></sub></p>

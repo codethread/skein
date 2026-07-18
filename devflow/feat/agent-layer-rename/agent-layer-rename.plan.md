@@ -64,7 +64,7 @@ Gate: `make build`; focused per-namespace runs for the four moved suites + `conf
 
 ### PLAN-Alr-001.PH2 Attribute-key string sweep (fan-out by file family)
 
-Outcome: token class 2 (quoted-string and keyword attribute literals) is rewritten per the brief table across spool sources and their tests together — `agent-run/*` run attrs and markers, `gate/*` (incl. `treadle/gate`→`gate/step`), the `review/*`/`panel/*`/`note/*` per-key split, `workflow/notes`→`workflow/outcome-notes`, and the two event-type keywords via `events/register!`. Family scopes are disjoint (agent-run vs subagent vs delegation vs workflow/consumers) so they fan out in parallel after PH1.
+Outcome: token class 2 (quoted-string and keyword attribute literals) is rewritten per the brief table across spool sources and their tests together — `agent-run/*` run attrs and markers, `gate/*` (incl. `treadle/gate`→`gate/step`), the `review/*`/`panel/*`/`note/*` per-key split, `workflow/notes`→`workflow/outcome-notes`, and the two event-type keywords via `events/register-handler!`. Family scopes are disjoint (agent-run vs subagent vs delegation vs workflow/consumers) so they fan out in parallel after PH1.
 
 Gate: focused per-namespace suites for each touched family green; `surface_baseline.edn` diff reconciled (hand-edited, not regenerated); grep confirms the only surviving old attr strings are in `devflow/archive/*`.
 

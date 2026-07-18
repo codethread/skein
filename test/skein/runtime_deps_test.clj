@@ -135,7 +135,7 @@
           (is (= "\"daemon-maven-added\""
                  (daemon-value rt `(do (require 'skein.api.current.alpha
                                                 'skein.api.runtime.alpha)
-                                       (get-in (skein.api.runtime.alpha/use
+                                       (get-in (skein.api.runtime.alpha/use-entry
                                                 (skein.api.current.alpha/runtime)
                                                 :maven-spike)
                                                [:call :return])))))
