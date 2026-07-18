@@ -693,6 +693,7 @@
                "      stale-absent) printf '%s\\t0\\n' \"$FAKE_GH_STALE_SHA\" ;;\n"
                "      malformed-shape) printf 'not-a-pair\\n' ;;\n"
                "      malformed-head) printf 'not-a-sha\\t3\\n' ;;\n"
+               "      short-head) printf 'deadbeef\\t3\\n' ;;\n"
                "      malformed-count) printf '%s\\tnot-a-count\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
                "      lookup-fail) echo 'lookup failed' >&2; exit 42 ;;\n"
                "      watch-fail) printf '%s\\t3\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
@@ -759,6 +760,9 @@
           (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-head" expected-sha 10)]
             (is (= 1 exit))
             (is (str/includes? err "malformed PR head")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "short-head" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR head for land-x: deadbeef")))
           (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-count" expected-sha 10)]
             (is (= 1 exit))
             (is (str/includes? err "malformed PR check count")))
