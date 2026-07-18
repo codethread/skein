@@ -45,10 +45,10 @@
       (throw (ex-info "Hook :order must be an integer" {:order (:order opts)})))
     opts))
 
-(defn register!
+(defn register-hook!
   "Register or replace a lifecycle hook in `runtime` for selected hook types."
   ([runtime key types fn-sym]
-   (register! runtime key types fn-sym {}))
+   (register-hook! runtime key types fn-sym {}))
   ([runtime key types fn-sym opts]
    (let [opts (validate-hook-opts! opts)
          entry {:key (validate-hook-key! key)
@@ -60,12 +60,22 @@
      (swap! (access/hook-registry runtime) assoc (:key entry) entry)
      (dissoc entry :fn-value))))
 
-(defn unregister!
+(defn unregister-hook!
   "Unregister a lifecycle hook by stable key from `runtime` and return that key."
   [runtime key]
   (let [key (validate-hook-key! key)]
     (swap! (access/hook-registry runtime) dissoc key)
     key))
+
+(defn ^:deprecated register!
+  "Renamed to register-hook! (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply register-hook! args))
+
+(defn ^:deprecated unregister!
+  "Renamed to unregister-hook! (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply unregister-hook! args))
 
 (defn hooks
   "Return data-first lifecycle hook registry entries in execution order."

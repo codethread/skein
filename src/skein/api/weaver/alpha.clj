@@ -2,7 +2,7 @@
   "Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
 
   This namespace owns the primitives no domain namespace does: strand
-  create/read/update (`add`, `update`, `supersede`, `archive!`/`unarchive!`,
+  create/read/update (`add!`, `update!`, `supersede!`, `archive!`/`unarchive!`,
   `show`, `list`/`list-lean`/`list-query`, and `ready`/`ready-lean`),
   database schema `init`, acyclic-relation declaration
   (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
@@ -36,10 +36,10 @@
   (db/init! (ds runtime))
   {:database "initialized"})
 
-(defn add
+(defn add!
   "Create a strand, enqueue a creation event, and return the normalized strand."
   ([runtime strand]
-   (add runtime strand (request-context :add)))
+   (add! runtime strand (request-context :add)))
   ([runtime strand req-ctx]
    (let [created (jdbc/with-transaction [tx (ds runtime)]
                    (let [edges (:edges strand)
@@ -79,10 +79,10 @@
   (when-let [unknown (seq (remove update-patch-keys (keys patch)))]
     (throw (ex-info "Unknown strand update fields" {:fields (vec unknown)}))))
 
-(defn update
+(defn update!
   "Update a strand and/or add edges atomically, then enqueue an update event."
   ([runtime id patch]
-   (update runtime id patch (request-context :update)))
+   (update! runtime id patch (request-context :update)))
   ([runtime id patch req-ctx]
    (reject-unknown-update-keys! patch)
    (let [{:keys [title state edges]} patch
@@ -131,10 +131,10 @@
    :supersession/supersedes-edge (:supersedes-edge result)
    :supersession/rewired-dependencies (:rewired-dependencies result)})
 
-(defn supersede
+(defn supersede!
   "Replace one strand with another and enqueue a supersession event."
   ([runtime old-id replacement-id]
-   (supersede runtime old-id replacement-id (request-context :supersede)))
+   (supersede! runtime old-id replacement-id (request-context :supersede)))
   ([runtime old-id replacement-id req-ctx]
    (let [result (jdbc/with-transaction [tx (ds runtime)]
                   (let [result (normalize (db/supersede-strand-in-transaction! tx old-id replacement-id))]
@@ -147,6 +147,21 @@
      (dispatch/enqueue! runtime (merge (event-base :strand/superseded)
                                        (supersede-context old-id replacement-id result)))
      result)))
+
+(defn ^:deprecated add
+  "Renamed to add! (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply add! args))
+
+(defn ^:deprecated update
+  "Renamed to update! (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply update! args))
+
+(defn ^:deprecated supersede
+  "Renamed to supersede! (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply supersede! args))
 
 (defn declare-acyclic-relation!
   "Declare an edge relation as acyclic for future graph writes."

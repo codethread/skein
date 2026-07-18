@@ -48,10 +48,10 @@
       (throw (ex-info "Event handler metadata must contain only data-first values" {:metadata metadata})))
     metadata))
 
-(defn register!
+(defn register-handler!
   "Register or replace an event handler in `runtime` for selected event types."
   ([runtime key types fn-sym]
-   (register! runtime key types fn-sym {}))
+   (register-handler! runtime key types fn-sym {}))
   ([runtime key types fn-sym metadata]
    (let [entry {:key (validate-event-handler-key! key)
                 :types (validate-event-types! types)
@@ -61,12 +61,22 @@
      (swap! (:handler-registry (access/event-system runtime)) assoc (:key entry) entry)
      (dissoc entry :fn-value))))
 
-(defn unregister!
+(defn unregister-handler!
   "Unregister an event handler by stable key from `runtime`."
   [runtime key]
   (let [key (validate-event-handler-key! key)]
     (swap! (:handler-registry (access/event-system runtime)) dissoc key)
     {:unregistered key}))
+
+(defn ^:deprecated register!
+  "Renamed to register-handler! (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply register-handler! args))
+
+(defn ^:deprecated unregister!
+  "Renamed to unregister-handler! (card d6xgt); this alias is removed before the v1 stamp."
+  [& args]
+  (apply unregister-handler! args))
 
 (defn handlers
   "Return data-first event handler registry entries from `runtime`."
