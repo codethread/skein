@@ -667,7 +667,7 @@
               :keys ["owner"]
               :archived? true
               :changed 1}
-             (weaver-api/archive! runtime strand-id [:owner])
+             (weaver-api/archive-attributes! runtime strand-id [:owner])
              "trusted archive API marks selected attribute rows archived")
     (assert= [] (weaver-api/list runtime [:= [:attr :owner] owner] {})
              "hot query/list paths exclude archived attributes")
@@ -677,7 +677,7 @@
               :keys ["owner"]
               :archived? false
               :changed 1}
-             (weaver-api/unarchive! runtime strand-id [:owner])
+             (weaver-api/unarchive-attributes! runtime strand-id [:owner])
              "trusted unarchive API restores selected attribute rows")
     (assert= [strand-id] (mapv :id (weaver-api/list runtime [:= [:attr :owner] owner] {}))
              "hot query/list paths include unarchived attributes again")))

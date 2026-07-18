@@ -6,7 +6,8 @@
 Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
 
   This namespace owns the primitives no domain namespace does: strand
-  create/read/update (`add!`, `update!`, `supersede!`, `archive!`/`unarchive!`,
+  create/read/update (`add!`, `update!`, `supersede!`,
+  `archive-attributes!`/`unarchive-attributes!`,
   `show`, `list`/`list-lean`/`list-query`, and `ready`/`ready-lean`),
   database schema `init`, acyclic-relation declaration
   (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
@@ -28,7 +29,7 @@ Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
 Function.
 
 Return declared acyclic edge relation names.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L156-L159">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L157-L160">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/add!">`add!`</a>
 ``` clojure
@@ -38,22 +39,31 @@ Return declared acyclic edge relation names.
 Function.
 
 Create a strand, enqueue a creation event, and return the normalized strand.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L39-L68">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L40-L69">Source</a></sub></p>
 
-## <a name="skein.api.weaver.alpha/archive!">`archive!`</a>
+## <a name="skein.api.weaver.alpha/archive-attributes!">`archive-attributes!`</a>
 ``` clojure
-(archive! runtime strand-id)
-(archive! runtime strand-id keys)
+(archive-attributes! runtime strand-id)
+(archive-attributes! runtime strand-id keys)
 ```
 Function.
 
 Archive all attributes, or an explicit non-empty key set, for one strand.
 
-  A later write to an archived key makes that key hot again. Untouched archived
-  keys remain archived.
+  Archived keys drop out of hot-tier reads (`list`, `ready`, and query
+  execution) but stay visible to full point reads. A later write to an
+  archived key makes that key hot again; untouched archived keys remain
+  archived. Archiving a registered immutable key is rejected — it would hide
+  write-once history.
 
-  This is a trusted in-process primitive only; it has no socket or CLI surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L182-L192">Source</a></sub></p>
+  The strand id and key set are validated by the storage layer against
+  `:skein.core.specs/attribute-key-set`, failing loudly on malformed or
+  missing input; the result is checked here against
+  `:skein.core.specs/attribute-archive-result`.
+
+  This is a trusted in-process primitive only; it has no socket or CLI
+  surface, runs no lifecycle hooks, and enqueues no event.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L183-L202">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/declare-acyclic-relation!">`declare-acyclic-relation!`</a>
 ``` clojure
@@ -62,7 +72,7 @@ Archive all attributes, or an explicit non-empty key set, for one strand.
 Function.
 
 Declare an edge relation as acyclic for future graph writes.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L151-L154">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L152-L155">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/help-alias-result">`help-alias-result`</a>
 ``` clojure
@@ -75,7 +85,7 @@ Return an op detail projection when argv/envelope form a help alias.
   The alias applies only to ops whose arg-spec declares `:subcommands`, argv is
   exactly one reserved help token, and the envelope carries no payloads. Returns
   nil when the invocation must flow through normal parsing and handler dispatch.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L458-L471">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L476-L489">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/init">`init`</a>
 ``` clojure
@@ -84,7 +94,7 @@ Return an op detail projection when argv/envelope form a help alias.
 Function.
 
 Initialize the runtime database schema.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L33-L37">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L34-L38">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/list">`list`</a>
 ``` clojure
@@ -94,7 +104,7 @@ Initialize the runtime database schema.
 Function.
 
 Return strands visible to `runtime`, optionally filtered by a query definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L211-L216">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L229-L234">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/list-lean">`list-lean`</a>
 ``` clojure
@@ -108,7 +118,7 @@ Return strands with oversized attributes replaced by descriptors.
 
   The optional limit arity is for the CLI/wire read surface; the trusted
   in-process arities remain unbounded by default.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L218-L228">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L236-L246">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/list-query">`list-query`</a>
 ``` clojure
@@ -117,7 +127,7 @@ Return strands with oversized attributes replaced by descriptors.
 Function.
 
 Return strands matching a registered query definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L230-L233">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L248-L251">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op!">`op!`</a>
 ``` clojure
@@ -146,7 +156,7 @@ Invoke a registered CLI operation with raw string argv from a root-level `strand
   actual labels.
   Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L479-L521">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L497-L539">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op-help-handler">`op-help-handler`</a>
 ``` clojure
@@ -162,7 +172,7 @@ Project the op registry as help.
   arg-spec (or a raw-envelope marker) and a JSON-safe explanation of any
   declared return shape. Unknown names fail loudly through `resolve-op`, which
   carries the available names.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L558-L574">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L576-L592">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure
@@ -171,7 +181,7 @@ Project the op registry as help.
 Function.
 
 Return registered CLI operation entries for the current weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L439-L442">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L457-L460">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ready">`ready`</a>
 ``` clojure
@@ -181,7 +191,7 @@ Return registered CLI operation entries for the current weaver runtime.
 Function.
 
 Return ready strands for `runtime`, optionally filtered by a query definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L235-L240">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L253-L258">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ready-lean">`ready-lean`</a>
 ``` clojure
@@ -195,7 +205,7 @@ Return ready strands with oversized attributes replaced by descriptors.
 
   The optional limit arity is for the CLI/wire read surface; the trusted
   in-process arities remain unbounded by default.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L242-L252">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L260-L270">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-built-in-ops!">`register-built-in-ops!`</a>
 ``` clojure
@@ -204,7 +214,7 @@ Return ready strands with oversized attributes replaced by descriptors.
 Function.
 
 Install Skein-provided CLI operations into the runtime op registry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L576-L601">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L594-L619">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-op!">`register-op!`</a>
 ``` clojure
@@ -232,7 +242,7 @@ Register a trusted weaver-side CLI operation.
   deliberately. Registry contents live only for the current weaver lifetime and
   are normally installed from init.clj or a live REPL; `reload!` clears the
   registry before re-running init, so re-registration is collision-free.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L387-L419">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L405-L437">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/replace-op!">`replace-op!`</a>
 ``` clojure
@@ -245,7 +255,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 
   Same signature as `register-op!`. This is the deliberate override for a name
   that already exists; unlike `register-op!` it requires the name to be present.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L421-L437">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L439-L455">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/resolve-op">`resolve-op`</a>
 ``` clojure
@@ -254,7 +264,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 Function.
 
 Return the registered CLI operation entry for `op-name`, or fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L444-L451">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L462-L469">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/show">`show`</a>
 ``` clojure
@@ -263,7 +273,7 @@ Return the registered CLI operation entry for `op-name`, or fail loudly.
 Function.
 
 Return one normalized strand by id, or nil when absent.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L206-L209">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L224-L227">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/supersede!">`supersede!`</a>
 ``` clojure
@@ -273,22 +283,30 @@ Return one normalized strand by id, or nil when absent.
 Function.
 
 Replace one strand with another and enqueue a supersession event.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L134-L149">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L135-L150">Source</a></sub></p>
 
-## <a name="skein.api.weaver.alpha/unarchive!">`unarchive!`</a>
+## <a name="skein.api.weaver.alpha/unarchive-attributes!">`unarchive-attributes!`</a>
 ``` clojure
-(unarchive! runtime strand-id)
-(unarchive! runtime strand-id keys)
+(unarchive-attributes! runtime strand-id)
+(unarchive-attributes! runtime strand-id keys)
 ```
 Function.
 
-Unarchive all attributes, or an explicit non-empty key set, for one strand.
+Mark all attributes, or an explicit non-empty key set, hot again for one
+  strand.
 
-  A later write to an archived key has the same hot-data result for that key.
-  Untouched archived keys remain archived.
+  Restores hot-tier visibility without changing any value. Untouched archived
+  keys remain archived. Unarchiving a registered immutable key is legal — it
+  is the recovery path for immutable rows archived before enforcement existed.
 
-  This is a trusted in-process primitive only; it has no socket or CLI surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L194-L204">Source</a></sub></p>
+  The strand id and key set are validated by the storage layer against
+  `:skein.core.specs/attribute-key-set`, failing loudly on malformed or
+  missing input; the result is checked here against
+  `:skein.core.specs/attribute-archive-result`.
+
+  This is a trusted in-process primitive only; it has no socket or CLI
+  surface, runs no lifecycle hooks, and enqueues no event.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L204-L222">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/update!">`update!`</a>
 ``` clojure
@@ -298,4 +316,4 @@ Unarchive all attributes, or an explicit non-empty key set, for one strand.
 Function.
 
 Update a strand and/or add edges atomically, then enqueue an update event.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L82-L123">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L83-L124">Source</a></sub></p>

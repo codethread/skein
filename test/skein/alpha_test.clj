@@ -67,14 +67,14 @@
                 :keys ["owner"]
                 :archived? true
                 :changed 1}
-               (weaver/archive! rt (:id task) [:owner])))
+               (weaver/archive-attributes! rt (:id task) [:owner])))
         (is (= [] (weaver/list rt [:= [:attr :owner] "agent"] {})))
         (is (= {:owner "agent"} (:attributes (weaver/show rt (:id task)))))
         (is (= {:strand-id (:id task)
                 :keys ["owner"]
                 :archived? false
                 :changed 1}
-               (weaver/unarchive! rt (:id task) [:owner])))
+               (weaver/unarchive-attributes! rt (:id task) [:owner])))
         (weaver/update! rt (:id task) {:attributes {:payload (str/join (repeat 1100 "x"))}})
         (let [lean-task (first (filter #(= (:id task) (:id %))
                                        (weaver/ready-lean rt 1024)))

@@ -2,7 +2,8 @@
   "Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
 
   This namespace owns the primitives no domain namespace does: strand
-  create/read/update (`add!`, `update!`, `supersede!`, `archive!`/`unarchive!`,
+  create/read/update (`add!`, `update!`, `supersede!`,
+  `archive-attributes!`/`unarchive-attributes!`,
   `show`, `list`/`list-lean`/`list-query`, and `ready`/`ready-lean`),
   database schema `init`, acyclic-relation declaration
   (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
@@ -179,25 +180,42 @@
     (require-omitted-attribute-descriptor! value))
   result)
 
-(defn archive!
+(defn archive-attributes!
   "Archive all attributes, or an explicit non-empty key set, for one strand.
 
-  A later write to an archived key makes that key hot again. Untouched archived
-  keys remain archived.
+  Archived keys drop out of hot-tier reads (`list`, `ready`, and query
+  execution) but stay visible to full point reads. A later write to an
+  archived key makes that key hot again; untouched archived keys remain
+  archived. Archiving a registered immutable key is rejected — it would hide
+  write-once history.
 
-  This is a trusted in-process primitive only; it has no socket or CLI surface."
+  The strand id and key set are validated by the storage layer against
+  `:skein.core.specs/attribute-key-set`, failing loudly on malformed or
+  missing input; the result is checked here against
+  `:skein.core.specs/attribute-archive-result`.
+
+  This is a trusted in-process primitive only; it has no socket or CLI
+  surface, runs no lifecycle hooks, and enqueues no event."
   ([runtime strand-id]
    (require-archive-result! (db/archive-attributes! (ds runtime) strand-id)))
   ([runtime strand-id keys]
    (require-archive-result! (db/archive-attributes! (ds runtime) strand-id keys))))
 
-(defn unarchive!
-  "Unarchive all attributes, or an explicit non-empty key set, for one strand.
+(defn unarchive-attributes!
+  "Mark all attributes, or an explicit non-empty key set, hot again for one
+  strand.
 
-  A later write to an archived key has the same hot-data result for that key.
-  Untouched archived keys remain archived.
+  Restores hot-tier visibility without changing any value. Untouched archived
+  keys remain archived. Unarchiving a registered immutable key is legal — it
+  is the recovery path for immutable rows archived before enforcement existed.
 
-  This is a trusted in-process primitive only; it has no socket or CLI surface."
+  The strand id and key set are validated by the storage layer against
+  `:skein.core.specs/attribute-key-set`, failing loudly on malformed or
+  missing input; the result is checked here against
+  `:skein.core.specs/attribute-archive-result`.
+
+  This is a trusted in-process primitive only; it has no socket or CLI
+  surface, runs no lifecycle hooks, and enqueues no event."
   ([runtime strand-id]
    (require-archive-result! (db/unarchive-attributes! (ds runtime) strand-id)))
   ([runtime strand-id keys]
