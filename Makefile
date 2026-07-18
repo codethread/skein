@@ -143,13 +143,15 @@ spool-suite-gate:
 	fi; \
 	set -- $$coords; \
 	durl="$$1"; dsha="$$2"; kurl="$$3"; ksha="$$4"; aurl="$$5"; asha="$$6"; \
-	for pair in "devflow:$$durl:$$dsha" "kanban:$$kurl:$$ksha" "agent-run:$$aurl:$$asha"; do \
-		fam="$${pair%%:*}"; rest="$${pair#*:}"; url="$${rest%%:*}"; sha="$${rest##*:}"; \
-		if [ -z "$$url" ] || [ -z "$$sha" ]; then \
-			echo "spool-suite-gate: family $$fam extracted an empty url or sha from .skein/spools.edn (url=$$url sha=$$sha); refusing to run" >&2; \
+	check_pair() { \
+		if [ -z "$$2" ] || [ -z "$$3" ]; then \
+			echo "spool-suite-gate: family $$1 extracted an empty url or sha from .skein/spools.edn (url=$$2 sha=$$3); refusing to run" >&2; \
 			exit 1; \
 		fi; \
-	done; \
+	}; \
+	check_pair devflow "$$durl" "$$dsha"; \
+	check_pair kanban "$$kurl" "$$ksha"; \
+	check_pair agent-run "$$aurl" "$$asha"; \
 	root="$$(mktemp -d)"; \
 	trap 'rm -rf "$$root"' EXIT; \
 	ln -s "$$src" "$$root/skein-src"; \
