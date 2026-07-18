@@ -1,13 +1,14 @@
 (ns skein.quality.conventions-check-test
   "Ratchet-edge coverage for the api-form check in `quality.api-form`.
 
-  Sixteen conversion cards will each edit `quality.api-form/pending`, so
-  the edges that keep that set honest are the behavior worth pinning: a
-  converted module with a private var, an undocumented public var, or a
-  wide line is a finding; a pending module is exempt even when conformant
-  (deleting the entry is the card's deliberate act, never forced by an
-  unrelated cleanup); a stale entry is a finding; and the internal
-  dependency rules hold for every module, pending or not."
+  The conversion cards each edit `quality.api-form/pending`, so the edges
+  that keep that set honest are the behavior worth pinning: a converted
+  module with an undocumented public var or a wide line is a finding
+  (privates in alpha are story-support, not findings — SPEC-003.C19a); a
+  pending module is exempt even when conformant (deleting the entry is
+  the card's deliberate act, never forced by an unrelated cleanup); a
+  stale entry is a finding; and the internal dependency rules hold for
+  every module, pending or not."
   (:require
    [clojure.java.io :as io]
    [clojure.string :as str]
@@ -43,15 +44,12 @@
   [dir attrs]
   (merge {:filename (.getPath (io/file dir "alpha.clj")) :row 2} attrs))
 
-(deftest converted-module-with-private-var-is-a-finding
+(deftest private-vars-in-a-converted-alpha-are-not-findings
   (with-modules {"tidy" conformant-source}
     (fn [dirs]
       (let [analysis {:var-definitions [(var-def (dirs "tidy")
-                                                 {:private true :name 'helper})]}
-            findings (api-form/findings analysis dirs #{})]
-        (is (= 1 (count findings)))
-        (is (re-find #"private var `helper`.*skein\.api\.tidy\.internal"
-                     (first findings)))))))
+                                                 {:private true :name 'helper})]}]
+        (is (empty? (api-form/findings analysis dirs #{})))))))
 
 (deftest converted-module-with-undocumented-public-var-is-a-finding
   (with-modules {"tidy" conformant-source}
@@ -85,7 +83,7 @@
                                 (str/join (repeat 100 "x")) "\n")}
       (fn [dirs]
         (let [analysis {:var-definitions [(var-def (dirs "messy")
-                                                   {:private true :name 'helper})]}]
+                                                   {:name 'bare})]}]
           (is (empty? (api-form/findings analysis dirs #{"messy"})))))))
   (testing "a conformant pending module forces nothing; deletion is deliberate"
     (with-modules {"tidy" conformant-source}
@@ -118,9 +116,20 @@
     (let [usage {:from 'skein.core.weaver :to 'skein.api.tidy.internal
                  :filename "/abs/repo/src/skein/core/weaver.clj" :row 3}]
       (is (= 1 (count (api-form/findings {:namespace-usages [usage]} {} #{}))))))
-  (testing "the module's own alpha and its tests are allowed"
+  (testing "the module's own alpha, internal siblings, and tests are allowed"
     (let [own {:from 'skein.api.tidy.alpha :to 'skein.api.tidy.internal
                :filename "src/skein/api/tidy/alpha.clj" :row 3}
+          nested {:from 'skein.api.tidy.alpha :to 'skein.api.tidy.internal.validate
+                  :filename "src/skein/api/tidy/alpha.clj" :row 4}
+          sibling {:from 'skein.api.tidy.internal.validate
+                   :to 'skein.api.tidy.internal.shared
+                   :filename "src/skein/api/tidy/internal/validate.clj" :row 3}
           test-use {:from 'skein.api.tidy.alpha-test :to 'skein.api.tidy.internal
                     :filename "test/skein/api/tidy/alpha_test.clj" :row 3}]
-      (is (empty? (api-form/findings {:namespace-usages [own test-use]} {} #{}))))))
+      (is (empty? (api-form/findings
+                   {:namespace-usages [own nested sibling test-use]} {} #{})))))
+  (testing "a foreign module's internal is still fenced, nested or not"
+    (let [usage {:from 'skein.api.other.internal.helpers
+                 :to 'skein.api.tidy.internal.validate
+                 :filename "src/skein/api/other/internal/helpers.clj" :row 3}]
+      (is (= 1 (count (api-form/findings {:namespace-usages [usage]} {} #{})))))))

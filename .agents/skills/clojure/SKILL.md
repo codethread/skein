@@ -113,6 +113,53 @@ When scanning Clojure conformity, actively look for and report these before list
 - Public functions or `def` values appear unused, under-tested, or accidentally public. Constants, SQL fragments, dynamic compiler state, and implementation tables should normally be `^:private` unless they are intentional API and documented.
 - Tests only cover examples when a broad invariant would be better captured by property testing.
 
+### The story-file shape (api modules)
+
+A public namespace should read as a story: the promised fns lead, and each body shows the meat of its algorithm as named, composed steps. Placement of helpers — file-local privates below the publics, or a sibling `internal` namespace — is taste; what is not negotiable is that the public body surfaces the shape of the problem. SPEC-003.C19a holds converted `skein.api.*` modules to this.
+
+```clojure
+;; GOOD: the public fn IS the pipeline; helpers are named steps below it.
+(defn link!
+  "Link every configured project's dotfiles into place; return the
+  projects that changed."
+  [config-path]
+  (->> (load-configs config-path)
+       (pmap project-files-to-link)
+       (assert-no-conflicts!)
+       (mapv relink-project!)
+       (filterv changed?)))
+```
+
+```clojure
+;; BAD: a delegation husk — the story has been exiled to another file,
+;; and the reader learns nothing here.
+(defn link!
+  "Link every configured project's dotfiles into place."
+  [config-path]
+  (internal/link! config-path))
+```
+
+Concurrency shape is part of the story. Where calls run in sequence, where they fan out, and where the code blocks must read in the public body — a helper that hides a `future`, `pmap`, or blocking deref hides exactly the thing a review should question ("could we have started that fetch sooner?").
+
+```clojure
+;; BAD - the fan-out and the blocking joins are buried in the helper.
+(defn load-dashboard
+  "Assemble the dashboard for `ctx`."
+  [ctx]
+  (fetch-everything ctx))
+
+;; GOOD - sequence, parallelism, and joins read at the top level.
+(defn load-dashboard
+  "Assemble the dashboard for `ctx`."
+  [ctx]
+  (let [profile (future (fetch-profile ctx))   ; starts now
+        boards  (future (fetch-boards ctx))    ; runs alongside profile
+        prefs   (fetch-prefs ctx)]             ; must resolve before the join
+    (render-dashboard @profile @boards prefs)))
+```
+
+Method: write the split first, merge back by measurement. Draft the module as `alpha` composing `internal/<concern>` files — the compiler exposes coupling that imagination fudges — and write tests against the public surface only. Then measure: at roughly 500 lines or under, fold the concerns back into one story-ordered file (publics leading, section-commented private clusters, leaf mechanics last, one `declare` block as the accepted cost); over that, the split stands. The public-surface tests must pass unchanged through the fold, and watch for names that only made sense behind an alias (`case*` is a compiler special form someone hit this way). Recursion clusters stay together on whichever side they live; a public fn may run long when that keeps one story in one place. The worked example is `skein.api.return-shape.alpha`, folded to a single file after living as per-concern files.
+
 ### Public vs private helpers
 
 Do not make a public var private just because it has lower-level mechanics. Classify visibility before changing it.

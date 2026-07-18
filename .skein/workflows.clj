@@ -860,6 +860,338 @@
                              :extra :json}]))
          (keys (:subcommands land-arg-spec)))})
 
+;; ---------------------------------------------------------------------------
+;; story: the module-form refactor workflow (family "story")
+;; ---------------------------------------------------------------------------
+
+(defn story-fold-workflow
+  "Continuation after :fold-back: merge the split into one story-ordered file."
+  [_opts]
+  (workflow/workflow
+   (fn [{:keys [module]}] (str "Story fold: " module))
+   {:params {:feature (workflow/param :required true)
+             :module (workflow/param :required true)
+             :worktree (workflow/param :required true)}
+    :attributes {"workflow/family" "story"}}
+   (workflow/step :fold
+                  (fn [{:keys [module]}] (str "Fold " module " into one story-ordered file"))
+                  :self
+                  :attributes {"workflow/action-ref" "story.fold"
+                               "workflow/instruction"
+                               (fn [{:keys [module]}]
+                                 (format-alpha/reflow
+                                  "|Merge the concern files back into a single story-ordered
+                                   |alpha.clj: publics with real bodies first, section-commented
+                                   |private clusters in story order, leaf mechanics last, one
+                                   |declare block up top. The public-surface tests must pass
+                                   |unchanged through the fold. Then re-run the swift adversarial
+                                   |pass: folding loses namespace aliases, so hunt name
+                                   |collisions, misleading now-local names, surplus or stale
+                                   |declare entries, and section comments that no longer match
+                                   |their contents. Fix findings before completing."))})
+   (workflow/step :finish-validate
+                  (fn [{:keys [module]}] (str "Validate and hand " module " to landing"))
+                  :self
+                  :depends-on [:fold]
+                  :attributes {"workflow/action-ref" "story.finish"
+                               "workflow/instruction"
+                               (fn [{:keys [module]}]
+                                 (str "Delete `\"" module "\"` "
+                                      (format-alpha/reflow
+                                       "|from quality.api-form/pending when this is an api
+                                        |conversion; run the focused cold tests and `make
+                                        |fmt-check lint reflect-check docs-check`; `make
+                                        |api-docs` on docstring changes. The full change-review
+                                        |roster runs once, at the land run's signoff-review
+                                        |step: continue with `strand land start <feature>
+                                        |--branch <b> --worktree <path> [--card <id>]`. Then
+                                        |close this run.")))})))
+
+(defn story-keep-workflow
+  "Continuation after :keep-split: the per-concern split is the deliverable."
+  [_opts]
+  (workflow/workflow
+   (fn [{:keys [module]}] (str "Story keep-split: " module))
+   {:params {:feature (workflow/param :required true)
+             :module (workflow/param :required true)
+             :worktree (workflow/param :required true)}
+    :attributes {"workflow/family" "story"}}
+   (workflow/step :finish-validate
+                  (fn [{:keys [module]}] (str "Validate the split and hand " module " to landing"))
+                  :self
+                  :attributes {"workflow/action-ref" "story.finish"
+                               "workflow/instruction"
+                               (fn [{:keys [module]}]
+                                 (str (format-alpha/reflow
+                                       "|The split stands: internal/<concern> files stay, named
+                                        |by meaning, gated dependency rules apply (internal
+                                        |never requires alpha; only own alpha/internal
+                                        |siblings/tests reach internal).")
+                                      " Delete `\"" module "\"` "
+                                      (format-alpha/reflow
+                                       "|from quality.api-form/pending when this is an api
+                                        |conversion; focused cold tests; `make fmt-check lint
+                                        |reflect-check docs-check`; `make api-docs` on docstring
+                                        |changes. The full roster runs at the land run's
+                                        |signoff-review step: `strand land start <feature>
+                                        |--branch <b> --worktree <path> [--card <id>]`. Then
+                                        |close this run.")))})))
+
+(defn story-workflow
+  "Return the module-form STORY workflow (family \"story\").
+
+  The forcing function for writing module code: identify the changed
+  modules, make the overall changes, take an adversarial intent review
+  (table stakes), then run the refactor wave per chunky module — write
+  the per-concern split FIRST, test the public surface only, take a
+  swift adversarial pass while the boundaries are visible, measure the
+  folded size, and decide at a checkpoint: fold back to one
+  story-ordered file (roughly 500 lines or less) or keep the split.
+  Either branch validates and hands off to the land roster. One run
+  covers one module wave; extra large modules take their own runs."
+  [_opts]
+  (workflow/workflow
+   (fn [{:keys [module]}] (str "Story: " module))
+   {:params {:feature (workflow/param :required true)
+             :module (workflow/param :required true)
+             :worktree (workflow/param :required true)
+             :card (workflow/param :default nil)}
+    :attributes {"workflow/family" "story"
+                 "story/module" (fn [{:keys [module]}] module)}}
+   (workflow/step :identify-modules
+                  (fn [{:keys [feature]}] (str "Identify modules " feature " changes"))
+                  :self
+                  :attributes {"workflow/action-ref" "story.identify"
+                               "workflow/instruction"
+                               (fn [_]
+                                 (format-alpha/reflow
+                                  "|Name every module this feature touches and record the list
+                                   |as a note on this step. For a form-conversion card this is
+                                   |the card's module; for feature work it is the modules the
+                                   |change will land in."))})
+   (workflow/step :overall-changes
+                  (fn [{:keys [feature]}] (str "Make the overall changes for " feature))
+                  :self
+                  :depends-on [:identify-modules]
+                  :attributes {"workflow/action-ref" "story.changes"
+                               "workflow/instruction"
+                               (fn [_]
+                                 (format-alpha/reflow
+                                  "|Make the feature's behavior changes first - the refactor
+                                   |wave comes after, over the changed result. A pure form
+                                   |conversion records that there are none and completes."))})
+   (workflow/step :intent-review
+                  (fn [{:keys [feature]}] (str "Adversarial intent review for " feature))
+                  :self
+                  :depends-on [:overall-changes]
+                  :attributes {"workflow/action-ref" "story.intent-review"
+                               "workflow/instruction"
+                               (fn [_]
+                                 (format-alpha/reflow
+                                  "|Swift adversarial pass on the intent and diff so far: one or
+                                   |two cross-vendor seats via `strand agent review <task-id>
+                                   |--contract ... --commit-range <base>..HEAD` - never the full
+                                   |roster, which runs once at land. Record pass ids and verdict
+                                   |in notes; fix or adjudicate findings before completing."))})
+   (workflow/step :identify-large
+                  (fn [_] "Identify large-change modules for refactor waves")
+                  :self
+                  :depends-on [:intent-review]
+                  :attributes {"workflow/action-ref" "story.identify-large"
+                               "workflow/instruction"
+                               (fn [{:keys [module]}]
+                                 (str (format-alpha/reflow
+                                       "|Separate LARGE module changes from small churn - only
+                                        |large ones earn a wave. This run's wave covers")
+                                      " `" module "`; "
+                                      (format-alpha/reflow
+                                       "|start one further `strand flow start <id> --workflow
+                                        |story` run per additional large module. Record the
+                                        |classification.")))})
+   (workflow/step :split-refactor
+                  (fn [{:keys [module]}] (str "Write the per-concern split for " module))
+                  :self
+                  :depends-on [:identify-large]
+                  :attributes {"workflow/action-ref" "story.split"
+                               "workflow/instruction"
+                               (fn [_]
+                                 (format-alpha/reflow
+                                  "|Write the split FIRST - the compiler exposes coupling that
+                                   |imagination fudges. alpha.clj public bodies compose the
+                                   |story (sequencing, fan-out, blocking joins visible; no
+                                   |forwarding husks) over internal/<concern>.clj files named by
+                                   |meaning. Follow the clojure skill's story-file section and
+                                   |SPEC-003.C19a. Delegating this step to a tracked worker run
+                                   |is encouraged; size it to one worker context."))})
+   (workflow/step :public-tests
+                  (fn [{:keys [module]}] (str "Test " module " through its public surface"))
+                  :self
+                  :depends-on [:split-refactor]
+                  :attributes {"workflow/action-ref" "story.tests"
+                               "workflow/instruction"
+                               (fn [_]
+                                 (format-alpha/reflow
+                                  "|Write or keep tests against the public surface only - they
+                                   |are the behavior lock that survives any later fold. Cold
+                                   |run green before completing."))})
+   (workflow/step :split-review
+                  (fn [{:keys [module]}] (str "Swift adversarial review of the " module " split"))
+                  :self
+                  :depends-on [:public-tests]
+                  :attributes {"workflow/action-ref" "story.split-review"
+                               "workflow/instruction"
+                               (fn [_]
+                                 (format-alpha/reflow
+                                  "|Swift adversarial pass (one or two cross-vendor seats via
+                                   |--contract) while the concern boundaries are still visible:
+                                   |bad boundaries, husks, story helpers exiled from reading
+                                   |reach, tests leaning on internals. Record pass ids and fix
+                                   |or adjudicate findings before completing."))})
+   (workflow/step :measure
+                  (fn [{:keys [module]}] (str "Measure the folded size of " module))
+                  :self
+                  :depends-on [:split-review]
+                  :attributes {"workflow/action-ref" "story.measure"
+                               "workflow/instruction"
+                               (fn [_]
+                                 (format-alpha/reflow
+                                  "|Approximate the single-file fold: total content lines across
+                                   |alpha and concern files minus per-file ns overhead. Record
+                                   |the number in notes; roughly 500 lines is the tipping
+                                   |point."))})
+   (workflow/checkpoint :fold-decision
+                        (fn [{:keys [module]}] (str "Fold " module " back, or keep the split?"))
+                        :depends-on [:measure]
+                        :kind :agent
+                        :choices [{:key :fold-back
+                                   :label "Fold back to one file"
+                                   :description
+                                   (format-alpha/reflow
+                                    "|The measured fold fits the rough 500-line budget: merge
+                                     |back into a single story-ordered alpha.clj and re-verify.")
+                                   :next :story-fold}
+                                  {:key :keep-split
+                                   :label "Keep the split"
+                                   :description
+                                   (format-alpha/reflow
+                                    "|The module outgrows the budget: the per-concern
+                                     |internal/<concern> files are the deliverable.")
+                                   :next :story-keep}]
+                        :attributes {"workflow/decision-point" "story-fold-decided"})))
+
+(defn- register-story-workflows!
+  "Register the story run's fold and keep-split routing targets."
+  []
+  {:story (workflow/register-workflow! :story 'workflows/story-workflow)
+   :story-fold (workflow/register-workflow! :story-fold 'workflows/story-fold-workflow)
+   :story-keep (workflow/register-workflow! :story-keep 'workflows/story-keep-workflow)})
+
+(defn flow-op
+  "Dispatch parsed `strand flow ...` subcommands over any registered workflow.
+
+  The generic driving surface: `start` pours a registered workflow by name
+  with a JSON params object; `next`, `complete`, `choose`, and `status` step
+  any run by run-id. Registered workflows (story, land continuations, ...)
+  need no op of their own."
+  [ctx]
+  (let [{:keys [subcommand run-id workflow choice tail] :as _args} (:op/args ctx)
+        op-result (fn [m] (assoc m :operation (str "flow " subcommand)))]
+    (condp = subcommand
+      "start" (let [raw-params (first tail)
+                    _ (when (> (count tail) 1)
+                        (throw (ex-info "flow start accepts at most one JSON params argument"
+                                        {:op "flow start" :extra (vec (rest tail))})))
+                    params (if raw-params
+                             (config/parse-json-object-arg "flow start" raw-params)
+                             {})]
+                (config/require-non-blank! :run-id run-id)
+                (config/require-non-blank! :workflow workflow)
+                (op-result
+                 (merge {:run-id run-id :workflow workflow}
+                        (workflow/start! run-id
+                                         (keyword workflow)
+                                         params
+                                         {:family workflow
+                                          :definition (keyword workflow)
+                                          :context params}))))
+      "next" (do (config/require-non-blank! :run-id run-id)
+                 (op-result {:run-id run-id
+                             :ready (workflow/ready run-id)
+                             :done (workflow/done? run-id)}))
+      "complete" (let [[rest-tokens step] (config/pop-step-selector "flow complete" tail)
+                       notes (first rest-tokens)]
+                   (config/require-non-blank! :run-id run-id)
+                   (when (> (count rest-tokens) 1)
+                     (throw (ex-info "flow complete accepts at most one notes argument"
+                                     {:op "flow complete" :extra (vec (rest rest-tokens))})))
+                   (op-result
+                    (merge {:run-id run-id}
+                           (workflow/complete! run-id (cond-> {}
+                                                        notes (assoc :notes notes)
+                                                        step (assoc :step step))))))
+      "choose" (let [[rest-tokens step] (config/pop-step-selector "flow choose" tail)
+                     raw-input (first rest-tokens)]
+                 (config/require-non-blank! :run-id run-id)
+                 (when (> (count rest-tokens) 1)
+                   (throw (ex-info "flow choose accepts at most one JSON-input argument"
+                                   {:op "flow choose" :extra (vec (rest rest-tokens))})))
+                 (let [input (if raw-input (config/parse-json-object-arg "flow choose" raw-input) {})]
+                   (op-result
+                    (merge {:run-id run-id :choice choice}
+                           (workflow/choose! run-id (keyword choice) input
+                                             (if step {:step step} {}))))))
+      "status" (do (config/require-non-blank! :run-id run-id)
+                   (let [root (workflow/current-root run-id)]
+                     (op-result {:run-id run-id
+                                 :roots (mapv entity-projection (if root [root] []))
+                                 :done (workflow/done? run-id)
+                                 :ready (workflow/ready run-id)
+                                 :history (workflow/run-history run-id)})))
+      ;; the declared arg-spec rejects unknown subcommands before dispatch;
+      ;; this default is defense in depth, not a reachable CLI path.
+      (throw (ex-info "unsupported flow subcommand"
+                      {:subcommand subcommand
+                       :allowed ["start" "next" "complete" "choose" "status"]})))))
+
+(def ^:private flow-arg-spec
+  "Declared command surface for the generic `flow` op."
+  {:op "flow"
+   :doc "Drive any registered workflow: start by name, then next/complete/choose/status by run-id."
+   :subcommands
+   {"start" {:doc "Pour and start a registered workflow for a run-id with JSON params."
+             :flags {:workflow {:required? true
+                                :doc "Registered workflow name (e.g. story)."}}
+             :positionals [{:name :run-id
+                            :required? true
+                            :doc "Run id for the new workflow run."}
+                           {:name :tail
+                            :variadic? true
+                            :doc "One JSON object of workflow params."}]}
+    "next" {:doc "Show ready step views and done state for a run."
+            :positionals [{:name :run-id :required? true :doc "Workflow run id."}]}
+    "complete" {:doc "Close the current non-checkpoint step of a run."
+                :positionals [{:name :run-id :required? true :doc "Workflow run id."}
+                              {:name :tail
+                               :variadic? true
+                               :doc "Optional notes and a trailing step=<id> selector."}]}
+    "choose" {:doc "Record a checkpoint choice on a run."
+              :positionals [{:name :run-id :required? true :doc "Workflow run id."}
+                            {:name :choice :required? true :doc "Checkpoint choice key."}
+                            {:name :tail
+                             :variadic? true
+                             :doc "Optional JSON input and a trailing step=<id> selector."}]}
+    "status" {:doc "Show run state, ready steps, and history."
+              :positionals [{:name :run-id :required? true :doc "Workflow run id."}]}}})
+
+(def ^:private flow-returns
+  {:subcommands
+   (into {}
+         (map (fn [subcommand]
+                [subcommand {:type :map
+                             :required {:operation :string}
+                             :extra :json}]))
+         (keys (:subcommands flow-arg-spec)))})
+
 (defn install!
   "Install the repo's hand-authored workflows: the delegate-pipeline pattern
   and the coordinator land workflow with its op."
@@ -879,5 +1211,13 @@
             {:doc (:doc land-arg-spec)
              :arg-spec land-arg-spec
              :returns land-returns}
-            'workflows/land-op)]
-     :land-workflows (register-land-workflows!)}))
+            'workflows/land-op)
+           (weaver/register-op!
+            runtime
+            'flow
+            {:doc (:doc flow-arg-spec)
+             :arg-spec flow-arg-spec
+             :returns flow-returns}
+            'workflows/flow-op)]
+     :land-workflows (register-land-workflows!)
+     :story-workflows (register-story-workflows!)}))

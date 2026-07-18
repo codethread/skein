@@ -105,7 +105,10 @@
                  "Budget ~15-18 calls.")}
 
     {:name "source-form"
-     :harness :luna-low
+     ;; :terra-med by owner call (2026-07-18): story/composition judgment
+     ;; is cognitive work, not pattern matching - luna seats read form
+     ;; rules literally where this lens must weigh readability.
+     :harness :terra-med
      :brief (fmt/reflow
              "|Police source form, not behavior. In changed Clojure files:
               |docstrings and comments are hard-wrapped in source (match the
@@ -113,17 +116,23 @@
               |SPEC-003.C19a), and long prose values are |-margin blocks
               |reflowed through skein.api.format.alpha, never (str ...)
               |chains or one wide literal.
-              |Reading order is public-first: the surface at the top of the
-              |file, plumbing below, `declare` where definition order fights
-              |it; in skein.api.*.alpha files C19a is normative -
-              |contract-bearing forms only (public promised vars, public
-              |spec registrations), implementation in the sibling .internal
-              |namespace. Changed markdown is the counter-rule: prose
+              |Reading order is public-first and public bodies carry the
+              |meat: a promised fn composes named steps into the story
+              |(threading where natural). Flag delegation husks that only
+              |forward to internal, and story helpers exiled where a reader
+              |cannot follow them; privates below the publics are fine, and
+              |.internal is for plumbing that would drown the file (C19a -
+              |the split line is taste; judge readability, not var counts).
+              |Concurrency shape is story: sequencing, fan-out (future,
+              |pmap), and blocking derefs read in the public body - flag
+              |helpers that bury them where reviewers cannot question the
+              |call flow.
+              |Changed markdown is the counter-rule: prose
               |paragraphs run full length, one source line each, for the
               |IDE to wrap - flag newly hard-wrapped markdown prose (code
-              |fences and tables excepted). The mechanical width and
-              |privacy gate for converted api modules is lint's job
-              |(quality.api-form); do not re-run it - judge what it cannot:
+              |fences and tables excepted). The mechanical gate for
+              |converted api modules - docstrings, width, dependency rules
+              |(quality.api-form) - is lint's job; judge what it cannot:
               |wrap points that fight reading, ordering that buries the
               |surface, prose authored against the grain. Work from the
               |diff with ranged reads; budget ~10-12 calls.")}
@@ -136,7 +145,10 @@
                  "clojure.spec that validation actually consults, not prose alone. Manual "
                  "checks are acceptable only for what a spec cannot express (closed key "
                  "sets, cross-entry uniqueness); flag hand-rolled structural validation "
-                 "where a spec should be the source of truth, and any public shape whose "
+                 "where a spec should be the source of truth — EXCEPT a public fn that is "
+                 "itself the shape authority (a validator/parser whose body defines the "
+                 "grammar): per SPEC-003.C19a it documents the grammar in docstrings, and "
+                 "a mirrored spec would be a second source of truth, so do not flag it, and any public shape whose "
                  "spec exists but is unreferenced from its owning docstring or README. Use "
                  "ranged reads around the changed definitions, not whole-namespace reads. "
                  "This lens overlaps fail-loudly and correctness on validation defects: "

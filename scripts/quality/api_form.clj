@@ -2,10 +2,12 @@
   "The api-form slice of quality.conventions-check: SPEC-003.C19a over
   converted `skein.api.*` modules.
 
-  A converted module's `alpha.clj` holds only contract-bearing top-level
-  forms — public promised vars (each with a docstring) and intentionally
-  public spec registrations — with plumbing in the sibling `internal`
-  namespace and no source line past column 96. `pending` names the modules
+  A converted module's `alpha.clj` leads with its public promised vars,
+  each carrying a docstring; private helpers below them are welcome when
+  they are part of the file's story, genuine plumbing moves to the sibling
+  `internal` namespace, and no source line passes column 96. Reading order
+  and the story/plumbing line are judgment (the source-form reviewer);
+  this gate checks only what is mechanical. `pending` names the modules
   not yet converted; each conversion card under epic 9nu0q deletes its own
   entry, and a stale entry is a finding. Two dependency rules hold for
   every internal namespace regardless of pending: an internal namespace
@@ -18,7 +20,7 @@
 (def pending
   "Modules not yet through their v1 form card (epic 9nu0q)."
   #{"batch" "cli" "current" "events" "graph" "hooks" "notes" "patterns"
-    "peers" "relations" "return-shape" "runtime" "scheduler" "spool"
+    "peers" "relations" "runtime" "scheduler" "spool"
     "vocab" "weaver"})
 
 (def ^:private width-limit 96)
@@ -59,16 +61,17 @@
        (str/blank? (:doc var-def))))
 
 (defn- api-ns-module
-  "Return [module tier] for a `skein.api.<module>.<alpha|internal>` symbol,
-  nil for anything else."
+  "Return [module tier] for a `skein.api.<module>.alpha` or
+  `skein.api.<module>.internal[.<concern>]` symbol, nil for anything else."
   [ns-sym]
-  (rest (re-matches #"skein\.api\.([^.]+)\.(alpha|internal)" (str ns-sym))))
+  (rest (re-matches #"skein\.api\.([^.]+)\.(alpha|internal)(?:\..+)?" (str ns-sym))))
 
 (defn- dependency-findings
   "Enforce the internal-namespace dependency rules over kondo
-  `:namespace-usages`, everywhere in `src/`: internal requires no alpha
-  (its own alpha would be a cycle, a foreign one smuggles tiered surface
-  into plumbing), and nothing but a module's own alpha requires its
+  `:namespace-usages`, everywhere in `src/`: internal (including nested
+  `internal.<concern>` files) requires no alpha — its own alpha would be a
+  cycle, a foreign one smuggles tiered surface into plumbing — and nothing
+  but a module's own alpha or its own internal siblings requires its
   internal (tests may)."
   [analysis]
   (for [{:keys [from to filename row]} (:namespace-usages analysis)
@@ -83,7 +86,8 @@
                      " (SPEC-003.C19a)")
 
                 (and (= "internal" to-tier)
-                     (not (and (= "alpha" from-tier) (= from-module to-module))))
+                     (not (and (#{"alpha" "internal"} from-tier)
+                               (= from-module to-module))))
                 (str filename ":" row ": `" from "` requires `" to "`; only the"
                      " module's own alpha namespace reaches its internal plumbing"
                      " (SPEC-003.C19a)"))]
@@ -104,10 +108,6 @@
    (for [[m dir] (sort dirs)
          :when (not (contains? pending-set m))
          finding (concat
-                  (for [{:keys [filename row name]} (filter :private (alpha-vars analysis dir))]
-                    (str filename ":" row ": private var `" name "` in a converted"
-                         " api module; plumbing belongs in skein.api." m ".internal"
-                         " (SPEC-003.C19a)"))
                   (for [{:keys [filename row name]} (filter undocumented? (alpha-vars analysis dir))]
                     (str filename ":" row ": public var `" name "` in a converted"
                          " api module has no docstring (SPEC-003.C19a)"))
