@@ -14,10 +14,10 @@ Blessed declarative argv parser for weaver ops (SPEC-003-D003.C1/C2).
 
   Arg-spec shape:
 
-    {:op        <keyword-or-string>   ; optional, echoed into errors and help
-     :doc       <string>              ; optional op summary
-     :flags     {<name-kw> <flag-spec>}
-     :positionals [<positional-spec> ...]}  ; ordered, trailing may be variadic
+    {:op <keyword-or-string> ; optional, echoed into errors and help
+     :doc <string>           ; optional op summary
+     :flags {<name-kw> <flag-spec>}
+     :positionals [<positional-spec> ...]} ; trailing may be variadic
 
   Multi-verb ops may instead declare one level of subcommands:
 
@@ -34,14 +34,13 @@ Blessed declarative argv parser for weaver ops (SPEC-003-D003.C1/C2).
 
   A flag-spec is a map with:
 
-    :type      :string | :int | :boolean | :boolean-token | :map   ; default :string
-                 - :string/:int/:boolean-token consume the following token as a typed value
-                 - :boolean is a presence form (`--flag` -> true, no value)
-                 - :boolean-token consumes `true` or `false` as a boolean value
-                 - :map accumulates `--flag key=value` tokens into a {k v} map
-    :repeat?   truthy -> repeatable, values collect into a vector (:string/:int)
+    :type      :string | :int | :boolean | :boolean-token | :map
+               - :string/:int/:boolean-token consume a typed value
+               - :boolean is a presence form (`--flag` -> true, no value)
+               - :map accumulates `--flag key=value` tokens into a map
+    :repeat?   truthy -> repeatable, values collect into a vector
     :required? truthy -> must appear
-    :parse     :json | :jsonl   ; parse the resolved string value
+    :parse     :json | :jsonl ; parse the resolved string value
     :doc       <string>
 
   A positional-spec is a map with :name (keyword), :type, :required?,
@@ -63,9 +62,11 @@ Blessed declarative argv parser for weaver ops (SPEC-003-D003.C1/C2).
 ```
 Function.
 
-Render `arg-spec` as JSON-safe help data (args, types, docs, required flags,
-  subcommands, and payload-parse declarations) for the `help <op>` projection.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L477-L485">Source</a></sub></p>
+Render `arg-spec` as JSON-safe help data.
+
+  Includes arguments, types, docs, required flags, subcommands, and payload-parse
+  declarations for the `help <op>` projection.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L121-L133">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/parse">`parse`</a>
 ``` clojure
@@ -84,7 +85,7 @@ Parse `argv` against `arg-spec`, resolving payload references from `payloads`.
   malformed key=value tokens, trailing unconsumed tokens, missing/unknown
   subcommands, dangling or unused payload references, and malformed
   :json/:jsonl payloads.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L429-L445">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L84-L119">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/reserved-subcommand-names">`reserved-subcommand-names`</a>
 
@@ -95,7 +96,7 @@ Subcommand names reserved for dispatch-level help aliases.
 
   The single source of truth: registration/parse/explain validation here and
   the weaver's dispatch-time help alias must agree on this set.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L64-L69">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L58-L63">Source</a></sub></p>
 
 ## <a name="skein.api.cli.alpha/validate!">`validate!`</a>
 ``` clojure
@@ -109,4 +110,4 @@ Validate any parser arg-spec shape, returning it unchanged on success.
   arg-specs additionally enforce the one-level subcommand contract and reserved
   `:subcommand` result key. Throws structured `ex-info` on malformed specs so
   op registration fails before help or invocation can drift from the contract.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L251-L268">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L65-L82">Source</a></sub></p>
