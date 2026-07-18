@@ -195,7 +195,7 @@
                    subcommand (assoc :subcommand subcommand))))
         (validate-declared-type! op subcommand :positionals (:name spec) spec)))))
 
-(defn validate-subcommands!
+(defn- validate-subcommands!
   "Validate the structural rules for an arg-spec declaring `:subcommands`.
 
   Subcommand specs are intentionally one level deep: top-level

@@ -110,18 +110,3 @@ Validate any parser arg-spec shape, returning it unchanged on success.
   `:subcommand` result key. Throws structured `ex-info` on malformed specs so
   op registration fails before help or invocation can drift from the contract.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L251-L268">Source</a></sub></p>
-
-## <a name="skein.api.cli.alpha/validate-subcommands!">`validate-subcommands!`</a>
-``` clojure
-(validate-subcommands! arg-spec)
-```
-Function.
-
-Validate the structural rules for an arg-spec declaring `:subcommands`.
-
-  Subcommand specs are intentionally one level deep: top-level
-  flags/positionals may not be mixed with `:subcommands`, nested subcommands are
-  rejected, and `subcommand` is a reserved nested arg name because parse results
-  use `:subcommand` for the matched verb. Throws structured `ex-info` on any
-  violation so registries can fail before invocation.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/cli/alpha.clj#L198-L249">Source</a></sub></p>

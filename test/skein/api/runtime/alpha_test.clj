@@ -288,15 +288,6 @@
       (finally
         (delete-tree! root)))))
 
-(deftest runtime-path-accessors-use-the-selected-config-dir
-  (with-started-runtime
-    nil
-    {}
-    (fn [rt world]
-      (is (= (:config-dir world) (runtime/config-dir rt)))
-      (is (= (.getCanonicalFile (io/file (:config-dir world) "spools.edn"))
-             (.getCanonicalFile (runtime/spools-file rt)))))))
-
 (deftest spool-config-write-specs-own-public-shapes
   (let [entry {:git/url "https://example.invalid/demo.git"
                :git/sha (str/join (repeat 40 "a"))

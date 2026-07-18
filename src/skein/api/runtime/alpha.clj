@@ -153,17 +153,7 @@
                     "runtime release marker has an invalid shape")
     result))
 
-(defn config-dir
-  "Return the selected config directory path for `runtime`.
-
-  The result conforms to `:skein.core.specs/config-dir-result`."
-  [runtime]
-  (let [result (access/config-dir runtime)]
-    (require-valid! ::specs/config-dir-result result
-                    "runtime config directory has an invalid shape")
-    result))
-
-(defn spools-file
+(defn- spools-file
   "Return the `java.io.File` for `runtime`'s shared `spools.edn`.
 
   The result conforms to `:skein.core.specs/spools-file-result`."

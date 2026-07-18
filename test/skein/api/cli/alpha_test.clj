@@ -258,33 +258,33 @@
 (deftest subcommand-structure-failures-are-loud
   (testing "top-level flags cannot be mixed with subcommands"
     (is (= :invalid-subcommands
-           (reason #(cli/validate-subcommands! (assoc subcommand-spec :flags {:verbose {:type :boolean}}))))))
+           (reason #(cli/validate! (assoc subcommand-spec :flags {:verbose {:type :boolean}}))))))
   (testing "top-level positionals cannot be mixed with subcommands"
     (is (= :invalid-subcommands
-           (reason #(cli/validate-subcommands! (assoc subcommand-spec :positionals [{:name :id}]))))))
+           (reason #(cli/validate! (assoc subcommand-spec :positionals [{:name :id}]))))))
   (testing "subcommand names must be non-blank strings"
-    (let [data (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"" {:doc "Nope"}}}))]
+    (let [data (thrown-data #(cli/validate! {:op :x :subcommands {"" {:doc "Nope"}}}))]
       (is (= :invalid-subcommand-name (:reason data)))
       (is (= :x (:op data)))
       (is (= "" (:subcommand data)))
       (is (= :subcommands (:field data)))))
   (testing "nested subcommand specs must be maps"
-    (let [data (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" 42}}))]
+    (let [data (thrown-data #(cli/validate! {:op :x :subcommands {"a" 42}}))]
       (is (= :invalid-subcommand-spec (:reason data)))
       (is (= :x (:op data)))
       (is (= "a" (:subcommand data)))
       (is (= :subcommands (:field data)))
       (is (= 42 (:value data)))))
   (testing "nested flags must be a map"
-    (let [data (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:flags []}}}))]
+    (let [data (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:flags []}}}))]
       (is (= :invalid-subcommand-flags (:reason data)))
       (is (= :x (:op data)))
       (is (= "a" (:subcommand data)))
       (is (= :flags (:field data)))
       (is (= [] (:value data)))))
   (testing "nested flag entries must be keyword to map"
-    (let [bad-name (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:flags {"force" {:type :boolean}}}}}))
-          bad-spec (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:flags {:force true}}}}))]
+    (let [bad-name (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:flags {"force" {:type :boolean}}}}}))
+          bad-spec (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:flags {:force true}}}}))]
       (is (= :invalid-subcommand-flag (:reason bad-name)))
       (is (= :flags (:field bad-name)))
       (is (= "force" (:arg bad-name)))
@@ -292,15 +292,15 @@
       (is (= :force (:arg bad-spec)))
       (is (true? (:value bad-spec)))))
   (testing "nested positionals must be sequential"
-    (let [data (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:positionals {:name :id}}}}))]
+    (let [data (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:positionals {:name :id}}}}))]
       (is (= :invalid-subcommand-positionals (:reason data)))
       (is (= :x (:op data)))
       (is (= "a" (:subcommand data)))
       (is (= :positionals (:field data)))
       (is (= {:name :id} (:value data)))))
   (testing "nested positional entries must be maps with keyword :name"
-    (let [bad-entry (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:positionals ["id"]}}}))
-          bad-name (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:positionals [{:name "id"}]}}}))]
+    (let [bad-entry (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:positionals ["id"]}}}))
+          bad-name (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:positionals [{:name "id"}]}}}))]
       (is (= :invalid-subcommand-positional (:reason bad-entry)))
       (is (= :positionals (:field bad-entry)))
       (is (zero? (:index bad-entry)))
@@ -308,8 +308,8 @@
       (is (= :invalid-subcommand-positional (:reason bad-name)))
       (is (= {:name "id"} (:value bad-name)))))
   (testing "nested flag and positional types must be known"
-    (let [bad-flag (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:flags {:n {:type :strnig}}}}}))
-          bad-pos (thrown-data #(cli/validate-subcommands! {:op :x :subcommands {"a" {:positionals [{:name :id :type :uuid}]}}}))]
+    (let [bad-flag (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:flags {:n {:type :strnig}}}}}))
+          bad-pos (thrown-data #(cli/validate! {:op :x :subcommands {"a" {:positionals [{:name :id :type :uuid}]}}}))]
       (is (= :invalid-arg-type (:reason bad-flag)))
       (is (= :flags (:field bad-flag)))
       (is (= :n (:arg bad-flag)))
@@ -321,17 +321,17 @@
       (is (= :uuid (:type bad-pos)))))
   (testing "nested subcommands are rejected"
     (is (= :invalid-subcommands
-           (reason #(cli/validate-subcommands!
+           (reason #(cli/validate!
                      {:op :x :subcommands {"a" {:subcommands {"b" {}}}}}))))))
 
 (deftest subcommand-reserved-name-failures-are-loud
   (testing "nested flag named subcommand is reserved"
     (is (= :reserved-subcommand
-           (reason #(cli/validate-subcommands!
+           (reason #(cli/validate!
                      {:op :x :subcommands {"a" {:flags {:subcommand {:type :string}}}}})))))
   (testing "nested positional named subcommand is reserved"
     (is (= :reserved-subcommand
-           (reason #(cli/validate-subcommands!
+           (reason #(cli/validate!
                      {:op :x :subcommands {"a" {:positionals [{:name :subcommand}]}}}))))))
 
 (deftest subcommand-payload-ref-and-json-parse-use-routed-spec
