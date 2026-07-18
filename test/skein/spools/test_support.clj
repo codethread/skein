@@ -4,12 +4,51 @@
   poll-deadline knob, and the poll-until predicate poller that every
   wait-until/await-eventually/await-* helper across the suite wraps instead
   of reinventing its own deadline/sleep/recur loop."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.test :as t]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.config :as weaver-config]
             [skein.core.weaver.runtime :as weaver-runtime]))
+
+(defn- invalid-embedded-spools! [source-path family received expected-shape]
+  (throw (ex-info "Invalid embedded spools.edn shape"
+                  {:source-path source-path
+                   :family family
+                   :received received
+                   :received-type (if (nil? received) "nil" (.getName (class received)))
+                   :expected-shape expected-shape})))
+
+(defn embedded-spools-edn
+  "Read spool approvals from `source-path`, making local roots absolute.
+
+  Fail with source and family context before rewriting malformed approval data."
+  [source-path]
+  (let [config (edn/read-string (slurp source-path))
+        spools (:spools config)
+        config-dir (.getParentFile (.getCanonicalFile (io/file source-path)))]
+    (when-not (map? spools)
+      (invalid-embedded-spools! source-path nil spools "a :spools map"))
+    (assoc config
+           :spools
+           (into {}
+                 (map (fn [[family entry]]
+                        (when-not (symbol? family)
+                          (invalid-embedded-spools! source-path family family "a symbol family key"))
+                        (when-not (map? entry)
+                          (invalid-embedded-spools! source-path family entry "a map family entry"))
+                        (let [root (:local/root entry)]
+                          (when (and (contains? entry :local/root)
+                                     (or (not (string? root)) (str/blank? root)))
+                            (invalid-embedded-spools! source-path family root
+                                                      "a non-blank string :local/root"))
+                          [family (if root
+                                    (assoc entry :local/root
+                                           (.getCanonicalPath (io/file config-dir root)))
+                                    entry)])))
+                 spools))))
 
 (defn test-world [config-dir]
   (weaver-config/world config-dir

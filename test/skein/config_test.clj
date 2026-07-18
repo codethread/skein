@@ -16,7 +16,8 @@
             [skein.api.patterns.alpha :as patterns]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.spools.test-support :as test-support]))
 
 (defn- delete-directory!
   "Delete a directory tree rooted at `path` if it exists."
@@ -33,25 +34,11 @@
                        (str config-dir "/state")
                        (str config-dir "/data")))
 
-(defn- embedded-spools-edn
-  "Return the repo spool approvals with local roots made checkout-absolute."
-  []
-  (update (edn/read-string (slurp ".skein/spools.edn"))
-          :spools
-          (fn [spools]
-            (into {}
-                  (map (fn [[family entry]]
-                         [family
-                          (if-let [root (:local/root entry)]
-                            (assoc entry :local/root
-                                   (.getCanonicalPath (io/file ".skein" root)))
-                            entry)]))
-                  spools))))
-
 (defn- write-embedded-spools!
   "Write repo spool approvals into target for an embedded runtime."
   [target]
-  (spit (io/file target "spools.edn") (pr-str (embedded-spools-edn))))
+  (spit (io/file target "spools.edn")
+        (pr-str (test-support/embedded-spools-edn ".skein/spools.edn"))))
 
 (defn- with-runtime-loader
   "Run f with runtime's ambient binding and synced spool classloader."
