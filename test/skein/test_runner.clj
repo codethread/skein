@@ -15,7 +15,10 @@
    'skein.spools.text-search-test
    'skein.guild-test 'skein.test.alpha-test 'skein.warm-test 'skein.api.cli.alpha-test
    'skein.source-file-test
+   ;; pure findings logic over its own temp-dir fixtures — no shared state.
+   'skein.quality.conventions-check-test
    'skein.api.return-shape.alpha-test
+   'skein.api.format.alpha-test
    'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
    'skein.spools.batteries-test 'skein.roster-test 'skein.api.spool-test 'skein.config-ops-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test

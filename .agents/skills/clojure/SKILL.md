@@ -99,7 +99,7 @@ When a value is prose (op payloads, `about` surfaces, rule descriptions, delegat
   |single source line, soft-wrapped at authoring time.")
 ```
 
-Docstrings cannot use runtime helpers: wrap them by hand well short of the limit (match the surrounding namespace, usually ~80).
+Docstrings cannot use runtime helpers: wrap them by hand well short of the limit (match the surrounding namespace, usually ~80). Converted `skein.api.*` modules carry a hard 96-column bound on every source line, enforced by `quality.api-form` (SPEC-003.C19a).
 
 ### Audit red flags
 
