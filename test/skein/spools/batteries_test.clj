@@ -4,6 +4,7 @@
   payload-ref attributes, loud failures, and JSON-shape equivalence with the
   underlying weaver API the old socket dispatch delegates to."
   (:require [clojure.data.json :as json]
+            [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
@@ -14,6 +15,7 @@
             [skein.api.notes.alpha :as notes]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.relations.alpha :as relations]
+            [skein.api.runtime.alpha :as runtime]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.specs :as specs]
@@ -63,12 +65,28 @@
 (defn- wire-value [value]
   (json/read-str (json/write-str value) :key-fn keyword))
 
+(defn- sha [ch]
+  (str/join (repeat 40 ch)))
+
+(defn- tag-lines [& tag-shas]
+  (str/join "\n"
+            (mapcat (fn [[tag tag-object commit]]
+                      [(str tag-object "\trefs/tags/" tag)
+                       (str commit "\trefs/tags/" tag "^{}")])
+                    tag-shas)))
+
+(defn- stub-git! [rt tags manifest]
+  (batteries/set-git-client!
+   rt
+   {:ls-remote (fn [_git-url] tags)
+    :manifest-at (fn [_git-url _sha] manifest)}))
+
 (deftest activate-registers-ops-with-provenance-and-hook-classes
   (with-batteries
     (fn [rt]
       (testing "all shipped ops are registered under batteries provenance"
         (doseq [op-name ['add 'update 'show 'supersede 'burn 'list 'ready 'subgraph
-                         'weave 'query 'pattern 'note 'notes 'vocab]]
+                         'weave 'query 'pattern 'note 'notes 'vocab 'spool]]
           (let [entry (op-entry rt op-name)]
             (is (some? entry) (str op-name " should be registered"))
             (is (= 'skein.spools.batteries (:provenance entry)))
@@ -88,13 +106,18 @@
         (is (= :read (:hook-class (op-entry rt 'pattern))))
         (is (= :mutating (:hook-class (op-entry rt 'note))))
         (is (= :read (:hook-class (op-entry rt 'notes))))
-        (is (= :read (:hook-class (op-entry rt 'vocab))))))))
+        (is (= :read (:hook-class (op-entry rt 'vocab))))
+        (is (= :mutating (:hook-class (op-entry rt 'spool))))))))
 
 (deftest production-return-coverage-is-derived-from-batteries-provenance
   (with-batteries
     (fn [rt]
       (patterns/register-pattern! rt 'task 'skein.spools.batteries-test/weave-test-pattern ::weave-input)
       (graph/register-query! rt 'all [:exists :id])
+      (stub-git! rt
+                 (tag-lines ["v1" (sha "a") (sha "b")]
+                            ["v2" (sha "c") (sha "d")])
+                 nil)
       (let [checked (atom #{})
             check! (fn
                      ([operation value]
@@ -121,6 +144,10 @@
         (check! 'pattern "explain" (weaver/op! rt 'pattern ["explain" "task"]))
         (check! 'notes (weaver/op! rt 'notes [(:id first-row)]))
         (check! 'vocab (weaver/op! rt 'vocab []))
+        (check! 'spool "about" (weaver/op! rt 'spool ["about"]))
+        (check! 'spool "add" (weaver/op! rt 'spool ["add" "https://example.invalid/demo.git"]))
+        (check! 'spool "bump" (weaver/op! rt 'spool ["bump" "demo" "--to" "v1"]))
+        (check! 'spool "status" (weaver/op! rt 'spool ["status"]))
         (check! 'supersede (weaver/op! rt 'supersede [(:id first-row) (:id replacement)]))
         (check! 'burn (weaver/op! rt 'burn [(:id burnable)]))
         (let [{:keys [missing required unchecked]} (owner-return-coverage rt @checked)]
@@ -128,6 +155,126 @@
           (is (= required @checked))
           (is (empty? unchecked)))
         (is (= (:id first-row) (:target note)))))))
+
+(deftest spool-add-resolves-peeled-highest-tag-and-materializes-manifest
+  (with-runtime
+    {:release-marker "v4"}
+    (fn [rt _config-dir]
+      (batteries/install! rt)
+      (let [seen-sha (atom nil)
+            peeled-v9 (sha "9")
+            peeled-v12 (sha "d")]
+        (batteries/set-git-client!
+         rt
+         {:ls-remote
+          (fn [_]
+            (tag-lines ["v9" (sha "8") peeled-v9]
+                       ["v12" (sha "c") peeled-v12]))
+          :manifest-at
+          (fn [_ sha]
+            (reset! seen-sha sha)
+            (pr-str {:spool/format 1
+                     :skein/min "v2"
+                     :roots {'demo/root {:root "demo"}}
+                     :requires {'base/root "v3"}}))})
+        (let [result (weaver/op! rt 'spool
+                                 ["add" "https://example.invalid/acme/demo.spool.git"
+                                  "--lib" "acme/demo-spool"])
+              entry (:entry result)]
+          (is (= peeled-v12 @seen-sha) "manifest lookup receives the peeled commit, not the tag object")
+          (is (= {:git/url "https://example.invalid/acme/demo.spool.git"
+                  :git/tag "v12"
+                  :git/sha peeled-v12
+                  :roots {'demo/root "demo"}
+                  :requires {'base/root "v3"}
+                  :skein/min "v2"}
+                 entry))
+          (is (= entry (get-in (runtime/declared rt) [:families 'acme/demo-spool :declared])))
+          (is (= :inserted (:status result)))
+          (is (false? (get-in result [:requirements :valid?]))))))))
+
+(deftest spool-add-implicit-root-and-release-tag-failures
+  (with-runtime
+    (fn [rt _config-dir]
+      (batteries/install! rt)
+      (testing "a missing advisory manifest uses the confirmed URL-derived lib at root dot"
+        (stub-git! rt (tag-lines ["v1" (sha "a") (sha "b")]) nil)
+        (is (= {'notebook.spool "."}
+               (get-in (weaver/op! rt 'spool
+                                   ["add" "https://github.com/codethread/notebook.spool.git"])
+                       [:entry :roots]))))
+      (testing "v0 is reserved"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"v0 is reserved"
+                              (weaver/op! rt 'spool
+                                          ["add" "https://example.invalid/demo.git" "--tag" "v0"]))))
+      (testing "lightweight or absent releases name the manual sha-pin path"
+        (stub-git! rt (str (sha "c") "\trefs/tags/v1") nil)
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"pin a reviewed sha manually in spools.edn"
+                              (weaver/op! rt 'spool ["add" "https://example.invalid/untagged.git"])))))))
+
+(deftest spool-bump-prefers-floor-suggestion-and-rewrites-tag-sha-together
+  (with-runtime
+    {:release-marker "v4"}
+    (fn [rt _config-dir]
+      (batteries/install! rt)
+      (let [old-sha (sha "1")
+            v3-sha (sha "3")]
+        (runtime/upsert-spool-entry!
+         rt 'target/family
+         {:git/url "https://example.invalid/target.git"
+          :git/tag "v1"
+          :git/sha old-sha
+          :roots {'target/root "."}})
+        (runtime/upsert-spool-entry!
+         rt 'client/family
+         {:git/url "https://example.invalid/client.git"
+          :git/tag "v1"
+          :git/sha (sha "2")
+          :requires {'target/root "v3"}})
+        (stub-git! rt
+                   (tag-lines ["v2" (sha "a") (sha "2")]
+                              ["v3" (sha "b") v3-sha]
+                              ["v4" (sha "c") (sha "4")])
+                   nil)
+        (let [result (weaver/op! rt 'spool ["bump" "target/family"])]
+          (is (= {:tag "v1" :sha old-sha} (:old result)))
+          (is (= {:tag "v3" :sha v3-sha} (:new result))
+              "a failing floor selects its computed suggestion instead of latest v4")
+          (is (= (str "https://example.invalid/target/compare/" old-sha "..." v3-sha)
+                 (:compare-url result)))
+          (is (= {:git/tag "v3" :git/sha v3-sha}
+                 (select-keys (get-in (runtime/declared rt)
+                                      [:families 'target/family :declared])
+                              [:git/tag :git/sha])))
+          (is (true? (get-in result [:requirements :valid?]))))))))
+
+(deftest spool-status-joins-overlay-sync-use-pending-and-release-truth-without-git
+  (with-runtime
+    {:release-marker "v5"}
+    (fn [rt config-dir]
+      (batteries/install! rt)
+      (runtime/upsert-spool-entry!
+       rt 'demo/family
+       {:git/url "https://example.invalid/demo.git"
+        :git/tag "v2"
+        :git/sha (sha "d")
+        :roots {'demo/root "."}})
+      (spit (io/file config-dir "spools.local.edn")
+            (pr-str {:spools {'demo/family {:local/root "../demo" :claims "v3"}}}))
+      (spit (io/file config-dir "module.clj") "{:loaded true}\n")
+      (runtime/use! rt :demo/module {:file "module.clj" :spools ['demo/root]})
+      (batteries/set-git-client!
+       rt
+       {:ls-remote (fn [_] (throw (ex-info "network called" {})))
+        :manifest-at (fn [_ _] (throw (ex-info "network called" {})))})
+      (let [result (weaver/op! rt 'spool ["status"])
+            family (get-in result [:families 'demo/family])]
+        (is (= {:provenance :local-overlay :claims "v3"}
+               (select-keys family [:provenance :claims])))
+        (is (= {} (:syncs family)))
+        (is (= :not-synced (get-in family [:uses :demo/module :reason])))
+        (is (nil? (:pending-generation result)))
+        (is (= {:marker "v5" :provenance :claimed} (:release-marker result)))))))
 
 (deftest add-happy-path-and-json-shape
   (with-batteries

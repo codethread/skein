@@ -2,8 +2,9 @@
   "Shipped core strand command surface as parser-backed weaver ops.
 
   Batteries registers the everyday strand operations — add/update/show/supersede/
-  burn/list/ready/subgraph plus the create-only `weave` op and the read-only
-  `query`/`pattern` registry-introspection ops — as `register-op!` ops whose
+  burn/list/ready/subgraph, spool coordinate helpers, the create-only `weave`
+  op, and the read-only `query`/`pattern` registry-introspection ops — as
+  `register-op!` ops whose
   `:arg-spec` is parsed by `skein.api.cli.alpha`. Each op delegates to the same
   `skein.api.*.alpha` calls the JSON socket dispatch uses today and returns
   the same JSON shapes, so the ops are reachable through `strand <name>` at the
@@ -17,10 +18,13 @@
   accepts `active|closed` for mutations and `active|closed|replaced` for `list`
   filtering."
   (:require [clojure.data.json :as json]
+            [clojure.edn :as edn]
+            [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.walk :as walk]
             [skein.api.current.alpha :as current]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.graph.alpha :as graph]
             [skein.api.notes.alpha :as notes]
             [skein.api.patterns.alpha :as patterns]
@@ -29,12 +33,15 @@
             [skein.api.weaver.alpha :as weaver]
             [skein.core.query :as query]
             [skein.core.specs :as specs])
-  (:import [java.io PushbackReader StringReader]))
+  (:import [java.io PushbackReader StringReader]
+           [java.nio.file FileVisitResult Files LinkOption SimpleFileVisitor]
+           [java.nio.file.attribute FileAttribute]))
 
 (def ^:private generic-states #{"active" "closed"})
 (def ^:private lean-attribute-byte-floor 1024)
 (def ^:private default-read-limit 500)
 (def ^:private readable-states #{"active" "closed" "replaced"})
+(def ^:private release-tag-pattern #"v([1-9][0-9]*)")
 
 (defn- validate-generic-state
   "Return state when it is active|closed, else fail loudly (mutations)."
@@ -112,6 +119,295 @@
     (sequential? value) (mapv json-safe-value value)
     (set? value) (mapv json-safe-value (sort-by pr-str value))
     :else (pr-str value)))
+
+;; --- spool Git boundary -----------------------------------------------------
+
+(defn- delete-tree!
+  "Delete a temporary tree without following symbolic links."
+  [^java.io.File root]
+  (let [path (.toPath root)]
+    (when (Files/exists path (into-array LinkOption [LinkOption/NOFOLLOW_LINKS]))
+      (Files/walkFileTree
+       path
+       (proxy [SimpleFileVisitor] []
+         (visitFile [file _attrs]
+           (Files/delete file)
+           FileVisitResult/CONTINUE)
+         (postVisitDirectory [dir error]
+           (when error (throw error))
+           (Files/delete dir)
+           FileVisitResult/CONTINUE))))))
+
+(defn- run-git
+  "Run Git with argv and return its exit, stdout, and stderr."
+  [dir & args]
+  (let [process (try
+                  (-> (ProcessBuilder. ^java.util.List (vec (cons "git" args)))
+                      (.directory dir)
+                      (.start))
+                  (catch java.io.IOException error
+                    {:exit 127 :stdout "" :stderr (ex-message error)}))]
+    (if (map? process)
+      process
+      (let [stdout (future (slurp (.getInputStream ^Process process)))
+            stderr (future (slurp (.getErrorStream ^Process process)))
+            exit (.waitFor ^Process process)]
+        {:exit exit :stdout @stdout :stderr @stderr}))))
+
+(defn- checked-git
+  "Run Git, returning stdout or failing with command diagnostics."
+  [dir & args]
+  (let [result (apply run-git dir args)]
+    (when-not (zero? (:exit result))
+      (throw (ex-info "Git command failed"
+                      {:argv (vec (cons "git" args))
+                       :exit (:exit result)
+                       :stderr (str/trim (:stderr result))})))
+    (:stdout result)))
+
+(defn- ls-remote [git-url]
+  (checked-git nil "ls-remote" "--tags" git-url))
+
+(defn- manifest-at [git-url sha]
+  (let [tmp (.toFile (Files/createTempDirectory "skein-spool-manifest-"
+                                                (make-array FileAttribute 0)))]
+    (try
+      (checked-git tmp "init" "--quiet")
+      (checked-git tmp "fetch" "--quiet" "--depth=1" git-url sha)
+      (let [probe (run-git tmp "cat-file" "-e" "FETCH_HEAD:spool.edn")]
+        (when (zero? (:exit probe))
+          (checked-git tmp "show" "FETCH_HEAD:spool.edn")))
+      (finally
+        (delete-tree! tmp)))))
+
+(def ^:private default-git-client
+  {:ls-remote ls-remote
+   :manifest-at manifest-at})
+
+(defn- git-client-state [rt]
+  (runtime-api/spool-state rt ::git-client #(atom default-git-client)))
+
+(defn set-git-client!
+  "Set the remote Git seam for spool helper operations on `runtime`.
+
+  `client` must contain `:ls-remote` and `:manifest-at` functions. This is a
+  runtime-owned test and trusted-config seam; normal callers use the default
+  subprocess-backed client."
+  [rt client]
+  (when-not (and (= #{:ls-remote :manifest-at} (set (keys client)))
+                 (every? fn? (vals client)))
+    (throw (ex-info "Spool Git client must contain :ls-remote and :manifest-at functions"
+                    {:client client})))
+  (reset! (git-client-state rt) client)
+  client)
+
+(defn- git-client [rt]
+  @(git-client-state rt))
+
+(defn- release-number [tag]
+  (when-let [[_ n] (and (string? tag) (re-matches release-tag-pattern tag))]
+    (bigint n)))
+
+(defn- require-release-tag [tag role]
+  (when-not (release-number tag)
+    (throw (ex-info (str role " must be an ordered release marker vN; v0 is reserved")
+                    {:tag tag :reason :invalid-release-marker})))
+  tag)
+
+(defn- peeled-tags [output]
+  (into (sorted-map-by #(compare (release-number %1) (release-number %2)))
+        (keep (fn [line]
+                (when-let [[_ sha tag]
+                           (re-matches #"([0-9a-fA-F]{40})\s+refs/tags/(v[1-9][0-9]*)\^\{\}"
+                                       line)]
+                  [tag (str/lower-case sha)])))
+        (str/split-lines output)))
+
+(defn- select-tag [output requested]
+  (let [tags (peeled-tags output)
+        tag (if requested
+              (require-release-tag requested "Requested tag")
+              (last (keys tags)))]
+    (when-not tag
+      (if (re-find #"refs/tags/v0\^\{\}" output)
+        (throw (ex-info "v0 is reserved; WIP repositories stay untagged"
+                        {:reason :reserved-release-marker :tag "v0"}))
+        (throw (ex-info
+                "Repository has no annotated vN release tags; pin a reviewed sha manually in spools.edn"
+                {:reason :no-release-tags}))))
+    (when-not (contains? tags tag)
+      (throw (ex-info "Release tag is missing or is not annotated"
+                      {:reason :annotated-tag-not-found
+                       :tag tag
+                       :available (vec (keys tags))})))
+    {:tag tag :sha (get tags tag)}))
+
+(defn- url-basename [git-url]
+  (let [trimmed (str/replace git-url #"[/]+$" "")
+        basename (last (str/split trimmed #"[/\\:]"))
+        basename (str/replace basename #"\.git$" "")]
+    (when (str/blank? basename)
+      (throw (ex-info "Git URL must have a repository basename" {:git-url git-url})))
+    (symbol basename)))
+
+(defn- read-manifest [content]
+  (when content
+    (let [eof (Object.)
+          rdr (PushbackReader. (StringReader. content))
+          manifest (try
+                     (edn/read {:eof eof} rdr)
+                     (catch Exception cause
+                       (throw (ex-info "Advisory spool.edn is not valid EDN" {} cause))))]
+      (when (or (identical? eof manifest)
+                (not (identical? eof (edn/read {:eof eof} rdr))))
+        (throw (ex-info "Advisory spool.edn must contain exactly one EDN value" {})))
+      (when-not (and (map? manifest)
+                     (= 1 (:spool/format manifest))
+                     (contains? manifest :roots))
+        (throw (ex-info "Advisory spool.edn must be a map with :spool/format 1 and :roots"
+                        {:manifest manifest})))
+      (when-let [unknown (seq (remove #{:spool/format :skein/min :roots :requires}
+                                      (keys manifest)))]
+        (throw (ex-info "Advisory spool.edn contains unknown keys"
+                        {:unknown (vec unknown)})))
+      manifest)))
+
+(defn- manifest-roots [manifest implicit-lib]
+  (if manifest
+    (let [roots (:roots manifest)]
+      (when-not (and (map? roots) (seq roots))
+        (throw (ex-info "Advisory spool.edn :roots must be a non-empty map"
+                        {:roots roots})))
+      (into {}
+            (map (fn [[lib opts]]
+                   (when-not (and (symbol? lib)
+                                  (map? opts)
+                                  (= #{:root} (set (keys opts)))
+                                  (string? (:root opts))
+                                  (not (str/blank? (:root opts))))
+                     (throw (ex-info "Advisory spool.edn :roots entries must be {lib {:root path}}"
+                                     {:lib lib :entry opts})))
+                   [lib (:root opts)]))
+            roots))
+    {implicit-lib "."}))
+
+(defn- family-entry [git-url tag sha manifest lib]
+  (cond-> {:git/url git-url
+           :git/tag tag
+           :git/sha sha
+           :roots (manifest-roots manifest lib)}
+    (contains? manifest :requires) (assoc :requires (:requires manifest))
+    (contains? manifest :skein/min) (assoc :skein/min (:skein/min manifest))))
+
+(defn- add-spool-op [ctx]
+  (let [rt (:op/runtime ctx)
+        {:keys [git-url tag lib]} (:op/args ctx)
+        lib (if lib (symbol lib) (url-basename git-url))
+        client (git-client rt)
+        {:keys [tag sha]} (select-tag ((:ls-remote client) git-url) tag)
+        manifest (read-manifest ((:manifest-at client) git-url sha))
+        entry (family-entry git-url tag sha manifest lib)
+        write (runtime-api/upsert-spool-entry! rt lib entry)
+        requirements (:requirements (runtime-api/declared rt))]
+    {:status (:status write)
+     :family lib
+     :entry entry
+     :requirements requirements}))
+
+(defn- bump-target [declared family requested tags]
+  (if requested
+    (require-release-tag requested "Target tag")
+    (let [requirements (:requirements declared)]
+      (if (:valid? requirements)
+        (last (keys tags))
+        (or (get (:suggestions requirements) family)
+            (throw (ex-info "Current floor failures do not suggest a bump for this family"
+                            {:family family
+                             :requirements requirements})))))))
+
+(defn- compare-url [git-url old-sha new-sha]
+  (str (str/replace git-url #"\.git$" "") "/compare/" old-sha "..." new-sha))
+
+(defn- bump-spool-op [ctx]
+  (let [rt (:op/runtime ctx)
+        {:keys [family to]} (:op/args ctx)
+        family (symbol family)
+        declared (runtime-api/declared rt)
+        old-entry (get-in declared [:families family :declared])]
+    (when-not old-entry
+      (throw (ex-info "Spool family is not declared" {:family family})))
+    (when-not (:git/url old-entry)
+      (throw (ex-info "Only Git spool families can be bumped" {:family family :entry old-entry})))
+    (let [tags (peeled-tags ((:ls-remote (git-client rt)) (:git/url old-entry)))
+          target (bump-target declared family to tags)]
+      (when-not target
+        (throw (ex-info "Repository has no annotated vN release tags"
+                        {:family family :reason :no-release-tags})))
+      (when-not (contains? tags target)
+        (throw (ex-info "Target release tag is missing or is not annotated"
+                        {:family family :tag target :available (vec (keys tags))})))
+      (let [new-sha (get tags target)
+            entry (assoc old-entry :git/tag target :git/sha new-sha)
+            write (runtime-api/upsert-spool-entry! rt family entry)]
+        {:status (:status write)
+         :family family
+         :old {:tag (:git/tag old-entry) :sha (:git/sha old-entry)}
+         :new {:tag target :sha new-sha}
+         :compare-url (compare-url (:git/url old-entry) (:git/sha old-entry) new-sha)
+         :requirements (:requirements (runtime-api/declared rt))}))))
+
+(defn- family-uses [uses roots]
+  (into (sorted-map)
+        (filter (fn [[_ use-entry]]
+                  (seq (set/intersection roots (set (get-in use-entry [:opts :spools]))))))
+        uses))
+
+(defn- spool-status [rt]
+  (let [declared (runtime-api/declared rt)
+        sync-result (runtime-api/syncs rt)
+        uses (runtime-api/uses rt)]
+    {:families
+     (into (sorted-map)
+           (map (fn [[family projection]]
+                  (let [roots (set (keys (get-in projection [:declared :roots]
+                                                 {family "."})))]
+                    [family
+                     (assoc projection
+                            :syncs (select-keys (:spools sync-result) roots)
+                            :uses (family-uses uses roots))])))
+           (:families declared))
+     :requirements (:requirements declared)
+     :pending-generation (:pending-generation sync-result)
+     :release-marker (runtime-api/release-marker rt)}))
+
+(defn spool-about
+  "Return the spool helper's purpose and non-network status contract."
+  []
+  {:operation "spool about"
+   :purpose (format-alpha/reflow
+             "|Add and bump annotated Git spool releases through the validated,
+              |comment-preserving runtime write verb. Status joins declared,
+              |overlay, sync, use, pending-generation, and release-marker state.")
+   :conventions
+   [(format-alpha/reflow
+     "|Add and bump resolve only peeled refs/tags/vN^{} commits. v0,
+      |lightweight tags, and untagged repositories are refused.")
+    (format-alpha/reflow
+     "|An optional producer spool.edn supplies roots and floors. Without it,
+      |add uses one root at . under the URL basename; --lib confirms or
+      |overrides that family/root symbol.")
+    (format-alpha/reflow
+     "|Status performs no remote Git calls. It reports the running runtime's
+      |declared and adopted state without attempting sync or reload.")]})
+
+(defn spool-op
+  "Dispatch parsed `strand spool ...` subcommands."
+  [ctx]
+  (case (:subcommand (:op/args ctx))
+    "about" (spool-about)
+    "add" (add-spool-op ctx)
+    "bump" (bump-spool-op ctx)
+    "status" (spool-status (:op/runtime ctx))))
 
 ;; The blessed parser's :parse :json uses clojure.data.json/read-str, which
 ;; silently returns the first value and ignores trailing input, so it cannot
@@ -492,6 +788,29 @@
    :flags {:kind {:type :string
                   :doc "Narrow to one declaration kind: attr-namespace or edge."}}})
 
+(def ^:private spool-arg-spec
+  {:op "spool"
+   :doc "Add, bump, and inspect validated spool family coordinates. Run `strand spool about` for conventions."
+   :subcommands
+   {"about" {:doc "Return spool helper conventions and status semantics."}
+    "add" {:doc "Add one annotated Git spool release to spools.edn."
+           :flags {:tag {:type :string
+                         :doc "Annotated release tag vN; defaults to the highest release."}
+                   :lib {:type :string
+                         :doc "Consumer family symbol; defaults to the Git URL basename."}}
+           :positionals [{:name :git-url
+                          :type :string
+                          :required? true
+                          :doc "Git repository URL."}]}
+    "bump" {:doc "Bump one Git spool family atomically to an annotated release."
+            :flags {:to {:type :string
+                         :doc "Target annotated release tag vN; defaults from floors or latest."}}
+            :positionals [{:name :family
+                           :type :string
+                           :required? true
+                           :doc "Declared spool family symbol."}]}
+    "status" {:doc "Join declared, overlay, sync, use, pending, and running release state without network access."}}})
+
 (def ^:private attributes-return
   {:type :map :extra :json})
 
@@ -585,7 +904,12 @@
                               :doc :string
                               :family :string
                               :direction :string
-                              :declared-acyclic? :boolean}}}})
+                              :declared-acyclic? :boolean}}}
+   'spool {:subcommands
+           {"about" {:type :map :required {:operation :string} :extra :json}
+            "add" :json
+            "bump" :json
+            "status" :json}}})
 
 (def ^:private op-registrations
   "Each shipped op: [op-name arg-spec hook-class handler-symbol]."
@@ -602,7 +926,8 @@
    ['pattern pattern-arg-spec :read 'skein.spools.batteries/pattern-op]
    ['note note-arg-spec :mutating 'skein.spools.batteries/note-op]
    ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]
-   ['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]])
+   ['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]
+   ['spool spool-arg-spec :mutating 'skein.spools.batteries/spool-op]])
 
 (defn install!
   "Register the batteries core strand ops into a weaver runtime.
