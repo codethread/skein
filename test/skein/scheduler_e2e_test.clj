@@ -28,8 +28,8 @@
   "A due handler that mutates the graph: add a strand tagged from the payload,
   then signal the fire promise. Runs on the weaver's shared serialized lane."
   [{:keys [runtime payload]}]
-  (weaver/add runtime {:title (:title payload)
-                       :attributes {:origin "scheduler"}})
+  (weaver/add! runtime {:title (:title payload)
+                        :attributes {:origin "scheduler"}})
   (deliver @fired true))
 
 (defn- await-fire []

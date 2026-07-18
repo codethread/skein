@@ -584,15 +584,15 @@
               :types #{:strand/added}
               :fn 'skein.weaver-test/capture-event
               :metadata {:purpose :test}}
-             (events/register! rt :capture #{:strand/added} 'skein.weaver-test/capture-event {:purpose :test})))
+             (events/register-handler! rt :capture #{:strand/added} 'skein.weaver-test/capture-event {:purpose :test})))
       (is (= [:capture] (mapv :key (events/handlers rt))))
       (is (= {:key :capture
               :types #{:strand/updated}
               :fn 'skein.weaver-test/capture-event
               :metadata {}}
-             (events/register! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event)))
+             (events/register-handler! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event)))
       (is (= #{:strand/updated} (:types (first (events/handlers rt)))))
-      (is (= {:unregistered :capture} (events/unregister! rt :capture)))
+      (is (= {:unregistered :capture} (events/unregister-handler! rt :capture)))
       (is (= [] (events/handlers rt)))
       (is (= [] (events/recent-failures rt))))))
 
@@ -1788,8 +1788,8 @@
       (graph/register-query! rt 'stale [:= [:attr :owner] "stale"])
       (views/register-view! rt 'stale-view 'demo.stale/view)
       (reset! reload-deliveries [])
-      (events/register! rt :stale #{:strand/added} 'demo.stale/handler {})
-      (events/register! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
+      (events/register-handler! rt :stale #{:strand/added} 'demo.stale/handler {})
+      (events/register-handler! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
       (dispatch/enqueue! rt {:event/type :strand/added
                              :event/id "before-reload"
                              :event/at "2026-06-27T00:00:00Z"
@@ -1803,9 +1803,9 @@
                   '[skein.api.events.alpha :as events])
         '(let [rt (current/runtime)]
            (graph/register-query! rt 'fresh [:= [:attr :owner] "fresh"])
-           (events/register! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))])
+           (events/register-handler! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))])
       (is (= :loaded (:status (runtime/reload! rt))))
-      (is (nil? (runtime/use rt :stale)))
+      (is (nil? (runtime/use-entry rt :stale)))
       (is (nil? (get (graph/queries rt) "stale")))
       (is (= [:= [:attr :owner] "fresh"] (get (graph/queries rt) "fresh")))
       (is (= [] (views/views rt)))
@@ -1832,7 +1832,7 @@
           (is (= :loaded (:status result)))
           (is (= ns-sym (get-in result [:loaded :ns])))
           (is (= (.getCanonicalPath expected-file) (get-in result [:loaded :file])))
-          (is (= result (runtime/use rt :demo/ns)))
+          (is (= result (runtime/use-entry rt :demo/ns)))
           (is (= :synced-lib-loaded ((requiring-resolve (symbol (str ns-sym "/marker")))))))))))
 
 (deftest use-searches-multiple-synced-roots-for-namespace-source
@@ -1953,7 +1953,7 @@
       (is (= :failed (:status (runtime/use! rt :bad {:file "modules/bad.clj"}))))
       (is (thrown? Exception
                    (runtime/use! rt :required-bad {:file "modules/bad.clj" :required? true})))
-      (is (= :failed (:status (runtime/use rt :required-bad))))
+      (is (= :failed (:status (runtime/use-entry rt :required-bad))))
       (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
             ns-sym (symbol (str "demo.callfail" suffix))]
         (write-module-file! config-dir "modules/call_fail.clj"
@@ -1996,7 +1996,7 @@
       (is (= "modules/dup1.clj" (get-in (runtime/use! rt :dup {:file "modules/dup1.clj"}) [:opts :file])))
       (is (= "modules/dup2.clj" (get-in (runtime/use! rt :dup {:file "modules/dup2.clj"}) [:opts :file])))
       (is (= #{:dup} (set (keys (runtime/uses rt)))))
-      (is (= "modules/dup2.clj" (get-in (runtime/use rt :dup) [:opts :file]))))))
+      (is (= "modules/dup2.clj" (get-in (runtime/use-entry rt :dup) [:opts :file]))))))
 
 (deftest use-gates-before-load-and-call-side-effects
   (with-runtime

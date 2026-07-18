@@ -193,7 +193,7 @@
   ([runtime pattern-name input]
    (weave! runtime pattern-name input (request-context :weave)))
   ([runtime pattern-name input req-ctx]
-   (let [{fn-sym :fn input-spec :input-spec} (pattern runtime pattern-name)
+   (let [{fn-sym :fn input-spec :input-spec} (resolve-pattern runtime pattern-name)
          canonical-name (canonical-pattern-name pattern-name)]
      (spec-form input-spec)
      (when-not (s/valid? input-spec input)

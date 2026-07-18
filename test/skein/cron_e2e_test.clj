@@ -130,8 +130,8 @@
       (reset! run-release (promise))
       (reset! marker-fired (promise))
       (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
-      (events/register! rt :marker #{:test/marker}
-                        'skein.cron-e2e-test/marker-handler {})
+      (events/register-handler! rt :marker #{:test/marker}
+                                'skein.cron-e2e-test/marker-handler {})
       (cron/register! rt {:id :blocker :interval-ms 1000 :jitter-ms 0
                           :handler 'skein.cron-e2e-test/blocking-run})
       ;; The fire runs fire-wake on the lane; it arms the next wake and offloads

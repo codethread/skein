@@ -134,8 +134,8 @@
                       (swap! checked conj [(name operation) {:subcommand subcommand}])
                       value))
             first-row (check! 'add (weaver/op! rt 'add ["First"]))
-            replacement (weaver/add rt {:title "Replacement" :attributes {}})
-            burnable (weaver/add rt {:title "Burnable" :attributes {}})
+            replacement (weaver/add! rt {:title "Replacement" :attributes {}})
+            burnable (weaver/add! rt {:title "Burnable" :attributes {}})
             note (check! 'note (weaver/op! rt 'note [(:id first-row) "covered" "--by" "inuli"]))]
         (check! 'update (weaver/op! rt 'update [(:id first-row) "--title" "Updated"]))
         (check! 'show (weaver/op! rt 'show [(:id first-row)]))
@@ -494,7 +494,7 @@
                      :inactive_at m/absent}
                     added))
         (testing "shape matches a direct weaver-API add"
-          (let [direct (weaver/add rt {:title "Design model" :attributes {:priority "high"} :state "active"})]
+          (let [direct (weaver/add! rt {:title "Design model" :attributes {:priority "high"} :state "active"})]
             (is (= (set (keys added)) (set (keys direct))))))))))
 
 (deftest add-attr-precedence-and-payload-json-bulk
@@ -514,7 +514,7 @@
 (deftest add-with-edges
   (with-batteries
     (fn [rt]
-      (let [target (weaver/add rt {:title "Target" :attributes {}})
+      (let [target (weaver/add! rt {:title "Target" :attributes {}})
             added (weaver/op! rt 'add ["Source" "--edge" (str "depends-on:" (:id target))])
             edges (:edges (graph/subgraph rt [(:id added)] {:type "depends-on"}))]
         (is (match? (m/embeds [{:from_strand_id (:id added)
@@ -538,7 +538,7 @@
 (deftest update-happy-path
   (with-batteries
     (fn [rt]
-      (let [created (weaver/add rt {:title "Before" :attributes {:owner "old"}})
+      (let [created (weaver/add! rt {:title "Before" :attributes {:owner "old"}})
             id (:id created)
             updated (weaver/op! rt 'update [id "--title" "After" "--attr" "owner=new"])]
         (is (= "After" (:title updated)))
@@ -552,8 +552,8 @@
 (deftest show-supersede-burn
   (with-batteries
     (fn [rt]
-      (let [a (weaver/add rt {:title "Original" :attributes {}})
-            b (weaver/add rt {:title "Replacement" :attributes {}})]
+      (let [a (weaver/add! rt {:title "Original" :attributes {}})
+            b (weaver/add! rt {:title "Replacement" :attributes {}})]
         (testing "show returns the strand"
           (is (= "Original" (:title (weaver/op! rt 'show [(:id a)])))))
         (testing "supersede marks the old strand replaced"
@@ -567,10 +567,10 @@
 (deftest list-and-ready
   (with-batteries
     (fn [rt]
-      (let [active (weaver/add rt {:title "Active" :attributes {}})
-            closed (weaver/add rt {:title "Closed" :attributes {} :state "closed"})
-            blocked (weaver/add rt {:title "Blocked" :attributes {}
-                                    :edges [{:type "depends-on" :to (:id active)}]})]
+      (let [active (weaver/add! rt {:title "Active" :attributes {}})
+            closed (weaver/add! rt {:title "Closed" :attributes {} :state "closed"})
+            blocked (weaver/add! rt {:title "Blocked" :attributes {}
+                                     :edges [{:type "depends-on" :to (:id active)}]})]
         (testing "list returns all strands and matches the weaver API"
           (is (= (set (map :id (weaver/list rt)))
                  (set (map :id (weaver/op! rt 'list []))))))
@@ -587,8 +587,8 @@
     (fn [rt]
       (graph/register-query! rt 'owned {:params [:who]
                                         :where [:= [:attr :owner] [:param :who]]})
-      (let [mine (weaver/add rt {:title "Mine" :attributes {:owner "agent"}})
-            _theirs (weaver/add rt {:title "Theirs" :attributes {:owner "other"}})]
+      (let [mine (weaver/add! rt {:title "Mine" :attributes {:owner "agent"}})
+            _theirs (weaver/add! rt {:title "Theirs" :attributes {:owner "other"}})]
         (testing "list --query with --param"
           (is (= #{(:id mine)}
                  (set (map :id (weaver/op! rt 'list ["--query" "owned" "--param" "who=agent"]))))))
@@ -606,7 +606,7 @@
   (with-batteries
     (fn [rt]
       (let [_rows (doall (for [n (range 3)]
-                           (weaver/add rt {:title (str "Task " n) :attributes {}})))]
+                           (weaver/add! rt {:title (str "Task " n) :attributes {}})))]
         (testing "workspace cap is enforced before returning partial list results"
           (batteries/set-read-limit! rt 2)
           (is (= 2 (batteries/read-limit rt)))
@@ -634,11 +634,11 @@
       (let [at-floor (str/join (repeat 1022 "a"))
             over-floor (str/join (repeat 1023 "b"))
             non-ascii-at-floor (str/join (repeat 511 "é"))
-            strand (weaver/add rt {:title "Payload"
-                                   :attributes {:owner "agent"
-                                                :at-floor at-floor
-                                                :over-floor over-floor
-                                                :non-ascii-at-floor non-ascii-at-floor}})
+            strand (weaver/add! rt {:title "Payload"
+                                    :attributes {:owner "agent"
+                                                 :at-floor at-floor
+                                                 :over-floor over-floor
+                                                 :non-ascii-at-floor non-ascii-at-floor}})
             lean-list (first (filter #(= (:id strand) (:id %)) (weaver/op! rt 'list [])))
             lean-ready (first (filter #(= (:id strand) (:id %)) (weaver/op! rt 'ready [])))
             lean-query (first (weaver/op! rt 'list ["--query" "owned" "--param" "who=agent"]))
@@ -666,9 +666,9 @@
 (deftest subgraph-op-shape
   (with-batteries
     (fn [rt]
-      (let [root (weaver/add rt {:title "Root" :attributes {}})
-            child (weaver/add rt {:title "Child" :attributes {}
-                                  :edges [{:type "parent-of" :to (:id root)}]})
+      (let [root (weaver/add! rt {:title "Root" :attributes {}})
+            child (weaver/add! rt {:title "Child" :attributes {}
+                                   :edges [{:type "parent-of" :to (:id root)}]})
             result (weaver/op! rt 'subgraph [(:id child) "--relation" "parent-of"])]
         (is (= #{"root_ids" "strands" "edges"} (set (keys result))))
         (is (match? {"strands" (m/embeds [{:id (:id root)} {:id (:id child)}])}
@@ -787,7 +787,7 @@
 (deftest note-op-projects-target-from-edge
   (with-batteries
     (fn [rt]
-      (let [target (weaver/add rt {:title "Design" :attributes {}})
+      (let [target (weaver/add! rt {:title "Design" :attributes {}})
             written (weaver/op! rt 'note [(:id target) "first pass looks solid" "--by" "gpt"])]
         (testing "note returns the primitive's id/target shape"
           (is (match? {:id string? :target (:id target)} written))
@@ -818,7 +818,7 @@
 (deftest notes-op-reads-every-writer-in-order
   (with-batteries
     (fn [rt]
-      (let [target (weaver/add rt {:title "Reviewed" :attributes {}})]
+      (let [target (weaver/add! rt {:title "Reviewed" :attributes {}})]
         ;; two writers: the CLI verb and a direct primitive caller with its own
         ;; decorating attrs — the read walks the edge regardless of writer.
         (weaver/op! rt 'note [(:id target) "verb note" "--by" "opus" "--round" "1"])
