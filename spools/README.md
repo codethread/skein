@@ -103,7 +103,8 @@ than a deliberately swappable engine should; extraction to its own repo was reje
 workflow is a hub (devflow.spool, `executors.subagent` in agent-harness.spool, and this repo's
 `.skein` config all require it), so an external pin would put bump ceremony on the hottest path of
 engine development. Consumers who want the engine pinned independently of a checkout declare one
-sha-pinned family and map its root within the checkout:
+sha-pinned family and map its root within the checkout — an entry in the consumer's own
+`.skein/spools.edn`:
 
 ```clojure
 {skein.spools/workflow
@@ -111,6 +112,11 @@ sha-pinned family and map its root within the checkout:
   :git/sha "<40-lowercase-hex>"
   :roots {skein.spools/workflow "spools/workflow"}}}
 ```
+
+How to apply and verify entries like these: [Writing shared
+spools](../docs/spools/writing-shared-spools.md) covers the coordinate shape and publishing;
+[customisation](../docs/spools/customisation.md) covers activating config changes against a
+running weaver; `strand spool-status` shows what the runtime actually serves.
 
 `ct.spools.devflow` is consumed from
 [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
