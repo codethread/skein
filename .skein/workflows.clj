@@ -243,9 +243,9 @@
 ;; landed. COORDINATOR-ONLY: worker agents never land — they stop at
 ;; implemented+committed. The ordering is the enforcement: sign-off is only
 ;; valid on a pushed branch with a draft PR and green CI, and main is
-;; branch-protected — it only moves via `gh pr merge` with green CI, never a
-;; direct push, after a green local verification run. The two CI watches are
-;; `:shell` gates the shell executor (skein.spools.executors.shell) fulfils
+;; branch-protected — it only moves via a mechanical `gh pr merge` with green
+;; CI, never a direct push. The two CI watches and the merge continuation's
+;; pull are `:shell` gates the shell executor (skein.spools.executors.shell) fulfils
 ;; mechanically — a red watch stamps `gate/error` on the gate for a
 ;; fix-push-clear retry, and `land complete` refuses gates. Human steps keep
 ;; `workflow/instruction` text as the enforcement surface, shipped as data.
@@ -291,6 +291,42 @@
   [{:key :reason :required true
     :description "Why landing is being aborted; recorded on the abort step."}])
 
+(def ^:private land-merge-input
+  "Declare the squash subject and body required by the approved choice."
+  [{:key :subject :required true
+    :description "Semantic squash subject for gh pr merge."}
+   {:key :body :required true
+    :description "Squashed commits body for gh pr merge."}])
+
+(def ^:private land-merge-script
+  "Idempotently ready and squash-merge the feature PR."
+  (str "set -eu\n"
+       "state=$(gh pr view \"$1\" --json state --jq .state)\n"
+       "case \"$state\" in\n"
+       "  MERGED) echo \"already merged: $1\"; exit 0 ;;\n"
+       "  OPEN) ;;\n"
+       "  *) echo \"cannot merge PR for $1: state is $state\" >&2; exit 1 ;;\n"
+       "esac\n"
+       "if ! gh pr ready \"$1\"; then\n"
+       "  draft=$(gh pr view \"$1\" --json isDraft --jq .isDraft)\n"
+       "  if [ \"$draft\" != false ]; then\n"
+       "    echo \"failed to mark PR ready: $1\" >&2\n"
+       "    exit 1\n"
+       "  fi\n"
+       "fi\n"
+       "gh pr merge \"$1\" --squash --subject \"$2\" --body \"$3\"\n"))
+
+(def ^:private land-pull-main-script
+  "Fast-forward the canonical main checkout to origin/main."
+  (str "set -eu\n"
+       "root=$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")\n"
+       "branch=$(git -C \"$root\" branch --show-current)\n"
+       "if [ \"$branch\" != main ]; then\n"
+       "  echo \"refusing to update canonical checkout: expected main, found $branch\" >&2\n"
+       "  exit 1\n"
+       "fi\n"
+       "git -C \"$root\" pull --ff-only origin main\n"))
+
 (defn land-abort-workflow
   "Return the continuation that records an intentional abort of a land run.
 
@@ -315,22 +351,110 @@
                                  |task plus its latest note. Do NOT merge or push — nothing has landed;
                                  |the branch and worktree stay for follow-up.")})))
 
+(defn land-merge-workflow
+  "Return the mechanical merge continuation for an approved land run.
+
+  The shell gates squash-merge the PR, fast-forward canonical main, and watch
+  main CI. Cleanup remains coordinator-owned and releases the merge lock when
+  completed."
+  [_opts]
+  (workflow/workflow
+   (fn [{:keys [branch]}] (str "Merge land: " branch))
+   {:params {:feature (workflow/param :required true)
+             :branch (workflow/param :required true)
+             :worktree (workflow/param :required true)
+             :card (workflow/param :default nil)
+             :subject (workflow/param :required true)
+             :body (workflow/param :required true)}
+    :attributes {"workflow/family" "land"
+                 "land/stage" "merge"}}
+   (workflow/gate :merge-pr
+                  (fn [{:keys [branch]}] (str "Merge the PR for " branch " via gh"))
+                  :shell
+                  :attributes {"workflow/action-ref" "land.pr.merge"
+                               "shell/argv" (fn [{:keys [branch subject body]}]
+                                              ["sh" "-c" land-merge-script
+                                               "land-merge" branch subject body])
+                               "shell/cwd" (fn [{:keys [worktree]}] worktree)
+                               "shell/timeout-secs" 300
+                               "workflow/instruction"
+                               (fn [{:keys [branch]}]
+                                 (str "Machine gate: mark the PR for " branch
+                                      " ready, then run `gh pr merge --squash` with the approved"
+                                      " subject and body. Branch protection refuses the merge unless"
+                                      " required checks are green on an up-to-date branch. A failure"
+                                      " stamps `gate/error`: fix the cause, then clear the stamp"
+                                      " (`strand update <gate-id> --attr gate/error=`) to re-run. The"
+                                      " script first checks PR state, so re-running after a successful"
+                                      " merge is safe and reports that the PR is already merged."))})
+   (workflow/gate :pull-main
+                  "Fast-forward canonical main after the PR merge"
+                  :shell
+                  :depends-on [:merge-pr]
+                  :attributes {"workflow/action-ref" "land.main.pull"
+                               "shell/argv" ["sh" "-c" land-pull-main-script]
+                               "shell/cwd" (fn [{:keys [worktree]}] worktree)
+                               "shell/timeout-secs" 300
+                               "workflow/instruction"
+                               (format-alpha/reflow
+                                "|Machine gate: locate the canonical checkout through the shared Git
+                                 |directory, verify that checkout is on main, then run `git pull
+                                 |--ff-only origin main`. It never stashes or resets. A non-fast-forward,
+                                 |a conflicting dirty file, or a canonical checkout on another branch
+                                 |stamps `gate/error`: fix the checkout, then clear the stamp
+                                 |(`strand update <gate-id> --attr gate/error=`) to re-run.")})
+   (workflow/gate :main-ci-green
+                  "Watch main CI to green at the merged sha"
+                  :shell
+                  :depends-on [:pull-main]
+                  :attributes {"workflow/action-ref" "land.main.ci-green"
+                               "shell/argv" ["sh" "-c" main-ci-watch-script]
+                               ;; The feature worktree shares the repo's refs and outlives this
+                               ;; gate (cleanup runs after), so it is a safe cwd for the watch.
+                               "shell/cwd" (fn [{:keys [worktree]}] worktree)
+                               "shell/timeout-secs" 5400
+                               "workflow/instruction"
+                               (format-alpha/reflow
+                                "|Machine gate: the shell executor polls the full workflow-run set at
+                                 |the merged main sha (`gh run list --commit <sha>`) until it is
+                                 |non-empty, every run has completed, and the all-green state holds
+                                 |across two consecutive polls, so late-registering workflows are
+                                 |caught. Any conclusion besides success or skipped stamps
+                                 |`gate/error` with the run listing: re-run transient infra failures
+                                 |(`gh run rerun <run-id>`), then clear the stamp
+                                 |(`strand update <gate-id> --attr gate/error=`) to re-watch. The
+                                 |gate closing asserts green CI on the main sha; run output is
+                                 |recorded on the gate.")})
+   (workflow/step :cleanup
+                  (fn [{:keys [branch]}] (str "Clean up " branch " and close the land run"))
+                  :self
+                  :depends-on [:main-ci-green]
+                  :attributes {"workflow/action-ref" "land.cleanup"
+                               "workflow/instruction"
+                               (fn [{:keys [branch card worktree]}]
+                                 (str "Stop the worktree's warm test REPL before removing it: run `make test-warm-stop`"
+                                      " in " worktree " — it reaps the recorded PID from `.test-repl.pid` (by PID only,"
+                                      " never `pkill -f`) and clears the `.test-repl-port`/`.test-repl.pid` files, so no"
+                                      " orphaned warm JVM outlives the worktree."
+                                      " Delete the remote branch (`git push origin --delete " branch "`); the PR is"
+                                      " already merged and closed. Remove the worktree and local branch"
+                                      " (`wktree remove --branch " branch " --force`; force is expected after the"
+                                      " squash-merge)."
+                                      (if (non-blank-string? card)
+                                        (str " Finish the kanban card (`strand kanban finish " card " --outcome done`).")
+                                        "")
+                                      " Then close this land run's root to complete it."))})))
+
 (defn land-workflow
   "Return the coordinator LANDING workflow for a feature branch (family \"land\").
 
-  COORDINATOR-ONLY: worker agents never land. Sequential single molecule, one
-  linear DAG plus an abort cutover: push + draft PR, green CI at HEAD,
-  roster sign-off (only valid on a pushed branch with green CI), a coordinator
-  sign-off checkpoint, verification squash-merge to LOCAL main behind the
-  singleton merge lock, PR merge via `gh pr merge` (main is branch-protected;
-  never pushed directly), green main CI, then cleanup. Both CI watches are `:shell`
-  gates the shell executor fulfils by running the recorded `gh` watch; the
-  coordinator only sees them when a red watch stamps `gate/error`. Card-backed
-  runs move the card to `in_review` when push-draft-pr completes (the automated
-  CI watch and review pipeline starts there) and back to `claimed` on abort.
-  `params` carry `:feature`, `:branch`, `:worktree`, and optional `:card`; step
-  `workflow/instruction` text is command-precise and fail-loud, so the
-  discipline lives in the data."
+  COORDINATOR-ONLY: worker agents never land. This stage pushes the branch,
+  opens a draft PR, watches CI at HEAD, runs roster review, and ends at the
+  sign-off checkpoint. Approval requires the squash subject and body, acquires
+  the singleton merge lock, and routes to the mechanical `:land-merge`
+  continuation. Abort routes to `:land-abort`. Card-backed runs move the card
+  to `in_review` when push-draft-pr completes and back to `claimed` on abort.
+  `params` carry `:feature`, `:branch`, `:worktree`, and optional `:card`."
   [_opts]
   (workflow/workflow
    (fn [{:keys [branch]}] (str "Land: " branch))
@@ -406,106 +530,23 @@
                                    :description
                                    (format-alpha/reflow
                                     "|Sign-off approved on a pushed branch with green CI; continue to the
-                                     |local squash-merge and verification. The coordinator holds this
-                                     |delegated sign-off authority.")}
+                                     |mechanical GitHub squash-merge. Supply the semantic squash subject
+                                     |and Squashed commits body. The coordinator holds this delegated
+                                     |sign-off authority.")
+                                   :next :land-merge
+                                   :input land-merge-input}
                                   {:key :abort
                                    :label "Abort"
                                    :description "Stop landing intentionally; nothing merges. Records the reason and leaves the branch/worktree for follow-up."
                                    :next :land-abort
                                    :input land-abort-reason-input}]
-                        :attributes {"workflow/decision-point" "land-signed-off"})
-   (workflow/step :merge-local-verify
-                  (fn [{:keys [branch]}] (str "Squash-merge " branch " to local main and verify"))
-                  :self
-                  :depends-on [:signoff]
-                  :attributes {"workflow/action-ref" "land.merge.local-verify"
-                               "workflow/instruction"
-                               (fn [{:keys [branch]}]
-                                 (str "Squash-merge " branch " into LOCAL main without pushing — a verification"
-                                      " build only; the canonical squash commit is created by `gh pr merge` in the"
-                                      " next step. Use coding:git-merge semantics (a semantic squash subject plus a"
-                                      " `Squashed commits` body) and reuse the same subject/body at the merge step."
-                                      " If spool docstrings changed, regenerate `make api-docs`, commit it on the"
-                                      " branch, push, and re-establish green CI (`gh pr checks " branch " --watch`)"
-                                      " — the merged commit is built from the branch tip, so nothing may live only"
-                                      " in the local squash."
-                                      " Then, on the merged local main, run the full local verification gate:"
-                                      " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" flock -w 3600 /tmp/skein-test.lock clojure -M:test`,"
-                                      " `(cd cli && go test ./...)`, `make fmt-check lint reflect-check docs-check`,"
-                                      " the smoke suite `clojure -M:smoke`, and the spool-suite gate"
-                                      " `PATH=\"/opt/homebrew/opt/openjdk/bin:$PATH\" make spool-suite-gate`. If any gate fails:"
-                                      " `git reset --hard origin/main`, fix on the branch, re-establish green CI at"
-                                      " the new HEAD (`gh pr checks <branch> --watch`), and re-run the"
-                                      " signoff-review bar before re-attempting. Record every gate result in notes."
-                                      " Do NOT push in this step — main is branch-protected and only moves via"
-                                      " `gh pr merge`."))})
-   (workflow/step :merge-pr
-                  (fn [{:keys [branch]}] (str "Merge the PR for " branch " via gh"))
-                  :self
-                  :depends-on [:merge-local-verify]
-                  :attributes {"workflow/action-ref" "land.pr.merge"
-                               "workflow/instruction"
-                               (fn [{:keys [branch]}]
-                                 (str "Main is branch-protected: never `git push origin main` — the merge goes"
-                                      " through GitHub. Mark the PR ready (`gh pr ready " branch "`), then merge"
-                                      " it with the verified squash subject/body from merge-local-verify:"
-                                      " `gh pr merge " branch " --squash --subject <semantic subject>"
-                                      " --body <Squashed commits body>`. Branch protection refuses the merge"
-                                      " unless CI is green at HEAD. Then sync local main to the canonical squash"
-                                      " GitHub created: `git checkout main && git fetch origin &&"
-                                      " git reset --hard origin/main` — discarding the local verification squash"
-                                      " is expected; the shas differ. Record the merged sha"
-                                      " (`git rev-parse origin/main`) in notes. Completing this step hands the"
-                                      " watch to the main-ci-green shell gate."))})
-   (workflow/gate :main-ci-green
-                  "Watch main CI to green at the merged sha"
-                  :shell
-                  :depends-on [:merge-pr]
-                  :attributes {"workflow/action-ref" "land.main.ci-green"
-                               "shell/argv" ["sh" "-c" main-ci-watch-script]
-                               ;; The feature worktree shares the repo's refs and outlives this
-                               ;; gate (cleanup runs after), so it is a safe cwd for the watch.
-                               "shell/cwd" (fn [{:keys [worktree]}] worktree)
-                               "shell/timeout-secs" 5400
-                               "workflow/instruction"
-                               (format-alpha/reflow
-                                "|Machine gate: the shell executor polls the full workflow-run set at
-                                 |the merged main sha (`gh run list --commit <sha>`) until it is
-                                 |non-empty, every run has completed, and the all-green state holds
-                                 |across two consecutive polls, so late-registering workflows are
-                                 |caught. Any conclusion besides success or skipped stamps
-                                 |`gate/error` with the run listing: re-run transient infra failures
-                                 |(`gh run rerun <run-id>`), then clear the stamp
-                                 |(`strand update <gate-id> --attr gate/error=`) to re-watch. The
-                                 |gate closing asserts green CI on the main sha; run output is
-                                 |recorded on the gate.")})
-   (workflow/step :cleanup
-                  (fn [{:keys [branch]}] (str "Clean up " branch " and close the land run"))
-                  :self
-                  :depends-on [:main-ci-green]
-                  :attributes {"workflow/action-ref" "land.cleanup"
-                               "workflow/instruction"
-                               (fn [{:keys [branch card worktree]}]
-                                 (str "Stop the worktree's warm test REPL before removing it: run `make test-warm-stop`"
-                                      " in " worktree " — it reaps the recorded PID from `.test-repl.pid` (by PID only,"
-                                      " never `pkill -f`) and clears the `.test-repl-port`/`.test-repl.pid` files, so no"
-                                      " orphaned warm JVM outlives the worktree."
-                                      " Delete the remote branch (`git push origin --delete " branch "`); the PR is"
-                                      " already merged and closed. Remove the worktree and local branch"
-                                      " (`wktree remove --branch " branch " --force`; force is expected after the"
-                                      " squash-merge)."
-                                      (if (non-blank-string? card)
-                                        (str " Finish the kanban card (`strand kanban finish " card " --outcome done`).")
-                                        "")
-                                      " Then close this land run's root to complete it."))})))
+                        :attributes {"workflow/decision-point" "land-signed-off"})))
 
 (defn- register-land-workflows!
-  "Register the land run's routing targets (the abort continuation) with the
-  engine's weaver-lifetime workflow registry, so the sign-off `abort` choice's
-  `:next :land-abort` resolves at `choose!` time (re-registered on reload like
-  named queries and ops)."
+  "Register the land run's merge and abort routing targets."
   []
-  {:land-abort (workflow/register-workflow! :land-abort 'workflows/land-abort-workflow)})
+  {:land-merge (workflow/register-workflow! :land-merge 'workflows/land-merge-workflow)
+   :land-abort (workflow/register-workflow! :land-abort 'workflows/land-abort-workflow)})
 
 (defn- land-start!
   "Pour and start the land run for a feature branch; run-id is the feature slug."
@@ -529,8 +570,13 @@
   "Return the coordinator landing discipline manual."
   []
   {:operation "land about"
-   :summary "Coordinator-only landing workflow: the encoded discipline a coordinator drives before a branch is considered landed."
-   :coordinator-only "Worker agents never land — they stop at implemented+committed. Only a coordinator, holding delegated sign-off authority, drives a land run."
+   :summary (format-alpha/reflow
+             "|Coordinator-only landing workflow: the encoded discipline a
+              |coordinator drives before a branch is considered landed.")
+   :coordinator-only
+   (format-alpha/reflow
+    "|Worker agents never land — they stop at implemented+committed. Only a
+     |coordinator, holding delegated sign-off authority, drives a land run.")
    :discipline (format-alpha/reflow
                 "|Sign-off is only valid on a pushed branch with an open draft PR and
                  |green CI at HEAD — the ci-green shell gate enforces that ordering
@@ -540,31 +586,70 @@
                  |(`strand update <gate-id> --attr gate/error=`) to re-run it. For
                  |card-backed runs, completing push-draft-pr moves the card to
                  |in_review, and aborting sign-off moves it back to claimed. The
-                 |squash into LOCAL main is a verification build guarded by a
-                 |singleton merge lock. The lock is acquired after sign-off
-                 |approval, immediately before the local merge step, so review/CI
-                 |work can run concurrently but only one coordinator mutates main.
-                 |Local main must pass the full verification gate (tests + go
-                 |tests + fmt/lint/reflect/docs + smoke) before the PR merges.
-                 |Main is branch-protected: it only moves via `gh pr merge
-                 |--squash` with green CI, never a direct push, and is only landed
-                 |once the main-ci-green shell gate watches its CI to green.
-                 |Aborting at sign-off records a reason and leaves the
-                 |branch/worktree untouched.")
-   :steps [{:step "push-draft-pr" :purpose "Push the branch and open (or reuse) a draft PR against main; completing it starts the automated CI watch and moves a card-backed run's card to in_review."}
-           {:step "ci-green" :purpose "Machine shell gate: the executor watches CI to green at the branch HEAD; a red watch stamps gate/error for a fix-push-clear retry."}
-           {:step "signoff-review" :purpose "Run the declared roster review and drive fix rounds; every fix round re-establishes green CI."}
-           {:step "signoff" :purpose "Coordinator sign-off checkpoint (:agent): approved continues in the molecule, abort routes to a reason-recording step."}
-           {:step "merge-local-verify" :purpose "Verification squash-merge into local main without pushing, then run the full local verification gate + smoke."}
-           {:step "merge-pr" :purpose "Mark the PR ready and merge it via `gh pr merge --squash` (branch protection requires green CI), then sync local main; hands the watch to the main-ci-green gate."}
-           {:step "main-ci-green" :purpose "Machine shell gate: the executor watches every main workflow run at the merged sha to green."}
-           {:step "cleanup" :purpose "Delete the remote branch/PR, remove the worktree+branch, finish the card, and close the run."}]
-   :commands [{:verb "start" :purpose "Pour and start the land run: land start <feature> --branch <b> --worktree <path> [--card <id>]."}
-              {:verb "next" :purpose "Show the ready land step views for a feature."}
-              {:verb "complete" :purpose "Close the current non-checkpoint land step, optionally with notes and a step=<id> selector. CI shell gates are closed by the executor, never by complete."}
-              {:verb "choose" :purpose "Decide the sign-off checkpoint: approved, or abort with {\"reason\":\"...\"}."}
-              {:verb "status" :purpose "Show the land root, ready steps, done state, run history, and merge lock."}
-              {:verb "break-lock" :purpose "Explicitly break a stale merge lock with a reason."}]
+                 |lock is acquired after sign-off approval, immediately before the
+                 |mechanical merge continuation, so review and CI work can run
+                 |concurrently but only one coordinator lands a branch. Approval
+                 |requires the semantic squash subject and Squashed commits body.
+                 |The shell executor marks the PR ready, runs `gh pr merge --squash`,
+                 |fast-forwards canonical main with `git pull --ff-only`, and watches
+                 |main CI to green. Branch protection requires green CI on an
+                 |up-to-date branch. Any mechanical gate failure stamps gate/error;
+                 |fix the cause and clear the stamp to re-run. Aborting at sign-off
+                 |records a reason and leaves the branch/worktree untouched.")
+   :steps [{:step "push-draft-pr"
+            :purpose (format-alpha/reflow
+                      "|Push the branch and open or reuse a draft PR against main.
+                       |Completing it starts the automated CI watch and moves a
+                       |card-backed run's card to in_review.")}
+           {:step "ci-green"
+            :purpose (format-alpha/reflow
+                      "|Machine shell gate: watch CI to green at the branch HEAD.
+                       |A red watch stamps gate/error for a fix-push-clear retry.")}
+           {:step "signoff-review"
+            :purpose (format-alpha/reflow
+                      "|Run the declared roster review and drive fix rounds. Every
+                       |fix round re-establishes green CI.")}
+           {:step "signoff"
+            :purpose (format-alpha/reflow
+                      "|Coordinator sign-off checkpoint (:agent): approved requires a
+                       |squash subject/body and routes to the mechanical merge
+                       |continuation; abort routes to a reason-recording step.")}
+           {:step "merge-pr"
+            :purpose (format-alpha/reflow
+                      "|Machine shell gate: mark the PR ready and squash-merge it
+                       |through GitHub. Safe to re-run if the PR already merged.")}
+           {:step "pull-main"
+            :purpose (format-alpha/reflow
+                      "|Machine shell gate: verify the canonical checkout is on main
+                       |and fast-forward it with `git pull --ff-only origin main`.")}
+           {:step "main-ci-green"
+            :purpose (format-alpha/reflow
+                      "|Machine shell gate: watch every main workflow run at the
+                       |merged sha to green.")}
+           {:step "cleanup"
+            :purpose (format-alpha/reflow
+                      "|Delete the remote branch/PR, remove the worktree and local
+                       |branch, finish the card, and close the run.")}]
+   :commands [{:verb "start"
+               :purpose (format-alpha/reflow
+                         "|Pour and start the land run: land start <feature> --branch
+                          |<b> --worktree <path> [--card <id>].")}
+              {:verb "next"
+               :purpose "Show the ready land step views for a feature."}
+              {:verb "complete"
+               :purpose (format-alpha/reflow
+                         "|Close the current non-checkpoint land step, optionally with
+                          |notes and a step=<id> selector. CI shell gates are closed by
+                          |the executor, never by complete.")}
+              {:verb "choose"
+               :purpose (format-alpha/reflow
+                         "|Decide sign-off: approved requires
+                          |{\"subject\":\"...\",\"body\":\"...\"}; abort requires
+                          |{\"reason\":\"...\"}.")}
+              {:verb "status"
+               :purpose "Show the land root, ready steps, done state, run history, and merge lock."}
+              {:verb "break-lock"
+               :purpose "Explicitly break a stale merge lock with a reason."}]
    :discovery {:help "strand help land"
                :conventions "strand devflow-conventions"}})
 
@@ -671,7 +756,7 @@
                               {:name :tail
                                :variadic? true
                                :doc "Optional notes and a trailing step=<id> selector."}]}
-    "choose" {:doc "Decide the land sign-off checkpoint: approved or abort."
+    "choose" {:doc "Decide sign-off: approved requires a squash subject/body; abort requires a reason."
               :positionals [{:name :feature
                              :required? true
                              :doc "Land run id."}
@@ -680,7 +765,11 @@
                              :doc "Checkpoint choice: approved or abort."}
                             {:name :tail
                              :variadic? true
-                             :doc "Optional JSON-object input (abort requires {\"reason\":\"...\"}) and a trailing step=<id> selector."}]}
+                             :doc (format-alpha/reflow
+                                   "|JSON input: approved requires
+                                    |{\"subject\":\"...\",\"body\":\"...\"}; abort
+                                    |requires {\"reason\":\"...\"}. A trailing
+                                    |step=<id> selector is optional.")}]}
     "status" {:doc "Show the land root, ready steps, done state, run history, and merge lock."
               :positionals [{:name :feature
                              :required? true

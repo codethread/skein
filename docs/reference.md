@@ -126,16 +126,18 @@ coordinator-only discipline for taking a finished branch to landed. It is a sing
 `skein.spools.workflow` molecule whose ordering is the enforcement: push the branch and open a draft
 PR, drive CI green at HEAD, then run the declared roster sign-off — sign-off is only valid on a
 pushed branch with a draft PR and green CI. A coordinator sign-off checkpoint (`approved` continues;
-`abort` records a required reason and leaves the branch untouched) then gates a verification
-squash-merge into *local* main (regenerating `make api-docs` on the branch first if spool docstrings
-changed), which must pass the full local verification gate (`clojure -M:test`, `go test`, `make
-fmt-check lint reflect-check docs-check`, and the smoke suite) before the PR merges. Main is
-branch-protected: the merge is always `gh pr merge --squash` with green CI, never a direct push, and
-main is only landed once its own CI is green, after which cleanup deletes the remote branch, removes
-the kanban card when one is set (`strand kanban finish <card> --outcome done`), and closes the run.
-Worker agents never land — they stop at implemented+committed; only a coordinator holding delegated
-sign-off authority drives a `land` run (`strand land about` for the manual, `strand help land` for
-the command surface).
+`abort` records a required reason and leaves the branch untouched) carries the approved squash
+subject and body into a mechanical continuation. Under the singleton merge lock, an idempotent shell
+gate runs `gh pr merge --squash`; the canonical checkout then advances with `git pull --ff-only`,
+which stops for an operator rather than stashing or resetting a non-fast-forward state. Main is
+protected by a repository ruleset: squash-only PR merges, ten required status checks, and a strict
+up-to-date policy make PR CI the complete merged-state gate. The workflow watches main CI after the
+merge, then hands cleanup back to the coordinator. Cleanup deletes the remote branch, removes the
+worktree, finishes the kanban card when one is set (`strand kanban finish <card> --outcome done`),
+and closes the run. Worker
+agents never land — they stop at implemented+committed; only a coordinator holding delegated sign-off
+authority drives a `land` run (`strand land about` for the manual, `strand help land` for the command
+surface).
 
 ## Weaver
 

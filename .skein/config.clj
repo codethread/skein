@@ -552,8 +552,8 @@
          {:name "land" :help "strand help land" :manual "strand land about"
           :purpose (format-alpha/reflow
                     "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
-                     |sign-off, squash-merge to local main with full verification, then
-                     |green main CI. Registered by .skein/workflows.clj.")}]
+                     |sign-off, then a mechanical GitHub squash-merge under the merge lock
+                     |with main CI watched to green. Registered by .skein/workflows.clj.")}]
    :patterns [{:name "agent-plan"
                :purpose "Create a feature strand plus task/review children for agent work; shipped by ct.spools.delegation."}
               {:name "delegate-pipeline"

@@ -247,8 +247,8 @@
                     {:name "land" :help "strand help land" :manual "strand land about"
                      :purpose (format-alpha/reflow
                                "|Coordinator-only landing workflow: push+draft-PR, green CI, roster
-                                |sign-off, squash-merge to local main with full verification, then
-                                |green main CI. Registered by .skein/workflows.clj.")}]
+                                |sign-off, then a mechanical GitHub squash-merge under the merge lock
+                                |with main CI watched to green. Registered by .skein/workflows.clj.")}]
               :patterns [{:name "agent-plan"
                           :purpose "Create a feature strand plus task/review children for agent work; shipped by ct.spools.delegation."}
                          {:name "delegate-pipeline"
@@ -694,33 +694,48 @@
       (let [at-checkpoint (op! "land" ["complete" "land-x" "roster passed"])]
         (is (= "checkpoint" (:role (first (:ready at-checkpoint)))))
         (is (= "signoff" (:checkpoint (first (:ready at-checkpoint))))))
-      ;; the sign-off checkpoint offers approved + abort; abort requires a reason
+      ;; the sign-off checkpoint offers approved + abort; both declare required input
       (let [choices ((requiring-resolve 'skein.spools.workflow/choice-details) "land-x")
+            approved-input (get-in choices ["approved" "input"])
             abort-input (get-in choices ["abort" "input"])]
         (is (= #{"approved" "abort"} (set (keys choices))))
+        (is (= #{"subject" "body"} (set (map #(get % "key") approved-input))))
+        (is (every? #(true? (get % "required")) approved-input))
         (is (= "reason" (get (first abort-input) "key")))
         (is (true? (get (first abort-input) "required"))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing required keys"
-                            (op! "land" ["choose" "land-x" "abort"])))
-      ;; approved is terminal-in-molecule: it continues to the local merge/verify
-      (let [approved (op! "land" ["choose" "land-x" "approved"])]
+                            (op! "land" ["choose" "land-x" "approved"])))
+      ;; approval routes to the mechanical merge continuation. Subject and body
+      ;; remain argv elements rather than being interpolated into shell source.
+      (let [subject "feat: land x"
+            body "Squashed commits: abc123"
+            approved (op! "land" ["choose" "land-x" "approved"
+                                  "{\"subject\":\"feat: land x\",\"body\":\"Squashed commits: abc123\"}"])
+            gate (first (:ready approved))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))
+            script (nth (:shell/argv gate-attrs) 2)]
         (is (= "land choose" (:operation approved)))
-        (is (= "land.merge.local-verify" (:action-ref (first (:ready approved)))))
+        (is (= "land.pr.merge" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (str/includes? script "gh pr merge"))
+        (is (= ["sh" "-c" script "land-merge" "land-x" subject body]
+               (:shell/argv gate-attrs)))
         (is (= "merge-lock" (get-in (op! "land" ["status" "land-x"]) [:merge-lock :attributes :kind]))))
       (op! "land" ["start" "land-z" "--branch" "land-z" "--worktree" "/tmp/land-z"])
       (op! "land" ["complete" "land-z"])
       (shell-gate-complete! "land-z" "checks green")
       (op! "land" ["complete" "land-z"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"another land run holds the merge lock"
-                            (op! "land" ["choose" "land-z" "approved"])))
-      ;; merge-local-verify hands off to the gh PR-merge step (main is
-      ;; branch-protected — no direct push), then the machine main-ci-green
-      ;; shell gate carrying the merged-sha watch script
-      (let [merge-step (first (:ready (op! "land" ["complete" "land-x" "verified; gates green"])))]
-        (is (= "land.pr.merge" (:action-ref merge-step)))
-        (is (str/includes? (:instruction merge-step) "gh pr merge land-x --squash"))
-        (is (str/includes? (:instruction merge-step) "never `git push origin main`")))
-      (let [gate (first (:ready (op! "land" ["complete" "land-x" "PR merged"])))
+                            (op! "land" ["choose" "land-z" "approved"
+                                         "{\"subject\":\"feat: land z\",\"body\":\"Squashed commits: def456\"}"])))
+      (shell-gate-complete! "land-x" "PR merged")
+      (let [gate (first (:ready (op! "land" ["next" "land-x"])))
+            gate-attrs (:attributes (weaver/show rt (:id gate)))]
+        (is (= "land.main.pull" (:action-ref gate)))
+        (is (= "shell" (:gate gate)))
+        (is (str/includes? (last (:shell/argv gate-attrs)) "--ff-only")))
+      (shell-gate-complete! "land-x" "main fast-forwarded")
+      (let [gate (first (:ready (op! "land" ["next" "land-x"])))
             gate-attrs (:attributes (weaver/show rt (:id gate)))]
         (is (= "land.main.ci-green" (:action-ref gate)))
         (is (= "shell" (:gate gate)))
@@ -785,9 +800,10 @@
         (op! "land" ["complete" "land-w"])                          ; push-draft-pr
         (shell-gate-complete! "land-w" "checks green")              ; ci-green
         (op! "land" ["complete" "land-w"])                          ; signoff-review
-        (op! "land" ["choose" "land-w" "approved"])
-        (op! "land" ["complete" "land-w"])                          ; merge-local-verify
-        (op! "land" ["complete" "land-w"])                          ; merge-pr
+        (op! "land" ["choose" "land-w" "approved"
+                     "{\"subject\":\"feat: land w\",\"body\":\"Squashed commits: abc123\"}"])
+        (shell-gate-complete! "land-w" "PR merged")                  ; merge-pr
+        (shell-gate-complete! "land-w" "main fast-forwarded")       ; pull-main
         (shell-gate-complete! "land-w" "main runs green")           ; main-ci-green
         (let [ready-cleanup (op! "land" ["next" "land-w"])
               cleanup-step (first (:ready ready-cleanup))]
@@ -803,7 +819,8 @@
       (op! "land" ["complete" "land-lock-x"])
       (shell-gate-complete! "land-lock-x" "checks green")
       (op! "land" ["complete" "land-lock-x"])
-      (op! "land" ["choose" "land-lock-x" "approved"])
+      (op! "land" ["choose" "land-lock-x" "approved"
+                   "{\"subject\":\"feat: land lock x\",\"body\":\"Squashed commits: abc123\"}"])
       (is (= "merge-lock" (get-in (op! "land" ["status" "land-lock-x"])
                                   [:merge-lock :attributes :kind])))
       ;; a blank reason fails at the handler; a missing reason fails at the arg-spec
