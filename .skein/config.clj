@@ -551,11 +551,14 @@
           :purpose (format-alpha/reflow
                     "|Generic driver for any registered workflow: start by name, then
                      |next/complete/choose by run-id. The registered story workflow is
-                     |the module-shaping discipline (SPEC-003.C19a): split-first
-                     |refactor, public-surface tests, auto-spawned adversarial review
-                     |gates, measure, fold-back-or-keep-split checkpoint. Pour it for
-                     |any large module change; devflow stays the feature lifecycle
-                     |around it. Registered by .skein/workflows.clj.")}
+                     |the module-shaping discipline: split-first refactor,
+                     |public-surface tests, auto-spawned adversarial review gates,
+                     |measure, fold-back-or-keep-split checkpoint. Pour it for
+                     |substantial module work anywhere; for skein.api.* modules
+                     |SPEC-003.C19a is the binding form contract. Start params
+                     |(JSON): feature, module, worktree required; card and
+                     |reviewer-harness (a seat outside your model family; default
+                     |sol-med) optional. Registered by .skein/workflows.clj.")}
          {:name "flow-await" :help "strand help flow-await"}
          {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
          {:name "land" :help "strand help land" :manual "strand land about"
