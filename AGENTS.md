@@ -31,7 +31,7 @@ make dash                               # code-owner TUI over the live coordinat
 
 make test-warm NS="ns..."               # warm REPL to iterate a slice — never a Done-when gate
 clojure -M:test <ns...>                 # cold focused run — the per-slice Done-when gate
-flock -w 3600 /tmp/skein-test.lock clojure -M:test  # full locked suite — queue acceptance + land only; CI-blocking
+flock -w 3600 /tmp/skein-test.lock clojure -M:test  # full locked suite — queue acceptance only; CI-blocking
 (cd cli && go test ./...)               # primary validation, CI-blocking
 clojure -M:smoke                        # primary validation, CI-blocking
 make spool-suite-gate                   # pinned external spool suites vs this checkout — CI-blocking (GITLIBS=<dir> overrides the gitlibs cache)
@@ -47,7 +47,7 @@ make api-docs                           # regenerate *.api.md after touching any
 - **Never restart a running weaver to pick up changes**; restarting the canonical weaver requires explicit user sign-off (it tears down live agent runs and registries other agents depend on). Pickup ladder: `make build` for Go CLI changes; `runtime/reload!` for config/startup files; a targeted `(require 'the.ns :reload)` first for already-loaded base-classpath namespaces; `runtime/reload-spool!` for already-loaded synced spools (a bare `:reload` is blind to spool classloaders); only JVM-level changes or a `sync!`-recorded pending generation justify a restart. Semantics and recipes: `docs/spools/customisation.md`.
 - **Kill by PID only**, never `pkill -f <pattern>` — delegated agents' prompts can quote the very command you match, so a pattern kill strafes healthy sibling runs.
 - **Disposable workspaces for everything except coordination.** Tests, smoke runs, and config experiments use `--workspace` worlds from `mktemp -d`, never the user's default workspaces. Hold the path in your own shell variable and guard every expansion with `${ws:?}` — an empty variable must fail the command, not silently resolve to the canonical world.
-- **Warm test output never satisfies a Done-when gate**, and the full suite is serialized across agents: hold the flock (bare `flock`, on PATH via nix), and run it only at queue acceptance and land merge-local-verify. `SKEIN_TEST_AWAIT_SCALE` multiplies await budgets on slow hosts (CI sets 3).
+- **Warm test output never satisfies a Done-when gate**, and the full suite is serialized across agents: hold the flock (bare `flock`, on PATH via nix), and run it only at queue acceptance. `SKEIN_TEST_AWAIT_SCALE` multiplies await budgets on slow hosts (CI sets 3).
 
 ## Repo coordination workspace (.skein)
 
