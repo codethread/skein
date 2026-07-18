@@ -251,7 +251,7 @@
           (repl/-main "--stdin" (:config-dir (:metadata rt))))
         (let [lines (str/split-lines (str out))]
           (is (= 5 (count lines)))
-          (is (= {:spools {}} (read-string (nth lines 2))))
+          (is (= {:spools {} :families {}} (read-string (nth lines 2))))
           (is (= {:spools {}} (read-string (nth lines 3))))
           (is (= {} (read-string (nth lines 4)))))))))
 
