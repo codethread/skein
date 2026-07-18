@@ -547,6 +547,18 @@
          {:name "feature-costs" :help "strand help feature-costs"
           :purpose "Agent-run cost/usage rollup beneath a work root, as pure data. Registered by .skein/analytics.clj."}
          {:name "agent" :help "strand help agent" :manual "strand agent about"}
+         {:name "flow" :help "strand help flow"
+          :purpose (format-alpha/reflow
+                    "|Generic driver for any registered workflow: start by name, then
+                     |next/complete/choose by run-id. The registered story workflow is
+                     |the module-shaping discipline: split-first refactor,
+                     |public-surface tests, auto-spawned adversarial review gates,
+                     |measure, fold-back-or-keep-split checkpoint. Pour it for
+                     |substantial module work anywhere; for skein.api.* modules
+                     |SPEC-003.C19a is the binding form contract. Start params
+                     |(JSON): feature, module, worktree required; card and
+                     |reviewer-harness (a seat outside your model family; default
+                     |sol-med) optional. Registered by .skein/workflows.clj.")}
          {:name "flow-await" :help "strand help flow-await"}
          {:name "hitl" :help "strand help hitl" :purpose "Interactive user+agent session with a self-terminating tracking strand."}
          {:name "land" :help "strand help land" :manual "strand land about"
