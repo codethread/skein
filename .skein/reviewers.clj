@@ -105,7 +105,10 @@
                  "Budget ~15-18 calls.")}
 
     {:name "source-form"
-     :harness :luna-low
+     ;; :terra-med by owner call (2026-07-18): story/composition judgment
+     ;; is cognitive work, not pattern matching - luna seats read form
+     ;; rules literally where this lens must weigh readability.
+     :harness :terra-med
      :brief (fmt/reflow
              "|Police source form, not behavior. In changed Clojure files:
               |docstrings and comments are hard-wrapped in source (match the
