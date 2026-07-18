@@ -1,7 +1,8 @@
 (ns skein.api.return-shape.alpha
   "Pure declarations and checks for weaver operation return values.
 
-  Return shapes are finite EDN data: JSON scalars, `[:nullable <scalar>]`,
+  Return shapes are finite EDN data: JSON scalars, `[:nullable <scalar>]`
+  over the non-null scalars (`:string`, `:integer`, `:number`, `:boolean`),
   closed `{:type :map ...}` declarations, and homogeneous
   `{:type :collection ...}` sequences. Registry routing may wrap a shape in
   `:subcommands` or `:stream` declarations; this namespace has no registry

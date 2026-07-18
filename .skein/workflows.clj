@@ -896,13 +896,16 @@
                   :attributes {"workflow/action-ref" "story.finish"
                                "workflow/instruction"
                                (fn [{:keys [module]}]
-                                 (str "Delete `\"" module "\"` from quality.api-form/pending when this"
-                                      " is an api conversion; run the focused cold tests and"
-                                      " `make fmt-check lint reflect-check docs-check`;"
-                                      " `make api-docs` on docstring changes. The full change-review"
-                                      " roster runs once, at the land run's signoff-review step:"
-                                      " continue with `strand land start <feature> --branch <b>"
-                                      " --worktree <path> [--card <id>]`. Then close this run."))})))
+                                 (str "Delete `\"" module "\"` "
+                                      (format-alpha/reflow
+                                       "|from quality.api-form/pending when this is an api
+                                        |conversion; run the focused cold tests and `make
+                                        |fmt-check lint reflect-check docs-check`; `make
+                                        |api-docs` on docstring changes. The full change-review
+                                        |roster runs once, at the land run's signoff-review
+                                        |step: continue with `strand land start <feature>
+                                        |--branch <b> --worktree <path> [--card <id>]`. Then
+                                        |close this run.")))})))
 
 (defn story-keep-workflow
   "Continuation after :keep-split: the per-concern split is the deliverable."
@@ -919,16 +922,20 @@
                   :attributes {"workflow/action-ref" "story.finish"
                                "workflow/instruction"
                                (fn [{:keys [module]}]
-                                 (str "The split stands: internal/<concern> files stay, named by"
-                                      " meaning, gated dependency rules apply (internal never"
-                                      " requires alpha; only own alpha/internal siblings/tests"
-                                      " reach internal). Delete `\"" module "\"` from"
-                                      " quality.api-form/pending when this is an api conversion;"
-                                      " focused cold tests; `make fmt-check lint reflect-check"
-                                      " docs-check`; `make api-docs` on docstring changes. The full"
-                                      " roster runs at the land run's signoff-review step:"
-                                      " `strand land start <feature> --branch <b> --worktree <path>"
-                                      " [--card <id>]`. Then close this run."))})))
+                                 (str (format-alpha/reflow
+                                       "|The split stands: internal/<concern> files stay, named
+                                        |by meaning, gated dependency rules apply (internal
+                                        |never requires alpha; only own alpha/internal
+                                        |siblings/tests reach internal).")
+                                      " Delete `\"" module "\"` "
+                                      (format-alpha/reflow
+                                       "|from quality.api-form/pending when this is an api
+                                        |conversion; focused cold tests; `make fmt-check lint
+                                        |reflect-check docs-check`; `make api-docs` on docstring
+                                        |changes. The full roster runs at the land run's
+                                        |signoff-review step: `strand land start <feature>
+                                        |--branch <b> --worktree <path> [--card <id>]`. Then
+                                        |close this run.")))})))
 
 (defn story-workflow
   "Return the module-form STORY workflow (family \"story\").
@@ -993,10 +1000,14 @@
                   :attributes {"workflow/action-ref" "story.identify-large"
                                "workflow/instruction"
                                (fn [{:keys [module]}]
-                                 (str "Separate LARGE module changes from small churn - only"
-                                      " large ones earn a wave. This run's wave covers `" module
-                                      "`; start one further `strand flow start <id> --workflow story` run per"
-                                      " additional large module. Record the classification."))})
+                                 (str (format-alpha/reflow
+                                       "|Separate LARGE module changes from small churn - only
+                                        |large ones earn a wave. This run's wave covers")
+                                      " `" module "`; "
+                                      (format-alpha/reflow
+                                       "|start one further `strand flow start <id> --workflow
+                                        |story` run per additional large module. Record the
+                                        |classification.")))})
    (workflow/step :split-refactor
                   (fn [{:keys [module]}] (str "Write the per-concern split for " module))
                   :self
@@ -1083,7 +1094,8 @@
   any run by run-id. Registered workflows (story, land continuations, ...)
   need no op of their own."
   [ctx]
-  (let [{:keys [subcommand run-id workflow choice tail] :as _args} (:op/args ctx)]
+  (let [{:keys [subcommand run-id workflow choice tail] :as _args} (:op/args ctx)
+        op-result (fn [m] (assoc m :operation (str "flow " subcommand)))]
     (condp = subcommand
       "start" (let [raw-params (first tail)
                     _ (when (> (count tail) 1)
@@ -1094,27 +1106,29 @@
                              {})]
                 (config/require-non-blank! :run-id run-id)
                 (config/require-non-blank! :workflow workflow)
-                (merge {:run-id run-id :workflow workflow}
-                       (workflow/start! run-id
-                                        (keyword workflow)
-                                        params
-                                        {:family workflow
-                                         :definition (keyword workflow)
-                                         :context params})))
+                (op-result
+                 (merge {:run-id run-id :workflow workflow}
+                        (workflow/start! run-id
+                                         (keyword workflow)
+                                         params
+                                         {:family workflow
+                                          :definition (keyword workflow)
+                                          :context params}))))
       "next" (do (config/require-non-blank! :run-id run-id)
-                 {:run-id run-id
-                  :ready (workflow/ready run-id)
-                  :done (workflow/done? run-id)})
+                 (op-result {:run-id run-id
+                             :ready (workflow/ready run-id)
+                             :done (workflow/done? run-id)}))
       "complete" (let [[rest-tokens step] (config/pop-step-selector "flow complete" tail)
                        notes (first rest-tokens)]
                    (config/require-non-blank! :run-id run-id)
                    (when (> (count rest-tokens) 1)
                      (throw (ex-info "flow complete accepts at most one notes argument"
                                      {:op "flow complete" :extra (vec (rest rest-tokens))})))
-                   (merge {:run-id run-id}
-                          (workflow/complete! run-id (cond-> {}
-                                                       notes (assoc :notes notes)
-                                                       step (assoc :step step)))))
+                   (op-result
+                    (merge {:run-id run-id}
+                           (workflow/complete! run-id (cond-> {}
+                                                        notes (assoc :notes notes)
+                                                        step (assoc :step step))))))
       "choose" (let [[rest-tokens step] (config/pop-step-selector "flow choose" tail)
                      raw-input (first rest-tokens)]
                  (config/require-non-blank! :run-id run-id)
@@ -1122,16 +1136,22 @@
                    (throw (ex-info "flow choose accepts at most one JSON-input argument"
                                    {:op "flow choose" :extra (vec (rest rest-tokens))})))
                  (let [input (if raw-input (config/parse-json-object-arg "flow choose" raw-input) {})]
-                   (merge {:run-id run-id :choice choice}
-                          (workflow/choose! run-id (keyword choice) input
-                                            (if step {:step step} {})))))
+                   (op-result
+                    (merge {:run-id run-id :choice choice}
+                           (workflow/choose! run-id (keyword choice) input
+                                             (if step {:step step} {}))))))
       "status" (do (config/require-non-blank! :run-id run-id)
                    (let [root (workflow/current-root run-id)]
-                     {:run-id run-id
-                      :roots (mapv entity-projection (if root [root] []))
-                      :done (workflow/done? run-id)
-                      :ready (workflow/ready run-id)
-                      :history (workflow/run-history run-id)})))))
+                     (op-result {:run-id run-id
+                                 :roots (mapv entity-projection (if root [root] []))
+                                 :done (workflow/done? run-id)
+                                 :ready (workflow/ready run-id)
+                                 :history (workflow/run-history run-id)})))
+      ;; the declared arg-spec rejects unknown subcommands before dispatch;
+      ;; this default is defense in depth, not a reachable CLI path.
+      (throw (ex-info "unsupported flow subcommand"
+                      {:subcommand subcommand
+                       :allowed ["start" "next" "complete" "choose" "status"]})))))
 
 (def ^:private flow-arg-spec
   "Declared command surface for the generic `flow` op."
