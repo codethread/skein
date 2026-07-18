@@ -81,7 +81,6 @@ nav:
       - skein.api.runtime.alpha: docs/api/runtime.api.md
       - skein.api.scheduler.alpha: docs/api/scheduler.api.md
       - skein.api.spool.alpha: docs/api/spool.api.md
-      - skein.api.views.alpha: docs/api/views.api.md
       - skein.api.vocab.alpha: docs/api/vocab.api.md
       - skein.api.weaver.alpha: docs/api/weaver.api.md
   - Bundled Spools:

@@ -5,7 +5,7 @@
 Two conventions hold across the tier:
 
 - **The runtime is explicit.** Every operational function takes the target weaver runtime as its first argument. Capture it once at a trusted entry point with `skein.api.current.alpha/runtime` and thread it through; nothing else reads ambient state.
-- **Registries are weaver-lifetime.** Queries, patterns, views, events, and hooks registered at a REPL vanish on restart. Register from startup-loaded code (`init.clj` or an installed spool) when they should survive.
+- **Registries are weaver-lifetime.** Queries, patterns, events, and hooks registered at a REPL vanish on restart. Register from startup-loaded code (`init.clj` or an installed spool) when they should survive.
 
 ## Which namespace owns your concern
 
@@ -38,7 +38,6 @@ Two conventions hold across the tier:
 | Namespace | Reach for it when |
 | --- | --- |
 | [`patterns`](./patterns.api.md) | Agents should submit intent and your config decides the graph shape: spec-checked, create-only weave patterns invokable from the CLI. |
-| [`views`](./views.api.md) | Registering named read-only projections callable from trusted Clojure. |
 | [`cli`](./cli.api.md) | Declaring an op's argv shape as data — the parser and help renderer behind every registered op; never hand-write usage strings. |
 | [`return-shape`](./return-shape.api.md) | Declaring and checking the JSON-compatible values returned by registered ops. |
 

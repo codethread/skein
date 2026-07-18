@@ -9,7 +9,7 @@
   (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
   (`register-op!`, `replace-op!`, `ops`, `resolve-op`, `op!`,
   `op-help-handler`, `help-alias-result`, `register-built-in-ops!`). Domain
-  surfaces (events, views, hooks, graph queries, batch, patterns, scheduler,
+  surfaces (events, hooks, graph queries, batch, patterns, scheduler,
   runtime config) each own their own alpha namespace.
 
   Callers own runtime selection and pass the target weaver runtime as the first

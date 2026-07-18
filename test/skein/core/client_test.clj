@@ -24,9 +24,6 @@
                       (make-array java.nio.file.attribute.FileAttribute 0)))]
     (test-world (.getCanonicalPath dir))))
 
-(defn client-test-view [{:keys [params]}]
-  {:client-view params})
-
 ;; Namespace-level on purpose: hooks are registered by symbol and resolved
 ;; to top-level vars, so capture state cannot be a per-test local. Reset by
 ;; the :each fixture below; the runner never splits a namespace across threads.
@@ -159,13 +156,7 @@
         (is (= [agent] (call-world world :strands-by-ids [(:id agent)])))
         (is (= [] (call-world world :ancestor-root-ids [(:id agent)] {:where [:= [:attr :kind] "feature"]})))
         (is (= {:root-ids [(:id agent)] :strands [agent] :edges []}
-               (call-world world :subgraph [(:id agent)])))
-        (is (= {:name "client" :fn 'skein.core.client-test/client-test-view}
-               (call-world world :register-view! 'client 'skein.core.client-test/client-test-view)))
-        (is (= [{:name "client" :fn 'skein.core.client-test/client-test-view}]
-               (call-world world :views)))
-        (is (= {:client-view {:ok true}}
-               (call-world world :view! 'client {:ok true})))))))
+               (call-world world :subgraph [(:id agent)])))))))
 
 (deftest client-query-registry-preserves-domain-errors
   (with-runtime

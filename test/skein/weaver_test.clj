@@ -11,7 +11,6 @@
             [skein.api.current.alpha :as current]
             [skein.api.events.alpha :as events]
             [skein.api.hooks.alpha :as hooks]
-            [skein.api.views.alpha :as views]
             [skein.api.graph.alpha :as graph]
             [skein.api.patterns.alpha :as patterns]
             [skein.api.return-shape.alpha :as return-shape]
@@ -58,9 +57,6 @@
          (weaver-runtime/stop! rt)
          (db-test/delete-sqlite-family! db-file)
          (delete-tree! (io/file (:config-dir world))))))))
-
-(defn test-view [{:keys [params]}]
-  {:view :test :params params})
 
 (defn test-op [{:op/keys [name argv]}]
   {:operation name :argv argv})
@@ -302,9 +298,6 @@
 
 (def not-callable-hook 42)
 
-(defn replacement-view [{:keys [params]}]
-  {:view :replacement :params params})
-
 (def pattern-call-count (atom 0))
 
 (use-fixtures :each
@@ -348,7 +341,7 @@
 (s/def ::json-pattern-input #(string? (get % "title")))
 (s/def ::never-valid (constantly false))
 
-(defn write-view-lib! [workspace lib ns-sym]
+(defn write-op-lib! [workspace lib ns-sym]
   (let [root (io/file workspace "spools" (name lib))
         ns-path (-> (str ns-sym)
                     (str/replace \- \_)
@@ -356,7 +349,7 @@
         src-file (io/file root "src" (str ns-path ".clj"))]
     (.mkdirs (.getParentFile src-file))
     (spit src-file (str "(ns " ns-sym ")\n"
-                        "(defn render [{:keys [params]}] {:lib-view params})\n"))
+                        "(defn render [{:op/keys [argv]}] {:lib-op argv})\n"))
     (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
     root))
 
@@ -1642,43 +1635,22 @@
         (is (= #{(:id feature) (:id agent) (:id human)}
                (set (map :id (:strands (graph/subgraph rt [(:id feature)]))))))))))
 
-(deftest weaver-view-registry-operations
+(deftest weaver-op-resolves-through-spool-classloader
   (with-runtime
     (fn [rt _]
-      (is (= {:name "daily" :fn 'skein.weaver-test/test-view}
-             (views/register-view! rt 'daily 'skein.weaver-test/test-view)))
-      (is (= [{:name "daily" :fn 'skein.weaver-test/test-view}]
-             (views/views rt)))
-      (is (= {:view :test :params {:owner "agent"}}
-             (views/view! rt :daily {:owner "agent"})))
-      (is (= {:name "daily" :fn 'skein.weaver-test/replacement-view}
-             (views/register-view! rt :daily 'skein.weaver-test/replacement-view)))
-      (is (= [{:name "daily" :fn 'skein.weaver-test/replacement-view}]
-             (views/views rt)))
-      (is (= {:view :replacement :params {}}
-             (views/view! rt 'daily {})))
       (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
-            lib (symbol (str "view-" suffix))
-            ns-sym (symbol (str "demo.view-" suffix))
-            root (write-view-lib! (get-in rt [:metadata :config-dir]) lib ns-sym)]
+            lib (symbol (str "op-" suffix))
+            ns-sym (symbol (str "demo.op-" suffix))
+            root (write-op-lib! (get-in rt [:metadata :config-dir]) lib ns-sym)]
         (.addURL ^clojure.lang.DynamicClassLoader (:spool-classloader rt)
                  (.toURL (.toURI (io/file root "src"))))
         (load-file (str (io/file root "src" (str (-> (str ns-sym)
                                                      (str/replace \- \_)
                                                      (str/replace \. java.io.File/separatorChar))
                                                  ".clj"))))
-        (views/register-view! rt 'synced-lib (symbol (str ns-sym) "render"))
-        (is (= {:lib-view {:from :synced}}
-               (views/view! rt 'synced-lib {:from :synced}))))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"View not found"
-                            (views/view! rt 'missing {})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"fully qualified"
-                            (views/register-view! rt 'bad 'unqualified)))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"simple symbols or keywords"
-                            (views/register-view! rt 'user/daily 'skein.weaver-test/test-view))))))
+        (weaver/register-op! rt 'synced-lib "Echo argv from a synced lib" (symbol (str ns-sym) "render"))
+        (is (= {:lib-op ["--from" "synced"]}
+               (weaver/op! rt 'synced-lib ["--from" "synced"])))))))
 
 (deftest weaver-op-registry-and-built-in-help
   (with-runtime

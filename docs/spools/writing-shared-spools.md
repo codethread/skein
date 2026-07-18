@@ -71,7 +71,7 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    Pin the current key set with a drift-alarm test using
    `skein.spools.test-support/assert-state-shape`, which fails loudly if
    `new-state` and `state-version` drift apart.
-3. **Register behaviour by symbol, not by closure.** Views, patterns, event
+3. **Register behaviour by symbol, not by closure.** Patterns, event
    handlers, and hooks register a fully qualified function *symbol* the weaver
    resolves. This keeps registration serialisable and runtime-portable.
 4. **Fail loudly (TEN-003).** On unexpected input or missing state, throw with
@@ -85,7 +85,7 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    forever, and holds a process-local runtime binding that is meaningless — and
    actively wrong — inside a reusable spool.
 6. **Default to pull-based timing.** When your spool needs time-based work, prefer
-   a `wake-at` strand attribute surfaced by a view or query to whatever already
+   a `wake-at` strand attribute surfaced by a named query to whatever already
    polls the graph; reach for `skein.api.scheduler.alpha` only for the no-poller
    case where something must proactively fire at instant `T` with nothing polling
    to trigger it. Scheduler delivery is at-least-once, so any handler you register
@@ -389,7 +389,7 @@ The rename cost depends on the surface:
 | --- | --- | --- |
 | Function | A fresh function in the same namespace | Small: call sites opt into the new contract. |
 | Registered op or CLI verb | A new op or subcommand; the old one stays registered | Scripts, help text, and automation must opt in. |
-| Attribute vocabulary | A new namespaced key or value vocabulary | Highest: persisted rows, queries, views, and contributing spools need an explicit migration boundary. |
+| Attribute vocabulary | A new namespaced key or value vocabulary | Highest: persisted rows, queries, and contributing spools need an explicit migration boundary. |
 
 Escalate only as far as the break reaches:
 
