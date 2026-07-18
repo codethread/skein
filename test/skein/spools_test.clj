@@ -14,6 +14,7 @@
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.views.alpha :as views]
+            [skein.source-file :as source-file]
             [skein.test.alpha :as t]))
 
 (defn- delete-recursive [file]
@@ -804,9 +805,11 @@
                                  :files {(str "spools/init-demo/src/" ns-path ".clj")
                                          (str "(ns " ns-sym ")\n(defn marker [] :synced-lib-loaded)\n")
                                          "spools/init-demo/deps.edn" "{:paths [\"src\"]}\n"}
-                                 :init (str "(require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime])\n"
-                                            "(spit " (pr-str (str result-file))
-                                            " (pr-str (runtime/sync! (current/runtime))))\n")}]
+                                 :init (source-file/render-forms
+                                        ['(require '[skein.api.current.alpha :as current]
+                                                   '[skein.api.runtime.alpha :as runtime])
+                                         `(spit ~(str result-file)
+                                                (pr-str (runtime/sync! (current/runtime))))])}]
         (is (= :loaded (get-in (read-string (slurp result-file)) [:spools lib :status])))
         (is (= :loaded (get-in (t/repl! ctx
                                         '(do
@@ -1744,9 +1747,10 @@
   (with-runtime
     (fn [rt config-dir]
       (let [result-file (io/file config-dir "reload-result.edn")]
-        (spit (io/file config-dir "init.clj")
-              (str "(spit " (pr-str (str result-file)) " (pr-str :reloaded))\n"
-                   ":reload-return\n"))
+        (source-file/spit-forms!
+         (io/file config-dir "init.clj")
+         [`(spit ~(str result-file) (pr-str :reloaded))
+          :reload-return])
         (let [result (runtime/reload! rt)]
           (is (= :loaded (:status result)))
           (is (= [{:name "init.clj"
@@ -1767,8 +1771,11 @@
 (deftest reload-loads-generated-runtime-template-from-live-repl-namespace
   (with-runtime
     (fn [rt config-dir]
-      (spit (io/file config-dir "init.clj")
-            "(require '[skein.api.current.alpha :as current] '[skein.api.runtime.alpha :as runtime])\n\n(runtime/sync! (current/runtime))\n")
+      (source-file/spit-forms!
+       (io/file config-dir "init.clj")
+       ['(require '[skein.api.current.alpha :as current]
+                  '[skein.api.runtime.alpha :as runtime])
+        '(runtime/sync! (current/runtime))])
       (binding [*ns* (the-ns 'skein.repl)]
         (is (= :loaded (:status (runtime/reload! rt))))))))
 
@@ -1788,11 +1795,14 @@
                            :event/source :test})
       (Thread/sleep 250)
       (is (seq (events/recent-failures rt)))
-      (spit (io/file config-dir "init.clj")
-            (str "(require '[skein.api.current.alpha :as current] '[skein.api.graph.alpha :as graph] '[skein.api.events.alpha :as events])\n"
-                 "(let [rt (current/runtime)]\n"
-                 "  (graph/register-query! rt 'fresh [:= [:attr :owner] \"fresh\"])\n"
-                 "  (events/register! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))\n"))
+      (source-file/spit-forms!
+       (io/file config-dir "init.clj")
+       ['(require '[skein.api.current.alpha :as current]
+                  '[skein.api.graph.alpha :as graph]
+                  '[skein.api.events.alpha :as events])
+        '(let [rt (current/runtime)]
+           (graph/register-query! rt 'fresh [:= [:attr :owner] "fresh"])
+           (events/register! rt :fresh #{:strand/added} 'skein.spools-test/fresh-reload-handler {}))])
       (is (= :loaded (:status (runtime/reload! rt))))
       (is (nil? (runtime/use rt :stale)))
       (is (nil? (get (graph/queries rt) "stale")))
@@ -1992,9 +2002,10 @@
     (fn [rt config-dir]
       (let [side-effect-file (io/file config-dir "gated-side-effect.edn")]
         (write-module-file! config-dir "modules/gated_effect.clj"
-                            (str "(ns demo.gated-effect)\n"
-                                 "(spit " (pr-str (str side-effect-file)) " :loaded)\n"
-                                 "(defn install! [] (spit " (pr-str (str side-effect-file)) " :called))\n"))
+                            (source-file/render-forms
+                             ['(ns demo.gated-effect)
+                              `(spit ~(str side-effect-file) :loaded)
+                              `(defn ~'install! [] (spit ~(str side-effect-file) :called))]))
         (is (= :not-approved (:reason (runtime/use! rt :gate/not-approved
                                                     {:file "modules/gated_effect.clj"
                                                      :spools ['demo/not-approved]
@@ -2015,8 +2026,11 @@
     (try
       (t/with-weaver-world [ctx {:root (.getPath root)
                                  :files {"modules/connected.clj"
-                                         (str "(ns demo.connected)\n"
-                                              "(defn install! [] (spit " (pr-str (str result-file)) " (pr-str :daemon-called)) :ok)\n")}}]
+                                         (source-file/render-forms
+                                          ['(ns demo.connected)
+                                           `(defn ~'install! []
+                                              (spit ~(str result-file) (pr-str :daemon-called))
+                                              :ok)])}}]
         (let [result (client/call-world (:config-dir ctx) {:timeout-ms 30000} :use! :connected
                                         {:file "modules/connected.clj"
                                          :call 'demo.connected/install!})]
