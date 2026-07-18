@@ -8,7 +8,7 @@ The agent family (`agent-run`, `executors.subagent`, `delegation`, `bench`) live
 The spools in this directory ship with Skein as working references. Use them directly, copy them
 as starting points, or study them to author your own.
 
-Every spool loads through one convention: an approved coordinate in `.skein/spools.edn`, synced into the weaver by explicit-runtime `sync!`, and activated by a `:spools`-guarded explicit-runtime `use!`. `batteries` is the single documented exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
+Every spool loads through one convention: an approved coordinate in `.skein/spools.edn`, synced into the weaver by explicit-runtime `sync!`, and activated by a `:spools`-guarded explicit-runtime `use!`. Those forms run in trusted config (`.skein/init.clj`) or an explicit-runtime REPL; [customising your workspace](../docs/spools/customisation.md) is the operational walkthrough. `batteries` is the single documented exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
 
 Blessed alpha helpers such as `skein.api.peers.alpha` are also explicit-require userland APIs for trusted config and REPL workflows. Use that namespace's `peers`, `peer`, and `call!` helpers when a spool or repo config needs to discover and invoke same-machine sibling weavers.
 
