@@ -115,8 +115,9 @@
               |inside spools), never (str ...) chains or one wide literal.
               |Reading order is public-first: the surface at the top of the
               |file, plumbing below, `declare` where definition order fights
-              |it; in skein.api.*.alpha files C19a is normative - public
-              |promised vars only, implementation in the sibling .internal
+              |it; in skein.api.*.alpha files C19a is normative -
+              |contract-bearing forms only (public promised vars, public
+              |spec registrations), implementation in the sibling .internal
               |namespace. Changed markdown is the counter-rule: prose
               |paragraphs run full length, one source line each, for the
               |IDE to wrap - flag newly hard-wrapped markdown prose (code

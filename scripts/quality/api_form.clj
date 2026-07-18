@@ -2,13 +2,16 @@
   "The api-form slice of quality.conventions-check: SPEC-003.C19a over
   converted `skein.api.*` modules.
 
-  A converted module's `alpha.clj` holds no private vars (plumbing lives in
-  the sibling `internal` namespace) and none of the module's source lines
-  pass column 96. `pending` names the modules not yet converted; each
-  conversion card under epic 9nu0q deletes its entry, and a stale or
-  already-conformant entry is itself a finding, so the set can only shrink
-  truthfully. Kept clj-kondo-free so the findings logic loads on the test
-  classpath; the caller supplies kondo's analysis data."
+  A converted module's `alpha.clj` holds only contract-bearing top-level
+  forms — public promised vars (each with a docstring) and intentionally
+  public spec registrations — with plumbing in the sibling `internal`
+  namespace and no source line past column 96. `pending` names the modules
+  not yet converted; each conversion card under epic 9nu0q deletes its own
+  entry, and a stale entry is a finding. Two dependency rules hold for
+  every internal namespace regardless of pending: an internal namespace
+  never requires an alpha namespace, and only a module's own alpha (or a
+  test) requires its internal. Kept clj-kondo-free so the findings logic
+  loads on the test classpath; the caller supplies kondo's analysis data."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]))
 
@@ -41,41 +44,77 @@
         :when (> (count line) width-limit)]
     {:file (.getPath file) :line (inc idx) :length (count line)}))
 
-(defn- private-vars
-  "Return the kondo var definitions marked private in `dir`/alpha.clj."
+(defn- alpha-vars
+  "Return the kondo var definitions from `dir`/alpha.clj."
   [analysis ^java.io.File dir]
   (let [alpha-path (.getPath (io/file dir "alpha.clj"))]
-    (filter #(and (:private %) (= alpha-path (:filename %)))
-            (:var-definitions analysis))))
+    (filter #(= alpha-path (:filename %)) (:var-definitions analysis))))
+
+(defn- undocumented?
+  "True for a public var definition that promises surface without a
+  docstring; `declare` sites carry their doc at the definition."
+  [var-def]
+  (and (not (:private var-def))
+       (not= 'clojure.core/declare (:defined-by var-def))
+       (str/blank? (:doc var-def))))
+
+(defn- api-ns-module
+  "Return [module tier] for a `skein.api.<module>.<alpha|internal>` symbol,
+  nil for anything else."
+  [ns-sym]
+  (rest (re-matches #"skein\.api\.([^.]+)\.(alpha|internal)" (str ns-sym))))
+
+(defn- dependency-findings
+  "Enforce the internal-namespace dependency rules over kondo
+  `:namespace-usages`, everywhere in `src/`: internal requires no alpha
+  (its own alpha would be a cycle, a foreign one smuggles tiered surface
+  into plumbing), and nothing but a module's own alpha requires its
+  internal (tests may)."
+  [analysis]
+  (for [{:keys [from to filename row]} (:namespace-usages analysis)
+        :when (str/starts-with? (str filename) "src/")
+        :let [[from-module from-tier] (api-ns-module from)
+              [to-module to-tier] (api-ns-module to)
+              finding
+              (cond
+                (and (= "internal" from-tier) (= "alpha" to-tier))
+                (str filename ":" row ": internal namespace `" from "` requires the"
+                     " alpha namespace `" to "`; plumbing stays tier-free"
+                     " (SPEC-003.C19a)")
+
+                (and (= "internal" to-tier)
+                     (not (and (= "alpha" from-tier) (= from-module to-module))))
+                (str filename ":" row ": `" from "` requires `" to "`; only the"
+                     " module's own alpha namespace reaches its internal plumbing"
+                     " (SPEC-003.C19a)"))]
+        :when finding]
+    finding))
 
 (defn findings
   "Enforce the SPEC-003.C19a form contract over the api modules in `dirs`
   ({module-name module-dir}), skipping modules named in `pending-set` but
-  flagging pending entries that are stale or already conformant."
+  flagging stale pending entries. Dependency rules apply to every module."
   [analysis dirs pending-set]
-  (let [conformant? (fn [dir]
-                      (and (empty? (private-vars analysis dir))
-                           (empty? (wide-lines dir))))]
-    (concat
-     (for [m (sort pending-set)
-           :when (not (contains? dirs m))]
-       (str "conventions-check: api-form pending entry `" m
-            "` matches no module directory under " api-root))
-     (for [[m dir] (sort dirs)
-           :when (and (contains? pending-set m) (conformant? dir))]
-       (str "conventions-check: pending module `" m "` already satisfies "
-            "SPEC-003.C19a; delete it from quality.api-form/pending"))
-     (for [[m dir] (sort dirs)
-           :when (not (contains? pending-set m))
-           finding (concat
-                    (for [{:keys [filename row name]} (private-vars analysis dir)]
-                      (str filename ":" row ": private var `" name "` in a converted"
-                           " api module; plumbing belongs in skein.api." m ".internal"
-                           " (SPEC-003.C19a)"))
-                    (for [{:keys [file line length]} (wide-lines dir)]
-                      (str file ":" line ": line is " length " columns; converted api"
-                           " modules wrap at " width-limit " (SPEC-003.C19a)")))]
-       finding))))
+  (concat
+   (for [m (sort pending-set)
+         :when (not (contains? dirs m))]
+     (str "conventions-check: api-form pending entry `" m
+          "` matches no module directory under " api-root))
+   (dependency-findings analysis)
+   (for [[m dir] (sort dirs)
+         :when (not (contains? pending-set m))
+         finding (concat
+                  (for [{:keys [filename row name]} (filter :private (alpha-vars analysis dir))]
+                    (str filename ":" row ": private var `" name "` in a converted"
+                         " api module; plumbing belongs in skein.api." m ".internal"
+                         " (SPEC-003.C19a)"))
+                  (for [{:keys [filename row name]} (filter undocumented? (alpha-vars analysis dir))]
+                    (str filename ":" row ": public var `" name "` in a converted"
+                         " api module has no docstring (SPEC-003.C19a)"))
+                  (for [{:keys [file line length]} (wide-lines dir)]
+                    (str file ":" line ": line is " length " columns; converted api"
+                         " modules wrap at " width-limit " (SPEC-003.C19a)")))]
+     finding)))
 
 (defn check
   "Run `findings` over the live tree and the current `pending` set."
