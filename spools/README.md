@@ -74,23 +74,23 @@ spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-g
 | `ct.spools.delegation` | git, sha-pinned (see below) | [delegation/README.md][delegation-contract] | [delegation.api.md][delegation-api] · [cookbook][delegation-cookbook] | Cross-harness subagent surface over agent-run: the `strand agent` verbs, the `agent-plan` weave pattern, delegation/retry/status, and the worker + coordinator guidance. |
 | `ct.spools.executors.subagent` | git, sha-pinned `agent-run` root (see below) | [agent-run/subagent.md][subagent-contract] | [subagent.api.md][subagent-api] · [cookbook][subagent-cookbook] | Workflow gate bridge: fulfills ready `:subagent` gates by spawning agent-run runs and delivering successful results through `workflow/complete!`. |
 | `skein.spools.chime` | `../spools/chime` | [chime/README.md](./chime/README.md) | [chime.api.md](./chime.api.md) · [cookbook](./chime.cookbook.md) | Notification engine: watches graph mutations, evaluates user-registered rules, and sends matches through a user-bound local notifier command. |
-| `ct.spools.kanban` | git, sha-pinned (see below) | [kanban.md](https://github.com/codethread/kanban.spool/blob/c33dc70c6e2d477e489b34e8584f5092a6b2041c/kanban.md) | — | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`; this repo binds devflow as its tracker through `.skein/kanban_tracker.clj`. |
+| `ct.spools.kanban` | git, sha-pinned (see below) | [kanban.md](https://github.com/codethread/kanban.spool/blob/dfd6948afb5db9c8ca30778cb1ba329a3afff877/kanban.md) | — | User-facing kanban board: feature/epic cards, refinement/pending/claimed/in_review lanes, notes and handovers via `strand kanban`; this repo binds devflow as its tracker through `.skein/kanban_tracker.clj`. |
 | `skein.spools.cron` | `../spools/cron` | [cron/README.md](./cron/README.md) | [cron.api.md](./cron.api.md) · [cookbook](./cron.cookbook.md) | Userland recurrence layer over durable scheduler wakes: registers named interval+jitter jobs, records last-outcome/failure status, and leaves next-fire timing to scheduler introspection. Ships no jobs. |
 | `ct.spools.bench` | git, sha-pinned (see below) | [bench/README.md][bench-contract] | [bench.api.md][bench-api] | Deterministic, containerized benchmarking of coding-agent harnesses: pinned repo/prompt/memory overlays, bench-owned entry execution, normalized metrics, and an agent-run served judge. |
-| `ct.spools.devflow` | git, sha-pinned (see below) | [devflow.md](https://github.com/codethread/devflow.spool/blob/84c83f6a78812dd12ff74d330d58d6dc26b910ad/devflow.md) | — | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
+| `ct.spools.devflow` | git, sha-pinned (see below) | [devflow.md](https://github.com/codethread/devflow.spool/blob/9b0296a37b7ad8968c4630bbe676c3a4a0cf5df5/devflow.md) | — | Reference devflow lifecycle built on the workflow engine: intake → proposal → spec/plan → tasks/implementation stages with HITL checkpoints. |
 | `skein.spools.dresser` | *(none approved in this repo)* | [dresser.md](https://github.com/codethread/dresser.loom/blob/fea1d340be3591d008cf0ddeb72b0091d95a380d/dresser.md) | — | Brings a repo onto shared working conventions and surfaces convention upgrades later. Two flavours: scaffold a new shared-spool repo, or install a self-contained `.skein/` workspace into any host repo. Applied versions are recorded in the target at `.skein/conventions.edn`. |
 
-[agent-run-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/README.md
-[agent-run-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.api.md
-[agent-run-cookbook]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/agent-run.cookbook.md
-[delegation-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/README.md
-[delegation-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.api.md
-[delegation-cookbook]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/delegation/delegation.cookbook.md
-[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md
-[subagent-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.api.md
-[subagent-cookbook]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.cookbook.md
-[bench-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/README.md
-[bench-api]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/bench/bench.api.md
+[agent-run-contract]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/README.md
+[agent-run-api]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/agent-run.api.md
+[agent-run-cookbook]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/agent-run.cookbook.md
+[delegation-contract]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/delegation/README.md
+[delegation-api]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/delegation/delegation.api.md
+[delegation-cookbook]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/delegation/delegation.cookbook.md
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/subagent.md
+[subagent-api]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/subagent.api.md
+[subagent-cookbook]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/subagent.cookbook.md
+[bench-contract]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/bench/README.md
+[bench-api]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/bench/bench.api.md
 
 `guild` is a never-activated reference root. This repo carries its source and tests because
 kanban.spool's peering layer depends on it, but adds no `.skein/spools.edn` coordinate. A downstream

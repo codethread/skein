@@ -218,4 +218,4 @@ Honest source: the recovery and attention sections in [`executors/shell.md`](./s
 - [`ct.spools.executors.subagent`][subagent-contract] — the external `:subagent` sibling the shell
   executor composes with.
 
-[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/27c7429c1642d1fdb609af4c37d11d51db202bb4/agent-run/subagent.md
+[subagent-contract]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/subagent.md
