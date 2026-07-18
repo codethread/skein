@@ -713,11 +713,14 @@
       (op! "land" ["complete" "land-z"])
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"another land run holds the merge lock"
                             (op! "land" ["choose" "land-z" "approved"])))
-      ;; merge-local-verify hands off to the explicit main push step, then the
-      ;; machine main-ci-green shell gate carrying the pushed-sha watch script
-      (is (= "land.main.push"
-             (:action-ref (first (:ready (op! "land" ["complete" "land-x" "merged; gates green"]))))))
-      (let [gate (first (:ready (op! "land" ["complete" "land-x" "main pushed"])))
+      ;; merge-local-verify hands off to the gh PR-merge step (main is
+      ;; branch-protected — no direct push), then the machine main-ci-green
+      ;; shell gate carrying the merged-sha watch script
+      (let [merge-step (first (:ready (op! "land" ["complete" "land-x" "verified; gates green"])))]
+        (is (= "land.pr.merge" (:action-ref merge-step)))
+        (is (str/includes? (:instruction merge-step) "gh pr merge land-x --squash"))
+        (is (str/includes? (:instruction merge-step) "never `git push origin main`")))
+      (let [gate (first (:ready (op! "land" ["complete" "land-x" "PR merged"])))
             gate-attrs (:attributes (weaver/show rt (:id gate)))]
         (is (= "land.main.ci-green" (:action-ref gate)))
         (is (= "shell" (:gate gate)))
@@ -784,7 +787,7 @@
         (op! "land" ["complete" "land-w"])                          ; signoff-review
         (op! "land" ["choose" "land-w" "approved"])
         (op! "land" ["complete" "land-w"])                          ; merge-local-verify
-        (op! "land" ["complete" "land-w"])                          ; push-main
+        (op! "land" ["complete" "land-w"])                          ; merge-pr
         (shell-gate-complete! "land-w" "main runs green")           ; main-ci-green
         (let [ready-cleanup (op! "land" ["next" "land-w"])
               cleanup-step (first (:ready ready-cleanup))]
