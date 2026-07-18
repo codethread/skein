@@ -3,7 +3,7 @@
 **Document ID:** `PROP-Lsd-001`
 **Last Updated:** 2026-07-18
 **Related RFCs:** None
-**Related root specs:** None; this is repo-local landing policy.
+**Related root specs:** `SPEC-002.C39a`
 
 ## PROP-Lsd-001.P1 Problem
 

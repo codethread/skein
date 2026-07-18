@@ -1,6 +1,6 @@
 # CLI Surface
 
-**Document ID:** `SPEC-002` **Status:** Implemented **Last Updated:** 2026-07-15 **Related RFCs:** [RFC-019 Op-only CLI](../archive/26-07-04__op-only-cli/rfcs/2026-07-04-op-only-cli.md), [RFC-002 Task Query DSL](../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-go-cli-migration.md) **Code:** `cli/`, `src/skein/core/weaver`, `src/skein/api/weaver/alpha.clj`
+**Document ID:** `SPEC-002` **Status:** Implemented **Last Updated:** 2026-07-18 **Related RFCs:** [RFC-019 Op-only CLI](../archive/26-07-04__op-only-cli/rfcs/2026-07-04-op-only-cli.md), [RFC-002 Task Query DSL](../rfcs/2026-06-24-task-query-dsl.md), [RFC-003 Fast JSON Socket CLI](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-fast-json-socket-cli.md), [RFC-004 Go CLI Migration](../archive/26-06-25__go-cli-migration/rfcs/2026-06-25-go-cli-migration.md) **Code:** `cli/`, `src/skein/core/weaver`, `src/skein/api/weaver/alpha.clj`, `.skein/workflows.clj`
 
 ## SPEC-002.P1 Purpose
 
@@ -48,6 +48,13 @@ Dispatcher flags: `--workspace <dir>`, `--cwd <dir>`, `--worktree-root <dir>`, `
 - **SPEC-002.C37:** Payload references (`:stdin` / `:payload/<name>` as whole argv values) are resolved weaver-side by the blessed parser (`skein.api.cli.alpha`, SPEC-003), never by the bin.
 - **SPEC-002.C38:** Unknown op names fail non-zero with the weaver's not-found domain error carrying available op names. Malformed dispatcher flags, duplicate payload slots, no reachable mill, no running weaver, stale metadata/socket state, transport/identity failures, malformed weaver responses, database/domain errors, op arg-spec parse failures, and lifecycle hook rejections fail non-zero. Hook failures use the `hook/failed` domain error code with structured details.
 - **SPEC-002.C39:** Live discovery is the core-registered `help` op: `strand help` lists registered ops with metadata and provenance; `strand help <op>` renders one op's detail including its arg-spec and, when declared, its JSON-safe `returns` explanation. The return explanation includes per-subcommand cases and separate emitted-item and terminal-result cases for streaming ops. When the arg-spec declares subcommands (SPEC-003.C64), the detail lists each subcommand's name, doc, flags, and positionals one level deep, with no extra flags required. Query and pattern registry introspection are batteries read ops (`strand query list|explain`, `strand pattern list|explain`). The query registry introspection op is not a strand listing surface and is not result-capped; `list --query` and `ready --query` are capped. For subcommand-declaring ops, `strand <op> help|-h|--help` (sole token, no payloads) returns the same detail as `strand help <op>` with exit 0 (SPEC-004.C63e); bare `strand <op>` stays a loud non-zero structured error. Subcommand routing, return-shape rendering, and the help alias are entirely weaver-side behavior; the dispatcher ships verbatim argv and relays the returned JSON without interpreting either declaration (SPEC-002.C30, TEN-006).
+- **SPEC-002.C39a:** The repo coordination workspace's `land` op enriches every
+  checkpoint view in the `:ready` collection returned by `start`, `next`,
+  `complete`, `choose`, and `status` with `:choice-details` beside `:choices`.
+  The value is the canonical string-keyed `workflow/choice-details` map for
+  that materialized step, including its input declarations and route. Each
+  checkpoint is joined by its own step id; non-checkpoint views omit the field.
+  The shared workflow step-view remains unchanged.
 
 ## SPEC-002.P4 Mill contracts
 

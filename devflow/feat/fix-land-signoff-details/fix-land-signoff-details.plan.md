@@ -4,7 +4,7 @@
 **Feature:** `fix-land-signoff-details`
 **Proposal:** [proposal.md](./proposal.md)
 **RFC:** None
-**Root specs:** None
+**Root specs:** `SPEC-002.C39a`
 **Feature specs:** None
 **Status:** Reviewed
 **Last Updated:** 2026-07-18
