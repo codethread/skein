@@ -8,7 +8,7 @@ The agent family (`agent-run`, `executors.subagent`, `delegation`, `bench`) live
 The spools in this directory ship with Skein as working references. Use them directly, copy them
 as starting points, or study them to author your own.
 
-Every spool loads through one convention: an approved coordinate in `.skein/spools.edn`, synced into the weaver by explicit-runtime `sync!`, and activated by a `:spools`-guarded explicit-runtime `use!`. `batteries` is the single documented exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
+Every spool loads through one convention: an approved coordinate in `.skein/spools.edn`, synced into the weaver by explicit-runtime `sync!`, and activated by a `:spools`-guarded explicit-runtime `use!`. Those forms run in trusted config (`.skein/init.clj`) or an explicit-runtime REPL; [customising your workspace](../docs/spools/customisation.md) is the operational walkthrough. `batteries` is the single documented exception — see [Classpath exception: batteries](#classpath-exception-batteries) below.
 
 Blessed alpha helpers such as `skein.api.peers.alpha` are also explicit-require userland APIs for trusted config and REPL workflows. Use that namespace's `peers`, `peer`, and `call!` helpers when a spool or repo config needs to discover and invoke same-machine sibling weavers.
 
@@ -103,7 +103,8 @@ than a deliberately swappable engine should; extraction to its own repo was reje
 workflow is a hub (devflow.spool, `executors.subagent` in agent-harness.spool, and this repo's
 `.skein` config all require it), so an external pin would put bump ceremony on the hottest path of
 engine development. Consumers who want the engine pinned independently of a checkout declare one
-sha-pinned family and map its root within the checkout:
+sha-pinned family and map its root within the checkout — an entry in the consumer's own
+`.skein/spools.edn`:
 
 ```clojure
 {skein.spools/workflow
@@ -112,28 +113,37 @@ sha-pinned family and map its root within the checkout:
   :roots {skein.spools/workflow "spools/workflow"}}}
 ```
 
+## External spool consumption
+
+How to apply and verify entries like these: [Writing shared
+spools](../docs/spools/writing-shared-spools.md) covers the coordinate shape and publishing;
+[customisation](../docs/spools/customisation.md) covers activating config changes against a
+running weaver; `strand spool-status` shows what the runtime actually serves.
+
 `ct.spools.devflow` is consumed from
 [`codethread/devflow.spool`](https://github.com/codethread/devflow.spool) by git coordinate rather
 than a local root — the worked example of publishing a spool for others (RFC-017, [Writing shared
 spools](../docs/spools/writing-shared-spools.md#publishing-a-shared-spool-with-git-distribution)).
-This repo pins a sha-pinned `:git/url`+`:git/sha` coordinate in `.skein/spools.edn`, activates it
-with `:required? true` in `.skein/init.clj`, and pins the same sha as a tools.deps git dep for the
-test JVM; developers override the coordinate with a gitignored `spools.local.edn` local root to work
+This repo pins one family coordinate in `.skein/spools.edn`: the `:git/url`, a release
+`:git/tag`, and its peeled `:git/sha`. That entry is the single source of the pin, and
+`.skein/init.clj` activates the spool with `:required? true`. Tests consume the approved
+coordinate rather than carrying a second pin, so the test and weaver pins cannot drift.
+Developers override the coordinate with a gitignored `spools.local.edn` local root to work
 against a checkout.
 
 `ct.spools.kanban` is the second external spool: it lives in
 [`codethread/kanban.spool`](https://github.com/codethread/kanban.spool). Kanban loads independently
 of a tracker; this repo's `.skein/kanban_tracker.clj` binds devflow after both spools are active.
-Like devflow, `.skein/spools.edn` and the test JVM (`deps.edn`) pin the same sha-pinned
-`:git/url`+`:git/sha` coordinate — config_test enforces the pairing — and developers override it
-with a gitignored `spools.local.edn` local root.
+Like devflow, its pin lives only in `.skein/spools.edn`: a release `:git/tag` plus its peeled
+`:git/sha`. Tests consume that same entry, and developers override it with a gitignored
+`spools.local.edn` local root.
 
 The `ct.spools.agent-run`, `ct.spools.executors.subagent`, `ct.spools.delegation`, and
 `ct.spools.bench` family lives in
 [`codethread/agent-harness.spool`](https://github.com/codethread/agent-harness.spool). This repo
 pins one family coordinate with a `:roots` map for `agent-run`, `delegation`, and `bench`.
-`config_test` pairs that sha with the three test coordinates in `deps.edn`. Developers override the
-whole family from one checkout with one gitignored `spools.local.edn` entry:
+Tests consume all three roots from that one entry. Developers override the whole family
+from one checkout with one gitignored `spools.local.edn` entry:
 
 ```clojure
 {:spools
