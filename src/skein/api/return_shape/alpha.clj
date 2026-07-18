@@ -8,13 +8,14 @@
   or runtime state. Failures are `ex-info` whose data carries the published
   marker `:skein.api.return-shape.alpha/error`, a `:reason` keyword, and
   shape-local context such as `:path`."
-  (:require [clojure.set :as set]
-            [skein.api.return-shape.internal :as internal]))
+  (:require [clojure.set :as set]))
 
 (declare validate-shape! validate-stream! validate-subcommands!
+         render explain-case render-shape
+         check-shape! check-map!
          validate-map-shape! validate-collection-shape! validate-key-shapes!
-         explain-case explain-shape
-         check-shape! check-map!)
+         fail! exact-keys! mismatch! scalar-match? json-compatible?
+         scalar-shapes nullable-scalar-shapes)
 
 (defn validate!
   "Validate a return declaration and return it unchanged.
@@ -37,15 +38,10 @@
   "Render a return declaration as JSON-safe data.
 
   Shape and field names become strings; routing maps retain their structure
-  so callers can render flat, subcommand, and stream declarations uniformly."
+  so callers can render flat, subcommand, and stream declarations uniformly.
+  Validates first: only well-formed declarations render."
   [declaration]
-  (let [declaration (validate! declaration)]
-    (if (and (map? declaration) (contains? declaration :subcommands))
-      {:subcommands (into (sorted-map)
-                          (map (fn [[name return-case]]
-                                 [name (explain-case return-case)]))
-                          (:subcommands declaration))}
-      (explain-case declaration))))
+  (-> declaration validate! render))
 
 (defn check!
   "Check `value` against one concrete return shape and return it unchanged.
@@ -55,9 +51,9 @@
   [shape value]
   (when (and (map? shape)
              (or (contains? shape :subcommands) (contains? shape :stream)))
-    (internal/fail! :routed-declaration
-                    "check! requires a selected concrete return shape"
-                    {:path [] :value shape}))
+    (fail! :routed-declaration
+           "check! requires a selected concrete return shape"
+           {:path [] :value shape}))
   (validate-shape! shape [])
   (check-shape! shape value []))
 
@@ -66,120 +62,128 @@
 (defn- validate-shape!
   [shape path]
   (cond
-    (contains? internal/scalar-shapes shape)
+    (contains? scalar-shapes shape)
     shape
 
     (vector? shape)
     (if (and (= 2 (count shape))
              (= :nullable (first shape))
-             (contains? internal/nullable-scalar-shapes (second shape)))
+             (contains? nullable-scalar-shapes (second shape)))
       shape
-      (internal/fail!
+      (fail!
        :invalid-nullable
        "Nullable return shapes must be [:nullable <scalar>] with a non-null JSON scalar"
        {:path path :value shape
-        :allowed (vec (sort internal/nullable-scalar-shapes))}))
+        :allowed (vec (sort nullable-scalar-shapes))}))
 
     (map? shape)
     (case (:type shape)
       :map (validate-map-shape! shape path)
       :collection (validate-collection-shape! shape path)
-      (internal/fail! :invalid-shape
-                      "Return shape maps require :type :map or :collection"
-                      {:path path :value shape}))
+      (fail! :invalid-shape
+             "Return shape maps require :type :map or :collection"
+             {:path path :value shape}))
 
     :else
-    (internal/fail! :invalid-shape
-                    (str "Return shape must be a supported scalar, nullable"
-                         " scalar, map, or collection declaration")
-                    {:path path :value shape})))
+    (fail! :invalid-shape
+           (str "Return shape must be a supported scalar, nullable"
+                " scalar, map, or collection declaration")
+           {:path path :value shape})))
+
+(defn- validate-stream!
+  [declaration path]
+  (exact-keys! declaration #{:stream} path "stream return")
+  (let [stream (:stream declaration)]
+    (when-not (map? stream)
+      (fail! :invalid-stream
+             "Return :stream declaration must be a map"
+             {:path (conj path :stream) :value stream}))
+    (exact-keys! stream #{:emits :result} (conj path :stream) "stream channel")
+    (doseq [channel [:emits :result]]
+      (when-not (contains? stream channel)
+        (fail! :missing-declaration-key
+               (str "Return stream requires " channel)
+               {:path (conj path :stream channel) :key channel}))
+      (validate-shape! (get stream channel) (conj path :stream channel))))
+  declaration)
+
+(defn- validate-subcommands!
+  [declaration]
+  (exact-keys! declaration #{:subcommands} [] "subcommand return")
+  (let [subcommands (:subcommands declaration)]
+    (when-not (map? subcommands)
+      (fail! :invalid-subcommands
+             "Return :subcommands declaration must be a map"
+             {:path [:subcommands] :value subcommands}))
+    (doseq [[name return-case] subcommands]
+      (when-not (string? name)
+        (fail! :invalid-subcommand-name
+               "Return subcommand names must be strings"
+               {:path [:subcommands name] :name name}))
+      (if (and (map? return-case) (contains? return-case :stream))
+        (validate-stream! return-case [:subcommands name])
+        (validate-shape! return-case [:subcommands name]))))
+  declaration)
 
 (defn- validate-map-shape!
   [shape path]
-  (internal/exact-keys! shape #{:type :required :optional :extra} path "map shape")
+  (exact-keys! shape #{:type :required :optional :extra} path "map shape")
   (let [required (if (contains? shape :required) (:required shape) {})
         optional (if (contains? shape :optional) (:optional shape) {})]
     (validate-key-shapes! :required required path)
     (validate-key-shapes! :optional optional path)
     (when-let [overlap (seq (set/intersection (set (keys required))
                                               (set (keys optional))))]
-      (internal/fail! :overlapping-map-keys
-                      "Return map required and optional keys must not overlap"
-                      {:path path :keys (vec (sort overlap))}))
+      (fail! :overlapping-map-keys
+             "Return map required and optional keys must not overlap"
+             {:path path :keys (vec (sort overlap))}))
     (when (contains? shape :extra)
       (validate-shape! (:extra shape) (conj path :extra))))
   shape)
 
 (defn- validate-collection-shape!
   [shape path]
-  (internal/exact-keys! shape #{:type :items} path "collection shape")
+  (exact-keys! shape #{:type :items} path "collection shape")
   (when-not (contains? shape :items)
-    (internal/fail! :missing-declaration-key
-                    "Return collection shape requires :items"
-                    {:path (conj path :items) :key :items}))
+    (fail! :missing-declaration-key
+           "Return collection shape requires :items"
+           {:path (conj path :items) :key :items}))
   (validate-shape! (:items shape) (conj path :items))
   shape)
 
 (defn- validate-key-shapes!
   [field shapes path]
   (when-not (map? shapes)
-    (internal/fail! :invalid-map-fields
-                    (str "Return map " (name field) " fields must be a map")
-                    {:path (conj path field) :field field :value shapes}))
+    (fail! :invalid-map-fields
+           (str "Return map " (name field) " fields must be a map")
+           {:path (conj path field) :field field :value shapes}))
   (doseq [[key shape] shapes]
     (when-not (keyword? key)
-      (internal/fail! :invalid-map-key
-                      "Return map field names must be keywords"
-                      {:path (conj path field key) :field field :key key}))
+      (fail! :invalid-map-key
+             "Return map field names must be keywords"
+             {:path (conj path field key) :field field :key key}))
     (validate-shape! shape (conj path field key)))
   shapes)
 
-(defn- validate-stream!
-  [declaration path]
-  (internal/exact-keys! declaration #{:stream} path "stream return")
-  (let [stream (:stream declaration)]
-    (when-not (map? stream)
-      (internal/fail! :invalid-stream
-                      "Return :stream declaration must be a map"
-                      {:path (conj path :stream) :value stream}))
-    (internal/exact-keys! stream #{:emits :result} (conj path :stream)
-                          "stream channel")
-    (doseq [channel [:emits :result]]
-      (when-not (contains? stream channel)
-        (internal/fail! :missing-declaration-key
-                        (str "Return stream requires " channel)
-                        {:path (conj path :stream channel) :key channel}))
-      (validate-shape! (get stream channel) (conj path :stream channel))))
-  declaration)
+;; --- rendering validated declarations as JSON-safe data ---------------
 
-(defn- validate-subcommands!
+(defn- render
   [declaration]
-  (internal/exact-keys! declaration #{:subcommands} [] "subcommand return")
-  (let [subcommands (:subcommands declaration)]
-    (when-not (map? subcommands)
-      (internal/fail! :invalid-subcommands
-                      "Return :subcommands declaration must be a map"
-                      {:path [:subcommands] :value subcommands}))
-    (doseq [[name return-case] subcommands]
-      (when-not (string? name)
-        (internal/fail! :invalid-subcommand-name
-                        "Return subcommand names must be strings"
-                        {:path [:subcommands name] :name name}))
-      (if (and (map? return-case) (contains? return-case :stream))
-        (validate-stream! return-case [:subcommands name])
-        (validate-shape! return-case [:subcommands name]))))
-  declaration)
-
-;; --- rendering declarations as JSON-safe data -------------------------
+  (if (and (map? declaration) (contains? declaration :subcommands))
+    {:subcommands (into (sorted-map)
+                        (map (fn [[name return-case]]
+                               [name (explain-case return-case)]))
+                        (:subcommands declaration))}
+    (explain-case declaration)))
 
 (defn- explain-case
   [return-case]
   (if (and (map? return-case) (contains? return-case :stream))
-    {:stream {:emits (explain-shape (get-in return-case [:stream :emits]))
-              :result (explain-shape (get-in return-case [:stream :result]))}}
-    (explain-shape return-case)))
+    {:stream {:emits (render-shape (get-in return-case [:stream :emits]))
+              :result (render-shape (get-in return-case [:stream :result]))}}
+    (render-shape return-case)))
 
-(defn- explain-shape
+(defn- render-shape
   [shape]
   (cond
     (keyword? shape) (name shape)
@@ -187,14 +191,14 @@
     (= :map (:type shape))
     (cond-> {:type "map"
              :required (into (sorted-map)
-                             (map (fn [[k v]] [(name k) (explain-shape v)]))
+                             (map (fn [[k v]] [(name k) (render-shape v)]))
                              (:required shape {}))
              :optional (into (sorted-map)
-                             (map (fn [[k v]] [(name k) (explain-shape v)]))
+                             (map (fn [[k v]] [(name k) (render-shape v)]))
                              (:optional shape {}))}
-      (contains? shape :extra) (assoc :extra (explain-shape (:extra shape))))
+      (contains? shape :extra) (assoc :extra (render-shape (:extra shape))))
     (= :collection (:type shape))
-    {:type "collection" :items (explain-shape (:items shape))}))
+    {:type "collection" :items (render-shape (:items shape))}))
 
 ;; --- checking values against a validated shape ------------------------
 
@@ -202,12 +206,12 @@
   [shape value path]
   (cond
     (keyword? shape)
-    (when-not (internal/scalar-match? shape value)
-      (internal/mismatch! path shape value :type-mismatch))
+    (when-not (scalar-match? shape value)
+      (mismatch! path shape value :type-mismatch))
 
     (vector? shape)
-    (when-not (or (nil? value) (internal/scalar-match? (second shape) value))
-      (internal/mismatch! path shape value :type-mismatch))
+    (when-not (or (nil? value) (scalar-match? (second shape) value))
+      (mismatch! path shape value :type-mismatch))
 
     (= :map (:type shape))
     (check-map! shape value path)
@@ -216,19 +220,19 @@
     (if (sequential? value)
       (doseq [[index item] (map-indexed vector value)]
         (check-shape! (:items shape) item (conj path index)))
-      (internal/mismatch! path shape value :type-mismatch)))
+      (mismatch! path shape value :type-mismatch)))
   value)
 
 (defn- check-map!
   [shape value path]
   (when-not (map? value)
-    (internal/mismatch! path shape value :type-mismatch))
+    (mismatch! path shape value :type-mismatch))
   (let [required (:required shape {})
         optional (:optional shape {})
         declared (set (concat (keys required) (keys optional)))]
     (doseq [[key child-shape] required]
       (when-not (contains? value key)
-        (internal/mismatch! (conj path key) child-shape nil :missing-required-key))
+        (mismatch! (conj path key) child-shape nil :missing-required-key))
       (check-shape! child-shape (get value key) (conj path key)))
     (doseq [[key child-shape] optional
             :when (contains? value key)]
@@ -237,5 +241,49 @@
             :when (not (contains? declared key))]
       (if (contains? shape :extra)
         (check-shape! (:extra shape) child-value (conj path key))
-        (internal/mismatch! (conj path key) :no-extra-keys child-value
-                            :undeclared-key)))))
+        (mismatch! (conj path key) :no-extra-keys child-value
+                   :undeclared-key)))))
+
+;; --- leaf mechanics: errors and scalar semantics ----------------------
+
+(def ^:private scalar-shapes
+  #{:string :integer :number :boolean :null :json})
+
+(def ^:private nullable-scalar-shapes
+  #{:string :integer :number :boolean})
+
+(defn- fail!
+  [reason message data]
+  (throw (ex-info message (assoc data ::error true :reason reason))))
+
+(defn- exact-keys!
+  [value allowed path kind]
+  (when-let [unknown (seq (remove allowed (keys value)))]
+    (fail! :unknown-declaration-keys
+           (str "Unknown " kind " declaration keys")
+           {:path path :keys (vec unknown) :value value})))
+
+(defn- mismatch!
+  [path expected actual reason]
+  (fail! reason
+         (str "Return value does not match declaration at " (pr-str path))
+         {:path path :expected expected :actual actual}))
+
+(defn- json-compatible?
+  [value]
+  (cond
+    (or (nil? value) (string? value) (number? value) (boolean? value)) true
+    (map? value) (and (every? #(or (keyword? %) (string? %)) (keys value))
+                      (every? json-compatible? (vals value)))
+    (sequential? value) (every? json-compatible? value)
+    :else false))
+
+(defn- scalar-match?
+  [shape value]
+  (case shape
+    :string (string? value)
+    :integer (integer? value)
+    :number (number? value)
+    :boolean (boolean? value)
+    :null (nil? value)
+    :json (json-compatible? value)))

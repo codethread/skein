@@ -116,9 +116,20 @@
     (let [usage {:from 'skein.core.weaver :to 'skein.api.tidy.internal
                  :filename "/abs/repo/src/skein/core/weaver.clj" :row 3}]
       (is (= 1 (count (api-form/findings {:namespace-usages [usage]} {} #{}))))))
-  (testing "the module's own alpha and its tests are allowed"
+  (testing "the module's own alpha, internal siblings, and tests are allowed"
     (let [own {:from 'skein.api.tidy.alpha :to 'skein.api.tidy.internal
                :filename "src/skein/api/tidy/alpha.clj" :row 3}
+          nested {:from 'skein.api.tidy.alpha :to 'skein.api.tidy.internal.validate
+                  :filename "src/skein/api/tidy/alpha.clj" :row 4}
+          sibling {:from 'skein.api.tidy.internal.validate
+                   :to 'skein.api.tidy.internal.shared
+                   :filename "src/skein/api/tidy/internal/validate.clj" :row 3}
           test-use {:from 'skein.api.tidy.alpha-test :to 'skein.api.tidy.internal
                     :filename "test/skein/api/tidy/alpha_test.clj" :row 3}]
-      (is (empty? (api-form/findings {:namespace-usages [own test-use]} {} #{}))))))
+      (is (empty? (api-form/findings
+                   {:namespace-usages [own nested sibling test-use]} {} #{})))))
+  (testing "a foreign module's internal is still fenced, nested or not"
+    (let [usage {:from 'skein.api.other.internal.helpers
+                 :to 'skein.api.tidy.internal.validate
+                 :filename "src/skein/api/other/internal/helpers.clj" :row 3}]
+      (is (= 1 (count (api-form/findings {:namespace-usages [usage]} {} #{})))))))

@@ -158,7 +158,7 @@ Concurrency shape is part of the story. Where calls run in sequence, where they 
     (render-dashboard @profile @boards prefs)))
 ```
 
-Guidelines, not gates: a public fn may run long (even ~100 lines) when that keeps one story in one place; a module comfortably under ~150 lines rarely needs an internal file; recursion clusters stay together on whichever side they live. The worked example is `skein.api.return-shape.alpha` — grammar walking in alpha as the story, error construction and scalar semantics in its `internal` sibling.
+Method: write the split first, merge back by measurement. Draft the module as `alpha` composing `internal/<concern>` files — the compiler exposes coupling that imagination fudges — and write tests against the public surface only. Then measure: at roughly 500 lines or under, fold the concerns back into one story-ordered file (publics leading, section-commented private clusters, leaf mechanics last, one `declare` block as the accepted cost); over that, the split stands. The public-surface tests must pass unchanged through the fold, and watch for names that only made sense behind an alias (`case*` is a compiler special form someone hit this way). Recursion clusters stay together on whichever side they live; a public fn may run long when that keeps one story in one place. The worked example is `skein.api.return-shape.alpha`, folded to a single file after living as per-concern files.
 
 ### Public vs private helpers
 

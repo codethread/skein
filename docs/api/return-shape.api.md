@@ -26,7 +26,7 @@ Check `value` against one concrete return shape and return it unchanged.
 
   Throws structured `ex-info` on mismatch with `:path`, `:expected`, and
   `:actual`. Routing declarations must be selected by the caller first.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L50-L62">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L46-L58">Source</a></sub></p>
 
 ## <a name="skein.api.return-shape.alpha/explain">`explain`</a>
 ``` clojure
@@ -38,7 +38,8 @@ Render a return declaration as JSON-safe data.
 
   Shape and field names become strings; routing maps retain their structure
   so callers can render flat, subcommand, and stream declarations uniformly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L36-L48">Source</a></sub></p>
+  Validates first: only well-formed declarations render.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L37-L44">Source</a></sub></p>
 
 ## <a name="skein.api.return-shape.alpha/validate!">`validate!`</a>
 ``` clojure
@@ -51,4 +52,4 @@ Validate a return declaration and return it unchanged.
   Accepts a concrete shape, a `{:stream ...}` return case, or a
   `{:subcommands ...}` routed declaration. Throws structured `ex-info` for
   malformed or unsupported declarations.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L19-L34">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/return_shape/alpha.clj#L20-L35">Source</a></sub></p>

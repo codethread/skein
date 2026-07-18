@@ -61,16 +61,17 @@
        (str/blank? (:doc var-def))))
 
 (defn- api-ns-module
-  "Return [module tier] for a `skein.api.<module>.<alpha|internal>` symbol,
-  nil for anything else."
+  "Return [module tier] for a `skein.api.<module>.alpha` or
+  `skein.api.<module>.internal[.<concern>]` symbol, nil for anything else."
   [ns-sym]
-  (rest (re-matches #"skein\.api\.([^.]+)\.(alpha|internal)" (str ns-sym))))
+  (rest (re-matches #"skein\.api\.([^.]+)\.(alpha|internal)(?:\..+)?" (str ns-sym))))
 
 (defn- dependency-findings
   "Enforce the internal-namespace dependency rules over kondo
-  `:namespace-usages`, everywhere in `src/`: internal requires no alpha
-  (its own alpha would be a cycle, a foreign one smuggles tiered surface
-  into plumbing), and nothing but a module's own alpha requires its
+  `:namespace-usages`, everywhere in `src/`: internal (including nested
+  `internal.<concern>` files) requires no alpha — its own alpha would be a
+  cycle, a foreign one smuggles tiered surface into plumbing — and nothing
+  but a module's own alpha or its own internal siblings requires its
   internal (tests may)."
   [analysis]
   (for [{:keys [from to filename row]} (:namespace-usages analysis)
@@ -85,7 +86,8 @@
                      " (SPEC-003.C19a)")
 
                 (and (= "internal" to-tier)
-                     (not (and (= "alpha" from-tier) (= from-module to-module))))
+                     (not (and (#{"alpha" "internal"} from-tier)
+                               (= from-module to-module))))
                 (str filename ":" row ": `" from "` requires `" to "`; only the"
                      " module's own alpha namespace reaches its internal plumbing"
                      " (SPEC-003.C19a)"))]
