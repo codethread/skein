@@ -121,6 +121,16 @@
   (s/and (s/coll-of ::normalized-family :kind vector?)
          #(empty? (duplicate-root-owners %))))
 
+(s/def ::spools (s/map-of symbol? ::family-entry))
+(s/def ::mvn-overrides map?)
+(s/def ::shared-spools-config
+  (s/and #(exact-keys? #{:spools :mvn-overrides} %)
+         (s/keys :req-un [::spools] :opt-un [::mvn-overrides])))
+(s/def ::families ::normalized-families)
+(s/def ::normalized-shared-spools-config
+  (s/and #(= #{:families :mvn-overrides} (set (keys %)))
+         (s/keys :req-un [::families ::mvn-overrides])))
+
 (defn- require-spec! [spec value message context]
   (when-not (s/valid? spec value)
     (throw (ex-info message
@@ -482,6 +492,23 @@
                      (normalize-entry source family entry))
                    (:spools config))})
 
+(defn validate-shared-spools-config!
+  "Return stage-1 normalized records for a shared `spools.edn` config.
+
+  `file` names the source in validation failures. This is the shared validation
+  seam used by runtime config writes; it applies the same entry specs and error
+  classes as sync before any file is changed. Input conforms to
+  `::shared-spools-config`; the result conforms to
+  `::normalized-shared-spools-config`."
+  [file config]
+  (let [source {:kind :shared :file (.getPath (io/file file))}
+        normalized (normalize-approved-spools-file
+                    "spools.edn" source config normalize-shared-family)]
+    (require-spec! ::shared-spools-config config
+                   "spools.edn config has an invalid shape" source)
+    (require-spec! ::normalized-shared-spools-config normalized
+                   "spools.edn normalized config has an invalid shape" source)))
+
 (defn- read-config-edn-file
   "Read an approved-spool EDN file, adding source context to expected failures."
   [file message context]
@@ -548,7 +575,8 @@
   (s/and map?
          kind-shaped-root?
          #(non-blank-string? (:root %))
-         #(s/valid? ::source (:source %))))
+         #(s/valid? ::source (:source %))
+         #(s/valid? ::provenance (:provenance %))))
 (s/def ::approved-root-map
   (s/and (s/map-of symbol? ::approved-root-entry)
          #(every? (fn [[lib entry]]
@@ -557,7 +585,6 @@
                          (s/valid? ::coordinate (::coordinate (meta entry)))
                          (s/valid? ::provenance (::provenance (meta entry)))))
                   %)))
-(s/def ::mvn-overrides map?)
 (s/def ::pending-validations vector?)
 (s/def ::approved-result
   (s/and #(exact-keys? #{:spools :mvn-overrides :pending-validations} %)
@@ -628,7 +655,8 @@
                                     [lib (with-meta
                                            (cond-> (assoc coordinate
                                                           :root (.getPath root)
-                                                          :source source)
+                                                          :source source
+                                                          :provenance provenance)
                                              claims (assoc :claims claims))
                                            {::family family
                                             ::coordinate coordinate

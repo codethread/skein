@@ -1,6 +1,7 @@
 (ns skein.api.runtime.alpha-test
-  "Release-marker and path-accessor coverage for the explicit runtime API."
-  (:require [clojure.java.io :as io]
+  "Release-marker, config-write, and path coverage for the explicit runtime API."
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -295,3 +296,128 @@
       (is (= (:config-dir world) (runtime/config-dir rt)))
       (is (= (.getCanonicalFile (io/file (:config-dir world) "spools.edn"))
              (.getCanonicalFile (runtime/spools-file rt)))))))
+
+(deftest spool-config-write-specs-own-public-shapes
+  (let [entry {:git/url "https://example.invalid/demo.git"
+               :git/sha (str/join (repeat 40 "a"))
+               :git/tag "v1"}]
+    (is (s/valid? ::runtime/spool-family 'demo/family))
+    (is (s/valid? ::runtime/spool-entry entry))
+    (is (s/valid? ::runtime/spool-write-result
+                  {:status :inserted
+                   :lib 'demo/family
+                   :entry entry
+                   :file (io/file "/tmp/spools.edn")}))
+    (is (not (s/valid? ::runtime/spool-entry (assoc entry :git/sha "short"))))
+    (is (not (s/valid? ::runtime/spool-write-result
+                       {:status :inserted :lib 'demo/family :entry entry})))))
+
+(deftest approved-surfaces-primary-and-overlay-provenance
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [config-dir (io/file (:config-dir world))
+            sha (str/join (repeat 40 "b"))]
+        (.mkdirs config-dir)
+        (spit (io/file config-dir "spools.edn")
+              (pr-str {:spools {'demo/family {:git/url "https://example.invalid/demo.git"
+                                              :git/sha sha
+                                              :git/tag "v2"
+                                              :roots {'demo/root "."}}}}))
+        (is (= :spools-edn
+               (get-in (runtime/approved rt) [:spools 'demo/root :provenance])))
+        (spit (io/file config-dir "spools.local.edn")
+              (pr-str {:spools {'demo/family {:local/root "../demo"
+                                              :claims "v3"}}}))
+        (is (= {:provenance :local-overlay :claims "v3"}
+               (select-keys (get-in (runtime/approved rt) [:spools 'demo/root])
+                            [:provenance :claims])))))))
+
+(deftest upsert-spool-entry-validates-before-write-and-preserves-header-comments
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [file (io/file (:config-dir world) "spools.edn")
+            overlay-file (io/file (:config-dir world) "spools.local.edn")
+            overlay ";; hand edited\n{:spools {}}\n"
+            header ";; This header explains hand-owned policy.\n;; Keep it byte-for-byte.\n"
+            suffix "\n ;; top-level comment survives too\n :mvn-overrides {}}\n"
+            original (str header "{:spools {}" suffix)
+            entry {:local/root "spools/demo"}]
+        (.mkdirs (.getParentFile file))
+        (spit file original)
+        (spit overlay-file overlay)
+        (is (= :inserted (:status (runtime/upsert-spool-entry! rt 'demo/family entry))))
+        (let [written (slurp file)]
+          (is (str/starts-with? written header))
+          (is (str/ends-with? written suffix))
+          (is (= entry (get-in (edn/read-string written) [:spools 'demo/family]))))
+        (is (= overlay (slurp overlay-file)))
+        (is (= :updated
+               (:status (runtime/upsert-spool-entry!
+                         rt 'demo/family {:local/root "spools/demo-2"}))))
+        (let [before (slurp file)
+              error (try
+                      (runtime/upsert-spool-entry!
+                       rt 'demo/bad {:git/url "https://example.invalid/bad.git"
+                                     :git/sha "short"})
+                      nil
+                      (catch clojure.lang.ExceptionInfo exception exception))]
+          (is (= "Git spool entry requires 40 lowercase hex characters :git/sha"
+                 (ex-message error)))
+          (is (= 'demo/bad (:family (ex-data error))))
+          (is (= before (slurp file))))))))
+
+(deftest spool-config-writes-refuse-trailing-edn-without-changing-the-file
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [file (io/file (:config-dir world) "spools.edn")
+            config "{:spools {demo/family {:local/root \"spools/demo\"}}}\n{:ignored true}\n"]
+        (.mkdirs (.getParentFile file))
+        (doseq [write! [#(runtime/upsert-spool-entry!
+                          rt 'demo/family {:local/root "spools/replacement"})
+                        #(runtime/remove-spool-entry! rt 'demo/family)]]
+          (spit file config)
+          (let [error (try
+                        (write!)
+                        nil
+                        (catch clojure.lang.ExceptionInfo exception exception))]
+            (is (re-find #"trailing content" (ex-message error)))
+            (is (= (.getPath file) (:file (ex-data error))))
+            (is (= "{:ignored true}" (:trailing-content (ex-data error))))
+            (is (= config (slurp file)))))))))
+
+(deftest remove-spool-entry-refuses-requirers-and-removes-unreferenced-family
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [file (io/file (:config-dir world) "spools.edn")
+            sha-a (str/join (repeat 40 "a"))
+            sha-b (str/join (repeat 40 "b"))
+            target {:git/url "https://example.invalid/target.git"
+                    :git/sha sha-a
+                    :git/tag "v1"
+                    :roots {'demo/root "."}}
+            requirer {:git/url "https://example.invalid/requirer.git"
+                      :git/sha sha-b
+                      :git/tag "v1"
+                      :requires {'demo/root "v1"}}]
+        (.mkdirs (.getParentFile file))
+        (spit file (pr-str {:spools {'demo/target target 'demo/requirer requirer}}))
+        (let [error (try
+                      (runtime/remove-spool-entry! rt 'demo/target)
+                      nil
+                      (catch clojure.lang.ExceptionInfo exception exception))]
+          (is (= :spool-family-required (:reason (ex-data error))))
+          (is (= [{:family 'demo/requirer :roots #{'demo/root}}]
+                 (:requirers (ex-data error))))
+          (is (= target (get-in (edn/read-string (slurp file))
+                                [:spools 'demo/target]))))
+        (is (= :removed (:status (runtime/remove-spool-entry! rt 'demo/requirer))))
+        (is (nil? (get-in (edn/read-string (slurp file))
+                          [:spools 'demo/requirer])))))))
