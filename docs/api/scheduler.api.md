@@ -48,33 +48,6 @@ Function.
 Return all pending wakes in `runtime`, ordered by wake-at ascending.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L73-L76">Source</a></sub></p>
 
-## <a name="skein.api.scheduler.alpha/recent-cancellations">`recent-cancellations`</a>
-``` clojure
-(recent-cancellations runtime)
-```
-Function.
-
-Return `runtime`'s most recently cancelled wakes, newest first (bounded).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L83-L86">Source</a></sub></p>
-
-## <a name="skein.api.scheduler.alpha/recent-failures">`recent-failures`</a>
-``` clojure
-(recent-failures runtime)
-```
-Function.
-
-Return `runtime`'s most recently failed wakes, newest first (bounded).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L88-L91">Source</a></sub></p>
-
-## <a name="skein.api.scheduler.alpha/recent-fires">`recent-fires`</a>
-``` clojure
-(recent-fires runtime)
-```
-Function.
-
-Return `runtime`'s most recently completed wakes, newest first (bounded).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L78-L81">Source</a></sub></p>
-
 ## <a name="skein.api.scheduler.alpha/schedule!">`schedule!`</a>
 ``` clojure
 (schedule! runtime wake)

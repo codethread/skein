@@ -647,9 +647,7 @@
       (Thread/sleep 100)
       (recur (dec attempts))))
   (assert (some #(= "Smoke scheduled strand" (:title %)) (weaver-api/list runtime))
-          "scheduled handler mutated the strand graph")
-  (assert (some #(= "smoke-fire" (:key %)) (scheduler/recent-fires runtime))
-          "completed wake is visible in scheduler introspection"))
+          "scheduled handler mutated the strand graph"))
 
 (defn smoke-attribute-storage! [runtime]
   (let [owner "attribute-storage-smoke"

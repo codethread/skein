@@ -74,18 +74,3 @@
   "Return all pending wakes in `runtime`, ordered by wake-at ascending."
   [runtime]
   (mapv normalize-wake (db/pending-wakes (access/ds runtime))))
-
-(defn recent-fires
-  "Return `runtime`'s most recently completed wakes, newest first (bounded)."
-  [runtime]
-  (mapv normalize-wake (db/recent-fires (access/ds runtime))))
-
-(defn recent-cancellations
-  "Return `runtime`'s most recently cancelled wakes, newest first (bounded)."
-  [runtime]
-  (mapv normalize-wake (db/recent-cancellations (access/ds runtime))))
-
-(defn recent-failures
-  "Return `runtime`'s most recently failed wakes, newest first (bounded)."
-  [runtime]
-  (mapv normalize-wake (db/recent-failures (access/ds runtime))))

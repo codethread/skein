@@ -41,7 +41,7 @@
        (filter #(= "scheduler" (get-in % [:attributes :origin])))
        (mapv :title)))
 
-(deftest scheduled-handler-mutates-graph-and-is-introspectable
+(deftest scheduled-handler-mutates-graph-and-drains-pending
   (wt/with-runtime
     (fn [rt _db-file]
       (test-alpha/set-clock! rt (constantly (Instant/ofEpochSecond 0)))
@@ -53,8 +53,6 @@
       (events/await-quiescent! rt)
       (is (= ["Scheduled strand"] (scheduler-strand-titles rt))
           "the handler mutated the strand graph on the shared lane")
-      (is (= ["seed-strand"] (mapv :key (scheduler/recent-fires rt)))
-          "the completed wake is visible in introspection")
       (is (nil? (first (scheduler/pending rt))) "no wake remains armed"))))
 
 (deftest pending-wake-survives-weaver-restart-and-fires-on-rearm
@@ -92,8 +90,8 @@
           (events/await-quiescent! rt2)
           (is (= ["Survivor strand"] (scheduler-strand-titles rt2))
               "the re-armed handler mutated the graph in the fresh weaver")
-          (is (= ["survivor"] (mapv :key (scheduler/recent-fires rt2)))
-              "the restart-fired wake is visible in introspection")
+          (is (empty? (scheduler/pending rt2))
+              "the restarted wake completed and is no longer pending")
           (finally
             (weaver-runtime/stop! rt2))))
       (finally

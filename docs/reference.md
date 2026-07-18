@@ -800,8 +800,6 @@ REPL/config/API surface only.
                            :payload {:scope "temporary"}})
   (scheduler/pending rt)          ; => data-first pending wakes, earliest first
   (first (scheduler/pending rt))  ; => the earliest pending wake, or nil
-  (scheduler/recent-fires rt)
-  (scheduler/recent-failures rt)
   (scheduler/cancel! rt "nightly-sweep"))
 ```
 
