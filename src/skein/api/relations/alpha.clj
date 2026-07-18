@@ -68,18 +68,3 @@
     :direction "effect --caused-by--> cause"
     :declared-acyclic? false
     :help "Behavior-free causal-note convention."}])
-
-(defn relation
-  "Return the advisory catalog entry for relation-name, or nil when uncataloged."
-  [relation-name]
-  (first (filter #(= (:relation %) relation-name) catalog)))
-
-(defn annotation-relations
-  "Return catalog entries for behavior-free annotation relation conventions."
-  []
-  (filterv #(= :annotation (:family %)) catalog))
-
-(defn operational-relations
-  "Return catalog entries for shipped operational relation batteries."
-  []
-  (filterv #(= :operational (:family %)) catalog))

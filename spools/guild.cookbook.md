@@ -93,17 +93,15 @@ Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `reg
 (require '[clojure.data.json :as json]
          '[skein.api.peers.alpha :as peers])
 
-(def backend (peers/peer "backend"))    ; resolve exactly one running peer by name
-
 ;; discover: what does this weaver actually expose right now?
-(peers/call! backend "guild" {:argv ["list"]})
+(peers/call! "backend" "guild" {:argv ["list"]})
 ;; => {"guild" "backend"
 ;;     "operation" "guild list"
 ;;     "active" [{"name" "gate.status.v1" "doc" … "input-spec" …}]
 ;;     "deprecated" [{"name" "gate.old.v1" "replacement" "gate.status.v1" …}]}
 
 ;; then invoke the version you confirmed is active
-(peers/call! backend "gate.status.v1"
+(peers/call! "backend" "gate.status.v1"
   {:argv [(json/write-str {:gate-name "api-ready"})]})
 ;; => {"gate" "api-ready" "satisfied" false}
 ```
@@ -114,8 +112,8 @@ Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `reg
   before invoking means a caller notices a version has moved to deprecated
   instead of blindly calling a handle that now fails. The discovery step is
   cheap and turns a silent break into a visible migration.
-- **Portable names decouple caller from checkout.** `peers/peer "backend"`
-  resolves by the weaver's published name, so the caller never encodes a
+- **Portable names decouple caller from checkout.** `peers/call!` resolves a
+  published peer name, so the caller never encodes a
   filesystem path. A machine with two clones disambiguates locally without the
   caller changing.
 - **Peering fails loudly, never silently degrades.** The helpers don't
@@ -123,7 +121,7 @@ Honest source: the worked two-repo example in [`guild.md`](./guild.md), and `reg
   stream-class op all throw. That is the right default for coordination — a
   missing peer should stop you, not be papered over.
 
-Honest source: the peer-side of the worked example in [`guild.md`](./guild.md) (`peers/peer`, `peers/call!`, and the `guild list` payload) and the `skein.api.peers.alpha` helper listing in the [REPL API spec](../devflow/specs/repl-api.md); the `guild list` `:active` / `:deprecated` shape is pinned by `guild-list-reports-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj). (The two-weaver call is distilled from the contract's worked example and the listing test rather than run live here.)
+Honest source: the peer-side of the worked example in [`guild.md`](./guild.md) (`peers/call!` and the `guild list` payload) and the `skein.api.peers.alpha` helper listing in the [REPL API spec](../devflow/specs/repl-api.md); the `guild list` `:active` / `:deprecated` shape is pinned by `guild-list-reports-active-and-deprecated-ops` in [`test/skein/guild_test.clj`](../test/skein/guild_test.clj). (The two-weaver call is distilled from the contract's worked example and the listing test rather than run live here.)
 
 ---
 

@@ -182,17 +182,15 @@ From the frontend weaver (or a manager weaver), discover the backend by its port
 (require '[clojure.data.json :as json]
          '[skein.api.peers.alpha :as peers])
 
-(def backend (peers/peer "backend"))
-
-(peers/call! backend "guild" {:argv ["list"]})
+(peers/call! "backend" "guild" {:argv ["list"]})
 ;; => {"guild" "backend", "operation" "guild list", "active" [...], "deprecated" [...]}
 
-(peers/call! backend "gate.status.v1"
+(peers/call! "backend" "gate.status.v1"
   {:argv [(json/write-str {:gate-name "api-ready"})]})
 ;; => {"gate" "api-ready", "satisfied" false}
 ```
 
-`skein.api.peers.alpha` is explicit-require userland API: `(peers/peers)` enumerates running sibling weavers from mill metadata, `(peers/peer name-or-workspace)` resolves exactly one running peer, and `(peers/call! peer op args)` invokes one named op on the peer over the invoke envelope (optional `:argv`/`:payloads` in `args`); unknown ops and the peer's payload hooks reject receiving-side, and stream-class ops fail loudly as unsupported. It does not auto-start peers or add retries; unavailable peers fail loudly.
+`skein.api.peers.alpha` is explicit-require userland API: `(peers/peers)` enumerates running sibling weavers from mill metadata, and `(peers/call! peerish op args)` invokes one named op on a metadata row, peer name, or workspace path over the invoke envelope (optional `:argv`/`:payloads` in `args`); unknown ops and the peer's payload hooks reject receiving-side, and stream-class ops fail loudly as unsupported. It does not auto-start peers or add retries; unavailable peers fail loudly.
 
 ## See also
 

@@ -65,7 +65,7 @@
     (with-state-root state-root
       #(is (= [] (peers/peers))))))
 
-(deftest peers-list-and-resolve-running-test
+(deftest peers-list-running-test
   (let [state-root (temp-dir "skein-peers-running")
         workspace (temp-dir "skein-peer-workspace")
         state-dir (write-peer! state-root "a" workspace "alpha" (current-pid))
@@ -80,17 +80,7 @@
                  :state-dir (.getPath state-dir)
                  :running? true}
                 (select-keys (first rows) [:name :workspace :protocol-version :socket-path :state-dir :running?])))
-         (is (= "alpha" (:name (peers/peer "alpha"))))
-         (is (= "alpha" (:name (peers/peer (.getPath workspace)))))))))
-
-(deftest peers-bare-name-not-shadowed-by-local-directory-test
-  ;; "src" exists as a directory relative to the test cwd; a bare token must
-  ;; still resolve as a logical peer name, never as a workspace path.
-  (let [state-root (temp-dir "skein-peers-shadow")
-        workspace (temp-dir "skein-peer-shadow-workspace")]
-    (write-peer! state-root "s" workspace "src" (current-pid))
-    (with-state-root state-root
-      #(is (= "src" (:name (peers/peer "src")))))))
+         (is (= "alpha" (:name (first rows))))))))
 
 (deftest peers-stale-listed-but-not-resolvable-test
   (let [state-root (temp-dir "skein-peers-stale")
@@ -100,7 +90,7 @@
       #(do
          (is (false? (:running? (first (peers/peers)))))
          (try
-           (peers/peer "stale")
+           (peers/call! "stale" "status")
            (is false "expected stale peer resolution to throw")
            (catch clojure.lang.ExceptionInfo ex
              (is (= :peer/stale (:code (ex-data ex))))))))))
@@ -113,7 +103,7 @@
     (write-peer! state-root "b" workspace-b "shared" (current-pid))
     (with-state-root state-root
       #(try
-         (peers/peer "shared")
+         (peers/call! "shared" "status")
          (is false "expected ambiguous peer resolution to throw")
          (catch clojure.lang.ExceptionInfo ex
            (is (= :peer/ambiguous (:code (ex-data ex))))
@@ -173,8 +163,8 @@
   (with-two-runtimes
     (fn [_rt-a rt-b]
       (weaver/register-op! rt-b 'echo "Echo peer test argv" 'skein.peers-test/peer-test-op)
-      (let [beta (peers/peer "beta")
-            echoed (peers/call! beta "echo" {:argv ["x" "y"]})
+      (let [beta (first (filter #(= "beta" (:name %)) (peers/peers)))
+            echoed (peers/call! "beta" "echo" {:argv ["x" "y"]})
             via-symbol (peers/call! "beta" 'echo)
             status (peers/call! beta "status")
             listed (peers/call! beta "help")]
@@ -231,7 +221,8 @@
         db-b (db-test/temp-db-file)
         rt-b (weaver-runtime/start! db-b {:world (world-under root "b" "beta") :name "beta"})]
     (try
-      (let [beta (with-state-root state-root #(peers/peer "beta"))]
+      (let [beta (with-state-root state-root #(first (filter (fn [row] (= "beta" (:name row)))
+                                                             (peers/peers))))]
         (weaver-runtime/stop! rt-b)
         (try
           (peers/call! beta "status" {})

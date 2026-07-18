@@ -189,9 +189,3 @@
           (filter (fn [d] (or (nil? kind) (= kind (:kind d)))))
           (sort-by (juxt :kind :name))
           vec))))
-
-(defn declaration
-  "Return the one declaration in `runtime` under `[kind name]`, or `nil` when
-  that namespace or edge type is undeclared."
-  [runtime kind name]
-  (get @(registry runtime) [kind name]))

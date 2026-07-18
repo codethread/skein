@@ -23,16 +23,6 @@ Explicit-runtime vocabulary registry: the blessed home for declaring and
 
 
 
-## <a name="skein.api.vocab.alpha/declaration">`declaration`</a>
-``` clojure
-(declaration runtime kind name)
-```
-Function.
-
-Return the one declaration in `runtime` under `[kind name]`, or `nil` when
-  that namespace or edge type is undeclared.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L193-L197">Source</a></sub></p>
-
 ## <a name="skein.api.vocab.alpha/declaration-kinds">`declaration-kinds`</a>
 
 
