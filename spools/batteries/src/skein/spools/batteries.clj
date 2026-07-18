@@ -709,10 +709,20 @@
                     query-def)]
     (query-fn rt lean-attribute-byte-floor query-def params limit)))
 
-(defn- run-named-ready-query-lean [rt query-name raw-params limit]
+(defn- run-named-ready-lean [rt query-name raw-params limit]
   (let [query-def (graph/resolve-query rt (handle-name query-name))
         params (validate-query-params query-def raw-params)]
     (weaver/ready-lean rt lean-attribute-byte-floor query-def params limit)))
+
+(defn- query-list-entry [[name query-def]]
+  {:name name
+   :params (if (map? query-def) (vec (:params query-def)) [])
+   :referenced-params (query/referenced-params (if (map? query-def)
+                                                 (:where query-def)
+                                                 query-def))})
+
+(defn- query-list-entries [rt]
+  (mapv query-list-entry (graph/queries rt)))
 
 ;; --- op handlers ------------------------------------------------------------
 
@@ -787,7 +797,7 @@
     (if query
       (do (when (str/blank? query)
             (throw (ex-info "--query requires a non-empty name" {})))
-          (run-named-ready-query-lean rt query params limit))
+          (run-named-ready-lean rt query params limit))
       (do (when (seq params)
             (throw (ex-info "--param requires --query" {})))
           (weaver/ready-lean rt lean-attribute-byte-floor [:exists :id] {} limit)))))
@@ -819,7 +829,7 @@
   (let [rt (:op/runtime ctx)
         {:keys [subcommand] nm :name} (:op/args ctx)]
     (case subcommand
-      "list" (json-safe-value (graph/query-metadata rt))
+      "list" (json-safe-value (query-list-entries rt))
       "explain" (do (when (str/blank? nm)
                       (throw (ex-info "query explain requires a query name" {})))
                     (json-safe-value (graph/query-explain rt (handle-name nm)))))))
@@ -1044,7 +1054,7 @@
 (def ^:private strand-collection-return
   {:type :collection :items strand-return})
 
-(def ^:private query-metadata-return
+(def ^:private query-list-return
   {:type :map
    :required {:name :string
               :params {:type :collection :items :string}
@@ -1081,7 +1091,7 @@
            :required {:created strand-collection-return
                       :refs {:type :map :extra :string}}}
    'query {:subcommands
-           {"list" {:type :collection :items query-metadata-return}
+           {"list" {:type :collection :items query-list-return}
             "explain" {:type :map
                        :required {:name :string
                                   :operation :string

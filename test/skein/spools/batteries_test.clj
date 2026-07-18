@@ -642,20 +642,20 @@
             lean-list (first (filter #(= (:id strand) (:id %)) (weaver/op! rt 'list [])))
             lean-ready (first (filter #(= (:id strand) (:id %)) (weaver/op! rt 'ready [])))
             lean-query (first (weaver/op! rt 'list ["--query" "owned" "--param" "who=agent"]))
-            lean-ready-query (first (weaver/op! rt 'ready ["--query" "owned" "--param" "who=agent"]))
+            lean-ready-filtered (first (weaver/op! rt 'ready ["--query" "owned" "--param" "who=agent"]))
             full-show (weaver/op! rt 'show [(:id strand)])
             full-api-list (first (filter #(= (:id strand) (:id %)) (weaver/list rt)))]
         (testing "list/ready/query preserve values at the fixed 1 KiB floor"
-          (doseq [row [lean-list lean-ready lean-query lean-ready-query]]
+          (doseq [row [lean-list lean-ready lean-query lean-ready-filtered]]
             (is (= "agent" (get-in row [:attributes :owner])))
             (is (= at-floor (get-in row [:attributes :at-floor])))))
         (testing "list and ready use the same stored-byte floor for non-ASCII values"
           (let [projections (mapv #(get-in % [:attributes :non-ascii-at-floor])
-                                  [lean-list lean-ready lean-query lean-ready-query])]
+                                  [lean-list lean-ready lean-query lean-ready-filtered])]
             (is (= 1 (count (set projections))))
             (is (specs/omitted-attribute-descriptor? (first projections)))))
         (testing "list/ready/query replace values above the floor with the descriptor"
-          (doseq [row [lean-list lean-ready lean-query lean-ready-query]]
+          (doseq [row [lean-list lean-ready lean-query lean-ready-filtered]]
             (let [descriptor (get-in row [:attributes :over-floor])]
               (is (specs/omitted-attribute-descriptor? descriptor))
               (is (= {:skein/omitted true :bytes 1025} descriptor)))))

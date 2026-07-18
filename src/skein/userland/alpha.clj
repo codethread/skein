@@ -140,7 +140,7 @@
 
   Missing ids fail loudly. Returns the weaver burn summary."
   ([id]
-   (graph/burn-by-id! (resolve-runtime) id))
+   (graph/burn-by-ids! (resolve-runtime) [id]))
   ([id & ids]
    (graph/burn-by-ids! (resolve-runtime) (vec (cons id ids)))))
 
@@ -165,7 +165,11 @@
   Deliberately diverges from `skein.repl/load-queries!`, which takes a file
   path and reads EDN from disk: trusted in-process code owns its own I/O."
   [registry]
-  (graph/load-queries! (resolve-runtime) registry))
+  (let [runtime (resolve-runtime)]
+    (reduce-kv (fn [loaded query-name query-def]
+                 (merge loaded (graph/register-query! runtime query-name query-def)))
+               {}
+               registry)))
 
 (defn queries
   "Return the resolved runtime's in-memory named query registry."
@@ -216,7 +220,7 @@
   ([query-or-def params]
    (let [runtime (resolve-runtime)]
      (if (terse/named-query? query-or-def)
-       (weaver/ready-query runtime query-or-def params)
+       (weaver/ready runtime (graph/resolve-query runtime query-or-def) params)
        (weaver/ready runtime query-or-def params)))))
 
 (defn defpattern!

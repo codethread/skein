@@ -26,13 +26,6 @@
     (swap! (access/query-registry runtime) conj entry)
     (into {} [entry])))
 
-(defn load-queries!
-  "Merge validated named query definitions into the runtime query registry."
-  [runtime query-defs]
-  (let [validated-query-defs (into {} (map validated-query-entry) query-defs)]
-    (swap! (access/query-registry runtime) merge validated-query-defs)
-    validated-query-defs))
-
 (defn queries
   "Return registered query definitions keyed by canonical string name."
   [runtime]
@@ -48,15 +41,10 @@
     (:where query-def)
     query-def))
 
-(defn- query-metadata-entry [[name query-def]]
+(defn- query-details-entry [[name query-def]]
   {:name name
    :params (if (map? query-def) (vec (:params query-def)) [])
    :referenced-params (query/referenced-params (query-where query-def))})
-
-(defn query-metadata
-  "Return registered query caller metadata ordered by canonical name."
-  [runtime]
-  (mapv query-metadata-entry (queries runtime)))
 
 (defn query-explain
   "Describe a registered query definition and how CLI callers invoke it."
@@ -64,7 +52,7 @@
   (let [query-def (resolve-query runtime query-name)
         name (query/query-lookup-name query-name)
         where (query-where query-def)]
-    (assoc (query-metadata-entry [name query-def])
+    (assoc (query-details-entry [name query-def])
            :where where
            :definition query-def
            :where-form (pr-str where)
@@ -100,13 +88,6 @@
                                        :strand/burned-ids (:burned result)
                                        :strand/before before))
      result)))
-
-(defn burn-by-id!
-  "Delete one strand by id and return burn metadata."
-  ([runtime id]
-   (burn-by-ids! runtime [id]))
-  ([runtime id req-ctx]
-   (burn-by-ids! runtime [id] req-ctx)))
 
 (defn strands-by-ids
   "Return normalized strands for ids, preserving first-seen input order."

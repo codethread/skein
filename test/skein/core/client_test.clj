@@ -127,7 +127,7 @@
         (is (= query-def (call-world world :resolve-query 'mine)))
         (is (= {"mine" query-def} (call-world world :queries)))
         (is (= {"done" [:= :state "closed"]}
-               (call-world world :load-queries {'done [:= :state "closed"]})))
+               (call-world world :register-query 'done [:= :state "closed"])))
         (is (= {"done" [:= :state "closed"]
                 "mine" query-def}
                (call-world world :queries)))))))
@@ -178,7 +178,7 @@
           (is (= "Query not found" (:weaver-message (ex-data e))))
           (is (= :missing (get-in (ex-data e) [:weaver-data :query])))))
       (try
-        (call-world world :load-queries {"mine" [:= :state "active"]})
+        (call-world world :register-query "mine" [:= :state "active"])
         (is false "expected invalid query name error")
         (catch clojure.lang.ExceptionInfo e
           (is (= "Weaver API call failed" (ex-message e)))

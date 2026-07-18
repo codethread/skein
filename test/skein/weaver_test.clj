@@ -994,7 +994,7 @@
             (is (= edge-patch (:strand/patch update-event)))))
         (reset! delivered-events [])
         (let [pre-burn (weaver/show rt (:id added))
-              burn-result (graph/burn-by-id! rt (:id added))
+              burn-result (graph/burn-by-ids! rt [(:id added)])
               burn-event (first (wait-for-events 1))]
           (is (= {:burned [(:id added)] :count 1} burn-result))
           (is (= :strand/burned (:event/type burn-event)))
@@ -1521,18 +1521,15 @@
                                  (:id burn-target) (:id edge-target)])))
             (is (empty? @delivered-events))))))))
 
-(deftest weaver-query-registry-add-load-list-and-resolve
+(deftest weaver-query-registry-add-list-and-resolve
   (with-runtime
     (fn [rt _]
-      (let [open-query [:= :state "active"]
-            owner-query {:params [:owner]
+      (let [owner-query {:params [:owner]
                          :where [:= [:attr :owner] [:param :owner]]}]
         (is (= {"mine" owner-query} (graph/register-query! rt 'mine owner-query)))
         (is (= owner-query (graph/resolve-query rt :mine)))
         (is (= {"mine" owner-query} (graph/queries rt)))
-        (is (= {"open" open-query} (graph/load-queries! rt {:open open-query})))
-        (is (= {"mine" owner-query
-                "open" open-query}
+        (is (= {"mine" owner-query}
                (graph/queries rt)))))))
 
 (deftest weaver-query-registry-accepts-parameterized-in-queries
@@ -1587,19 +1584,13 @@
                                     [:and
                                      [:= [:attr :owner] [:param :owner]]
                                      [:= :state "active"]]]}]
-        (graph/load-queries! rt {:open open-query
-                                 :mine owner-query
-                                 :declared-unused declared-unused-query
-                                 :owners owners-query
-                                 :literal literal-query
-                                 :blocked relation-query})
-        (is (= [{:name "blocked" :params [:relation :owner] :referenced-params [:relation :owner]}
-                {:name "declared-unused" :params [:owner :unused] :referenced-params [:owner]}
-                {:name "literal" :params [] :referenced-params []}
-                {:name "mine" :params [:owner] :referenced-params [:owner]}
-                {:name "open" :params [] :referenced-params []}
-                {:name "owners" :params [:owners] :referenced-params [:owners]}]
-               (graph/query-metadata rt)))
+        (doseq [[query-name query-def] {:open open-query
+                                        :mine owner-query
+                                        :declared-unused declared-unused-query
+                                        :owners owners-query
+                                        :literal literal-query
+                                        :blocked relation-query}]
+          (graph/register-query! rt query-name query-def))
 
         (is (= {:name "mine"
                 :params [:owner]
@@ -2578,18 +2569,9 @@
                             #"simple symbols or keywords"
                             (graph/register-query! rt 'user/mine [:= :state "active"])))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"simple symbols or keywords"
-                            (graph/load-queries! rt {"mine" [:= :state "active"]})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"simple symbols or keywords"
-                            (graph/load-queries! rt {'user/mine [:= :state "active"]})))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Unknown query operator"
                             (graph/register-query! rt :broken [:unknown :state "active"])))
       (graph/register-query! rt :ok [:= :state "active"])
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"Unknown query operator"
-                            (graph/load-queries! rt {:bad [:unknown :state "active"]})))
       (is (= {"ok" [:= :state "active"]} (graph/queries rt))))))
 
 (deftest weaver-api-update-preserves-domain-errors-and-rolls-back
@@ -2715,7 +2697,7 @@
       ;; The old fixed command surface (add/update/... and the socket stop op)
       ;; is gone; only invoke and status remain.
       (doseq [op ["init" "add" "update" "supersede" "show" "burn" "list" "ready"
-                  "list-query" "ready-query" "weave" "subgraph"
+                  "list-query" "weave" "subgraph"
                   "pattern-list" "query-list" "op" "stop"]]
         (let [rejected (socket-request rt op {})]
           (is (false? (get rejected "ok")) op)
