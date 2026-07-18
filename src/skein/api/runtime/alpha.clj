@@ -54,6 +54,10 @@
                                             :opt-un [::reason]))
 (s/def ::retained-spool-state (s/coll-of ::retained-spool-state-entry :kind vector?))
 (s/def ::approved-result :skein.core.weaver.spool-sync/approved-result)
+(s/def ::declared-result :skein.core.weaver.spool-sync/declared-result)
+(s/def ::running-marker (s/or :marker string?
+                              :unavailable #{:none}
+                              :deferred nil?))
 (s/def ::sync-result :skein.core.weaver.spool-sync/sync-result)
 (s/def ::non-additive-sync-diff-ex-data
   (s/keys :req-un [::status ::reason ::diff ::pending-generation ::remedy]))
@@ -91,6 +95,10 @@
   (require-valid! ::approved-result result "runtime approved spool config has an invalid shape")
   result)
 
+(defn- validate-declared-result! [result]
+  (require-valid! ::declared-result result "runtime declared spool config has an invalid shape")
+  result)
+
 (defn- validate-sync-ex-data! [data]
   (when (= :non-additive-sync-diff (:reason data))
     (require-valid! ::non-additive-sync-diff-ex-data data "runtime sync exception data has an invalid shape")))
@@ -112,6 +120,20 @@
   [runtime]
   (validate-approved-result!
    (spool-sync/approved-spools runtime (running-release-marker runtime))))
+
+(defn declared
+  "Return declared spool families with release-floor validation as data.
+
+  `:families` has the same declared/effective projection as `approved`.
+  `:requirements` is valid with pending validations, or invalid with findings
+  and bump suggestions. Stage-1 structural errors still throw. The explicit
+  `running-marker` arity accepts nil to leave Skein floor checks pending. The
+  result conforms to `::declared-result`."
+  ([runtime]
+   (declared runtime (running-release-marker runtime)))
+  ([runtime running-marker]
+   (validate-declared-result!
+    (spool-sync/declared-spools runtime running-marker))))
 
 (defn release-marker
   "Return the running Skein release marker and its provenance.
@@ -391,6 +413,12 @@
 (s/fdef approved
   :args (s/cat :runtime map?)
   :ret ::approved-result)
+
+(s/fdef declared
+  :args (s/or :runtime (s/cat :runtime map?)
+              :with-marker (s/cat :runtime map?
+                                  :running-marker ::running-marker))
+  :ret ::declared-result)
 
 (s/fdef upsert-spool-entry!
   :args (s/cat :runtime map? :lib ::spool-family :entry ::spool-entry)

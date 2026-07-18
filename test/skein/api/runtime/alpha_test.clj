@@ -361,6 +361,96 @@
                   :claims nil}
                  (get-in approved [:families 'demo/family]))))))))
 
+(deftest declared-returns-family-projection-with-valid-requirements
+  (with-started-runtime
+    nil
+    {:release-marker "v3"}
+    (fn [rt world]
+      (let [config-dir (io/file (:config-dir world))
+            sha (str/join (repeat 40 "c"))]
+        (.mkdirs config-dir)
+        (spit (io/file config-dir "spools.edn")
+              (pr-str {:spools
+                       {'demo/target {:git/url "https://example.invalid/target.git"
+                                      :git/sha sha
+                                      :git/tag "v2"}
+                        'demo/client {:git/url "https://example.invalid/client.git"
+                                      :git/sha sha
+                                      :git/tag "v1"
+                                      :requires {'demo/target "v2"}
+                                      :skein/min "v3"}}}))
+        (let [declared (runtime/declared rt)]
+          (is (= (:families (runtime/approved rt)) (:families declared)))
+          (is (= {:valid? true :pending-validations []}
+                 (:requirements declared)))
+          (is (s/valid? ::runtime/declared-result declared)))))))
+
+(deftest declared-preserves-families-when-release-floors-fail
+  (with-started-runtime
+    nil
+    {:release-marker "v2"}
+    (fn [rt world]
+      (let [config-dir (io/file (:config-dir world))
+            sha (str/join (repeat 40 "d"))
+            target {:git/url "https://example.invalid/target.git"
+                    :git/sha sha
+                    :git/tag "v2"}]
+        (.mkdirs config-dir)
+        (spit (io/file config-dir "spools.edn")
+              (pr-str {:spools
+                       {'demo/target target
+                        'demo/client {:git/url "https://example.invalid/client.git"
+                                      :git/sha sha
+                                      :git/tag "v1"
+                                      :requires {'demo/target "v4"}
+                                      :skein/min "v3"}}}))
+        (let [approved-ex (is (thrown? clojure.lang.ExceptionInfo
+                                       (runtime/approved rt)))
+              declared (runtime/declared rt)]
+          (is (= target (get-in declared [:families 'demo/target :declared])))
+          (is (= (select-keys (ex-data approved-ex) [:findings :suggestions])
+                 (select-keys (:requirements declared) [:findings :suggestions])))
+          (is (false? (get-in declared [:requirements :valid?]))))))))
+
+(deftest declared-without-running-marker-leaves-skein-floor-pending
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [config-dir (io/file (:config-dir world))
+            sha (str/join (repeat 40 "e"))]
+        (.mkdirs config-dir)
+        (spit (io/file config-dir "spools.edn")
+              (pr-str {:spools
+                       {'demo/family {:git/url "https://example.invalid/family.git"
+                                      :git/sha sha
+                                      :git/tag "v1"
+                                      :skein/min "v2"}}}))
+        (is (= {:valid? true
+                :pending-validations [{:check :skein/min
+                                       :spool 'demo/family
+                                       :skein/min "v2"
+                                       :status :pending
+                                       :reason :running-marker-unavailable}]}
+               (:requirements (runtime/declared rt nil))))))))
+
+(deftest declared-still-fails-loudly-on-stage-one-shape-errors
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [config-dir (io/file (:config-dir world))]
+        (.mkdirs config-dir)
+        (spit (io/file config-dir "spools.edn")
+              (pr-str {:spools
+                       {'demo/malformed {:git/url "https://example.invalid/malformed.git"
+                                         :git/sha "short"
+                                         :requires {'demo/missing "v2"}}}}))
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo
+                              (runtime/declared rt nil)))]
+          (is (re-find #":git/sha" (ex-message ex)))
+          (is (not (contains? (ex-data ex) :findings))))))))
+
 (deftest upsert-spool-entry-validates-before-write-and-preserves-header-comments
   (with-started-runtime
     nil

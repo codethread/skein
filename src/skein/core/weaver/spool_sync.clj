@@ -8,8 +8,8 @@
   targets — `:file` paths confined to the config-dir and `:ns` sources located
   under synced roots — for `skein.api.runtime.alpha/use!`. Internal tier: the
   trusted `skein.api.runtime.alpha` surface delegates its
-  `approved`/`sync!`/`syncs` publics and its module loading here and owns the
-  blessed contract (SPEC-004, SPEC-005.C5)."
+  `approved`/`declared`/`sync!`/`syncs` publics and its module loading here and
+  owns the blessed contract (SPEC-004, SPEC-005.C5)."
   (:require [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
@@ -591,6 +591,24 @@
          (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims])))
 (s/def ::approved-family-map (s/map-of symbol? ::approved-family-entry))
 (s/def ::pending-validations vector?)
+(s/def ::valid? boolean?)
+(s/def ::findings vector?)
+(s/def ::suggestions map?)
+(s/def ::valid-requirements
+  (s/and #(exact-keys? #{:valid? :pending-validations} %)
+         #(true? (:valid? %))
+         #(s/valid? ::pending-validations (:pending-validations %))))
+(s/def ::invalid-requirements
+  (s/and #(exact-keys? #{:valid? :findings :suggestions} %)
+         #(false? (:valid? %))
+         #(s/valid? ::findings (:findings %))
+         #(s/valid? ::suggestions (:suggestions %))))
+(s/def ::requirements (s/or :valid ::valid-requirements
+                            :invalid ::invalid-requirements))
+(s/def ::declared-result
+  (s/and #(exact-keys? #{:families :requirements} %)
+         #(s/valid? ::approved-family-map (:families %))
+         #(s/valid? ::requirements (:requirements %))))
 (s/def ::approved-result
   (s/and #(exact-keys? #{:spools :families :mvn-overrides :pending-validations} %)
          #(contains? % :spools)
@@ -626,6 +644,72 @@
          #(or (not (contains? % :pending-generation)) (map? (:pending-generation %)))
          #(or (not (contains? % :retained-spool-state)) (vector? (:retained-spool-state %)))))
 
+(defn- family-projection [shared families]
+  (into {}
+        (map (fn [{:keys [family coordinate claims provenance]}]
+               [family {:declared (get (:declared-spools shared) family)
+                        :effective-coordinate coordinate
+                        :provenance provenance
+                        :claims claims}]))
+        families))
+
+(defn- approved-stage-one [runtime]
+  (reject-legacy-spool-config! runtime)
+  (let [shared (approved-spools-file runtime "spools.edn" :shared normalize-shared-family)
+        local (approved-spools-file runtime "spools.local.edn" :local normalize-overlay)
+        _ (reject-shared-git-urls! (:families shared))
+        families (vals (apply-overlays (:families shared) (:families local)))
+        _ (reject-duplicate-root-libs! families)]
+    {:families families
+     :family-projection (family-projection shared families)
+     :overrides (merge (:mvn-overrides shared) (:mvn-overrides local))}))
+
+(defn- unavailable-marker-findings [floors]
+  (mapv (fn [{:keys [family] :as floor}]
+          {:error :release-marker-unavailable
+           :family family
+           :skein/min (:skein/min floor)})
+        floors))
+
+(defn- family-requirement-validation [families running-marker]
+  (try
+    {:requirements {:valid? true
+                    :pending-validations (or (validate-family-requirements! families running-marker)
+                                             [])}}
+    (catch clojure.lang.ExceptionInfo ex
+      (let [{:keys [reason findings suggestions floors]} (ex-data ex)]
+        (case reason
+          :spool-requirements-unsatisfied
+          {:requirements {:valid? false
+                          :findings findings
+                          :suggestions suggestions}
+           :exception ex}
+
+          :release-marker-unavailable
+          {:requirements {:valid? false
+                          :findings (unavailable-marker-findings floors)
+                          :suggestions {}}
+           :exception ex}
+
+          (throw ex))))))
+
+(defn declared-spools
+  "Return declared spool families with requirement validation as data.
+
+  Stage-1 structural errors fail loudly. Unsatisfied release floors return under
+  `:requirements` with `:valid? false`; they never hide the `:families`
+  projection. Omitting `running-marker` leaves Skein floor checks pending."
+  ([runtime]
+   (declared-spools runtime nil))
+  ([runtime running-marker]
+   (let [{:keys [families family-projection]} (approved-stage-one runtime)
+         {:keys [requirements]} (family-requirement-validation families running-marker)
+         result {:families family-projection
+                 :requirements requirements}]
+     (require-spec! ::declared-result result
+                    "Declared spool config has an invalid shape" {})
+     result)))
+
 (defn approved-spools
   "Read and validate the effective runtime spool allowlist.
 
@@ -641,21 +725,10 @@
   ([runtime]
    (approved-spools runtime nil))
   ([runtime running-marker]
-   (reject-legacy-spool-config! runtime)
-   (let [shared (approved-spools-file runtime "spools.edn" :shared normalize-shared-family)
-         local (approved-spools-file runtime "spools.local.edn" :local normalize-overlay)
-         _ (reject-shared-git-urls! (:families shared))
-         families (vals (apply-overlays (:families shared) (:families local)))
-         _ (reject-duplicate-root-libs! families)
-         pending-validations (validate-family-requirements! families running-marker)
-         overrides (merge (:mvn-overrides shared) (:mvn-overrides local))
-         family-projection (into {}
-                                 (map (fn [{:keys [family coordinate claims provenance]}]
-                                        [family {:declared (get (:declared-spools shared) family)
-                                                 :effective-coordinate coordinate
-                                                 :provenance provenance
-                                                 :claims claims}]))
-                                 families)
+   (let [{:keys [families family-projection overrides]} (approved-stage-one runtime)
+         {:keys [requirements exception]} (family-requirement-validation families running-marker)
+         _ (when exception (throw exception))
+         pending-validations (:pending-validations requirements)
          spools (into {}
                       (mapcat
                        (fn [{:keys [family coordinate roots-map claims provenance source]}]
