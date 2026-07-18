@@ -294,7 +294,10 @@ strand spool-status
 
 `spool about` returns the command forms and conventions as data. `spool add` and `spool bump` are
 mutating subcommands under one op. The offline projection is the separate read op `spool-status`,
-so read hooks do not inherit mutation gating.
+so read hooks do not inherit mutation gating: an op's hook class covers every subcommand, so a
+`status` subcommand under the mutating `spool` op would be mutation-gated despite touching
+nothing. The split mirrors `kanban`/`kanban-export`; if per-subcommand hook classes ever land in
+the op registry, folding `spool-status` back in is an accretion-safe follow-up.
 
 The public boundary specs are `::spool-op-context`, `::spool-status-op-context`,
 `::spool-about-result`, `::spool-add-result`, `::spool-bump-result`, `::spool-status-result`, and

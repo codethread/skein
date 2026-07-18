@@ -370,6 +370,17 @@
         (is (s/valid? ::batteries/spool-status-result result))
         (is (= {:marker "v5" :provenance :claimed} (:release-marker result)))))))
 
+(deftest spool-status-rejects-declared-family-without-roots
+  (with-batteries
+    (fn [rt]
+      (with-redefs [runtime/declared
+                    (fn [& _]
+                      {:families {'demo/family {:declared {:git/url "https://example.invalid/demo.git"}}}
+                       :requirements {:valid? true :pending-validations []}})]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"Declared spool family has no roots"
+                              (weaver/op! rt 'spool-status [])))))))
+
 (deftest spool-contracts-and-dispatch-fail-loudly
   (is (s/valid? ::batteries/advisory-manifest
                 {:spool/format 1

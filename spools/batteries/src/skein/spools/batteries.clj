@@ -516,8 +516,12 @@
     {:families
      (into (sorted-map)
            (map (fn [[family projection]]
-                  (let [roots (set (keys (get-in projection [:declared :roots]
-                                                 {family "."})))]
+                  (let [declared-roots (get-in projection [:declared :roots])
+                        _ (when-not (seq declared-roots)
+                            (throw (ex-info "Declared spool family has no roots"
+                                            {:family family
+                                             :projection projection})))
+                        roots (set (keys declared-roots))]
                     [family
                      (assoc projection
                             :syncs (select-keys (:spools sync-result) roots)
