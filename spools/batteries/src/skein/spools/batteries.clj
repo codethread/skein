@@ -84,15 +84,21 @@
 (s/def ::spool-bump-result
   (s/and (s/keys :req-un [::operation ::status ::family ::old ::new ::compare-url ::requirements])
          #(exact-keys? #{:operation :status :family :old :new :compare-url :requirements} %)))
+(s/def ::declared #(s/valid? :skein.core.weaver.spool-sync/family-entry %))
+(s/def ::effective-coordinate #(s/valid? :skein.core.weaver.spool-sync/coordinate %))
+(s/def ::provenance #(s/valid? :skein.core.weaver.spool-sync/provenance %))
+(s/def ::claims #(s/valid? :skein.core.weaver.spool-sync/claims %))
+(s/def ::sync-entry #(s/valid? :skein.core.weaver.spool-sync/sync-root-entry %))
+(s/def ::syncs
+  (s/and (s/map-of symbol? ::sync-entry)
+         #(every? (fn [[root-lib entry]] (= root-lib (:lib entry))) %)))
+(s/def ::use-entry #(s/valid? ::runtime-api/use-entry %))
+(s/def ::uses
+  (s/and (s/map-of keyword? ::use-entry)
+         #(every? (fn [[use-key entry]] (= use-key (:key entry))) %)))
 (s/def ::status-family
-  (s/and map?
-         #(exact-keys? #{:declared :effective-coordinate :provenance :claims :syncs :uses} %)
-         #(s/valid? ::runtime-api/spool-entry (:declared %))
-         #(map? (:effective-coordinate %))
-         #(keyword? (:provenance %))
-         #(or (nil? (:claims %)) (string? (:claims %)))
-         #(map? (:syncs %))
-         #(map? (:uses %))))
+  (s/and (s/keys :req-un [::declared ::effective-coordinate ::provenance ::claims ::syncs ::uses])
+         #(exact-keys? #{:declared :effective-coordinate :provenance :claims :syncs :uses} %)))
 (s/def ::families (s/map-of symbol? ::status-family))
 (s/def ::pending-generation (s/nilable ::runtime-api/pending-generation))
 (s/def ::release-marker ::specs/release-marker-result)

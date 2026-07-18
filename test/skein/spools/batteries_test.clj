@@ -381,6 +381,42 @@
                               #"Declared spool family has no roots"
                               (weaver/op! rt 'spool-status [])))))))
 
+(deftest spool-status-rejects-malformed-nested-results
+  (testing "malformed effective coordinate"
+    (with-batteries
+      (fn [rt]
+        (runtime/upsert-spool-entry!
+         rt 'demo/family
+         {:git/url "https://example.invalid/demo.git"
+          :git/tag "v1"
+          :git/sha (sha "d")
+          :roots {'demo/root "."}})
+        (let [declared runtime/declared]
+          (with-redefs [runtime/declared
+                        (fn [& args]
+                          (assoc-in (apply declared args)
+                                    [:families 'demo/family :effective-coordinate]
+                                    {:kind :git}))]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                  #"spool-status returned an invalid result"
+                                  (weaver/op! rt 'spool-status []))))))))
+  (testing "malformed per-root sync entry"
+    (with-batteries
+      (fn [rt]
+        (runtime/upsert-spool-entry!
+         rt 'demo/family
+         {:git/url "https://example.invalid/demo.git"
+          :git/tag "v1"
+          :git/sha (sha "d")
+          :roots {'demo/root "."}})
+        (with-redefs [runtime/syncs
+                      (fn [_]
+                        {:spools {'demo/root {:lib 'demo/root
+                                              :status :loaded}}})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                #"spool-status returned an invalid result"
+                                (weaver/op! rt 'spool-status []))))))))
+
 (deftest spool-contracts-and-dispatch-fail-loudly
   (is (s/valid? ::batteries/advisory-manifest
                 {:spool/format 1
