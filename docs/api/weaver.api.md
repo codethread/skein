@@ -28,16 +28,7 @@ Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
 Function.
 
 Return declared acyclic edge relation names.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L171-L174">Source</a></sub></p>
-
-## <a name="skein.api.weaver.alpha/add">`add`</a>
-``` clojure
-(add & args)
-```
-Function.
-
-Renamed to add! (card d6xgt); this alias is removed before the v1 stamp.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L151-L154">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L156-L159">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/add!">`add!`</a>
 ``` clojure
@@ -62,7 +53,7 @@ Archive all attributes, or an explicit non-empty key set, for one strand.
   keys remain archived.
 
   This is a trusted in-process primitive only; it has no socket or CLI surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L197-L207">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L182-L192">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/declare-acyclic-relation!">`declare-acyclic-relation!`</a>
 ``` clojure
@@ -71,7 +62,7 @@ Archive all attributes, or an explicit non-empty key set, for one strand.
 Function.
 
 Declare an edge relation as acyclic for future graph writes.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L166-L169">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L151-L154">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/help-alias-result">`help-alias-result`</a>
 ``` clojure
@@ -84,7 +75,7 @@ Return an op detail projection when argv/envelope form a help alias.
   The alias applies only to ops whose arg-spec declares `:subcommands`, argv is
   exactly one reserved help token, and the envelope carries no payloads. Returns
   nil when the invocation must flow through normal parsing and handler dispatch.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L473-L486">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L458-L471">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/init">`init`</a>
 ``` clojure
@@ -103,7 +94,7 @@ Initialize the runtime database schema.
 Function.
 
 Return strands visible to `runtime`, optionally filtered by a query definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L226-L231">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L211-L216">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/list-lean">`list-lean`</a>
 ``` clojure
@@ -117,7 +108,7 @@ Return strands with oversized attributes replaced by descriptors.
 
   The optional limit arity is for the CLI/wire read surface; the trusted
   in-process arities remain unbounded by default.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L233-L243">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L218-L228">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/list-query">`list-query`</a>
 ``` clojure
@@ -126,7 +117,7 @@ Return strands with oversized attributes replaced by descriptors.
 Function.
 
 Return strands matching a registered query definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L245-L248">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L230-L233">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op!">`op!`</a>
 ``` clojure
@@ -155,7 +146,7 @@ Invoke a registered CLI operation with raw string argv from a root-level `strand
   actual labels.
   Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
   carrying the raw `:op/payloads` map.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L494-L536">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L479-L521">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/op-help-handler">`op-help-handler`</a>
 ``` clojure
@@ -171,7 +162,7 @@ Project the op registry as help.
   arg-spec (or a raw-envelope marker) and a JSON-safe explanation of any
   declared return shape. Unknown names fail loudly through `resolve-op`, which
   carries the available names.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L573-L589">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L558-L574">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ops">`ops`</a>
 ``` clojure
@@ -180,7 +171,7 @@ Project the op registry as help.
 Function.
 
 Return registered CLI operation entries for the current weaver runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L454-L457">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L439-L442">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ready">`ready`</a>
 ``` clojure
@@ -190,7 +181,7 @@ Return registered CLI operation entries for the current weaver runtime.
 Function.
 
 Return ready strands for `runtime`, optionally filtered by a query definition.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L250-L255">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L235-L240">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/ready-lean">`ready-lean`</a>
 ``` clojure
@@ -204,7 +195,7 @@ Return ready strands with oversized attributes replaced by descriptors.
 
   The optional limit arity is for the CLI/wire read surface; the trusted
   in-process arities remain unbounded by default.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L257-L267">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L242-L252">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-built-in-ops!">`register-built-in-ops!`</a>
 ``` clojure
@@ -213,7 +204,7 @@ Return ready strands with oversized attributes replaced by descriptors.
 Function.
 
 Install Skein-provided CLI operations into the runtime op registry.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L591-L616">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L576-L601">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/register-op!">`register-op!`</a>
 ``` clojure
@@ -241,7 +232,7 @@ Register a trusted weaver-side CLI operation.
   deliberately. Registry contents live only for the current weaver lifetime and
   are normally installed from init.clj or a live REPL; `reload!` clears the
   registry before re-running init, so re-registration is collision-free.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L402-L434">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L387-L419">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/replace-op!">`replace-op!`</a>
 ``` clojure
@@ -254,7 +245,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 
   Same signature as `register-op!`. This is the deliberate override for a name
   that already exists; unlike `register-op!` it requires the name to be present.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L436-L452">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L421-L437">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/resolve-op">`resolve-op`</a>
 ``` clojure
@@ -263,7 +254,7 @@ Replace an already-registered op, failing loudly when the name is absent.
 Function.
 
 Return the registered CLI operation entry for `op-name`, or fail loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L459-L466">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L444-L451">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/show">`show`</a>
 ``` clojure
@@ -272,16 +263,7 @@ Return the registered CLI operation entry for `op-name`, or fail loudly.
 Function.
 
 Return one normalized strand by id, or nil when absent.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L221-L224">Source</a></sub></p>
-
-## <a name="skein.api.weaver.alpha/supersede">`supersede`</a>
-``` clojure
-(supersede & args)
-```
-Function.
-
-Renamed to supersede! (card d6xgt); this alias is removed before the v1 stamp.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L161-L164">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L206-L209">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/supersede!">`supersede!`</a>
 ``` clojure
@@ -306,16 +288,7 @@ Unarchive all attributes, or an explicit non-empty key set, for one strand.
   Untouched archived keys remain archived.
 
   This is a trusted in-process primitive only; it has no socket or CLI surface.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L209-L219">Source</a></sub></p>
-
-## <a name="skein.api.weaver.alpha/update">`update`</a>
-``` clojure
-(update & args)
-```
-Function.
-
-Renamed to update! (card d6xgt); this alias is removed before the v1 stamp.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L156-L159">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/weaver/alpha.clj#L194-L204">Source</a></sub></p>
 
 ## <a name="skein.api.weaver.alpha/update!">`update!`</a>
 ``` clojure

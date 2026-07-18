@@ -7,7 +7,7 @@
 ## TASK-Alr-010.P1 Scope
 
 Rename the two engine event-type keywords so they follow the namespace rename:
-`:shuttle/engine`→`:agent-run/engine` and `:treadle/engine`→`:gate/engine`, via `events/register!`
+`:shuttle/engine`→`:agent-run/engine` and `:treadle/engine`→`:gate/engine`, via `events/register-handler!`
 and every publish/subscribe site (`PLAN-Alr-001.A5`, brief "Event-type keywords" row). These are
 **not** durable attributes — the cutover script never touches them; they are listed only so the
 source sweep is exhaustive. **Why this task serializes after Tasks 6 and 7 rather than fanning out
@@ -15,7 +15,7 @@ with them:** the two event kws live in `agent_run.clj` (Task 6's file) and `suba
 file); serializing avoids a same-file collision with two mutators (`PLAN-Alr-001.TC2` — never two
 mutators in the same file scope).
 
-**Owned files (the two `events/register!` call sites and subscribers only):**
+**Owned files (the two `events/register-handler!` call sites and subscribers only):**
 - the `:shuttle/engine` registration/publish sites in
   `spools/agent-run/src/skein/spools/agent_run.clj`.
 - the `:treadle/engine` registration/publish sites in
@@ -24,7 +24,7 @@ mutators in the same file scope).
 
 ## TASK-Alr-010.P2 Must implement exactly
 
-- **TASK-Alr-010.MI1:** Rename the event kw at `events/register!` and every publish/subscribe
+- **TASK-Alr-010.MI1:** Rename the event kw at `events/register-handler!` and every publish/subscribe
   call: `:shuttle/engine`→`:agent-run/engine`, `:treadle/engine`→`:gate/engine`.
 - **TASK-Alr-010.MI2:** Scope strictly to the event-type keyword literals — do not re-touch the
   attribute strings Tasks 6/7 already swapped, and do not corrupt unrelated `shuttle/`/`treadle/`

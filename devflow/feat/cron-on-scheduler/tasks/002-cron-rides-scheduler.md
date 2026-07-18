@@ -73,7 +73,7 @@ cannot pass its suite. Depends on generation-aware retirement (task 1) so the
 - **TASK-cron-on-scheduler-002.DW2:** Rewritten `skein.cron-test` asserts:
   register persists a `cron/<id>` pending wake (visible via
   `skein.api.scheduler.alpha/pending`); after `advance!` +
-  `events/await-quiescent!` + `cron/await-idle!`, a fired job records its outcome
+  `test-alpha/await-quiescent!` + `cron/await-idle!`, a fired job records its outcome
   and the next `cron/<id>` wake is pending (jitter bounds under a seeded RNG); a
   `:run!` throw lands in `failures` with `:last-error` while the delivered wake
   completes and the next wake is armed (cadence continues,

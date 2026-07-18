@@ -245,7 +245,7 @@ roster hunts `Thread/sleep` in tests, so every wait is condition-driven.
   equivalent sentinel-file gate — so a run stays `running` (occupying a slot) until the test writes the sentinel. No
   timing assumption: the run finishes exactly when, and only when, the test releases it.
 - **Settle deterministically, never sleep.** After each `scan!`-triggering mutation, settle the event lane with
-  `skein.api.events.alpha/await-quiescent!` (SPEC-004.C74b; already used across `test/skein/*` — e.g.
+  `skein.test.alpha/await-quiescent!` (SPEC-004.C74b; already used across `test/skein/*` — e.g.
   `events_quiescence_test.clj`, `scheduler_e2e_test.clj`), then assert against `in-flight-run-ids`
   (`agent_run.clj:227`) for the exact count admitted. For "a slot never opened," poll `poll-until-deadline!`
   (blessed `skein.api.spool.alpha`, SPEC-005.C2; used in `test/skein/api/spool_test.clj`) with a fail-loud budget.

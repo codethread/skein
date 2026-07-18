@@ -115,7 +115,7 @@ Workflow gate-outcome string:
 |---|---|
 | `workflow/notes` | `workflow/outcome-notes` (gate-outcome string; removes the name collision with note records) |
 
-Event-type keywords — not durable attributes, so the cutover script never touches them; they carry the `shuttle/`/`treadle/` prefix and follow the namespace rename (via `events/register!`), listed here so the source sweep is exhaustive:
+Event-type keywords — not durable attributes, so the cutover script never touches them; they carry the `shuttle/`/`treadle/` prefix and follow the namespace rename (via `events/register-handler!`), listed here so the source sweep is exhaustive:
 
 | Today | New |
 |---|---|

@@ -13,7 +13,7 @@
 
   Callers own runtime selection and pass the target weaver runtime as the first
   argument to every function here."
-  (:refer-clojure :exclude [list update])
+  (:refer-clojure :exclude [list])
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [next.jdbc :as jdbc]
@@ -147,21 +147,6 @@
      (dispatch/enqueue! runtime (merge (event-base :strand/superseded)
                                        (supersede-context old-id replacement-id result)))
      result)))
-
-(defn ^:deprecated add
-  "Renamed to add! (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply add! args))
-
-(defn ^:deprecated update
-  "Renamed to update! (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply update! args))
-
-(defn ^:deprecated supersede
-  "Renamed to supersede! (card d6xgt); this alias is removed before the v1 stamp."
-  [& args]
-  (apply supersede! args))
 
 (defn declare-acyclic-relation!
   "Declare an edge relation as acyclic for future graph writes."
