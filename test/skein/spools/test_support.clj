@@ -6,12 +6,14 @@
   of reinventing its own deadline/sleep/recur loop."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.test :as t]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]))
 
 (defn- invalid-embedded-spools! [source-path family received expected-shape]
   (throw (ex-info "Invalid embedded spools.edn shape"
@@ -24,9 +26,17 @@
 (defn embedded-spools-edn
   "Read spool approvals from `source-path`, making local roots absolute.
 
-  Fail with source and family context before rewriting malformed approval data."
+  Entries validate against :skein.core.weaver.spool-sync/family-entry — the
+  same owning spec sync consults — before rewriting; IO and reader failures
+  rethrow with the source path and expected shape."
   [source-path]
-  (let [config (edn/read-string (slurp source-path))
+  (let [config (try
+                 (edn/read-string (slurp source-path))
+                 (catch Exception cause
+                   (throw (ex-info "Unreadable embedded spools.edn"
+                                   {:source-path source-path
+                                    :expected-shape "an EDN map carrying a :spools map"}
+                                   cause))))
         spools (:spools config)
         config-dir (.getParentFile (.getCanonicalFile (io/file source-path)))]
     (when-not (map? spools)
@@ -44,6 +54,11 @@
                                      (or (not (string? root)) (str/blank? root)))
                             (invalid-embedded-spools! source-path family root
                                                       "a non-blank string :local/root"))
+                          (when-not (s/valid? ::spool-sync/family-entry entry)
+                            (invalid-embedded-spools!
+                             source-path family
+                             (s/explain-data ::spool-sync/family-entry entry)
+                             "a :skein.core.weaver.spool-sync/family-entry"))
                           [family (if root
                                     (assoc entry :local/root
                                            (.getCanonicalPath (io/file config-dir root)))
