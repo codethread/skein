@@ -130,9 +130,9 @@
               |Changed markdown is the counter-rule: prose
               |paragraphs run full length, one source line each, for the
               |IDE to wrap - flag newly hard-wrapped markdown prose (code
-              |fences and tables excepted). The mechanical width and
-              |privacy gate for converted api modules is lint's job
-              |(quality.api-form); do not re-run it - judge what it cannot:
+              |fences and tables excepted). The mechanical gate for
+              |converted api modules - docstrings, width, dependency rules
+              |(quality.api-form) - is lint's job; judge what it cannot:
               |wrap points that fight reading, ordering that buries the
               |surface, prose authored against the grain. Work from the
               |diff with ranged reads; budget ~10-12 calls.")}

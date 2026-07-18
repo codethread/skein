@@ -11,10 +11,10 @@
   (:require [clojure.set :as set]))
 
 (declare validate-shape! validate-stream! validate-subcommands!
-         render explain-case render-shape
+         render-declaration render-case render-shape
          check-shape! check-map!
          validate-map-shape! validate-collection-shape! validate-key-shapes!
-         fail! exact-keys! mismatch! scalar-match? json-compatible?
+         fail! exact-keys! mismatch! scalar-match?
          scalar-shapes nullable-scalar-shapes)
 
 (defn validate!
@@ -41,7 +41,7 @@
   so callers can render flat, subcommand, and stream declarations uniformly.
   Validates first: only well-formed declarations render."
   [declaration]
-  (-> declaration validate! render))
+  (-> declaration validate! render-declaration))
 
 (defn check!
   "Check `value` against one concrete return shape and return it unchanged.
@@ -167,16 +167,16 @@
 
 ;; --- rendering validated declarations as JSON-safe data ---------------
 
-(defn- render
+(defn- render-declaration
   [declaration]
   (if (and (map? declaration) (contains? declaration :subcommands))
     {:subcommands (into (sorted-map)
                         (map (fn [[name return-case]]
-                               [name (explain-case return-case)]))
+                               [name (render-case return-case)]))
                         (:subcommands declaration))}
-    (explain-case declaration)))
+    (render-case declaration)))
 
-(defn- explain-case
+(defn- render-case
   [return-case]
   (if (and (map? return-case) (contains? return-case :stream))
     {:stream {:emits (render-shape (get-in return-case [:stream :emits]))
