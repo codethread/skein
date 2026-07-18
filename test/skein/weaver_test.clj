@@ -18,6 +18,7 @@
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.weaver.config :as weaver-config]
+            [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.metadata :as metadata]
             [skein.core.weaver.runtime :as weaver-runtime]
             [skein.core.db :as db]
@@ -239,7 +240,7 @@
     (events/register! rt :event-drain #{:test/event-drain}
                       'skein.weaver-test/event-drain-handler {})
     (try
-      (events/enqueue! rt (test-event :test/event-drain (str (random-uuid))))
+      (dispatch/enqueue! rt (test-event :test/event-drain (str (random-uuid))))
       (when-not (deref signal (test-support/await-budget-ms 5000) false)
         (throw (ex-info "Timed out draining event queue" {})))
       (finally
@@ -737,12 +738,13 @@
          (io/file workspace "init.clj")
          ['(require '[skein.api.current.alpha :as current]
                     '[skein.api.graph.alpha :as graph]
-                    '[skein.api.events.alpha :as events])
+                    '[skein.api.events.alpha :as events]
+                    '[skein.core.weaver.dispatch :as dispatch])
           '(let [rt (current/runtime)]
              (graph/register-query! rt 'shared [:= [:attr :owner] "shared"])
              (events/register! rt :shared #{:strand/added} 'skein.weaver-test/capture-event)
-             (events/enqueue! rt {:event/type :strand/added :event/id "shared-only"
-                                  :event/at "2026-06-29T00:00:00Z" :event/source :test}))])
+             (dispatch/enqueue! rt {:event/type :strand/added :event/id "shared-only"
+                                    :event/at "2026-06-29T00:00:00Z" :event/source :test}))])
         (source-file/spit-forms!
          (io/file workspace "init.local.clj")
          ['(throw (ex-info "local boom" {:source :local}))])
@@ -771,8 +773,8 @@
         (events/register! rt :stale #{:strand/added} 'skein.weaver-test/capture-event {})
         (hooks/register! rt :stale #{:payload/received} 'skein.weaver-test/capture-hook {})
         (events/register! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
-        (events/enqueue! rt (test-event :strand/added "before-reload"))
-        (events/await-quiescent! rt)
+        (dispatch/enqueue! rt (test-event :strand/added "before-reload"))
+        (t/await-quiescent! rt)
         (is (seq (events/recent-failures rt)))
         (source-file/spit-forms!
          (io/file workspace "init.clj")
@@ -828,15 +830,15 @@
                 :metadata {:purpose :replacement}}
                (events/register! rt :capture #{:strand/updated} 'skein.weaver-test/capture-event {:purpose :replacement})))
         (is (= [] @delivered-events))
-        (events/enqueue! rt (test-event :strand/added "ignored"))
-        (events/await-quiescent! rt)
+        (dispatch/enqueue! rt (test-event :strand/added "ignored"))
+        (t/await-quiescent! rt)
         (is (= [] @delivered-events))
-        (events/enqueue! rt (test-event :strand/updated "delivered"))
-        (events/await-quiescent! rt)
+        (dispatch/enqueue! rt (test-event :strand/updated "delivered"))
+        (t/await-quiescent! rt)
         (is (= [(test-event :strand/updated "delivered")] @delivered-events))
         (events/register! rt :fails #{:strand/updated} 'skein.weaver-test/failing-event {})
-        (events/enqueue! rt (test-event :strand/updated "fails"))
-        (events/await-quiescent! rt)
+        (dispatch/enqueue! rt (test-event :strand/updated "fails"))
+        (t/await-quiescent! rt)
         (let [failure (last (events/recent-failures rt))]
           (is (= :fails (:handler/key failure)))
           (is (= 'skein.weaver-test/failing-event (:handler/fn failure)))
@@ -1056,12 +1058,12 @@
       (reset! handler-started (promise))
       (reset! handler-release (promise))
       (events/register! rt :slow #{:x} 'skein.weaver-test/slow-capture-event {})
-      (events/enqueue! rt (test-event :x "started"))
+      (dispatch/enqueue! rt (test-event :x "started"))
       (is (deref @handler-started (test-support/await-budget-ms 1000) false))
       (doseq [n (range weaver-runtime/event-queue-capacity)]
-        (events/enqueue! rt (test-event :x (str "queued-" n))))
+        (dispatch/enqueue! rt (test-event :x (str "queued-" n))))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"queue is full"
-                            (events/enqueue! rt (test-event :x "full"))))
+                            (dispatch/enqueue! rt (test-event :x "full"))))
       (let [init (io/file (get-in rt [:metadata :config-dir]) "init.clj")]
         (source-file/spit-forms!
          init
@@ -1075,7 +1077,7 @@
         (is (= [] (events/recent-failures rt)))
         (is (not (wait-until #(some (fn [event] (= "queued-0" (:event/id event)))
                                     @delivered-events))))
-        (events/enqueue! rt (test-event :x "after-reload"))
+        (dispatch/enqueue! rt (test-event :x "after-reload"))
         (is (wait-until #(some (fn [event] (= "after-reload" (:event/id event)))
                                @delivered-events)))))))
 
@@ -1153,7 +1155,7 @@
       (weaver/init rt)
       (let [from (weaver/add rt {:title "From"})
             to (weaver/add rt {:title "To"})]
-        (events/await-quiescent! rt)
+        (t/await-quiescent! rt)
         (reset! hook-contexts [])
         (reset! delivered-events [])
         (events/register! rt :capture #{:batch/applied :strand/added :strand/updated :strand/burned}
@@ -1164,7 +1166,7 @@
               events (wait-for-events 1)
               batch-event (first (filter #(= :batch/applied (:event/type %)) events))
               context (last @hook-contexts)]
-          (events/await-quiescent! rt)
+          (t/await-quiescent! rt)
           (is (= [:batch/applied] (mapv :event/type @delivered-events)))
           (is (= (:edges result) (:batch/edges batch-event)))
           (is (= [] (:batch/created context) (:batch/updated context) (:batch/burned context)))
@@ -1262,7 +1264,7 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"could not be resolved" (events/register! rt :bad #{:x} 'missing.ns/handler {})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"callable" (events/register! rt :bad #{:x} 'skein.weaver-test/not-callable-event-handler {})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"metadata" (events/register! rt :bad #{:x} 'skein.weaver-test/capture-event :opaque)))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Event requires key" (events/enqueue! rt {:event/type :x :event/id "missing-shape"}))))))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Event requires key" (dispatch/enqueue! rt {:event/type :x :event/id "missing-shape"}))))))
 
 (deftest weaver-hook-registry-registers-replaces-orders-and-unregisters
   (with-runtime
@@ -1379,7 +1381,7 @@
           (is (= 'skein.weaver-test/rejecting-normalize-hook (:hook/fn (ex-data e))))
           (is (= "policy/rejected" (:hook/cause-code (ex-data e))))
           (is (= {:code "policy/rejected" :reason :test} (:exception/data (ex-data e))))))
-      (events/await-quiescent! rt)
+      (t/await-quiescent! rt)
       (is (empty? (weaver/list rt)))
       (is (empty? @delivered-events))
       (hooks/unregister! rt :reject)
@@ -1397,7 +1399,7 @@
         (hooks/register! rt :reject #{:attributes/normalize} 'skein.weaver-test/rejecting-normalize-hook {})
         (is (thrown? clojure.lang.ExceptionInfo
                      (weaver/update rt (:id strand) {:attributes {:c "d"}})))
-        (events/await-quiescent! rt)
+        (t/await-quiescent! rt)
         (is (= {:a "b"} (:attributes (weaver/show rt (:id strand)))))
         (is (empty? @delivered-events))))))
 
@@ -1433,7 +1435,7 @@
             (is (= :reject-add (:hook/key (ex-data e))))
             (is (= 'skein.weaver-test/rejecting-hook (:hook/fn (ex-data e))))
             (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-        (events/await-quiescent! rt)
+        (t/await-quiescent! rt)
         (is (nil? (some #(when (= "Rejected" (:title %)) %) (weaver/list rt))))
         (is (= 1 (count @delivered-events)))
         (hooks/unregister! rt :reject-add)
@@ -1475,7 +1477,7 @@
                 (is (= :strand/update-before-commit (:hook/type (ex-data e))))
                 (is (= :reject-update (:hook/key (ex-data e))))
                 (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-            (events/await-quiescent! rt)
+            (t/await-quiescent! rt)
             (is (= updated (weaver/show rt (:id created))))
             (is (empty? (db/execute! (:datasource rt)
                                      ["SELECT 1 FROM strand_edges WHERE from_strand_id = ? AND to_strand_id = ? AND edge_type = 'parent-of'"
@@ -1502,7 +1504,7 @@
               edge-target (weaver/add rt {:title "Burn edge target"})]
           (weaver/update rt (:id burn-target) {:edges [{:type "depends-on" :to (:id edge-target)}]})
           (let [burn-target (weaver/show rt (:id burn-target))]
-            (events/await-quiescent! rt)
+            (t/await-quiescent! rt)
             (reset! delivered-events [])
             (hooks/register! rt :reject-burn #{:strand/burn-before-commit} 'skein.weaver-test/rejecting-hook {})
             (try
@@ -1513,7 +1515,7 @@
                 (is (= :strand/burn-before-commit (:hook/type (ex-data e))))
                 (is (= :reject-burn (:hook/key (ex-data e))))
                 (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-            (events/await-quiescent! rt)
+            (t/await-quiescent! rt)
             (is (= burn-target (weaver/show rt (:id burn-target))))
             (is (= [{:found 1}]
                    (db/execute! (:datasource rt)
@@ -2211,7 +2213,7 @@
         (is (= 1 (count (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"]))))
         ;; a weave is a batch apply: event-driven spools must see the created
         ;; strands without waiting for an unrelated mutation
-        (let [event (do (events/await-quiescent! rt) (first @delivered-events))]
+        (let [event (do (t/await-quiescent! rt) (first @delivered-events))]
           (is (= :batch/applied (:event/type event)))
           (is (= "dev-task" (str (:pattern/name event))))
           (is (= 2 (count (:batch/created event))))))
@@ -2318,7 +2320,7 @@
           (is (= :batch/apply-before-commit (:hook/type (ex-data e))))
           (is (= :reject-batch (:hook/key (ex-data e))))
           (is (= "policy/rejected" (:hook/cause-code (ex-data e))))))
-      (events/await-quiescent! rt)
+      (t/await-quiescent! rt)
       (is (empty? (weaver/list rt)))
       (is (empty? (db/execute! (:datasource rt) ["SELECT * FROM strand_edges"])))
       (is (empty? @delivered-events)))))

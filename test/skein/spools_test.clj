@@ -10,6 +10,7 @@
             [skein.core.weaver.access :as access]
             [skein.core.weaver.spool-sync :as spool-sync]
             [skein.api.events.alpha :as events]
+            [skein.core.weaver.dispatch :as dispatch]
             [skein.api.graph.alpha :as graph]
             [skein.spools.test-support :refer [temp-config-dir with-runtime]]
             [skein.api.runtime.alpha :as runtime]
@@ -1789,10 +1790,10 @@
       (reset! reload-deliveries [])
       (events/register! rt :stale #{:strand/added} 'demo.stale/handler {})
       (events/register! rt :fails #{:strand/added} 'skein.weaver-test/failing-event {})
-      (events/enqueue! rt {:event/type :strand/added
-                           :event/id "before-reload"
-                           :event/at "2026-06-27T00:00:00Z"
-                           :event/source :test})
+      (dispatch/enqueue! rt {:event/type :strand/added
+                             :event/id "before-reload"
+                             :event/at "2026-06-27T00:00:00Z"
+                             :event/source :test})
       (Thread/sleep 250)
       (is (seq (events/recent-failures rt)))
       (source-file/spit-forms!
@@ -1810,10 +1811,10 @@
       (is (= [] (views/views rt)))
       (is (= [:fresh] (mapv :key (events/handlers rt))))
       (is (= [] (events/recent-failures rt)))
-      (events/enqueue! rt {:event/type :strand/added
-                           :event/id "after-reload"
-                           :event/at "2026-06-27T00:00:00Z"
-                           :event/source :test})
+      (dispatch/enqueue! rt {:event/type :strand/added
+                             :event/id "after-reload"
+                             :event/at "2026-06-27T00:00:00Z"
+                             :event/source :test})
       (Thread/sleep 250)
       (is (= ["after-reload"] @reload-deliveries)))))
 

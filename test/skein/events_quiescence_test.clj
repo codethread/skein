@@ -8,6 +8,8 @@
   live in namespace state that the tests reset between runs."
   (:require [clojure.test :refer [deftest is]]
             [skein.api.events.alpha :as events]
+            [skein.core.weaver.dispatch :as dispatch]
+            [skein.test.alpha :as test-alpha]
             [skein.spools.test-support :as test-support]))
 
 (def ^:private handler-started (atom (promise)))
@@ -31,7 +33,7 @@
   (reset! handler-release (promise))
   (events/register! rt :blocking #{:test/quiescence}
                     'skein.events-quiescence-test/blocking-handler {})
-  (events/enqueue! rt (test-event (str (random-uuid))))
+  (dispatch/enqueue! rt (test-event (str (random-uuid))))
   ;; The single event is now claimed and mid-dispatch, so the queue is empty and
   ;; only the dispatch-in-progress flag keeps the lane unsettled.
   (is (deref @handler-started 5000 false) "handler reached the event worker"))
@@ -41,18 +43,18 @@
     (fn [rt _config-dir]
       (arm-blocking-handler! rt)
       (is (thrown? clojure.lang.ExceptionInfo
-                   (events/await-quiescent! rt {:timeout-ms 200}))
+                   (test-alpha/await-quiescent! rt {:timeout-ms 200}))
           "empty queue with a dispatch in flight must not report settled")
       ;; Releasing the handler lets the flag drop and await-quiescent! return.
       (deliver @handler-release true)
-      (is (= rt (events/await-quiescent! rt {:timeout-ms (test-support/await-budget-ms)}))))))
+      (is (= rt (test-alpha/await-quiescent! rt {:timeout-ms (test-support/await-budget-ms)}))))))
 
 (deftest await-quiescent-rejects-non-positive-timeout
   (test-support/with-runtime
     (fn [rt _config-dir]
       (doseq [bad [0 -1 1.5 "200"]]
         (try
-          (events/await-quiescent! rt {:timeout-ms bad})
+          (test-alpha/await-quiescent! rt {:timeout-ms bad})
           (is false (str "expected a validation throw for :timeout-ms " (pr-str bad)))
           (catch clojure.lang.ExceptionInfo e
             (is (= bad (:timeout-ms (ex-data e)))
@@ -63,7 +65,7 @@
     (fn [rt _config-dir]
       (arm-blocking-handler! rt)
       (try
-        (events/await-quiescent! rt {:timeout-ms 100})
+        (test-alpha/await-quiescent! rt {:timeout-ms 100})
         (is false "expected a timeout throw")
         (catch clojure.lang.ExceptionInfo e
           (is (true? (:dispatch-in-progress? (ex-data e)))

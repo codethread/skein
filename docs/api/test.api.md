@@ -1,0 +1,201 @@
+
+-----
+# <a name="skein.test.alpha">skein.test.alpha</a>
+
+
+Blessed author-side clojure.test helpers for disposable weaver worlds.
+
+  This namespace runs in the author's test JVM and orchestrates real weaver
+  runtimes in isolated temporary workspaces: it writes requested config
+  fixtures (`config.json`, `spools.edn`, `init.clj`, arbitrary workspace
+  files), starts an unpublished in-process weaver runtime with explicit
+  storage selection, exposes an orchestration context map, and stops/cleans up
+  afterwards. Weaver-side behavior is exercised through `repl!`, which
+  evaluates weaver-routed forms over the runtime's real nREPL transport.
+
+  Deliberately out of scope: strand/query wrappers, assertion DSLs, spool
+  activation wrappers, CLI subprocess helpers, and any use of the user's
+  default config/data/state workspaces. Generated worlds are isolated and
+  disposable by default.
+
+
+
+
+## <a name="skein.test.alpha/*weaver-world*">`*weaver-world*`</a>
+
+
+
+
+Context map for the current `weaver-world-fixture` weaver world, or nil.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L29-L31">Source</a></sub></p>
+
+## <a name="skein.test.alpha/advance!">`advance!`</a>
+``` clojure
+(advance! runtime duration)
+```
+Function.
+
+Move `runtime`'s clock forward by `duration`, then pump clock consumers.
+
+  `duration` is a `java.time.Duration` and must be strictly positive: advancing
+  by zero or a backwards/negative duration fails loudly. After moving the clock,
+  every registered clock-consumer pump (subsystems that arm real timers off the
+  runtime clock, such as the scheduler) runs synchronously so its due-check
+  observes the new now before `advance!` returns. Returns the new Instant.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L382-L397">Source</a></sub></p>
+
+## <a name="skein.test.alpha/await-quiescent!">`await-quiescent!`</a>
+``` clojure
+(await-quiescent! runtime)
+(await-quiescent! runtime {:keys [timeout-ms]})
+```
+Function.
+
+Block until `runtime`'s event lane settles, then return `runtime`.
+
+  This lane-settling test primitive waits until the bounded event queue is empty
+  and no handler dispatch is in flight. It says nothing about completion signals
+  work dispatched off the lane may have initiated. Throws `ex-info` on timeout.
+  The default budget comes from `skein.spools.test-support/await-budget-ms`; pass
+  `:timeout-ms` to override it.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L38-L64">Source</a></sub></p>
+
+## <a name="skein.test.alpha/check-op-return!">`check-op-return!`</a>
+``` clojure
+(check-op-return! runtime operation value)
+(check-op-return! runtime operation context value)
+```
+Function.
+
+Check a captured operation return value against its registered declaration.
+
+  `runtime` is explicit and `operation` resolves through its live op registry.
+  The three-argument form checks a flat result. The four-argument form accepts
+  a context map with optional `:subcommand` and `:channel` (`:emits` or
+  `:result`) selectors. Returns `value` unchanged on success. Missing or
+  misaligned declarations fail loudly. Shape mismatches carry the canonical
+  operation name, selected declaration, failing path, and actual value.
+
+  This helper only checks an already-captured value; it never invokes an op.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L140-L163">Source</a></sub></p>
+
+## <a name="skein.test.alpha/repl!">`repl!`</a>
+``` clojure
+(repl! ctx form)
+```
+Function.
+
+Evaluate a weaver-routed form against ctx's weaver world and return data.
+
+  `form` is a quoted form rendered with pr-str, or a string of Clojure
+  source. It evaluates in the weaver runtime over its real nREPL transport
+  with the runtime ambiently bound, so `(skein.api.current.alpha/runtime)`
+  resolves to the test weaver. Results must be EDN-readable; weaver-side and
+  transport failures throw ExceptionInfo.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L420-L431">Source</a></sub></p>
+
+## <a name="skein.test.alpha/run-focused!">`run-focused!`</a>
+``` clojure
+(run-focused! namespaces)
+```
+Function.
+
+Run the named test namespaces in-process and return the aggregate
+  `clojure.test` summary, without exiting the JVM.
+
+  `namespaces` is a collection of test-namespace symbols. The run reuses the
+  cold focused runner's single validation-and-execution core
+  (`skein.test-runner/run-focused-core`), so a warm focused run accepts and
+  rejects exactly the namespace set a cold `clojure -M:test <ns...>` run does:
+  an add-libs shard namespace, or a namespace not declared in the runner's
+  island sets, fails loudly. The runner is resolved at call time
+  (`requiring-resolve`) because it lives on the test classpath while this
+  namespace is on the main classpath, so requiring `skein.test.alpha` outside a
+  test JVM is unaffected.
+
+  This is the agent-facing entry for the per-worktree warm test REPL. A warm
+  focused run is never a validation gate — the cold focused run is; `run-focused!`
+  exists for sub-second iteration only, and returns rather than exits so it is
+  safe to call repeatedly inside a long-lived REPL.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L399-L418">Source</a></sub></p>
+
+## <a name="skein.test.alpha/run-with-weaver-world">`run-with-weaver-world`</a>
+``` clojure
+(run-with-weaver-world opts f)
+```
+Function.
+
+Start a disposable weaver world from `opts`, call `f` with its context map,
+  then stop the weaver and clean up. Functional core of `with-weaver-world`.
+
+  Options: `:storage` (`:sqlite-file` default, or `:sqlite-memory`), `:root`
+  (explicit workspace root; default short temp dir), `:delete?` (remove the
+  root afterwards; default true, always false for an explicit `:root`),
+  `:name` (weaver name), `:timeout-ms` (`repl!` default), `:source` (source
+  checkout override), and the fixture options `:config-json`, `:spools-edn`,
+  `:init`, `:files`.
+
+  The context map exposes orchestration facts only: `:config-dir`,
+  `:state-dir`, `:data-dir`, `:db-path` (file storage only), `:storage`,
+  `:source`, `:runtime`, `:metadata`, and `:timeout-ms`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L299-L353">Source</a></sub></p>
+
+## <a name="skein.test.alpha/set-clock!">`set-clock!`</a>
+``` clojure
+(set-clock! runtime clock-fn)
+```
+Function.
+
+Install `clock-fn` as `runtime`'s clock: a zero-arg fn returning an Instant.
+
+  Deterministic tests inject an advanceable clock so subsystems that read the
+  runtime clock seam (the scheduler) resolve due-ness against test time rather
+  than the wall clock. Pair with `advance!` to step it.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L373-L380">Source</a></sub></p>
+
+## <a name="skein.test.alpha/spool-checkout-root">`spool-checkout-root`</a>
+``` clojure
+(spool-checkout-root resource-path)
+(spool-checkout-root resource-path resource-loader)
+```
+Function.
+
+Resolve the checkout root of a spool from one of its classpath source files.
+
+  `resource-path` is the spool source's classpath-relative path (for example,
+  `"skein/spools/devflow.clj"`). Returns the directory holding the spool's
+  `deps.edn`, whichever directory-backed checkout supplies the classpath entry:
+  a tools.deps gitlib procurement or a developer's local override. The supplying
+  checkout must declare that classpath entry in `deps.edn` `:paths`. Fails
+  loudly when the resource is not on the test classpath, is jar-backed, or does
+  not come from a directory checkout with the expected layout. This is for tests
+  that must approve the real dependency checkout as a `:local/root` in generated
+  `spools.edn` data.
+
+  The one-argument form resolves `resource-path` with `clojure.java.io/resource`.
+  The two-argument form accepts `resource-loader`, a function from resource path
+  string to `java.net.URL` or nil, for deterministic tests of this resolver.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L240-L272">Source</a></sub></p>
+
+## <a name="skein.test.alpha/weaver-world-fixture">`weaver-world-fixture`</a>
+``` clojure
+(weaver-world-fixture opts)
+```
+Function.
+
+Return a clojure.test fixture that binds *weaver-world* to a fresh
+  disposable weaver world context for each wrapped test.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L364-L371">Source</a></sub></p>
+
+## <a name="skein.test.alpha/with-weaver-world">`with-weaver-world`</a>
+``` clojure
+(with-weaver-world [ctx-sym opts] & body)
+```
+Macro.
+
+Run `body` with `ctx-sym` bound to a disposable weaver world context.
+
+  (with-weaver-world [ctx {:spools-edn {:spools {}}}]
+    (is (= [] (repl! ctx '(skein.api.weaver.alpha/list
+                           (skein.api.current.alpha/runtime))))))
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/test/alpha.clj#L355-L362">Source</a></sub></p>
