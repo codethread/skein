@@ -18,7 +18,7 @@
 (def pending
   "Modules not yet through their v1 form card (epic 9nu0q)."
   #{"batch" "cli" "current" "events" "graph" "hooks" "notes" "patterns"
-    "peers" "relations" "return-shape" "runtime" "scheduler" "spool"
+    "peers" "relations" "runtime" "scheduler" "spool"
     "vocab" "weaver"})
 
 (def ^:private width-limit 96)
