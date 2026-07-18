@@ -11,16 +11,24 @@
   (:require [clojure.string :as str]))
 
 (defn render-forms
-  "Return `forms` printed as top-level source text, one form per line.
+  "Return `forms` — a vector of top-level forms — printed as source text,
+  one form per line.
 
-  Binds *print-length* and *print-level* to nil so large literals are never
-  silently truncated into unreadable source."
+  Throws when `forms` is not a vector: a bare list is indistinguishable
+  from one accidentally-unwrapped form, which would render each of its
+  elements as its own top-level form. Binds *print-length* and
+  *print-level* to nil so large literals are never silently truncated
+  into unreadable source."
   [forms]
+  (when-not (vector? forms)
+    (throw (ex-info "render-forms takes a vector of top-level forms"
+                    {:forms forms})))
   (binding [*print-length* nil
             *print-level* nil]
     (str (str/join "\n" (map pr-str forms)) "\n")))
 
 (defn spit-forms!
-  "Write `forms` to `file` as top-level source text via `render-forms`."
+  "Write `forms` — a vector of top-level forms — to `file` as source text
+  via `render-forms`."
   [file forms]
   (spit file (render-forms forms)))
