@@ -631,10 +631,13 @@ update or restore the approved entry.
 
 ## Test mechanics
 
-The floor-pinned and consumer-workspace tiers above use ordinary Clojure test tooling. Put the
-spool's roots in `:paths`, its tests in a `:test` alias, and each required root in `:extra-deps` at
-the peeled sha for its declared floor. Give the test namespace a `-main` that exits non-zero on
-failure so `clojure -M:test` works in CI.
+Floor-pinned producer tests use ordinary Clojure test tooling. Put the spool's roots in `:paths`,
+its tests in a `:test` alias, and each required root in `:extra-deps` at the peeled sha for its
+declared floor. Give the test namespace a `-main` that exits non-zero on failure so
+`clojure -M:test` works in CI.
+
+Consumer-workspace tests load the roots approved by their fixture through `sync!` in the embedded
+runtime. The test JVM does not independently pin those spool roots in Skein's `deps.edn`.
 
 Use `skein.test.alpha/with-weaver-world` for the consumer-workspace tier and take the runtime it
 hands you explicitly. Reach for `skein.core.weaver.runtime/with-runtime-binding` only when a test

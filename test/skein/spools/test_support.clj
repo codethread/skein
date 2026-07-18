@@ -4,12 +4,66 @@
   poll-deadline knob, and the poll-until predicate poller that every
   wait-until/await-eventually/await-* helper across the suite wraps instead
   of reinventing its own deadline/sleep/recur loop."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [clojure.test :as t]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.db-test :as db-test]
             [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]))
+            [skein.core.weaver.runtime :as weaver-runtime]
+            [skein.core.weaver.spool-sync :as spool-sync]))
+
+(defn- invalid-embedded-spools! [source-path family received expected-shape]
+  (throw (ex-info "Invalid embedded spools.edn shape"
+                  {:source-path source-path
+                   :family family
+                   :received received
+                   :received-type (if (nil? received) "nil" (.getName (class received)))
+                   :expected-shape expected-shape})))
+
+(defn embedded-spools-edn
+  "Read spool approvals from `source-path`, making local roots absolute.
+
+  Entries validate against :skein.core.weaver.spool-sync/family-entry — the
+  same owning spec sync consults — before rewriting; IO and reader failures
+  rethrow with the source path and expected shape."
+  [source-path]
+  (let [config (try
+                 (edn/read-string (slurp source-path))
+                 (catch Exception cause
+                   (throw (ex-info "Unreadable embedded spools.edn"
+                                   {:source-path source-path
+                                    :expected-shape "an EDN map carrying a :spools map"}
+                                   cause))))
+        spools (:spools config)
+        config-dir (.getParentFile (.getCanonicalFile (io/file source-path)))]
+    (when-not (map? spools)
+      (invalid-embedded-spools! source-path nil spools "a :spools map"))
+    (assoc config
+           :spools
+           (into {}
+                 (map (fn [[family entry]]
+                        (when-not (symbol? family)
+                          (invalid-embedded-spools! source-path family family "a symbol family key"))
+                        (when-not (map? entry)
+                          (invalid-embedded-spools! source-path family entry "a map family entry"))
+                        (let [root (:local/root entry)]
+                          (when (and (contains? entry :local/root)
+                                     (or (not (string? root)) (str/blank? root)))
+                            (invalid-embedded-spools! source-path family root
+                                                      "a non-blank string :local/root"))
+                          (when-not (s/valid? ::spool-sync/family-entry entry)
+                            (invalid-embedded-spools!
+                             source-path family
+                             (s/explain-data ::spool-sync/family-entry entry)
+                             "a :skein.core.weaver.spool-sync/family-entry"))
+                          [family (if root
+                                    (assoc entry :local/root
+                                           (.getCanonicalPath (io/file config-dir root)))
+                                    entry)])))
+                 spools))))
 
 (defn test-world [config-dir]
   (weaver-config/world config-dir

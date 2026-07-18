@@ -123,7 +123,7 @@ test-warm:
 # run the pinned external spool suites (codethread/devflow.spool, kanban.spool,
 # agent-harness.spool)
 # against this checkout's HEAD, closing the untested skein-src->spool direction.
-# The three shas are read from deps.edn as EDN (never restated here, never line-
+# The three family coordinates are read from .skein/spools.edn as EDN (never line-
 # grepped) and the target aborts loudly rather than run against an empty sha.
 # Each spool source is materialized at its pin into a mktemp scratch root beside a
 # `skein-src` link to the invoking checkout ($(CURDIR)), matching the spools'
@@ -136,17 +136,22 @@ test-warm:
 spool-suite-gate:
 	@set -e; \
 	src="$(CURDIR)"; \
-	coords="$$(clojure -M -e '(let [deps (clojure.edn/read-string (slurp "deps.edn")) ed (get-in deps [:aliases :test :extra-deps]) g (fn [c] (let [m (get ed c) sha (:git/sha m) url (:git/url m)] (when-not (and (string? sha) (string? url)) (binding [*out* *err*] (println (str "spool-suite-gate: deps.edn :aliases :test :extra-deps is missing :git/url or :git/sha for " c "; refusing to run against HEAD/an empty sha"))) (System/exit 1)) [url sha]))] (let [[du ds] (g (quote io.github.codethread/devflow.spool)) [ku ks] (g (quote io.github.codethread/kanban.spool)) [au as] (g (quote io.github.codethread/agent-run.agent-harness))] (println du ds ku ks au as) (flush) (System/exit 0)))')" || coords=""; \
+	coords="$$(clojure -M -e '(let [spools (:spools (clojure.edn/read-string (slurp ".skein/spools.edn"))) g (fn [family] (let [m (get spools family) sha (:git/sha m) url (:git/url m)] (when-not (and (string? sha) (string? url)) (binding [*out* *err*] (println (str "spool-suite-gate: .skein/spools.edn is missing :git/url or :git/sha for family " family "; refusing to run against HEAD/an empty sha"))) (System/exit 1)) [url sha]))] (let [[du ds] (g (quote codethread/devflow)) [ku ks] (g (quote codethread/kanban)) [au as] (g (quote ct.spools/agent-run))] (println du ds ku ks au as) (flush) (System/exit 0)))')"; \
 	if [ -z "$$coords" ]; then \
-		echo "spool-suite-gate: could not extract spool coordinates from deps.edn (unparseable, or missing the :aliases :test :extra-deps spool pins); refusing to run against HEAD/an empty sha" >&2; \
+		echo "spool-suite-gate: coordinate extraction printed nothing for families codethread/devflow, codethread/kanban, ct.spools/agent-run in .skein/spools.edn (expected \"url sha\" pairs); refusing to run against HEAD/an empty sha" >&2; \
 		exit 1; \
 	fi; \
 	set -- $$coords; \
 	durl="$$1"; dsha="$$2"; kurl="$$3"; ksha="$$4"; aurl="$$5"; asha="$$6"; \
-	if [ -z "$$durl" ] || [ -z "$$dsha" ] || [ -z "$$kurl" ] || [ -z "$$ksha" ] || [ -z "$$aurl" ] || [ -z "$$asha" ]; then \
-		echo "spool-suite-gate: incomplete spool coordinates extracted from deps.edn" >&2; \
-		exit 1; \
-	fi; \
+	check_pair() { \
+		if [ -z "$$2" ] || [ -z "$$3" ]; then \
+			echo "spool-suite-gate: family $$1 extracted an empty url or sha from .skein/spools.edn (url=$$2 sha=$$3); refusing to run" >&2; \
+			exit 1; \
+		fi; \
+	}; \
+	check_pair devflow "$$durl" "$$dsha"; \
+	check_pair kanban "$$kurl" "$$ksha"; \
+	check_pair agent-run "$$aurl" "$$asha"; \
 	root="$$(mktemp -d)"; \
 	trap 'rm -rf "$$root"' EXIT; \
 	ln -s "$$src" "$$root/skein-src"; \
