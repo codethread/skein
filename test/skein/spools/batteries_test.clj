@@ -87,7 +87,7 @@
     (fn [rt]
       (testing "all shipped ops are registered under batteries provenance"
         (doseq [op-name ['add 'update 'show 'supersede 'burn 'list 'ready 'subgraph
-                         'weave 'query 'pattern 'note 'notes 'vocab 'spool]]
+                         'weave 'query 'pattern 'note 'notes 'vocab 'spool 'spool-status]]
           (let [entry (op-entry rt op-name)]
             (is (some? entry) (str op-name " should be registered"))
             (is (= 'skein.spools.batteries (:provenance entry)))
@@ -108,7 +108,8 @@
         (is (= :mutating (:hook-class (op-entry rt 'note))))
         (is (= :read (:hook-class (op-entry rt 'notes))))
         (is (= :read (:hook-class (op-entry rt 'vocab))))
-        (is (= :mutating (:hook-class (op-entry rt 'spool))))))))
+        (is (= :mutating (:hook-class (op-entry rt 'spool))))
+        (is (= :read (:hook-class (op-entry rt 'spool-status))))))))
 
 (deftest production-return-coverage-is-derived-from-batteries-provenance
   (with-batteries
@@ -148,7 +149,7 @@
         (check! 'spool "about" (weaver/op! rt 'spool ["about"]))
         (check! 'spool "add" (weaver/op! rt 'spool ["add" "https://example.invalid/demo.git"]))
         (check! 'spool "bump" (weaver/op! rt 'spool ["bump" "demo" "--to" "v1"]))
-        (check! 'spool "status" (weaver/op! rt 'spool ["status"]))
+        (check! 'spool-status (weaver/op! rt 'spool-status []))
         (check! 'supersede (weaver/op! rt 'supersede [(:id first-row) (:id replacement)]))
         (check! 'burn (weaver/op! rt 'burn [(:id burnable)]))
         (let [{:keys [missing required unchecked]} (owner-return-coverage rt @checked)]
@@ -180,7 +181,7 @@
                      :requires {'base/root "v3"}}))})
         (let [result (weaver/op! rt 'spool
                                  ["add" "https://example.invalid/acme/demo.spool.git"
-                                  "--lib" "acme/demo-spool"])
+                                  "--lib" "demo/root"])
               entry (:entry result)]
           (is (= peeled-v12 @seen-sha) "manifest lookup receives the peeled commit, not the tag object")
           (is (= {:git/url "https://example.invalid/acme/demo.spool.git"
@@ -190,7 +191,7 @@
                   :requires {'base/root "v3"}
                   :skein/min "v2"}
                  entry))
-          (is (= entry (get-in (runtime/declared rt) [:families 'acme/demo-spool :declared])))
+          (is (= entry (get-in (runtime/declared rt) [:families 'demo/root :declared])))
           (is (= :inserted (:status result)))
           (is (s/valid? ::batteries/spool-add-result result))
           (is (false? (get-in result [:requirements :valid?]))))))))
@@ -222,6 +223,50 @@
           (is (re-find #"(?i)pin a reviewed sha manually in spools.edn" (ex-message error)))
           (is (= "vN where N is a positive integer" (:accepted-format (ex-data error))))
           (is (= [] (:available (ex-data error)))))))))
+
+(deftest spool-add-validates-explicit-lib-against-advisory-manifest
+  (with-runtime
+    (fn [rt _config-dir]
+      (batteries/install! rt)
+      (stub-git! rt
+                 (tag-lines ["v1" (sha "a") (sha "b")])
+                 (pr-str {:spool/format 1
+                          :roots {'manifest/family {:root "."}}}))
+      (testing "matching --lib confirms the manifest root family"
+        (is (= 'manifest/family
+               (:family (weaver/op! rt 'spool
+                                    ["add" "https://example.invalid/demo.git"
+                                     "--lib" "manifest/family"])))))
+      (testing "conflicting --lib names both requested and manifest symbols"
+        (let [error (is (thrown? clojure.lang.ExceptionInfo
+                                 (weaver/op! rt 'spool
+                                             ["add" "https://example.invalid/demo.git"
+                                              "--lib" "requested/family"])))]
+          (is (str/includes? (ex-message error) "requested/family"))
+          (is (str/includes? (ex-message error) "manifest/family"))
+          (is (= 'requested/family (:requested-lib (ex-data error))))
+          (is (= ['manifest/family] (:manifest-libs (ex-data error)))))))))
+
+(deftest spool-add-wraps-malformed-trailing-manifest-input-with-coordinate-context
+  (with-runtime
+    (fn [rt _config-dir]
+      (batteries/install! rt)
+      (let [git-url "https://example.invalid/trailing.git"
+            commit (sha "b")]
+        (stub-git! rt
+                   (tag-lines ["v1" (sha "a") commit])
+                   "{:spool/format 1 :roots {demo/root {:root \".\"}}} {")
+        (let [error (is (thrown? clojure.lang.ExceptionInfo
+                                 (weaver/op! rt 'spool ["add" git-url])))]
+          (is (str/includes? (ex-message error) git-url))
+          (is (str/includes? (ex-message error) commit))
+          (is (re-find #"(?i)trailing input" (ex-message error)))
+          (is (re-find #"exactly one EDN value" (ex-message error)))
+          (is (= {:git-url git-url
+                  :git/sha commit
+                  :contract :single-edn-value
+                  :reason :invalid-edn}
+                 (ex-data error))))))))
 
 (deftest spool-bump-prefers-floor-suggestion-and-rewrites-tag-sha-together
   (with-runtime
@@ -279,7 +324,7 @@
        rt
        {:ls-remote (fn [_] (throw (ex-info "network called" {})))
         :manifest-at (fn [_ _] (throw (ex-info "network called" {})))})
-      (let [result (weaver/op! rt 'spool ["status"])
+      (let [result (weaver/op! rt 'spool-status [])
             family (get-in result [:families 'demo/family])]
         (is (= {:provenance :local-overlay :claims "v3"}
                (select-keys family [:provenance :claims])))
@@ -300,12 +345,15 @@
   (let [about (batteries/spool-op {:op/args {:subcommand "about"}})]
     (is (= ["strand spool add <git-url> [--tag vN] [--lib family]"
             "strand spool bump <family> [--to vN]"
-            "strand spool status"]
-           (mapv :form (:commands about)))))
+            "strand spool-status"]
+           (mapv :form (:commands about))))
+    (is (s/valid? ::batteries/spool-about-result about)))
   (let [error (is (thrown? clojure.lang.ExceptionInfo
                            (batteries/spool-op {:op/args {:subcommand :unexpected}})))]
-    (is (= :unexpected (:subcommand (ex-data error))))
-    (is (= ["about" "add" "bump" "status"] (:allowed (ex-data error))))))
+    (is (= ::batteries/spool-op-context (:spec (ex-data error)))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid operation context"
+                        (batteries/spool-op
+                         {:op/args {:subcommand "add" :git-url "https://example.invalid/x"}}))))
 
 (deftest add-happy-path-and-json-shape
   (with-batteries

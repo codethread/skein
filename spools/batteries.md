@@ -66,8 +66,9 @@ Loud rules (SPEC-003-D003.C2): a reference naming no attached payload fails `:mi
 attached payload that no reference consumed fails `:unused-payloads`.
 - **BAT-C3 (hook classes):** Each op declares a `:hook-class` used for
   metadata-driven gating (SPEC-004-D003): `:mutating` for `add`, `update`,
-  `supersede`, `burn`, `note`, `weave`; `:read` for `show`, `list`, `ready`,
-  `notes`, `subgraph`, `query`, `pattern`. Mutating ops pass a request context
+  `supersede`, `burn`, `note`, `weave`, `spool`; `:read` for `show`, `list`,
+  `ready`, `notes`, `subgraph`, `query`, `pattern`, `vocab`, `spool-status`.
+  Mutating ops pass a request context
   `{:request/source :json-socket :request/operation <op-kw>}` so hooks and
   events observe the same data the old socket dispatch supplied.
 - **BAT-C4 (result shapes):** Handlers return JSON-safe data (strings,
@@ -281,6 +282,43 @@ The result is one JSON array ordered like `declarations`: by declaration kind an
 name. Each entry is a C1 declaration map, string-keyed at the wire boundary. Attribute namespace
 rows carry `kind`, `name`, `owner`, `doc`, and an advisory `keys` list. Edge rows carry `kind`, `name`,
 `owner`, `doc` plus the catalog-reflected `family`, `direction`, and `declared-acyclic?`.
+
+### 3.3 Spool release coordinates — BAT-C24
+
+```
+strand spool about
+strand spool add <git-url> [--tag vN] [--lib family]
+strand spool bump <family> [--to vN]
+strand spool-status
+```
+
+`spool about` returns the command forms and conventions as data. `spool add` and `spool bump` are
+mutating subcommands under one op. The offline projection is the separate read op `spool-status`,
+so read hooks do not inherit mutation gating.
+
+Add lists the remote tags and accepts annotated `vN` tags only, where `N` is a positive integer.
+It resolves the peeled `refs/tags/vN^{}` commit and records that 40-character commit sha, never the
+tag-object sha. `--tag` chooses one release; without it, add chooses the highest numbered release.
+Lightweight tags, `v0`, missing releases, and untagged repositories fail loudly.
+
+At the peeled commit, add reads the optional producer `spool.edn` as an advisory manifest. A present
+manifest supplies the roots, Skein floor, and root requirements written into the consumer family
+entry. When `--lib` is also present, it must match one of the manifest's root symbols; a conflict
+fails before any write and names the requested and declared symbols. Without a manifest, add creates
+one root at `.`. Its symbol defaults to the Git URL basename, while `--lib` confirms or overrides
+that implicit symbol. The completed entry goes through the validated, comment-preserving atomic
+`spools.edn` write path.
+
+Bump lists the same annotated, peeled releases and updates `:git/tag` and `:git/sha` together. An
+explicit `--to vN` chooses the target. Without `--to`, a failing declared floor chooses its computed
+suggestion for that family; when current requirements pass, bump chooses the highest release. The
+result includes a `<repository>/compare/<old-sha>...<new-sha>` URL as a review hint. It does not
+claim that the compared releases are compatible.
+
+`spool-status` performs no Git call, file write, sync, reload, or adoption action. It joins the
+running runtime's declared family projection with local-overlay provenance and claims, sync state,
+uses, pending generation, requirement outcome, and release marker. The result reports current
+truth; it does not try to repair or adopt anything.
 
 ## 4. Attribute and edge flag semantics
 

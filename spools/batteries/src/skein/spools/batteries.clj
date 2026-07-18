@@ -99,6 +99,50 @@
 (s/def ::spool-status-result
   (s/and (s/keys :req-un [::operation ::families ::requirements ::pending-generation ::release-marker])
          #(exact-keys? #{:operation :families :requirements :pending-generation :release-marker} %)))
+(s/def ::purpose ::non-blank-string)
+(s/def ::form ::non-blank-string)
+(s/def ::behavior ::non-blank-string)
+(s/def ::spool-command
+  (s/and (s/keys :req-un [::form ::behavior])
+         #(exact-keys? #{:form :behavior} %)))
+(s/def ::commands (s/coll-of ::spool-command :kind vector? :min-count 1))
+(s/def ::conventions (s/coll-of ::non-blank-string :kind vector? :min-count 1))
+(s/def ::spool-about-result
+  (s/and (s/keys :req-un [::operation ::purpose ::commands ::conventions])
+         #(exact-keys? #{:operation :purpose :commands :conventions} %)))
+
+(defn- exact-spool-args? [required optional args]
+  (and (map? args)
+       (every? #(contains? args %) required)
+       (set/subset? (set (keys args)) (set/union required optional))))
+
+(s/def ::spool-about-args
+  (s/and #(exact-spool-args? #{:subcommand} #{} %)
+         #(= "about" (:subcommand %))))
+(s/def ::spool-add-args
+  (s/and #(exact-spool-args? #{:subcommand :git-url} #{:tag :lib} %)
+         #(= "add" (:subcommand %))
+         #(s/valid? ::non-blank-string (:git-url %))
+         #(or (nil? (:tag %)) (s/valid? ::non-blank-string (:tag %)))
+         #(or (nil? (:lib %)) (s/valid? ::non-blank-string (:lib %)))))
+(s/def ::spool-bump-args
+  (s/and #(exact-spool-args? #{:subcommand :family} #{:to} %)
+         #(= "bump" (:subcommand %))
+         #(s/valid? ::non-blank-string (:family %))
+         #(or (nil? (:to %)) (s/valid? ::non-blank-string (:to %)))))
+(s/def ::spool-args
+  (s/or :about ::spool-about-args
+        :add ::spool-add-args
+        :bump ::spool-bump-args))
+(s/def ::spool-op-context
+  (s/and map?
+         #(s/valid? ::spool-args (:op/args %))
+         #(or (= "about" (get-in % [:op/args :subcommand]))
+              (some? (:op/runtime %)))))
+(s/def ::spool-status-op-context
+  (s/and map?
+         #(= {} (:op/args %))
+         #(some? (:op/runtime %))))
 
 (defn- require-valid! [spec value message]
   (when-not (s/valid? spec value)
@@ -323,19 +367,42 @@
       (throw (ex-info "Git URL must have a repository basename" {:git-url git-url})))
     (symbol basename)))
 
-(defn- read-manifest [content]
+(defn- read-manifest [git-url sha content]
   (when content
     (let [eof (Object.)
-          rdr (PushbackReader. (StringReader. content))
-          manifest (try
-                     (edn/read {:eof eof} rdr)
-                     (catch Exception cause
-                       (throw (ex-info "Advisory spool.edn is not valid EDN" {} cause))))]
-      (when (or (identical? eof manifest)
-                (not (identical? eof (edn/read {:eof eof} rdr))))
-        (throw (ex-info "Advisory spool.edn must contain exactly one EDN value" {})))
-      (require-valid! ::advisory-manifest manifest
-                      "Advisory spool.edn has an invalid manifest shape"))))
+          rdr (PushbackReader. (StringReader. content))]
+      (try
+        (let [manifest (edn/read {:eof eof} rdr)
+              trailing (edn/read {:eof eof} rdr)]
+          (when (identical? eof manifest)
+            (throw (ex-info "manifest is empty" {:reason :empty-manifest})))
+          (when-not (identical? eof trailing)
+            (throw (ex-info "trailing input follows the first EDN value"
+                            {:reason :trailing-input :trailing trailing})))
+          (require-valid! ::advisory-manifest manifest
+                          "Advisory spool.edn has an invalid manifest shape"))
+        (catch Exception cause
+          (throw
+           (ex-info
+            (str "Advisory spool.edn parse failed for " git-url " at commit " sha ": "
+                 (ex-message cause) ". The manifest must contain exactly one EDN value; "
+                 "trailing input is invalid.")
+            {:git-url git-url
+             :git/sha sha
+             :contract :single-edn-value
+             :reason (or (:reason (ex-data cause)) :invalid-edn)}
+            cause)))))))
+
+(defn- require-matching-manifest-lib! [manifest requested-lib]
+  (when (and manifest requested-lib (not (contains? (:roots manifest) requested-lib)))
+    (let [manifest-libs (vec (sort (keys (:roots manifest))))]
+      (throw (ex-info
+              (str "Requested --lib " requested-lib
+                   " conflicts with advisory spool.edn roots "
+                   (str/join ", " manifest-libs))
+              {:requested-lib requested-lib
+               :manifest-libs manifest-libs
+               :reason :manifest-lib-conflict})))))
 
 (defn- manifest-roots [manifest implicit-lib]
   (if manifest
@@ -353,10 +420,12 @@
 (defn- add-spool-op [ctx]
   (let [rt (:op/runtime ctx)
         {:keys [git-url tag lib]} (:op/args ctx)
-        lib (if lib (symbol lib) (url-basename git-url))
+        requested-lib (some-> lib symbol)
+        lib (or requested-lib (url-basename git-url))
         client (git-client rt)
         {:keys [tag sha]} (select-tag ((:ls-remote client) git-url) tag)
-        manifest (read-manifest ((:manifest-at client) git-url sha))
+        manifest (read-manifest git-url sha ((:manifest-at client) git-url sha))
+        _ (require-matching-manifest-lib! manifest requested-lib)
         entry (family-entry git-url tag sha manifest lib)
         write (runtime-api/upsert-spool-entry! rt lib entry)
         requirements (:requirements (runtime-api/declared rt))]
@@ -456,7 +525,7 @@
                 "|Queries remote annotated tags, selects a requested, floor-driven,
                  |or latest release, then atomically rewrites its tag and peeled
                  |commit pin together.")}
-    {:form "strand spool status"
+    {:form "strand spool-status"
      :behavior (format-alpha/reflow
                 "|Reads runtime and workspace state only. It performs no network,
                  |file write, sync, reload, or other adoption action.")}]
@@ -465,28 +534,33 @@
      "|Add and bump resolve only peeled refs/tags/vN^{} commits. v0,
       |lightweight tags, and untagged repositories are refused.")
     (format-alpha/reflow
-     "|An optional producer spool.edn supplies roots and floors. Without it,
-      |add uses one root at . under the URL basename; --lib confirms or
-      |overrides that family/root symbol.")
+     "|An optional producer spool.edn supplies roots and floors. With it,
+      |--lib must match one declared root symbol. Without it, add uses one root
+      |at . under the URL basename; --lib confirms or overrides that symbol.")
     (format-alpha/reflow
      "|Status performs no remote Git calls. It reports the running runtime's
       |declared and adopted state without attempting sync or reload.")]})
 
 (defn spool-op
-  "Dispatch parsed `strand spool ...` subcommands."
+  "Dispatch validated `strand spool about|add|bump` inputs and results."
   [ctx]
+  (require-valid! ::spool-op-context ctx "spool received an invalid operation context")
   (case (:subcommand (:op/args ctx))
-    "about" (spool-about)
+    "about" (require-valid! ::spool-about-result (spool-about)
+                            "spool about returned an invalid result")
     "add" (require-valid! ::spool-add-result (assoc (add-spool-op ctx) :operation "spool add")
                           "spool add returned an invalid result")
     "bump" (require-valid! ::spool-bump-result (assoc (bump-spool-op ctx) :operation "spool bump")
-                           "spool bump returned an invalid result")
-    "status" (require-valid! ::spool-status-result
-                             (assoc (spool-status (:op/runtime ctx)) :operation "spool status")
-                             "spool status returned an invalid result")
-    (throw (ex-info "Unknown spool subcommand"
-                    {:subcommand (:subcommand (:op/args ctx))
-                     :allowed ["about" "add" "bump" "status"]}))))
+                           "spool bump returned an invalid result")))
+
+(defn spool-status-op
+  "Return validated offline spool declaration and adoption status."
+  [ctx]
+  (require-valid! ::spool-status-op-context ctx
+                  "spool-status received an invalid operation context")
+  (require-valid! ::spool-status-result
+                  (assoc (spool-status (:op/runtime ctx)) :operation "spool-status")
+                  "spool-status returned an invalid result"))
 
 ;; The blessed parser's :parse :json uses clojure.data.json/read-str, which
 ;; silently returns the first value and ignores trailing input, so it cannot
@@ -869,7 +943,7 @@
 
 (def ^:private spool-arg-spec
   {:op "spool"
-   :doc "Add, bump, and inspect validated spool family coordinates. Run `strand spool about` for conventions."
+   :doc "Add and bump validated spool family coordinates. Run `strand spool about` for conventions."
    :subcommands
    {"about" {:doc "Return spool helper conventions and status semantics."}
     "add" {:doc "Add one annotated Git spool release to spools.edn."
@@ -887,8 +961,11 @@
             :positionals [{:name :family
                            :type :string
                            :required? true
-                           :doc "Declared spool family symbol."}]}
-    "status" {:doc "Join declared, overlay, sync, use, pending, and running release state without network access."}}})
+                           :doc "Declared spool family symbol."}]}}})
+
+(def ^:private spool-status-arg-spec
+  {:op "spool-status"
+   :doc "Join declared, overlay, sync, use, pending, and running release state without network access."})
 
 (def ^:private attributes-return
   {:type :map :extra :json})
@@ -985,16 +1062,22 @@
                               :direction :string
                               :declared-acyclic? :boolean}}}
    'spool {:subcommands
-           {"about" {:type :map :required {:operation :string} :extra :json}
+           {"about" {:type :map
+                     :required {:operation :string
+                                :purpose :string
+                                :commands {:type :collection
+                                           :items {:type :map
+                                                   :required {:form :string :behavior :string}}}
+                                :conventions {:type :collection :items :string}}}
             "add" {:type :map
                    :required {:operation :string :status :string :family :string
                               :entry :json :requirements :json}}
             "bump" {:type :map
                     :required {:operation :string :status :string :family :string :old :json :new :json
-                               :compare-url :string :requirements :json}}
-            "status" {:type :map
-                      :required {:operation :string :families :json :requirements :json
-                                 :pending-generation :json :release-marker :json}}}}})
+                               :compare-url :string :requirements :json}}}}
+   'spool-status {:type :map
+                  :required {:operation :string :families :json :requirements :json
+                             :pending-generation :json :release-marker :json}}})
 
 (def ^:private op-registrations
   "Each shipped op: [op-name arg-spec hook-class handler-symbol]."
@@ -1012,7 +1095,8 @@
    ['note note-arg-spec :mutating 'skein.spools.batteries/note-op]
    ['notes notes-arg-spec :read 'skein.spools.batteries/notes-op]
    ['vocab vocab-arg-spec :read 'skein.spools.batteries/vocab-op]
-   ['spool spool-arg-spec :mutating 'skein.spools.batteries/spool-op]])
+   ['spool spool-arg-spec :mutating 'skein.spools.batteries/spool-op]
+   ['spool-status spool-status-arg-spec :read 'skein.spools.batteries/spool-status-op]])
 
 (defn install!
   "Register the batteries core strand ops into a weaver runtime.
