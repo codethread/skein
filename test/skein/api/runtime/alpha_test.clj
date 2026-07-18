@@ -312,27 +312,54 @@
     (is (not (s/valid? ::runtime/spool-write-result
                        {:status :inserted :lib 'demo/family :entry entry})))))
 
-(deftest approved-surfaces-primary-and-overlay-provenance
+(deftest approved-surfaces-declared-and-effective-family-config
   (with-started-runtime
     nil
-    {}
+    {:release-marker "v3"}
     (fn [rt world]
       (let [config-dir (io/file (:config-dir world))
-            sha (str/join (repeat 40 "b"))]
+            sha (str/join (repeat 40 "b"))
+            declared {:git/url "https://example.invalid/demo.git"
+                      :git/sha sha
+                      :git/tag "v2"
+                      :roots {'demo/root "."}
+                      :requires {'demo/root "v1"}
+                      :skein/min "v1"}]
         (.mkdirs config-dir)
         (spit (io/file config-dir "spools.edn")
-              (pr-str {:spools {'demo/family {:git/url "https://example.invalid/demo.git"
-                                              :git/sha sha
-                                              :git/tag "v2"
-                                              :roots {'demo/root "."}}}}))
+              (pr-str {:spools {'demo/family declared}}))
         (is (= :spools-edn
                (get-in (runtime/approved rt) [:spools 'demo/root :provenance])))
         (spit (io/file config-dir "spools.local.edn")
               (pr-str {:spools {'demo/family {:local/root "../demo"
                                               :claims "v3"}}}))
-        (is (= {:provenance :local-overlay :claims "v3"}
-               (select-keys (get-in (runtime/approved rt) [:spools 'demo/root])
-                            [:provenance :claims])))))))
+        (let [approved (runtime/approved rt)]
+          (is (= {:provenance :local-overlay :claims "v3"}
+                 (select-keys (get-in approved [:spools 'demo/root])
+                              [:provenance :claims])))
+          (is (= {:declared declared
+                  :effective-coordinate {:kind :local :local/root "../demo"}
+                  :provenance :local-overlay
+                  :claims "v3"}
+                 (get-in approved [:families 'demo/family]))))))))
+
+(deftest approved-projects-implicit-single-root-family
+  (with-started-runtime
+    nil
+    {}
+    (fn [rt world]
+      (let [config-dir (io/file (:config-dir world))
+            declared {:local/root "spools/demo"}]
+        (.mkdirs config-dir)
+        (spit (io/file config-dir "spools.edn")
+              (pr-str {:spools {'demo/family declared}}))
+        (let [approved (runtime/approved rt)]
+          (is (= #{'demo/family} (set (keys (:spools approved)))))
+          (is (= {:declared declared
+                  :effective-coordinate {:kind :local :local/root "spools/demo"}
+                  :provenance :spools-edn
+                  :claims nil}
+                 (get-in approved [:families 'demo/family]))))))))
 
 (deftest upsert-spool-entry-validates-before-write-and-preserves-header-comments
   (with-started-runtime

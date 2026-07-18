@@ -132,7 +132,12 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
 - **SPEC-004.C39c:** `skein.api.runtime.alpha/approved` exposes each root's
   effective config layer as `:provenance :spools-edn|:local-overlay`; an overlay
   also exposes its explicit `:claims` marker. These keys accrete onto the
-  existing root entry shape. `upsert-spool-entry!` and `remove-spool-entry!`
+  existing root entry shape. Its `:families` projection maps each family symbol
+  to `{:declared entry :effective-coordinate coordinate :provenance layer
+  :claims marker-or-nil}`. The declared entry is exactly the primary
+  `spools.edn` value; the effective coordinate and provenance reflect any local
+  overlay. This map accretes onto the existing return shape.
+  `upsert-spool-entry!` and `remove-spool-entry!`
   are the blessed data-first write seam for the primary `spools.edn`; overlays
   remain hand-edited. Both take a family symbol rather than serialized EDN and
   return a map with status, family, entry, and primary file conforming to
