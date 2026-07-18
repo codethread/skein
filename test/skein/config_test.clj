@@ -6,6 +6,7 @@
   usage rollup."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.java.shell :as sh]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [skein.core.db-test :as db-test]
@@ -668,6 +669,108 @@
   ((requiring-resolve 'skein.spools.workflow/complete!)
    feature {:by "shell" :notes notes}))
 
+(defn- write-fake-gh!
+  "Write a deterministic `gh` executable for feature-CI watch script tests."
+  [dir]
+  (let [file (io/file dir "gh")]
+    (spit file
+          (str "#!/bin/sh\n"
+               "set -eu\n"
+               "case \"$1 $2\" in\n"
+               "  'pr view')\n"
+               "    case \"$FAKE_GH_MODE\" in\n"
+               "      delayed)\n"
+               "        n=0\n"
+               "        if [ -f \"$FAKE_GH_COUNTER\" ]; then n=$(cat \"$FAKE_GH_COUNTER\"); fi\n"
+               "        n=$((n + 1))\n"
+               "        printf '%s\\n' \"$n\" > \"$FAKE_GH_COUNTER\"\n"
+               "        case \"$n\" in\n"
+               "          1) printf '%s\\t0\\n' \"$FAKE_GH_STALE_SHA\" ;;\n"
+               "          2) printf '%s\\t0\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "          *) printf '%s\\t3\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "        esac ;;\n"
+               "      absent) printf '%s\\t0\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "      stale-absent) printf '%s\\t0\\n' \"$FAKE_GH_STALE_SHA\" ;;\n"
+               "      malformed-shape) printf 'not-a-pair\\n' ;;\n"
+               "      malformed-head) printf 'not-a-sha\\t3\\n' ;;\n"
+               "      malformed-count) printf '%s\\tnot-a-count\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "      lookup-fail) echo 'lookup failed' >&2; exit 42 ;;\n"
+               "      watch-fail) printf '%s\\t3\\n' \"$FAKE_GH_EXPECTED_SHA\" ;;\n"
+               "    esac ;;\n"
+               "  'pr checks')\n"
+               "    printf 'watch:%s\\n' \"$*\"\n"
+               "    if [ \"$FAKE_GH_MODE\" = watch-fail ]; then exit 17; fi ;;\n"
+               "  *) echo \"unexpected gh argv: $*\" >&2; exit 64 ;;\n"
+               "esac\n"))
+    (is (.setExecutable file true))
+    file))
+
+(defn- run-feature-ci-watch
+  "Run script against fake-gh-dir with mode and startup timeout, without sleeping."
+  [script fake-gh-dir mode expected-sha timeout]
+  (let [env (merge (into {} (System/getenv))
+                   {"PATH" (str (.getAbsolutePath fake-gh-dir)
+                                java.io.File/pathSeparator
+                                (System/getenv "PATH"))
+                    "FAKE_GH_MODE" mode
+                    "FAKE_GH_COUNTER" (str (io/file fake-gh-dir (str "counter-" mode)))
+                    "FAKE_GH_EXPECTED_SHA" expected-sha
+                    "FAKE_GH_STALE_SHA" (str/join (repeat 40 "0"))})]
+    (sh/sh "sh" "-c" script "land-ci-watch" "land-x" (str timeout) "0"
+           :dir (System/getProperty "user.dir")
+           :env env)))
+
+(deftest land-feature-ci-watch-waits-for-check-registration-and-preserves-failures
+  (with-config-runtime
+    (fn [rt]
+      (let [_ (op! "land" ["start" "land-ci-script"
+                           "--branch" "land-x"
+                           "--worktree" (System/getProperty "user.dir")])
+            completed (op! "land" ["complete" "land-ci-script"])
+            gate-attrs (:attributes (weaver/show rt (get-in completed [:ready 0 :id])))
+            [shell-command shell-flag script script-name branch startup-timeout poll-interval]
+            (:shell/argv gate-attrs)
+            expected-sha (str/trim (:out (sh/sh "git" "rev-parse" "HEAD")))
+            fake-gh-dir (.toFile
+                         (java.nio.file.Files/createTempDirectory
+                          "skein-land-fake-gh"
+                          (make-array java.nio.file.attribute.FileAttribute 0)))]
+        (try
+          (write-fake-gh! fake-gh-dir)
+          (is (= ["sh" "-c" "land-ci-watch" "land-x" "180" "5"]
+                 [shell-command shell-flag script-name branch startup-timeout poll-interval]))
+          (let [{:keys [exit out err]} (run-feature-ci-watch script fake-gh-dir "delayed" expected-sha 10)]
+            (is (zero? exit))
+            (is (= "watch:pr checks land-x --watch --fail-fast\n" out))
+            (is (= "" err))
+            (is (= "3" (str/trim (slurp (io/file fake-gh-dir "counter-delayed"))))))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "absent" expected-sha 0)]
+            (is (= 1 exit))
+            (is (str/includes? err "timed out after 0s waiting for CI checks on land-x"))
+            (is (str/includes? err (str "expected HEAD: " expected-sha)))
+            (is (str/includes? err (str "last PR HEAD: " expected-sha "; checks: 0"))))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "stale-absent" expected-sha 0)]
+            (is (= 1 exit))
+            (is (str/includes? err (str "expected HEAD: " expected-sha)))
+            (is (str/includes? err (str "last PR HEAD: " (str/join (repeat 40 "0"))))))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-shape" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR check metadata")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-head" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR head")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "malformed-count" expected-sha 10)]
+            (is (= 1 exit))
+            (is (str/includes? err "malformed PR check count")))
+          (let [{:keys [exit err]} (run-feature-ci-watch script fake-gh-dir "lookup-fail" expected-sha 10)]
+            (is (= 42 exit))
+            (is (str/includes? err "lookup failed")))
+          (let [{:keys [exit out]} (run-feature-ci-watch script fake-gh-dir "watch-fail" expected-sha 10)]
+            (is (= 17 exit))
+            (is (= "watch:pr checks land-x --watch --fail-fast\n" out)))
+          (finally
+            (delete-directory! fake-gh-dir)))))))
+
 (deftest land-ops-drive-a-poured-run-end-to-end
   (with-config-runtime
     (fn [rt]
@@ -683,7 +786,9 @@
         (is (= "land complete" (:operation completed)))
         (is (= "land.ci.green" (:action-ref gate)))
         (is (= "shell" (:gate gate)))
-        (is (= ["gh" "pr" "checks" "land-x" "--watch" "--fail-fast"] (:shell/argv gate-attrs)))
+        (is (= ["sh" "-c" "land-ci-watch" "land-x" "180" "5"]
+               (let [[command flag _script & args] (:shell/argv gate-attrs)]
+                 (into [command flag] args))))
         (is (= "/tmp/land-x" (:shell/cwd gate-attrs))))
       ;; a coordinator cannot hand-close a CI gate; the shell executor owns it
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Gate steps require a non-blank :by"
