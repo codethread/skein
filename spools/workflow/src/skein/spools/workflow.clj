@@ -938,8 +938,8 @@
   the intra-molecule dependency edges `compile` emits."
   [left-id right-id]
   (let [rt (current/runtime)]
-    (weaver/update rt right-id {:edges [{:type "depends-on" :to left-id
-                                         :attributes {:workflow/bond "sequential"}}]})))
+    (weaver/update! rt right-id {:edges [{:type "depends-on" :to left-id
+                                          :attributes {:workflow/bond "sequential"}}]})))
 
 (defn- burn-with-rt!
   [rt root-id]
@@ -961,12 +961,12 @@
   ([root-id title attributes]
    (let [rt (current/runtime)
          subgraph (graph/subgraph rt [root-id])
-         digest (weaver/add rt {:title title
-                                :state "closed"
-                                :attributes (merge {"workflow/role" "digest"
-                                                    "workflow/squashed-root" root-id
-                                                    "workflow/squashed-count" (count (:strands subgraph))}
-                                                   attributes)})]
+         digest (weaver/add! rt {:title title
+                                 :state "closed"
+                                 :attributes (merge {"workflow/role" "digest"
+                                                     "workflow/squashed-root" root-id
+                                                     "workflow/squashed-count" (count (:strands subgraph))}
+                                                    attributes)})]
      (burn-with-rt! rt root-id)
      digest)))
 
@@ -1253,13 +1253,13 @@
      (let [roots (run-molecule-roots rt run-id)
            summary (run-summary (mapv #(molecule-history rt %) roots))
            squashed-count (reduce + 0 (map #(count (:strands (graph/subgraph rt [(:id %)]))) roots))
-           digest (weaver/add rt {:title (or title (str "Digest for run " run-id))
-                                  :state "closed"
-                                  :attributes (merge {"workflow/role" "digest"
-                                                      "workflow/run-id" run-id
-                                                      "workflow/squashed-count" squashed-count
-                                                      "workflow/summary" summary}
-                                                     attributes)})]
+           digest (weaver/add! rt {:title (or title (str "Digest for run " run-id))
+                                   :state "closed"
+                                   :attributes (merge {"workflow/role" "digest"
+                                                       "workflow/run-id" run-id
+                                                       "workflow/squashed-count" squashed-count
+                                                       "workflow/summary" summary}
+                                                      attributes)})]
        (doseq [root roots]
          (burn-with-rt! rt (:id root)))
        digest))))
@@ -1563,7 +1563,7 @@
     (when (and (= "active" (:state strand))
                (contains? #{"root" "step" "checkpoint" "procedure"}
                           (attr strand :workflow/role)))
-      (weaver/update rt (:id strand) {:state "closed"}))))
+      (weaver/update! rt (:id strand) {:state "closed"}))))
 
 (defonce ^{:private true
            :doc "Weaver-lifetime map of registered workflow name (keyword) ->

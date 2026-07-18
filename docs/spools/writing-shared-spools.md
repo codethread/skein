@@ -91,12 +91,12 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    to trigger it. Scheduler delivery is at-least-once, so any handler you register
    must be idempotent.
 7. **Write attribute deltas, not read-merged maps.** To change a strand's
-   attributes, pass `weaver/update` **only the keys you are changing** —
+   attributes, pass `weaver/update!` **only the keys you are changing** —
    `{:attributes {:kanban/lane "claimed"}}` — and let `db/update-strand!`'s
    `json_patch` merge fold them into the stored map. Never read the strand, merge
    your changes into its full `:attributes`, and write the whole map back: two
    concurrent updates each start from a possibly-stale read and the later write
-   silently drops the earlier one (a lost-update race). `weaver/update` returns the
+   silently drops the earlier one (a lost-update race). `weaver/update!` returns the
    full merged strand, so a delta write loses no result fidelity. For reads, use
    the shared tolerant reader `skein.api.spool.alpha/attr-get` (keyword key, bare
    string fallback) and `attr-key->str` for wire-key coercion rather than
@@ -164,7 +164,7 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
   order — the transfer argument protects the next author, not only the API
   consumer.
 - **Inherit the bare verb.** Your Clojure namespace already carries the noun:
-  `events/register!`, never `register-handler!`; and a member name never
+  `events/register-handler!`, never `register!`; and a member name never
   repeats its own namespace's noun. Mint keywords only into namespaces you
   own — a spool that writes no attributes still squats when it coins an
   event type or return value in someone else's namespace.
@@ -665,7 +665,7 @@ spools](./testing.md).
   (when-not (weaver/show runtime id)
     (throw (ex-info "No such strand to promote" {:id id})))     ; fail loudly
   (swap! (promotions runtime) inc)
-  (weaver/update runtime id {:attributes {:priority "high"}}))
+  (weaver/update! runtime id {:attributes {:priority "high"}}))
 
 (defn promotion-count
   "Return how many promotions this `runtime` has performed."

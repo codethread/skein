@@ -155,7 +155,7 @@ Return runtime-owned state for a spool key, creating it with `init-fn` once.
   once a version is declared. Opts conform to
   `:skein.api.runtime.alpha/spool-state-opts`; a malformed map fails loudly at
   the call site rather than degrading to the unversioned path.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L752-L805">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L757-L810">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/sync!">`sync!`</a>
 ``` clojure
@@ -201,14 +201,12 @@ Insert or replace `lib` in `runtime`'s primary `spools.edn`.
 
 ## <a name="skein.api.runtime.alpha/use">`use`</a>
 ``` clojure
-(use runtime key)
+(use & args)
 ```
 Function.
 
-Return one module-use registry entry from `runtime` by key.
-
-  The nilable result conforms to `:skein.api.runtime.alpha/use-result`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L659-L666">Source</a></sub></p>
+Renamed to use-entry (card d6xgt); this alias is removed before the v1 stamp.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L680-L683">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/use!">`use!`</a>
 ``` clojure
@@ -225,6 +223,17 @@ Load a runtime module and record its module-use state under keyword key.
   `:skein.api.runtime.alpha/use-registration`; the returned and recorded entry
   conforms to `:skein.api.runtime.alpha/use-entry`.
 <p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L606-L648">Source</a></sub></p>
+
+## <a name="skein.api.runtime.alpha/use-entry">`use-entry`</a>
+``` clojure
+(use-entry runtime key)
+```
+Function.
+
+Return one module-use registry entry from `runtime` by key.
+
+  The nilable result conforms to `:skein.api.runtime.alpha/use-result`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/runtime/alpha.clj#L659-L666">Source</a></sub></p>
 
 ## <a name="skein.api.runtime.alpha/uses">`uses`</a>
 ``` clojure

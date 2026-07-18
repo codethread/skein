@@ -71,17 +71,17 @@
     (throw (ex-info "Note target strand not found" {:id target-id})))
   (require-int-round round)
   (let [decorating (dissoc opts :by :round)
-        note (weaver/add runtime
-                         {:title (truncate text 72)
-                          :state "closed"
+        note (weaver/add! runtime
+                          {:title (truncate text 72)
+                           :state "closed"
                           ;; note/at carries sub-second precision the seconds-only
                           ;; created_at column cannot, so it orders a note burst.
-                          :attributes (cond-> (merge decorating
-                                                     {"note/text" text
-                                                      "note/at" (str (runtime/now runtime))})
-                                        by (assoc "note/by" by)
-                                        round (assoc "note/round" round))
-                          :edges [{:type "notes" :to target-id}]})]
+                           :attributes (cond-> (merge decorating
+                                                      {"note/text" text
+                                                       "note/at" (str (runtime/now runtime))})
+                                         by (assoc "note/by" by)
+                                         round (assoc "note/round" round))
+                           :edges [{:type "notes" :to target-id}]})]
     {:id (:id note) :target target-id}))
 
 (defn notes

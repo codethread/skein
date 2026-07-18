@@ -132,7 +132,7 @@ Helpers include:
   `reload!`.
 - `(runtime/reload! runtime)` clears weaver-lifetime approved-spool sync state, module-use state, named queries, views, patterns, lifecycle hooks, event handlers, queued events, and recent event failures, then reloads selected workspace startup files in order (`init.clj`, then `init.local.clj`) inside the active weaver and returns loaded file metadata plus final return values. Missing startup files are skipped; present failing files throw with file context. Event dispatch resumes after the fully layered config loads. Reload does not unload already-loaded Clojure namespaces or vars.
 - `(runtime/use! runtime key opts)` records one weaver-lifetime module-use attempt under keyword `key`; duplicate keys replace prior state for reload workflows.
-- `(runtime/uses runtime)` and `(runtime/use runtime key)` expose weaver-lifetime module-use state.
+- `(runtime/uses runtime)` and `(runtime/use-entry runtime key)` expose weaver-lifetime module-use state.
 - `(runtime/now runtime)` returns the runtime clock's current `java.time.Instant` — the blessed, runtime-scoped time source trusted spools read instead of `(Instant/now)` (SPEC-004.C1a). It defaults to the real wall clock; deterministic tests install and step an advanceable clock with `skein.test.alpha/set-clock!`/`advance!` (SPEC-003.C28a). It is data-first (an `Instant`, not the clock fn) and, like every `runtime.alpha` helper, takes the runtime first (SPEC-003.C18).
 
 `use!` options identify exactly one load target with `:ns` for weaver-side namespace loading or

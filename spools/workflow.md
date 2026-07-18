@@ -418,7 +418,7 @@ Each event is a **closed** `step` or `checkpoint` strand (procedure joins, being
 
 ### `squash-run!`
 
-`squash-run!` is the run-level counterpart of `squash!` (§6). It **fails loudly** for an unknown run or one that still has an active root, then replaces every molecule subgraph of the run with **one** closed digest strand (`weaver/add`, then `burn!` on each molecule) and returns it. The digest is stamped `workflow/role "digest"`, `workflow/run-id`, `workflow/squashed-count` (total strands folded), and a compact JSON-safe `workflow/summary` — one entry per molecule (creation order) with its title and the ordered checkpoint `outcomes`. `opts` may override the digest `:title` and merge extra `:attributes`. As with `squash!`, the original graph is burned, so a later `run-history` for the squashed run fails loudly.
+`squash-run!` is the run-level counterpart of `squash!` (§6). It **fails loudly** for an unknown run or one that still has an active root, then replaces every molecule subgraph of the run with **one** closed digest strand (`weaver/add!`, then `burn!` on each molecule) and returns it. The digest is stamped `workflow/role "digest"`, `workflow/run-id`, `workflow/squashed-count` (total strands folded), and a compact JSON-safe `workflow/summary` — one entry per molecule (creation order) with its title and the ordered checkpoint `outcomes`. `opts` may override the digest `:title` and merge extra `:attributes`. As with `squash!`, the original graph is burned, so a later `run-history` for the squashed run fails loudly.
 
 ## 7. Attribute vocabulary
 

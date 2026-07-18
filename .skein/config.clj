@@ -652,13 +652,13 @@
     (require-non-blank! :context context)
     (when-not (weaver/show rt parent-id)
       (throw (ex-info "hitl parent strand not found" {:parent parent-id})))
-    (let [tracking (weaver/add rt {:title (str "HITL: " title)
-                                   :attributes {"hitl" "true"
-                                                "body" (str "Tracking strand for the interactive HITL session \"" title "\"."
-                                                            " The session agent appends closed note children for decisions,"
-                                                            " writes a final outcome attr, then closes this strand to end its"
-                                                            " run and tear down the session.")}})]
-      (weaver/update rt parent-id {:edges [{:type "parent-of" :to (:id tracking)}]})
+    (let [tracking (weaver/add! rt {:title (str "HITL: " title)
+                                    :attributes {"hitl" "true"
+                                                 "body" (str "Tracking strand for the interactive HITL session \"" title "\"."
+                                                             " The session agent appends closed note children for decisions,"
+                                                             " writes a final outcome attr, then closes this strand to end its"
+                                                             " run and tear down the session.")}})]
+      (weaver/update! rt parent-id {:edges [{:type "parent-of" :to (:id tracking)}]})
       (let [run (shuttle/spawn-run! {:harness (or harness "hitl-fable")
                                      :prompt (hitl-prompt (:id tracking) context)
                                      :title (str "HITL: " title)

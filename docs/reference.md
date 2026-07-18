@@ -747,7 +747,7 @@ Register handlers from startup-loaded code or weaver-loadable spools:
     nil))
 
 (defn install! []
-  (events/register! (current/runtime)
+  (events/register-handler! (current/runtime)
                     :my/cleanup-temporary
                     #{:strand/updated}
                     'my.workflow/cleanup-temporary!
