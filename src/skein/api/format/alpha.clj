@@ -20,7 +20,7 @@
   when the input does not satisfy `::block`."
   [block]
   (when-not (s/valid? ::block block)
-    (throw (ex-info "fill needs a ::block: a string with at least one |-margin line"
+    (throw (ex-info "fill: no barred lines; ::block is a string with a |-margin line"
                     {:block block :explain (s/explain-data ::block block)})))
   (format/fill block))
 
@@ -33,7 +33,7 @@
   `::block`, like `fill`."
   [block]
   (when-not (s/valid? ::block block)
-    (throw (ex-info "reflow needs a ::block: a string with at least one |-margin line"
+    (throw (ex-info "reflow: no barred lines; ::block is a string with a |-margin line"
                     {:block block :explain (s/explain-data ::block block)})))
   (format/reflow block))
 
