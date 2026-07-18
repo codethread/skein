@@ -199,9 +199,9 @@
       (batteries/install! rt)
       (testing "a missing advisory manifest uses the confirmed URL-derived lib at root dot"
         (stub-git! rt (tag-lines ["v1" (sha "a") (sha "b")]) nil)
-        (is (= {'notebook.spool "."}
+        (is (= {'demo.spool "."}
                (get-in (weaver/op! rt 'spool
-                                   ["add" "https://github.com/codethread/notebook.spool.git"])
+                                   ["add" "https://example.invalid/acme/demo.spool.git"])
                        [:entry :roots]))))
       (testing "v0 is reserved"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"v0 is reserved"
