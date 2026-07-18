@@ -90,7 +90,7 @@
 (defn- candidate-summary [rows]
   (mapv #(select-keys % [:name :workspace :weaver-id :socket-path :state-dir]) rows))
 
-(defn peer
+(defn- resolve-peer
   "Resolve exactly one running peer by friendly name or selected workspace path.
 
   Explicitly path-like input (contains `/`, or starts with `~`) matches the
@@ -135,7 +135,7 @@
 (defn- resolved-peer [peerish]
   (if (map? peerish)
     peerish
-    (peer peerish)))
+    (resolve-peer peerish)))
 
 (defn- operation-name [op]
   (cond
@@ -272,9 +272,9 @@
 (defn call!
   "Invoke a named op on a resolved peer over the `invoke` envelope, or `status`.
 
-  `peerish` may be a row from `peer`/`peers`, a friendly name, or an existing
-  workspace path resolvable by `peer`. `op` is an op name (string or unqualified
-  symbol/keyword); pass `\"status\"` for the minimal lifecycle op. Optional `args`
+  `peerish` may be a row from `peers`, a friendly name, or an existing workspace
+  path. `op` is an op name (string or unqualified symbol/keyword); pass `\"status\"`
+  for the minimal lifecycle op. Optional `args`
   is a map with `:argv` (vector of strings) and `:payloads` (name→value map) for
   the invoke envelope. Domain error envelopes become `ExceptionInfo` with
   `:code :peer/domain-error`; a peer that answers with a stream header fails

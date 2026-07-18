@@ -275,7 +275,8 @@
   (with-runtime
     (fn [rt _]
       (roster/install!)
-      (let [decl (vocab/declaration rt :attr-namespace "roster")]
+      (let [decl (some #(when (= [:attr-namespace "roster"] [(:kind %) (:name %)]) %)
+                       (vocab/declarations rt))]
         (is (some? decl))
         (is (= :skein/spools-roster (:owner decl)))))))
 

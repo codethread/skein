@@ -13,7 +13,8 @@
   (with-runtime
     (fn [rt _]
       (workflow/install!)
-      (let [decl (vocab/declaration rt :attr-namespace "workflow")]
+      (let [decl (some #(when (= [:attr-namespace "workflow"] [(:kind %) (:name %)]) %)
+                       (vocab/declarations rt))]
         (is (= :attr-namespace (:kind decl)))
         (is (= :skein/spools-workflow (:owner decl))
             "workflow install! owns the workflow/* namespace via its use-key")))))
