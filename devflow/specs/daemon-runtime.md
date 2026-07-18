@@ -150,6 +150,15 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
   any root owned by it; the latter failure names every requiring family and
   root. The verbs do not sync, fetch, edit overlays, or expose entry
   serialization.
+- **SPEC-004.C39d:** `skein.api.runtime.alpha/declared` returns the same stage-1
+  family projection as `approved` without materializing root entries. Its
+  `:requirements` value is `{:valid? true :pending-validations [...]}` when
+  release floors pass, or `{:valid? false :findings [...] :suggestions {...}}`
+  when they do not. The invalid result preserves the findings and suggestions
+  that `approved` reports in `:spool-requirements-unsatisfied` exception data,
+  so repair tools can read the declared entry and computed bump target together.
+  Omitting a running marker leaves Skein floor checks pending. Stage-1 structural
+  errors still throw before floor arithmetic.
 - **SPEC-004.C40:** Blessed `skein.api.*.alpha` namespaces and shipped reference spools are documented, tested, and used by examples. They are recommended maintenance paths, not enforcement boundaries; trusted code may require lower-level namespaces or use raw SQLite schema when it accepts compatibility cost.
 - **SPEC-004.C41:** The selected workspace is a trusted alpha spool workspace root. User-owned config may include `config.json` with only `"configFormat":"alpha"`, shared `init.clj`/`spools.edn`, local `init.local.clj`/`spools.local.edn`, local source directories, and user code. The CLI bootstrap path may initialize missing workspace files/directories, but must not initialize a Git repository, persist source checkout paths, or overwrite existing user files.
 - **SPEC-004.C42:** `spools.edn` declares approved weaver-wide spool families. A local family is
