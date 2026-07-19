@@ -1810,7 +1810,9 @@
             (is (contains? (:spools (runtime/syncs rt)) lib))
             (is (not (.exists marker-file)) "init.clj must never have run")))
         (testing "the restart remedy is recorded exactly as a refused sync records it"
-          (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status]))))))))
+          (let [pending (:pending-generation (runtime/syncs rt))]
+            (is (= :pending (:status pending)))
+            (is (= [lib] (mapv :lib (get-in pending [:diff :removed-roots]))))))))))
 
 (deftest reload-aborts-on-invalid-spool-config-before-clearing-registries
   (with-runtime
@@ -1872,6 +1874,99 @@
               (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
               (is (contains? (:spools (runtime/syncs rt)) lib))
               (is (not (.exists marker-file)) "init.clj must never have run"))))))))
+
+(deftest reload-refuses-a-violated-skein-floor-under-the-running-marker
+  ;; Pins the marker-resolution seam of the preflight: with a nil marker the
+  ;; floor check would only become a pending validation and the reload would
+  ;; run init.clj, so the marker file below is the tripwire for a regression
+  ;; back to marker-blind preflighting.
+  (with-runtime
+    {:release-marker "v1"}
+    (fn [rt config-dir]
+      (let [family 'demo/reload-floor
+            sha "0123456789abcdef0123456789abcdef01234567"
+            marker-file (io/file config-dir "init-ran.edn")]
+        (write-local-lib! config-dir "reload-floor" 'demo.reload_floor)
+        (write-spools! config-dir
+                       (pr-str {:spools {family {:git/url "https://example.invalid/reload-floor.git"
+                                                 :git/sha sha
+                                                 :git/tag "v1"
+                                                 :skein/min "v2"}}}))
+        (write-local-spools! config-dir
+                             (pr-str {:spools {family {:local/root "spools/reload-floor"
+                                                       :claims "v1"}}}))
+        (graph/register-query! rt 'keepme [:= [:attr :owner] "keepme"])
+        (source-file/spit-forms!
+         (io/file config-dir "init.clj")
+         [`(spit ~(str marker-file) (pr-str :ran))])
+        (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/reload! rt)))]
+          (is (= :spool-requirements-unsatisfied (:reason (ex-data ex)))))
+        (testing "the floor refusal aborts before the clear"
+          (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
+          (is (not (.exists marker-file)) "init.clj must never have run"))))))
+
+(deftest reload-aborts-on-atomic-maven-resolution-failure-before-clearing
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.reload_resolver_" suffix))
+            lib (symbol (str "demo/reload-resolver-" suffix))
+            root (write-local-lib! config-dir (str "reload-resolver-" suffix) ns-sym)
+            marker-file (io/file config-dir "init-ran.edn")
+            fail? (atom false)
+            resolver (fn [universe]
+                       (when @fail?
+                         (throw (ex-info "resolver offline" {:universe (keys universe)})))
+                       (when (contains? universe 'org.example/loaded)
+                         {'org.example/loaded {:mvn/version "1.0.0"
+                                               :paths [(str (io/file config-dir "fake" "loaded-1.0.0.jar"))]}}))]
+        (spit (io/file root "deps.edn")
+              (pr-str {:paths ["src"]
+                       :deps {'org.example/loaded {:mvn/version "1.0.0"}}}))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-resolver-" suffix)}}}))
+        (with-resolver
+          resolver
+          (fn []
+            (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+            (graph/register-query! rt 'keepme [:= [:attr :owner] "keepme"])
+            (source-file/spit-forms!
+             (io/file config-dir "init.clj")
+             [`(spit ~(str marker-file) (pr-str :ran))])
+            (reset! fail? true)
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"resolver offline"
+                                  (runtime/reload! rt)))
+            (testing "the atomic resolution failure aborts before the clear"
+              (is (= [:= [:attr :owner] "keepme"] (get (graph/queries rt) "keepme")))
+              (is (contains? (:spools (runtime/syncs rt)) lib))
+              (is (not (.exists marker-file)) "init.clj must never have run"))))))))
+
+(deftest reload-preflight-leaves-additive-roots-off-the-classloader
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-sym (symbol (str "demo.reload_additive_" suffix))
+            lib (symbol (str "demo/reload-additive-" suffix))
+            new-ns (symbol (str "demo.reload_newroot_" suffix))
+            new-lib (symbol (str "demo/reload-newroot-" suffix))
+            marker-file (io/file config-dir "init-ran.edn")]
+        (write-local-lib! config-dir (str "reload-additive-" suffix) ns-sym)
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/reload-additive-" suffix)}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (write-local-lib! config-dir (str "reload-newroot-" suffix) new-ns)
+        (write-spools! config-dir
+                       (pr-str {:spools {lib {:local/root (str "spools/reload-additive-" suffix)}
+                                         new-lib {:local/root (str "spools/reload-newroot-" suffix)}}}))
+        (source-file/spit-forms!
+         (io/file config-dir "init.clj")
+         [`(spit ~(str marker-file) (pr-str :ran))])
+        (let [urls-before (set (map str (.getURLs ^java.net.URLClassLoader (:spool-classloader rt))))]
+          (is (= :loaded (:status (runtime/reload! rt))))
+          (testing "a passing preflight classifies the additive root without loading it"
+            (is (.exists marker-file) "init.clj ran past the preflight")
+            (is (= urls-before
+                   (set (map str (.getURLs ^java.net.URLClassLoader (:spool-classloader rt)))))
+                "only a real sync! adds roots to the spool classloader")
+            (is (not (contains? (:spools (runtime/syncs rt)) new-lib)))))))))
 
 (deftest reload-proceeds-past-per-root-sync-failures
   (with-runtime
