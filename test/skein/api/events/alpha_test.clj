@@ -23,7 +23,9 @@
   "Non-callable var pinning the resolution contract."
   42)
 
-(def handler-sym 'skein.api.events.alpha-test/capture-event)
+(def ^:private handler-sym
+  "Qualified symbol of the fixture handler, as registration wants it."
+  'skein.api.events.alpha-test/capture-event)
 
 (deftest registration-rejects-each-invalid-piece-and-leaves-the-registry-untouched
   (t/with-weaver-world [ctx {:storage :sqlite-memory}]
