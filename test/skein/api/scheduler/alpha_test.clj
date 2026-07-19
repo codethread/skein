@@ -7,7 +7,8 @@
   pending-wake shapes (decoded payload, symbol handler), the classloader
   handler-resolution check this tier adds on top of storage validation, and
   that a rejected schedule! persists nothing."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.spec.alpha :as s]
+            [clojure.test :refer [deftest is testing]]
             [skein.api.scheduler.alpha :as scheduler]
             [skein.core.db :as db]
             [skein.spools.test-support :as test-support]
@@ -53,7 +54,9 @@
         (is (= {:n 7} (:payload created)) "payload round-trips decoded")
         (is (zero? (:attempts created)))
         (is (= [created] (scheduler/pending rt)))
-        (is (= created (first (scheduler/pending rt))) "the earliest pending wake is the first ordered row")))))
+        (is (= created (first (scheduler/pending rt))) "the earliest pending wake is the first ordered row")
+        (is (s/valid? ::scheduler/pending-wake created)
+            (s/explain-str ::scheduler/pending-wake created))))))
 
 (deftest schedule-replaces-existing-key-and-resets-attempts
   (wt/with-runtime
@@ -74,6 +77,9 @@
     (fn [rt _db-file]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be a map"
                             (scheduler/schedule! rt "not-a-map")))
+      (is (s/valid? ::scheduler/wake {:key "k" :wake-at (Instant/now)
+                                      :handler `deliver-fire-handler})
+          "the alpha ::wake alias accepts what the persistence seam accepts")
       ;; Field-level validation flows through ::specs/scheduler-wake; the offending
       ;; predicate is pinpointed in the spec explanation carried in the ex-data.
       (is (re-find #"non-blank-string"
@@ -88,9 +94,10 @@
 (deftest schedule-rejects-unresolvable-or-non-callable-handler-without-persisting
   (wt/with-runtime
     (fn [rt _db-file]
-      (testing "a bare (non-namespaced) symbol is rejected"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fully qualified symbol"
-                              (scheduler/schedule! rt {:key "k" :wake-at (Instant/now) :handler 'bare-symbol}))))
+      (testing "a bare (non-namespaced) symbol is rejected by the wake spec"
+        (is (re-find #"fully-qualified-symbol"
+                     (reject-explain rt {:key "k" :wake-at (Instant/now)
+                                         :handler 'bare-symbol}))))
       (testing "a symbol whose namespace cannot be required is rejected"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"could not be resolved"
                               (scheduler/schedule! rt {:key "k" :wake-at (Instant/now)
@@ -108,7 +115,9 @@
         (scheduler/schedule! rt {:key "cancel-me" :wake-at far-future :handler `deliver-fire-handler})
         (let [cancelled (scheduler/cancel! rt "cancel-me")]
           (is (= "cancel-me" (:key cancelled)))
-          (is (= "cancelled" (:status cancelled))))
+          (is (= "cancelled" (:status cancelled)))
+          (is (s/valid? ::scheduler/cancellation cancelled)
+              (s/explain-str ::scheduler/cancellation cancelled)))
         (is (empty? (scheduler/pending rt)))
         (is (nil? (first (scheduler/pending rt))) "no pending wake remains after cancel")
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not found"

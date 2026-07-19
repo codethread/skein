@@ -19,7 +19,7 @@
 
 (def pending
   "Modules not yet through their v1 form card (epic 9nu0q)."
-  #{"scheduler"})
+  #{})
 
 (def ^:private width-limit 96)
 
