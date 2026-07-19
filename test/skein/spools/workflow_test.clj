@@ -589,16 +589,20 @@
       (is (= "Orient" (:title (workflow/ready-step "keyword-start")))))))
 
 (deftest workflow-describe-accepts-registered-keyword
-  (workflow/register-workflow! :loopy-describe 'skein.spools.workflow-test/loopy-workflow)
-  (is (= "Loopy" (:name (workflow/describe :loopy-describe {})))))
+  (with-runtime
+    (fn [_rt _]
+      (workflow/register-workflow! :loopy-describe 'skein.spools.workflow-test/loopy-workflow)
+      (is (= "Loopy" (:name (workflow/describe :loopy-describe {})))))))
 
 (deftest workflow-start-and-describe-reject-unknown-registered-keyword
   (with-runtime
     (fn [_rt _]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
                             (workflow/start! "missing-keyword-start" :missing-workflow {})))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
-                        (workflow/describe :missing-workflow {}))))
+  (with-runtime
+    (fn [_rt _]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown registered workflow"
+                            (workflow/describe :missing-workflow {}))))))
 
 (deftest workflow-revise-choice-loops-back-to-a-fresh-revision-round
   (with-runtime
@@ -1508,5 +1512,7 @@
       (is (= :self (:waiter (ex-data e)))))))
 
 (deftest executors-reflects-registrations
-  (workflow/register-executor! :registry-test-executor (constantly nil))
-  (is (contains? (workflow/executors) :registry-test-executor)))
+  (with-runtime
+    (fn [_rt _]
+      (workflow/register-executor! :registry-test-executor (constantly nil))
+      (is (contains? (workflow/executors) :registry-test-executor)))))

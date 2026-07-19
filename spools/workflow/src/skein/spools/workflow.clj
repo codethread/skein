@@ -3,18 +3,20 @@
 
   A workflow definition is plain data. `compile` turns that data into a Skein
   batch payload, while `pour!` and `wisp!` materialize persistent molecules and
-  ephemeral wisps through the public batch alpha surface. This namespace owns no
-  privileged runtime state; it composes existing strand graph primitives."
+  ephemeral wisps through the public batch alpha surface. Workflow and executor
+  registries are runtime-owned spool state; graph operations compose existing
+  strand primitives."
   (:refer-clojure :exclude [compile])
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.batch.alpha :as batch]
             [skein.api.current.alpha :as current]
-            [skein.api.graph.alpha :as graph]
-            [skein.api.vocab.alpha :as vocab]
-            [skein.api.weaver.alpha :as weaver]
             [skein.api.format.alpha :as fmt]
-            [skein.api.spool.alpha :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]))
+            [skein.api.graph.alpha :as graph]
+            [skein.api.runtime.alpha :as runtime]
+            [skein.api.spool.alpha :refer [fail! require-valid! attr-get attr-key->str poll-until-deadline!]]
+            [skein.api.vocab.alpha :as vocab]
+            [skein.api.weaver.alpha :as weaver]))
 
 (defn- non-blank-string? [value]
   (and (string? value) (not (str/blank? value))))
@@ -60,7 +62,39 @@
 (s/def ::workflow (s/keys :req-un [::name ::steps]
                           :opt-un [::params ::attributes ::state ::form]))
 
-(declare executor-registry)
+(def ^:private registry-state-version
+  "Shape version for workflow's runtime registry state. Version 1 contains the
+  workflow-name and executor registry atoms. Bump this when `new-registry-state`
+  changes shape: spool state survives `reload!`, so a version mismatch must
+  reinitialize rather than reuse stale state (SPEC-004.C95)."
+  1)
+
+(defn- new-registry-state []
+  {:workflow-name-registry (atom {})
+   :executor-registry (atom {})})
+
+(defn- registry-state [rt]
+  (runtime/spool-state rt ::registry-state
+                       {:version registry-state-version}
+                       new-registry-state))
+
+(defn- workflow-name-registry
+  "Return `rt`'s workflow-name registry atom.
+
+  The runtime owns this state for its lifetime. Its spool-state entry survives
+  `reload!`; startup config re-registers definitions during reload and after a
+  restart."
+  [rt]
+  (:workflow-name-registry (registry-state rt)))
+
+(defn- executor-registry
+  "Return `rt`'s executor registry atom.
+
+  The runtime owns this state for its lifetime. Its spool-state entry survives
+  `reload!`; startup config re-registers executors during reload and after a
+  restart."
+  [rt]
+  (:executor-registry (registry-state rt)))
 
 (defn- reject-unknown-keys!
   "Fail loudly (TEN-003) when `m` carries keys outside `allowed`, so a builder
@@ -1266,8 +1300,8 @@
 
 (defn- executor-for
   "Return the registered stall predicate for a ready gate's `waiter` name, or nil."
-  [waiter]
-  (get @executor-registry waiter))
+  [rt waiter]
+  (get @(executor-registry rt) waiter))
 
 (defn- attention
   "Return the current attention state for workflow run-id.
@@ -1283,9 +1317,9 @@
         done (done-with-rt? rt run-id)
         checkpoint (first (filter #(= "checkpoint" (:role %)) ready))
         self-step (first (filter #(and (not= "checkpoint" (:role %)) (not (:gate %))) ready))
-        unowned-gate (first (filter #(and (:gate %) (not (executor-for (:gate %)))) ready))
+        unowned-gate (first (filter #(and (:gate %) (not (executor-for rt (:gate %)))) ready))
         stalled (some (fn [step]
-                        (when-let [pred (and (:gate step) (executor-for (:gate step)))]
+                        (when-let [pred (and (:gate step) (executor-for rt (:gate step)))]
                           (when-let [detail (pred step)]
                             {:gate step :stall detail})))
                       ready)]
@@ -1565,39 +1599,22 @@
                           (attr strand :workflow/role)))
       (weaver/update! rt (:id strand) {:state "closed"}))))
 
-(defonce ^{:private true
-           :doc "Weaver-lifetime map of registered workflow name (keyword) ->
-  fully qualified constructor symbol. Re-registered from startup code like named
-  queries and patterns; `defonce` so a bare namespace reload keeps existing runs'
-  named routes resolvable until startup re-registration runs."}
-  workflow-name-registry
-  (atom {}))
-
-(defonce ^{:private true
-           :doc "Weaver-lifetime map of gate waiter name (string) -> executor stall
-  predicate. A predicate receives a ready gate step view and returns truthy
-  detail when its executor believes coordinator attention is needed. A waiter
-  with no registered executor always surfaces immediately as :gate; a
-  registered executor's gate stays silent until its predicate fires."}
-  executor-registry
-  (atom {}))
-
 (defn register-workflow!
   "Register a workflow constructor under a stable keyword `name`.
 
   `name` is a keyword; `constructor-sym` is a fully qualified symbol resolving to
-  a workflow constructor. Registration is weaver-lifetime in-memory state
-  (mirroring named queries/patterns), re-established from startup config. A
-  duplicate `name` replaces the prior entry, so reloading a workflow re-points
-  existing in-flight runs' named `:next` routes at the new constructor. Returns
-  `name`."
+  a workflow constructor. Registration is runtime-owned, weaver-lifetime spool
+  state that survives `reload!`; startup config re-registers entries during
+  reload and after restart. A duplicate `name` replaces the prior entry, so
+  reloading a workflow re-points existing in-flight runs' named `:next` routes at
+  the new constructor. Returns `name`."
   [name constructor-sym]
   (when-not (keyword? name)
     (fail! "Workflow registry name must be a keyword" {:name name}))
   (when-not (qualified-symbol? constructor-sym)
     (fail! "Workflow registry constructor must be a fully qualified symbol"
            {:name name :constructor constructor-sym}))
-  (swap! workflow-name-registry assoc name constructor-sym)
+  (swap! (workflow-name-registry (current/runtime)) assoc name constructor-sym)
   name)
 
 (defn register-executor!
@@ -1606,34 +1623,37 @@
 
   The predicate receives a ready gate step view and returns nil/false while the
   executor is still fulfilling the gate, or truthy detail when coordinator
-  attention is needed. Registration is weaver-lifetime runtime state, mirroring
-  `register-workflow!`. Returns the registered waiter as a keyword."
+  attention is needed. Registration is runtime-owned, weaver-lifetime spool state
+  that survives `reload!`, mirroring `register-workflow!`. Returns the registered
+  waiter as a keyword."
   [waiter pred]
   (when-not (s/valid? ::external-waiter waiter)
     (fail! "Executor waiter must be a keyword, symbol, or non-blank string other than :self"
            {:waiter waiter :explain (s/explain-data ::external-waiter waiter)}))
   (when-not (ifn? pred)
     (fail! "Executor predicate must be invokable" {:waiter waiter}))
-  (swap! executor-registry assoc (name waiter) pred)
+  (swap! (executor-registry (current/runtime)) assoc (name waiter) pred)
   (keyword (name waiter)))
 
 (defn executors
   "Return the current registry map of gate waiter name (keyword) -> stall predicate."
   []
-  (into {} (map (fn [[k v]] [(keyword k) v])) @executor-registry))
+  (into {} (map (fn [[k v]] [(keyword k) v]))
+        @(executor-registry (current/runtime))))
 
 (defn workflow-definition
   "Return the constructor symbol registered under keyword `name`, failing loudly
   (TEN-003) when `name` is not registered."
   [name]
-  (or (get @workflow-name-registry name)
-      (fail! "Unknown registered workflow"
-             {:name name :registered (vec (keys @workflow-name-registry))})))
+  (let [registry @(workflow-name-registry (current/runtime))]
+    (or (get registry name)
+        (fail! "Unknown registered workflow"
+               {:name name :registered (vec (keys registry))}))))
 
 (defn workflows
   "Return the current registry map of workflow name (keyword) -> constructor symbol."
   []
-  @workflow-name-registry)
+  @(workflow-name-registry (current/runtime)))
 
 (defn- resolve-next-symbol
   "Resolve a checkpoint choice's stored `:next` target to a workflow constructor
