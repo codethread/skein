@@ -184,6 +184,8 @@
        CHECK (json_valid(attributes))
      )"]
    ["CREATE INDEX IF NOT EXISTS idx_strand_edges_to ON strand_edges(to_strand_id, edge_type)"]
+   ["CREATE UNIQUE INDEX IF NOT EXISTS idx_strand_edges_single_serves
+       ON strand_edges(from_strand_id) WHERE edge_type = 'serves'"]
    ["CREATE TABLE IF NOT EXISTS acyclic_relations (
        relation TEXT PRIMARY KEY
      )"]
@@ -273,6 +275,30 @@
               (str/includes? edge-schema "CHECK (edge_type IN"))
       (throw (ex-info "Existing strand_edges table is not compatible with the current schema; use a new database or migrate it explicitly." {})))))
 
+(defn- serving-targets [ds run-id]
+  (mapv :to_strand_id
+        (execute! ds ["SELECT to_strand_id
+                       FROM strand_edges
+                       WHERE from_strand_id = ? AND edge_type = 'serves'
+                       ORDER BY to_strand_id"
+                      run-id])))
+
+(defn- require-valid-existing-serves! [ds]
+  (when-let [run-id (:from_strand_id
+                     (execute-one! ds ["SELECT from_strand_id
+                                        FROM strand_edges
+                                        WHERE edge_type = 'serves'
+                                        GROUP BY from_strand_id
+                                        HAVING COUNT(*) > 1
+                                        ORDER BY from_strand_id
+                                        LIMIT 1"]))]
+    (let [targets (serving-targets ds run-id)]
+      (throw (ex-info (str "Run " run-id " has multiple outgoing serves targets: "
+                           (str/join ", " targets))
+                      {:run-id run-id
+                       :relation "serves"
+                       :existing-targets targets})))))
+
 (declare bootstrap-acyclic-relation! bootstrap-immutable-key! immutable-key?)
 
 (defn init!
@@ -281,7 +307,8 @@
   Existing incompatible schemas throw instead of being migrated implicitly."
   [ds]
   (when (some #(table-exists? ds %) ["strands" "attributes" "strand_edges"])
-    (ensure-current-schema! ds))
+    (ensure-current-schema! ds)
+    (require-valid-existing-serves! ds))
   (doseq [stmt schema-sql]
     (execute! ds stmt))
   (ensure-current-schema! ds)
@@ -686,6 +713,26 @@
              (path-exists? ds type to from))
     (throw (ex-info "Strand edge would create a cycle" {:from from :to to :type type}))))
 
+(defn- require-single-serves-edge! [ds from to type]
+  (when (= "serves" type)
+    (let [targets (serving-targets ds from)]
+      (cond
+        (< 1 (count targets))
+        (throw (ex-info (str "Run " from " has multiple outgoing serves targets: "
+                             (str/join ", " targets))
+                        {:run-id from
+                         :relation type
+                         :existing-targets targets
+                         :attempted-target to}))
+
+        (and (seq targets) (not= to (first targets)))
+        (throw (ex-info (str "Run " from " already serves target " (first targets)
+                             "; cannot also serve " to)
+                        {:run-id from
+                         :relation type
+                         :existing-target (first targets)
+                         :attempted-target to}))))))
+
 (defn add-edge!
   "Upsert an edge row and return it.
 
@@ -693,6 +740,7 @@
   [ds {:keys [from to type attributes] :as edge}]
   (require-valid! ::specs/edge-input edge "Invalid edge")
   (require-existing-strand-ids! ds [from to] :edge)
+  (require-single-serves-edge! ds from to type)
   (require-acyclic-edge! ds from to type)
   (execute-one! ds
                 ["INSERT INTO strand_edges (from_strand_id, to_strand_id, edge_type, attributes)

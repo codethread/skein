@@ -27,7 +27,7 @@
     :family :operational
     :direction "run --serves--> served-target"
     :declared-acyclic? true
-    :help "Engine-owned delegation battery: this run is a delegation of that strand's own work."}
+    :help "Engine-owned delegation battery: a run has exactly one served target."}
    {:relation "notes"
     :family :operational
     :direction "note --notes--> target"

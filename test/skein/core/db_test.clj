@@ -53,6 +53,8 @@
       (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'indexed_attr_keys'"])))
       (is (= #{"depends-on" "parent-of" "serves" "supersedes" "notes"}
              (set (db/list-acyclic-relations ds))))
+      (is (some #(= "idx_strand_edges_single_serves" (:name %))
+                (db/execute! ds ["PRAGMA index_list(strand_edges)"])))
       (is (empty? (db/execute! ds ["SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('tasks', 'task_edges')"]))))))
 
 (deftest strand-creation-and-validation
@@ -574,6 +576,56 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"after edges"
                                 (db/declare-acyclic-relation! ds "related-to"))))))))
 
+(deftest serves-relation-allows-one-outgoing-target-per-run
+  (with-db
+    (fn [ds]
+      (let [run (:id (db/add-strand! ds {:title "Run"}))
+            first-target (:id (db/add-strand! ds {:title "First target"}))
+            second-target (:id (db/add-strand! ds {:title "Second target"}))]
+        (db/add-edge! ds {:from run :to first-target :type "serves" :attributes {:attempt 1}})
+        (is (= {:attempt 2}
+               (-> (db/add-edge! ds {:from run
+                                     :to first-target
+                                     :type "serves"
+                                     :attributes {:attempt 2}})
+                   :attributes
+                   db/<-json)))
+        (try
+          (db/add-edge! ds {:from run :to second-target :type "serves" :attributes {}})
+          (is false "expected a second serves target to fail")
+          (catch clojure.lang.ExceptionInfo e
+            (is (str/includes? (.getMessage e) first-target))
+            (is (= {:run-id run
+                    :relation "serves"
+                    :existing-target first-target
+                    :attempted-target second-target}
+                   (ex-data e)))))
+        (is (= [first-target]
+               (mapv :to_strand_id
+                     (db/execute! ds ["SELECT to_strand_id
+                                      FROM strand_edges
+                                      WHERE from_strand_id = ? AND edge_type = 'serves'"
+                                      run]))))))))
+
+(deftest init-rejects-legacy-runs-with-multiple-serves-targets
+  (with-db
+    (fn [ds]
+      (let [run (:id (db/add-strand! ds {:title "Legacy run"}))
+            target-a (:id (db/add-strand! ds {:title "Target A"}))
+            target-b (:id (db/add-strand! ds {:title "Target B"}))]
+        (db/execute! ds ["DROP INDEX idx_strand_edges_single_serves"])
+        (doseq [target [target-a target-b]]
+          (db/execute! ds ["INSERT INTO strand_edges
+                            (from_strand_id, to_strand_id, edge_type, attributes)
+                            VALUES (?, ?, 'serves', '{}')"
+                           run target]))
+        (try
+          (db/init! ds)
+          (is false "expected malformed legacy serves rows to fail")
+          (catch clojure.lang.ExceptionInfo e
+            (is (str/includes? (.getMessage e) run))
+            (is (= #{target-a target-b} (set (:existing-targets (ex-data e)))))))))))
+
 (deftest init-rejects-old-document-strand-schema
   (let [db-file (temp-db-file)
         ds (db/datasource db-file)]
@@ -830,6 +882,20 @@
                (-> (db/execute-one! ds ["SELECT attributes FROM strand_edges WHERE from_strand_id = ? AND to_strand_id = ? AND edge_type = 'related-to'" a b])
                    :attributes
                    db/<-json)))))))
+
+(deftest apply-batch-rejects-multiple-serves-targets-atomically
+  (with-db
+    (fn [ds]
+      (let [run (:id (db/add-strand! ds {:title "Run"}))
+            target-a (:id (db/add-strand! ds {:title "Target A"}))
+            target-b (:id (db/add-strand! ds {:title "Target B"}))]
+        (assert-batch-fails-without-mutation
+         ds
+         (re-pattern target-a)
+         {:refs {:run run :target-a target-a :target-b target-b}
+          :strands [{:ref :run :title "Changed before edge failure"}]
+          :edges [{:op :upsert :from :run :to :target-a :type "serves"}
+                  {:op :upsert :from :run :to :target-b :type "serves"}]})))))
 
 (deftest apply-batch-rolls-back-earlier-valid-mutations
   (with-db
