@@ -120,7 +120,9 @@
 ;; Opts maps stay open — `:by`/`:round` ride beside caller-owned decorating
 ;; attributes — so the known keys are constrained by predicate rather than
 ;; `s/keys`: writers legitimately pass them as nil to mean absent, which
-;; present-key `s/keys` validation would reject.
+;; present-key `s/keys` validation would reject. `:by` states the documented
+;; contract; the body enforces only `:round` and stays lenient about `:by`,
+;; a legacy tolerance deliberately left unchanged by the form conversion.
 (s/def ::note-opts
   (s/nilable
    (s/and map?
