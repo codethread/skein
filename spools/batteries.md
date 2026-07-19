@@ -103,18 +103,22 @@ strand update <id> [--title t] [--state active|closed] [--attr key=value]… \
   [--attributes <json-object-ref>] [--edge edge-type:to-id]…
 ```
 
-Patches title, lifecycle state, attributes, and outgoing edges of one existing strand. Attributes
-**merge** into the existing map — they never replace it. The weaver applies the patch with SQLite
-`json_patch` (`skein.core.db/update-strand!`), so keys you pass are added or overwritten and keys you
-omit are left untouched. Precedence matches `add`: `--attr` (highest, repeatable string map) over
-`--attributes` (lowest, a JSON object of typed values). Passing no attribute flag leaves the
-attribute map untouched.
+Patches title, lifecycle state, attributes, and outgoing edges of one
+existing strand. Attributes **merge** into the existing map — they never
+replace it. The weaver applies the patch with SQLite `json_patch`
+(`skein.core.db/update-strand!`), so keys you pass are added or overwritten
+and keys you omit are left untouched. Precedence matches `add`: `--attr`
+(highest, repeatable string map) over `--attributes` (lowest, a JSON object
+of typed values). Passing no attribute flag leaves the attribute map
+untouched.
 
-The JSON Merge Patch surface is how you *remove* a key: a JSON `null` in `--attributes` deletes that
-attribute. A JSON empty string stores `""`, and `--attr key=` likewise stores `""` — blank is data,
-never a clearing convention. `--attr` values are always strings, so `--attr key=null` stores the
-literal `"null"`; use `--attributes '{"key":null}'` to delete. The trusted-path equivalent is
-`skein.api.weaver.alpha/update!` with `{:attributes {"key" nil}}`.
+The JSON Merge Patch surface is how you *remove* a key: a JSON `null` in
+`--attributes` deletes that attribute. A JSON empty string stores `""`, and
+`--attr key=` likewise stores `""` — blank is data, never a clearing
+convention. `--attr` values are always strings, so `--attr key=null` stores
+the literal `"null"`; a JSON `null` in the `--attributes` object deletes
+instead. The trusted-path equivalent is `skein.api.weaver.alpha/update!`
+with `{:attributes {"key" nil}}`.
 
 Duplicate keys within one `--attr` set fail loudly, as on `add`; a blank `--attributes` key fails
 loudly. Accepts `active|closed`; cannot set `replaced`. Returns the normalized strand.

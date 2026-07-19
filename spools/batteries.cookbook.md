@@ -128,7 +128,7 @@ strand update "$id" --attr gate/error=
 **Why this shape.**
 
 - **Absence is a typed null, never a blank string.** JSON `null` lowers to the Clojure nil merge-patch the trusted path uses (`skein.api.weaver.alpha/update!` with `{:attributes {"key" nil}}`); an empty string stays stored as `""`. Modeling an attribute's disappearance as blank text conflates "no value" with "the value is empty", so the CLI keeps them distinct.
-- **`--attr` wins on collision, so a raw `key=` beats a typed null.** If you pass both, the string write lands — reach for `--attributes '{"key":null}'` when you mean removal.
+- **`--attr` wins on collision, so a raw `key=` beats a typed null.** If you pass both, the string write lands — reach for a JSON `null` in the `--attributes` object when you mean removal.
 - **Omitting all attribute flags leaves the map untouched.** `update --title …` with no `--attr`/`--attributes` never rewrites attributes.
 
 Honest source: the `update`/BAT-C6/BAT-C20 contract in [`batteries.md`](./batteries.md), the `update-typed-attributes-merge-patch` test in `test/skein/spools/batteries_test.clj`, and the core merge-patch nil deletion in `skein.core.db/update-strand!`.

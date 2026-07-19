@@ -658,16 +658,16 @@
     (throw (ex-info (str "Duplicate attribute key in --attr: " dup) {:key dup}))))
 
 (defn- attributes->map
-  "Coerce a parsed --attributes value (a JSON object) into an attribute map."
+  "Coerce a supplied --attributes value into an attribute map, failing loudly on
+  anything but a JSON object. A JSON null parses to nil and is rejected here, not
+  read as an empty patch; callers guard against an omitted flag before calling."
   [attributes]
-  (cond
-    (nil? attributes) {}
-    (map? attributes)
+  (if (map? attributes)
     (do (doseq [k (keys attributes)]
           (when (str/blank? k)
             (throw (ex-info "--attributes contains a blank attribute key" {:key k}))))
         attributes)
-    :else (throw (ex-info "--attributes must reference a JSON object" {:value attributes}))))
+    (throw (ex-info "--attributes must reference a JSON object" {:value attributes}))))
 
 (defn- parse-edges
   "Parse repeatable --edge edge-type:to-id specs into edge maps."
@@ -730,9 +730,11 @@
   "Create a strand with merged attributes, optional state, and outgoing edges."
   [ctx]
   (let [rt (:op/runtime ctx)
-        {:keys [title state attr attributes edge]} (:op/args ctx)]
+        args (:op/args ctx)
+        {:keys [title state attr attributes edge]} args]
     (check-attr-duplicates! (:op/argv ctx))
-    (let [merged (merge (attributes->map attributes) (or attr {}))
+    (let [merged (merge (when (contains? args :attributes) (attributes->map attributes))
+                        (or attr {}))
           edges (parse-edges edge)]
       (weaver/add! rt
                    (cond-> {:title title :attributes merged}
@@ -758,7 +760,9 @@
                   (some? title) (assoc :title title)
                   (some? state) (assoc :state (validate-generic-state state))
                   attribute-patch? (assoc :attributes
-                                          (merge (attributes->map attributes) (or attr {}))))]
+                                          (merge (when (contains? args :attributes)
+                                                   (attributes->map attributes))
+                                                 (or attr {}))))]
       (weaver/update! rt id patch (request-context :update)))))
 
 (defn show-op
@@ -909,7 +913,7 @@
                   :doc "String attribute key=value merge patch; repeatable, highest precedence. Values may be payload references."}
            :attributes {:type :string
                         :parse :json
-                        :doc "Payload reference to a JSON object merge patch of typed bulk attributes (lowest precedence). A JSON null value removes that key; a JSON empty string stores \"\"."}
+                        :doc "Payload reference to a JSON object merge patch of typed attributes (lowest precedence); a JSON null removes that key, an empty string stores \"\"."}
            :edge {:type :string
                   :repeat? true
                   :doc "Outgoing edge edge-type:to-id; repeatable."}}

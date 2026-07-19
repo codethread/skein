@@ -586,7 +586,17 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"blank attribute key"
                                 (weaver/op! rt 'update
                                             [(:id created) "--attributes" ":payload/attrs"]
-                                            {:payloads {"attrs" "{\"\":\"x\"}"}}))))))))
+                                            {:payloads {"attrs" "{\"\":\"x\"}"}})))))
+      (testing "supplied JSON null for --attributes fails loudly, not as an empty patch"
+        (let [created (weaver/add! rt {:title "Null" :attributes {:owner "old"}})]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must reference a JSON object"
+                                (weaver/op! rt 'update
+                                            [(:id created) "--attributes" ":payload/attrs"]
+                                            {:payloads {"attrs" "null"}})))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must reference a JSON object"
+                                (weaver/op! rt 'add
+                                            ["Null add" "--attributes" ":payload/attrs"]
+                                            {:payloads {"attrs" "null"}}))))))))
 
 (deftest show-supersede-burn
   (with-batteries
