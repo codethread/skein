@@ -12,14 +12,17 @@ Explicit-runtime API for the weaver-owned no-poller scheduler primitive.
   event handlers observe one mutation order (RFC-009, DELTA-weaver-scheduler-
   repl-001). Delivery is at-least-once: handlers must be idempotent.
 
-  This namespace owns wake validation, handler resolution, and JSON
-  normalization of persisted rows into data-first maps; durable storage lives
-  in `skein.core.db` and timer arming/dispatch in `skein.core.weaver.scheduler`.
+  This namespace guards the wake map and resolves handlers eagerly, so a bad
+  handler fails `schedule!`, not dispatch; field validation flows through the
+  shared `:skein.core.specs/scheduler-wake` boundary spec at the persistence
+  seam, durable storage lives in `skein.core.db`, and timer arming/dispatch
+  in `skein.core.weaver.scheduler`. Persisted rows return as decoded
+  data-first maps (`::pending-wake`, `::cancellation`).
 
-  Pull-based `wake-at` strand attributes plus named queries remain the default
-  answer when a poller already exists. Reach for this namespace only for the
-  no-poller case where something must proactively happen at instant T with no
-  client polling to trigger it.
+  Pull-based `wake-at` strand attributes plus named queries remain the
+  default answer when a poller already exists. Reach for this namespace only
+  for the no-poller case where something must proactively happen at instant T
+  with no client polling to trigger it.
 
   Callers own runtime selection and pass the target weaver runtime as the
   first argument to every function here; capture it with
@@ -36,8 +39,10 @@ Function.
 
 Cancel a pending wake in `runtime` by stable key.
 
-  Returns the cancellation's history row. A missing key fails loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L64-L71">Source</a></sub></p>
+  Removes whichever generation currently holds `key` and returns the
+  cancellation's history row as a decoded `::cancellation` map. A missing
+  key fails loudly.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L51-L60">Source</a></sub></p>
 
 ## <a name="skein.api.scheduler.alpha/pending">`pending`</a>
 ``` clojure
@@ -45,8 +50,11 @@ Cancel a pending wake in `runtime` by stable key.
 ```
 Function.
 
-Return all pending wakes in `runtime`, ordered by wake-at ascending.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L73-L76">Source</a></sub></p>
+Return all pending wakes in `runtime` as decoded `::pending-wake` maps.
+
+  Ordered by wake-at ascending with a stable key tie-break, so the earliest
+  pending wake is `(first (pending runtime))`.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L62-L68">Source</a></sub></p>
 
 ## <a name="skein.api.scheduler.alpha/schedule!">`schedule!`</a>
 ``` clojure
@@ -60,6 +68,7 @@ Persist or replace a durable wake in `runtime` and arm it for dispatch.
   (java.time.Instant), :handler (fully qualified symbol resolvable in
   `runtime`'s spool classloader), and optional :payload (nil or a map that
   encodes to a JSON object). Replacing an existing key resets its attempt
-  count. Malformed keys/instants/payloads, unknown wake keys, and unresolvable
-  handlers fail loudly; no wake is persisted on failure.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L47-L62">Source</a></sub></p>
+  count. Returns the persisted wake as a decoded `::pending-wake` map.
+  Malformed keys/instants/payloads and unresolvable or non-callable handlers
+  fail loudly; no wake is persisted on failure.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L33-L49">Source</a></sub></p>
