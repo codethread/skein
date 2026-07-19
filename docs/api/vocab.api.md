@@ -31,7 +31,7 @@ Explicit-runtime vocabulary registry: the blessed home for declaring and
 The two vocabulary kinds a declaration may describe: an attribute namespace
   segment or an edge (relation) type. This set is the `::kind` spec enum and the
   single source of the `vocab --kind` allow-list reused by the batteries op.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L26-L30">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L27-L31">Source</a></sub></p>
 
 ## <a name="skein.api.vocab.alpha/declarations">`declarations`</a>
 ``` clojure
@@ -42,9 +42,11 @@ Function.
 
 Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
 
-  With `{:kind k}` opts, narrows to that kind. Reads the runtime store
-  explicitly — never the published ambient singleton.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L178-L191">Source</a></sub></p>
+  With `{:kind k}` opts, narrows to that kind; a `:kind` outside
+  `declaration-kinds` fails loudly rather than silently matching nothing.
+  Reads the runtime store explicitly — never the published ambient
+  singleton.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L50-L69">Source</a></sub></p>
 
 ## <a name="skein.api.vocab.alpha/declare!">`declare!`</a>
 ``` clojure
@@ -61,4 +63,4 @@ Record C1 `declaration` in `runtime`'s vocabulary registry and return it.
   ownership of a namespace or edge type is a hard, single-owner edge. The
   conflict check runs inside the `swap!`, so concurrent cross-owner declarations
   cannot race past it.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L161-L176">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L33-L48">Source</a></sub></p>
