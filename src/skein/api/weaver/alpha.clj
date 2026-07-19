@@ -1,16 +1,25 @@
 (ns skein.api.weaver.alpha
-  "Explicit-runtime API for the strand lifecycle, schema init, and the op registry.
+  "Explicit-runtime API for the strand lifecycle, schema init, and the op
+  registry.
 
   This namespace owns the primitives no domain namespace does: strand
   create/read/update (`add!`, `update!`, `supersede!`,
-  `archive-attributes!`/`unarchive-attributes!`,
-  `show`, `list`/`list-lean`/`list-query`, and `ready`/`ready-lean`),
-  database schema `init`, acyclic-relation declaration
+  `archive-attributes!`/`unarchive-attributes!`, `show`,
+  `list`/`list-lean`/`list-query`, and `ready`/`ready-lean`), database schema
+  `init`, acyclic-relation declaration
   (`declare-acyclic-relation!`/`acyclic-relations`), and the CLI op registry
-  (`register-op!`, `replace-op!`, `ops`, `resolve-op`, `op!`,
-  `op-help-handler`, `help-alias-result`, `register-built-in-ops!`). Domain
-  surfaces (events, hooks, graph queries, batch, patterns, scheduler,
-  runtime config) each own their own alpha namespace.
+  (`register-op!`, `replace-op!`, `ops`, `resolve-op`, `op!`). Domain surfaces
+  (events, hooks, graph queries, batch, patterns, scheduler, runtime config)
+  each own their own alpha namespace.
+
+  The module reads in that order. The mutating writes lead — each shows its own
+  transaction/hook/event sequencing at the top level — followed by the acyclic
+  relations, attribute archival, the read surface, and the op registry, whose
+  `op!` is the dispatch entry point for a root-level `strand <name>` invoke.
+  Registration validation and entry construction are plumbing in
+  `skein.api.weaver.internal.op-entry`; the built-in `help` op and the
+  help-alias projection live in `skein.core.weaver.help`, which both `op!` and
+  the JSON socket consume.
 
   Callers own runtime selection and pass the target weaver runtime as the first
   argument to every function here."
@@ -20,16 +29,25 @@
             [next.jdbc :as jdbc]
             [skein.api.cli.alpha :as cli]
             [skein.api.return-shape.alpha :as return-shape]
+            [skein.api.weaver.internal.op-entry :as op-entry]
             [skein.core.db :as db]
-            [skein.core.weaver.access :refer [ds normalize query-registry op-registry
-                                              with-spool-classloader validate-fn-symbol!]]
-            [skein.core.weaver.dispatch :as dispatch]
-            [skein.core.weaver.lifecycle :refer [event-base request-context
-                                                 run-validation-hooks! run-transform-hooks]]
             [skein.core.query :as query]
-            [skein.core.specs :as specs]))
+            [skein.core.specs :as specs]
+            [skein.core.weaver.access :refer [ds normalize query-registry op-registry
+                                              with-spool-classloader]]
+            [skein.core.weaver.dispatch :as dispatch]
+            [skein.core.weaver.help :as help]
+            [skein.core.weaver.lifecycle :refer [event-base request-context
+                                                 run-validation-hooks! run-transform-hooks]]))
 
-(declare apply-edges! op-detail)
+(declare apply-edges! reject-unknown-update-keys! supersede-context
+         require-archive-result! require-lean-result!
+         validated-op-entry operation-label)
+
+;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
+(s/def ::runtime some?)
+
+;; --- schema init ------------------------------------------------------------
 
 (defn init
   "Initialize the runtime database schema."
@@ -37,8 +55,19 @@
   (db/init! (ds runtime))
   {:database "initialized"})
 
+(s/fdef init
+  :args (s/cat :runtime ::runtime)
+  :ret map?)
+
+;; --- strand create / read / update ------------------------------------------
+
 (defn add!
-  "Create a strand, enqueue a creation event, and return the normalized strand."
+  "Create a strand, enqueue a creation event, and return the normalized strand.
+
+  The transaction normalizes attributes through the `:attributes/normalize`
+  transform hooks, inserts the strand, applies its edges, and runs the
+  `:strand/add-before-commit` validation hooks before committing; the
+  `:strand/added` event is enqueued only after the commit succeeds."
   ([runtime strand]
    (add! runtime strand (request-context :add)))
   ([runtime strand req-ctx]
@@ -47,12 +76,14 @@
                          strand (cond-> strand
                                   true (dissoc :edges)
                                   (some? (:attributes strand))
-                                  (assoc :attributes (run-transform-hooks runtime
-                                                                          :attributes/normalize
-                                                                          (merge req-ctx
-                                                                                 {:hook/value (:attributes strand)
-                                                                                  :mutation/operation :strand/add
-                                                                                  :strand/patch strand}))))
+                                  (assoc :attributes
+                                         (run-transform-hooks
+                                          runtime
+                                          :attributes/normalize
+                                          (merge req-ctx
+                                                 {:hook/value (:attributes strand)
+                                                  :mutation/operation :strand/add
+                                                  :strand/patch strand}))))
                          created (normalize (db/add-strand! tx strand))]
                      (apply-edges! tx (:id created) edges)
                      (run-validation-hooks! runtime
@@ -68,20 +99,20 @@
                                        :strand created))
      created)))
 
-(defn- apply-edges! [tx id edges]
-  (doseq [{:keys [to type attributes]} edges]
-    (when-not (db/get-strand tx to)
-      (throw (ex-info "Edge target strand not found" {:to to :type type})))
-    (db/add-edge! tx {:from id :to to :type type :attributes (or attributes {})})))
-
-(def ^:private update-patch-keys #{:title :state :attributes :edges})
-
-(defn- reject-unknown-update-keys! [patch]
-  (when-let [unknown (seq (remove update-patch-keys (keys patch)))]
-    (throw (ex-info "Unknown strand update fields" {:fields (vec unknown)}))))
+(s/fdef add!
+  :args (s/or :default (s/cat :runtime ::runtime :strand ::specs/strand-input)
+              :with-ctx (s/cat :runtime ::runtime :strand ::specs/strand-input
+                               :req-ctx map?))
+  :ret map?)
 
 (defn update!
-  "Update a strand and/or add edges atomically, then enqueue an update event."
+  "Update a strand and/or add edges atomically, then enqueue an update event.
+
+  Rejects unknown patch fields up front. The transaction reads the current
+  strand (failing loudly when absent), normalizes any supplied attributes
+  through the `:attributes/normalize` transform hooks, applies edges, writes the
+  changed columns, and runs the `:strand/update-before-commit` validation hooks;
+  the `:strand/updated` event is enqueued only after the commit succeeds."
   ([runtime id patch]
    (update! runtime id patch (request-context :update)))
   ([runtime id patch req-ctx]
@@ -91,21 +122,29 @@
                   (let [before (or (some-> (db/get-strand tx id) normalize)
                                    (throw (ex-info "Strand not found" {:strand-id id})))
                         patch (if (some? (:attributes patch))
-                                (assoc patch :attributes (run-transform-hooks runtime
-                                                                              :attributes/normalize
-                                                                              (merge req-ctx
-                                                                                     {:hook/value (:attributes patch)
-                                                                                      :mutation/operation :strand/update
-                                                                                      :strand/id id
-                                                                                      :strand/before before
-                                                                                      :strand/patch patch})))
+                                (assoc patch :attributes
+                                       (run-transform-hooks
+                                        runtime
+                                        :attributes/normalize
+                                        (merge req-ctx
+                                               {:hook/value (:attributes patch)
+                                                :mutation/operation :strand/update
+                                                :strand/id id
+                                                :strand/before before
+                                                :strand/patch patch})))
                                 patch)
                         attributes (:attributes patch)]
                     (apply-edges! tx id edges)
-                    (let [after (normalize (db/update-strand! tx id (cond-> {}
-                                                                      (contains? patch :title) (assoc :title title)
-                                                                      (contains? patch :state) (assoc :state state)
-                                                                      (contains? patch :attributes) (assoc :attributes attributes))))]
+                    (let [after (normalize
+                                 (db/update-strand!
+                                  tx id
+                                  (cond-> {}
+                                    (contains? patch :title)
+                                    (assoc :title title)
+                                    (contains? patch :state)
+                                    (assoc :state state)
+                                    (contains? patch :attributes)
+                                    (assoc :attributes attributes))))]
                       (run-validation-hooks! runtime
                                              :strand/update-before-commit
                                              (merge req-ctx
@@ -123,62 +162,64 @@
                                        :strand/after (:after result)))
      (:after result))))
 
-(defn- supersede-context [old-id replacement-id result]
-  {:strand/id old-id
-   :strand/old-id old-id
-   :strand/replacement-id replacement-id
-   :strand/before (get-in result [:old :before])
-   :strand/after (get-in result [:old :after])
-   :supersession/supersedes-edge (:supersedes-edge result)
-   :supersession/rewired-dependencies (:rewired-dependencies result)})
+(s/fdef update!
+  :args (s/or :default (s/cat :runtime ::runtime :id ::specs/id :patch map?)
+              :with-ctx (s/cat :runtime ::runtime :id ::specs/id :patch map?
+                               :req-ctx map?))
+  :ret map?)
 
 (defn supersede!
-  "Replace one strand with another and enqueue a supersession event."
+  "Replace one strand with another and enqueue a supersession event.
+
+  The transaction performs the supersession and runs the
+  `:strand/supersede-before-commit` validation hooks with the supersession
+  context; the `:strand/superseded` event is enqueued only after the commit
+  succeeds."
   ([runtime old-id replacement-id]
    (supersede! runtime old-id replacement-id (request-context :supersede)))
   ([runtime old-id replacement-id req-ctx]
    (let [result (jdbc/with-transaction [tx (ds runtime)]
-                  (let [result (normalize (db/supersede-strand-in-transaction! tx old-id replacement-id))]
-                    (run-validation-hooks! runtime
-                                           :strand/supersede-before-commit
-                                           (merge req-ctx
-                                                  {:mutation/operation :strand/supersede}
-                                                  (supersede-context old-id replacement-id result)))
+                  (let [result (normalize
+                                (db/supersede-strand-in-transaction! tx old-id replacement-id))]
+                    (run-validation-hooks!
+                     runtime
+                     :strand/supersede-before-commit
+                     (merge req-ctx
+                            {:mutation/operation :strand/supersede}
+                            (supersede-context old-id replacement-id result)))
                     result))]
      (dispatch/enqueue! runtime (merge (event-base :strand/superseded)
                                        (supersede-context old-id replacement-id result)))
      result)))
+
+(s/fdef supersede!
+  :args (s/or :default (s/cat :runtime ::runtime :old-id ::specs/id
+                              :replacement-id ::specs/id)
+              :with-ctx (s/cat :runtime ::runtime :old-id ::specs/id
+                               :replacement-id ::specs/id :req-ctx map?))
+  :ret map?)
+
+;; --- acyclic relations ------------------------------------------------------
 
 (defn declare-acyclic-relation!
   "Declare an edge relation as acyclic for future graph writes."
   [runtime relation]
   (db/declare-acyclic-relation! (ds runtime) relation))
 
+(s/fdef declare-acyclic-relation!
+  :args (s/cat :runtime ::runtime :relation some?)
+  :ret any?)
+
 (defn acyclic-relations
   "Return declared acyclic edge relation names."
   [runtime]
   (db/list-acyclic-relations (ds runtime)))
 
-(defn- require-archive-result! [result]
-  (when-not (s/valid? ::specs/attribute-archive-result result)
-    (throw (ex-info "Attribute archive result is invalid"
-                    {:result result
-                     :explain (s/explain-str ::specs/attribute-archive-result result)})))
-  result)
+(s/fdef acyclic-relations
+  :args (s/cat :runtime ::runtime)
+  :ret coll?)
 
-(defn- require-omitted-attribute-descriptor! [descriptor]
-  (when-not (s/valid? ::specs/omitted-attribute-descriptor descriptor)
-    (throw (ex-info "Omitted attribute descriptor is invalid"
-                    {:descriptor descriptor
-                     :explain (s/explain-str ::specs/omitted-attribute-descriptor descriptor)})))
-  descriptor)
-
-(defn- require-lean-result! [result]
-  (doseq [strand result
-          [_ value] (:attributes strand)
-          :when (:skein/omitted value)]
-    (require-omitted-attribute-descriptor! value))
-  result)
+;; --- attribute archival -----------------------------------------------------
 
 (defn archive-attributes!
   "Archive all attributes, or an explicit non-empty key set, for one strand.
@@ -201,6 +242,12 @@
   ([runtime strand-id keys]
    (require-archive-result! (db/archive-attributes! (ds runtime) strand-id keys))))
 
+(s/fdef archive-attributes!
+  :args (s/or :all (s/cat :runtime ::runtime :strand-id ::specs/id)
+              :keys (s/cat :runtime ::runtime :strand-id ::specs/id
+                           :keys ::specs/attribute-key-set))
+  :ret ::specs/attribute-archive-result)
+
 (defn unarchive-attributes!
   "Mark all attributes, or an explicit non-empty key set, hot again for one
   strand.
@@ -221,10 +268,22 @@
   ([runtime strand-id keys]
    (require-archive-result! (db/unarchive-attributes! (ds runtime) strand-id keys))))
 
+(s/fdef unarchive-attributes!
+  :args (s/or :all (s/cat :runtime ::runtime :strand-id ::specs/id)
+              :keys (s/cat :runtime ::runtime :strand-id ::specs/id
+                           :keys ::specs/attribute-key-set))
+  :ret ::specs/attribute-archive-result)
+
+;; --- read surface -----------------------------------------------------------
+
 (defn show
   "Return one normalized strand by id, or nil when absent."
   [runtime id]
   (normalize (db/get-strand (ds runtime) id)))
+
+(s/fdef show
+  :args (s/cat :runtime ::runtime :id ::specs/id)
+  :ret (s/nilable map?))
 
 (defn list
   "Return strands visible to `runtime`, optionally filtered by a query definition."
@@ -232,6 +291,11 @@
    (normalize (db/all-strands (ds runtime))))
   ([runtime query-def params]
    (normalize (db/all-strands (ds runtime) query-def params))))
+
+(s/fdef list
+  :args (s/or :all (s/cat :runtime ::runtime)
+              :filtered (s/cat :runtime ::runtime :query-def any? :params any?))
+  :ret coll?)
 
 (defn list-lean
   "Return strands with oversized attributes replaced by descriptors.
@@ -241,14 +305,28 @@
   ([runtime lean-byte-floor]
    (require-lean-result! (normalize (db/all-strands-lean (ds runtime) lean-byte-floor))))
   ([runtime lean-byte-floor query-def params]
-   (require-lean-result! (normalize (db/all-strands-lean (ds runtime) lean-byte-floor query-def params))))
+   (require-lean-result!
+    (normalize (db/all-strands-lean (ds runtime) lean-byte-floor query-def params))))
   ([runtime lean-byte-floor query-def params limit]
-   (require-lean-result! (normalize (db/all-strands-lean (ds runtime) lean-byte-floor query-def params limit)))))
+   (require-lean-result!
+    (normalize (db/all-strands-lean (ds runtime) lean-byte-floor query-def params limit)))))
+
+(s/fdef list-lean
+  :args (s/or :floor (s/cat :runtime ::runtime :lean-byte-floor nat-int?)
+              :filtered (s/cat :runtime ::runtime :lean-byte-floor nat-int?
+                               :query-def any? :params any?)
+              :limited (s/cat :runtime ::runtime :lean-byte-floor nat-int?
+                              :query-def any? :params any? :limit nat-int?))
+  :ret coll?)
 
 (defn list-query
   "Return strands matching a registered query definition."
   [runtime query-name params]
   (list runtime (query/query-def @(query-registry runtime) query-name) params))
+
+(s/fdef list-query
+  :args (s/cat :runtime ::runtime :query-name any? :params any?)
+  :ret coll?)
 
 (defn ready
   "Return ready strands for `runtime`, optionally filtered by a query definition."
@@ -256,6 +334,11 @@
    (normalize (db/ready-strands (ds runtime))))
   ([runtime query-def params]
    (normalize (db/ready-strands (ds runtime) query-def params))))
+
+(s/fdef ready
+  :args (s/or :all (s/cat :runtime ::runtime)
+              :filtered (s/cat :runtime ::runtime :query-def any? :params any?))
+  :ret coll?)
 
 (defn ready-lean
   "Return ready strands with oversized attributes replaced by descriptors.
@@ -265,157 +348,35 @@
   ([runtime lean-byte-floor]
    (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor))))
   ([runtime lean-byte-floor query-def params]
-   (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params))))
+   (require-lean-result!
+    (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params))))
   ([runtime lean-byte-floor query-def params limit]
-   (require-lean-result! (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params limit)))))
+   (require-lean-result!
+    (normalize (db/ready-strands-lean (ds runtime) lean-byte-floor query-def params limit)))))
 
-(defn- validate-op-fn-symbol! [fn-sym]
-  (validate-fn-symbol! "Operation" fn-sym))
+(s/fdef ready-lean
+  :args (s/or :floor (s/cat :runtime ::runtime :lean-byte-floor nat-int?)
+              :filtered (s/cat :runtime ::runtime :lean-byte-floor nat-int?
+                               :query-def any? :params any?)
+              :limited (s/cat :runtime ::runtime :lean-byte-floor nat-int?
+                              :query-def any? :params any? :limit nat-int?))
+  :ret coll?)
 
-(defn- canonical-op-name [op-name]
-  (query/canonical-query-name op-name))
-
-(defn- validate-op-doc! [doc]
-  (when-not (and (string? doc) (not (str/blank? doc)))
-    (throw (ex-info "Operation doc must be a non-blank string" {:doc doc})))
-  doc)
-
-(def ^:private op-metadata-keys #{:doc :arg-spec :returns :stream? :deadline-class :hook-class})
-(def ^:private op-deadline-classes #{:standard :unbounded})
-(def ^:private op-hook-classes #{:read :mutating})
-
-(defn- normalize-op-opts
-  "Coerce a register-op! metadata argument into an options map.
-
-  A string is the legacy positional doc; a map is the full metadata map; nil is
-  the no-metadata case."
-  [opts]
-  (cond
-    (nil? opts) {}
-    (string? opts) {:doc opts}
-    (map? opts) opts
-    :else (throw (ex-info "Operation metadata must be a doc string or options map" {:opts opts}))))
-
-(defn- validate-op-metadata! [opts]
-  ;; Provenance is registry-recorded from the handler namespace; a caller must
-  ;; never assert it. Reject it explicitly so the error is unambiguous even
-  ;; though it would also trip the unknown-key check below.
-  (when (contains? opts :provenance)
-    (throw (ex-info "Operation :provenance is registry-recorded and cannot be supplied by the caller"
-                    {:provenance (:provenance opts)})))
-  (when-let [unknown (seq (remove op-metadata-keys (keys opts)))]
-    (throw (ex-info "Operation metadata contains unknown keys" {:keys (vec unknown)})))
-  (when (and (contains? opts :stream?) (not (boolean? (:stream? opts))))
-    (throw (ex-info "Operation :stream? must be a boolean" {:stream? (:stream? opts)})))
-  (when (and (contains? opts :deadline-class) (not (op-deadline-classes (:deadline-class opts))))
-    (throw (ex-info "Operation :deadline-class must be :standard or :unbounded"
-                    {:deadline-class (:deadline-class opts)})))
-  (when (and (contains? opts :hook-class) (not (op-hook-classes (:hook-class opts))))
-    (throw (ex-info "Operation :hook-class must be :read or :mutating"
-                    {:hook-class (:hook-class opts)})))
-  opts)
-
-(defn- validate-op-arg-spec! [op-name arg-spec]
-  (try
-    (cli/validate! arg-spec)
-    (catch clojure.lang.ExceptionInfo e
-      (throw (ex-info "Operation arg-spec is invalid"
-                      (assoc (ex-data e) :operation (canonical-op-name op-name))
-                      e)))))
-
-(defn- invalid-returns!
-  [op-name reason message data]
-  (throw (ex-info message
-                  (merge {:operation (canonical-op-name op-name)
-                          :reason reason}
-                         data))))
-
-(defn- stream-return-case?
-  [return-case]
-  (and (map? return-case) (contains? return-case :stream)))
-
-(defn- validate-return-case-alignment!
-  [op-name stream? return-case context]
-  (when (not= stream? (stream-return-case? return-case))
-    (invalid-returns! op-name
-                      :return-stream-misalignment
-                      "Operation :returns does not align with :stream?"
-                      (assoc context :stream? stream? :returns return-case))))
-
-(defn- validate-op-returns!
-  [op-name arg-spec stream? returns]
-  (try
-    (return-shape/validate! returns)
-    (catch clojure.lang.ExceptionInfo e
-      (throw (ex-info "Operation :returns declaration is invalid"
-                      (assoc (ex-data e) :operation (canonical-op-name op-name))
-                      e))))
-  (let [arg-subcommands (:subcommands arg-spec)
-        return-subcommands (when (and (map? returns) (contains? returns :subcommands))
-                             (:subcommands returns))]
-    (if arg-subcommands
-      (do
-        (when-not return-subcommands
-          (invalid-returns! op-name
-                            :return-routing-misalignment
-                            "Subcommand operation :returns must declare :subcommands"
-                            {:returns returns}))
-        (let [expected (set (keys arg-subcommands))
-              actual (set (keys return-subcommands))]
-          (when-not (= expected actual)
-            (invalid-returns! op-name
-                              :return-subcommand-misalignment
-                              "Operation :returns subcommands must exactly match :arg-spec"
-                              {:expected-subcommands (vec (sort expected))
-                               :actual-subcommands (vec (sort actual))})))
-        (doseq [[subcommand return-case] return-subcommands]
-          (validate-return-case-alignment! op-name stream? return-case {:subcommand subcommand})))
-      (do
-        (when return-subcommands
-          (invalid-returns! op-name
-                            :return-routing-misalignment
-                            "Flat operation :returns cannot declare :subcommands"
-                            {:returns returns}))
-        (validate-return-case-alignment! op-name stream? returns {}))))
-  returns)
-
-(defn- build-op-entry
-  "Build a validated op registry entry with metadata defaults and provenance.
-
-  Provenance is derived from the handler symbol's namespace. `:deadline-class`
-  defaults to `:unbounded` for stream ops and `:standard` otherwise;
-  `:hook-class` defaults to `:mutating`, preserving today's hook-gated behavior."
-  [op-name opts fn-sym]
-  (let [opts (validate-op-metadata! (normalize-op-opts opts))
-        validated-fn (validate-op-fn-symbol! fn-sym)
-        stream? (boolean (:stream? opts))]
-    (cond-> {:name (canonical-op-name op-name)
-             :fn validated-fn
-             :stream? stream?
-             :deadline-class (or (:deadline-class opts) (if stream? :unbounded :standard))
-             :hook-class (or (:hook-class opts) :mutating)
-             :provenance (symbol (namespace validated-fn))}
-      (:doc opts) (assoc :doc (validate-op-doc! (:doc opts)))
-      (some? (:arg-spec opts)) (assoc :arg-spec (validate-op-arg-spec! op-name (:arg-spec opts)))
-      (contains? opts :returns) (assoc :returns (validate-op-returns! op-name
-                                                                      (:arg-spec opts)
-                                                                      stream?
-                                                                      (:returns opts))))))
+;; --- op registry ------------------------------------------------------------
 
 (defn register-op!
   "Register a trusted weaver-side CLI operation.
 
-  Registered operations are invoked at the CLI root as `strand <name> [args...]`. The handler
-  symbol must resolve to a function that accepts one context map (see `op!` for
-  the context keys) and returns JSON-compatible data. The third positional
-  argument is either a doc string or an op metadata map with keys `:doc`,
-  `:arg-spec` (parser spec, structurally validated at registration), `:returns`
-  (validated return-shape declaration),
-  `:stream?` (default false), `:deadline-class`
-  (`:standard`/`:unbounded`, defaulting to `:unbounded` for stream ops), and
-  `:hook-class` (`:read`/`:mutating`, default `:mutating`); unknown keys fail
-  loudly. Provenance (the registering namespace) is recorded from the handler
-  symbol and must never be caller-supplied.
+  Registered operations are invoked at the CLI root as `strand <name>
+  [args...]`. The handler symbol must resolve to a function that accepts one
+  context map (see `op!` for the context keys) and returns JSON-compatible data.
+  The third positional argument is either a doc string or an op metadata map
+  with keys `:doc`, `:arg-spec` (parser spec, structurally validated at
+  registration), `:returns` (validated return-shape declaration), `:stream?`
+  (default false), `:deadline-class` (`:standard`/`:unbounded`, defaulting to
+  `:unbounded` for stream ops), and `:hook-class` (`:read`/`:mutating`, default
+  `:mutating`); unknown keys fail loudly. Provenance (the registering namespace)
+  is recorded from the handler symbol and must never be caller-supplied.
 
   Registering an already-registered name fails loudly, naming both the existing
   entry's provenance and the attempted registrant; use `replace-op!` to override
@@ -425,7 +386,7 @@
   ([runtime op-name fn-sym]
    (register-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
-   (let [entry (build-op-entry op-name opts fn-sym)]
+   (let [entry (validated-op-entry op-name opts fn-sym)]
      (swap! (op-registry runtime)
             (fn [registry]
               (when-let [existing (get registry (:name entry))]
@@ -436,6 +397,12 @@
               (assoc registry (:name entry) entry)))
      entry)))
 
+(s/fdef register-op!
+  :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
+              :with-opts (s/cat :runtime ::runtime :op-name any?
+                                :opts any? :fn-sym symbol?))
+  :ret map?)
+
 (defn replace-op!
   "Replace an already-registered op, failing loudly when the name is absent.
 
@@ -444,7 +411,7 @@
   ([runtime op-name fn-sym]
    (replace-op! runtime op-name nil fn-sym))
   ([runtime op-name opts fn-sym]
-   (let [entry (build-op-entry op-name opts fn-sym)]
+   (let [entry (validated-op-entry op-name opts fn-sym)]
      (swap! (op-registry runtime)
             (fn [registry]
               (when-not (contains? registry (:name entry))
@@ -454,48 +421,38 @@
               (assoc registry (:name entry) entry)))
      entry)))
 
+(s/fdef replace-op!
+  :args (s/or :default (s/cat :runtime ::runtime :op-name any? :fn-sym symbol?)
+              :with-opts (s/cat :runtime ::runtime :op-name any?
+                                :opts any? :fn-sym symbol?))
+  :ret map?)
+
 (defn ops
   "Return registered CLI operation entries for the current weaver runtime."
   [runtime]
   (mapv val (sort-by key @(op-registry runtime))))
 
+(s/fdef ops
+  :args (s/cat :runtime ::runtime)
+  :ret (s/coll-of map? :kind vector?))
+
 (defn resolve-op
   "Return the registered CLI operation entry for `op-name`, or fail loudly."
   [runtime op-name]
-  (let [canonical-name (canonical-op-name op-name)]
+  (let [canonical-name (op-entry/canonical-op-name op-name)]
     (or (get @(op-registry runtime) canonical-name)
-        (throw (ex-info "Operation not found" {:operation op-name
-                                               :canonical-operation canonical-name
-                                               :available (sort (keys @(op-registry runtime)))})))))
+        (throw (ex-info "Operation not found"
+                        {:operation op-name
+                         :canonical-operation canonical-name
+                         :available (sort (keys @(op-registry runtime)))})))))
 
-(def ^:private help-alias-tokens
-  "Dispatch-level help alias argv tokens; the parser's reserved set is the
-  single source of truth so validation and dispatch cannot drift."
-  cli/reserved-subcommand-names)
-
-(defn help-alias-result
-  "Return an op detail projection when argv/envelope form a help alias.
-
-  The alias applies only to ops whose arg-spec declares `:subcommands`, argv is
-  exactly one reserved help token, and the envelope carries no payloads. Returns
-  nil when the invocation must flow through normal parsing and handler dispatch."
-  [entry argv envelope]
-  (let [argv (vec argv)
-        payloads (or (:payloads envelope) {})]
-    (when (and (contains? (:arg-spec entry) :subcommands)
-               (= 1 (count argv))
-               (contains? help-alias-tokens (first argv))
-               (empty? payloads))
-      (op-detail entry))))
-
-(defn- operation-label
-  "Return the canonical label for a parsed subcommand invocation."
-  [op-name parsed-args]
-  (str/join " " (cond-> [op-name (:subcommand parsed-args)]
-                  (contains? parsed-args :action) (conj (:action parsed-args)))))
+(s/fdef resolve-op
+  :args (s/cat :runtime ::runtime :op-name any?)
+  :ret map?)
 
 (defn op!
-  "Invoke a registered CLI operation with raw string argv from a root-level `strand <name>` invoke.
+  "Invoke a registered CLI operation with raw string argv from a root-level
+  `strand <name>` invoke.
 
   The handler receives a context map with `:op/name`, `:op/argv`, `:op/runtime`,
   `:op/runtime-metadata`, and `:op/payloads` (defaulting to `{}`). The envelope
@@ -503,117 +460,157 @@
   `:timeout` fields into `:op/cwd`, `:op/worktree-root`, `:op/git-common-dir`,
   and `:op/timeout`, and an envelope `:emit!` fn (supplied by the streaming
   socket transport for `:stream? true` ops) into `:op/emit!`. When the resolved
-  op declares an `:arg-spec`, `:op/argv` and
-  the attached payloads are parsed through `skein.api.cli.alpha/parse` and the
-  result is supplied as `:op/args`; a parse failure throws before the handler
-  runs. For subcommand ops, sole-token `help`, `-h`, or `--help` invocations
-  with no payloads return the op's help detail instead of running the handler.
-  Subcommand map results receive a canonical `:operation` label containing the
-  registered op name and full resolved path, including a nested `:action`. A
-  handler-supplied `:operation` equal to the derived label is preserved; any
-  other value, including explicit nil, fails loudly with the expected and
-  actual labels.
-  Raw-envelope ops (no `:arg-spec`) receive the context unchanged, still
-  carrying the raw `:op/payloads` map."
+  op declares an `:arg-spec`, `:op/argv` and the attached payloads are parsed
+  through `skein.api.cli.alpha/parse` and the result is supplied as `:op/args`;
+  a parse failure throws before the handler runs. For subcommand ops, sole-token
+  `help`, `-h`, or `--help` invocations with no payloads return the op's help
+  detail instead of running the handler. Subcommand map results receive a
+  canonical `:operation` label containing the registered op name and full
+  resolved path, including a nested `:action`. A handler-supplied `:operation`
+  equal to the derived label is preserved; any other value, including explicit
+  nil, fails loudly with the expected and actual labels. Raw-envelope ops (no
+  `:arg-spec`) receive the context unchanged, still carrying the raw
+  `:op/payloads` map."
   ([runtime op-name argv]
    (op! runtime op-name argv {}))
   ([runtime op-name argv envelope]
    (let [{fn-sym :fn name :name arg-spec :arg-spec :as entry} (resolve-op runtime op-name)
-         argv (vec argv)
-         payloads (or (:payloads envelope) {})]
-     (if-let [alias (help-alias-result entry argv envelope)]
+         argv (vec argv)]
+     (if-let [alias (help/help-alias-result entry argv envelope)]
        alias
-       (let [ctx (cond-> {:op/name name :op/argv argv :op/runtime runtime
-                          :op/runtime-metadata (:metadata runtime) :op/payloads payloads}
-                   (contains? envelope :cwd) (assoc :op/cwd (:cwd envelope)) (contains? envelope :worktree-root) (assoc :op/worktree-root (:worktree-root envelope))
-                   (contains? envelope :git-common-dir) (assoc :op/git-common-dir (:git-common-dir envelope)) (contains? envelope :timeout) (assoc :op/timeout (:timeout envelope))
-                   (contains? envelope :emit!) (assoc :op/emit! (:emit! envelope)) (some? arg-spec) (assoc :op/args (cli/parse arg-spec argv payloads)))
-             result (with-spool-classloader runtime #((requiring-resolve fn-sym) ctx)) parsed-args (:op/args ctx)]
+       (let [payloads (or (:payloads envelope) {})
+             ctx (cond-> {:op/name name
+                          :op/argv argv
+                          :op/runtime runtime
+                          :op/runtime-metadata (:metadata runtime)
+                          :op/payloads payloads}
+                   (contains? envelope :cwd)
+                   (assoc :op/cwd (:cwd envelope))
+                   (contains? envelope :worktree-root)
+                   (assoc :op/worktree-root (:worktree-root envelope))
+                   (contains? envelope :git-common-dir)
+                   (assoc :op/git-common-dir (:git-common-dir envelope))
+                   (contains? envelope :timeout)
+                   (assoc :op/timeout (:timeout envelope))
+                   (contains? envelope :emit!)
+                   (assoc :op/emit! (:emit! envelope))
+                   (some? arg-spec)
+                   (assoc :op/args (cli/parse arg-spec argv payloads)))
+             result (with-spool-classloader runtime #((requiring-resolve fn-sym) ctx))
+             parsed-args (:op/args ctx)]
          (if-not (and (map? result) (contains? parsed-args :subcommand))
            result
-           (let [expected (operation-label name parsed-args) actual (:operation result)]
+           (let [expected (operation-label name parsed-args)
+                 actual (:operation result)]
              (cond
                (not (contains? result :operation)) (assoc result :operation expected)
                (= expected actual) result
                :else (throw (ex-info "Operation result label disagrees with dispatch"
                                      {:expected expected :actual actual}))))))))))
 
-(def ^:private help-arg-spec
-  "Arg-spec for the built-in `help` op: an optional positional op name.
+(s/fdef op!
+  :args (s/or :default (s/cat :runtime ::runtime :op-name any? :argv any?)
+              :with-envelope (s/cat :runtime ::runtime :op-name any?
+                                    :argv any? :envelope map?))
+  :ret any?)
 
-  This makes `help` the first parser-consuming op, so `op!` parses its argv and
-  supplies the resolved positional as `:op/args`."
-  {:op "help"
-   :doc "List registered weaver ops, or show one op's full detail."
-   :positionals [{:name :op
-                  :type :string
-                  :required? false
-                  :doc "Optional op name; when given, return that op's full detail instead of the listing."}]})
+;; --- private story helpers --------------------------------------------------
 
-(defn- op-summary
-  "Project one op registry entry to its help-listing summary."
-  [entry]
-  (cond-> {:name (:name entry)
-           :provenance (str (:provenance entry))
-           :stream? (:stream? entry)
-           :deadline-class (name (:deadline-class entry))
-           :hook-class (name (:hook-class entry))}
-    (:doc entry) (assoc :doc (:doc entry))))
+;; -- strand write helpers --
 
-(defn- op-detail
-  "Project one op registry entry to its full help detail.
+(defn- apply-edges! [tx id edges]
+  (doseq [{:keys [to type attributes]} edges]
+    (when-not (db/get-strand tx to)
+      (throw (ex-info "Edge target strand not found" {:to to :type type})))
+    (db/add-edge! tx {:from id :to to :type type :attributes (or attributes {})})))
 
-  Arg-spec ops carry the parser `explain` rendering; raw-envelope ops carry a
-  `:raw-envelope true` marker instead. Declared return shapes carry the
-  JSON-safe return-shape `explain` rendering."
-  [entry]
-  (cond-> (merge (op-summary entry)
-                 (if-let [arg-spec (:arg-spec entry)]
-                   {:arg-spec (cli/explain arg-spec)}
-                   {:raw-envelope true}))
-    (contains? entry :returns) (assoc :returns (return-shape/explain (:returns entry)))))
+(def ^:private update-patch-keys #{:title :state :attributes :edges})
 
-(defn op-help-handler
-  "Project the op registry as help.
+(defn- reject-unknown-update-keys! [patch]
+  (when-let [unknown (seq (remove update-patch-keys (keys patch)))]
+    (throw (ex-info "Unknown strand update fields" {:fields (vec unknown)}))))
 
-  With no positional op name, return every registered op's summary (name, doc,
-  provenance, stream?, deadline-class, hook-class) sorted by name. With one op
-  name, return that op's full detail including the parser `explain` of its
-  arg-spec (or a raw-envelope marker) and a JSON-safe explanation of any
-  declared return shape. Unknown names fail loudly through `resolve-op`, which
-  carries the available names."
-  [ctx]
-  (let [runtime (:op/runtime ctx)
-        op-name (:op (:op/args ctx))]
-    (if op-name
-      ;; The parsed positional is a raw string; resolve-op keys on simple
-      ;; symbols/keywords, and its loud not-found error carries available names.
-      (op-detail (resolve-op runtime (symbol op-name)))
-      {:ops (mapv op-summary (ops runtime))})))
+(defn- supersede-context [old-id replacement-id result]
+  {:strand/id old-id
+   :strand/old-id old-id
+   :strand/replacement-id replacement-id
+   :strand/before (get-in result [:old :before])
+   :strand/after (get-in result [:old :after])
+   :supersession/supersedes-edge (:supersedes-edge result)
+   :supersession/rewired-dependencies (:rewired-dependencies result)})
 
-(defn register-built-in-ops!
-  "Install Skein-provided CLI operations into the runtime op registry."
-  [runtime]
-  (register-op! runtime 'help
-                {:doc (:doc help-arg-spec)
-                 :hook-class :read
-                 :arg-spec help-arg-spec
-                 :returns {:type :map
-                           :optional {:ops {:type :collection
-                                            :items {:type :map
-                                                    :required {:name :string
-                                                               :doc :string
-                                                               :provenance :string
-                                                               :stream? :boolean
-                                                               :deadline-class :string
-                                                               :hook-class :string}}}
-                                      :name :string
-                                      :doc :string
-                                      :provenance :string
-                                      :stream? :boolean
-                                      :deadline-class :string
-                                      :hook-class :string
-                                      :arg-spec {:type :map :extra :json}
-                                      :raw-envelope :boolean
-                                      :returns :json}}}
-                'skein.api.weaver.alpha/op-help-handler))
+;; -- result-shape validators --
+
+(defn- require-archive-result! [result]
+  (when-not (s/valid? ::specs/attribute-archive-result result)
+    (throw (ex-info "Attribute archive result is invalid"
+                    {:result result
+                     :explain (s/explain-str ::specs/attribute-archive-result result)})))
+  result)
+
+(defn- require-omitted-attribute-descriptor! [descriptor]
+  (when-not (s/valid? ::specs/omitted-attribute-descriptor descriptor)
+    (throw (ex-info "Omitted attribute descriptor is invalid"
+                    {:descriptor descriptor
+                     :explain (s/explain-str ::specs/omitted-attribute-descriptor
+                                             descriptor)})))
+  descriptor)
+
+(defn- require-lean-result! [result]
+  (doseq [strand result
+          [_ value] (:attributes strand)
+          :when (:skein/omitted value)]
+    (require-omitted-attribute-descriptor! value))
+  result)
+
+;; -- op registration helpers --
+
+(defn- validate-op-arg-spec!
+  "Structurally validate `arg-spec` for `op-name` through the CLI parser
+  contract, returning it."
+  [op-name arg-spec]
+  (try
+    (cli/validate! arg-spec)
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info "Operation arg-spec is invalid"
+                      (assoc (ex-data e) :operation (op-entry/canonical-op-name op-name))
+                      e)))))
+
+(defn- validate-op-returns!
+  "Validate `returns` through the return-shape contract and its op alignment,
+  returning it."
+  [op-name arg-spec stream? returns]
+  (try
+    (return-shape/validate! returns)
+    (catch clojure.lang.ExceptionInfo e
+      (throw (ex-info "Operation :returns declaration is invalid"
+                      (assoc (ex-data e) :operation (op-entry/canonical-op-name op-name))
+                      e))))
+  (op-entry/validate-returns-alignment! op-name arg-spec stream? returns))
+
+(defn- validated-op-entry
+  "Validate one registration's inputs and assemble its registry entry.
+
+  Normalization, structural metadata validation, and entry assembly are
+  `op-entry` plumbing; the reaches into the promised `skein.api.cli.alpha`
+  and `skein.api.return-shape.alpha` contracts happen here, because an
+  internal namespace never requires an alpha namespace (SPEC-003.C19a)."
+  [op-name opts fn-sym]
+  (let [opts (op-entry/validate-op-metadata! (op-entry/normalize-op-opts opts))
+        fn-sym (op-entry/validate-op-fn-symbol! fn-sym)
+        stream? (boolean (:stream? opts))]
+    (when (:doc opts)
+      (op-entry/validate-op-doc! (:doc opts)))
+    (when (some? (:arg-spec opts))
+      (validate-op-arg-spec! op-name (:arg-spec opts)))
+    (when (contains? opts :returns)
+      (validate-op-returns! op-name (:arg-spec opts) stream? (:returns opts)))
+    (op-entry/assemble op-name opts fn-sym)))
+
+;; -- op dispatch helpers --
+
+(defn- operation-label
+  "Return the canonical label for a parsed subcommand invocation."
+  [op-name parsed-args]
+  (str/join " " (cond-> [op-name (:subcommand parsed-args)]
+                  (contains? parsed-args :action) (conj (:action parsed-args)))))

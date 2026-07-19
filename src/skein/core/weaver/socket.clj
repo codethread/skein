@@ -10,6 +10,7 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [skein.core.db :as db]
+            [skein.core.weaver.help :as help]
             [skein.core.weaver.protocol :as protocol])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
@@ -280,7 +281,7 @@
       (write-frame! err)
       (let [entry (:ok entry)
             envelope (invoke-envelope args)]
-        (if-let [alias ((api 'help-alias-result) entry (get args "argv") envelope)]
+        (if-let [alias (help/help-alias-result entry (get args "argv") envelope)]
           (write-frame! (success request-id alias))
           (if (:stream? entry)
             (handle-stream-invoke! runtime request-id args entry envelope write-frame!)

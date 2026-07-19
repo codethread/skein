@@ -258,11 +258,11 @@
 (defn install-built-in-ops!
   "Install Skein's built-in CLI ops, resolving the api-tier registrar dynamically.
 
-  The op registry and its built-ins are owned by `skein.api.weaver.alpha`, above
-  this core namespace; `requiring-resolve` keeps the require graph pointing
-  downward while startup and reload share one install path."
+  The built-in help op and its registrar live in `skein.core.weaver.help`, which
+  resolves `register-op!` on the alpha op registry at call time; `requiring-resolve`
+  keeps startup and reload sharing one install path without a static require."
   [runtime]
-  (with-runtime-binding runtime #((requiring-resolve 'skein.api.weaver.alpha/register-built-in-ops!) runtime)))
+  (with-runtime-binding runtime #((requiring-resolve 'skein.core.weaver.help/register-built-in-ops!) runtime)))
 
 (defn- clear-reload-state! [runtime]
   (reset! (:approved-spool-sync-state runtime) {})
