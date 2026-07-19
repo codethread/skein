@@ -7,20 +7,20 @@
   id, relation-scoped traversal, edge adjacency, and burn with its pre-commit
   gate and event fanout — and reads in that order. The query compiler lives
   in `skein.core.query`, the SQL engine in `skein.core.db`, and the shared
-  lifecycle and dispatch plumbing in `skein.core.weaver.*`; query-definition
-  shape mechanics are plumbing in `skein.api.graph.internal.query-defs`.
+  lifecycle and dispatch plumbing in `skein.core.weaver.*`.
 
   Callers own runtime selection and pass the target weaver runtime as the
   first argument to every function here."
   (:require [clojure.spec.alpha :as s]
             [next.jdbc :as jdbc]
-            [skein.api.graph.internal.query-defs :as query-defs]
             [skein.core.db :as db]
             [skein.core.query :as query]
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :as lifecycle]))
+
+(declare validated-entry where-clause details-entry)
 
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
 (s/def ::runtime some?)
@@ -38,7 +38,7 @@
   fails loudly at registration time; `skein.core.query` is the grammar
   authority for definitions."
   [runtime query-name query-def]
-  (let [entry (query-defs/validated-entry query-name query-def)]
+  (let [entry (validated-entry query-name query-def)]
     (swap! (access/query-registry runtime) conj entry)
     (into {} [entry])))
 
@@ -70,8 +70,8 @@
   [runtime query-name]
   (let [query-def (resolve-query runtime query-name)
         lookup-name (query/query-lookup-name query-name)
-        where (query-defs/where-clause query-def)]
-    (assoc (query-defs/details-entry [lookup-name query-def])
+        where (where-clause query-def)]
+    (assoc (details-entry [lookup-name query-def])
            :where where
            :definition query-def
            :where-form (pr-str where)
@@ -199,3 +199,28 @@
   :args (s/or :default (s/cat :runtime ::runtime :ids ::ids)
               :with-ctx (s/cat :runtime ::runtime :ids ::ids :req-ctx map?))
   :ret map?)
+
+;; --- query-definition shape helpers -----------------------------------------
+;;
+;; A registered query definition is either a bare where vector or a map of
+;; `:where` and `:params`; `skein.core.query` is the grammar authority.
+
+(defn- validated-entry
+  "Return a `[canonical-name query-def]` registry entry, validated loudly."
+  [query-name query-def]
+  [(query/canonical-query-name query-name)
+   (query/validate-query-def! query-def)])
+
+(defn- where-clause
+  "Return the where expression of a bare-vector or map query definition."
+  [query-def]
+  (if (map? query-def)
+    (:where query-def)
+    query-def))
+
+(defn- details-entry
+  "Return the `:name`/`:params`/`:referenced-params` projection of an entry."
+  [[lookup-name query-def]]
+  {:name lookup-name
+   :params (if (map? query-def) (vec (:params query-def)) [])
+   :referenced-params (query/referenced-params (where-clause query-def))})

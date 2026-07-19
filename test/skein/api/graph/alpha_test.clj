@@ -52,4 +52,3 @@
              (mapv :to_strand_id (graph/outgoing-edges rt [(:id parent)] "parent-of"))))
       (is (empty? (graph/incoming-edges rt ["no-such-id"] "parent-of")))
       (is (empty? (graph/outgoing-edges rt ["no-such-id"] "parent-of"))))))
-
