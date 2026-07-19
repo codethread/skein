@@ -77,6 +77,11 @@
               payload (get-in lean-task [:attributes :payload])]
           (is (true? (:skein/omitted payload)))
           (is (pos-int? (:bytes payload))))
+        (let [lean-task (first (filter #(= (:id task) (:id %))
+                                       (weaver/list-lean rt 1024)))
+              payload (get-in lean-task [:attributes :payload])]
+          (is (true? (:skein/omitted payload)))
+          (is (pos-int? (:bytes payload))))
         (weaver/update! rt (:id task) {:attributes {:payload nil}})
         (is (= [(:id feature)] (graph/ancestor-root-ids rt [(:id task)] {})))
         (is (= #{(:id feature) (:id task)}
