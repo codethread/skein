@@ -123,13 +123,9 @@ The weaver runtime is the long-lived local Clojure process that owns strand stor
   default. `:skein.core.specs/release-marker-claim` and
   `:skein.core.specs/release-marker-result` own these shapes. Foreground parsing
   uses a declared arg-spec, including whole-value payload resolution.
-- **SPEC-004.C39b:** `skein.api.runtime.alpha/config-dir` returns the selected
-  config-directory path for its explicit runtime, and
-  `skein.api.runtime.alpha/spools-file` returns the `java.io.File` for that
-  directory's shared `spools.edn`. Both are read-only delegations to the core
-  weaver accessors; they do not expose a general filesystem mutation API. Their
-  results conform to `:skein.core.specs/config-dir-result` and
-  `:skein.core.specs/spools-file-result`.
+- **SPEC-004.C39b:** Retired. The read-only `config-dir` and `spools-file` accessors were
+  trimmed from `skein.api.runtime.alpha` with zero external consumers; `spools-file`
+  survives as module plumbing behind the C39c write seam. The ID is not reused.
 - **SPEC-004.C39c:** `skein.api.runtime.alpha/approved` exposes each root's
   effective config layer as `:provenance :spools-edn|:local-overlay`; an overlay
   also exposes its explicit `:claims` marker. These keys accrete onto the
