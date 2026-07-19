@@ -141,7 +141,9 @@ The result names the root lib, canonical root, and namespaces in reload order, a
 The two verbs are complementary halves of a hot bump. `reload-spool!` reloads spool *code*; `reload!` re-runs
 the startup files so `install!` re-registers ops, queries, and handlers. So the code-bump sequence
 is `reload-spool! root-lib` to make the code live, then a targeted re-`use!` of the spool's activation to
-re-register — or a full `reload!` when the bump changes registrations across the config.
+re-register — or a full `reload!` when the bump changes registrations across the config. Order matters: while
+an edited source sits unreloaded, `sync!` and `reload!` refuse it as a non-additive redefinition; a completed
+`reload-spool!` records the root's fresh fingerprint, so the refusal clears and the full `reload!` passes.
 
 Some changes cannot load into a running weaver at all: removing an already-loaded root, repointing one at
 different source, or bumping a loaded Maven coordinate's version. `sync!` refuses those in-JVM and records a
