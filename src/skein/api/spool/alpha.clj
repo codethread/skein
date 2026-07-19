@@ -19,6 +19,7 @@
   deliberate exception: it keeps its own branded `reject-unknown-keys!` rather
   than adopting this one."
   (:require [clojure.spec.alpha :as s]
+            [skein.api.format.alpha :as format-alpha]
             [skein.core.specs :as specs]))
 
 (declare entity-projection-keys reject-omitted-attribute!)
@@ -33,6 +34,17 @@
   ([message data cause]
    (throw (ex-info message data cause))))
 
+;; `fail!` never returns, so its interface is arguments only.
+(s/fdef fail!
+  :args (s/cat :message string? :data map?
+               :cause (s/? #(instance? Throwable %))))
+
+;; The canonical exact projection promised by SPEC-005.C3: these four fields and
+;; nothing else. The body keeps a hand-rolled containment check only so the
+;; failure carries the exact missing-key set; this named shape owns the contract.
+(s/def ::entity
+  (s/keys :req-un [::specs/id ::specs/title ::specs/state ::specs/attributes]))
+
 (defn entity-projection
   "Return the canonical exact strand entity projection.
 
@@ -44,6 +56,10 @@
       (fail! "Strand is missing canonical entity fields"
              {:missing missing :required entity-projection-keys :strand strand}))
     (select-keys strand entity-projection-keys)))
+
+(s/fdef entity-projection
+  :args (s/cat :strand map?)
+  :ret ::entity)
 
 (defn reject-unknown-keys!
   "Return `m`, failing loudly when it carries keys outside `allowed`.
@@ -57,6 +73,14 @@
            {:unknown (vec unknown) :allowed (vec (sort allowed))}))
   m)
 
+(s/fdef reject-unknown-keys!
+  :args (s/cat :context string? :allowed set? :m map?)
+  :ret map?)
+
+;; Anything `s/valid?` accepts: a registered spec name, a spec object, or a
+;; bare predicate.
+(s/def ::spec (s/or :named qualified-keyword? :object s/spec? :pred ifn?))
+
 (defn require-valid!
   "Return `value`, failing loudly with spec explain data when it is invalid.
 
@@ -68,6 +92,10 @@
     (fail! message {:value value :explain (s/explain-data spec value)}))
   value)
 
+(s/fdef require-valid!
+  :args (s/cat :spec ::spec :value any? :message string?)
+  :ret any?)
+
 (defn attr-key->str
   "Coerce an attribute key to its string wire form.
 
@@ -76,6 +104,10 @@
   not a tolerant reader."
   [k]
   (if (keyword? k) (subs (str k) 1) (str k)))
+
+(s/fdef attr-key->str
+  :args (s/cat :k ::specs/attribute-key)
+  :ret string?)
 
 (defn attr-get
   "Read attribute `k` from a normalized strand, tolerating keyword- or
@@ -104,6 +136,21 @@
                 (get attrs (attr-key->str kw)))]
     (reject-omitted-attribute! strand k value)))
 
+(s/fdef attr-get
+  :args (s/cat :strand map? :k ::specs/attribute-key)
+  :ret any?)
+
+;; The closed five-key option shape for `poll-until-deadline!`. Key exactness
+;; is enforced manually via `reject-unknown-keys!` so the failure names the
+;; offending keys; this named shape owns the required set and field contracts.
+(s/def ::deadline int?)
+(s/def ::poll-ms (s/and integer? (complement neg?)))
+(s/def ::check ifn?)
+(s/def ::pred->result ifn?)
+(s/def ::on-timeout ifn?)
+(s/def ::poll-options
+  (s/keys :req-un [::deadline ::poll-ms ::check ::pred->result ::on-timeout]))
+
 (defn poll-until-deadline!
   "The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
   and `skein.spools.roster/await-quiet!`: call `check` (a zero-arg fn) once,
@@ -130,16 +177,21 @@
   (require-valid! ::deadline deadline "poll-until-deadline! :deadline must be a long")
   (require-valid! ::poll-ms poll-ms
                   "poll-until-deadline! :poll-ms must be a non-negative integer")
-  (require-valid! ::poll-fn check "poll-until-deadline! :check must be a function")
-  (require-valid! ::poll-fn pred->result
+  (require-valid! ::check check "poll-until-deadline! :check must be a function")
+  (require-valid! ::pred->result pred->result
                   "poll-until-deadline! :pred->result must be a function")
-  (require-valid! ::poll-fn on-timeout "poll-until-deadline! :on-timeout must be a function")
+  (require-valid! ::on-timeout on-timeout
+                  "poll-until-deadline! :on-timeout must be a function")
   (loop []
     (let [value (check)]
       (or (pred->result value)
           (if (>= (System/currentTimeMillis) deadline)
             (on-timeout value)
             (do (Thread/sleep (long poll-ms)) (recur)))))))
+
+(s/fdef poll-until-deadline!
+  :args (s/cat :opts ::poll-options)
+  :ret any?)
 
 ;; Entity projection mechanics
 
@@ -150,15 +202,10 @@
 (defn- reject-omitted-attribute! [strand k value]
   (when (specs/omitted-attribute-descriptor? value)
     (let [strand-id (:id strand)]
-      (fail! (str "Attribute value was omitted from this lean read; "
-                  "fetch the full strand before reading it")
+      (fail! (format-alpha/reflow
+              "|Attribute value was omitted from this lean read; fetch the
+               |full strand before reading it")
              {:key k
               :strand-id strand-id
               :recovery (str "show " strand-id)})))
   value)
-
-;; Polling option specs
-
-(s/def ::deadline int?)
-(s/def ::poll-ms (s/and integer? (complement neg?)))
-(s/def ::poll-fn ifn?)

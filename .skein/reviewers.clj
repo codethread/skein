@@ -83,29 +83,32 @@
 
     {:name "surface-minimalism"
      :harness :luna-low
-     :brief (str "Enforce TEN-004 (devflow/TENETS.md): the change should expose the minimum "
-                 "possible new public surface. For EVERY new op, public fn, CLI verb, flag, "
-                 "or attribute, answer explicitly in your findings: could an existing op, a "
-                 "new flag on an existing op, or userland composition of existing surface "
-                 "serve instead? State the answer even when it is no - the enumeration is "
-                 "the deliverable, not an afterthought behind doc/test coverage. Also flag "
-                 "any new surface left undocumented or untested. For every new or changed "
-                 "op, verb, or flag, compare its name and shape with the CLI style section "
-                 "of docs/spools/writing-shared-spools.md#cli-style. Divergence from the "
-                 "vocabulary rule "
-                 "(rule 8 of that guide) is NORMATIVE per SPEC-005.C11: a name that rebrands "
-                 "a primitive's published word is a finding to fix, not one to weigh. Layout "
-                 "and shape style stay ADVISORY findings for the "
-                 "synthesizer to weigh, never a gate. If the guide section or anchor "
-                 "is absent or unreadable, do not skip silently or guess "
-                 "applicability: report the missing reference by path and mark that "
-                 "comparison blocked. The sole "
-                 "must-fix class is a text-bearing flag or positional declared outside the "
-                 "declared arg-spec parser: it loses whole-value :stdin and :payload/<name> "
-                 "resolution, so that is correctness rather than style. Work from the "
-                 "changed-file list with targeted diff reads and one bounded guide read; do "
-                 "not read whole namespaces or re-read a file in slices after a whole read. "
-                 "Budget ~15-18 calls.")}
+     :brief (fmt/reflow
+             "|Enforce TEN-004 (devflow/TENETS.md): the change should expose
+              |the minimum possible new public surface. For EVERY new op,
+              |public fn, CLI verb, flag, or attribute, answer explicitly in
+              |your findings: could an existing op, a new flag on an existing
+              |op, or userland composition of existing surface serve instead?
+              |State the answer even when it is no - the enumeration is the
+              |deliverable, not an afterthought behind doc/test coverage.
+              |Also flag any new surface left undocumented or untested. For
+              |every new or changed op, verb, or flag, compare its name and
+              |shape with the CLI style section of
+              |docs/spools/writing-shared-spools.md#cli-style. Divergence
+              |from the vocabulary rule (rule 8 of that guide) is NORMATIVE
+              |per SPEC-005.C11: a name that rebrands a primitive's published
+              |word is a finding to fix, not one to weigh. Layout and shape
+              |style stay ADVISORY findings for the synthesizer to weigh,
+              |never a gate. If the guide section or anchor is absent or
+              |unreadable, do not skip silently or guess applicability:
+              |report the missing reference by path and mark that comparison
+              |blocked. The sole must-fix class is a text-bearing flag or
+              |positional declared outside the declared arg-spec parser: it
+              |loses whole-value :stdin and :payload/<name> resolution, so
+              |that is correctness rather than style. Work from the
+              |changed-file list with targeted diff reads and one bounded
+              |guide read; do not read whole namespaces or re-read a file in
+              |slices after a whole read. Budget ~15-18 calls.")}
 
     {:name "source-form"
      ;; :terra-med by owner call (2026-07-18): story/composition judgment
