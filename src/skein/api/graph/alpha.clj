@@ -13,6 +13,7 @@
   first argument to every function here."
   (:require [clojure.spec.alpha :as s]
             [next.jdbc :as jdbc]
+            [skein.api.format.alpha :as format-alpha]
             [skein.core.db :as db]
             [skein.core.query :as query]
             [skein.core.specs :as specs]
@@ -30,21 +31,32 @@
 
 ;; --- named-query registry ---------------------------------------------------
 
+;; Registration names are simple symbols or keywords; read-side lookups also
+;; accept strings. The definition grammar itself is owned by
+;; `skein.core.query`; these specs encode only the seam's top-level shape —
+;; a bare where vector or a `:where`/`:params` map, registered under its
+;; canonical string name.
+(s/def ::query-name (s/or :symbol simple-symbol? :keyword simple-keyword?))
+(s/def ::query-lookup (s/or :name ::query-name :string string?))
+(s/def ::query-def (s/or :where-vector vector? :detailed map?))
+(s/def ::query-registry (s/map-of string? ::query-def))
+
 (defn register-query!
   "Register a named query definition and return its canonical API shape.
 
-  Canonicalizes the simple symbol or keyword name and compiles the
-  definition once before it reaches the registry, so malformed query data
-  fails loudly at registration time; `skein.core.query` is the grammar
-  authority for definitions."
+  Canonicalizes the simple symbol or keyword name and validates that the
+  definition compiles before it reaches the registry, so malformed query
+  data fails loudly at registration time; `skein.core.query` is the
+  grammar authority for definitions and compiles the stored definition at
+  each use."
   [runtime query-name query-def]
   (let [entry (validated-entry query-name query-def)]
     (swap! (access/query-registry runtime) conj entry)
     (into {} [entry])))
 
 (s/fdef register-query!
-  :args (s/cat :runtime ::runtime :query-name any? :query-def any?)
-  :ret map?)
+  :args (s/cat :runtime ::runtime :query-name ::query-name :query-def ::query-def)
+  :ret ::query-registry)
 
 (defn queries
   "Return registered query definitions keyed by canonical string name."
@@ -53,7 +65,7 @@
 
 (s/fdef queries
   :args (s/cat :runtime ::runtime)
-  :ret map?)
+  :ret ::query-registry)
 
 (defn resolve-query
   "Return the registered query definition for a simple symbol or keyword name.
@@ -63,7 +75,21 @@
   (query/query-def @(access/query-registry runtime) query-name))
 
 (s/fdef resolve-query
-  :args (s/cat :runtime ::runtime :query-name any?))
+  :args (s/cat :runtime ::runtime :query-name ::query-lookup)
+  :ret ::query-def)
+
+;; The explain projection publishes unqualified keys for CLI/JSON callers.
+(s/def ::name string?)
+(s/def ::params (s/coll-of keyword? :kind vector?))
+(s/def ::referenced-params (s/coll-of keyword? :kind vector?))
+(s/def ::where vector?)
+(s/def ::definition ::query-def)
+(s/def ::where-form string?)
+(s/def ::definition-form string?)
+(s/def ::summary string?)
+(s/def ::query-explanation
+  (s/keys :req-un [::name ::params ::referenced-params ::where ::definition
+                   ::where-form ::definition-form ::summary]))
 
 (defn query-explain
   "Describe a registered query definition and how CLI callers invoke it."
@@ -76,13 +102,14 @@
            :definition query-def
            :where-form (pr-str where)
            :definition-form (pr-str query-def)
-           :summary (str "Invoke this query with `strand list --query <name>` or"
-                         " `strand ready --query <name>` and pass runtime values"
-                         " with repeated `--param key=value` arguments."))))
+           :summary (format-alpha/reflow
+                     "|Invoke this query with `strand list --query <name>` or
+                      |`strand ready --query <name>` and pass runtime values
+                      |with repeated `--param key=value` arguments."))))
 
 (s/fdef query-explain
-  :args (s/cat :runtime ::runtime :query-name any?)
-  :ret map?)
+  :args (s/cat :runtime ::runtime :query-name ::query-lookup)
+  :ret ::query-explanation)
 
 ;; --- query selection --------------------------------------------------------
 
@@ -95,8 +122,10 @@
     (db/query-strand-ids (access/ds runtime) query-def params)))
 
 (s/fdef query-ids
-  :args (s/cat :runtime ::runtime :query-or-name any? :params any?)
-  :ret coll?)
+  :args (s/cat :runtime ::runtime
+               :query-or-name (s/or :ad-hoc ::query-def :registered ::query-lookup)
+               :params (s/nilable map?))
+  :ret (s/coll-of ::specs/id))
 
 ;; --- strand hydration -------------------------------------------------------
 
@@ -107,7 +136,7 @@
 
 (s/fdef strands-by-ids
   :args (s/cat :runtime ::runtime :ids ::ids)
-  :ret coll?)
+  :ret (s/coll-of map?))
 
 ;; --- graph traversal --------------------------------------------------------
 
@@ -121,7 +150,11 @@
 (s/fdef ancestor-root-ids
   :args (s/or :default (s/cat :runtime ::runtime :seed-ids ::ids)
               :with-opts (s/cat :runtime ::runtime :seed-ids ::ids :opts map?))
-  :ret coll?)
+  :ret (s/coll-of ::specs/id))
+
+;; A subgraph result carries normalized strand rows and edge rows.
+(s/def ::strands (s/coll-of map?))
+(s/def ::edges (s/coll-of map?))
 
 (defn subgraph
   "Return a normalized strand subgraph rooted at `root-ids`."
@@ -136,7 +169,7 @@
 (s/fdef subgraph
   :args (s/or :default (s/cat :runtime ::runtime :root-ids ::ids)
               :with-opts (s/cat :runtime ::runtime :root-ids ::ids :opts map?))
-  :ret map?)
+  :ret (s/keys :req-un [::strands ::edges]))
 
 ;; --- edge adjacency ---------------------------------------------------------
 
@@ -151,7 +184,7 @@
 
 (s/fdef incoming-edges
   :args (s/cat :runtime ::runtime :to-ids ::ids :edge-type ::specs/edge-type)
-  :ret coll?)
+  :ret ::edges)
 
 (defn outgoing-edges
   "Return normalized `edge-type` edges whose source is one of `from-ids`.
@@ -163,9 +196,13 @@
 
 (s/fdef outgoing-edges
   :args (s/cat :runtime ::runtime :from-ids ::ids :edge-type ::specs/edge-type)
-  :ret coll?)
+  :ret ::edges)
 
 ;; --- burn -------------------------------------------------------------------
+
+;; A burn result names the removed ids and their count.
+(s/def ::burned (s/coll-of ::specs/id :kind vector?))
+(s/def ::count nat-int?)
 
 (defn burn-by-ids!
   "Delete strands by id and enqueue burn events for removed rows.
@@ -173,7 +210,10 @@
   Loads the before-images and deletes inside one transaction, running the
   `:strand/burn-before-commit` validation gate between the two so a rejecting
   hook rolls the whole burn back; then enqueues the `:strand/burned` event
-  carrying requested ids, burned ids, and before-images."
+  carrying requested ids, burned ids, and before-images. The `req-ctx` arity
+  threads an explicit request-context map (the same shape
+  `skein.api.batch.alpha/apply!` accepts) into the gate; the two-argument
+  form derives its own burn context."
   ([runtime ids]
    (burn-by-ids! runtime ids (lifecycle/request-context :burn)))
   ([runtime ids req-ctx]
@@ -198,7 +238,7 @@
 (s/fdef burn-by-ids!
   :args (s/or :default (s/cat :runtime ::runtime :ids ::ids)
               :with-ctx (s/cat :runtime ::runtime :ids ::ids :req-ctx map?))
-  :ret map?)
+  :ret (s/keys :req-un [::burned ::count]))
 
 ;; --- query-definition shape helpers -----------------------------------------
 ;;
