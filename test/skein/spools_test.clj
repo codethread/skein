@@ -2575,7 +2575,84 @@
         (is (= :v1 ((version))) "require :reload is classloader-blind to the spool root")
         (let [result (spool-sync/reload-synced-spool! rt lib)]
           (is (= :v2 ((version))) "the blessed seam load-files the bumped source live")
-          (is (= [ns-sym] (mapv :ns (:namespaces result)))))))))
+          (is (= [ns-sym] (mapv :ns (:namespaces result)))))
+        ;; The completed hot bump converges (SPEC-004.C46): the recorded
+        ;; fingerprint now matches disk, so the documented direct follow-up —
+        ;; a full reload! with no intervening sync — passes, and a clean sync
+        ;; then retires the pending record (C44d). This world's reload runs no
+        ;; startup sync, so the record survives the reload itself.
+        (is (= :loaded (:status (runtime/reload! rt))))
+        (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status]))
+            "only a clean sync proves the pending record stale")
+        (let [result (runtime/sync! rt)]
+          (is (= :already-available (get-in result [:spools lib :status])))
+          (is (nil? (:pending-generation result))))
+        (is (nil? (:pending-generation (runtime/syncs rt))))
+        (is (= :v2 ((version))) "convergence never rolls the loaded source back")))))
+
+(deftest reload-synced-spool-partial-failure-keeps-the-refusal
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-a (symbol (str "demo.partial-a-" suffix))
+            ns-b (symbol (str "demo.partial-b-" suffix))
+            lib (symbol (str "demo/partial-lib-" suffix))
+            root (io/file config-dir "spools" (str "partial-" suffix))
+            file-a (io/file root "src" "demo" (str "partial_a_" suffix ".clj"))
+            file-b (io/file root "src" "demo" (str "partial_b_" suffix ".clj"))]
+        (.mkdirs (.getParentFile file-a))
+        (spit (io/file root "deps.edn") "{:paths [\"src\"]}\n")
+        (spit file-a (str "(ns " ns-a ")\n(defn version [] :v1)\n"))
+        (spit file-b (str "(ns " ns-b " (:require [" ns-a "]))\n(defn version [] :v1)\n"))
+        (write-spools! config-dir (pr-str {:spools {lib {:local/root (str "spools/partial-" suffix)}}}))
+        (is (= :loaded (get-in (runtime/sync! rt) [:spools lib :status])))
+        (is (= :loaded (:status (runtime/use! rt (keyword (str "partial-" suffix))
+                                              {:ns ns-b :spools [lib]}))))
+        ;; Bump both sources, breaking the dependency-ordered second file: the
+        ;; reload rebinds ns-a then throws on ns-b, leaving a half-reloaded root.
+        (spit file-a (str "(ns " ns-a ")\n(defn version [] :v2)\n"))
+        (spit file-b (str "(ns " ns-b " (:require [" ns-a "]))\n(defn version [] :v2\n"))
+        (is (thrown? Throwable (spool-sync/reload-synced-spool! rt lib)))
+        (testing "no fingerprint recorded: the half-reloaded root keeps refusing"
+          (let [ex (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))]
+            (is (= :non-additive-sync-diff (:reason (ex-data ex))))))))))
+
+(deftest sync-with-per-root-failures-never-clears-a-pending-generation
+  (with-runtime
+    (fn [rt config-dir]
+      (let [suffix (str/replace (str (java.util.UUID/randomUUID)) "-" "")
+            ns-x (symbol (str "demo.pending_x_" suffix))
+            ns-y (symbol (str "demo.pending_y_" suffix))
+            lib-x (symbol (str "demo/pending-x-" suffix))
+            lib-y (symbol (str "demo/pending-y-" suffix))
+            root-x (write-local-lib! config-dir (str "pending-x-" suffix) ns-x)
+            entry-x {:local/root (str "spools/pending-x-" suffix)}
+            entry-y {:local/root (str "spools/pending-y-" suffix)}]
+        (write-local-lib! config-dir (str "pending-y-" suffix) ns-y)
+        (write-spools! config-dir (pr-str {:spools {lib-x entry-x lib-y entry-y}}))
+        (let [result (runtime/sync! rt)]
+          (is (= :loaded (get-in result [:spools lib-x :status])))
+          (is (= :loaded (get-in result [:spools lib-y :status]))))
+        ;; Record a pending generation by removing the loaded lib-y.
+        (write-spools! config-dir (pr-str {:spools {lib-x entry-x}}))
+        (is (thrown? clojure.lang.ExceptionInfo (runtime/sync! rt)))
+        (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status])))
+        ;; Restore lib-y but break lib-x: the sync succeeds around the per-root
+        ;; failure, which proves nothing about the failed root, so the pending
+        ;; record must survive (C44d).
+        (write-spools! config-dir (pr-str {:spools {lib-x entry-x lib-y entry-y}}))
+        (spit (io/file root-x "deps.edn") "{:paths [\"src\"")
+        (let [result (runtime/sync! rt)]
+          (is (= :failed (get-in result [:spools lib-x :status])))
+          (is (= :pending (get-in result [:pending-generation :status]))))
+        (is (= :pending (get-in (runtime/syncs rt) [:pending-generation :status])))
+        ;; Fix lib-x: a zero-failure pass classifies every loaded root and
+        ;; retires the stale record.
+        (spit (io/file root-x "deps.edn") "{:paths [\"src\"]}\n")
+        (let [result (runtime/sync! rt)]
+          (is (contains? #{:loaded :already-available} (get-in result [:spools lib-x :status])))
+          (is (nil? (:pending-generation result))))
+        (is (nil? (:pending-generation (runtime/syncs rt))))))))
 
 ;; TASK-shr-003.MI1: the blessed verb fails loudly before delegating when `coord`
 ;; is not a symbol, rather than passing a bad key into the sync-state lookup. It
