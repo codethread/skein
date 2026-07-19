@@ -18,8 +18,8 @@
   only the branch's own work even when the base ref has advanced (an explicit
   --commit-range is still accepted; a two-dot range whose base is not an
   ancestor of its tip is refused). The range is expanded to its changed files
-  and injected into every reviewer prompt as the authoritative diff surface. Discover the live
-  registered roster with `strand agent rosters`. The registry is
+  and injected into every reviewer prompt as the authoritative diff surface.
+  Discover the live registered roster with `strand agent rosters`. The registry is
   weaver-lifetime state: edits here need a weaver restart or config reload to
   take effect.
 
@@ -28,9 +28,10 @@
     :harness  harness alias from harnesses.clj (resolved at review time)
     :brief    the reviewer's single concern - precise, judgmental, actionable
     :scope    optional prompt-level confinement (guidance text only). The
-              changed-file list and commit range are supplied separately as
-              the review's change context (--commit-range); only dynamic
-              reviewer *selection* from git changes stays deferred to an RFC.
+              changed-file list and pinned range are supplied separately as
+              the review's change context (--base, or an explicit
+              --commit-range); only dynamic reviewer *selection* from git
+              changes stays deferred to an RFC.
 
   Routing note: pick seats by scanning the scorecards in
   .skein/harnesses.clj ({:complexity :code-taste :resilience :ui-design
