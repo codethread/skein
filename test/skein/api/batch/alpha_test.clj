@@ -8,26 +8,7 @@
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [skein.api.batch.alpha :as batch]
             [skein.api.hooks.alpha :as hooks]
-            [skein.api.weaver.alpha :as weaver]
-            [skein.core.db-test :as db-test]
-            [skein.core.weaver.config :as weaver-config]
-            [skein.core.weaver.runtime :as weaver-runtime]))
-
-(defn- test-world [config-dir]
-  (weaver-config/world config-dir
-                       (str config-dir "/state")
-                       (str config-dir "/data")))
-
-(defn- with-runtime [f]
-  (let [db-file (db-test/temp-db-file)
-        config-dir (str "/tmp/skein-batch-alpha-" (java.util.UUID/randomUUID))]
-    (.mkdirs (java.io.File. config-dir))
-    (let [rt (weaver-runtime/start! db-file {:world (test-world config-dir) :publish? false})]
-      (try
-        (f rt)
-        (finally
-          (weaver-runtime/stop! rt)
-          (db-test/delete-sqlite-family! db-file))))))
+            [skein.test.alpha :as t]))
 
 ;; Namespace-level on purpose: hooks are registered by symbol and resolved to
 ;; top-level vars, so capture state cannot be a per-test local.
@@ -42,9 +23,8 @@
   :ok)
 
 (deftest apply-threads-a-caller-request-context-into-the-validation-gate
-  (with-runtime
-    (fn [rt]
-      (weaver/init rt)
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)]
       (hooks/register-hook! rt :capture #{:batch/apply-before-commit}
                             'skein.api.batch.alpha-test/capture-hook {})
       (let [payload {:strands [{:ref :created
@@ -61,9 +41,8 @@
         (is (= payload (:batch/payload context)))))))
 
 (deftest apply-rejects-malformed-payloads-loudly
-  (with-runtime
-    (fn [rt]
-      (weaver/init rt)
+  (t/with-weaver-world [ctx {:storage :sqlite-memory}]
+    (let [rt (:runtime ctx)]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Batch payload must be a map"
                             (batch/apply! rt [:not-a-map])))

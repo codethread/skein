@@ -9,14 +9,14 @@
   `skein.core.weaver.*`."
   (:require [clojure.spec.alpha :as s]
             [next.jdbc :as jdbc]
-            [skein.api.batch.internal.fanout :as fanout]
-            [skein.api.batch.internal.normalize :as normalize]
             [skein.core.db :as db]
             [skein.core.weaver.access :as access]
+            [skein.core.weaver.dispatch :as dispatch]
             [skein.core.weaver.lifecycle :as lifecycle])
   (:import [java.util UUID]))
 
-(declare batch-apply-context)
+(declare normalize-strand-attributes batch-apply-context
+         enqueue-batch-applied! enqueue-strand-fanout! strand-patch-for-ref)
 
 (defn apply!
   "Apply one transactional batch graph mutation payload to `runtime`.
@@ -33,7 +33,7 @@
    (apply! runtime payload (lifecycle/request-context :apply-batch)))
   ([runtime payload req-ctx]
    (let [submitted-payload payload
-         normalized-payload (normalize/strand-attributes
+         normalized-payload (normalize-strand-attributes
                              runtime req-ctx (db/normalize-batch-payload! payload))
          result (jdbc/with-transaction [tx (access/ds runtime)]
                   (let [result (access/normalize
@@ -44,8 +44,8 @@
                      (batch-apply-context req-ctx submitted-payload result))
                     result))
          batch-id (str (UUID/randomUUID))]
-     (fanout/enqueue-batch-applied! runtime batch-id result)
-     (fanout/enqueue-strand-fanout! runtime batch-id normalized-payload result)
+     (enqueue-batch-applied! runtime batch-id result)
+     (enqueue-strand-fanout! runtime batch-id normalized-payload result)
      result)))
 
 ;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
@@ -55,6 +55,25 @@
   :args (s/or :default (s/cat :runtime ::runtime :payload map?)
               :with-ctx (s/cat :runtime ::runtime :payload map? :req-ctx map?))
   :ret map?)
+
+;; --- attribute normalization -------------------------------------------------
+
+(defn- normalize-strand-attributes [runtime req-ctx payload]
+  (update payload :strands
+          (fn [strands]
+            (mapv (fn [{:keys [ref attributes] :as strand}]
+                    (if (nil? attributes)
+                      strand
+                      (assoc strand :attributes
+                             (lifecycle/run-transform-hooks
+                              runtime
+                              :attributes/normalize
+                              (merge req-ctx
+                                     {:hook/value attributes
+                                      :mutation/operation :batch/apply
+                                      :batch/ref ref
+                                      :strand/patch strand})))))
+                  strands))))
 
 ;; --- validation-gate context -------------------------------------------------
 
@@ -68,3 +87,42 @@
           :batch/updated (:updated result)
           :batch/burned (:burned result)
           :batch/edge-ops (:edges result)}))
+
+;; --- event fanout ------------------------------------------------------------
+
+(defn- enqueue-batch-applied! [runtime batch-id result]
+  (dispatch/enqueue! runtime (assoc (lifecycle/event-base :batch/applied)
+                                    :batch/id batch-id
+                                    :batch/refs (:refs result)
+                                    :batch/created (:created result)
+                                    :batch/updated (:updated result)
+                                    :batch/burned (:burned result)
+                                    :batch/edges (:edges result))))
+
+(defn- enqueue-strand-fanout! [runtime batch-id payload result]
+  (doseq [created (:created result)]
+    (dispatch/enqueue! runtime (assoc (lifecycle/event-base :strand/added)
+                                      :batch/id batch-id
+                                      :strand/id (:id created)
+                                      :strand created)))
+  (doseq [{:keys [ref id before after]} (:updated result)]
+    (dispatch/enqueue! runtime (assoc (lifecycle/event-base :strand/updated)
+                                      :batch/id batch-id
+                                      :strand/id id
+                                      :strand/patch (strand-patch-for-ref payload ref)
+                                      :strand/before before
+                                      :strand/after after)))
+  (when (seq (:burned result))
+    (dispatch/enqueue! runtime (assoc (lifecycle/event-base :strand/burned)
+                                      :batch/id batch-id
+                                      :strand/requested-ids (mapv :id (:burned result))
+                                      :strand/burned-ids (mapv :id (:burned result))
+                                      :strand/before (mapv :before (:burned result))))))
+
+;; --- leaf mechanics ----------------------------------------------------------
+
+(defn- strand-patch-for-ref [payload ref]
+  (some (fn [strand]
+          (when (= ref (:ref strand))
+            (dissoc strand :ref)))
+        (:strands payload)))
