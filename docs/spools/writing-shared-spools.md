@@ -183,6 +183,72 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
   `activate!` that returns `{:installed true}` — the name is the thing
   that's wrong.
 
+## Modeling attribute values: enums, absence, empty, history
+
+Rule 7 is the mechanics — write deltas, and set a key to `nil` only when you
+mean "remove". This section is the modeling decision that comes first: what a
+value *means*, and which of enum, absence, empty string, or recorded history
+carries that meaning. A strand *has* an attribute map (TEN-007); the public
+contract is which keys are present and what each present value is, never the
+physical row that stores it.
+
+Choose per attribute:
+
+- **An enum value** when a finite, durable state is itself the domain fact. A
+  `kanban/lane` is `pending`, `claimed`, or `in_review`; a `phase` is `red`,
+  `green`, or `refactor`. The value names where the strand is, and the reader
+  learns the whole space from the vocabulary. Reach for an enum before removal
+  when the "no longer applies" case is itself a nameable state a consumer will
+  query on.
+- **Absence** when an optional or temporary fact no longer applies. A
+  `gate/error` exists while a gate is failing and is *gone* once it clears; a
+  claim marker exists while a run holds the strand and is *gone* on release.
+  Absence is the natural model for "this fact is not true right now", and a
+  presence query (`[:exists [:attr :gate/error]]`) reads it directly. Do not
+  invent a duplicate lifecycle state (a second `cleared` enum beside a real
+  lane) merely to dodge absence; if the space already names the state, use the
+  enum, and if it does not, absence is the answer, not a coined synonym.
+- **An empty string** only when empty text is legitimate domain data — a note
+  body a user genuinely left blank, a field whose emptiness a consumer reads as
+  content. An empty string is a *present* value, distinct from absence:
+  `[:exists [:attr :body]]` is true for `""`. Never reach for blank as a generic
+  clear-or-remove syntax; that conflates "no value" with "the value is empty
+  text", and both the trusted nil patch and the CLI JSON-null surface exist so
+  you never have to.
+- **Recorded history**, as explicit `state`, `outcome`, and note data, when the
+  fact that mattered is that something *happened*. A closed card carries
+  `kanban/outcome=done`; a finished run records its result. An empty current
+  value is not history: clearing `kanban/lane` says nothing about how the card
+  ended, so record the outcome as its own durable value and let the transient
+  key go absent. Skein aims at resumability, not replay (see
+  [PHILOSOPHY](../../devflow/PHILOSOPHY.md)) — history you need is data you write,
+  not a value you blank.
+
+### Making a key absent
+
+Absence has one meaning and two spellings, one per surface. Both lower to the
+same SQLite `json_patch` deletion; neither stores a `null`.
+
+Trusted Clojure — pass `nil` as the value in a delta write:
+
+```clojure
+;; gate/error no longer applies: remove the key, don't blank it
+(weaver/update! runtime id {:attributes {:gate/error nil}})
+```
+
+CLI — `update` treats `--attributes` as a JSON Merge Patch, and a JSON `null`
+deletes the addressed key while leaving the rest untouched:
+
+```sh
+printf '{"gate/error":null}' \
+  | strand --stdin update "$id" --attributes :stdin
+```
+
+`--attr key=` and a JSON empty string both store `""` — data, never removal. The
+full CLI contract, including precedence and the blank-is-data guarantee, is the
+[typed-null recipe](../../spools/batteries.cookbook.md) and the `update`
+contract in [`batteries.md`](../../spools/batteries.md).
+
 ## Namespace claims
 
 This section covers vocab and attribute namespaces, not Clojure source namespaces; see
