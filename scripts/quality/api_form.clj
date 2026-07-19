@@ -19,7 +19,7 @@
 
 (def pending
   "Modules not yet through their v1 form card (epic 9nu0q)."
-  #{"batch" "current" "events" "graph" "notes" "patterns"
+  #{"batch" "current" "events" "graph" "notes"
     "peers" "relations" "runtime" "scheduler" "spool"
     "vocab" "weaver"})
 
