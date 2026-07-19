@@ -117,13 +117,11 @@
                  (select-keys (:after updated) [:id :state :attributes]))))))))
 
 (deftest current-runtime-fails-loudly-without-ambient-runtime
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                        #"No active Skein weaver runtime"
-                        (#'current/runtime* (constantly nil))))
   ;; This namespace runs in the parallel batch, whose tests start unpublished
   ;; runtimes only; with the thread-local binding cleared, the public entry point
   ;; must see no ambient runtime and fail loudly.
   (binding [weaver-runtime/*runtime* nil]
+    (is (nil? (current/runtime-or-nil)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"No active Skein weaver runtime"
                           (current/runtime)))))

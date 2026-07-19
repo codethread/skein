@@ -20,12 +20,6 @@
   (or weaver-runtime/*runtime*
       @weaver-runtime/current-runtime))
 
-(defn- runtime*
-  [runtime-or-nil-fn]
-  (or (runtime-or-nil-fn)
-      (throw (ex-info "No active Skein weaver runtime; scope one with (with-runtime rt ...) or with-runtime*, or run inside a started or published weaver."
-                      {:skein/runtime :absent}))))
-
 (defn runtime
   "Return the thread-bound or published in-process weaver runtime.
 
@@ -34,7 +28,11 @@
   neither exists, fail loudly. Use `runtime-or-nil` when a missing runtime is a
   branch rather than an error."
   []
-  (runtime* runtime-or-nil))
+  (or (runtime-or-nil)
+      (throw (ex-info (str "No active Skein weaver runtime; scope one with"
+                           " (with-runtime rt ...) or with-runtime*, or run"
+                           " inside a started or published weaver.")
+                      {:skein/runtime :absent}))))
 
 (defn with-runtime*
   "Call `thunk` with `runtime` bound as the thread-local ambient runtime.
@@ -44,7 +42,7 @@
   same runtime without threading it through every call."
   [runtime thunk]
   (when (nil? runtime)
-    (throw (ex-info "Cannot scope a nil Skein runtime" {})))
+    (throw (ex-info "Cannot scope a nil Skein runtime" {:skein/runtime :nil})))
   (weaver-runtime/with-runtime-binding runtime thunk))
 
 (defmacro with-runtime

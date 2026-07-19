@@ -25,7 +25,7 @@ Return the thread-bound or published in-process weaver runtime.
   processes also publish one ambient runtime for legacy REPL ergonomics. When
   neither exists, fail loudly. Use `runtime-or-nil` when a missing runtime is a
   branch rather than an error.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/current/alpha.clj#L29-L37">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/current/alpha.clj#L23-L35">Source</a></sub></p>
 
 ## <a name="skein.api.current.alpha/runtime-or-nil">`runtime-or-nil`</a>
 ``` clojure
@@ -50,7 +50,7 @@ Return the thread-bound or published in-process weaver runtime, or nil.
 Macro.
 
 Evaluate `body` with `runtime` bound as the thread-local ambient runtime.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/current/alpha.clj#L50-L53">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/current/alpha.clj#L48-L51">Source</a></sub></p>
 
 ## <a name="skein.api.current.alpha/with-runtime*">`with-runtime*`</a>
 ``` clojure
@@ -63,4 +63,4 @@ Call `thunk` with `runtime` bound as the thread-local ambient runtime.
   Trusted in-process code uses this to scope a chosen runtime for a dynamic
   extent so nested `(runtime)` reads and explicit-runtime callees agree on the
   same runtime without threading it through every call.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/current/alpha.clj#L39-L48">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/current/alpha.clj#L37-L46">Source</a></sub></p>
