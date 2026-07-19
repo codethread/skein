@@ -21,7 +21,8 @@
             [skein.api.current.alpha :as current]
             [skein.api.format.alpha :as fmt]
             [skein.api.graph.alpha :as graph]
-            [skein.api.spool.alpha :refer [fail! require-valid! attr-key->str poll-until-deadline!]]
+            [skein.api.spool.alpha :refer [fail! require-valid! attr-key->str
+                                           poll-until-deadline!]]
             [skein.api.vocab.alpha :as vocab]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.workflow.internal.compile :as cmp]
@@ -30,77 +31,14 @@
             [skein.spools.workflow.internal.routing :as routing]
             [skein.spools.workflow.internal.util :as util]))
 
-(defn- non-blank-string?
-  ;; A peer of internal.util/non-blank-string?, kept in this namespace so the
-  ;; spec predicates below resolve their symbol to `skein.spools.workflow`,
-  ;; keeping s/form (and thus `explain`/`s/explain-data`) output byte-identical.
-  [value]
-  (and (string? value) (not (str/blank? value))))
-
-(s/def ::form #{:molecule :wisp})
-(s/def ::id-ref #(or (keyword? %) (symbol? %) (non-blank-string? %)))
-(s/def ::id ::id-ref)
-(s/def ::renderable #(or (non-blank-string? %) (fn? %)))
-(s/def ::name ::renderable)
-(s/def ::title ::renderable)
-(s/def ::description #(or (string? %) (fn? %)))
-(s/def ::state #{"active" "closed"})
-(s/def ::attributes map?)
-(s/def ::required boolean?)
-(s/def ::default any?)
-(s/def ::param-def (s/keys :opt-un [::required ::default]))
-(s/def ::params (s/map-of keyword? ::param-def))
-;; caller-supplied param values (compile args, call-site :params); the aux
-;; namespace keeps the un-namespaced :params key while the shape differs from
-;; the declaration map above
-(s/def :skein.spools.workflow.values/params (s/map-of keyword? any?))
-(s/def ::count pos-int?)
-(s/def ::chain boolean?)
-;; :each resolves against params at expansion time: a literal sequential, a
-;; keyword naming a resolved param, or a fn of the resolved params map.
-(s/def ::each #(or (sequential? %) (keyword? %) (fn? %)))
-(s/def ::depends-on (s/coll-of ::id-ref :kind vector?))
-(s/def ::timeout-secs (s/and integer? (complement neg?)))
-(s/def ::poll-ms (s/and integer? (complement neg?)))
-(s/def ::self-waiter #{:self})
-(s/def ::external-waiter #(and (or (keyword? %) (symbol? %) (non-blank-string? %))
-                               (not= :self %)))
-(s/def ::condition #(or (keyword? %)
-                        (and (vector? %) (#{:= :!=} (first %)) (= 3 (count %)))))
-(s/def ::loop (s/keys :opt-un [::count ::each ::chain]))
-(s/def ::procedure any?)
-(s/def ::call (s/keys :req-un [::id ::procedure]
-                      :opt-un [::title :skein.spools.workflow.values/params ::depends-on ::attributes]))
-(s/def ::step (s/keys :req-un [::id ::title]
-                      :opt-un [::description ::attributes ::state ::depends-on ::condition ::loop]))
-(s/def ::workflow-item (s/or :step ::step :call ::call))
-(s/def ::steps (s/coll-of ::workflow-item :kind vector?))
-(s/def ::workflow (s/keys :req-un [::name ::steps]
-                          :opt-un [::params ::attributes ::state ::form]))
-
-(defn- reject-unknown-keys!
-  "Fail loudly (TEN-003) when `m` carries keys outside `allowed`, so a builder
-  never silently ignores a mistyped option key (`:require`, `:depend-on`, …).
-  Returns `m` for threading."
-  [m allowed context]
-  (when-let [unknown (seq (remove allowed (keys m)))]
-    (fail! "Unknown workflow option keys"
-           {:context context :unknown (vec unknown) :allowed allowed}))
-  m)
-
-(def ^:private param-opt-keys #{:required :default})
-(def ^:private step-opt-keys #{:description :attributes :state :depends-on :condition :loop})
-(def ^:private checkpoint-opt-keys (into step-opt-keys #{:kind :choices}))
-(def ^:private call-opt-keys #{:title :depends-on :attributes})
-(def ^:private workflow-opt-keys #{:params :attributes :state :form})
-(def ^:private choice-opt-keys #{:key :label :description :next :input :revise})
-(def ^:private choice-input-opt-keys #{:key :required :description})
-
-(defn- spec-entry [spec-name doc example]
-  {:spec (str spec-name)
-   :doc doc
-   :spec-form (pr-str (s/form spec-name))
-   :example example})
+(declare non-blank-string?
+         explain-step explain-gate explain-checkpoint explain-call explain-workflow
+         reject-unknown-keys! step*
+         param-opt-keys step-opt-keys checkpoint-opt-keys call-opt-keys workflow-opt-keys
+         choice-name choice-details-attr reject-unknown-choice-keys!
+         reject-next-and-revise! require-unique-choice-keys!
+         pour-with-rt! wisp-with-rt! burn-with-rt!
+         attention timeout-secs-opt poll-ms-opt)
 
 (defn explain
   "Return self-documenting workflow spool input contracts.
@@ -112,99 +50,13 @@
    (explain :workflow))
   ([topic]
    (case topic
-     :workflow {:topic :workflow
-                :summary "Clojure-native workflow data compiled into a Skein molecule or wisp."
-                :builders {'workflow 'skein.spools.workflow/workflow
-                           'step 'skein.spools.workflow/step
-                           'gate 'skein.spools.workflow/gate
-                           'checkpoint 'skein.spools.workflow/checkpoint
-                           'call 'skein.spools.workflow/call
-                           'param 'skein.spools.workflow/param}
-                :contract (spec-entry ::workflow
-                                      "A workflow requires a non-blank :name and vector :steps."
-                                      '(workflow (fn [{:keys [feature]}] (str "Ship " feature))
-                                                 {:params {:feature (param :required true)}}
-                                                 (step :design (fn [{:keys [feature]}] (str "Design " feature)) :self)
-                                                 (checkpoint :signoff "Approve design" :choices [:approved :revise])))
-                :fields {:params (fmt/reflow "
-                                  |Workflow-level map of keyword param names to param definitions. Param
-                                  |definitions support boolean :required and optional :default.")}
-                :runtime {:start! (fmt/reflow "
-                                   |(start! run-id workflow params opts) accepts a workflow map, constructor var,
-                                   |or registered workflow keyword. Var/keyword starts derive :definition; absent
-                                   |:context defaults from JSON-safe params after keyword values are stringified.")
-                          :ready "(ready run-id selector) filters ready views by keys such as :role, :gate, :checkpoint, or :checkpoint-kind."
-                          :ready-gates "(ready-gates run-id) or (ready-gates run-id waiter) returns ready gate views."
-                          :ready-checkpoint "Returns the single ready checkpoint view, nil when none, and fails loudly when ambiguous."}
-                :registry {:register-workflow! "Register keyword -> fully-qualified constructor symbol for named :next routes and keyword start!/describe."}
-                :step (explain :step)
-                :gate (explain :gate)
-                :checkpoint (explain :checkpoint)
-                :call (explain :call)}
-     :step {:topic :step
-            :summary "A step is one unit of work owned by the driving agent itself. Do the work, then complete it."
-            :contract (spec-entry ::step
-                                  (fmt/reflow "
-                                  |A step definition contains :id and :title plus optional fields; the step
-                                  |builder separately validates its required waiter against ::self-waiter,
-                                  |which only accepts :self. A non-:self waiter fails loudly, directing to
-                                  |gate.")
-                                  '(step :implement (fn [{:keys [feature]}] (str "Implement " feature)) :self :depends-on [:design] :attributes {"skills" "clojure"}))
-            :fields {:id "Stable local ref, keyword/symbol/string."
-                     :title "Human-readable instruction."
-                     :waiter (fmt/reflow "
-                              |Must be :self — the driving agent does the work itself. Any other value
-                              |fails loudly and directs to gate. :self carries no workflow/gate attribute,
-                              |so compiled output is identical to a bare step.")
-                     :depends-on "Vector of local refs this step waits for."
-                     :attributes "Plain metadata stored on the materialized strand."
-                     :condition "Keyword param truthiness, or [:= :param value] / [:!= :param value]."
-                     :loop (fmt/reflow "
-                            |Expansion: {:count n} (items 1..n) or {:each xs} where xs is a literal
-                            |sequential, a keyword naming a param, or a fn of params. Add :chain true to
-                            |make expansion i depend on expansion i-1 while expansion 0 keeps the step's
-                            |declared deps. Expanded steps render against (merge params {:item item :i
-                            |idx}); conditions remain params-only/uniform; a downstream :depends-on on the
-                            |base loop id fans in to every expanded id.")}}
-     :gate {:topic :gate
-            :summary "A gate is a step whose completion belongs to an external actor. Wait for the waiter; don't do the work yourself."
-            :contract (spec-entry ::step
-                                  (fmt/reflow "
-                                  |A gate returns step data with a workflow/gate actor hint. Its required
-                                  |waiter is separately validated against ::external-waiter: a keyword,
-                                  |symbol, or non-blank string, never :self. It takes the same optional
-                                  |fields as a step.")
-                                  '(gate :ci-green "Wait for CI to pass" :ci :depends-on [:push]))
-            :fields {:waiter (fmt/reflow "
-                              |Freeform actor hint (keyword/symbol/string) stored as workflow/gate, e.g.
-                              |:ci, :human, :subagent; never :self. register-executor! keys a stall
-                              |predicate by this same name.")
-                     :others "Same optional fields as step: :depends-on, :attributes, :condition, :loop, :description, :state."
-                     :workflow/gate (fmt/reflow "
-                                     |Marks the step an external wait point, surfaced by step-view as :gate;
-                                     |complete! requires :by to close it. A waiter with no registered
-                                     |executor always needs attention; a registered executor's stall
-                                     |predicate decides.")}}
-     :call {:topic :call
-            :summary "A call is a procedure-style inline reuse of another workflow, without a choice branch."
-            :contract (spec-entry ::call
-                                  "A call requires :id and :procedure; optional fields include :params, :depends-on, :title, and :attributes."
-                                  '(call :review-proposal review-workflow {:artifact "proposal.md"} :depends-on [:write-proposal]))
-            :fields {:id "Stable local ref for the procedure call. Downstream parent steps may depend on this id."
-                     :procedure "Workflow map, zero-arg function, one-arg function receiving params, or symbol resolving to one of those."
-                     :params "Procedure-local params merged with parent workflow params."
-                     :depends-on "Parent refs that the procedure entry steps wait for."}}
-     :checkpoint {:topic :checkpoint
-                  :summary "A checkpoint is a step that requires an explicit choice. Use choose! in higher-level workflow spools."
-                  :contract (spec-entry ::step
-                                        "Checkpoint returns step data with workflow/checkpoint metadata and optional workflow/choices."
-                                        '(checkpoint :route "Choose next path" :kind :agent :choices [:tasks :direct]))
-                  :fields {:kind "Decision owner such as :human or :agent."
-                           :choices "Allowed outcomes, stored as strings."
-                           :workflow/checkpoint "Stable checkpoint id, derived from the local step id."
-                           :workflow/checkpoint-kind "Decision owner stored as a string."
-                           :workflow/choices "Allowed choices stored as strings."}}
-     (fail! "Unknown workflow explain topic" {:topic topic :topics [:workflow :step :gate :checkpoint :call]}))))
+     :workflow (explain-workflow)
+     :step (explain-step)
+     :gate (explain-gate)
+     :checkpoint (explain-checkpoint)
+     :call (explain-call)
+     (fail! "Unknown workflow explain topic"
+            {:topic topic :topics [:workflow :step :gate :checkpoint :call]}))))
 
 (defn param
   "Return a workflow param definition.
@@ -215,10 +67,6 @@
   [& {:as opts}]
   (reject-unknown-keys! opts param-opt-keys :param)
   opts)
-
-(defn- step*
-  [id title opts]
-  (merge {:id id :title title} opts))
 
 (defn step
   "Return a workflow step definition — a unit of work the driving agent does
@@ -256,96 +104,6 @@
   (-> (step* id title opts)
       (update :attributes merge {"workflow/gate" (name waiter)})))
 
-(defn- choice-key [choice]
-  (cond
-    (map? choice) (:key choice)
-    :else choice))
-
-(defn- choice-name [choice]
-  (let [k (choice-key choice)]
-    (cond
-      (or (keyword? k) (symbol? k)) (name k)
-      (non-blank-string? k) k
-      :else (fail! "Workflow checkpoint choices require a non-blank key" {:choice choice}))))
-
-(defn- input-key-name [decl]
-  (let [k (:key decl)]
-    (cond
-      (or (keyword? k) (symbol? k)) (name k)
-      (non-blank-string? k) k
-      :else (fail! "Workflow choice :input entries require a non-blank :key" {:input decl}))))
-
-(defn- choice-input-attr
-  "Return the JSON-safe stored form of a checkpoint choice's `:input` declaration:
-  a vector of string-keyed maps carrying each input key's name, its required flag,
-  and an optional description. Rejects unknown declaration keys loudly (TEN-003),
-  matching the other builder opts."
-  [input]
-  (when-not (vector? input)
-    (fail! "Workflow choice :input must be a vector of declaration maps" {:input input}))
-  (mapv (fn [decl]
-          (util/require-map! decl [:choice :input])
-          (reject-unknown-keys! decl choice-input-opt-keys :choice-input)
-          (when (and (contains? decl :required) (not (boolean? (:required decl))))
-            (fail! "Workflow choice :input :required must be a boolean" {:input decl}))
-          (when (and (contains? decl :description) (not (string? (:description decl))))
-            (fail! "Workflow choice :input :description must be a string" {:input decl}))
-          (cond-> {"key" (input-key-name decl)
-                   "required" (boolean (:required decl))}
-            (:description decl) (assoc "description" (:description decl))))
-        input))
-
-(defn- revise-params-attr
-  "Return the override params stored for a checkpoint choice's `:revise` directive.
-  `:revise` must be a map carrying a `:params` map (TEN-003); the params are the
-  authoritative overrides re-poured over the run's own definition at `choose!`."
-  [revise]
-  (when-not (and (map? revise) (map? (:params revise)))
-    (fail! "Workflow choice :revise must be a map with a :params map" {:revise revise}))
-  (:params revise))
-
-(defn- choice-detail-attr [choice]
-  (when (map? choice)
-    (let [k (choice-name choice)]
-      [k (cond-> {}
-           (:label choice) (assoc "label" (:label choice))
-           (:description choice) (assoc "description" (:description choice))
-           (:next choice) (assoc "next" (str (:next choice)))
-           (:revise choice) (assoc "revise" (revise-params-attr (:revise choice)))
-           (:input choice) (assoc "input" (choice-input-attr (:input choice))))])))
-
-(defn- choice-details-attr [choices]
-  (not-empty (into {} (keep choice-detail-attr choices))))
-
-(defn- reject-unknown-choice-keys! [choices]
-  (doseq [choice choices :when (map? choice)]
-    (reject-unknown-keys! choice choice-opt-keys :choice))
-  choices)
-
-(defn- reject-next-and-revise! [choices]
-  (doseq [choice choices
-          :when (and (map? choice) (contains? choice :next) (contains? choice :revise))]
-    (fail! "Workflow choice :next and :revise are mutually exclusive"
-           {:choice (choice-name choice)}))
-  choices)
-
-(defn- require-unique-choice-keys! [choices]
-  (let [names (mapv choice-name choices)
-        duplicate (some (fn [[k n]] (when (< 1 n) k)) (frequencies names))]
-    (when duplicate
-      (fail! "Workflow checkpoint choice keys must be unique" {:choice duplicate :choices names})))
-  choices)
-
-(defn call
-  "Return a procedure-style workflow call.
-
-  The callee workflow is expanded inline at compile time. Downstream parent
-  steps depend on the call id, which represents completion of the expanded
-  procedure's exit steps."
-  [id procedure params & {:as opts}]
-  (reject-unknown-keys! opts call-opt-keys :call)
-  (merge {:id id :procedure procedure :params params} opts))
-
 (defn checkpoint
   "Return a workflow checkpoint step definition.
 
@@ -363,7 +121,10 @@
   [id title & {:as opts}]
   (reject-unknown-keys! opts checkpoint-opt-keys :checkpoint)
   (let [kind (or (:kind opts) :human)
-        choices (some-> (:choices opts) reject-unknown-choice-keys! reject-next-and-revise! require-unique-choice-keys!)
+        choices (some-> (:choices opts)
+                        reject-unknown-choice-keys!
+                        reject-next-and-revise!
+                        require-unique-choice-keys!)
         details (choice-details-attr choices)]
     (-> (step* id title (dissoc opts :kind :choices))
         (update :attributes merge
@@ -374,6 +135,16 @@
                   {"workflow/choices" (mapv choice-name choices)})
                 (when details
                   {"workflow/choice-details" details})))))
+
+(defn call
+  "Return a procedure-style workflow call.
+
+  The callee workflow is expanded inline at compile time. Downstream parent
+  steps depend on the call id, which represents completion of the expanded
+  procedure's exit steps."
+  [id procedure params & {:as opts}]
+  (reject-unknown-keys! opts call-opt-keys :call)
+  (merge {:id id :procedure procedure :params params} opts))
 
 (defn workflow
   "Return a Clojure-native workflow definition.
@@ -440,10 +211,6 @@
      {:name (:name rendered)
       :steps (mapv cmp/describe-step steps)})))
 
-(defn- pour-with-rt!
-  [rt workflow params opts]
-  (batch/apply! rt (compile workflow params (merge opts {:form :molecule}))))
-
 (defn pour!
   "Materialize `workflow` as a persistent molecule strand graph."
   ([workflow]
@@ -452,10 +219,6 @@
    (pour! workflow params {}))
   ([workflow params opts]
    (pour-with-rt! (current/runtime) workflow params opts)))
-
-(defn- wisp-with-rt!
-  [rt workflow params opts]
-  (batch/apply! rt (compile workflow params (merge opts {:form :wisp}))))
 
 (defn wisp!
   "Materialize `workflow` as an ephemeral wisp strand graph.
@@ -487,13 +250,6 @@
     (weaver/update! rt right-id {:edges [{:type "depends-on" :to left-id
                                           :attributes {:workflow/bond "sequential"}}]})))
 
-(defn- burn-with-rt!
-  [rt root-id]
-  (let [ids (mapv :id (:strands (graph/subgraph rt [root-id])))]
-    (if (seq ids)
-      (graph/burn-by-ids! rt ids)
-      {:burned [] :count 0})))
-
 (defn burn!
   "Burn a materialized molecule or wisp subgraph rooted at `root-id`."
   [root-id]
@@ -506,14 +262,41 @@
   ([root-id title attributes]
    (let [rt (current/runtime)
          subgraph (graph/subgraph rt [root-id])
-         digest (weaver/add! rt {:title title
-                                 :state "closed"
-                                 :attributes (merge {"workflow/role" "digest"
-                                                     "workflow/squashed-root" root-id
-                                                     "workflow/squashed-count" (count (:strands subgraph))}
-                                                    attributes)})]
+         attrs (merge {"workflow/role" "digest"
+                       "workflow/squashed-root" root-id
+                       "workflow/squashed-count" (count (:strands subgraph))}
+                      attributes)
+         digest (weaver/add! rt {:title title :state "closed" :attributes attrs})]
      (burn-with-rt! rt root-id)
      digest)))
+
+(defn start!
+  "Start a workflow run and return the `{:ready [step-view ...] :done boolean}`
+  result shape.
+
+  `run-id` is the stable active workflow instance handle. `workflow` may be a
+  pre-built workflow map, a constructor var, or a registered workflow keyword.
+  Var/keyword starts derive `:definition`; when `:context` is absent, params are
+  persisted as context after keyword values are stringified and non-JSON-safe
+  values are rejected loudly. `opts` may include :family, :definition, :context,
+  and :root-attributes. `:ready` is empty when the run has no ready workflow work
+  (e.g. an empty workflow, which also reports `:done true`)."
+  ([run-id workflow params]
+   (start! run-id workflow params {}))
+  ([run-id workflow params opts]
+   (let [rt (current/runtime)]
+     (when (query/current-root-with-rt rt run-id)
+       (fail! "Active workflow run already exists" {:run-id run-id}))
+     (let [{resolved-workflow :workflow derived-definition :definition}
+           (cmp/workflow-input-plan workflow params)
+           opts (cond-> opts
+                  (and derived-definition (not (contains? opts :definition)))
+                  (assoc :definition derived-definition)
+                  (not (contains? opts :context))
+                  (assoc :context (cmp/default-context params)))]
+       (pour-with-rt! rt resolved-workflow params (merge opts {:run-id run-id})))
+     (routing/close-run-if-done! rt run-id)
+     (query/run-result rt run-id))))
 
 (defn active-runs
   "Return active workflow root strands, optionally filtered by family."
@@ -592,163 +375,6 @@
       (fail! "Unknown workflow run" {:run-id run-id}))
     (mapv #(query/molecule-history rt %) roots)))
 
-(defn squash-run!
-  "Squash a finished run's molecules into one closed digest strand and return it.
-
-  The run-level counterpart of `squash!`: it replaces every molecule of the run
-  with one digest and burns their graphs, so `run-history` for the run fails
-  loudly afterwards. Fails loudly (TEN-003) for an unknown run or one that still
-  has an active root. The single digest is stamped `workflow/role \"digest\"`,
-  `workflow/run-id`, `workflow/squashed-count`, and a compact JSON-safe
-  `workflow/summary` of the history (molecule titles + checkpoint outcomes).
-  opts may override the digest `:title` and merge extra `:attributes`."
-  ([run-id]
-   (squash-run! run-id {}))
-  ([run-id {:keys [title attributes]}]
-   (let [rt (current/runtime)]
-     (when-not (query/root-strand-exists? rt run-id)
-       (fail! "Unknown workflow run" {:run-id run-id}))
-     (when (query/current-root-with-rt rt run-id)
-       (fail! "Cannot squash a run with an active root" {:run-id run-id}))
-     (let [roots (query/run-molecule-roots rt run-id)
-           summary (query/run-summary (mapv #(query/molecule-history rt %) roots))
-           squashed-count (reduce + 0 (map #(count (:strands (graph/subgraph rt [(:id %)]))) roots))
-           digest (weaver/add! rt {:title (or title (str "Digest for run " run-id))
-                                   :state "closed"
-                                   :attributes (merge {"workflow/role" "digest"
-                                                       "workflow/run-id" run-id
-                                                       "workflow/squashed-count" squashed-count
-                                                       "workflow/summary" summary}
-                                                      attributes)})]
-       (doseq [root roots]
-         (burn-with-rt! rt (:id root)))
-       digest))))
-
-(defn- attention
-  "Return the current attention state for workflow run-id.
-
-  `:done` when finished; `:checkpoint` when a checkpoint is ready; `:step`
-  when a ready `:self` step needs the driving agent (kills the footgun of a
-  ready step burying itself under `:waiting`); `:gate` when a ready gate's
-  waiter has no registered executor; `:stalled` when a registered executor's
-  stall predicate reports detail for one of its gates; else `:waiting`, which
-  now means the whole ready frontier is executor-owned and healthy."
-  [rt run-id]
-  (let [ready (query/ready-with-rt rt run-id {})
-        done (query/done-with-rt? rt run-id)
-        checkpoint (first (filter #(= "checkpoint" (:role %)) ready))
-        self-step (first (filter #(and (not= "checkpoint" (:role %)) (not (:gate %))) ready))
-        unowned-gate (first (filter #(and (:gate %) (not (registry/executor-for rt (:gate %)))) ready))
-        stalled (some (fn [step]
-                        (when-let [pred (and (:gate step) (registry/executor-for rt (:gate step)))]
-                          (when-let [detail (pred step)]
-                            {:gate step :stall detail})))
-                      ready)]
-    (cond
-      done {:reason :done :ready ready :done true}
-      checkpoint {:reason :checkpoint :ready ready :done false :detail checkpoint}
-      self-step {:reason :step :ready ready :done false :detail self-step}
-      unowned-gate {:reason :gate :ready ready :done false :detail unowned-gate}
-      stalled {:reason :stalled :ready ready :done false :detail stalled}
-      :else {:reason :waiting :ready ready :done false})))
-
-(defn- timeout-secs-opt
-  [opts]
-  (require-valid! ::timeout-secs (get opts :timeout-secs 1800)
-                  "await! :timeout-secs must be a non-negative integer"))
-
-(defn- poll-ms-opt
-  [opts]
-  (require-valid! ::poll-ms (get opts :poll-ms 250)
-                  "await! :poll-ms must be a non-negative integer"))
-
-(defn await!
-  "Block until workflow run-id is done, at a checkpoint, at a ready `:self`
-  step, at a gate whose waiter has no registered executor, at an
-  executor-owned gate whose stall predicate reports detail, or timed out.
-
-  opts: `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching
-  the agent-run await surface). Fails loudly for a non-negative-integer
-  violation on either, agreeing with `skein.spools.roster/await-quiet!`'s
-  `:timeout-ms`/`:poll-ms` validation.
-
-  The three-arg `(runtime run-id opts)` arity threads the target runtime
-  explicitly, agreeing with `skein.spools.roster/await-quiet!`; the shorter
-  arities resolve `current/runtime` as the ergonomic default for trusted
-  in-process callers."
-  ([run-id]
-   (await! run-id {}))
-  ([run-id opts]
-   (await! (current/runtime) run-id opts))
-  ([runtime run-id opts]
-   (let [timeout-secs (timeout-secs-opt opts)
-         poll-ms (poll-ms-opt opts)]
-     (poll-until-deadline!
-      {:deadline (+ (System/currentTimeMillis) (* 1000 (long timeout-secs)))
-       :poll-ms poll-ms
-       :check #(attention runtime run-id)
-       :pred->result (fn [state] (when (not= :waiting (:reason state)) state))
-       :on-timeout (fn [state] (assoc state :reason :timeout))}))))
-
-(defn start!
-  "Start a workflow run and return the `{:ready [step-view ...] :done boolean}`
-  result shape.
-
-  `run-id` is the stable active workflow instance handle. `workflow` may be a
-  pre-built workflow map, a constructor var, or a registered workflow keyword.
-  Var/keyword starts derive `:definition`; when `:context` is absent, params are
-  persisted as context after keyword values are stringified and non-JSON-safe
-  values are rejected loudly. `opts` may include :family, :definition, :context,
-  and :root-attributes. `:ready` is empty when the run has no ready workflow work
-  (e.g. an empty workflow, which also reports `:done true`)."
-  ([run-id workflow params]
-   (start! run-id workflow params {}))
-  ([run-id workflow params opts]
-   (let [rt (current/runtime)]
-     (when (query/current-root-with-rt rt run-id)
-       (fail! "Active workflow run already exists" {:run-id run-id}))
-     (let [{resolved-workflow :workflow derived-definition :definition} (cmp/workflow-input-plan workflow params)
-           opts (cond-> opts
-                  (and derived-definition (not (contains? opts :definition)))
-                  (assoc :definition derived-definition)
-                  (not (contains? opts :context))
-                  (assoc :context (cmp/default-context params)))]
-       (pour-with-rt! rt resolved-workflow params (merge opts {:run-id run-id})))
-     (routing/close-run-if-done! rt run-id)
-     (query/run-result rt run-id))))
-
-(defn choice-details
-  "Return choice explanations for run-id's current workflow checkpoint, keyed by
-  choice name with string-keyed detail maps (the same shape `choice-detail`
-  returns for a single choice).
-
-  opts may include `:step` (materialized strand id) to select among multiple
-  ready checkpoints; without it, exactly one checkpoint must be ready."
-  ([run-id]
-   (choice-details run-id {}))
-  ([run-id opts]
-   (let [rt (current/runtime)]
-     (util/require-map! opts [:opts])
-     (let [step (or (query/resolve-ready-step rt run-id opts)
-                    (fail! "No ready workflow step" {:run-id run-id}))
-           details (query/attr step :workflow/choice-details)]
-       (when-not (= "checkpoint" (query/attr step :workflow/role))
-         (fail! "Current workflow step is not a checkpoint" {:run-id run-id :step (query/strand->view step)}))
-       (into {} (map (fn [[k v]] [(attr-key->str k) (query/detail-view v)])) details)))))
-
-(defn choice-detail
-  "Return one choice explanation for run-id's current workflow checkpoint.
-
-  opts may include `:step` (materialized strand id) to select among multiple
-  ready checkpoints; without it, exactly one checkpoint must be ready."
-  ([run-id choice]
-   (choice-detail run-id choice {}))
-  ([run-id choice opts]
-   (let [choice (if (keyword? choice) (name choice) (str choice))
-         details (choice-details run-id opts)]
-     (or (get details choice)
-         (fail! "Choice detail not found" {:run-id run-id :choice choice})))))
-
 (defn complete!
   "Close the current ready non-checkpoint workflow step for run-id and return
   the `{:ready [step-view ...] :done boolean}` result shape.
@@ -771,7 +397,8 @@
      (let [step (or (query/resolve-ready-step rt run-id opts)
                     (fail! "No ready workflow step" {:run-id run-id}))]
        (when (= "checkpoint" (query/attr step :workflow/role))
-         (fail! "Cannot complete a checkpoint; use choose!" {:run-id run-id :step (query/strand->view step)}))
+         (fail! "Cannot complete a checkpoint; use choose!"
+                {:run-id run-id :step (query/strand->view step)}))
        (let [gate (query/attr step :workflow/gate)
              by (:by opts)]
          (when (and gate (not (non-blank-string? by)))
@@ -857,6 +484,100 @@
                     {:run-id run-id :step (query/strand->view step)}))
            (complete! run-id (select-keys opts [:notes :attributes :step :by]))))))))
 
+(defn choice-details
+  "Return choice explanations for run-id's current workflow checkpoint, keyed by
+  choice name with string-keyed detail maps (the same shape `choice-detail`
+  returns for a single choice).
+
+  opts may include `:step` (materialized strand id) to select among multiple
+  ready checkpoints; without it, exactly one checkpoint must be ready."
+  ([run-id]
+   (choice-details run-id {}))
+  ([run-id opts]
+   (let [rt (current/runtime)]
+     (util/require-map! opts [:opts])
+     (let [step (or (query/resolve-ready-step rt run-id opts)
+                    (fail! "No ready workflow step" {:run-id run-id}))
+           details (query/attr step :workflow/choice-details)]
+       (when-not (= "checkpoint" (query/attr step :workflow/role))
+         (fail! "Current workflow step is not a checkpoint"
+                {:run-id run-id :step (query/strand->view step)}))
+       (into {} (map (fn [[k v]] [(attr-key->str k) (query/detail-view v)])) details)))))
+
+(defn choice-detail
+  "Return one choice explanation for run-id's current workflow checkpoint.
+
+  opts may include `:step` (materialized strand id) to select among multiple
+  ready checkpoints; without it, exactly one checkpoint must be ready."
+  ([run-id choice]
+   (choice-detail run-id choice {}))
+  ([run-id choice opts]
+   (let [choice (if (keyword? choice) (name choice) (str choice))
+         details (choice-details run-id opts)]
+     (or (get details choice)
+         (fail! "Choice detail not found" {:run-id run-id :choice choice})))))
+
+(defn await!
+  "Block until workflow run-id is done, at a checkpoint, at a ready `:self`
+  step, at a gate whose waiter has no registered executor, at an
+  executor-owned gate whose stall predicate reports detail, or timed out.
+
+  opts: `:timeout-secs` (default 1800) and `:poll-ms` (default 250, matching
+  the agent-run await surface). Fails loudly for a non-negative-integer
+  violation on either, agreeing with `skein.spools.roster/await-quiet!`'s
+  `:timeout-ms`/`:poll-ms` validation.
+
+  The three-arg `(runtime run-id opts)` arity threads the target runtime
+  explicitly, agreeing with `skein.spools.roster/await-quiet!`; the shorter
+  arities resolve `current/runtime` as the ergonomic default for trusted
+  in-process callers."
+  ([run-id]
+   (await! run-id {}))
+  ([run-id opts]
+   (await! (current/runtime) run-id opts))
+  ([runtime run-id opts]
+   (let [timeout-secs (timeout-secs-opt opts)
+         poll-ms (poll-ms-opt opts)]
+     (poll-until-deadline!
+      {:deadline (+ (System/currentTimeMillis) (* 1000 (long timeout-secs)))
+       :poll-ms poll-ms
+       :check #(attention runtime run-id)
+       :pred->result (fn [state] (when (not= :waiting (:reason state)) state))
+       :on-timeout (fn [state] (assoc state :reason :timeout))}))))
+
+(defn squash-run!
+  "Squash a finished run's molecules into one closed digest strand and return it.
+
+  The run-level counterpart of `squash!`: it replaces every molecule of the run
+  with one digest and burns their graphs, so `run-history` for the run fails
+  loudly afterwards. Fails loudly (TEN-003) for an unknown run or one that still
+  has an active root. The single digest is stamped `workflow/role \"digest\"`,
+  `workflow/run-id`, `workflow/squashed-count`, and a compact JSON-safe
+  `workflow/summary` of the history (molecule titles + checkpoint outcomes).
+  opts may override the digest `:title` and merge extra `:attributes`."
+  ([run-id]
+   (squash-run! run-id {}))
+  ([run-id {:keys [title attributes]}]
+   (let [rt (current/runtime)]
+     (when-not (query/root-strand-exists? rt run-id)
+       (fail! "Unknown workflow run" {:run-id run-id}))
+     (when (query/current-root-with-rt rt run-id)
+       (fail! "Cannot squash a run with an active root" {:run-id run-id}))
+     (let [roots (query/run-molecule-roots rt run-id)
+           summary (query/run-summary (mapv #(query/molecule-history rt %) roots))
+           squashed-count (reduce + 0 (map #(count (:strands (graph/subgraph rt [(:id %)])))
+                                           roots))
+           digest (weaver/add! rt {:title (or title (str "Digest for run " run-id))
+                                   :state "closed"
+                                   :attributes (merge {"workflow/role" "digest"
+                                                       "workflow/run-id" run-id
+                                                       "workflow/squashed-count" squashed-count
+                                                       "workflow/summary" summary}
+                                                      attributes)})]
+       (doseq [root roots]
+         (burn-with-rt! rt (:id root)))
+       digest))))
+
 (defn register-workflow!
   "Register a workflow constructor under a stable keyword `name`.
 
@@ -917,20 +638,23 @@
   registry, owned by this spool's use-key, so the workflow attributes `compile`
   and the step/gate/checkpoint builders write are discoverable data."
   []
-  (vocab/declare! (current/runtime)
-                  {:kind :attr-namespace
-                   :name "workflow"
-                   :owner :skein/spools-workflow
-                   :keys ["workflow/role" "workflow/form" "workflow/run-id"
-                          "workflow/family" "workflow/definition" "workflow/context"
-                          "workflow/gate" "workflow/checkpoint"
-                          "workflow/checkpoint-kind" "workflow/choices"
-                          "workflow/choice-details" "workflow/procedure" "workflow/outcome"
-                          "workflow/outcome-by" "workflow/outcome-notes" "workflow/outcome-input"
-                          "workflow/summary" "workflow/stage-params" "workflow/squashed-root"
-                          "workflow/squashed-count" "workflow/artifact" "workflow/decision-point"
-                          "workflow/action-ref" "workflow/instruction" "workflow/bond"]
-                   :doc "Workflow molecule/wisp attributes written by the workflow spool's compile and builders."})
+  (vocab/declare!
+   (current/runtime)
+   {:kind :attr-namespace
+    :name "workflow"
+    :owner :skein/spools-workflow
+    :keys ["workflow/role" "workflow/form" "workflow/run-id"
+           "workflow/family" "workflow/definition" "workflow/context"
+           "workflow/gate" "workflow/checkpoint"
+           "workflow/checkpoint-kind" "workflow/choices"
+           "workflow/choice-details" "workflow/procedure" "workflow/outcome"
+           "workflow/outcome-by" "workflow/outcome-notes" "workflow/outcome-input"
+           "workflow/summary" "workflow/stage-params" "workflow/squashed-root"
+           "workflow/squashed-count" "workflow/artifact" "workflow/decision-point"
+           "workflow/action-ref" "workflow/instruction" "workflow/bond"]
+    :doc (fmt/reflow "
+          |Workflow molecule/wisp attributes written by the workflow spool's
+          |compile and builders.")})
   {:installed true
    :namespace 'skein.spools.workflow
    :workflow {:builder 'skein.spools.workflow/workflow
@@ -964,3 +688,373 @@
    :registry {:register-workflow 'skein.spools.workflow/register-workflow!
               :workflow-definition 'skein.spools.workflow/workflow-definition
               :workflows 'skein.spools.workflow/workflows}})
+
+;; --- input contract specs -------------------------------------------------
+
+(defn- non-blank-string?
+  ;; A peer of internal.util/non-blank-string?, kept in this namespace so the
+  ;; spec predicates below resolve their symbol to `skein.spools.workflow`,
+  ;; keeping s/form (and thus `explain`/`s/explain-data`) output byte-identical.
+  [value]
+  (and (string? value) (not (str/blank? value))))
+
+(s/def ::form #{:molecule :wisp})
+(s/def ::id-ref #(or (keyword? %) (symbol? %) (non-blank-string? %)))
+(s/def ::id ::id-ref)
+(s/def ::renderable #(or (non-blank-string? %) (fn? %)))
+(s/def ::name ::renderable)
+(s/def ::title ::renderable)
+(s/def ::description #(or (string? %) (fn? %)))
+(s/def ::state #{"active" "closed"})
+(s/def ::attributes map?)
+(s/def ::required boolean?)
+(s/def ::default any?)
+(s/def ::param-def (s/keys :opt-un [::required ::default]))
+(s/def ::params (s/map-of keyword? ::param-def))
+;; caller-supplied param values (compile args, call-site :params); the aux
+;; namespace keeps the un-namespaced :params key while the shape differs from
+;; the declaration map above
+(s/def :skein.spools.workflow.values/params (s/map-of keyword? any?))
+(s/def ::count pos-int?)
+(s/def ::chain boolean?)
+;; :each resolves against params at expansion time: a literal sequential, a
+;; keyword naming a resolved param, or a fn of the resolved params map.
+(s/def ::each #(or (sequential? %) (keyword? %) (fn? %)))
+(s/def ::depends-on (s/coll-of ::id-ref :kind vector?))
+(s/def ::timeout-secs (s/and integer? (complement neg?)))
+(s/def ::poll-ms (s/and integer? (complement neg?)))
+(s/def ::self-waiter #{:self})
+(s/def ::external-waiter #(and (or (keyword? %) (symbol? %) (non-blank-string? %))
+                               (not= :self %)))
+(s/def ::condition #(or (keyword? %)
+                        (and (vector? %) (#{:= :!=} (first %)) (= 3 (count %)))))
+(s/def ::loop (s/keys :opt-un [::count ::each ::chain]))
+(s/def ::procedure any?)
+(s/def ::call (s/keys :req-un [::id ::procedure]
+                      :opt-un [::title :skein.spools.workflow.values/params
+                               ::depends-on ::attributes]))
+(s/def ::step (s/keys :req-un [::id ::title]
+                      :opt-un [::description ::attributes ::state ::depends-on
+                               ::condition ::loop]))
+(s/def ::workflow-item (s/or :step ::step :call ::call))
+(s/def ::steps (s/coll-of ::workflow-item :kind vector?))
+(s/def ::workflow (s/keys :req-un [::name ::steps]
+                          :opt-un [::params ::attributes ::state ::form]))
+
+;; --- explain topic builders -----------------------------------------------
+
+(defn- spec-entry [spec-name doc example]
+  {:spec (str spec-name)
+   :doc doc
+   :spec-form (pr-str (s/form spec-name))
+   :example example})
+
+(defn- explain-step []
+  {:topic :step
+   :summary (fmt/reflow "
+            |A step is one unit of work owned by the driving agent itself. Do the
+            |work, then complete it.")
+   :contract (spec-entry ::step
+                         (fmt/reflow "
+                         |A step definition contains :id and :title plus optional fields; the
+                         |step builder separately validates its required waiter against
+                         |::self-waiter, which only accepts :self. A non-:self waiter fails
+                         |loudly, directing to gate.")
+                         '(step :implement
+                                (fn [{:keys [feature]}] (str "Implement " feature))
+                                :self
+                                :depends-on [:design]
+                                :attributes {"skills" "clojure"}))
+   :fields {:id "Stable local ref, keyword/symbol/string."
+            :title "Human-readable instruction."
+            :waiter (fmt/reflow "
+                     |Must be :self — the driving agent does the work itself. Any
+                     |other value fails loudly and directs to gate. :self carries no
+                     |workflow/gate attribute, so compiled output is identical to a
+                     |bare step.")
+            :depends-on "Vector of local refs this step waits for."
+            :attributes "Plain metadata stored on the materialized strand."
+            :condition "Keyword param truthiness, or [:= :param value] / [:!= :param value]."
+            :loop (fmt/reflow "
+                   |Expansion: {:count n} (items 1..n) or {:each xs} where xs is a
+                   |literal sequential, a keyword naming a param, or a fn of params.
+                   |Add :chain true to make expansion i depend on expansion i-1 while
+                   |expansion 0 keeps the step's declared deps. Expanded steps render
+                   |against (merge params {:item item :i idx}); conditions remain
+                   |params-only/uniform; a downstream :depends-on on the base loop id
+                   |fans in to every expanded id.")}})
+
+(defn- explain-gate []
+  {:topic :gate
+   :summary (fmt/reflow "
+            |A gate is a step whose completion belongs to an external actor. Wait for the
+            |waiter; don't do the work yourself.")
+   :contract (spec-entry ::step
+                         (fmt/reflow "
+                         |A gate returns step data with a workflow/gate actor hint. Its required
+                         |waiter is separately validated against ::external-waiter: a keyword,
+                         |symbol, or non-blank string, never :self. It takes the same optional
+                         |fields as a step.")
+                         '(gate :ci-green "Wait for CI to pass" :ci :depends-on [:push]))
+   :fields {:waiter (fmt/reflow "
+                     |Freeform actor hint (keyword/symbol/string) stored as workflow/gate, e.g.
+                     |:ci, :human, :subagent; never :self. register-executor! keys a stall
+                     |predicate by this same name.")
+            :others (fmt/reflow "
+                     |Same optional fields as step: :depends-on, :attributes, :condition, :loop,
+                     |:description, :state.")
+            :workflow/gate (fmt/reflow "
+                            |Marks the step an external wait point, surfaced by
+                            |step-view as :gate; complete! requires :by to close it. A
+                            |waiter with no registered executor always needs attention;
+                            |a registered executor's stall predicate decides.")}})
+
+(defn- explain-checkpoint []
+  {:topic :checkpoint
+   :summary (fmt/reflow "
+            |A checkpoint is a step that requires an explicit choice. Use choose! in
+            |higher-level workflow spools.")
+   :contract (spec-entry ::step
+                         (fmt/reflow "
+                         |Checkpoint returns step data with workflow/checkpoint metadata and
+                         |optional workflow/choices.")
+                         '(checkpoint :route "Choose next path"
+                                      :kind :agent
+                                      :choices [:tasks :direct]))
+   :fields {:kind "Decision owner such as :human or :agent."
+            :choices "Allowed outcomes, stored as strings."
+            :workflow/checkpoint "Stable checkpoint id, derived from the local step id."
+            :workflow/checkpoint-kind "Decision owner stored as a string."
+            :workflow/choices "Allowed choices stored as strings."}})
+
+(defn- explain-call []
+  {:topic :call
+   :summary (fmt/reflow "
+            |A call is a procedure-style inline reuse of another workflow, without a
+            |choice branch.")
+   :contract (spec-entry ::call
+                         (fmt/reflow "
+                         |A call requires :id and :procedure; optional fields include :params,
+                         |:depends-on, :title, and :attributes.")
+                         '(call :review-proposal review-workflow {:artifact "proposal.md"}
+                                :depends-on [:write-proposal]))
+   :fields {:id (fmt/reflow "
+                 |Stable local ref for the procedure call. Downstream parent steps
+                 |may depend on this id.")
+            :procedure (fmt/reflow "
+                        |Workflow map, zero-arg function, one-arg function receiving params, or
+                        |symbol resolving to one of those.")
+            :params "Procedure-local params merged with parent workflow params."
+            :depends-on "Parent refs that the procedure entry steps wait for."}})
+
+(defn- explain-workflow []
+  {:topic :workflow
+   :summary "Clojure-native workflow data compiled into a Skein molecule or wisp."
+   :builders {'workflow 'skein.spools.workflow/workflow
+              'step 'skein.spools.workflow/step
+              'gate 'skein.spools.workflow/gate
+              'checkpoint 'skein.spools.workflow/checkpoint
+              'call 'skein.spools.workflow/call
+              'param 'skein.spools.workflow/param}
+   :contract (spec-entry ::workflow
+                         "A workflow requires a non-blank :name and vector :steps."
+                         '(workflow (fn [{:keys [feature]}] (str "Ship " feature))
+                                    {:params {:feature (param :required true)}}
+                                    (step :design
+                                          (fn [{:keys [feature]}] (str "Design " feature))
+                                          :self)
+                                    (checkpoint :signoff "Approve design"
+                                                :choices [:approved :revise])))
+   :fields {:params (fmt/reflow "
+                     |Workflow-level map of keyword param names to param definitions. Param
+                     |definitions support boolean :required and optional :default.")}
+   :runtime {:start! (fmt/reflow "
+                      |(start! run-id workflow params opts) accepts a workflow map,
+                      |constructor var, or registered workflow keyword. Var/keyword
+                      |starts derive :definition; absent :context defaults from
+                      |JSON-safe params after keyword values are stringified.")
+             :ready (fmt/reflow "
+                     |(ready run-id selector) filters ready views by keys such as :role, :gate,
+                     |:checkpoint, or :checkpoint-kind.")
+             :ready-gates (fmt/reflow "
+                           |(ready-gates run-id) or (ready-gates run-id waiter) returns
+                           |ready gate views.")
+             :ready-checkpoint (fmt/reflow "
+                                |Returns the single ready checkpoint view, nil when none,
+                                |and fails loudly when ambiguous.")}
+   :registry {:register-workflow! (fmt/reflow "
+                                   |Register keyword -> fully-qualified constructor
+                                   |symbol for named :next routes and keyword
+                                   |start!/describe.")}
+   :step (explain-step)
+   :gate (explain-gate)
+   :checkpoint (explain-checkpoint)
+   :call (explain-call)})
+
+;; --- builder option validation --------------------------------------------
+
+(defn- reject-unknown-keys!
+  "Fail loudly (TEN-003) when `m` carries keys outside `allowed`, so a builder
+  never silently ignores a mistyped option key (`:require`, `:depend-on`, …).
+  Returns `m` for threading."
+  [m allowed context]
+  (when-let [unknown (seq (remove allowed (keys m)))]
+    (fail! "Unknown workflow option keys"
+           {:context context :unknown (vec unknown) :allowed allowed}))
+  m)
+
+(def ^:private param-opt-keys #{:required :default})
+(def ^:private step-opt-keys #{:description :attributes :state :depends-on :condition :loop})
+(def ^:private checkpoint-opt-keys (into step-opt-keys #{:kind :choices}))
+(def ^:private call-opt-keys #{:title :depends-on :attributes})
+(def ^:private workflow-opt-keys #{:params :attributes :state :form})
+(def ^:private choice-opt-keys #{:key :label :description :next :input :revise})
+(def ^:private choice-input-opt-keys #{:key :required :description})
+
+(defn- step*
+  [id title opts]
+  (merge {:id id :title title} opts))
+
+;; --- checkpoint choice builders -------------------------------------------
+
+(defn- choice-key [choice]
+  (cond
+    (map? choice) (:key choice)
+    :else choice))
+
+(defn- choice-name [choice]
+  (let [k (choice-key choice)]
+    (cond
+      (or (keyword? k) (symbol? k)) (name k)
+      (non-blank-string? k) k
+      :else (fail! "Workflow checkpoint choices require a non-blank key" {:choice choice}))))
+
+(defn- input-key-name [decl]
+  (let [k (:key decl)]
+    (cond
+      (or (keyword? k) (symbol? k)) (name k)
+      (non-blank-string? k) k
+      :else (fail! "Workflow choice :input entries require a non-blank :key" {:input decl}))))
+
+(defn- choice-input-attr
+  "Return the JSON-safe stored form of a checkpoint choice's `:input` declaration:
+  a vector of string-keyed maps carrying each input key's name, its required flag,
+  and an optional description. Rejects unknown declaration keys loudly (TEN-003),
+  matching the other builder opts."
+  [input]
+  (when-not (vector? input)
+    (fail! "Workflow choice :input must be a vector of declaration maps" {:input input}))
+  (mapv (fn [decl]
+          (util/require-map! decl [:choice :input])
+          (reject-unknown-keys! decl choice-input-opt-keys :choice-input)
+          (when (and (contains? decl :required) (not (boolean? (:required decl))))
+            (fail! "Workflow choice :input :required must be a boolean" {:input decl}))
+          (when (and (contains? decl :description) (not (string? (:description decl))))
+            (fail! "Workflow choice :input :description must be a string" {:input decl}))
+          (cond-> {"key" (input-key-name decl)
+                   "required" (boolean (:required decl))}
+            (:description decl) (assoc "description" (:description decl))))
+        input))
+
+(defn- revise-params-attr
+  "Return the override params stored for a checkpoint choice's `:revise` directive.
+  `:revise` must be a map carrying a `:params` map (TEN-003); the params are the
+  authoritative overrides re-poured over the run's own definition at `choose!`."
+  [revise]
+  (when-not (and (map? revise) (map? (:params revise)))
+    (fail! "Workflow choice :revise must be a map with a :params map" {:revise revise}))
+  (:params revise))
+
+(defn- choice-detail-attr [choice]
+  (when (map? choice)
+    (let [k (choice-name choice)]
+      [k (cond-> {}
+           (:label choice) (assoc "label" (:label choice))
+           (:description choice) (assoc "description" (:description choice))
+           (:next choice) (assoc "next" (str (:next choice)))
+           (:revise choice) (assoc "revise" (revise-params-attr (:revise choice)))
+           (:input choice) (assoc "input" (choice-input-attr (:input choice))))])))
+
+(defn- choice-details-attr [choices]
+  (not-empty (into {} (keep choice-detail-attr choices))))
+
+(defn- reject-unknown-choice-keys! [choices]
+  (doseq [choice choices :when (map? choice)]
+    (reject-unknown-keys! choice choice-opt-keys :choice))
+  choices)
+
+(defn- reject-next-and-revise! [choices]
+  (doseq [choice choices
+          :when (and (map? choice) (contains? choice :next) (contains? choice :revise))]
+    (fail! "Workflow choice :next and :revise are mutually exclusive"
+           {:choice (choice-name choice)}))
+  choices)
+
+(defn- require-unique-choice-keys! [choices]
+  (let [names (mapv choice-name choices)
+        duplicate (some (fn [[k n]] (when (< 1 n) k)) (frequencies names))]
+    (when duplicate
+      (fail! "Workflow checkpoint choice keys must be unique"
+             {:choice duplicate :choices names})))
+  choices)
+
+;; --- runtime wrappers -----------------------------------------------------
+
+(defn- pour-with-rt!
+  [rt workflow params opts]
+  (batch/apply! rt (compile workflow params (merge opts {:form :molecule}))))
+
+(defn- wisp-with-rt!
+  [rt workflow params opts]
+  (batch/apply! rt (compile workflow params (merge opts {:form :wisp}))))
+
+(defn- burn-with-rt!
+  [rt root-id]
+  (let [ids (mapv :id (:strands (graph/subgraph rt [root-id])))]
+    (if (seq ids)
+      (graph/burn-by-ids! rt ids)
+      {:burned [] :count 0})))
+
+;; --- attention & await polling --------------------------------------------
+
+(defn- attention
+  "Return the current attention state for workflow run-id.
+
+  `:done` when finished; `:checkpoint` when a checkpoint is ready; `:step`
+  when a ready `:self` step needs the driving agent (kills the footgun of a
+  ready step burying itself under `:waiting`); `:gate` when a ready gate's
+  waiter has no registered executor; `:stalled` when a registered executor's
+  stall predicate reports detail for one of its gates; else `:waiting`, which
+  now means the whole ready frontier is executor-owned and healthy."
+  [rt run-id]
+  (let [ready (query/ready-with-rt rt run-id {})
+        done (query/done-with-rt? rt run-id)
+        checkpoint (first (filter #(= "checkpoint" (:role %)) ready))
+        self-step (first (filter #(and (not= "checkpoint" (:role %)) (not (:gate %)))
+                                 ready))
+        unowned-gate (first (filter #(and (:gate %)
+                                          (not (registry/executor-for rt (:gate %))))
+                                    ready))
+        stalled (some (fn [step]
+                        (when-let [pred (and (:gate step)
+                                             (registry/executor-for rt (:gate step)))]
+                          (when-let [detail (pred step)]
+                            {:gate step :stall detail})))
+                      ready)]
+    (cond
+      done {:reason :done :ready ready :done true}
+      checkpoint {:reason :checkpoint :ready ready :done false :detail checkpoint}
+      self-step {:reason :step :ready ready :done false :detail self-step}
+      unowned-gate {:reason :gate :ready ready :done false :detail unowned-gate}
+      stalled {:reason :stalled :ready ready :done false :detail stalled}
+      :else {:reason :waiting :ready ready :done false})))
+
+(defn- timeout-secs-opt
+  [opts]
+  (require-valid! ::timeout-secs (get opts :timeout-secs 1800)
+                  "await! :timeout-secs must be a non-negative integer"))
+
+(defn- poll-ms-opt
+  [opts]
+  (require-valid! ::poll-ms (get opts :poll-ms 250)
+                  "await! :poll-ms must be a non-negative integer"))
