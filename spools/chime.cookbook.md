@@ -176,8 +176,8 @@ Honest source: agent-run's `run-summary` / `runs` implementation in
 and the external [`delegation/README.md`][delegation-contract] documents that `strand agent ps`
 carries `mode`, `backend`, `session`, and `attach` for interactive summaries.
 
-[agent-run-source]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/agent-run/src/ct/spools/agent_run.clj
-[delegation-contract]: https://github.com/codethread/agent-harness.spool/blob/7415d9dc50cd98c15a8703b237711295b2996759/delegation/README.md
+[agent-run-source]: https://github.com/codethread/agent-harness.spool/blob/25933eb3400f0f8175878b2fc66e351f960fd211/agent-run/src/ct/spools/agent_run.clj
+[delegation-contract]: https://github.com/codethread/agent-harness.spool/blob/25933eb3400f0f8175878b2fc66e351f960fd211/delegation/README.md
 
 ---
 

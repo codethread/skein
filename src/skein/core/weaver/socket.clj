@@ -9,7 +9,8 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.java.io :as io]
-            [skein.core.db :as db])
+            [skein.core.db :as db]
+            [skein.core.weaver.protocol :as protocol])
   (:import [java.io BufferedReader BufferedWriter InputStreamReader OutputStreamWriter]
            [java.net StandardProtocolFamily UnixDomainSocketAddress]
            [java.nio.channels Channels ClosedChannelException ServerSocketChannel]
@@ -34,7 +35,7 @@
 (def ^:private default-standard-deadline-ms 10000)
 
 (defn- protocol-error [request-id code message details]
-  {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
+  {"protocol_version" protocol/version "request_id" request-id "ok" false "result" nil
    "error" {"type" "protocol" "code" code "message" message "details" (or details {})}})
 
 (defn- json-safe-value [value]
@@ -49,7 +50,7 @@
     :else (pr-str value)))
 
 (defn- success [request-id result]
-  {"protocol_version" 1 "request_id" request-id "ok" true "result" result "error" nil})
+  {"protocol_version" protocol/version "request_id" request-id "ok" true "result" result "error" nil})
 
 (defn- error-envelope [e]
   (let [message (ex-message e)
@@ -61,11 +62,11 @@
      "details" (json-safe-value (dissoc details :code))}))
 
 (defn- domain-error [request-id e]
-  {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
+  {"protocol_version" protocol/version "request_id" request-id "ok" false "result" nil
    "error" (error-envelope e)})
 
 (defn- transport-error [request-id e]
-  {"protocol_version" 1 "request_id" request-id "ok" false "result" nil
+  {"protocol_version" protocol/version "request_id" request-id "ok" false "result" nil
    "error" {"type" "transport" "code" "transport/server-error" "message" (ex-message e) "details" {}}})
 
 (defn- uninitialized-db-error? [e]
@@ -118,7 +119,7 @@
     (cond
       (not= required-request-keys keys-present)
       (protocol-error (get req "request_id") "protocol/malformed-request" "Request envelope keys do not match protocol" {"keys" (vec keys-present)})
-      (not= 1 (get req "protocol_version"))
+      (not= protocol/version (get req "protocol_version"))
       (protocol-error (get req "request_id") "protocol/unsupported-version" "Unsupported protocol version" {})
       (not (string? (get req "request_id")))
       (protocol-error nil "protocol/malformed-request" "request_id must be a string" {})
@@ -222,10 +223,10 @@
         result))))
 
 (defn- stream-header [request-id]
-  {"protocol_version" 1 "request_id" request-id "stream" true})
+  {"protocol_version" protocol/version "request_id" request-id "stream" true})
 
 (defn- stream-terminator [request-id success? result error]
-  (cond-> {"protocol_version" 1 "request_id" request-id "done" true "success" success?}
+  (cond-> {"protocol_version" protocol/version "request_id" request-id "done" true "success" success?}
     success? (assoc "result" result)
     (not success?) (assoc "error" error)))
 
