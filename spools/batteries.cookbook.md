@@ -111,7 +111,7 @@ Honest source: the payload-reference rules in [`batteries.md`](./batteries.md) �
 
 ## Recipe: Remove an attribute key with a typed JSON null
 
-**Situation.** A strand carries an attribute that no longer applies — a transient `gate/error`, a stale claim marker — and you want the key *gone*, not set to blank. `--attr key=` stores an empty string, which is data, not absence.
+**Situation.** A strand carries an attribute that no longer applies — a transient `gate/error`, a stale claim marker — and you want the key *gone*, not set to blank. `--attr key=` stores an empty string, which is data, not absence. Whether removal is even the right model — versus an enum value or a recorded outcome — is the [attribute-value modeling guidance](../docs/spools/writing-shared-spools.md#modeling-attribute-values-enums-absence-empty-history); this recipe is the mechanics once you've decided a key should go absent.
 
 **Composition.** `update` treats `--attributes` as a JSON Merge Patch. A JSON `null` value deletes the addressed key; other keys are left untouched. Keep raw `--attr` for the string writes you want on top.
 
