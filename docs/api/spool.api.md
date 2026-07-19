@@ -50,7 +50,7 @@ Read attribute `k` from a normalized strand, tolerating keyword- or
 
   Fails loudly if the selected value is a lean-read omission descriptor, because
   trusted spool readers require a raw full-fidelity attribute value.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L124-L149">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L80-L105">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/attr-key->str">`attr-key->str`</a>
 ``` clojure
@@ -88,11 +88,11 @@ Throw an `ex-info` carrying `message` and a contextual `data` map (TEN-003).
 
   The optional `cause` arity threads an underlying throwable so a spool can fail
   loudly without discarding the original exception.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L24-L32">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L26-L34">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/poll-until-deadline!">`poll-until-deadline!`</a>
 ``` clojure
-(poll-until-deadline! {:keys [deadline poll-ms check pred->result on-timeout]})
+(poll-until-deadline! {:keys [deadline poll-ms check pred->result on-timeout], :as opts})
 ```
 Function.
 
@@ -109,11 +109,12 @@ The shared spool-tier long-poll skeleton behind `skein.spools.workflow/await!`
   its return value becomes the result. `deadline` and `poll-ms` are both
   required — this helper does not supply timeout/cadence defaults; those stay
   owned by each caller so existing behavior is unchanged. Fails loudly
-  (TEN-003) when `deadline` is not a long, `poll-ms` is not a non-negative
-  integer, or `check`/`pred->result`/`on-timeout` is not a function, rather
-  than surfacing a bare NPE/`IllegalArgumentException` once the loop actually
+  (TEN-003) on option keys outside the five named here, when `deadline` is
+  not a long, when `poll-ms` is not a non-negative integer, or when
+  `check`/`pred->result`/`on-timeout` is not a function, rather than
+  surfacing a bare NPE/`IllegalArgumentException` once the loop actually
   runs.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L84-L113">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/spool/alpha.clj#L107-L142">Source</a></sub></p>
 
 ## <a name="skein.api.spool.alpha/reject-unknown-keys!">`reject-unknown-keys!`</a>
 ``` clojure

@@ -1,5 +1,5 @@
 (ns skein.api.spool-test
-  "Tests for skein.api.spool.alpha: shared arg-spec, validation, attribute, and
+  "Tests for skein.api.spool.alpha: shared fail-loud, validation, attribute, and
   polling seams that other spools compose from."
   (:require [clojure.test :refer [deftest is]]
             [skein.api.spool.alpha :as util]))
