@@ -19,7 +19,7 @@
 
 (def pending
   "Modules not yet through their v1 form card (epic 9nu0q)."
-  #{"batch" "events" "graph" "notes"
+  #{"events" "graph" "notes"
     "scheduler" "spool"})
 
 (def ^:private width-limit 96)

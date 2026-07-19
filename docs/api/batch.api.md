@@ -24,7 +24,12 @@ Function.
 
 Apply one transactional batch graph mutation payload to `runtime`.
 
-  Persists the batch atomically, runs the `:batch/apply-before-commit`
-  validation gate inside the transaction, then enqueues the batch event followed
-  by the per-strand created/updated/burned fanout.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/batch/alpha.clj#L70-L96">Source</a></sub></p>
+  The payload is a map of `:refs` (symbol -> existing strand id), `:strands`
+  (patches keyed by `:ref`), `:edges` (upsert ops between refs), and `:burn`
+  (refs to burn); `skein.core.db/normalize-batch-payload!` is the grammar
+  authority and rejects malformed payloads loudly. Normalizes strand
+  attributes through the `:attributes/normalize` transform hooks, persists the
+  batch atomically, runs the `:batch/apply-before-commit` validation gate
+  inside the transaction, then enqueues the batch event followed by the
+  per-strand created/updated/burned fanout.
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/batch/alpha.clj#L21-L49">Source</a></sub></p>
