@@ -166,7 +166,7 @@ test in ``test/skein/spools/executors/shell_test.clj``.
 
 **Situation.** A shell check failed — the command exited non-zero, timed out, or the argv was malformed. The gate is stuck with `gate/error` and the shell executor is skipping it. You've fixed the underlying problem and want the check to run again.
 
-**Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **clear the gate's `gate/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). A blank stamp counts as cleared; from the CLI, use `strand update <gate-id> --attr gate/error=`. The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
+**Composition.** Discovery is the `stalled-shell-gates` named query (or the `gate-stalled?` predicate on a gate view). Recovery is a single mutation: **remove the gate's `gate/error` attribute** (optionally rewriting `shell/argv` or `shell/cwd`). Removal means the key is *absent*, not blank — trusted Clojure passes a nil patch (`{"gate/error" nil}`); from the CLI, `strand update <gate-id> --attributes '{"gate/error":null}'`. `--attr gate/error=` stores `""`, which is present data and leaves the gate stalled. The next scan finds a ready, un-errored, un-claimed `:shell` gate and re-runs the deterministic check.
 
 ```clojure
 (require '[skein.api.weaver.alpha :as weaver]
@@ -177,8 +177,8 @@ test in ``test/skein/spools/executors/shell_test.clj``.
 ;; find stalled shell gates (any gate carrying gate/error)
 (weaver/list-query rt 'stalled-shell-gates {})
 
-;; recover: fix the underlying problem, then clear the error.
-;; Clearing gate/error is what lets the next scan re-run the check.
+;; recover: fix the underlying problem, then remove the error.
+;; Removing gate/error (a nil patch, not a blank stamp) re-arms the next scan.
 (weaver/update! rt gate-id {:attributes {"gate/error" nil
                                         "shell/argv" ["clojure" "-M:test"]}})
 ;; next scan re-runs the check and closes the gate on exit 0.
@@ -186,15 +186,16 @@ test in ``test/skein/spools/executors/shell_test.clj``.
 
 **Why this shape.**
 
-- **Clearing the error, not retrying, is the recovery verb.** Because the check is
+- **Removing the error, not retrying, is the recovery verb.** Because the check is
   deterministic and idempotent, a gate carrying `gate/error` (or a live
   `shell/running` claim) is skipped on every later scan — so an expensive
   `clojure -M:test` runs once per deliberate request, not on every graph mutation.
-  Blanking `gate/error` is the explicit "run it again" signal (contract
+  Removing `gate/error` — making the key absent — is the explicit "run it again"
+  signal; a blank `""` is present data and leaves the gate stalled (contract
   [`executors/shell.md`, "Failure and recovery"](./shell.md#failure-and-recovery)).
 - **Recovery is strictly simpler than the subagent executor's.** There is no separate run strand
   to reconcile — the failure detail lives on the gate itself. A weaver crash
-  between claim and outcome leaves `shell/running` with no live process; clearing
+  between claim and outcome leaves `shell/running` with no live process; removing
   it re-runs the same idempotent check. `shell/running` and `gate/error` are
   distinct markers, so a crashed-mid-run gate is never confused with a failed one.
 - **The failure is loud and local, never lost.** A failed check does not advance

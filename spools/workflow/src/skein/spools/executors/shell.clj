@@ -88,14 +88,15 @@
 (defn- attr [strand k]
   (attr-get strand k))
 
-(defn- non-blank
-  "Return s when it is a non-blank string, else nil.
+(defn- stamped?
+  "True when attribute `k` is present on `gate`, false when the key is absent.
 
-  A blank `gate/error` / `shell/running` stamp counts as cleared, so the
-  CLI clearing idiom (`strand update <gate-id> --attr gate/error=`) re-arms
-  a gate exactly as it does for the subagent executor's gates."
-  [s]
-  (when (and (string? s) (not (str/blank? s))) s))
+  Absence is the only cleared state: a coordinator re-arms a gate by removing
+  `gate/error` / `shell/running` with a trusted nil patch (or the CLI
+  `strand update <gate-id> --attributes '{\"gate/error\":null}'` JSON-null merge).
+  A blank string is present data and does not re-arm the gate (epic 9emyu)."
+  [gate k]
+  (some? (attr gate k)))
 
 (defn- stamp! [id attributes]
   (weaver/update! (rt) id {:attributes attributes}))
@@ -270,8 +271,8 @@
   [runtime run-id gate-view]
   (let [gate (weaver/show (rt) (:id gate-view))]
     (when (and (= "active" (:state gate))
-               (not (non-blank (attr gate :gate/error)))
-               (not (non-blank (attr gate :shell/running))))
+               (not (stamped? gate :gate/error))
+               (not (stamped? gate :shell/running)))
       (stamp! (:id gate) {"shell/running" (now)})
       (.execute (worker-executor)
                 ^Runnable (fn []
@@ -311,8 +312,8 @@
   run row."
   [gate-view]
   (let [gate (weaver/show (rt) (:id gate-view))]
-    (when-let [error (non-blank (attr gate :gate/error))]
-      {:gate (:id gate) :error error})))
+    (when (stamped? gate :gate/error)
+      {:gate (:id gate) :error (attr gate :gate/error)})))
 
 (defn install!
   "Install the shell executor: register its event handler, the `:shell`
@@ -336,14 +337,13 @@
                               {:spool "shell"})
     (workflow/register-executor! :shell gate-stalled?)
     ;; The coordinator attention surface for stuck shell gates: an active `:shell`
-    ;; gate carrying a non-blank `gate/error` (a blank stamp is the CLI clearing
-    ;; idiom). No delegates-edge join is needed because the failure detail lives
-    ;; on the gate itself.
+    ;; gate carrying a `gate/error` attribute. Presence is the stall; a coordinator
+    ;; re-arms by removing the key (nil patch / JSON null), never by blanking it. No
+    ;; delegates-edge join is needed because the failure detail lives on the gate itself.
     (graph/register-query! runtime 'stalled-shell-gates
                            [:and [:= :state "active"]
                             [:= [:attr "workflow/gate"] "shell"]
-                            [:exists [:attr "gate/error"]]
-                            [:!= [:attr "gate/error"] ""]])
+                            [:exists [:attr "gate/error"]]])
     (scan!)
     {:installed true
      :namespace 'skein.spools.executors.shell}))
