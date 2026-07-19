@@ -428,7 +428,7 @@ func statusFromMetadata(m client.Metadata, state string) map[string]any {
 }
 
 func validateMetadata(world config.World, m client.Metadata) string {
-	if m.ProtocolVersion != 1 || m.PID == 0 || m.DaemonID == "" || m.ConfigDir == "" || m.StateDir == "" || m.DataDir == "" || strings.TrimSpace(m.Name) == "" || m.SocketPath == "" || m.StartedAt == "" || m.NREPL.Host == "" || m.NREPL.Port == 0 {
+	if m.ProtocolVersion != client.ProtocolVersion || m.PID == 0 || m.DaemonID == "" || m.ConfigDir == "" || m.StateDir == "" || m.DataDir == "" || strings.TrimSpace(m.Name) == "" || m.SocketPath == "" || m.StartedAt == "" || m.NREPL.Host == "" || m.NREPL.Port == 0 {
 		return "malformed weaver metadata: missing required fields"
 	}
 	if err := client.ValidateStorageIdentity(m); err != nil {
