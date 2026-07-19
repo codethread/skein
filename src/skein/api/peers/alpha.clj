@@ -76,11 +76,11 @@
 
 (defn- malformed-metadata
   "Build the loud `:peer/malformed-metadata` failure for a metadata `file`."
-  [^File file metadata cause]
+  [^File file metadata-map cause]
   (ex-info "Malformed weaver metadata"
            (cond-> {:code :peer/malformed-metadata
                     :file (.getPath file)}
-             metadata (assoc :metadata metadata))
+             metadata-map (assoc :metadata metadata-map))
            cause))
 
 (defn- read-peer-metadata
