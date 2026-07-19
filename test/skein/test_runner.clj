@@ -22,6 +22,8 @@
    ;; drives its own unpublished runtime per test — no JVM-global state.
    'skein.api.batch.alpha-test
    'skein.api.graph.alpha-test
+   ;; drives its own unpublished runtime per test — no JVM-global state.
+   'skein.api.events.alpha-test
    'skein.alpha-test 'skein.core.client-test 'skein.spools.workflow-test
    'skein.spools.batteries-test 'skein.roster-test 'skein.api.spool-test 'skein.config-ops-test
    'skein.macros.queries-test 'skein.macros.ops-test 'skein.macros.rules-test 'skein.macros.patterns-test
