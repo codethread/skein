@@ -29,8 +29,8 @@
     :direction "run --serves--> served-target"
     :declared-acyclic? true
     :help (format-alpha/reflow
-           "|Engine-owned delegation battery: this run is a delegation of that
-            |strand's own work.")}
+           "|Engine-owned delegation battery: a run may serve at most one
+            |target.")}
    {:relation "notes"
     :family :operational
     :direction "note --notes--> target"
