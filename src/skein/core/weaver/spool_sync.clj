@@ -1698,11 +1698,25 @@
           (throw (ex-info "Synced spool root has no namespace sources"
                           {:status :failed :reason :no-namespaces :root-lib root-lib :root canonical-root})))
         (let [ordered (dependency-ordered-sources root-lib sources)
-              ;; Loaded-namespace entries carry the hash of the exact bytes
-              ;; compiled (see load-source-bytes!); non-namespace clojure
-              ;; sources (e.g. data_readers.clj) are hashed from disk. Recorded
-              ;; only after every namespace loads, so a completed hot bump
-              ;; stops classifying as a C44c redefinition while a partial
+              ;; The baseline's file set is enumerated once, BEFORE loading:
+              ;; a file created after this point is absent from the baseline
+              ;; (later sync sees an extra file and refuses) and a compiled
+              ;; file deleted afterwards stays in it (later sync sees it
+              ;; missing and refuses) — every race stays conservative.
+              ;; Non-namespace clojure sources (e.g. data_readers.clj) are
+              ;; hashed from disk now; loaded-namespace entries get the hash
+              ;; of the exact bytes compiled (see load-source-bytes!).
+              namespace-files (set (map :file ordered))
+              disk-hashes (->> (root-paths root)
+                               (mapcat file-seq)
+                               (filter clojure-source?)
+                               (keep (fn [^java.io.File file]
+                                       (let [path (.getCanonicalPath file)]
+                                         (when-not (contains? namespace-files path)
+                                           [path (sha256-file file)]))))
+                               (into {}))
+              ;; Recorded only after every namespace loads, so a completed hot
+              ;; bump stops classifying as a C44c redefinition while a partial
               ;; failure leaves the baseline (and the refusal) in place.
               loaded-hashes (with-spool-classloader
                               runtime
@@ -1710,15 +1724,7 @@
                                            (map (fn [{:keys [file]}]
                                                   [file (load-source-bytes! file)]))
                                            ordered)))
-              fingerprint (->> (root-paths root)
-                               (mapcat file-seq)
-                               (filter clojure-source?)
-                               (map (fn [^java.io.File file]
-                                      (let [path (.getCanonicalPath file)]
-                                        [path (or (get loaded-hashes path)
-                                                  (sha256-file file))])))
-                               sort
-                               vec)]
+              fingerprint (vec (sort (map vec (concat disk-hashes loaded-hashes))))]
           (swap! (:approved-spool-generation-fingerprints runtime) assoc root-lib fingerprint)
           {:root-lib root-lib
            :root canonical-root
