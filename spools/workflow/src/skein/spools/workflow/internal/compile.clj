@@ -355,8 +355,45 @@
         steps (normalize-steps rendered params root-ref)]
     [rendered params root-ref steps]))
 
+(defn root-strand
+  "Build the root strand for a compiled workflow from the rendered `workflow`,
+  its `root-ref`, `form` (`:molecule`/`:wisp`), and `opts`. `opts` supplies the
+  run-id/family/definition/context stamped onto the root, plus the
+  `:root-attributes` a routed continuation carries onto its fresh root."
+  [workflow root-ref form opts]
+  {:ref root-ref
+   :title (:name workflow)
+   :state (or (:state workflow) "active")
+   :attributes (merge {"workflow/role" "root"
+                       "workflow/form" (name form)}
+                      (:attributes workflow)
+                      (:root-attributes opts)
+                      (when-let [run-id (:run-id opts)]
+                        {"workflow/run-id" run-id})
+                      (when-let [family (:family opts)]
+                        {"workflow/family" family})
+                      (when-let [definition (:definition opts)]
+                        {"workflow/definition" (str definition)})
+                      (when-let [context (:context opts)]
+                        {"workflow/context" context}))})
+
+(defn payload
+  "Assemble the batch payload from a compiled `root` strand and its normalized
+  `steps` for `form`: `root` followed by one `step-strand` per step, and the
+  parent-of + depends-on edges under `root`'s ref."
+  [root form steps]
+  {:strands (into [root] (mapv #(step-strand % form) steps))
+   :edges (vec (concat (parent-edges (:ref root) steps)
+                       (dependency-edges steps)))})
+
 (defn compile
   "Return a batch payload for a workflow molecule or wisp.
+
+  The internal recursion entry — `expand-call-step` re-enters here to splice an
+  inline procedure's own compiled subgraph — composing the same named stages the
+  public `skein.spools.workflow/compile` exposes: `resolve-and-normalize` (the
+  materialization-free front half, including loop/procedure expansion),
+  `root-strand`, and `payload`.
 
   `workflow` accepts plain maps or values produced by the `workflow` builder.
   Each step requires `:id` and `:title`, and may include
@@ -375,25 +412,8 @@
    (compile workflow params {}))
   ([workflow params opts]
    (let [form (or (:form opts) (:form workflow) :molecule)
-         [workflow _params root-ref steps] (resolve-and-normalize workflow params opts)
-         root {:ref root-ref
-               :title (:name workflow)
-               :state (or (:state workflow) "active")
-               :attributes (merge {"workflow/role" "root"
-                                   "workflow/form" (name form)}
-                                  (:attributes workflow)
-                                  (:root-attributes opts)
-                                  (when-let [run-id (:run-id opts)]
-                                    {"workflow/run-id" run-id})
-                                  (when-let [family (:family opts)]
-                                    {"workflow/family" family})
-                                  (when-let [definition (:definition opts)]
-                                    {"workflow/definition" (str definition)})
-                                  (when-let [context (:context opts)]
-                                    {"workflow/context" context}))}]
-     {:strands (into [root] (mapv #(step-strand % form) steps))
-      :edges (vec (concat (parent-edges root-ref steps)
-                          (dependency-edges steps)))})))
+         [workflow _params root-ref steps] (resolve-and-normalize workflow params opts)]
+     (payload (root-strand workflow root-ref form opts) form steps))))
 
 (defn- step-attr
   "Read string-keyed workflow attribute `k` off a normalized step's `:attributes`

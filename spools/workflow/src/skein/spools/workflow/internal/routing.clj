@@ -1,21 +1,22 @@
 (ns skein.spools.workflow.internal.routing
   "Run-mutation mechanics for the workflow spool: cascading closes, checkpoint
-  choice routing, and the continuation pours a routed choice fans out into.
+  choice validation and routing, and the continuation pours a routed choice fans
+  out into. `skein.spools.workflow/choose!` composes these — resolve checkpoint,
+  validate the choice, build the routed/terminal batch, apply it once — into its
+  public story.
 
   A routed choice (`:next` or `:revise`) closes the old root's remaining strands
-  and pours its continuation under the same run-id in one transactional batch, so
-  two active roots never share a run-id. `choose!*` is the fault-injection seam:
-  it takes the batch applier explicitly so a test can inject a failing apply and
-  assert the run stays resumable."
+  and pours its continuation under the same run-id in one transactional
+  `batch/apply!`, so two active roots never share a run-id; because the closes
+  and the pour ride one batch, a failing apply commits nothing and the run stays
+  resumable."
   (:require [clojure.string :as str]
-            [skein.api.current.alpha :as current]
             [skein.api.graph.alpha :as graph]
             [skein.api.spool.alpha :refer [fail!]]
             [skein.api.weaver.alpha :as weaver]
             [skein.spools.workflow.internal.compile :as cmp]
             [skein.spools.workflow.internal.query :as query]
-            [skein.spools.workflow.internal.registry :as registry]
-            [skein.spools.workflow.internal.util :as util]))
+            [skein.spools.workflow.internal.registry :as registry]))
 
 (defn close-attributes!
   "Return attributes to merge onto a step closed by complete!, from optional
@@ -107,7 +108,7 @@
     (or (get details choice)
         (get details (keyword choice)))))
 
-(defn- validate-choice-input!
+(defn- require-choice-input!
   "Fail loudly (TEN-003) before any mutation when a checkpoint choice declares
   required `:input` keys absent from `input`.
 
@@ -225,7 +226,7 @@
                               :form :molecule})]
     {:old-root root :payload payload}))
 
-(defn- route-plan
+(defn route-plan
   "Return the routing plan for a checkpoint choice, or nil for a terminal choice.
 
   A `:next` choice routes to a continuation (symbol or registered name; see
@@ -242,7 +243,7 @@
       revise-params (revise-plan rt run-id step choice input revise-params)
       :else nil)))
 
-(defn- routed-batch
+(defn routed-batch
   "Return one batch payload that atomically closes the chosen checkpoint (with
   its `outcome`), force-closes every other still-active workflow strand in the
   old root's subgraph, and pours the continuation.
@@ -271,37 +272,42 @@
      :strands (into close-strands (:strands payload))
      :edges (:edges payload)}))
 
-(defn choose!*
-  "Record a checkpoint `choice` for run-id and apply its close (and any routed
-  continuation) via `apply-batch!`, returning the `{:ready … :done …}` result.
+(defn resolve-checkpoint!
+  "Resolve run-id's ready workflow checkpoint, honoring an optional `:step`
+  selector in `opts`, and fail loudly when none is ready. Whether the resolved
+  step is actually a checkpoint is asserted in `validate-choice!`, so the caller
+  can order role validation after the input-shape checks."
+  [rt run-id opts]
+  (or (query/resolve-ready-step rt run-id opts)
+      (fail! "No ready workflow checkpoint" {:run-id run-id})))
 
-  The fault-injection seam behind the public `choose!`: `apply-batch!` is
-  normally `skein.api.batch.alpha/apply!`, but a test can pass a failing applier
-  to prove a routed cutover commits nothing and leaves the run resumable. All
-  validation happens before any mutation."
-  [run-id choice input opts apply-batch!]
-  (let [rt (current/runtime)]
-    (util/require-map! opts [:opts])
-    (let [choice (if (keyword? choice) (name choice) (str choice))
-          step (or (query/resolve-ready-step rt run-id opts)
-                   (fail! "No ready workflow checkpoint" {:run-id run-id}))]
-      (when-not (map? input)
-        (fail! "Choice input must be a map" {:run-id run-id :choice choice :input input}))
-      (when-not (= "checkpoint" (query/attr step :workflow/role))
-        (fail! "Current workflow step is not a checkpoint" {:run-id run-id :step (query/strand->view step)}))
-      (let [choices (set (query/attr step :workflow/choices))]
-        (when-not (contains? choices choice)
-          (fail! "Choice is not valid for checkpoint" {:run-id run-id :choice choice :valid choices})))
-      (validate-choice-input! run-id step choice input)
-      (let [route (route-plan rt run-id step choice input)
-            outcome (cond-> {"workflow/outcome" choice
-                             "workflow/outcome-input" input}
-                      (contains? opts :by) (assoc "workflow/outcome-by" (:by opts)))]
-        (if route
-          (apply-batch! rt (routed-batch rt route step outcome))
-          (apply-batch! rt (close-batch (:id step) outcome
-                                        (cascade-join-ids rt (:id (query/current-root-with-rt rt run-id)) #{(:id step)}))))
-        ;; also covers a routed continuation that poured no active work, so the
-        ;; new root cannot linger active on a logically finished run
-        (close-run-if-done! rt run-id)
-        (query/run-result rt run-id)))))
+(defn validate-choice!
+  "Fail loudly (TEN-003), before any mutation, when a choice request is invalid:
+  `input` must be a map, `step` must be a checkpoint, `choice` must be one of the
+  checkpoint's declared choices, and any `:input` keys the choice marks required
+  must be supplied (see `require-choice-input!`)."
+  [run-id step choice input]
+  (when-not (map? input)
+    (fail! "Choice input must be a map" {:run-id run-id :choice choice :input input}))
+  (when-not (= "checkpoint" (query/attr step :workflow/role))
+    (fail! "Current workflow step is not a checkpoint" {:run-id run-id :step (query/strand->view step)}))
+  (let [choices (set (query/attr step :workflow/choices))]
+    (when-not (contains? choices choice)
+      (fail! "Choice is not valid for checkpoint" {:run-id run-id :choice choice :valid choices})))
+  (require-choice-input! run-id step choice input))
+
+(defn choice-outcome
+  "Build the checkpoint outcome attributes recorded for `choice`/`input`,
+  stamping `workflow/outcome-by` when `opts` carries `:by`."
+  [choice input opts]
+  (cond-> {"workflow/outcome" choice
+           "workflow/outcome-input" input}
+    (contains? opts :by) (assoc "workflow/outcome-by" (:by opts))))
+
+(defn terminal-batch
+  "Return the batch for a terminal (non-routing) choice: close the chosen
+  checkpoint with its `outcome`, plus every `procedure` join that cascades closed
+  once the checkpoint closes (see `cascade-join-ids`)."
+  [rt run-id step outcome]
+  (close-batch (:id step) outcome
+               (cascade-join-ids rt (:id (query/current-root-with-rt rt run-id)) #{(:id step)})))

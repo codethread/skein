@@ -10,9 +10,9 @@
   This is the public story file. The DSL builders and every run-driving op live
   here; the mechanics they compose live in `skein.spools.workflow.internal.*`:
   `compile` (compile/normalize/expand pipeline), `query` (run views/ready/done/
-  history), `routing` (checkpoint routing and cascading closes, incl. the
-  `choose!*` seam), `registry` (runtime-owned registries), and `util` (shared
-  validation/ref-normalization). Specs stay registered here so `explain` and
+  history), `routing` (checkpoint choice validation, routing, and cascading
+  closes), `registry` (runtime-owned registries), and `util` (shared validation/
+  ref-normalization). Specs stay registered here so `explain` and
   `s/explain-data` paths are unchanged."
   (:refer-clojure :exclude [compile])
   (:require [clojure.spec.alpha :as s]
@@ -401,13 +401,21 @@
   that step's own deps, transitively, matching beads' behavior for conditional
   steps. A ref that matches neither an included nor an excluded step, or a step
   ref colliding with the root ref (`:molecule`, overridable via opts
-  `:root-ref`), fails loudly."
+  `:root-ref`), fails loudly.
+
+  The pipeline: resolve params and normalize/expand the steps, build the root
+  strand, then assemble the strands + edges payload. The expansion mechanics
+  live in `skein.spools.workflow.internal.compile`, which re-enters its own
+  `compile` for inline procedure calls."
   ([workflow]
    (compile workflow {}))
   ([workflow params]
    (compile workflow params {}))
   ([workflow params opts]
-   (cmp/compile workflow params opts)))
+   (let [form (or (:form opts) (:form workflow) :molecule)
+         [workflow _params root-ref steps] (cmp/resolve-and-normalize workflow params opts)
+         root (cmp/root-strand workflow root-ref form opts)]
+     (cmp/payload root form steps))))
 
 (defn describe
   "Return a compile-time projection of `workflow` without materializing any strand.
@@ -434,7 +442,7 @@
 
 (defn- pour-with-rt!
   [rt workflow params opts]
-  (batch/apply! rt (cmp/compile workflow params (merge opts {:form :molecule}))))
+  (batch/apply! rt (compile workflow params (merge opts {:form :molecule}))))
 
 (defn pour!
   "Materialize `workflow` as a persistent molecule strand graph."
@@ -447,7 +455,7 @@
 
 (defn- wisp-with-rt!
   [rt workflow params opts]
-  (batch/apply! rt (cmp/compile workflow params (merge opts {:form :wisp}))))
+  (batch/apply! rt (compile workflow params (merge opts {:form :wisp}))))
 
 (defn wisp!
   "Materialize `workflow` as an ephemeral wisp strand graph.
@@ -788,20 +796,36 @@
   persist who made the choice (unenforced per TEN-002).
 
   When the chosen choice declares required `:input` keys, `choose!` fails loudly
-  before any mutation if `input` omits them (see `validate-choice-input!`). A
-  routed choice — one carrying `:next` (a symbol or registered name) or
-  `:revise` (re-pour the run's own definition with override params) — closes out
-  the current workflow's remaining steps and pours the continuation under the
-  same run-id, all in one transactional `batch/apply!` (see `routed-batch`); a
-  terminal choice that closes the last inner step beneath a `procedure` join
-  closes the join in the same transaction. All validation happens before any
-  mutation."
+  before any mutation if `input` omits them. A routed choice — one carrying
+  `:next` (a symbol or registered name) or `:revise` (re-pour the run's own
+  definition with override params) — closes out the current workflow's remaining
+  steps and pours the continuation under the same run-id, all in one
+  transactional `batch/apply!`; a terminal choice that closes the last inner step
+  beneath a `procedure` join closes the join in the same transaction. Because the
+  closes and any continuation pour ride one batch, a failing apply commits
+  nothing and the run stays resumable. Validation, routing, and batch-building
+  mechanics live in `skein.spools.workflow.internal.routing`; all validation
+  happens before any mutation."
   ([run-id choice]
    (choose! run-id choice {} {}))
   ([run-id choice input]
    (choose! run-id choice input {}))
   ([run-id choice input opts]
-   (routing/choose!* run-id choice input opts batch/apply!)))
+   (let [rt (current/runtime)]
+     (util/require-map! opts [:opts])
+     (let [choice (if (keyword? choice) (name choice) (str choice))
+           step (routing/resolve-checkpoint! rt run-id opts)
+           _ (routing/validate-choice! run-id step choice input)
+           route (routing/route-plan rt run-id step choice input)
+           outcome (routing/choice-outcome choice input opts)
+           batch (if route
+                   (routing/routed-batch rt route step outcome)
+                   (routing/terminal-batch rt run-id step outcome))]
+       (batch/apply! rt batch)
+       ;; also covers a routed continuation that poured no active work, so the
+       ;; new root cannot linger active on a logically finished run
+       (routing/close-run-if-done! rt run-id)
+       (query/run-result rt run-id)))))
 
 (defn advance!
   "Advance run-id by one ready step regardless of its kind, returning the
