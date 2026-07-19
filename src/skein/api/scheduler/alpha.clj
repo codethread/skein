@@ -8,41 +8,27 @@
   event handlers observe one mutation order (RFC-009, DELTA-weaver-scheduler-
   repl-001). Delivery is at-least-once: handlers must be idempotent.
 
-  This namespace owns wake validation, handler resolution, and JSON
-  normalization of persisted rows into data-first maps; durable storage lives
-  in `skein.core.db` and timer arming/dispatch in `skein.core.weaver.scheduler`.
+  This namespace guards the wake map and resolves handlers eagerly, so a bad
+  handler fails `schedule!`, not dispatch; field validation flows through the
+  shared `:skein.core.specs/scheduler-wake` boundary spec at the persistence
+  seam, durable storage lives in `skein.core.db`, and timer arming/dispatch
+  in `skein.core.weaver.scheduler`. Persisted rows return as decoded
+  data-first maps (`::pending-wake`, `::cancellation`).
 
-  Pull-based `wake-at` strand attributes plus named queries remain the default
-  answer when a poller already exists. Reach for this namespace only for the
-  no-poller case where something must proactively happen at instant T with no
-  client polling to trigger it.
+  Pull-based `wake-at` strand attributes plus named queries remain the
+  default answer when a poller already exists. Reach for this namespace only
+  for the no-poller case where something must proactively happen at instant T
+  with no client polling to trigger it.
 
   Callers own runtime selection and pass the target weaver runtime as the
   first argument to every function here; capture it with
   `skein.api.current.alpha/runtime` only at trusted entry points."
-  (:require [skein.core.db :as db]
+  (:require [clojure.spec.alpha :as s]
+            [skein.api.scheduler.internal :as internal]
+            [skein.core.db :as db]
+            [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.scheduler :as scheduler]))
-
-(defn- normalize-wake
-  "Decode a scheduler wake/history row's JSON payload and handler symbol."
-  [row]
-  (some-> row
-          (update :payload db/<-json)
-          (update :handler symbol)))
-
-(defn- resolve-scheduler-handler-fn! [runtime handler]
-  (when-not (and (symbol? handler) (namespace handler))
-    (throw (ex-info "Scheduler handler must be a fully qualified symbol" {:handler handler})))
-  (let [resolved (try
-                   (access/with-spool-classloader runtime #(requiring-resolve handler))
-                   (catch Throwable t
-                     (throw (ex-info "Scheduler handler could not be resolved" {:handler handler} t))))
-        value (if (var? resolved) @resolved resolved)]
-    (when-not (ifn? value)
-      (throw (ex-info "Scheduler handler symbol must resolve to a callable value"
-                      {:handler handler :resolved-class (str (class value))})))
-    value))
 
 (defn schedule!
   "Persist or replace a durable wake in `runtime` and arm it for dispatch.
@@ -51,26 +37,81 @@
   (java.time.Instant), :handler (fully qualified symbol resolvable in
   `runtime`'s spool classloader), and optional :payload (nil or a map that
   encodes to a JSON object). Replacing an existing key resets its attempt
-  count. Malformed keys/instants/payloads, unknown wake keys, and unresolvable
-  handlers fail loudly; no wake is persisted on failure."
+  count. Returns the persisted wake as a decoded `::pending-wake` map.
+  Malformed keys/instants/payloads and unresolvable or non-callable handlers
+  fail loudly; no wake is persisted on failure."
   [runtime wake]
   (when-not (map? wake)
     (throw (ex-info "Scheduler wake must be a map" {:wake wake})))
-  (resolve-scheduler-handler-fn! runtime (:handler wake))
-  (let [created (normalize-wake (db/schedule-wake! (access/ds runtime) wake))]
+  (internal/resolve-handler-fn! runtime (:handler wake))
+  (let [created (internal/decoded-row (db/schedule-wake! (access/ds runtime) wake))]
     (scheduler/arm! runtime)
     created))
 
 (defn cancel!
   "Cancel a pending wake in `runtime` by stable key.
 
-  Returns the cancellation's history row. A missing key fails loudly."
+  Removes whichever generation currently holds `key` and returns the
+  cancellation's history row as a decoded `::cancellation` map. A missing
+  key fails loudly."
   [runtime key]
-  (let [cancelled (normalize-wake (db/cancel-wake! (access/ds runtime) key))]
+  (let [cancelled (internal/decoded-row (db/cancel-wake! (access/ds runtime) key))]
     (scheduler/arm! runtime)
     cancelled))
 
 (defn pending
-  "Return all pending wakes in `runtime`, ordered by wake-at ascending."
+  "Return all pending wakes in `runtime` as decoded `::pending-wake` maps.
+
+  Ordered by wake-at ascending with a stable key tie-break, so the earliest
+  pending wake is `(first (pending runtime))`."
   [runtime]
-  (mapv normalize-wake (db/pending-wakes (access/ds runtime))))
+  (mapv internal/decoded-row (db/pending-wakes (access/ds runtime))))
+
+;; --- seam specs ---------------------------------------------------------------
+
+;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
+(s/def ::runtime some?)
+
+;; The wake input shape's authority is the shared boundary spec consulted at
+;; the persistence seam; this name identifies the interface from alpha without
+;; declaring a second grammar (SPEC-003.C19a).
+(s/def ::wake ::specs/scheduler-wake)
+
+(s/def ::key :skein.scheduler-wake/key)
+
+;; Persisted rows carry the storage column names: epoch-millis :wake_at plus
+;; SQLite datetime text for the bookkeeping columns.
+(s/def ::wake_at integer?)
+(s/def ::handler qualified-symbol?)
+(s/def ::payload (s/nilable map?))
+(s/def ::attempts (s/and integer? (complement neg?)))
+(s/def ::created_at string?)
+(s/def ::updated_at string?)
+
+;; The decoded pending/created wake row (SPEC-003.C58, C59b): serializable
+;; data-first fields only, never functions, executors, or timer handles.
+(s/def ::pending-wake
+  (s/keys :req-un [::key ::wake_at ::handler ::payload ::attempts
+                   ::created_at ::updated_at]))
+
+(s/def ::id integer?)
+(s/def ::status #{"cancelled"})
+(s/def ::error (s/nilable string?))
+(s/def ::recorded_at string?)
+
+;; The decoded cancellation history row (SPEC-003.C59a).
+(s/def ::cancellation
+  (s/keys :req-un [::id ::key ::wake_at ::handler ::payload ::status
+                   ::attempts ::error ::recorded_at]))
+
+(s/fdef schedule!
+  :args (s/cat :runtime ::runtime :wake ::wake)
+  :ret ::pending-wake)
+
+(s/fdef cancel!
+  :args (s/cat :runtime ::runtime :key ::key)
+  :ret ::cancellation)
+
+(s/fdef pending
+  :args (s/cat :runtime ::runtime)
+  :ret (s/coll-of ::pending-wake :kind vector?))
