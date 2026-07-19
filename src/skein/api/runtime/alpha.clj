@@ -93,6 +93,10 @@
                     "runtime release marker has an invalid shape")
     result))
 
+(s/fdef release-marker
+  :args (s/cat :runtime map?)
+  :ret :skein.core.specs/release-marker-result)
+
 ;; --- the spools.edn write seam ----------------------------------------------
 
 (s/def ::spool-family symbol?)
@@ -206,9 +210,16 @@
 ;; --- making updated code live -----------------------------------------------
 
 (defn reload!
-  "Reload startup files from `runtime`'s config dir after clearing registries."
+  "Reload startup files from `runtime`'s config dir after clearing registries.
+
+  Returns the core reload result map (`:status`, the loaded `:files`, and
+  their `:returns`)."
   [runtime]
   (weaver-runtime/reload-config! runtime))
+
+(s/fdef reload!
+  :args (s/cat :runtime map?)
+  :ret map?)
 
 (s/def ::root-lib symbol?)
 (s/def ::reload-spool-result
@@ -361,6 +372,10 @@
   [runtime]
   (weaver-runtime/now runtime))
 
+(s/fdef now
+  :args (s/cat :runtime map?)
+  :ret inst?)
+
 (def ^:private spool-state-opt-keys #{:version :migrate-fn})
 
 ;; ::version is also the metadata key stamped on versioned spool-state values;
@@ -429,6 +444,12 @@
                                 runtime existing version migrate-fn init-fn)]
                (swap! state assoc key replacement)
                replacement))))))))
+
+(s/fdef spool-state
+  :args (s/or :unversioned (s/cat :runtime map? :key any? :init-fn ifn?)
+              :versioned (s/cat :runtime map? :key any?
+                                :opts ::spool-state-opts :init-fn ifn?))
+  :ret any?)
 
 ;; --- release marker and spools.edn access -----------------------------------
 
