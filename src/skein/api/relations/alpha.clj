@@ -29,7 +29,7 @@
     :direction "run --serves--> served-target"
     :declared-acyclic? true
     :help (format-alpha/reflow
-           "|Engine-owned delegation battery: a run has exactly one served
+           "|Engine-owned delegation battery: a run may serve at most one
             |target.")}
    {:relation "notes"
     :family :operational
