@@ -1,6 +1,10 @@
 # Project Tenets
 
-- **TEN-000**: This is alpha software.
+TEN ids use `@N` versions. A bare TEN id means its latest version. Bump `@N` only when the tenet's normative meaning changes, never for editorial changes. When a version is superseded, replace its text here with a one-line supersession note; git history holds the superseded text.
+
+`TEN-000` is currently `TEN-000@1`. Do not add new bare `TEN-000` references. Bare `TEN-000` references in git history name the original meaning from before the `@1` tag.
+
+- **TEN-000@1**: This is alpha software.
   - All apis, contracts, db schemas, are subject to change. Changes can and should drop old ideas without migration plans should a better approach be presented.
 - **TEN-001**: This is primarily an LLM coding agent tool.
   - All apis should favour their consumption (raw informative structure data over pretty ascii and layouts).
@@ -19,4 +23,4 @@
   - The engine may translate between JSON wire data and Clojure-native/EDN data internally, but that translation is hidden behind daemon APIs.
 - **TEN-007**: Storage complexity is the core's burden; the attribute map is the contract.
   - A strand *has* an attribute map. How those attributes are physically stored is an implementation detail owned entirely by `skein.core.*`. No consumer above `skein.core.*` — `skein.api.*`, spool authors, the CLI JSON wire format, the query language, events, or views — may depend on the physical shape of attribute storage.
-  - This is deliberate deep-module discipline: a simple interface (a map) over an implementation free to absorb whatever complexity scale and performance demand. Keeping the storage representation hidden is what lets it change under a stable contract (TEN-000).
+  - This is deliberate deep-module discipline: a simple interface (a map) over an implementation free to absorb whatever complexity scale and performance demand. Keeping the storage representation hidden is what lets it change under a stable contract (TEN-000@1).

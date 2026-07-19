@@ -6,7 +6,7 @@
 
 **Related brief:** [brief.md](./brief.md)
 
-**Related decisions:** [TEN-000 and TEN-003](../../TENETS.md); spool CLI style-guide card `1dw6d`
+**Related decisions:** [TEN-000@1 and TEN-003](../../TENETS.md); spool CLI style-guide card `1dw6d`
 
 ## PROP-Rdf-001.P1 Problem
 
@@ -41,7 +41,7 @@ for the CLI flags.
 - **PROP-Rdf-001.G1:** Make the roster CLI use `--timeout-secs` and
   `--stale-after-secs`, matching `agent await`, `flow-await`, and card `1dw6d`.
 - **PROP-Rdf-001.G2:** Make the removed millisecond flags fail as unknown flags.
-  TEN-000 calls for a direct alpha-surface change, and TEN-003 rules out a
+  TEN-000@1 calls for a direct alpha-surface change, and TEN-003 rules out a
   silent interpretation fallback.
 - **PROP-Rdf-001.G3:** Keep timeout and staleness behavior unchanged apart from
   the CLI unit presented to callers.

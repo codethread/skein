@@ -23,7 +23,7 @@ Returns `config.json` to version control (its gitignore entry is a stale leftove
   `.skein/.gitignore` no longer ignores `config.json` and ignores
   `config.local.json` instead. Bootstrap still never overwrites existing
   user files; already-generated `.gitignore` files in existing repos are
-  user-owned and are not migrated (TEN-000).
+  user-owned and are not migrated (TEN-000@1).
 - **DELTA-Cli-002.CC4:** Amends `SPEC-002.C16`: when `weaver start` is given
   no explicit `--name`, mill resolves the friendly name from
   `config.local.json` `"name"`, then `config.json` `"name"`, then the

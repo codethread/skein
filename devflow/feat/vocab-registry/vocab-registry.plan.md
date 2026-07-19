@@ -62,7 +62,7 @@ from `relations.alpha`, not re-listed).
   fan out in parallel. `delegation.clj` owns both `review/*` and `panel/*` — same file, one slice, not two
   (`PROP-Vr-001.C5`). No engine file is split across two slices, so there is no same-file serial chain among the code
   slices.
-- **PLAN-Vr-001.A4:** Additive, no shim, no cutover (`PROP-Vr-001.C12`, `C13`, TEN-000). No reader changes shape; nothing
+- **PLAN-Vr-001.A4:** Additive, no shim, no cutover (`PROP-Vr-001.C12`, `C13`, TEN-000@1). No reader changes shape; nothing
   is migrated. A partial branch state (registry live, some seeds not yet declared) is acceptable *on the branch* — a
   missing declaration just means `strand vocab` omits that namespace and the carder section may flag it — but the whole set
   proves green together at `PLAN-Vr-001.S10` before the branch merges.

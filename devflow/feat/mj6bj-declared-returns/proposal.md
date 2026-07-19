@@ -85,7 +85,7 @@ shape one contract.
   the JSON shapes this feature needs and stays in the same small data-first
   family as arg-specs.
 - **PROP-Dcr-001.NG4:** No migration shims, dual declarations, or
-  compatibility readers. TEN-000 permits replacing the undeclared convention
+  compatibility readers. TEN-000@1 permits replacing the undeclared convention
   directly; old and new output contracts do not coexist.
 - **PROP-Dcr-001.NG5:** No normalization of intentionally
   domain-specific projections. Agent `ps` returns a run summary with phase,

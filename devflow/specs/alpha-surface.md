@@ -4,7 +4,7 @@
 
 ## SPEC-005.P1 Purpose
 
-This spec draws the line around what Skein ships as "alpha": which surface is in-contract (and where each contract lives), and which surface is explicitly internal. It is a contract index — it adds no behavior. The rule is exclusionary: surface not reachable through the in-contract tiers below is internal, regardless of Clojure var visibility or OS observability. TEN-000 still applies to everything: in-contract alpha surface evolves by accretion within a tier's own compatibility discipline, and internal surface may change without notice.
+This spec draws the line around what Skein ships as "alpha": which surface is in-contract (and where each contract lives), and which surface is explicitly internal. It is a contract index — it adds no behavior. The rule is exclusionary: surface not reachable through the in-contract tiers below is internal, regardless of Clojure var visibility or OS observability. TEN-000@1 still applies to everything: in-contract alpha surface evolves by accretion within a tier's own compatibility discipline, and internal surface may change without notice.
 
 ## SPEC-005.P2 In-contract surface
 

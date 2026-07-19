@@ -113,7 +113,7 @@ Deep review found three blocking ambiguities: connected helper REPL direct `requ
 
 ### RLW-PLAN-001.DN3 Rebased on archived plugin system — 2026-06-25
 
-Another agent finished and archived `runtime-plugin-system`, promoting its plugin/library contracts into canonical root specs. Re-evaluated this feature as direct deltas against root `daemon-runtime`, `repl-api`, and `cli` specs rather than deltas of feature-local plugin deltas. User clarified that, per TEN-000, the better `use!`/library-workspace design should replace rather than preserve the old plugin loader. The intended relationship is now explicit: runtime-library-workspace supersedes `atom.plugin.alpha/load-plugin!`, `atom-plugin.edn`, and plugin metadata as public extension contracts.
+Another agent finished and archived `runtime-plugin-system`, promoting its plugin/library contracts into canonical root specs. Re-evaluated this feature as direct deltas against root `daemon-runtime`, `repl-api`, and `cli` specs rather than deltas of feature-local plugin deltas. User clarified that, per TEN-000@1, the better `use!`/library-workspace design should replace rather than preserve the old plugin loader. The intended relationship is now explicit: runtime-library-workspace supersedes `atom.plugin.alpha/load-plugin!`, `atom-plugin.edn`, and plugin metadata as public extension contracts.
 
 ### RLW-PLAN-001.DN4 Final deep review tightening — 2026-06-25
 

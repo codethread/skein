@@ -73,7 +73,7 @@ runs, no per-turn/per-tool breakdown, no derived pricing, and no new storage.
   to the full locked suite at queue acceptance — the exact F4 `PLAN-Vr-001.S2a` pattern. This corrects `PROP-Ru-001.P6`,
   which names `clojure -M:test skein.agent-run-test` as the focused command; that command does not run against the
   current tree (`PLAN-Ru-001.R1`).
-- **PLAN-Ru-001.A6:** Additive, no shim, no cutover (`PROP-Ru-001.C10`, TEN-000). No reader changes shape; nothing is
+- **PLAN-Ru-001.A6:** Additive, no shim, no cutover (`PROP-Ru-001.C10`, TEN-000@1). No reader changes shape; nothing is
   migrated. A partial branch state (parse returns `:usage` but the spend verb is not wired yet) is acceptable *on the
   branch* — the whole set proves green together at acceptance before the branch merges.
 

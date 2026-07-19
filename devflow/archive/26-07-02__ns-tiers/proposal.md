@@ -1,6 +1,6 @@
 # Namespace tiers and a root spool home
 
-**Status:** Implemented **Related:** [repl-api spec](../../specs/repl-api.md), [daemon-runtime spec](../../specs/daemon-runtime.md), [spools index](../../../spools/README.md), TEN-000/TEN-004
+**Status:** Implemented **Related:** [repl-api spec](../../specs/repl-api.md), [daemon-runtime spec](../../specs/daemon-runtime.md), [spools index](../../../spools/README.md), TEN-000@1/TEN-004
 
 ## Summary
 
@@ -15,7 +15,7 @@ Two structural changes that make the repo tree and the namespace map tell the sa
      promised **within** an alpha/beta subnamespace by idiomatic accretion
      (add, don't break); a breaking rethink ships as a new subnamespace.
    - `skein.core.*` — *"here be dragons."* No compatibility promise
-     (TEN-000); trusted users may require it at their own cost
+     (TEN-000@1); trusted users may require it at their own cost
      (repl-api C19 already says this).
    - `skein.spools.*` — blessed reference libs and building material.
    - `skein.repl` — deliberate exception, unchanged: the interactive human
@@ -83,7 +83,7 @@ spools/
   `skein.spools.*` (unchanged); registries (queries/ops/patterns/handlers/
   stall predicates) are weaver-lifetime and re-register from startup config.
   Third-party workspaces with old `init.clj` requires break loudly on next
-  start; TEN-000 accepts this, and the fix is mechanical.
+  start; TEN-000@1 accepts this, and the fix is mechanical.
 - **Specs (root contracts, must be updated — this change extends core):**
   `devflow/specs/repl-api.md` (`skein.runtime.alpha`, `skein.patterns.alpha`
   references, C16/C17/C19 wording, the reserved-family clause gains the tier
@@ -114,4 +114,4 @@ PATH="/opt/homebrew/opt/openjdk/bin:$PATH" clojure -M:smoke
 make install   # then mill + weaver restart, live sanity via strand ops
 ```
 
-Out of scope: renaming the loom metaphors, splitting `skein.api.weaver.alpha` into finer modules (accrete later), any beta subnamespaces, migration shims (TEN-000: none).
+Out of scope: renaming the loom metaphors, splitting `skein.api.weaver.alpha` into finer modules (accrete later), any beta subnamespaces, migration shims (TEN-000@1: none).

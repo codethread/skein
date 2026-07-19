@@ -53,7 +53,7 @@ Evidence from the `runtime-ownership` feature (2026-07-03), which was coordinate
 ## RFC-015.P6 Consequences
 
 - **RFC-015.C1:** Spool docs split accordingly: `spools/shuttle/README.md` documents the engine contract (harness registry, run lifecycle, preamble seam); a new `spools/agents.md` (or `spools/agents/README.md` if it ships as a local-root spool beside shuttle) documents the op surface, DAG conventions, and both guidance sets.
-- **RFC-015.C2:** Workspaces that load shuttle today must load `agents` to keep `strand op agent`; the `.skein/init.clj` use-chain gains one entry. TEN-000 applies — no compatibility shim for the moved op registration.
+- **RFC-015.C2:** Workspaces that load shuttle today must load `agents` to keep `strand op agent`; the `.skein/init.clj` use-chain gains one entry. TEN-000@1 applies — no compatibility shim for the moved op registration.
 - **RFC-015.C3:** The delegated-agent contract text moves from `.agents/skills/strand/SKILL.md` and `.skein/config.clj` into the spool, becoming the single source injected into worker preambles and printed by `agent about`.
 - **RFC-015.C4:** `daemon-runtime.md` and `repl-api.md` references to shuttle's op registration move/point to the `agents` spool; treadle's gate bridge re-targets the promoted delegate verb.
 - **RFC-015.C5:** The boundary rule for native subagent tools (RFC-015.NG2) becomes stated policy in AGENTS.md and `agent about`, giving coordinators a defensible default rather than per-session judgement.

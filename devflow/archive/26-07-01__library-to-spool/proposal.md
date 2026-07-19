@@ -22,7 +22,7 @@ This scope is deliberately narrow: the in-session naming review kept `Skein`, `s
 - **LTS-PROP-001.G4:** Keep generic runtime verbs and the loader namespace unchanged: `skein.runtime.alpha` still exposes `approved`, `sync!`, `syncs`, `use!`, `uses`, and `reload!`. The rename is a noun/data-shape rename, not a verb or namespace-root rename.
 - **LTS-PROP-001.G5:** Introduce a recommended, non-enforced `.spool` directory-suffix convention for spool roots (for example, `spools/my-module.spool`) as a discovery marker for future authoring/discovery tools.
 - **LTS-PROP-001.G6:** Preserve the runtime model and behavior: shared/local overlay, local-root resolution, runtime dependency loading, sync/use/reload lifecycle, trusted execution, and fail-loud malformed config semantics are unchanged except for renamed keys/files.
-- **LTS-PROP-001.G7:** Drop old names outright under TEN-000: no `libs.edn`/`:libs` fallback, alias, dual-read path, or compatibility namespace for the renamed approved-spool surface.
+- **LTS-PROP-001.G7:** Drop old names outright under TEN-000@1: no `libs.edn`/`:libs` fallback, alias, dual-read path, or compatibility namespace for the renamed approved-spool surface.
 
 ## LTS-PROP-001.P3 Non-goals
 

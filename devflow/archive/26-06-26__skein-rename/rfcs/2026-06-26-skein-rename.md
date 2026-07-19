@@ -20,7 +20,7 @@ The project shipped as a "todo" graph but has grown (per [PRD-001](../prd/runtim
 - **RFC-006.G2:** A maximally neutral stored primitive so userland supplies domain meaning via attributes.
 - **RFC-006.G3:** Vocabulary that reinforces the pure-core / runtime-transformation split: durable facts vs derived structure.
 - **RFC-006.G4:** A product brand that is distinct and searchable in the AI-agent space, not a head-on collision with an incumbent.
-- **RFC-006.G5:** Drop legacy names outright per [TEN-000](../TENETS.md) without compatibility shims or data migration.
+- **RFC-006.G5:** Drop legacy names outright per [TEN-000@1](../TENETS.md) without compatibility shims or data migration.
 
 ## RFC-006.P3 Non-goals
 
@@ -69,7 +69,7 @@ The connected-subgraph concept previously sketched as "molecule" is dropped; do 
 - **RFC-006.C5:** Runtime worlds (SPEC-004.P2/P3): config `~/.config/atom` → `~/.config/skein`, state `~/.local/state/atom` → `~/.local/state/skein`, data `~/.local/share/atom` → `~/.local/share/skein`. Socket/metadata files rename `daemon.sock`/`daemon.json`/`daemon.edn` → `weaver.sock`/`weaver.json`/`weaver.edn`.
 - **RFC-006.C6:** Specs: rename `task-model.md` → `strand-model.md`; refresh vocabulary across `cli.md`, `daemon-runtime.md` (→ weaver runtime framing), `repl-api.md`, and PRD-001. Promote on feature finish, not in this RFC.
 - **RFC-006.C7:** No Clojure-core symbol hazard: `strand`/`skein`/`weaver` do not shadow any `clojure.core` name, so the `atom`-style bare-symbol caution does not apply.
-- **RFC-006.C8:** Per [TEN-000](../TENETS.md), drop legacy names with no compatibility aliases and no data migration; existing local worlds/dbs are disposable.
+- **RFC-006.C8:** Per [TEN-000@1](../TENETS.md), drop legacy names with no compatibility aliases and no data migration; existing local worlds/dbs are disposable.
 - **RFC-006.C9:** Publish identity should use the distinctive brand in code and specs (`skein.*`), but public domain/GitHub handle claims are out of scope for the rename feature. Local checks found `skein.dev`, `getskein.dev`, `github.com/skein`, and `github.com/skein-dev` occupied; any public release-home decision needs explicit owner confirmation in a later release feature.
 
 ## RFC-006.P7 Outcome

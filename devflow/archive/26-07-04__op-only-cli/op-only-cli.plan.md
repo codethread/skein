@@ -4,7 +4,7 @@
 
 ## PLAN-Ooc-001.P1 Goal and scope
 
-Deliver RFC-019: collapse the dual dispatch tiers so every weaver-facing command is a registered op at the CLI root, `strand` becomes a pure invoke-envelope dispatcher, `mill` absorbs the no-weaver commands, and the shipped command surface moves to `skein.spools.batteries` built on a new blessed parser `skein.api.cli.alpha`. Hard cutover per TEN-000; contracts in the three feature spec deltas.
+Deliver RFC-019: collapse the dual dispatch tiers so every weaver-facing command is a registered op at the CLI root, `strand` becomes a pure invoke-envelope dispatcher, `mill` absorbs the no-weaver commands, and the shipped command surface moves to `skein.spools.batteries` built on a new blessed parser `skein.api.cli.alpha`. Hard cutover per TEN-000@1; contracts in the three feature spec deltas.
 
 ## PLAN-Ooc-001.P2 Approach
 
@@ -30,7 +30,7 @@ Deliver RFC-019: collapse the dual dispatch tiers so every weaver-facing command
 
 ## PLAN-Ooc-001.P4 Contract and migration impact
 
-- **PLAN-Ooc-001.CM1:** All contract changes are in the three deltas (SPEC-002-D004, SPEC-003-D003, SPEC-004-D003). No data model or storage change. No migration: TEN-000 hard cutover; old builtins and the `op` prefix stop existing.
+- **PLAN-Ooc-001.CM1:** All contract changes are in the three deltas (SPEC-002-D004, SPEC-003-D003, SPEC-004-D003). No data model or storage change. No migration: TEN-000@1 hard cutover; old builtins and the `op` prefix stop existing.
 - **PLAN-Ooc-001.CM2:** External consumer impact: `codethread/devflow.spool` emits `strand op devflow-*` guidance and must be updated + re-pinned; any other external spool shelling the CLI breaks at cutover and is out of scope beyond the pinned devflow spool.
 
 ## PLAN-Ooc-001.P5 Implementation phases

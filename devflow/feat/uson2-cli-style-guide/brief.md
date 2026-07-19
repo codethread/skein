@@ -42,7 +42,7 @@ outlier issues only, no rename-only churn, and rely on a style guide + shared co
 - Payload-reference plumbing is the one correctness MUST; everything else in the guide is
   advisory (PHILOSOPHY: prose guides, code decides — but the MUST is enforceable at review).
 - Keep the `:operation` result key; stamp it from dispatch rather than hand-rolling.
-- No compatibility aliases anywhere (TEN-000).
+- No compatibility aliases anywhere (TEN-000@1).
 
 Design record: card `1dw6d` notes (synthesis note `ce3gj`; full opus/deepseek counsel as
 review-dump notes `r7i1f`/`ch0kz` on task `8kd6l`).

@@ -77,7 +77,7 @@ their runs don't use ([proposal](./proposal.md), gh#81).
 ## PLAN-Wct-001.P4 Contract and migration impact
 
 - **PLAN-Wct-001.CM1:** `skein.spools.delegation/worker-contract` changes content
-  (task-workflow fragment only) — TEN-000 alpha, no migration; consuming workspaces that
+  (task-workflow fragment only) — TEN-000@1 alpha, no migration; consuming workspaces that
   want the old always-on behavior register the exported fragment themselves.
 - **PLAN-Wct-001.CM2:** Any workspace already calling `set-preamble-extension!` stops
   colliding with delegation's claim; the conflict-recording behavior of that seam is

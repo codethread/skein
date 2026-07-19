@@ -136,7 +136,7 @@ unpublished runtime or alongside a second runtime: it mutates the wrong world or
    convention, not a namespace to converge into: use them as found, and mint
    no new ones. A concept unrelated to another spool's that happens to share
    its noun is not inheritance — it is a reader trap; pick a different word.
-   Before a `v1` promise, convergence may be a clean break under TEN-000:
+   Before a `v1` promise, convergence may be a clean break under TEN-000@1:
    durable attributes on closed strands stay as written because they are
    memory, not authority. After `v1`, the corrected contract takes a new name;
    ship an explicit cutover for active rows when continuity needs it.
@@ -302,7 +302,7 @@ applies to shared-spool CLIs.
 - Prefer one op with declared subcommands for a cohesive multi-verb domain. Keep
   single-purpose projections and config-registered ops flat.
 - Before a `v1` promise, a vocabulary correction may be a clear cut under
-  TEN-000. After `v1`, keep the old contract and publish the correction under a
+  TEN-000@1. After `v1`, keep the old contract and publish the correction under a
   new name as described in [Versioning and release](#versioning-and-release).
 
 Every text-bearing flag or positional MUST use the declared arg-spec parser so
@@ -731,7 +731,7 @@ silent:
 2. **A README/contract unsafe-declaration section.** The contract doc opens with
    an **Unsafe declaration**: the exact internal namespaces required; why the
    blessed `api.*` surface cannot serve this; and the breakage contract —
-   `skein.core.*` changes freely (TEN-000), so the spool may break on any
+   `skein.core.*` changes freely (TEN-000@1), so the spool may break on any
    upgrade and is maintained *in-repo, in lockstep* with the storage it reads.
 3. **In-repo lockstep maintenance.** An unsafe spool ships in this repo, beside
    the internals it couples to, so a `skein.core.*` change and the spool's fix

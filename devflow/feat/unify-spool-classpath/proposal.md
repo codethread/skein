@@ -59,7 +59,7 @@ and `alpha-surface.md` SPEC-005.C3 (`alpha-surface.md:13`) draws the alpha contr
   classpath-load it; the only classpath-resident code is the batteries exception, loaded by an honest explicit
   `require`, not by a hidden loader fallback.
 - **PROP-usc-001.G5:** A fresh `mill init` world still gets its command surface with an empty `{:spools {}}`, and no
-  in-repo consumer regresses — every activation, test root, doc, and spec is updated in the same change (TEN-000: no
+  in-repo consumer regresses — every activation, test root, doc, and spec is updated in the same change (TEN-000@1: no
   migration shims).
 
 ## PROP-usc-001.NG Non-goals
