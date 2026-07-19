@@ -24,7 +24,7 @@ UNSAFE: uses skein.core.db for substring search over strand titles and
   and runs SQL against the physical `strands` and `attributes` tables. That
   reaches under the attribute-map contract (TEN-007, storage is the core's
   burden) and couples to a storage shape `skein.core.*` is free to change
-  without notice (TEN-000).
+  without notice (TEN-000@1).
 
   ## The contract you are opting into
 

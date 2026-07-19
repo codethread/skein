@@ -112,7 +112,7 @@ why it matters; the land gate and CI are unchanged (PROP-Ttv-001.NG3).
   delta. `run-focused!` accretes within `skein.test.alpha`, already blessed by
   SPEC-005.C2; SPEC-005.C9 updates the index only when tier **membership**
   changes, and it does not. The `:test-repl` alias, `make test-warm`, and the
-  `skein.test.warm` server are internal dev tooling (TEN-000, parallel to the
+  `skein.test.warm` server are internal dev tooling (TEN-000@1, parallel to the
   SPEC-005.C8 tooling internals), not new contract surface.
 - **PLAN-Ttv-001.CM3 (cli.md: None):** No `devflow/specs/cli.md` delta. The tiers
   add no `strand`/`mill` command; SPEC-002 governs the shipped Go binaries, and
@@ -204,7 +204,7 @@ generated SQLite/runtime artifacts and no warm files.
   source of truth: the script trusts a port file only after a live probe, and
   boots fresh on refusal. It kills the recorded PID only when the socket is
   unreachable; PID reuse within a worktree's lifetime is a small, documented
-  residual risk (TEN-000 alpha), with idle self-termination as the primary
+  residual risk (TEN-000@1 alpha), with idle self-termination as the primary
   reaper. The registry-visibility option (PROP-Ttv-001.S6) is **deferred**: the
   socket probe stays the truth, and a coordination-world registry would add
   surface for little value; cut to keep the plan lean (TEN-004).

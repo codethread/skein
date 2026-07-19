@@ -23,7 +23,7 @@ Deliver the ergonomics fixes enumerated in [PROP-Werg-001](./proposal.md) across
 
 ## PLAN-Werg-001.P4 Contract and migration impact
 
-- **PLAN-Werg-001.CM1:** Breaking spool API change (mutation result shape) and done-semantics change (join auto-close), per DELTA-Werg-001.D1.1/D1.5; TEN-000 alpha, no migration path, all in-repo callers updated in the same change. No public CLI or root-spec contract changes.
+- **PLAN-Werg-001.CM1:** Breaking spool API change (mutation result shape) and done-semantics change (join auto-close), per DELTA-Werg-001.D1.1/D1.5; TEN-000@1 alpha, no migration path, all in-repo callers updated in the same change. No public CLI or root-spec contract changes.
 
 ## PLAN-Werg-001.P5 Implementation phases
 

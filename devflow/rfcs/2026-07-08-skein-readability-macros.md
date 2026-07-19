@@ -88,7 +88,7 @@ Load-order constraints any macro layer must respect (from `init.clj` and the rec
   (`config`, `attention`) `require` them, exactly as `demo.clj` requires `skein.macros.patterns` today. Tier
   correctness: this is config-tier spool code that requires blessed `skein.api.*.alpha` registration APIs
   (the correct direction); it is **not** part of the shipped `src/skein/` tree, so it commits to no accretion
-  contract and stays freely evolvable (TEN-000). It is **not** `skein.userland.alpha` — userland is
+  contract and stays freely evolvable (TEN-000@1). It is **not** `skein.userland.alpha` — userland is
   downstream-only ergonomics that no `skein.*` namespace may require, and a registration macro that calls
   `skein.api.*` would invert that tier.
 - **RFC-020.REC3:** Do **not** promote to a shipped `skein.api.config-macros.alpha` yet (that is O5, tracked

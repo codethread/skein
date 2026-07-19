@@ -19,7 +19,7 @@ Epic `kaans` fixes the behavior. This feature does not. It is the **purely mecha
 ## PROP-Alr-001.P3 Non-goals
 
 - **PROP-Alr-001.NG1:** No behavior change of any kind. Same tests pass modulo renamed symbols and attrs; any behavioral fix discovered during the sweep is carded against `kaans`, never folded in.
-- **PROP-Alr-001.NG2:** No dual-read or compatibility shim that accepts both old and new attribute names (TEN-000: alpha, rename without migration).
+- **PROP-Alr-001.NG2:** No dual-read or compatibility shim that accepts both old and new attribute names (TEN-000@1: alpha, rename without migration).
 - **PROP-Alr-001.NG3:** No `serves` edge, no `serves`/lineage semantics — that is F2, which also owns dropping the `agent-run/run` and `gate/run`/`gate/step`/`gate/run-id`/`gate/superseded-by` markers.
 - **PROP-Alr-001.NG4:** No note-primitive semantics (F3) and no registry work (F4).
 - **PROP-Alr-001.NG5:** No `devflow/archive/*` edits — the archive is the historical record and stays in the old vocabulary.
@@ -57,7 +57,7 @@ The recon surfaced twelve gotchas. Each resolves below to a decision; the four c
 
 ## PROP-Alr-001.P6 Decisions closed at design time
 
-- **PROP-Alr-001.D5:** `spools.edn` keys and roots follow the rename. The brief moves the directories (`spools/shuttle` → `spools/agent-run`, `spools/agents` → `spools/delegation`), so `.skein/spools.edn`'s `skein.spools/shuttle {:local/root "../spools/shuttle"}` and `skein.spools/agents {:local/root "../spools/agents"}` become `skein.spools/agent-run {:local/root "../spools/agent-run"}` and `skein.spools/delegation {:local/root "../spools/delegation"}`. The map key is the registered spool name; no external consumer pins it, and TEN-000 forbids a migration shim, so the key moves with its directory and namespace.
+- **PROP-Alr-001.D5:** `spools.edn` keys and roots follow the rename. The brief moves the directories (`spools/shuttle` → `spools/agent-run`, `spools/agents` → `spools/delegation`), so `.skein/spools.edn`'s `skein.spools/shuttle {:local/root "../spools/shuttle"}` and `skein.spools/agents {:local/root "../spools/agents"}` become `skein.spools/agent-run {:local/root "../spools/agent-run"}` and `skein.spools/delegation {:local/root "../spools/delegation"}`. The map key is the registered spool name; no external consumer pins it, and TEN-000@1 forbids a migration shim, so the key moves with its directory and namespace.
 
 ## PROP-Alr-001.P7 Sequencing and risks
 
@@ -67,7 +67,7 @@ The recon surfaced twelve gotchas. Each resolves below to a decision; the four c
 
 ## PROP-Alr-001.P8 Cutover plan
 
-Renaming the code changes what attribute names the running canonical weaver reads. Active strands in the canonical world still carry the old attribute keys, so the code landing must be paired with a one-shot rewrite of those live attributes. No dual-read shim bridges the gap (TEN-000, PROP-Alr-001.NG2).
+Renaming the code changes what attribute names the running canonical weaver reads. Active strands in the canonical world still carry the old attribute keys, so the code landing must be paired with a one-shot rewrite of those live attributes. No dual-read shim bridges the gap (TEN-000@1, PROP-Alr-001.NG2).
 
 - **PROP-Alr-001.C1:** One-shot rewrite script. A script that rewrites **active** strands' attribute keys per the brief rename table, which is the authoritative old→new key list. The transform is not a uniform prefix swap: the `shuttle/*` run attrs and markers map `shuttle/…` → `agent-run/…`, `treadle/*` maps `treadle/…` → `gate/…` (including `treadle/gate` → `gate/step`), and the review/panel/note families split off their own namespaces per key — `shuttle/review-*` → `review/*` (`shuttle/review-pass` → `review/pass`, etc.), `shuttle/panel-seat`/`shuttle/panel-turn`/`shuttle/fresh-prompt`/`shuttle/role` → `panel/seat`/`panel/turn`/`panel/fresh-prompt`/`panel/role`, `shuttle/note-for`/`shuttle/note`/`shuttle/note-by`/`shuttle/round`/`shuttle/at` → `note/for`/`note/text`/`note/by`/`note/round`/`note/at` — plus `workflow/notes` → `workflow/outcome-notes` and the `shuttle/handle.<key>` prefix rewrite. The script rewrites explicitly per key, never through a generic `shuttle/*` rule that would mis-map the review/panel/note attrs. Markers are renamed, not dropped (PROP-Alr-001.P5.H7). Archived/inactive strands are memory, not authority (PHILOSOPHY: the code wins) — the script scopes to active work.
 - **PROP-Alr-001.C2:** Rehearse against a copy. Copy the canonical world's `data/skein.sqlite` into a disposable `mktemp -d` workspace, run the renamed code and the rewrite script there, and confirm the smoke checks pass. The rehearsal never touches the canonical world.

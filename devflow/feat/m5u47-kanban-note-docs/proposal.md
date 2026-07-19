@@ -18,7 +18,7 @@ the kanban docs.
 The same surface uses `--author`, while the settled spool CLI vocabulary uses `--by` for
 attribution. The flag is declared in the note arg-spec and translated back into the stored
 `:author` decoration (`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:561`,
-`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1230-1232`). TEN-000 permits dropping the old flag
+`~/dev/projects/kanban.spool/src/ct/spools/kanban.clj:1230-1232`). TEN-000@1 permits dropping the old flag
 without a migration alias (`devflow/TENETS.md:3`), and TEN-003 requires the removed spelling to
 fail loudly (`devflow/TENETS.md:10`).
 

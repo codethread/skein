@@ -83,7 +83,7 @@ helper accretion and registered-op result semantics in the two linked deltas.
   transport, or public command changes.
 - **PLAN-Ucs-001.CM4:** No stored-data migration or compatibility alias ships.
   The observable `agent-spend` and `land-*` result labels move directly to
-  `agent spend` and `land <verb>` under TEN-000. Flat op labels do not move.
+  `agent spend` and `land <verb>` under TEN-000@1. Flat op labels do not move.
 
 ## PLAN-Ucs-001.P5 Implementation slices
 

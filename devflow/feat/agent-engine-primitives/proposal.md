@@ -50,7 +50,7 @@ F1 renamed the surfaces without changing behavior. This feature makes the behavi
 
 ## PROP-Aep-001.P3 Non-goals
 
-- **PROP-Aep-001.NG1:** No dual-read or compatibility shim (TEN-000: alpha, change without migration). Historical closed
+- **PROP-Aep-001.NG1:** No dual-read or compatibility shim (TEN-000@1: alpha, change without migration). Historical closed
   runs keep their old shape; queries are written so they never *misread* the old shape (PROP-Aep-001.C13), but no code
   reads both encodings as live.
 - **PROP-Aep-001.NG2:** No change to the gate-*delivery* predicate — a gate is still delivered only by a run in

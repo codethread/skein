@@ -15,7 +15,7 @@ Converge roster to `--timeout-secs` / `--stale-after-secs`. If a genuine sub-sec
 precision need exists (unlikely at 1-5s poll intervals) document it instead and keep ms
 with the reason stated in the flag doc.
 
-- Alpha (TEN-000): no compatibility aliases; the old flags fail loudly as unknown flags.
+- Alpha (TEN-000@1): no compatibility aliases; the old flags fail loudly as unknown flags.
 - Update roster spool docs/cookbook (`spools/roster.md`, `spools/roster.cookbook.md`,
   regenerate `spools/roster.api.md` if docstrings change) and any callers in-repo.
 

@@ -15,7 +15,7 @@ The feature needs to turn RFC-006 into one shipped contract without leaving part
 - **SR-PROP-001.G1:** Ship one coherent identity: product **Skein**, namespace root `skein.*`, CLI binary `strand`, stored unit **strand**, and daemon/runtime noun **weaver**.
 - **SR-PROP-001.G2:** Rename public contracts, code namespaces, storage identifiers, default world paths, generated config, docs, tests, and smoke workflows consistently.
 - **SR-PROP-001.G3:** Preserve existing behavior while renaming it except for deliberate lifecycle/retention simplifications: status enum to core `active` boolean, and optional ephemeral strands that disappear when deactivated. Edge types, readiness rules, JSON attributes, query registry semantics, runtime library workflow, and view/graph primitives keep their current meaning.
-- **SR-PROP-001.G4:** Drop old names outright under TEN-000; no compatibility aliases, fallback lookup paths, dual binaries, or data migration.
+- **SR-PROP-001.G4:** Drop old names outright under TEN-000@1; no compatibility aliases, fallback lookup paths, dual binaries, or data migration.
 - **SR-PROP-001.G5:** Keep the CLI thin. The rename should not add query authoring, package management, view invocation, or richer runtime behavior.
 
 ## SR-PROP-001.P3 Non-goals

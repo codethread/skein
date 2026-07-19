@@ -8,7 +8,7 @@ Deliver the alpha reset from direct per-world weaver sockets to a user-started G
 
 ## PLAN-MillRouterRuntime-001.P2 Approach
 
-- **PLAN-MillRouterRuntime-001.A1:** Treat TEN-000 as permission to replace the current direct-socket contract rather than preserving compatibility shims.
+- **PLAN-MillRouterRuntime-001.A1:** Treat TEN-000@1 as permission to replace the current direct-socket contract rather than preserving compatibility shims.
 - **PLAN-MillRouterRuntime-001.A2:** Build the Go routing boundary first: shared world resolution, XDG state layout, mill metadata/socket, and a minimal request/response envelope.
 - **PLAN-MillRouterRuntime-001.A3:** Move `strand` commands onto mill one vertical path at a time, beginning with bootstrap/status/lifecycle before mutation/query forwarding.
 - **PLAN-MillRouterRuntime-001.A4:** Keep mill payload-agnostic. Mill may route by operation name and selected-world metadata, but semantic validation remains in existing CLI argument parsing and weaver socket handlers.
@@ -92,7 +92,7 @@ Outcome: Go, Clojure, integration, smoke, README, getting-started, Makefile, and
 
 ### PLAN-MillRouterRuntime-001.DN1 Plan creation — 2026-06-29
 
-- Created directly from user direction under TEN-000. Direction is settled enough for AFK tasking: mill is mandatory router/supervisor, no ordinary-command autostart, no CLI DB init, Git-root implicit worlds only, XDG runtime/data, REPL attaches directly after mill resolution.
+- Created directly from user direction under TEN-000@1. Direction is settled enough for AFK tasking: mill is mandatory router/supervisor, no ordinary-command autostart, no CLI DB init, Git-root implicit worlds only, XDG runtime/data, REPL attaches directly after mill resolution.
 
 ### PLAN-MillRouterRuntime-001.DN2 Task queue review fixes — 2026-06-29
 

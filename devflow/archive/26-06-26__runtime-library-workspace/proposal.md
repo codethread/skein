@@ -6,7 +6,7 @@
 
 The runtime plugin MVP established trusted local plugin loading, but its plugin-directory framing is not the right primary abstraction. The deeper model is simpler and more Clojure-native: make user/community Clojure libraries available to the daemon, then let trusted daemon-side `init.clj` and daemon-routed helper calls require/load namespaces and call functions. Treating every extension as one plugin directory is too limiting for multi-module repos, normal Clojure `require`, and Atom's own `atom.*.alpha` libraries.
 
-This feature should therefore replace the plugin-system framing in the canonical specs. Per TEN-000, this alpha project should drop the weaker `load-plugin!` abstraction rather than preserve a compatibility layer around an inferior idea. The blessed extension story should become config-dir library workspaces, approved local roots, daemon-side module activation, and layered resilient boot through `use!`.
+This feature should therefore replace the plugin-system framing in the canonical specs. Per TEN-000@1, this alpha project should drop the weaker `load-plugin!` abstraction rather than preserve a compatibility layer around an inferior idea. The blessed extension story should become config-dir library workspaces, approved local roots, daemon-side module activation, and layered resilient boot through `use!`.
 
 Atom needs a minimal config-dir library workspace model that separates source acquisition, classpath/library availability, and runtime activation. Users should be able to keep their config-dir as a Git repo, manage source with submodules/manual copy, approve runtime libraries in a user-owned file, sync approved local roots into the daemon, and use a resilient boot primitive for optional layered modules.
 

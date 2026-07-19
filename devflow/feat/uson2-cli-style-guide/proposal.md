@@ -99,7 +99,7 @@ prose explains them (`devflow/PHILOSOPHY.md:27-35`).
   domain-neutral argv and payload-reference parser; shared domain shapes are
   ordinary data in `skein.api.spool.alpha`.
 - **PROP-Ucs-001.NG3:** No compatibility aliases. When an outlier is changed for
-  a substantive reason, the old spelling is dropped under TEN-000
+  a substantive reason, the old spelling is dropped under TEN-000@1
   (`devflow/TENETS.md:3-4`), not retained beside the replacement.
 - **PROP-Ucs-001.NG4:** No hard conformance gate for advisory vocabulary, and no
   per-op result-spec system. The only MUST concerns payload-reference

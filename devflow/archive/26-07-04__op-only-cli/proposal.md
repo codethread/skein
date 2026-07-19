@@ -22,7 +22,7 @@ The strand surface has two parallel dispatch tiers. Shipped commands each pay a 
 - **PROP-Ooc-001.NG2:** No stream-in or bidirectional session protocol (RFC-019.NG2).
 - **PROP-Ooc-001.NG3:** No output shaping: no `--format`, `--quiet`, or pretty rendering; JSON/NDJSON only (RFC-019.NG3, TEN-001).
 - **PROP-Ooc-001.NG4:** No hook bypass flags, ever — a permanent invariant, not feature scope (RFC-019.NG4).
-- **PROP-Ooc-001.NG5:** No compatibility layer or aliases for the removed builtin commands and `op` prefix (RFC-019.NG5, TEN-000 hard cutover).
+- **PROP-Ooc-001.NG5:** No compatibility layer or aliases for the removed builtin commands and `op` prefix (RFC-019.NG5, TEN-000@1 hard cutover).
 
 ## PROP-Ooc-001.P4 Proposed scope
 

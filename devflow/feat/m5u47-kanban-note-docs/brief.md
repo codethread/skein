@@ -26,7 +26,7 @@ and any in-repo doc references.
    `--stdin` form.
 2. While touching the note op, align attribution with core note: accept `--by`.
    DECIDED (coordinator, per the epic's settled flag lexicon: `--by` for attribution;
-   TEN-000 no aliases): `--author` DROPS, replaced by `--by`; the removed flag fails
+   TEN-000@1 no aliases): `--author` DROPS, replaced by `--by`; the removed flag fails
    loudly as unknown. Update every in-repo caller/example (skein-src docs, .skein config,
    spool cookbooks) to `--by` in the pin-bump commit.
 3. Fix-on-touch rides (handed off from feature uson2-cli-style-guide's plan): while
@@ -39,6 +39,6 @@ and any in-repo doc references.
 
 - Kanban spool has its own test suite; skein-src's `make spool-suite-gate` runs the pinned
   suite against the checkout — the new pin must be green there.
-- TEN-000: no compatibility aliases anywhere.
+- TEN-000@1: no compatibility aliases anywhere.
 
 Design record: card `1dw6d` notes (synthesis `ce3gj`); epic `3o7le` body.

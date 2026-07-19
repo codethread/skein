@@ -97,7 +97,7 @@ Append notes here. Do not rewrite earlier notes.
 
 ### ERF-PLAN-001.DN2 Task queue creation — 2026-06-28
 
-- Created the initial eight-task AFK queue. The queue intentionally included fixes for current code/tests/docs and active feature artifacts, but excluded live migration and compatibility aliases per TEN-000. DN3 extends this to a nine-task queue with an explicit batch graph upsert handoff.
+- Created the initial eight-task AFK queue. The queue intentionally included fixes for current code/tests/docs and active feature artifacts, but excluded live migration and compatibility aliases per TEN-000@1. DN3 extends this to a nine-task queue with an explicit batch graph upsert handoff.
 
 ### ERF-PLAN-001.DN3 Batch feature handoff — 2026-06-28
 

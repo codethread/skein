@@ -61,7 +61,7 @@ Ship local weaver peering per the proposal: portable config-declared weaver name
 - **PLAN-Guild-001.CM1:** All durable contract changes are staged in the
   three feature deltas; root specs merge at finish. No storage/schema
   changes, no migration: existing repos' generated `.gitignore` files are
-  user-owned and stay as-is (TEN-000).
+  user-owned and stay as-is (TEN-000@1).
 
 ## PLAN-Guild-001.P5 Implementation phases
 

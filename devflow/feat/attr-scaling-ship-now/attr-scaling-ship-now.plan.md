@@ -37,7 +37,7 @@ Out of scope: the declared-key overflow storage table (L2), any size-threshold o
 
 ## ASSN-PLAN-001.P4 Contract and migration impact
 
-- **ASSN-PLAN-001.CM1:** Additive, no forced rebuild (`ASSN-DELTA-001` / `ASSN-DELTA-003`): pragmas apply on open; `indexed_attr_keys` and expression indexes use `IF NOT EXISTS`; the read change is output-shape only. Existing worlds open unchanged. `ensure-current-schema!` still validates only `strands`/`strand_edges` and fails loud only on genuinely incompatible core layouts (fail-loud rejection per TEN-003; no forced migration per TEN-000).
+- **ASSN-PLAN-001.CM1:** Additive, no forced rebuild (`ASSN-DELTA-001` / `ASSN-DELTA-003`): pragmas apply on open; `indexed_attr_keys` and expression indexes use `IF NOT EXISTS`; the read change is output-shape only. Existing worlds open unchanged. `ensure-current-schema!` still validates only `strands`/`strand_edges` and fails loud only on genuinely incompatible core layouts (fail-loud rejection per TEN-003; no forced migration per TEN-000@1).
 - **ASSN-PLAN-001.CM2:** CLI/agent behavior change: `list`/`ready`/query-backed listing return the omission descriptor for values above the fixed 1 KiB floor by default; `show` stays full. No new flag.
 - **ASSN-PLAN-001.CM3:** Declaration is trusted Clojure config/REPL surface only — no public JSON socket op, no `strand` command (TEN-006). It stays separate from any future L2 offload declaration; no combined per-key capability system is built (`PROP-AttrScalingShipNow-001.Q4`).
 - **ASSN-PLAN-001.CM4:** No L2 overflow table, no size/naming offload, no dedup, no per-world floor config, no generated columns (NG1–NG6). The descriptor's storage-neutral wording is what keeps L2 an unforced future option.

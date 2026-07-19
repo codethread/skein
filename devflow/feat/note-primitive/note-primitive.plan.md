@@ -52,7 +52,7 @@ model or delegation/review flows beyond routing their note writes/reads through 
   hard rule). Once the primitive (S2) lands, its four consumers are disjoint files — `agent_run.clj` (S3), `kanban.clj`
   (S4), `delegation.clj` (S5), `batteries.clj` (S6) — and fan out in parallel. No engine file is split across two slices
   here (unlike F2's `agent_run.clj` serves/lineage split), so there is no same-file serial chain among the code slices.
-- **PLAN-Np-001.A4:** Direct rewrite, no shim (`PROP-Np-001.NG1`, TEN-000). The reader is moved to the edge encoding in
+- **PLAN-Np-001.A4:** Direct rewrite, no shim (`PROP-Np-001.NG1`, TEN-000@1). The reader is moved to the edge encoding in
   the same landing; no live reader understands `note/for` or `body`-as-note-text after cutover. Historical notes are made
   readable by the rewrite (S11/S13), not by a reader that understands old shapes (`PROP-Np-001.C11`).
 - **PLAN-Np-001.A5:** Focused gates during the sweep; the full locked suite only at acceptance. The authoritative

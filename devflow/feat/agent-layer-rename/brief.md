@@ -129,7 +129,7 @@ Spool dir moves: `spools/shuttle` → `spools/agent-run`, `spools/agents` → `s
 - **No behavior change.** Same tests pass modulo renamed symbols/attrs; any behavioral fix discovered is carded, not folded in.
 - **Atomic landing**: spool sources + tests + `.skein` config (init/config/workflows/harnesses/attention/reviewers/nvd_scan) + bench + chime recipes + docs (`spools/*`, `docs/`, `devflow/specs` alpha-surface) + `make api-docs` regen in one landing.
 - **Cutover is part of Done-when**: one-shot rewrite script for **active** strands' attrs, rehearsed against a *copy* of the canonical world's SQLite in a disposable world; documented cutover plan (quiet board → script → weaver restart → smoke via `agent status`/`stalled-gates`/`kanban board`). The canonical weaver restart itself requires explicit user sign-off — hard stop.
-- No dual-read compat shims (TEN-000).
+- No dual-read compat shims (TEN-000@1).
 - Blocked for implementation by the in-flight tiered-validation-v2 queue and `vk8aa` (shared doc/test files); design stages may proceed.
 
 ## Validation

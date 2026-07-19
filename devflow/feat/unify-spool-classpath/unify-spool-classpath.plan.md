@@ -29,7 +29,7 @@ and loaded by an explicit `require`. The authoring libraries stop pretending to 
 `skein.spools.format` is deleted in favour of the already-blessed `skein.api.format.alpha`, and
 `skein.spools.util` is promoted to a blessed `skein.api.spool.alpha` home (`PROP-usc-001.C1`), so no
 blessed `skein.api.*` namespace requires a `skein.spools.*` namespace. The `require` fallback is
-removed so a guardless `use!` `:ns` fails loudly (`PROP-usc-001.C4`). TEN-000 applies: no migration
+removed so a guardless `use!` `:ns` fails loudly (`PROP-usc-001.C4`). TEN-000@1 applies: no migration
 shims — every in-repo consumer (activation, test roots, doc-gen paths, docs, specs) is updated in the
 same change.
 
@@ -105,7 +105,7 @@ same change.
   source classpath is documented to ship exactly **one spool** — `batteries` — while otherwise
   carrying the ordinary src/dev tiers (`skein.core.*`, `skein.api.*`, `skein.repl`, dev tooling)
   and no other `skein.spools.*` (`DELTA-usc-dr-001`, new `SPEC-004.C50a`). No coordinate grammar, sync outcome, or storage
-  change (`SPEC-004.C41`/`.C42`/`.C43` reaffirmed). No migration/backfill: TEN-000, every in-repo
+  change (`SPEC-004.C41`/`.C42`/`.C43` reaffirmed). No migration/backfill: TEN-000@1, every in-repo
   consumer updated in-change.
 
 ## PLAN-usc-001.P5 Implementation phases
