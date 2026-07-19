@@ -20,10 +20,11 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
-            [skein.api.notes.internal :as internal]
             [skein.api.runtime.alpha :as runtime]
             [skein.api.weaver.alpha :as weaver]
             [skein.core.specs :as specs]))
+
+(declare note-attr at-instant note-view require-int-round truncate)
 
 (defn note!
   "Append an immutable note strand to `target-id`'s memory and return its id.
@@ -41,10 +42,10 @@
     (throw (ex-info "Note text must be non-blank" {})))
   (when-not (weaver/show runtime target-id)
     (throw (ex-info "Note target strand not found" {:id target-id})))
-  (internal/require-int-round round)
+  (require-int-round round)
   (let [decorating (dissoc opts :by :round)
         note (weaver/add! runtime
-                          {:title (internal/truncate text 72)
+                          {:title (truncate text 72)
                            :state "closed"
                            ;; note/at carries sub-second precision the
                            ;; seconds-only created_at column cannot, so it
@@ -66,12 +67,12 @@
   be an integer (fails loudly otherwise); ordering parses `note/at` so mixed
   fractional-precision timestamps still sort chronologically."
   [runtime target-id {:keys [round]}]
-  (internal/require-int-round round)
+  (require-int-round round)
   (let [note-ids (mapv :from_strand_id (graph/incoming-edges runtime [target-id] "notes"))]
     (->> (graph/strands-by-ids runtime note-ids)
-         (filter (fn [note] (or (nil? round) (= round (internal/note-attr note "round")))))
-         (sort-by (juxt internal/at-instant :created_at :id))
-         (mapv internal/note-view))))
+         (filter (fn [note] (or (nil? round) (= round (note-attr note "round")))))
+         (sort-by (juxt at-instant :created_at :id))
+         (mapv note-view))))
 
 (defn writer-ref->prompt
   "Render `ref` as the note-writing CLI instruction fragment.
@@ -83,7 +84,18 @@
   malformed refs fail loudly naming the offending field. Renders only the write
   instruction — no read/`agent notes` string."
   [ref]
-  (let [{:keys [target decoration by]} (internal/require-writer-ref ref)]
+  (when-not (map? ref)
+    (throw (ex-info "writer-ref shape invalid" {:field :root :value ref})))
+  (let [{:keys [target decoration by]} ref]
+    (when-not (string? target)
+      (throw (ex-info "writer-ref target must be a string" {:field :target :value target})))
+    (when-not (or (nil? by) (string? by))
+      (throw (ex-info "writer-ref by must be a string" {:field :by :value by})))
+    (when-not (or (nil? decoration)
+                  (and (map? decoration)
+                       (every? (fn [[k v]] (and (string? k) (string? v))) decoration)))
+      (throw (ex-info "writer-ref decoration must be a map of strings"
+                      {:field :decoration :value decoration})))
     (str "agent note " target " \"<text>\""
          (when by (str " --by " by))
          ;; sort keeps the rendered flags deterministic across map orderings
@@ -117,5 +129,52 @@
   :ret (s/coll-of ::note-view :kind vector?))
 
 ;; `writer-ref->prompt` is itself the authority for the writer-ref grammar: its
-;; docstring documents the shape and its validation defines it (SPEC-003.C19a),
-;; so no spec mirrors it here.
+;; docstring documents the shape and its body defines it (SPEC-003.C19a), so no
+;; spec mirrors it here.
+
+;; --- note attribute mechanics -------------------------------------------------
+
+(defn- note-attr
+  "Read the `note/<k>` memory attribute from a normalized note strand."
+  [note k]
+  (get (:attributes note) (keyword "note" k)))
+
+(defn- at-instant
+  "Chronological sort key for a note: its `note/at` parsed as an Instant, else
+  epoch. `Instant/toString` varies in fractional precision, so lexicographic
+  comparison misorders notes; parsing restores chronological order."
+  [note]
+  (if-let [at (note-attr note "at")]
+    (try (java.time.Instant/parse at)
+         (catch Exception _ java.time.Instant/EPOCH))
+    java.time.Instant/EPOCH))
+
+(defn- note-view
+  "Project a normalized note strand as `{:id :note :at}` plus `:by`/`:round`
+  when present."
+  [note]
+  (cond-> {:id (:id note)
+           :note (note-attr note "text")
+           :at (or (note-attr note "at") (:created_at note))}
+    (note-attr note "by") (assoc :by (note-attr note "by"))
+    (note-attr note "round") (assoc :round (note-attr note "round"))))
+
+;; --- round contract -----------------------------------------------------------
+
+(defn- require-int-round
+  "Return `round` when it is an integer (or nil); otherwise fail loudly.
+
+  `note/round` is single-typed by contract: every writer stores an integer and
+  the read filter compares integers, so a round written through one surface is
+  always visible through another."
+  [round]
+  (when (and (some? round) (not (integer? round)))
+    (throw (ex-info "note/round must be an integer" {:round round :type (type round)})))
+  round)
+
+;; --- leaf mechanics -----------------------------------------------------------
+
+(defn- truncate
+  "Return `s` capped at `n` characters, ellipsizing when it overflows."
+  [s n]
+  (if (> (count s) n) (str (subs s 0 (dec n)) "…") s))
