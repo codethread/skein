@@ -1665,8 +1665,13 @@
              (weaver/register-op! rt 'custom "Echo argv" 'skein.weaver-test/test-op)))
       (is (= {:operation "custom" :argv ["--flag" "value"]}
              (weaver/op! rt 'custom ["--flag" "value"])))
+      (weaver/register-op! rt 'undocumented 'skein.weaver-test/test-op)
       (let [help (weaver/op! rt 'help [])]
-        (is (some #(= "help" (:name %)) (:ops help))))
+        (is (some #(= "help" (:name %)) (:ops help)))
+        ;; A docless registration is legal, so the declared help return shape
+        ;; must accept a summary item that carries no :doc.
+        (is (some #(= "undocumented" (:name %)) (:ops help)))
+        (t/check-op-return! rt 'help help))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Operation not found"
                             (weaver/op! rt 'missing [])))

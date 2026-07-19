@@ -18,6 +18,7 @@
   here (`register-op!`, `resolve-op`) are call-time reaches into the public
   surface, the same idiom the socket transport uses for `op!`."
   (:require [skein.api.cli.alpha :as cli]
+            [skein.api.format.alpha :as format-alpha]
             [skein.api.return-shape.alpha :as return-shape]))
 
 (defn- registered-op-entries
@@ -101,7 +102,9 @@
    :positionals [{:name :op
                   :type :string
                   :required? false
-                  :doc "Optional op name; when given, return that op's full detail instead of the listing."}]})
+                  :doc (format-alpha/reflow
+                        "|Optional op name; when given, return that op's full
+                         |detail instead of the listing.")}]})
 
 (defn register-built-in-ops!
   "Install Skein-provided CLI operations into the runtime op registry.
@@ -118,13 +121,15 @@
     :arg-spec help-arg-spec
     :returns {:type :map
               :optional {:ops {:type :collection
+                               ;; :doc is optional in both projections: registration
+                               ;; accepts docless ops, and op-summary omits the key.
                                :items {:type :map
                                        :required {:name :string
-                                                  :doc :string
                                                   :provenance :string
                                                   :stream? :boolean
                                                   :deadline-class :string
-                                                  :hook-class :string}}}
+                                                  :hook-class :string}
+                                       :optional {:doc :string}}}
                          :name :string
                          :doc :string
                          :provenance :string
