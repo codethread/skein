@@ -52,7 +52,7 @@
     state-dir))
 
 (defn- with-state-root [state-root f]
-  (let [state-root-var (ns-resolve 'skein.api.peers.internal.discovery 'state-root)
+  (let [state-root-var (ns-resolve 'skein.api.peers.alpha 'state-root)
         original @state-root-var]
     (alter-var-root state-root-var (constantly (fn [] state-root)))
     (try

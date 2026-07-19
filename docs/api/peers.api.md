@@ -26,7 +26,7 @@ Invoke a named op on a resolved peer over the `invoke` envelope, or `status`.
   loudly with `:code :peer/stream-unsupported` (streams are out of scope for
   `call!`). Transport failures are loud and include peer identity. No retries or
   peer lifecycle management are attempted.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/peers/alpha.clj#L272-L307">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/peers/alpha.clj#L29-L53">Source</a></sub></p>
 
 ## <a name="skein.api.peers.alpha/peers">`peers`</a>
 ``` clojure
@@ -38,4 +38,4 @@ Return data-first rows for weaver metadata under the mill state root.
 
   Stale rows are included with `:running? false`. Present malformed metadata
   throws with `:code :peer/malformed-metadata` rather than being skipped.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/peers/alpha.clj#L70-L79">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/peers/alpha.clj#L18-L27">Source</a></sub></p>
