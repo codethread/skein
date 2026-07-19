@@ -277,12 +277,22 @@
 (defn reload-config!
   "Reload selected config-dir startup files after clearing runtime registries.
 
-  Clears every weaver-lifetime registry and the event system, reinstalls the
-  built-in ops, then reloads `init.clj`/`init.local.clj` and re-arms the
-  scheduler so handlers newly supplied by reloaded spools/config resolve before
-  any durable pending wake fires. This is `skein.api.runtime.alpha/reload!`'s
+  First preflights the on-disk approved spool config: a config the sync phase
+  would throw on as a whole — a non-additive diff, an invalid entry, an
+  atomically failing Maven universe — aborts here with every registry and the
+  sync state untouched (a refused non-additive diff still records its pending
+  generation), because discovering that refusal after the clear would leave a
+  world with built-in ops only and no in-JVM recovery (SPEC-004.C46). Then
+  clears every weaver-lifetime registry and the event system, reinstalls the
+  built-in ops, reloads `init.clj`/`init.local.clj`, and re-arms the scheduler
+  so handlers newly supplied by reloaded spools/config resolve before any
+  durable pending wake fires. This is `skein.api.runtime.alpha/reload!`'s
   implementation."
   [runtime]
+  ;; requiring-resolve keeps the require graph pointing downward: spool-sync
+  ;; sits above this namespace through the access tier, like the api-tier op
+  ;; registrar install-built-in-ops! resolves.
+  ((requiring-resolve 'skein.core.weaver.spool-sync/preflight-approved-sync!) runtime)
   (try
     (clear-reload-state! runtime)
     (let [world {:config-dir (get-in runtime [:metadata :config-dir])}

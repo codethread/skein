@@ -18,7 +18,7 @@
             [clojure.tools.namespace.parse :as ns-parse]
             [skein.core.format :as format]
             [skein.core.query :as query]
-            [skein.core.weaver.access :refer [approved-spool-sync-state
+            [skein.core.weaver.access :refer [approved-spool-sync-state release-marker
                                               with-spool-classloader config-dir spools-file
                                               canonical-root cache-base]])
   (:import [java.math BigInteger]
@@ -1296,6 +1296,49 @@
                      :diff diff
                      :pending-generation pending
                      :remedy pending-generation-remedy}))))
+
+(defn preflight-approved-sync!
+  "Classify the on-disk approved config against the loaded generation, writing
+  nothing on success.
+
+  Runs `sync-approved-spools`' classification sequence — read approved config,
+  materialize families, per-root phase-1 validation, structural diff
+  classification, atomic Maven-universe resolution, full diff classification —
+  without its state resets: sync state and the spool classloader are never
+  touched. A non-additive diff records the same `:pending-generation` a refused
+  sync records (the one permitted mutation) and throws its
+  `:non-additive-sync-diff` failure; an invalid config, a declared-floor
+  refusal, or an atomically failing Maven universe throws its own loud failure.
+  Per-root `:failed` outcomes are not refusals and pass. The 1-arity resolves
+  the running release marker exactly as `skein.api.runtime.alpha/sync!` does,
+  so floor validation refuses the same configs. Callers use this to refuse a
+  destructive operation (a registry-clearing reload) before it starts
+  (SPEC-004.C46); it proves only that the sync phase would not throw now, not
+  that a later startup file will succeed."
+  ([runtime]
+   (let [{:keys [marker provenance]} (release-marker runtime)]
+     (preflight-approved-sync! runtime (if (= :none provenance) :none marker))))
+  ([runtime running-marker]
+   (let [previous @(:approved-spool-generation-state runtime)
+         previous-fingerprints @(:approved-spool-generation-fingerprints runtime)
+         previous-maven @(:approved-spool-generation-maven runtime)
+         approved (approved-spools runtime running-marker)
+         materializations (materialize-families (:spools approved))
+         phase1 (mapv (fn [[lib entry]]
+                        (materialize-and-validate-spool
+                         lib entry (get materializations (::family (meta entry)))))
+                      (:spools approved))
+         survivors (into [] (keep :survivor) phase1)
+         structural-diff (non-additive-diff previous previous-fingerprints {} approved survivors {})]
+     (when (seq structural-diff)
+       (fail-non-additive-diff! runtime structural-diff approved))
+     (let [universe (merge-maven-universe survivors (:mvn-overrides approved))
+           added (resolve-spool-maven-libs universe)
+           resolved-maven (into {} (map (fn [[lib coord]] [lib (resolved-maven-version lib coord)])) added)
+           diff (non-additive-diff previous previous-fingerprints previous-maven approved survivors resolved-maven)]
+       (when (seq diff)
+         (fail-non-additive-diff! runtime diff approved)))
+     nil)))
 
 (defn sync-approved-spools
   "Load approved spools into the runtime classloader and record per-spool status.
