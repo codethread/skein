@@ -17,41 +17,14 @@
   Callers own runtime selection and pass the target weaver runtime as the first
   argument, per the blessed-namespace convention. `writer-ref->prompt` renders
   a plain-data `{:target :by :decoration}` ref as a note-writing CLI fragment."
-  (:require [clojure.string :as str]
+  (:require [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [skein.api.graph.alpha :as graph]
             [skein.api.runtime.alpha :as runtime]
-            [skein.api.weaver.alpha :as weaver]))
+            [skein.api.weaver.alpha :as weaver]
+            [skein.core.specs :as specs]))
 
-(defn- truncate
-  "Return `s` capped at `n` characters, ellipsizing when it overflows."
-  [s n]
-  (if (> (count s) n) (str (subs s 0 (dec n)) "…") s))
-
-(defn- note-attr
-  "Read the `note/<k>` memory attribute from a normalized note strand."
-  [note k]
-  (get (:attributes note) (keyword "note" k)))
-
-(defn- require-int-round
-  "Return `round` when it is an integer (or nil); otherwise fail loudly.
-
-  `note/round` is single-typed by contract: every writer stores an integer and
-  the read filter compares integers, so a round written through one surface is
-  always visible through another."
-  [round]
-  (when (and (some? round) (not (integer? round)))
-    (throw (ex-info "note/round must be an integer" {:round round :type (type round)})))
-  round)
-
-(defn- at-instant
-  "Chronological sort key for a note: its `note/at` parsed as an Instant, else
-  epoch. `Instant/toString` varies in fractional precision, so lexicographic
-  comparison misorders notes; parsing restores chronological order."
-  [note]
-  (if-let [at (note-attr note "at")]
-    (try (java.time.Instant/parse at)
-         (catch Exception _ java.time.Instant/EPOCH))
-    java.time.Instant/EPOCH))
+(declare note-attr at-instant note-view require-int-round truncate)
 
 (defn note!
   "Append an immutable note strand to `target-id`'s memory and return its id.
@@ -74,8 +47,9 @@
         note (weaver/add! runtime
                           {:title (truncate text 72)
                            :state "closed"
-                          ;; note/at carries sub-second precision the seconds-only
-                          ;; created_at column cannot, so it orders a note burst.
+                           ;; note/at carries sub-second precision the
+                           ;; seconds-only created_at column cannot, so it
+                           ;; orders a note burst.
                            :attributes (cond-> (merge decorating
                                                       {"note/text" text
                                                        "note/at" (str (runtime/now runtime))})
@@ -98,12 +72,7 @@
     (->> (graph/strands-by-ids runtime note-ids)
          (filter (fn [note] (or (nil? round) (= round (note-attr note "round")))))
          (sort-by (juxt at-instant :created_at :id))
-         (mapv (fn [note]
-                 (cond-> {:id (:id note)
-                          :note (note-attr note "text")
-                          :at (or (note-attr note "at") (:created_at note))}
-                   (note-attr note "by") (assoc :by (note-attr note "by"))
-                   (note-attr note "round") (assoc :round (note-attr note "round"))))))))
+         (mapv note-view))))
 
 (defn writer-ref->prompt
   "Render `ref` as the note-writing CLI instruction fragment.
@@ -123,10 +92,105 @@
     (when-not (or (nil? by) (string? by))
       (throw (ex-info "writer-ref by must be a string" {:field :by :value by})))
     (when-not (or (nil? decoration)
-                  (and (map? decoration) (every? (fn [[k v]] (and (string? k) (string? v))) decoration)))
+                  (and (map? decoration)
+                       (every? (fn [[k v]] (and (string? k) (string? v))) decoration)))
       (throw (ex-info "writer-ref decoration must be a map of strings"
                       {:field :decoration :value decoration})))
     (str "agent note " target " \"<text>\""
          (when by (str " --by " by))
          ;; sort keeps the rendered flags deterministic across map orderings
          (str/join (for [[k v] (sort decoration)] (str " --attr " k "=" v))))))
+
+;; --- seam specs ---------------------------------------------------------------
+
+;; A runtime is an opaque, non-nil handle; callers select it and pass it first.
+(s/def ::runtime some?)
+
+(s/def ::id ::specs/id)
+(s/def ::target ::specs/id)
+(s/def ::note string?)
+(s/def ::at string?)
+(s/def ::by string?)
+(s/def ::round integer?)
+
+;; The read projection of one note strand; `:by`/`:round` appear only when the
+;; note carries them.
+(s/def ::note-view (s/keys :req-un [::id ::note ::at] :opt-un [::by ::round]))
+
+;; Opts maps stay open — `:by`/`:round` ride beside caller-owned decorating
+;; attributes — so the known keys are constrained by predicate rather than
+;; `s/keys`: writers legitimately pass them as nil to mean absent, which
+;; present-key `s/keys` validation would reject. `:by` states the documented
+;; contract; the body enforces only `:round` and stays lenient about `:by`,
+;; a legacy tolerance deliberately left unchanged by the form conversion.
+(s/def ::note-opts
+  (s/nilable
+   (s/and map?
+          (fn [{:keys [by round]}]
+            (and (or (nil? by) (string? by))
+                 (or (nil? round) (integer? round)))))))
+
+(s/def ::read-opts
+  (s/nilable
+   (s/and map?
+          (fn [{:keys [round]}]
+            (or (nil? round) (integer? round))))))
+
+(s/fdef note!
+  :args (s/cat :runtime ::runtime :target-id ::specs/id :text string? :opts ::note-opts)
+  :ret (s/keys :req-un [::id ::target]))
+
+(s/fdef notes
+  :args (s/cat :runtime ::runtime :target-id ::specs/id :opts ::read-opts)
+  :ret (s/coll-of ::note-view :kind vector?))
+
+;; `writer-ref->prompt` is itself the authority for the writer-ref grammar: its
+;; docstring documents the shape and its body defines it (SPEC-003.C19a), so no
+;; spec mirrors it here.
+
+;; --- note attribute mechanics -------------------------------------------------
+
+(defn- note-attr
+  "Read the `note/<k>` memory attribute from a normalized note strand."
+  [note k]
+  (get (:attributes note) (keyword "note" k)))
+
+(defn- at-instant
+  "Chronological sort key for a note: its `note/at` parsed as an Instant, else
+  epoch. `Instant/toString` varies in fractional precision, so lexicographic
+  comparison misorders notes; parsing restores chronological order."
+  [note]
+  (if-let [at (note-attr note "at")]
+    (try (java.time.Instant/parse at)
+         (catch Exception _ java.time.Instant/EPOCH))
+    java.time.Instant/EPOCH))
+
+(defn- note-view
+  "Project a normalized note strand as `{:id :note :at}` plus `:by`/`:round`
+  when present."
+  [note]
+  (cond-> {:id (:id note)
+           :note (note-attr note "text")
+           :at (or (note-attr note "at") (:created_at note))}
+    (note-attr note "by") (assoc :by (note-attr note "by"))
+    (note-attr note "round") (assoc :round (note-attr note "round"))))
+
+;; --- round contract -----------------------------------------------------------
+
+(defn- require-int-round
+  "Return `round` when it is an integer (or nil); otherwise fail loudly.
+
+  `note/round` is single-typed by contract: every writer stores an integer and
+  the read filter compares integers, so a round written through one surface is
+  always visible through another."
+  [round]
+  (when (and (some? round) (not (integer? round)))
+    (throw (ex-info "note/round must be an integer" {:round round :type (type round)})))
+  round)
+
+;; --- leaf mechanics -----------------------------------------------------------
+
+(defn- truncate
+  "Return `s` capped at `n` characters, ellipsizing when it overflows."
+  [s n]
+  (if (> (count s) n) (str (subs s 0 (dec n)) "…") s))

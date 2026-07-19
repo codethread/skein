@@ -41,7 +41,7 @@ Append an immutable note strand to `target-id`'s memory and return its id.
   path can rewrite, delete, or archive them. Fails loudly on blank text, a
   missing target, or a non-integer `:round` (the `note/round` contract is
   single-typed).
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L56-L85">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L29-L59">Source</a></sub></p>
 
 ## <a name="skein.api.notes.alpha/notes">`notes`</a>
 ``` clojure
@@ -56,7 +56,7 @@ Return `target-id`'s notes in `note/at` order, optionally one `:round`.
   each note as `{:id :note :at}` plus `:by`/`:round` when present. `:round` must
   be an integer (fails loudly otherwise); ordering parses `note/at` so mixed
   fractional-precision timestamps still sort chronologically.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L87-L106">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L61-L75">Source</a></sub></p>
 
 ## <a name="skein.api.notes.alpha/writer-ref->prompt">`writer-ref->prompt`</a>
 ``` clojure
@@ -72,4 +72,4 @@ Render `ref` as the note-writing CLI instruction fragment.
   optional string `:by`, and an optional map of string `:decoration` entries;
   malformed refs fail loudly naming the offending field. Renders only the write
   instruction — no read/`agent notes` string.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L108-L132">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/notes/alpha.clj#L77-L102">Source</a></sub></p>
