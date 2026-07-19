@@ -42,11 +42,12 @@ Function.
 
 Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
 
-  With `{:kind k}` opts, narrows to that kind; a `:kind` outside
+  With `{:kind k}` opts, narrows to that kind. Present opts are validated
+  against the `::declarations-opts` spec, so a `:kind` outside
   `declaration-kinds` fails loudly rather than silently matching nothing.
   Reads the runtime store explicitly — never the published ambient
   singleton.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L50-L69">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/vocab/alpha.clj#L50-L68">Source</a></sub></p>
 
 ## <a name="skein.api.vocab.alpha/declare!">`declare!`</a>
 ``` clojure

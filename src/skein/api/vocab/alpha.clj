@@ -50,7 +50,8 @@
 (defn declarations
   "Return `runtime`'s declarations as full C1 maps, sorted by `[:kind :name]`.
 
-  With `{:kind k}` opts, narrows to that kind; a `:kind` outside
+  With `{:kind k}` opts, narrows to that kind. Present opts are validated
+  against the `::declarations-opts` spec, so a `:kind` outside
   `declaration-kinds` fails loudly rather than silently matching nothing.
   Reads the runtime store explicitly — never the published ambient
   singleton."
@@ -58,10 +59,8 @@
   ([runtime opts]
    (when (some? opts)
      (reject-unknown-keys! "vocab/declarations" #{:kind} opts)
-     (when (and (contains? opts :kind)
-                (not (contains? declaration-kinds (:kind opts))))
-       (fail! "vocab/declarations :kind must be :attr-namespace or :edge"
-              {:kind (:kind opts) :allowed (vec (sort declaration-kinds))})))
+     (require-valid! ::declarations-opts opts
+                     "vocab/declarations :kind must be :attr-namespace or :edge"))
    (let [kind (:kind opts)]
      (->> (vals @(registry runtime))
           (filter (fn [d] (or (nil? kind) (= kind (:kind d)))))
@@ -103,6 +102,10 @@
 (defmethod declaration-shape :edge [_]
   (s/keys :req-un [::kind ::name ::owner ::doc ::family ::direction ::declared-acyclic?]))
 (s/def ::declaration (s/multi-spec declaration-shape :kind))
+
+(s/def ::declarations-opts
+  ;; the closed key set is reject-unknown-keys!'s job — s/keys cannot express it
+  (s/keys :opt-un [::kind]))
 
 (defn- validate-declaration!
   "Return `declaration` after validating the C1 shape, or fail loudly.
