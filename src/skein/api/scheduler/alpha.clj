@@ -24,11 +24,12 @@
   first argument to every function here; capture it with
   `skein.api.current.alpha/runtime` only at trusted entry points."
   (:require [clojure.spec.alpha :as s]
-            [skein.api.scheduler.internal :as internal]
             [skein.core.db :as db]
             [skein.core.specs :as specs]
             [skein.core.weaver.access :as access]
             [skein.core.weaver.scheduler :as scheduler]))
+
+(declare decoded-row resolve-handler-fn!)
 
 (defn schedule!
   "Persist or replace a durable wake in `runtime` and arm it for dispatch.
@@ -43,8 +44,8 @@
   [runtime wake]
   (when-not (map? wake)
     (throw (ex-info "Scheduler wake must be a map" {:wake wake})))
-  (internal/resolve-handler-fn! runtime (:handler wake))
-  (let [created (internal/decoded-row (db/schedule-wake! (access/ds runtime) wake))]
+  (resolve-handler-fn! runtime (:handler wake))
+  (let [created (decoded-row (db/schedule-wake! (access/ds runtime) wake))]
     (scheduler/arm! runtime)
     created))
 
@@ -55,7 +56,7 @@
   cancellation's history row as a decoded `::cancellation` map. A missing
   key fails loudly."
   [runtime key]
-  (let [cancelled (internal/decoded-row (db/cancel-wake! (access/ds runtime) key))]
+  (let [cancelled (decoded-row (db/cancel-wake! (access/ds runtime) key))]
     (scheduler/arm! runtime)
     cancelled))
 
@@ -65,7 +66,7 @@
   Ordered by wake-at ascending with a stable key tie-break, so the earliest
   pending wake is `(first (pending runtime))`."
   [runtime]
-  (mapv internal/decoded-row (db/pending-wakes (access/ds runtime))))
+  (mapv decoded-row (db/pending-wakes (access/ds runtime))))
 
 ;; --- seam specs ---------------------------------------------------------------
 
@@ -115,3 +116,34 @@
 (s/fdef pending
   :args (s/cat :runtime ::runtime)
   :ret (s/coll-of ::pending-wake :kind vector?))
+
+;; --- row decoding -------------------------------------------------------------
+
+(defn- decoded-row
+  "Decode a scheduler wake/history row's JSON payload and handler symbol."
+  [row]
+  (some-> row
+          (update :payload db/<-json)
+          (update :handler symbol)))
+
+;; --- handler resolution -------------------------------------------------------
+
+(defn- resolve-handler-fn!
+  "Resolve `handler` under `runtime`'s spool classloader to a callable value.
+
+  Throws when the symbol is not fully qualified, cannot be resolved, or
+  names a non-callable value."
+  [runtime handler]
+  (when-not (and (symbol? handler) (namespace handler))
+    (throw (ex-info "Scheduler handler must be a fully qualified symbol"
+                    {:handler handler})))
+  (let [resolved (try
+                   (access/with-spool-classloader runtime #(requiring-resolve handler))
+                   (catch Throwable t
+                     (throw (ex-info "Scheduler handler could not be resolved"
+                                     {:handler handler} t))))
+        value (if (var? resolved) @resolved resolved)]
+    (when-not (ifn? value)
+      (throw (ex-info "Scheduler handler symbol must resolve to a callable value"
+                      {:handler handler :resolved-class (str (class value))})))
+    value))

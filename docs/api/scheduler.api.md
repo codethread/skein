@@ -42,7 +42,7 @@ Cancel a pending wake in `runtime` by stable key.
   Removes whichever generation currently holds `key` and returns the
   cancellation's history row as a decoded `::cancellation` map. A missing
   key fails loudly.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L51-L60">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L52-L61">Source</a></sub></p>
 
 ## <a name="skein.api.scheduler.alpha/pending">`pending`</a>
 ``` clojure
@@ -54,7 +54,7 @@ Return all pending wakes in `runtime` as decoded `::pending-wake` maps.
 
   Ordered by wake-at ascending with a stable key tie-break, so the earliest
   pending wake is `(first (pending runtime))`.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L62-L68">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L63-L69">Source</a></sub></p>
 
 ## <a name="skein.api.scheduler.alpha/schedule!">`schedule!`</a>
 ``` clojure
@@ -71,4 +71,4 @@ Persist or replace a durable wake in `runtime` and arm it for dispatch.
   count. Returns the persisted wake as a decoded `::pending-wake` map.
   Malformed keys/instants/payloads and unresolvable or non-callable handlers
   fail loudly; no wake is persisted on failure.
-<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L33-L49">Source</a></sub></p>
+<p><sub><a href="https://github.com/codethread/skein/blob/main/src/skein/api/scheduler/alpha.clj#L34-L50">Source</a></sub></p>
